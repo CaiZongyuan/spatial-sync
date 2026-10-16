@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from packages.info.catalog import load_catalog
 from packages.info.program import HostCore
 from packages.programs.centrifuge.virtual import CentrifugeProgram
-from packages.programs.robot_arm.virtual import RobotArmProgram, kinematics
+from packages.programs.robot_arm.virtual import BASE_HEIGHT, RobotArmProgram, kinematics
 from packages.programs.tube.virtual import TubeProgram
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.math import compose_pose
@@ -422,7 +422,7 @@ class SyntheticSource:
                         "type": "revolute",
                         "parentBodyKey": None,
                         "childBodyKey": LINK1,
-                        "parentLocalPose": {"p": [0, 0, 0.65], "q": [0, 0, 0, 1]},
+                        "parentLocalPose": {"p": [0, 0, BASE_HEIGHT], "q": [0, 0, 0, 1]},
                         "axis": [0, 1, 0],
                         "anchorSiteKey": JOINT1 + "/anchor",
                         "dofCount": 1,

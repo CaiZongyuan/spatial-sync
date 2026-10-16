@@ -8,11 +8,12 @@ from packages.info.program import ProgramConfig, Reject
 from packages.protocol.math import compose_pose
 
 HOME = [0.0, 0.3, -0.6, 0.0, 0.0, 0.0, 0.0]
+BASE_HEIGHT = 0.9
 
 
 def kinematics(joints):
     yaw, shoulder, elbow, *wrist = joints
-    origin = {"p": [0, 0, 0.65], "q": [0, 0, math.sin(yaw / 2), math.cos(yaw / 2)]}
+    origin = {"p": [0, 0, BASE_HEIGHT], "q": [0, 0, math.sin(yaw / 2), math.cos(yaw / 2)]}
     first = compose_pose(
         origin, {"p": [0, 0, 0], "q": [0, math.sin(shoulder / 2), 0, math.cos(shoulder / 2)]}
     )
