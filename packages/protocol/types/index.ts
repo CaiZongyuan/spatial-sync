@@ -125,6 +125,7 @@ export interface BodyNode {
   transformMode: 'stream'
   stableKey: boolean
   visuals: Visual[]
+  fallbackVisuals?: Visual[] | null
   colliders: Visual[]
   debug: {
     [k: string]: JsonValue
@@ -255,6 +256,7 @@ export interface StaticNode {
   initialPose: Pose
   stableKey: boolean
   visuals: Visual[]
+  fallbackVisuals?: Visual[] | null
   colliders: Visual[]
   debug: {
     [k: string]: JsonValue

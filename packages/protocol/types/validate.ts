@@ -47,7 +47,7 @@ export function validateManifest(value: unknown): SceneManifest {
   }
   for (const node of value.nodes) {
     if (node.kind === 'static') unitQuaternion(node.initialPose.q)
-    if (node.kind !== 'group') for (const visual of [...node.visuals, ...node.colliders]) unitQuaternion(visual.localPose.q)
+    if (node.kind !== 'group') for (const visual of [...node.visuals, ...(node.fallbackVisuals ?? []), ...node.colliders]) unitQuaternion(visual.localPose.q)
   }
   for (const site of value.sites) unitQuaternion(site.localPose.q)
   for (const joint of value.joints) if (joint.parentLocalPose) unitQuaternion(joint.parentLocalPose.q)

@@ -48,6 +48,20 @@
           },
           "type": "array"
         },
+        "fallbackVisuals": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Visual"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "colliders": {
           "items": {
             "$ref": "#/$defs/Visual"
@@ -1736,6 +1750,20 @@
             "$ref": "#/$defs/Visual"
           },
           "type": "array"
+        },
+        "fallbackVisuals": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Visual"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "colliders": {
           "items": {
