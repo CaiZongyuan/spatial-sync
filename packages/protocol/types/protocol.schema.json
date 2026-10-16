@@ -1836,6 +1836,14 @@
           "exclusiveMinimum": 0,
           "type": "number"
         },
+        "format": {
+          "default": "json",
+          "enum": [
+            "json",
+            "binary"
+          ],
+          "type": "string"
+        },
         "entityKeys": {
           "anyOf": [
             {
@@ -1857,7 +1865,8 @@
         "protocolVersion",
         "sceneRevision",
         "scope",
-        "rateHz"
+        "rateHz",
+        "format"
       ],
       "type": "object"
     },
@@ -1879,12 +1888,21 @@
         "grantedRateHz": {
           "exclusiveMinimum": 0,
           "type": "number"
+        },
+        "format": {
+          "default": "json",
+          "enum": [
+            "json",
+            "binary"
+          ],
+          "type": "string"
         }
       },
       "required": [
         "type",
         "scope",
-        "grantedRateHz"
+        "grantedRateHz",
+        "format"
       ],
       "type": "object"
     },

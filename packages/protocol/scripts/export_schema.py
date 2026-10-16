@@ -80,6 +80,13 @@ def main():
     manifest = manifest_sample()
     write("fixtures/manifest.json", manifest.model_dump(mode="json", exclude_none=True))
     frame_args = dict(sessionId=manifest.sessionId, sceneRevision=manifest.sceneRevision, epoch=0, seq=1, simTime=0, sampleTimeMs=1000, poses=[(7, 1, 2, 3, 0, 0, 0, 1)])
+    from packages.transport import FrameCodec
+
+    binary_frame = Snapshot(**frame_args)
+    write("fixtures/binary-frame.json", {
+        "frame": binary_frame.model_dump(mode="json"), "revisionNumericId": 1,
+        "hex": FrameCodec(manifest.sessionId, manifest.sceneRevision, 1).encode(binary_frame).hex(),
+    })
     state_args = dict(sessionId=manifest.sessionId, state="PAUSED", sceneRevision=manifest.sceneRevision, epoch=0, seq=1, simTime=0, realtimeFactor=1, actualRtf=0, cause={"kind": "command", "requestId": "cmd-fixture", "command": "pause"})
     messages = [
         Ready(sessionId=manifest.sessionId, sceneRevision=manifest.sceneRevision, revisionNumericId=1, epoch=0, sessionState="RUNNING", simTime=0, basePublishHz=30, realtimeFactor=1),

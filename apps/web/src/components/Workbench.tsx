@@ -40,7 +40,16 @@ declare global {
 
 export function Workbench({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
-  const client = useMemo(() => new SessionClient(sessionId), [sessionId]);
+  const client = useMemo(
+    () =>
+      new SessionClient(
+        sessionId,
+        new URLSearchParams(location.search).get('format') === 'binary'
+          ? 'binary'
+          : 'json',
+      ),
+    [sessionId],
+  );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const [loadError, setLoadError] = useState<string>();
   const [operationPending, setOperationPending] = useState(false);

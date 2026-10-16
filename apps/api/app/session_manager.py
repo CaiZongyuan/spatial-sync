@@ -32,6 +32,7 @@ from packages.protocol.schema import (
     TransformFrame,
     validate_command_args,
 )
+from packages.transport import FrameCodec
 
 logger = logging.getLogger("spatial.gateway")
 SCENES = [
@@ -288,18 +289,28 @@ class Session:
             if not client.subscribed:
                 continue
             scope = client.stream_ids
-            if scope not in encoded:
+            key = (scope, client.frame_format)
+            if key not in encoded:
                 scoped = (
                     frame
                     if scope is None
                     else frame.model_copy(update={"poses": [row for row in frame.poses if row[0] in scope]})
                 )
-                encoded[scope] = encode(scoped)
-                self.payload_bytes += len(encoded[scope].encode("utf-8"))
+                encoded[key] = self._encode_frame(scoped, client.frame_format)
+                payload = encoded[key]
+                self.payload_bytes += len(payload.encode("utf-8") if isinstance(payload, str) else payload)
             if reliable:
-                client.enqueue_reliable(encoded[scope], seq=frame.seq)
+                client.enqueue_reliable(encoded[key], seq=frame.seq)
             else:
-                client.offer_frame(encoded[scope], frame.seq)
+                client.offer_frame(encoded[key], frame.seq)
+
+    def _encode_frame(self, frame: TransformFrame, format_name: str) -> str | bytes:
+        if format_name == "binary":
+            # Source-local IPC revision/seq differ after a gateway-owned reload.
+            return FrameCodec(
+                self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
+            ).encode(frame)
+        return encode(frame)
 
     def _apply_state(self, state: SessionState):
         if (self.state, self.epoch, self.options.realtimeFactor) != (
@@ -435,10 +446,15 @@ class Session:
             )
         client.stream_ids = scope
         client.granted_rate_hz = min(max(request.rateHz, 1), self.options.basePublishHz)
+        client.frame_format = request.format
         client.subscribed = True
         client.latest = None
         client.enqueue_reliable(
-            encode(SubscriptionAck(scope=request.scope, grantedRateHz=client.granted_rate_hz))
+            encode(
+                SubscriptionAck(
+                    scope=request.scope, grantedRateHz=client.granted_rate_hz, format=request.format
+                )
+            )
         )
         frame = self.latest_frame()
         if frame is None:
@@ -453,7 +469,9 @@ class Session:
             }
         )
         # A re-subscription deliberately permits a complete snapshot at the same seq.
-        client.enqueue_reliable(encode(snapshot), seq=snapshot.seq, force=True)
+        client.enqueue_reliable(
+            self._encode_frame(snapshot, client.frame_format), seq=snapshot.seq, force=True
+        )
         for event in self.entity_states.values():
             client.enqueue_reliable(encode(event))
 
@@ -553,6 +571,7 @@ class Session:
                 {
                     "subscribed": c.subscribed,
                     "grantedRateHz": c.granted_rate_hz,
+                    "format": c.frame_format,
                     "reliableQueueDepth": c.reliable.qsize(),
                     "droppedFrames": c.dropped_frames,
                     "sentMessages": c.sent_messages,
