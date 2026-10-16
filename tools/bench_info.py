@@ -1,8 +1,10 @@
 """Real localhost information-plane benchmark; correctness is checked before budgets.
 
-JSON goes to stdout (and --output); the compact human table goes to stderr.
+JSON goes to stdout (and --output); compact human tables go to stderr.
 The temporary fixture extends the production Synthetic scene with unplaced devices.
 No benchmark HTTP endpoints or alternate gateway paths are installed.
+After the Synthetic gateway exits, the real log benchmark runs separately;
+--include-newton also measures the real CPU Newton host in its own gateway.
 """
 
 from __future__ import annotations
@@ -692,6 +694,79 @@ async def run(args, directory, log_path):
                 execution["exitCode"] = process.returncode
 
 
+async def postphases(args, directory):
+    """Run only after Synthetic cleanup, so the measured workloads do not overlap."""
+    from tools.bench_newton_info import probe_newton_info
+
+    newton = {"status": "unavailable", "reason": "not_requested; use --include-newton"}
+    if args.include_newton:
+        newton = await probe_newton_info(python=args.newton_python, port=args.port)
+    log_tool = ROOT / "tools/bench_recording.py"
+    if not log_tool.is_file():
+        return {"newton": newton, "logThroughput": {"status": "unavailable", "reason": "i4_not_integrated"}}
+    from tools.bench_recording import benchmark_log
+
+    log = {
+        "status": "unverified",
+        "toolSha256": hashlib.sha256(log_tool.read_bytes()).hexdigest(),
+        "configuration": {"frames": 1024, "bodiesPerFrame": 2048},
+        "method": {"eventLoop": "2ms scheduling probe; report delay without inventing a numeric budget"},
+    }
+    try:
+        log["measurements"] = await benchmark_log(directory / "session-log-benchmark")
+        log["budgets"] = {"throughput5MBps": log["measurements"]["meetsThroughputBudget"]}
+        log["status"] = "measured"
+    except Exception as exc:
+        log.update(status="invalid", error=f"{type(exc).__name__}: {exc}")
+    return {"newton": newton, "logThroughput": log}
+
+
+def print_postphases(measurements):
+    print("phase | metric | observed | budget passed", file=sys.stderr)
+    native = measurements["newton"]
+    if native["status"] == "measured":
+        measured, budgets = native["measurements"], native["budgets"]
+        for label, value, budget in (
+            ("HTTP accept p95 ms", measured["accept"]["p95Ms"], "accept25ms"),
+            (
+                "WS observation p95 ms (worst reader)",
+                max(v["p95Ms"] for v in measured["observation"]),
+                "observation20ms",
+            ),
+            (
+                "source control tick p95 ms (final window)",
+                measured["reportedFinalTickP95Ms"],
+                "sourceTick2ms",
+            ),
+            ("registered wait wake p95 ms", measured["waitWake"]["p95Ms"], "waitWake5ms"),
+            (
+                "two-client reliable loss",
+                measured["correctness"]["twoClientReliableLoss"],
+                "twoClientReliableLossZero",
+            ),
+        ):
+            print(f"Newton | {label} | {value:.3f} | {budgets[budget]}", file=sys.stderr)
+    else:
+        print(
+            f"Newton | {native['status']} | {native.get('reason', native.get('error'))} | n/a",
+            file=sys.stderr,
+        )
+    log = measurements["logThroughput"]
+    if log["status"] == "measured":
+        measured = log["measurements"]
+        print(
+            f"log | verified buffered MB/s | {measured['megabytesPerSecond']:.3f} | "
+            f"{log['budgets']['throughput5MBps']}",
+            file=sys.stderr,
+        )
+        print(
+            f"log | event-loop delay p95 ms | {measured['loopDelayP95Ms']:.3f} | no numeric budget",
+            file=sys.stderr,
+        )
+    else:
+        print(f"log | {log['status']} | {log.get('reason', log.get('error'))} | n/a", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entities", type=int, default=1000)
@@ -703,6 +778,12 @@ def main():
     parser.add_argument("--wake-samples", type=int, default=3)
     parser.add_argument("--port", type=int, default=8011)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--include-newton", action="store_true", help="After Synthetic cleanup, probe the real CPU host"
+    )
+    parser.add_argument(
+        "--newton-python", type=Path, help="Optional Python with the simulation extra for the Newton gateway"
+    )
     parser.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--fixture-dir", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -726,7 +807,11 @@ def main():
     result = {
         "status": "unverified",
         "configuration": vars(args)
-        | {"output": str(args.output) if args.output else None, "fixture_dir": None},
+        | {
+            "output": str(args.output) if args.output else None,
+            "newton_python": str(args.newton_python) if args.newton_python else None,
+            "fixture_dir": None,
+        },
         "environment": {
             "platform": platform.platform(),
             "python": platform.python_version(),
@@ -747,10 +832,8 @@ def main():
             "instrumentation": "source/reader SHA256 of index/rev/value; Source.stats and waiter counters",
             "limits": "CPU contention and instrumentation included; interpret budgets separately",
             "correctnessCohort": "all post-cursor messages through drain, including warmup and controls",
-        },
-        "unavailable": {
-            "newtonAcceptAndTick": "requires I3 real Newton host",
-            "logThroughput": "requires I4 session log",
+            "phases": "Synthetic cleanup, optional Newton cleanup, then actual log drain/flush",
+            "status": "measured means valid work; each unchanged performance budget is evaluated separately",
         },
     }
     try:
@@ -763,7 +846,12 @@ def main():
             except Exception:
                 result["gatewayLogTail"] = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
                 raise
+            result["measurements"].update(asyncio.run(postphases(args, directory)))
         result["status"] = "measured"
+        if any(result["measurements"][name]["status"] == "invalid" for name in ("newton", "logThroughput")):
+            result.update(
+                status="invalid", error="A sequential phase failed correctness; inspect its receipt"
+            )
     except Exception as exc:
         result["status"], result["error"] = "invalid", f"{type(exc).__name__}: {exc}"
     rendered = json.dumps(result, ensure_ascii=False, indent=2)
@@ -771,7 +859,7 @@ def main():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
-    if result["status"] == "measured":
+    if "measurements" in result:
         print(
             "repeat | baseline transform Hz | loaded transform Hz | changes/s | HTTP accept p95 ms",
             file=sys.stderr,
@@ -783,6 +871,8 @@ def main():
                 f"{item['loaded']['http']['accept']['p95Ms']:.3f}",
                 file=sys.stderr,
             )
+        if "newton" in result["measurements"]:
+            print_postphases(result["measurements"])
     if result["status"] != "measured":
         raise SystemExit(1)
 
