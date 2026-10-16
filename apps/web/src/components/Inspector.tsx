@@ -113,6 +113,7 @@ export function Inspector({
           store={client.info}
           binding={device}
           definition={definition}
+          disabledReason={client.readOnly ? 'Recorded sessions are read-only.' : undefined}
           disabled={
             client.readOnly ||
             state.connection !== 'connected' ||

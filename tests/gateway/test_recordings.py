@@ -144,3 +144,35 @@ def test_terminal_lost_after_writer_stops_cannot_return_stale_accepted_or_redisp
             assert response.json()["detail"]["code"] == "history_unavailable"
             assert response.json()["detail"]["invocationId"] == accepted["invocationId"]
         assert not owned.pipeline.table.active
+
+
+def test_remote_recording_files_and_list_share_viewer_authorization(tmp_path):
+    directory = tmp_path / "session-safe"
+    directory.mkdir()
+    (directory / "recording.json").write_text(
+        json.dumps(
+            {
+                "formatVersion": 1,
+                "sessionId": "session-safe",
+                "status": "complete",
+                "segments": [],
+            }
+        )
+    )
+    settings = Settings(
+        recordings_root=tmp_path,
+        remote=True,
+        operator_token="operator",
+        viewer_token="viewer",
+        allowed_origins=("http://viewer.test",),
+    )
+    with TestClient(create_app(settings)) as client:
+        for route in ("/api/v1/recordings", "/recordings/session-safe/recording.json"):
+            assert client.get(route).status_code == 401
+            assert client.get(route, headers={"Authorization": "Bearer viewer"}).status_code == 200
+            assert (
+                client.get(
+                    route, headers={"Authorization": "Bearer viewer", "Origin": "http://other.test"}
+                ).status_code
+                == 403
+            )

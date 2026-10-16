@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import struct
@@ -67,7 +68,16 @@ def _json_bytes(value):
 def _atomic_json(path, value):
     temporary = path.with_suffix(".tmp")
     temporary.write_bytes(_json_bytes(value))
-    temporary.replace(path)
+    for attempt in range(5):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError as exc:
+            # Windows readers can temporarily deny FILE_SHARE_DELETE. All waits
+            # stay on the disk-owner thread; persistent failures still follow D04.
+            if attempt == 4 or getattr(exc, "winerror", None) not in (5, 32, 33):
+                raise
+            time.sleep(0.01 * 2**attempt)
 
 
 def _sim_time(record):
@@ -142,13 +152,13 @@ class _Projection:
     def coherent(self):
         return self.frame is not None and FRAME_HEADER.unpack_from(self.frame.payload)[4] == self.store.epoch
 
-    def apply(self, record):
+    def apply(self, record, message=None):
         if record.kind == 1:
             self.frame = record
             return
         if record.kind != 2:
             return
-        value = json.loads(record.payload)
+        value = message if message is not None else json.loads(record.payload)
         kind = value.get("type")
         if kind == "entity.snapshot":
             self.store.apply(EntitySnapshot.model_validate(value))
@@ -252,6 +262,11 @@ class SessionLog:
     def pending_count(self):
         with self._condition:
             return len(self._pending)
+
+    @property
+    def queue_depth(self):
+        with self._condition:
+            return len(self._queue)
 
     @property
     def error(self):
@@ -369,7 +384,10 @@ class SessionLog:
                 try:
                     self._close_segment()
                 except OSError:
-                    self._file.close()
+                    file, self._file = self._file, None
+                    if file is not None:
+                        with contextlib.suppress(OSError):
+                            file.close()
         finally:
             self.metadata["status"] = "incomplete" if self._failure else "complete"
             if self._failure:
@@ -449,10 +467,17 @@ class SessionLog:
         self._segment["bytes"] += size
         self._clock = max(self._clock, record.t_ms)
         self._segment["endSampleTimeMs"] = self._clock
-        sim_time = _sim_time(record)
+        message = json.loads(record.payload) if record.kind == 2 else None
+        sim_time = (
+            FRAME_HEADER.unpack_from(record.payload)[6]
+            if record.kind == 1
+            else message.get("simTime")
+            if message is not None
+            else None
+        )
         if sim_time is not None:
             self._segment["endSimTime"] = sim_time
-        self._projection.apply(record)
+        self._projection.apply(record, message)
         if invocation_id:
             self._unflushed.append(
                 (

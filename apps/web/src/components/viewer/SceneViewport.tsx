@@ -649,7 +649,7 @@ export function SceneViewport(props: ViewportProps) {
         <SceneContents key={props.manifest.sceneRevision} {...props} />
       </Canvas>
       <div className="viewport-label">
-        <span className="live-dot" /> LIVE SPATIAL VIEW{' '}
+        <span className="live-dot" /> {props.client.readOnly ? 'RECORDED SPATIAL VIEW' : 'LIVE SPATIAL VIEW'}{' '}
         <small>METERS · Z-UP</small>
       </div>
       <div className="viewport-hint">

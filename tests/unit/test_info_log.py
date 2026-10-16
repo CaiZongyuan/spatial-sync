@@ -1,10 +1,14 @@
+import asyncio
+import ctypes
 import json
 import struct
+import sys
 import threading
+from pathlib import Path
 
 import pytest
 
-from packages.info.log import SessionLog, read_segment, recover_recordings
+from packages.info.log import SessionLog, _atomic_json, read_segment, recover_recordings
 from packages.protocol.schema import TransformFrame
 from packages.transport import HEADER as FRAME_HEADER
 from packages.transport import FrameCodec
@@ -199,3 +203,61 @@ async def test_reload_keeps_revision_documents_and_independent_new_segment(tmp_p
     records = read_segment((directory / "seg-000002.bin").read_bytes()).records
     assert FRAME_HEADER.unpack_from(records[0].payload)[3] == 2
     assert json.loads(records[1].payload)["sceneRevision"] == "rev-next"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows share-delete semantics")
+async def test_windows_atomic_metadata_retries_real_read_handle_sharing_conflict(tmp_path, monkeypatch):
+    path = tmp_path / "recording.json"
+    _atomic_json(path, {"version": 1})
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    kernel.CreateFileW.restype = ctypes.c_void_p
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    handle = kernel.CreateFileW(str(path), 0x80000000, 0x1 | 0x2, None, 3, 0, None)
+    assert handle not in (None, ctypes.c_void_p(-1).value)
+    blocked = threading.Event()
+    original_replace = Path.replace
+
+    def observe_replace(temporary, target):
+        try:
+            return original_replace(temporary, target)
+        except PermissionError:
+            blocked.set()
+            raise
+
+    monkeypatch.setattr(Path, "replace", observe_replace)
+    task = asyncio.create_task(asyncio.to_thread(_atomic_json, path, {"version": 2}))
+    try:
+        assert await asyncio.to_thread(blocked.wait, 5), "Expected a real Windows sharing violation"
+    finally:
+        kernel.CloseHandle(handle)
+    await task
+    assert json.loads(path.read_bytes()) == {"version": 2}
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+async def test_persistent_metadata_failure_closes_file_once_and_recovers_incomplete(tmp_path, monkeypatch):
+    original_replace = Path.replace
+
+    def fail_existing_metadata(temporary, target):
+        if target.name == "recording.json" and target.exists():
+            raise PermissionError("Persistent metadata replacement failure")
+        return original_replace(temporary, target)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Path, "replace", fail_existing_metadata)
+        log = new_log(tmp_path)
+        await log.close()
+        assert "Persistent" in log.error
+        assert not log.thread.is_alive()
+    recover_recordings(tmp_path)
+    value = json.loads((tmp_path / "session-test/recording.json").read_bytes())
+    assert value["status"] == "incomplete" and len(value["segments"]) == 1

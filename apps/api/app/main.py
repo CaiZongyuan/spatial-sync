@@ -125,7 +125,7 @@ def create_app(
     async def access_control(request: Request, call_next):
         if (
             settings.remote
-            and request.url.path.startswith("/api/v1")
+            and request.url.path.startswith(("/api/v1", "/recordings/"))
             and request.url.path != "/api/v1/health"
         ):
             origin = request.headers.get("origin")

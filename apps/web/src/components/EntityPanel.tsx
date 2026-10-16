@@ -265,12 +265,14 @@ export function EntityPanel({
   binding,
   definition,
   disabled,
+  disabledReason,
   onAction,
 }: {
   store: InfoStore;
   binding: EntityBinding;
   definition: EntityType;
   disabled: boolean;
+  disabledReason?: string;
   onAction: (
     key: string,
     action: string,
@@ -325,7 +327,7 @@ export function EntityPanel({
         </div>
         {disabled && (
           <p className="field-note">
-            Actions require a connected operator and synchronized device state.
+            {disabledReason ?? 'Actions require a connected operator and synchronized device state.'}
           </p>
         )}
         {Object.entries(definition.actions).map(([name, action]) => (
