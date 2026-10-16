@@ -1,6 +1,17 @@
 """Registered, reproducible scene builders. Arbitrary paths are never accepted by the API."""
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from math import pi
+from typing import Any
+
+
+@dataclass(frozen=True)
+class SceneConfig:
+    builder: Callable[[], Any]
+    solver: str = "xpbd"
+    driver_factory: Callable[[Any], Any] | None = None
+    warmup_steps: int = 1
 
 
 def falling_boxes_builder():
@@ -32,12 +43,42 @@ def falling_boxes_builder():
     return builder
 
 
-SCENE_BUILDERS = {"falling-boxes": falling_boxes_builder}
+def robot_and_tubes_builder():
+    from .robot_scene import build_robot_and_tubes
+
+    return build_robot_and_tubes()
+
+
+def robot_driver_factory(model):
+    from .robot_scene import RobotDriver
+
+    return RobotDriver(model)
+
+
+def usd_lab_builder():
+    from .usd_scene import usd_lab_builder as build
+
+    return build()
+
+
+SCENE_CONFIGS = {
+    "falling-boxes": SceneConfig(falling_boxes_builder),
+    "robot-and-tubes": SceneConfig(
+        robot_and_tubes_builder,
+        solver="mujoco",
+        driver_factory=robot_driver_factory,
+        warmup_steps=120,
+    ),
+    "usd-lab": SceneConfig(usd_lab_builder),
+}
+
+
+def get_scene_config(scene_id: str) -> SceneConfig:
+    try:
+        return SCENE_CONFIGS[scene_id]
+    except KeyError:
+        raise ValueError(f"Unknown registered Newton scene: {scene_id}") from None
 
 
 def build_scene(scene_id: str):
-    try:
-        build = SCENE_BUILDERS[scene_id]
-    except KeyError:
-        raise ValueError(f"Unknown registered Newton scene: {scene_id}") from None
-    return build()
+    return get_scene_config(scene_id).builder()

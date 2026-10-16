@@ -5,28 +5,51 @@ from time import perf_counter
 import newton
 import numpy as np
 import warp as wp
-from newton.solvers import SolverXPBD
+from newton.solvers import SolverFeatherstone, SolverMuJoCo, SolverXPBD
 
-from .scenes import build_scene
+from .scenes import get_scene_config
 from .sites import add_joint_anchor_sites
 
 
 class NewtonSimulation:
-    def __init__(self, scene_id="falling-boxes", *, device="cpu", physics_dt=1 / 240):
+    def __init__(self, scene_id="falling-boxes", *, device="cpu", physics_dt=1 / 240, solver=None):
         if physics_dt <= 0:
             raise ValueError("physics_dt must be positive")
         self.scene_id = scene_id
         self.physics_dt = physics_dt
-        self.builder = build_scene(scene_id)
+        self.config = get_scene_config(scene_id)
+        self.solver_kind = solver or self.config.solver
+        if self.solver_kind not in ("xpbd", "mujoco", "featherstone"):
+            raise ValueError(f"Unsupported scene solver: {self.solver_kind}")
+        with wp.ScopedDevice(device):
+            self.builder = self.config.builder()
         self.missing_labels = set(getattr(self.builder, "spatial_missing_labels", ()))
         self.anchor_sites = add_joint_anchor_sites(self.builder)
         self.model = self.builder.finalize(device=device)
         self.state = self.model.state()
         self.next_state = self.model.state()
         self.control = self.model.control()
-        self.solver = SolverXPBD(self.model, iterations=8)
-        self.collision_pipeline = newton.CollisionPipeline(self.model)
-        self.contacts = self.collision_pipeline.contacts()
+        with wp.ScopedDevice(self.model.device):
+            if self.solver_kind == "mujoco":
+                self.solver = SolverMuJoCo(
+                    self.model,
+                    use_mujoco_cpu=self.model.device.is_cpu,
+                    use_mujoco_contacts=True,
+                    iterations=20,
+                    ls_iterations=10,
+                    njmax=2048,
+                    nconmax=512,
+                )
+                self.collision_pipeline, self.contacts = None, None
+            else:
+                self.solver = (
+                    SolverXPBD(self.model, iterations=8)
+                    if self.solver_kind == "xpbd"
+                    else SolverFeatherstone(self.model)
+                )
+                self.collision_pipeline = newton.CollisionPipeline(self.model)
+                self.contacts = self.collision_pipeline.contacts()
+        self.driver = self.config.driver_factory(self.model) if self.config.driver_factory else None
         self.sim_time = 0.0
         self.epoch = 0
         self.paused = False
@@ -36,6 +59,8 @@ class NewtonSimulation:
     def reset(self, *, increment_epoch=True):
         self.state = self.model.state()
         self.next_state = self.model.state()
+        self.solver.reset(self.state)
+        self.control.clear(self.model)
         newton.eval_fk(self.model, self.state.joint_q, self.state.joint_qd, self.state)
         newton.eval_fk(self.model, self.next_state.joint_q, self.next_state.joint_qd, self.next_state)
         self.sim_time = 0.0
@@ -55,7 +80,10 @@ class NewtonSimulation:
         with wp.ScopedDevice(self.model.device):
             for _ in range(count):
                 self.state.clear_forces()
-                self.collision_pipeline.collide(self.state, self.contacts)
+                if self.driver:
+                    self.driver.apply(self.control, self.sim_time)
+                if self.collision_pipeline:
+                    self.collision_pipeline.collide(self.state, self.contacts)
                 self.solver.step(self.state, self.next_state, self.control, self.contacts, self.physics_dt)
                 self.state, self.next_state = self.next_state, self.state
                 self.sim_time += self.physics_dt
