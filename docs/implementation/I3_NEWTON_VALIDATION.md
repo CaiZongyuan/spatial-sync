@@ -72,7 +72,12 @@ Execution windows were exclusive with the other developers' performance work.
   independent actual-pose/finite-difference-velocity checks. Two tubes travel
   rack A1/A2 → opposite slots 1/3 → rack, with home/zone interlock, single-loaded
   imbalance rejection, physical lid and 3000 rpm/20 second run. All 130 running
-  samples retain the correct slots and tube locations. All 4078 control ticks
+  samples include four idle/rejection samples and 126 spinning-phase samples.
+  Among the latter, 124 retain the expected locations; two transient samples
+  (accelerating at 216.67 rpm and decelerating at zero requested rpm) report both
+  tubes loose/all slots null and recover at the next sample. These receipts lack
+  matching per-fact-boundary poses, so the transient's physical cause is not
+  proved. All 4078 control ticks
   are retained; p95 is 1.062995 ms, actual RTF 1.0014, invalid poses/dropped
   frames zero, declared welds 100/active zero. This measures readback + programs
   + diff + target commit, not solver throughput or gateway latency.
