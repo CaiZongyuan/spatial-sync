@@ -20,6 +20,11 @@ def test_official_seven_dof_arm_initial_tcp_and_dynamic_tubes_are_authoritative(
         assert len(arm) == 7
         assert len([label for label in sim.model.body_label if "/Tubes/Tube" in label]) == 20
         manifest = export_manifest(sim, session_id="robot", scene_revision="rev", revision_numeric_id=1)
+        assert len([w for w in manifest.warnings if w.code == "unlabeled_entity"]) == 54
+        with pytest.raises(ValueError, match="Missing label"):
+            export_manifest(
+                sim, session_id="robot", scene_revision="strict", revision_numeric_id=2, strict_labels=True,
+            )
         tcp = next(site for site in manifest.sites if site.entityKey.endswith("/fr3_hand/tcp"))
         assert tcp.localPose.p == pytest.approx((0, 0, 0.1034))
         index = sim.model.body_label.index(tcp.parentBodyKey.lstrip("/"))
@@ -46,6 +51,8 @@ def test_official_seven_dof_arm_initial_tcp_and_dynamic_tubes_are_authoritative(
         sim.reset()
         assert sim.sim_time == 0 and sim.epoch == 1
         np.testing.assert_allclose(sim.body_poses(), initial, atol=1e-6)
+        sim.step(120)
+        np.testing.assert_allclose(sim.body_poses(), moved, atol=1e-6)
 
 
 def test_featherstone_precontact_robot_tracking_is_a_bounded_comparison_only():
@@ -77,5 +84,9 @@ async def test_robot_source_exports_prismatic_metadata_and_queries_raw_joint_coo
         step = await source.execute(Command(requestId="step", command="step", args={"count": 60}))
         assert step.frame.simTime == pytest.approx(0.25)
         assert (await source.query_joint_state(joint.entityKey)).positions[0] != pytest.approx(-2.0, abs=1e-3)
+        await source.execute(Command(requestId="turn-1", command="step", args={"count": 1000}))
+        await source.execute(Command(requestId="turn-2", command="step", args={"count": 500}))
+        spindle = next(j for j in manifest.joints if j.entityKey.endswith("/Spindle"))
+        assert (await source.query_joint_state(spindle.entityKey)).positions[0] > np.pi
     finally:
         await source.close()

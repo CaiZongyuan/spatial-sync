@@ -18,7 +18,7 @@ from packages.protocol.schema import Command, SessionOptions, SessionState
 async def smoke(args):
     source = NewtonSource("cli-smoke")
     try:
-        manifest = await source.start("falling-boxes", SessionOptions(device=args.device))
+        manifest = await source.start(args.scene, SessionOptions(device=args.device))
         initial = source.latest_frame()
         await asyncio.sleep(1.1)
         pause = await source.execute(Command(requestId="pause", command="pause"))
@@ -26,13 +26,17 @@ async def smoke(args):
         reset = await source.execute(Command(requestId="reset", command="reset"))
         assert pause.frame.seq < step.frame.seq < reset.frame.seq
         assert reset.frame.epoch == 1 and reset.frame.simTime == 0
-        assert abs(reset.frame.poses[0][3] - 1.5) < 1e-6
+        for before, after in zip(initial.poses, reset.frame.poses, strict=True):
+            assert before[0] == after[0]
+            assert all(abs(a - b) < 1e-6 for a, b in zip(before[1:4], after[1:4]))
+            assert abs(sum(a * b for a, b in zip(before[4:], after[4:]))) > 0.99999
         assert pause.frame.seq == pause.state.seq
         assert pause.frame.simTime == pause.ack.simTime
         metrics = source.stats()
         result = {
             "status": "passed",
             "device": args.device,
+            "scene": args.scene,
             "versions": {name: version(name) for name in ("newton", "warp-lang", "pydantic")},
             "sceneRevision": manifest.sceneRevision,
             "streamBodyCount": len(initial.poses),
@@ -64,6 +68,7 @@ async def smoke(args):
 def main():
     parser = argparse.ArgumentParser(description="Real NewtonSource command and cleanup smoke")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--scene", default="falling-boxes")
     parser.add_argument("--crash", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
