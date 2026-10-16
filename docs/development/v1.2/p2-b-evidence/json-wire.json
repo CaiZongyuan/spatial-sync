@@ -1,0 +1,23 @@
+{
+  "format": "json",
+  "receivedDeltas": 62,
+  "droppedDeltas": 4,
+  "droppedKeyframe": true,
+  "viewportRequests": 47,
+  "snapshots": 54,
+  "jsonPoseFrames": 121,
+  "metrics": {
+    "subscriptionId": 1,
+    "scope": "viewport",
+    "requestedScope": "viewport",
+    "delta": true,
+    "memberIds": [
+      31
+    ],
+    "membershipRevision": 7,
+    "baseSeq": 108,
+    "resyncPending": false,
+    "resyncCount": 1
+  },
+  "oracleSeq": 29
+}

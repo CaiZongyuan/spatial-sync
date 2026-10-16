@@ -41,6 +41,7 @@ export type ServerMessage =
   | Ready
   | SubscriptionAck
   | TransformFrame
+  | TransformDelta
   | SessionState
   | SceneReplaced
   | CommandAck
@@ -318,10 +319,32 @@ export interface Subscribe {
   type: 'client.subscribe'
   protocolVersion: 1
   sceneRevision: string
-  scope: 'all' | 'entities'
+  scope: 'all' | 'entities' | 'device' | 'viewport'
   rateHz: number
   format: 'json' | 'binary'
   entityKeys?: string[] | null
+  deviceKey?: string | null
+  viewport?: Viewport | null
+  delta: boolean
+  requestId?: string | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Viewport".
+ */
+export interface Viewport {
+  /**
+   * @minItems 6
+   * @maxItems 6
+   */
+  planes: [
+    [number, number, number, number],
+    [number, number, number, number],
+    [number, number, number, number],
+    [number, number, number, number],
+    [number, number, number, number],
+    [number, number, number, number]
+  ]
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -346,16 +369,18 @@ export interface Ready {
  */
 export interface SubscriptionAck {
   type: 'subscription.ack'
-  scope: 'all' | 'entities'
+  scope: 'all' | 'entities' | 'device' | 'viewport'
   grantedRateHz: number
   format: 'json' | 'binary'
+  delta: boolean
+  subscriptionId?: number | null
+  requestId?: string | null
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "TransformFrame".
  */
 export interface TransformFrame {
-  type: 'transform.frame' | 'stream.snapshot'
   protocolVersion: 1
   sessionId: string
   sceneRevision: string
@@ -364,6 +389,27 @@ export interface TransformFrame {
   simTime: number
   sampleTimeMs: number
   poses: [number, number, number, number, number, number, number, number][]
+  type: 'transform.frame' | 'stream.snapshot'
+  subscriptionId?: number | null
+  keyframe?: boolean | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "TransformDelta".
+ */
+export interface TransformDelta {
+  protocolVersion: 1
+  sessionId: string
+  sceneRevision: string
+  epoch: number
+  seq: number
+  simTime: number
+  sampleTimeMs: number
+  poses: [number, number, number, number, number, number, number, number][]
+  type: 'transform.delta'
+  subscriptionId: number
+  baseSeq: number
+  removedStreamIds: number[]
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -469,7 +515,6 @@ export interface ServerError {
  * via the `definition` "Snapshot".
  */
 export interface Snapshot {
-  type: 'stream.snapshot'
   protocolVersion: 1
   sessionId: string
   sceneRevision: string
@@ -478,6 +523,9 @@ export interface Snapshot {
   simTime: number
   sampleTimeMs: number
   poses: [number, number, number, number, number, number, number, number][]
+  type: 'stream.snapshot'
+  subscriptionId?: number | null
+  keyframe?: boolean | null
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

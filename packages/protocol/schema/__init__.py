@@ -6,14 +6,27 @@ Validate low-frequency/untrusted boundaries, not every rendered high-frequency f
 
 from __future__ import annotations
 
+from math import hypot, isfinite
 from typing import Annotated, Literal, TypeAliasType
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_serializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 PROTOCOL_VERSION = 1
 MAX_MANUAL_STEPS = 1000
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
-JsonValue = TypeAliasType("JsonValue", "None | StrictBool | StrictInt | StrictStr | Finite | list[JsonValue] | dict[str, JsonValue]")
+JsonValue = TypeAliasType(
+    "JsonValue", "None | StrictBool | StrictInt | StrictStr | Finite | list[JsonValue] | dict[str, JsonValue]"
+)
 Positive = Annotated[Finite, Field(gt=0)]
 NonNegative = Annotated[Finite, Field(ge=0)]
 UInt32 = Annotated[int, Field(strict=True, ge=0, le=4294967295)]
@@ -24,12 +37,30 @@ Vec3 = tuple[Finite, Finite, Finite]
 Quaternion = tuple[Finite, Finite, Finite, Finite]
 Lifecycle = Literal["CREATED", "LOADING", "READY", "RUNNING", "PAUSED", "STOPPING", "STOPPED", "FAILED"]
 CommandName = Literal["pause", "resume", "reset", "step", "set_realtime_factor"]
-RejectionReason = Literal["invalid_state", "unknown_command", "invalid_args", "unauthorized", "source_unavailable"]
-ErrorCode = Literal["invalid_message", "unsupported_protocol", "revision_mismatch", "session_not_ready", "unknown_session", "unknown_entity", "source_unavailable", "internal_error", "unauthorized", "invalid_subscription"]
+RejectionReason = Literal[
+    "invalid_state", "unknown_command", "invalid_args", "unauthorized", "source_unavailable"
+]
+ErrorCode = Literal[
+    "invalid_message",
+    "unsupported_protocol",
+    "revision_mismatch",
+    "session_not_ready",
+    "unknown_session",
+    "unknown_entity",
+    "source_unavailable",
+    "internal_error",
+    "unauthorized",
+    "invalid_subscription",
+]
 
 
 class Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", validate_default=True, allow_inf_nan=False, json_schema_serialization_defaults_required=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_default=True,
+        allow_inf_nan=False,
+        json_schema_serialization_defaults_required=True,
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -86,7 +117,10 @@ class Plane(Model):
     length: NonNegative
 
 
-PrimitiveGeometry = TypeAliasType("PrimitiveGeometry", Annotated[Box | Sphere | Capsule | Cylinder | Cone | Plane, Field(discriminator="type")])
+PrimitiveGeometry = TypeAliasType(
+    "PrimitiveGeometry",
+    Annotated[Box | Sphere | Capsule | Cylinder | Cone | Plane, Field(discriminator="type")],
+)
 
 
 class Primitive(Model):
@@ -151,7 +185,9 @@ class StaticNode(Model):
     debug: dict[str, JsonValue] = Field(default_factory=dict)
 
 
-SceneNode = TypeAliasType("SceneNode", Annotated[GroupNode | BodyNode | StaticNode, Field(discriminator="kind")])
+SceneNode = TypeAliasType(
+    "SceneNode", Annotated[GroupNode | BodyNode | StaticNode, Field(discriminator="kind")]
+)
 
 
 class Site(Model):
@@ -257,20 +293,28 @@ class SceneManifest(Model):
             if site.jointKey is not None and site.jointKey not in joints:
                 raise ValueError(f"unknown Site joint: {site.jointKey}")
         for joint in self.joints:
-            if joint.childBodyKey not in bodies or (joint.parentBodyKey is not None and joint.parentBodyKey not in bodies):
+            if joint.childBodyKey not in bodies or (
+                joint.parentBodyKey is not None and joint.parentBodyKey not in bodies
+            ):
                 raise ValueError(f"unknown Joint Body: {joint.entityKey}")
             if joint.type != "free":
                 site = sites.get(joint.anchorSiteKey)
-                if site is None or site.parentBodyKey != joint.childBodyKey or site.jointKey != joint.entityKey or site.role != "joint-anchor":
-                    raise ValueError(f"Joint anchor must reference its child-side joint-anchor Site: {joint.entityKey}")
+                if (
+                    site is None
+                    or site.parentBodyKey != joint.childBodyKey
+                    or site.jointKey != joint.entityKey
+                    or site.role != "joint-anchor"
+                ):
+                    raise ValueError(
+                        f"Joint anchor must reference its child-side joint-anchor Site: {joint.entityKey}"
+                    )
         return self
 
 
 PoseRow = tuple[UInt32, Finite, Finite, Finite, Finite, Finite, Finite, Finite]
 
 
-class TransformFrame(Model):
-    type: Literal["transform.frame", "stream.snapshot"] = "transform.frame"
+class PoseMessage(Model):
     protocolVersion: Literal[1] = 1
     sessionId: NonEmpty
     sceneRevision: NonEmpty
@@ -293,6 +337,29 @@ class TransformFrame(Model):
     @field_serializer("poses", when_used="json")
     def serialize_poses(self, rows):
         return [[row[0], *(round(x, 6) for x in row[1:4]), *(round(x, 7) for x in row[4:8])] for row in rows]
+
+
+class TransformFrame(PoseMessage):
+    type: Literal["transform.frame", "stream.snapshot"] = "transform.frame"
+    subscriptionId: UInt32 | None = None
+    keyframe: StrictBool | None = None
+
+
+class TransformDelta(PoseMessage):
+    type: Literal["transform.delta"] = "transform.delta"
+    subscriptionId: UInt32
+    baseSeq: Counter
+    removedStreamIds: list[UInt32] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_baseline(self):
+        if self.baseSeq >= self.seq:
+            raise ValueError("delta sequence must follow its keyframe")
+        if len(set(self.removedStreamIds)) != len(self.removedStreamIds):
+            raise ValueError("removedStreamIds must be unique")
+        if {row[0] for row in self.poses} & set(self.removedStreamIds):
+            raise ValueError("a delta cannot both update and remove a streamId")
+        return self
 
 
 class Snapshot(TransformFrame):
@@ -352,7 +419,13 @@ class RealtimeFactorArgs(Model):
 
 
 def validate_command_args(command: Command) -> EmptyArgs | StepArgs | RealtimeFactorArgs:
-    model = {"pause": EmptyArgs, "resume": EmptyArgs, "reset": EmptyArgs, "step": StepArgs, "set_realtime_factor": RealtimeFactorArgs}.get(command.command)
+    model = {
+        "pause": EmptyArgs,
+        "resume": EmptyArgs,
+        "reset": EmptyArgs,
+        "step": StepArgs,
+        "set_realtime_factor": RealtimeFactorArgs,
+    }.get(command.command)
     if model is None:
         raise ValueError("unknown_command")
     return model.model_validate(command.args)
@@ -388,21 +461,46 @@ class Ready(Model):
     heartbeatIntervalMs: Positive = 1000
 
 
+class Viewport(Model):
+    planes: Annotated[list[tuple[Finite, Finite, Finite, Finite]], Field(min_length=6, max_length=6)]
+
+    @field_validator("planes")
+    @classmethod
+    def validate_planes(cls, planes):
+        for plane in planes:
+            magnitude = hypot(*plane[:3])
+            if (
+                not isfinite(magnitude)
+                or magnitude < 1e-12
+                or not all(isfinite(x / magnitude) for x in plane)
+            ):
+                raise ValueError("viewport planes require finite nonzero normals")
+        return planes
+
+
 class Subscribe(Model):
     type: Literal["client.subscribe"] = "client.subscribe"
     protocolVersion: Literal[1] = 1
     sceneRevision: NonEmpty
-    scope: Literal["all", "entities"] = "all"
+    scope: Literal["all", "entities", "device", "viewport"] = "all"
     rateHz: Positive = 30
     format: Literal["json", "binary"] = "json"
     entityKeys: list[EntityKey] | None = None
+    deviceKey: EntityKey | None = None
+    viewport: Viewport | None = None
+    delta: StrictBool = False
+    requestId: NonEmpty | None = None
 
     @model_validator(mode="after")
     def validate_scope(self):
         if self.scope == "entities" and not self.entityKeys:
             raise ValueError("entities scope requires nonempty entityKeys")
-        if self.scope == "all" and self.entityKeys is not None:
-            raise ValueError("all scope omits entityKeys")
+        if self.scope != "entities" and self.entityKeys is not None:
+            raise ValueError("entityKeys only apply to entities scope")
+        if (self.scope == "device") != (self.deviceKey is not None):
+            raise ValueError("device scope requires deviceKey; other scopes omit it")
+        if (self.scope == "viewport") != (self.viewport is not None):
+            raise ValueError("viewport scope requires viewport; other scopes omit it")
         if self.entityKeys is not None and len(set(self.entityKeys)) != len(self.entityKeys):
             raise ValueError("entityKeys must be unique")
         return self
@@ -410,9 +508,12 @@ class Subscribe(Model):
 
 class SubscriptionAck(Model):
     type: Literal["subscription.ack"] = "subscription.ack"
-    scope: Literal["all", "entities"]
+    scope: Literal["all", "entities", "device", "viewport"]
     grantedRateHz: Positive
     format: Literal["json", "binary"] = "json"
+    delta: StrictBool = False
+    subscriptionId: UInt32 | None = None
+    requestId: NonEmpty | None = None
 
 
 class SceneReplaced(Model):
@@ -433,7 +534,13 @@ class EntityState(Model):
     simTime: NonNegative
     payload: dict[str, JsonValue]
 
-    model_config = ConfigDict(extra="forbid", validate_default=True, allow_inf_nan=False, serialize_by_alias=True, populate_by_name=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_default=True,
+        allow_inf_nan=False,
+        serialize_by_alias=True,
+        populate_by_name=True,
+    )
 
 
 class ServerError(Model):
@@ -467,7 +574,22 @@ class JointState(Model):
 
 
 ClientMessage = TypeAliasType("ClientMessage", Annotated[Command | Subscribe, Field(discriminator="type")])
-ServerMessage = TypeAliasType("ServerMessage", Annotated[Ready | SubscriptionAck | TransformFrame | SessionState | SceneReplaced | CommandAck | EntityState | Heartbeat | ServerError, Field(discriminator="type")])
+ServerMessage = TypeAliasType(
+    "ServerMessage",
+    Annotated[
+        Ready
+        | SubscriptionAck
+        | TransformFrame
+        | TransformDelta
+        | SessionState
+        | SceneReplaced
+        | CommandAck
+        | EntityState
+        | Heartbeat
+        | ServerError,
+        Field(discriminator="type"),
+    ],
+)
 
 
 class ProtocolContract(Model):

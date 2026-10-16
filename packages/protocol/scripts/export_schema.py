@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from packages.protocol.schema import (  # noqa: E402
     Command, CommandAck, EntityState, Heartbeat, ProtocolContract, Ready,
     SceneManifest, SceneReplaced, ServerError, SessionState, Snapshot, Subscribe,
-    SubscriptionAck, TransformFrame,
+    SubscriptionAck, TransformFrame, TransformDelta,
 )
 
 
@@ -82,6 +82,18 @@ def main():
     frame_args = dict(sessionId=manifest.sessionId, sceneRevision=manifest.sceneRevision, epoch=0, seq=1, simTime=0, sampleTimeMs=1000, poses=[(7, 1, 2, 3, 0, 0, 0, 1)])
     from packages.transport import FrameCodec
 
+    from packages.transport.scoped_frames import encode_scoped_frame
+
+    scoped = [
+        Snapshot(**(frame_args | {"seq": 10, "poses": [(7, 5, 6, 7, 0, 0, 0, 1)]}), subscriptionId=3, keyframe=True),
+        TransformDelta(**(frame_args | {"seq": 11, "poses": []}), subscriptionId=3, baseSeq=10, removedStreamIds=[7]),
+        TransformDelta(**(frame_args | {"seq": 12, "poses": [(7, 9, 8, 7, 0, 0, 0, 1)]}), subscriptionId=3, baseSeq=10),
+        TransformFrame(**(frame_args | {"seq": 13}), subscriptionId=3, keyframe=True),
+    ]
+    write("fixtures/scoped-binary-frames.json", [
+        {"frame": frame.model_dump(mode="json", exclude_none=True), "revisionNumericId": 1,
+         "hex": encode_scoped_frame(frame, 1).hex()} for frame in scoped
+    ])
     binary_frame = Snapshot(**frame_args)
     write("fixtures/binary-frame.json", {
         "frame": binary_frame.model_dump(mode="json"), "revisionNumericId": 1,
@@ -93,6 +105,9 @@ def main():
         Subscribe(sceneRevision=manifest.sceneRevision),
         Subscribe(sceneRevision=manifest.sceneRevision, scope="entities", entityKeys=["/World/Arm"]),
         SubscriptionAck(scope="all", grantedRateHz=30), Snapshot(**frame_args), TransformFrame(**frame_args),
+        TransformDelta(**(frame_args | {"seq": 2}), subscriptionId=1, baseSeq=1),
+        Subscribe(sceneRevision=manifest.sceneRevision, scope="device", deviceKey="/World", delta=True, requestId="scope-device"),
+        Subscribe(sceneRevision=manifest.sceneRevision, scope="viewport", viewport={"planes": [[1,0,0,1],[-1,0,0,1],[0,1,0,1],[0,-1,0,1],[0,0,1,1],[0,0,-1,1]]}, delta=True, requestId="scope-camera"),
         SessionState(**state_args), Heartbeat(state="PAUSED", simTime=0, lastSeq=1, actualRtf=0, serverTimeMs=1000),
         Command(requestId="cmd-fixture", command="pause"),
         CommandAck(requestId="cmd-fixture", status="applied", simTime=0, epoch=0),

@@ -1316,6 +1316,7 @@
           "session.state": "#/$defs/SessionState",
           "stream.snapshot": "#/$defs/TransformFrame",
           "subscription.ack": "#/$defs/SubscriptionAck",
+          "transform.delta": "#/$defs/TransformDelta",
           "transform.frame": "#/$defs/TransformFrame"
         },
         "propertyName": "type"
@@ -1329,6 +1330,9 @@
         },
         {
           "$ref": "#/$defs/TransformFrame"
+        },
+        {
+          "$ref": "#/$defs/TransformDelta"
         },
         {
           "$ref": "#/$defs/SessionState"
@@ -1535,11 +1539,6 @@
     "Snapshot": {
       "additionalProperties": false,
       "properties": {
-        "type": {
-          "const": "stream.snapshot",
-          "default": "stream.snapshot",
-          "type": "string"
-        },
         "protocolVersion": {
           "const": 1,
           "default": 1,
@@ -1605,10 +1604,38 @@
             "type": "array"
           },
           "type": "array"
+        },
+        "type": {
+          "const": "stream.snapshot",
+          "default": "stream.snapshot",
+          "type": "string"
+        },
+        "subscriptionId": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "keyframe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
-        "type",
         "protocolVersion",
         "sessionId",
         "sceneRevision",
@@ -1616,7 +1643,8 @@
         "seq",
         "simTime",
         "sampleTimeMs",
-        "poses"
+        "poses",
+        "type"
       ],
       "type": "object"
     },
@@ -1827,7 +1855,9 @@
           "default": "all",
           "enum": [
             "all",
-            "entities"
+            "entities",
+            "device",
+            "viewport"
           ],
           "type": "string"
         },
@@ -1858,6 +1888,45 @@
             }
           ],
           "default": null
+        },
+        "deviceKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "viewport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Viewport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delta": {
+          "default": false,
+          "type": "boolean"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1866,7 +1935,8 @@
         "sceneRevision",
         "scope",
         "rateHz",
-        "format"
+        "format",
+        "delta"
       ],
       "type": "object"
     },
@@ -1881,7 +1951,9 @@
         "scope": {
           "enum": [
             "all",
-            "entities"
+            "entities",
+            "device",
+            "viewport"
           ],
           "type": "string"
         },
@@ -1896,27 +1968,49 @@
             "binary"
           ],
           "type": "string"
+        },
+        "delta": {
+          "default": false,
+          "type": "boolean"
+        },
+        "subscriptionId": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
         "type",
         "scope",
         "grantedRateHz",
-        "format"
+        "format",
+        "delta"
       ],
       "type": "object"
     },
-    "TransformFrame": {
+    "TransformDelta": {
       "additionalProperties": false,
       "properties": {
-        "type": {
-          "default": "transform.frame",
-          "enum": [
-            "transform.frame",
-            "stream.snapshot"
-          ],
-          "type": "string"
-        },
         "protocolVersion": {
           "const": 1,
           "default": 1,
@@ -1982,10 +2076,31 @@
             "type": "array"
           },
           "type": "array"
+        },
+        "type": {
+          "const": "transform.delta",
+          "default": "transform.delta",
+          "type": "string"
+        },
+        "subscriptionId": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "baseSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "removedStreamIds": {
+          "items": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         }
       },
       "required": [
-        "type",
         "protocolVersion",
         "sessionId",
         "sceneRevision",
@@ -1993,7 +2108,159 @@
         "seq",
         "simTime",
         "sampleTimeMs",
-        "poses"
+        "poses",
+        "type",
+        "subscriptionId",
+        "baseSeq",
+        "removedStreamIds"
+      ],
+      "type": "object"
+    },
+    "TransformFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "type": "integer"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "poses": {
+          "items": {
+            "maxItems": 8,
+            "minItems": 8,
+            "items": [
+              {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "type": {
+          "default": "transform.frame",
+          "enum": [
+            "transform.frame",
+            "stream.snapshot"
+          ],
+          "type": "string"
+        },
+        "subscriptionId": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "keyframe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "sessionId",
+        "sceneRevision",
+        "epoch",
+        "seq",
+        "simTime",
+        "sampleTimeMs",
+        "poses",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Viewport": {
+      "additionalProperties": false,
+      "properties": {
+        "planes": {
+          "items": {
+            "maxItems": 4,
+            "minItems": 4,
+            "items": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        }
+      },
+      "required": [
+        "planes"
       ],
       "type": "object"
     },
