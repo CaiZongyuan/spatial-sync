@@ -55,11 +55,13 @@ class _Runner:
         self._metric_clock, self._metric_steps, self._steps = time.monotonic(), 0, 0
         self._joint_q = wp.empty_like(self.sim.state.joint_q)
         self._joint_qd = wp.empty_like(self.sim.state.joint_qd)
-        # Warm the on-demand IK/query path before applying its 200 ms deadline.
-        newton.eval_ik(self.sim.model, self.sim.state, self._joint_q, self._joint_qd)
+        # Maximal-coordinate solvers need IK for their on-demand joint query.
+        # Reduced-coordinate solvers already maintain authoritative joint_q.
+        if self.sim.solver_kind == "xpbd":
+            newton.eval_ik(self.sim.model, self.sim.state, self._joint_q, self._joint_qd)
         # Compile the real contact/solver path while LOADING, then restore the
         # zero-step FK authority before advertising readiness or accepting commands.
-        self.sim.step()
+        self.sim.step(self.sim.config.warmup_steps)
         self.sim.reset(increment_epoch=False)
         self.sim.solver_ms = 0.0
         wp.synchronize_device(self.sim.model.device)
@@ -217,8 +219,11 @@ class _Runner:
                 self.control.offer({"kind": "unknown_entity", "token": token, "key": key})
             else:
                 index = self._joint_keys[key]
-                self.newton.eval_ik(self.sim.model, self.sim.state, self._joint_q, self._joint_qd)
-                positions = self._joint_q.numpy()[self._joint_starts[index] : self._joint_starts[index + 1]]
+                coordinates = self.sim.state.joint_q
+                if self.sim.solver_kind == "xpbd":
+                    self.newton.eval_ik(self.sim.model, self.sim.state, self._joint_q, self._joint_qd)
+                    coordinates = self._joint_q
+                positions = coordinates.numpy()[self._joint_starts[index] : self._joint_starts[index + 1]]
                 state = JointState(
                     entityKey=key,
                     epoch=self.sim.epoch,

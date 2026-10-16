@@ -58,7 +58,7 @@ class NewtonSource:
             thread.start()
         self._watch_task = asyncio.create_task(self._watch(), name=f"newton-watch-{self.session_id}")
         try:
-            return await asyncio.wait_for(self._ready, timeout=60)
+            return await asyncio.wait_for(self._ready, timeout=180)
         except BaseException:
             await self.close()
             raise
