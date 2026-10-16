@@ -27,6 +27,7 @@ const { values } = parseArgs({
     'allow-development': { type: 'boolean' },
     format: { type: 'string', default: 'json' },
     'render-mode': { type: 'string', default: 'individual' },
+    quality: { type: 'string', default: 'full' },
     'fit-scene': { type: 'boolean' },
     'camera-file': { type: 'string' },
   },
@@ -196,7 +197,7 @@ async function main() {
         const startupMs = performance.now() - startCreation;
         const manifest = await api<SceneManifest>(`/sessions/${sid}/scene`);
         const response = await page.goto(
-          `${values.web}/sessions/${encodeURIComponent(sid!)}?format=${values.format}&render=${values['render-mode']}`,
+          `${values.web}/sessions/${encodeURIComponent(sid!)}?format=${values.format}&render=${values['render-mode']}&quality=${values.quality}`,
         );
         const buildMode = (await response!.text()).includes('/@vite/client')
           ? 'development'
@@ -228,6 +229,29 @@ async function main() {
         await expect
           .poll(() =>
             page.evaluate(
+              () => window.__spatialRenderDebug?.frameStats().registeredBodies,
+            ),
+          )
+          .toBe(bodies.length);
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                window.__spatialRenderDebug?.frameStats().appliedBodies ?? 0,
+            ),
+          )
+          .toBeGreaterThan(0);
+        if (values['camera-file']) {
+          const saved = JSON.parse(readFileSync(values['camera-file'], 'utf8'));
+          await page.evaluate(
+            (camera) => window.__spatialRenderDebug!.setCamera(camera),
+            saved.runs[0].camera,
+          );
+        } else if (values['fit-scene'])
+          await page.evaluate(() => window.__spatialRenderDebug!.fitScene());
+        await expect
+          .poll(() =>
+            page.evaluate(
               (keys) =>
                 keys.every(
                   (key) =>
@@ -248,6 +272,9 @@ async function main() {
         }));
         if (references.some((item) => !item.pose))
           throw new Error('Snapshot omits declared Bodies');
+        await page
+          .getByRole('textbox', { name: 'Filter objects' })
+          .fill(bodies[0].entityKey);
         await page.getByTestId(`entity-${bodies[0].entityKey}`).click();
         await expect(page.getByTestId('inspector-seq')).toHaveText(
           String(snapshot.seq),
@@ -302,14 +329,6 @@ async function main() {
           throw new Error(
             'The rendered workload failed its authoritative-pose/count precondition',
           );
-        if (values['camera-file']) {
-          const saved = JSON.parse(readFileSync(values['camera-file'], 'utf8'));
-          await page.evaluate(
-            (camera) => window.__spatialRenderDebug!.setCamera(camera),
-            saved.runs[0].camera,
-          );
-        } else if (values['fit-scene'])
-          await page.evaluate(() => window.__spatialRenderDebug!.fitScene());
         await page.getByRole('button', { name: 'Resume simulation' }).click();
         await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
         await sleep(warmupMs);

@@ -445,6 +445,7 @@ function SceneContents({
     }),
     [rendered],
   );
+  const extraBounds = useCallback(() => instances.current?.bounds(), []);
   const elapsed = useRef({ time: 0, frames: 0 });
   const register = (
     key: string,
@@ -544,6 +545,7 @@ function SceneContents({
       <SceneDiagnostics
         counts={registrationCounts}
         mode={useInstances ? 'instanced' : 'individual'}
+        extraBounds={extraBounds}
       />
       <CameraSubscription client={client} />
       <color attach="background" args={['#172329']} />
@@ -614,7 +616,6 @@ function SceneContents({
         makeDefault
         target={[0, 0.65, 0]}
         minDistance={0.3}
-        maxDistance={30}
       />
     </>
   );

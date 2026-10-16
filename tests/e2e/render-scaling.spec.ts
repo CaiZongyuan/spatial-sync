@@ -12,6 +12,128 @@ const members = (page: Page) =>
   );
 const moving = '/World/Stress/Moving/Body';
 
+test('real instance LOD preserves every fitted Body and culls conservatively at the view edge', async ({
+  page,
+  request,
+}, info) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneId: 'stress-500', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const route = `${api}/api/v1/sessions/${sessionId}`;
+  try {
+    await page.goto(`/sessions/${sessionId}?render=instanced&quality=full`);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await page.getByRole('button', { name: 'Pause simulation' }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    const camera = await page.evaluate(() =>
+      window.__spatialRenderDebug!.fitScene(),
+    );
+    camera.position = camera.position.map((value, axis) => camera.target[axis] + (value - camera.target[axis]) * 2);
+    await page.evaluate((camera) => window.__spatialRenderDebug!.setCamera(camera), camera);
+    await expect.poll(async () => (await drawn(page)).length).toBe(500);
+    const full = await page.evaluate(() =>
+      window.__spatialRenderDebug!.frameStats(),
+    );
+    expect(full.lowDetailInstances).toBe(0);
+    await page.goto(`/sessions/${sessionId}?render=instanced`);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await page.evaluate(
+      (camera) => window.__spatialRenderDebug!.setCamera(camera),
+      camera,
+    );
+    await expect.poll(async () => (await drawn(page)).length).toBe(500);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.__spatialRenderDebug!.frameStats().lowDetailInstances,
+        ),
+      )
+      .toBeGreaterThan(100);
+    const adaptive = await page.evaluate(() =>
+      window.__spatialRenderDebug!.frameStats(),
+    );
+    expect(adaptive.submittedTriangles).toBeLessThan(
+      full.submittedTriangles * 0.5,
+    );
+    const snapshot = await (await request.get(`${route}/snapshot`)).json();
+    const pose = snapshot.poses.find((row: number[]) => row[0] === 100);
+    const canvas = await page.locator('canvas').boundingBox();
+    // Position the box origin just outside the left view plane. Its half-width
+    // extends into view; origin-only culling would incorrectly remove it.
+    const depth = 0.7,
+      halfWidth =
+        (depth * Math.tan((22 * Math.PI) / 180) * canvas!.width) /
+        canvas!.height;
+    await page.evaluate(
+      ({ pose, depth, halfWidth }) =>
+        window.__spatialRenderDebug!.setCamera({
+          position: [
+            pose[1] + halfWidth + 0.04,
+            pose[3] + depth,
+            -pose[2] + 0.0001,
+          ],
+          target: [pose[1] + halfWidth + 0.04, pose[3], -pose[2]],
+          fov: 44,
+          near: 0.01,
+          far: 100,
+        }),
+      { pose, depth, halfWidth },
+    );
+    await expect.poll(async () => (await drawn(page)).length).toBeLessThan(500);
+    await expect.poll(() => drawn(page)).toContain(moving + '00000');
+    const edge = await page.evaluate(
+      (key) => window.__spatialRenderDebug!.projectEntity(key),
+      moving + '00000',
+    );
+    expect(edge!.x).toBeLessThan(canvas!.x);
+    expect((await members(page)).length).toBe(500); // Local culling does not rewrite protocol membership.
+    await page.evaluate(() =>
+      window.__spatialRenderDebug!.setCamera({
+        position: [100, 8, 0.01],
+        target: [100, 0.45, 0],
+        fov: 44,
+        near: 0.01,
+        far: 100,
+      }),
+    );
+    await expect.poll(() => drawn(page)).toEqual([]);
+    expect(
+      await page.evaluate(
+        (key) => window.__spatialDebug!.getRenderedPose(key),
+        moving + '00000',
+      ),
+    ).toBeUndefined();
+    await page.evaluate(
+      (camera) => window.__spatialRenderDebug!.setCamera(camera),
+      camera,
+    );
+    await expect.poll(async () => (await drawn(page)).length).toBe(500);
+    const output = info.outputPath('lod-culling-evidence.json');
+    await writeFile(
+      output,
+      JSON.stringify(
+        {
+          full,
+          adaptive,
+          edge,
+          canvas,
+          restoredDrawnBodies: (await drawn(page)).length,
+        },
+        null,
+        2,
+      ),
+    );
+    await info.attach('lod-culling-evidence', {
+      path: output,
+      contentType: 'application/json',
+    });
+  } finally {
+    await request.delete(route);
+  }
+});
+
 for (const mode of ['individual', 'instanced']) {
   for (const format of ['json', 'binary']) {
     test(`real ${mode} ${format}: packed selection, scope visibility and Site/Joint dependencies`, async ({

@@ -2,6 +2,12 @@
 
 Status: implementation in progress; this is the instance-selection and subscription-visibility checkpoint, not final acceptance.
 
+LOD/culling checkpoint: actual instance bounds include VisualLocal and full primitive extents. Spheres intersecting the frustum remain eligible even when their origins lie outside. Curved primitives below a 12 CSS-pixel projected bounding-sphere diameter use lower tessellation; selected primitives retain full detail. `quality=full` disables tessellation changes for comparable controls. Pixel ratio remains capped at 1.75 and shadows remain disabled. Both detail levels release geometry on unload.
+
+The real LOD browser test passed in 4.1 s: all 500 Bodies remained drawn at the same full/adaptive camera, submitted triangles decreased, a box whose center was outside the left plane remained submitted, an away camera culled all instances without altering the 500 protocol members, and returning restored all 500. The original four selection/scope tests also passed on this renderer. `p2c-evidence/lod-culling.json` records actual Three counts. Large scene trees index parent relationships once and initially collapse their groups; search still finds any declared entity. The old arbitrary 30 m OrbitControls maximum was removed because it clamped the 10k scene's complete-bounds fit distance and excluded Bodies.
+
+`adaptive-checkpoint-10000.json` verifies all 10,000 actual instance matrices against a complete independent HTTP Snapshot, no missing Bodies, and actual submitted instance/triangle counts. A six-second SwiftShader window produced 26 RAF samples, FPS p50 4.1 and apply p95 9.2 ms. This is a completed correctness/load observation, not a 60 FPS claim. The old 10k baseline still has no valid ratio.
+
 ## Checkpoint
 
 The real registered SyntheticSource fixtures cover 100, 500, 500 moving + 2,000 static, 2,000 and 10,000 moving Bodies. IDs are non-contiguous, frame rows deliberately differ from Manifest order, and static poses never enter periodic frames. These are deterministic kinematic rendering loads, not Newton physics workloads.
@@ -20,7 +26,7 @@ Early instance checkpoints verified all 100 / 500 Body matrices with no missing 
 
 ## Remaining authorized work
 
-- Add and verify LOD / conservative per-instance frustum culling, then measure the completed renderer with comparable quality and explicit useful-work counts.
+- Measure the completed renderer with comparable quality and explicit useful-work counts.
 - Add real Warp gather before the existing pinned double-buffer asynchronous readback; preserve Manifest body-index to stream-ID mapping in the actual Runner.
 - Benchmark CPU / GPU / encode / actual Pipe boundaries, full versus subset and synchronous versus asynchronous paths, with output oracles and timing scopes.
 - Run final stress repeats, bounded simplification, applicable checks and independent review.

@@ -37,6 +37,7 @@ declare global {
         appliedBodies: number;
         potentialVisualInstances: number;
         potentialTriangles: number;
+        lowDetailInstances: number;
         drawCalls: number;
         submittedTriangles: number;
         mode: string;
@@ -48,6 +49,7 @@ declare global {
 export function SceneDiagnostics({
   counts,
   mode,
+  extraBounds,
 }: {
   mode: string;
   counts: () => {
@@ -55,6 +57,7 @@ export function SceneDiagnostics({
     registeredPhysicalNodes: number;
     appliedBodies: number;
   };
+  extraBounds?: () => Box3 | undefined;
 }) {
   const state = useThree();
   useEffect(() => {
@@ -160,9 +163,10 @@ export function SceneDiagnostics({
         const root = state.scene.getObjectByName('physicsRoot');
         if (!root) throw new Error('No physics root');
         root.updateWorldMatrix(true, true);
-        const sphere = new Box3()
-          .setFromObject(root)
-          .getBoundingSphere(new Sphere());
+        const bounds = new Box3().setFromObject(root);
+        const potential = extraBounds?.();
+        if (potential) bounds.union(potential);
+        const sphere = bounds.getBoundingSphere(new Sphere());
         const distance = Math.max(
           1,
           (sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.2,
@@ -181,11 +185,13 @@ export function SceneDiagnostics({
       },
       frameStats: () => {
         let potentialVisualInstances = 0,
-          potentialTriangles = 0;
+          potentialTriangles = 0,
+          lowDetailInstances = 0;
         state.scene.traverseVisible((object) => {
           if (!(object instanceof Mesh)) return;
           const instances = object instanceof InstancedMesh ? object.count : 1;
           potentialVisualInstances += instances;
+          if (object.userData.lod === 'low') lowDetailInstances += instances;
           potentialTriangles +=
             (Math.min(
               object.geometry.index?.count ??
@@ -200,6 +206,7 @@ export function SceneDiagnostics({
           ...counts(),
           potentialVisualInstances,
           potentialTriangles,
+          lowDetailInstances,
           drawCalls: state.gl.info.render.calls,
           submittedTriangles: state.gl.info.render.triangles,
           mode,
@@ -209,6 +216,6 @@ export function SceneDiagnostics({
     return () => {
       delete window.__spatialRenderDebug;
     };
-  }, [state, counts, mode]);
+  }, [state, counts, mode, extraBounds]);
   return null;
 }

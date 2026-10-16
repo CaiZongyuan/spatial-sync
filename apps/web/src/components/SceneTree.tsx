@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { SceneManifest } from '../lib/protocol';
 
 export function SceneTree({
@@ -15,20 +15,53 @@ export function SceneTree({
   toggle: (key: string) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [collapsed, setCollapsed] = useState(
+    () =>
+      new Set<string>(
+        manifest.nodes.length > 1000
+          ? manifest.nodes
+              .filter((node) => node.kind === 'group')
+              .map((node) => node.entityKey)
+          : [],
+      ),
+  );
+  const index = useMemo(() => {
+    const children = new Map<string, SceneManifest['nodes']>();
+    const sites = new Map<string, SceneManifest['sites']>();
+    const joints = new Map<string, SceneManifest['joints']>();
+    for (const node of manifest.nodes) {
+      const parent = node.parentEntityKey ?? '';
+      const owned = children.get(parent) ?? [];
+      owned.push(node);
+      children.set(parent, owned);
+    }
+    for (const site of manifest.sites) {
+      const parent = site.parentBodyKey ?? '';
+      const owned = sites.get(parent) ?? [];
+      owned.push(site);
+      sites.set(parent, owned);
+    }
+    for (const joint of manifest.joints) {
+      const owned = joints.get(joint.childBodyKey) ?? [];
+      owned.push(joint);
+      joints.set(joint.childBodyKey, owned);
+    }
+    return { children, sites, joints };
+  }, [manifest]);
   const row = (
     key: string,
     name: string,
     kind: string,
     depth: number,
     children?: React.ReactNode,
+    hasChildren = Boolean(children),
   ) => (
     <div key={key}>
       <div
         className={`tree-row ${selected === key ? 'selected' : ''}`}
         style={{ paddingLeft: 12 + depth * 14 }}
       >
-        {children ? (
+        {hasChildren ? (
           <button
             className="tree-disclosure"
             aria-label={`${collapsed.has(key) ? 'Expand' : 'Collapse'} ${name}`}
@@ -80,40 +113,37 @@ export function SceneTree({
     node: SceneManifest['nodes'][number],
     depth: number,
   ): React.ReactNode => {
-    const children = manifest.nodes.filter(
-      (child) => child.parentEntityKey === node.entityKey,
-    );
-    const sites = manifest.sites.filter(
-      (site) => site.parentBodyKey === node.entityKey,
-    );
-    const joints = manifest.joints.filter(
-      (joint) => joint.childBodyKey === node.entityKey,
-    );
-    const items = [
-      ...children.map((child) => renderNode(child, depth + 1)),
-      ...sites.map((site) =>
-        row(
-          site.entityKey,
-          site.entityKey.split('/').at(-1)!,
-          'site',
-          depth + 1,
-        ),
-      ),
-      ...joints.map((joint) =>
-        row(
-          joint.entityKey,
-          joint.entityKey.split('/').at(-1)!,
-          'joint',
-          depth + 1,
-        ),
-      ),
-    ];
+    const children = index.children.get(node.entityKey) ?? [];
+    const sites = index.sites.get(node.entityKey) ?? [];
+    const joints = index.joints.get(node.entityKey) ?? [];
+    const items = collapsed.has(node.entityKey)
+      ? undefined
+      : [
+          ...children.map((child) => renderNode(child, depth + 1)),
+          ...sites.map((site) =>
+            row(
+              site.entityKey,
+              site.entityKey.split('/').at(-1)!,
+              'site',
+              depth + 1,
+            ),
+          ),
+          ...joints.map((joint) =>
+            row(
+              joint.entityKey,
+              joint.entityKey.split('/').at(-1)!,
+              'joint',
+              depth + 1,
+            ),
+          ),
+        ];
     return row(
       node.entityKey,
       node.name,
       node.kind,
       depth,
-      items.length ? items : undefined,
+      items?.length ? items : undefined,
+      children.length + sites.length + joints.length > 0,
     );
   };
   const filtered = query.trim()
