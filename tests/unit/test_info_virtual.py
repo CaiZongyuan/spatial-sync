@@ -120,7 +120,10 @@ async def test_paused_intake_cancel_before_start_and_reset_are_authoritative():
         accepted = await invoke(source, CENTRIFUGE, "closeLid")
         cancelled = await source.cancel(accepted.invocationId)
         assert cancelled.status == "cancelled"
-        event = await asyncio.wait_for(anext(source.events()), 0.5)
+        stream = source.events()
+        accepted_event = await asyncio.wait_for(anext(stream), 0.5)
+        event = await asyncio.wait_for(anext(stream), 0.5)
+        assert accepted_event.type == "invocation.update" and accepted_event.status == "accepted"
         assert event.type == "invocation.update" and event.status == "cancelled"
         assert event.invocationId == accepted.invocationId and source.sim_time == 0
         await advance(source, 2)
@@ -167,6 +170,36 @@ async def test_execution_timeout_starts_at_host_acceptance_not_old_approval_crea
         assert result.status == "succeeded" and result.createdSimTime == 0
         assert result.startedSimTime >= 31
     finally:
+        await source.close()
+
+
+async def test_reliable_acceptance_precedes_running_when_direct_source_reply_is_delayed():
+    reply_allowed = asyncio.Event()
+
+    class DelayedReply(SyntheticSource):
+        async def invoke(self, request):
+            accepted = await super().invoke(request)
+            await reply_allowed.wait()
+            return accepted
+
+    source = DelayedReply("delayed-acceptance")
+    dispatch = None
+    try:
+        await source.start("lab-demo", SessionOptions())
+        dispatch = asyncio.create_task(invoke(source, CENTRIFUGE, "closeLid"))
+        stream = source.events()
+        accepted = await asyncio.wait_for(anext(stream), 0.5)
+        assert accepted.type == "invocation.update" and accepted.status == "accepted"
+        running = await asyncio.wait_for(anext(stream), 0.5)
+        assert running.type == "invocation.update" and running.status == "running"
+        assert running.invocationId == accepted.invocationId
+        assert not dispatch.done()
+        reply_allowed.set()
+        assert (await dispatch).status == "accepted"
+    finally:
+        reply_allowed.set()
+        if dispatch:
+            await dispatch
         await source.close()
 
 

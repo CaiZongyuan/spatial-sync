@@ -79,7 +79,11 @@ class SyntheticSource:
 
     async def invoke(self, request):
         async with self._lock:
-            return self.host.invoke(request)
+            result = self.host.invoke(request)
+            for event in self.host.drain_events():
+                self._events.put_nowait(event)
+            self._events.put_nowait(result)
+            return result
 
     async def cancel(self, invocation_id):
         async with self._lock:
