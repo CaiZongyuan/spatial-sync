@@ -1,0 +1,47 @@
+name: GPU-free checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contract-gateway-viewer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: uv sync --frozen --group dev
+      - run: pnpm install --frozen-lockfile
+      - run: uv run --frozen python -m pytest tests/contract tests/unit tests/gateway -q
+      - run: uv run --frozen ruff check apps/api tests/gateway
+      - run: pnpm protocol:check
+      - run: pnpm test:protocol:ts
+      - run: pnpm test:web
+      - run: pnpm build
+      - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
+      - name: Browser acceptance against SyntheticSource
+        run: |
+          uv run --frozen python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
+          SPATIAL_API_PID=$!
+          trap 'kill "$SPATIAL_API_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health; then break; fi
+            sleep 0.5
+          done
+          curl --fail http://127.0.0.1:8000/api/v1/health
+          pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: check-failure-evidence
+          path: |
+            /tmp/spatial-api.log
+            apps/web/playwright-report
+            apps/web/test-results
