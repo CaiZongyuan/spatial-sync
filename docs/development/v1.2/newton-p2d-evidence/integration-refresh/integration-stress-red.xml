@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.277" timestamp="2026-10-16T20:02:39.471083+08:00" hostname="Caii"><testcase classname="tests.gateway.test_remote_runner" name="test_registered_stress_scene_uses_remote_tls_with_complete_sparse_ids" file="tests\gateway\test_remote_runner.py" line="191" time="0.529"><failure message="AssertionError: {&quot;detail&quot;:{&quot;code&quot;:&quot;source_unavailable&quot;,&quot;message&quot;:&quot;0 bytes read on a total of 5 expected bytes&quot;}}&#10;assert 503 == 201&#10; +  where 503 = &lt;Response [503 Service Unavailable]&gt;.status_code">tls_material = (WindowsPath('D:/DevStorage/Temp/pytest-of-zongy/pytest-39/runner-tls0/cert.pem'), WindowsPath('D:/DevStorage/Temp/pytest-of-zongy/pytest-39/runner-tls0/private.pem'), '&lt;redacted disposable token&gt;')
+record_property = &lt;function record_property.&lt;locals&gt;.append_property at 0x000001D8AD69A700&gt;
+
+    async def test_registered_stress_scene_uses_remote_tls_with_complete_sparse_ids(
+        tls_material, record_property
+    ):
+        cert, key, token = tls_material
+        async with RunnerServer(
+            ServerConfig(cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic")
+        ) as remote:
+            config = RemoteConfig(port=remote.port, ca_file=cert, token=token, source_kind="synthetic")
+            async with public_gateway(config) as base, httpx.AsyncClient(base_url=base) as http:
+                scenes = (await http.get("/api/v1/scenes")).json()["scenes"]
+                advertised = {scene["sceneId"] for scene in scenes if "synthetic" in scene["sources"]}
+                assert {"stress-100", "stress-500", "stress-2000", "stress-10000", "stress-mixed"} &lt;= advertised
+                created = await http.post(
+                    "/api/v1/sessions", json={"sceneId": "stress-100", "source": "synthetic"}
+                )
+&gt;               assert created.status_code == 201, created.text
+E               AssertionError: {"detail":{"code":"source_unavailable","message":"0 bytes read on a total of 5 expected bytes"}}
+E               assert 503 == 201
+E                +  where 503 = &lt;Response [503 Service Unavailable]&gt;.status_code
+
+tests\gateway\test_remote_runner.py:207: AssertionError</failure></testcase></testsuite></testsuites>

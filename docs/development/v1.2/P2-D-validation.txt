@@ -51,3 +51,29 @@ These are NOT writer-timeout passes. Final actual TLS test verifies complete 16 
 
 Final socket inventory: no owned LISTEN socket on 8008/5188/8766
 Final integration and final non-author review remain PM-owned
+
+Combined C+D repair candidate ab9fdc520d3ad9053f6fd9995ca52567acde949c
+Merged root2127988e1d2bbc214d865cabd601456e2cdcd6db at6f8cf7e37c8204724db60f3306f4c7a182118dcf
+
+Actual public Gateway/TLS stress-100 red:
+GET /scenes announced registered stress; POST returned503 instead of201 (1 genuine failure,1.28s)
+
+Shared SCENES whitelist repair51b124d:
+Focused stress-100 complete sparse IDs/advancing WS/full paused HTTP-Ws plus unknown-scene rejection:2passed,1.27s
+Affected remote/import gate excluding16MiB and optional engine:33passed,2deselected,4.50s
+Six malformed-frame fixtures now construct their baseline through public start/latest_frame/close
+pnpm protocol:check and owned Ruff/format passed
+
+Combined gather optional NewtonCPU refresh:
+1passed,30deselected,5.16s; child40436 reaped; known reset pose/joint and24-step simTime preserved
+No GPU workload, CLI/browser,16MiB or renderer performance rerun
+
+Client read-only deadline red/green ab9fdc5:
+ActualTLS/publicHTTP: client.04s < querydelay.12s < host.5s
+Red:HTTP504 followed byFAILED Session (1 genuine failure,1.16s)
+Green:HTTP504 + RUNNING + periodic seq advancement + naturally drained late reply + subsequent applied pause
+Client deadline case,host typed QueryTimeout and fatal command timeout:3passed,29deselected,1.73s
+Owned Ruff and format checks passed; no unaffected NewtonCPU rerun
+
+Original evidence remains unchanged; new raw XML/summary/inventory is in newton-p2d-evidence/integration-refresh
+Root owns final base-environment full gate and fresh independent reviews

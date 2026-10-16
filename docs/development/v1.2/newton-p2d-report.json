@@ -1,7 +1,7 @@
 {
   "project": "Newton Spatial Sync",
   "title": "P2-D remote Runner implementation receipt",
-  "snapshotAt": "2026-10-16T11:55:58.880873Z",
+  "snapshotAt": "2026-10-16T12:18:42.870751+00:00",
   "task": {
     "status": "partial",
     "goal": "Authenticated bounded TLS Runner transport with actual public Gateway proof"
@@ -12,12 +12,14 @@
   },
   "checkpoint": {
     "authorization": "User requested complete v1.2 via pm-development; PM dispatched P2-D and approved bounded transport/test scope",
-    "revision": "30e330b0f9153da4ac0662e53c48e1a19e33b89c",
+    "revision": "ab9fdc520d3ad9053f6fd9995ca52567acde949c",
     "roles": {
       "implementer": "newton",
       "independentReviewAndIntegration": "PM"
     },
-    "next": "PM final review/integration and refresh after C source integration"
+    "next": "PM merge of integration repairs, true base-environment full gate and fresh independent Standards/Spec review",
+    "previousCodeCandidate": "30e330b0f9153da4ac0662e53c48e1a19e33b89c",
+    "mergedRoot": "2127988e1d2bbc214d865cabd601456e2cdcd6db"
   },
   "tickets": [
     {
@@ -29,11 +31,13 @@
         "Typed authenticated TLS control + independent NSYN periodic channel",
         "Explicit CA/hostname/configuration and fixed registered source",
         "Gateway receipt clock on all frame paths; complete snapshots and reliable order",
-        "Actual public TCP, independent CLI/browser, optional actual Newton CPU and cleanup receipts"
+        "Actual public TCP, independent CLI/browser, optional actual Newton CPU and cleanup receipts",
+        "Shared public scene/source registry on remote host; real stress100 sparse-ID HTTP/WS red/green",
+        "Fresh combined gather actual NewtonCPU receipt; client-local read-only timeout/late-reply compatibility red/green"
       ],
       "pending": [
-        "Final independent review and root integration",
-        "Integrated C+D verification"
+        "PM final repair integration",
+        "Base-environment complete gate and fresh independent review"
       ]
     }
   ],
@@ -92,6 +96,32 @@
         {
           "href": "P2-D.md",
           "label": "Boundary trace and compatibility"
+        }
+      ]
+    },
+    {
+      "id": "registry-consumer-drift",
+      "title": "Remote duplicate whitelist rejected publicly registered stress scenes",
+      "mechanism": "GET/scenes advertised stress100 but POST through TLS returned503; lazy shared SCENES combinations remove the drift while unknown scenes remain rejected",
+      "proposal": "Keep the single registered scene/source whitelist",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "href": "newton-p2d-evidence/integration-refresh/summary.json",
+          "label": "Integration red/green and refreshed CPU"
+        }
+      ]
+    },
+    {
+      "id": "client-readonly-deadline",
+      "title": "Client query deadline incorrectly failed the authoritative source",
+      "mechanism": "Client.04s < querydelay.12s < host.5s returnedHTTP504 plusFAILED; only the host typed timeout path had been nonfatal",
+      "proposal": "Preserve readers for joint/mesh local deadlines; drain expired reply token, while command/close timeout policy stays fatal",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "href": "newton-p2d-evidence/integration-refresh/client-query-green.xml",
+          "label": "PublicHTTP504/RUNNING/periodic/late reply then pause"
         }
       ]
     }
@@ -159,6 +189,18 @@
         {
           "href": "newton-p2d-evidence/slow-os-peer.xml",
           "label": "Raw unsupported observation"
+        }
+      ]
+    },
+    {
+      "label": "Combined integration refresh",
+      "method": "Real public Gateway/TLS stress100 sparseIDs, unknown rejection, affected remote/import gate; fresh actual NewtonCPU; local query deadline counterexample",
+      "outcome": "passed",
+      "cause": "Stress red1 then green2; affected33; freshCPU1; readonly red1 then green3. Final full gate remains PM-owned",
+      "evidence": [
+        {
+          "href": "newton-p2d-evidence/integration-refresh/summary.json",
+          "label": "Incremental raw receipts"
         }
       ]
     }
