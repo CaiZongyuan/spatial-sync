@@ -38,7 +38,7 @@ def _primitive(geometry, p=(0, 0, 0)):
 
 
 class SyntheticSource:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, *, publication_clock=None):
         self.session_id = session_id
         self.options = SessionOptions()
         self._task: asyncio.Task | None = None
@@ -55,6 +55,7 @@ class SyntheticSource:
         self._actual_rtf = 0.0
         self._control_index = 0
         self._rotor_angle = 0.0
+        self._publication_clock = publication_clock
 
     async def start(self, scene_id: str, options: SessionOptions):
         if scene_id != "lab-demo":
@@ -62,7 +63,9 @@ class SyntheticSource:
         self.options = options.model_copy()
         self.manifest = self._manifest()
         self.catalog = load_catalog(self.manifest, scene_id, REGISTRY)
-        self.host = HostCore(self.catalog, REGISTRY, fact_hz=options.factHz)
+        self.host = HostCore(
+            self.catalog, REGISTRY, fact_hz=options.factHz, publication_clock=self._publication_clock
+        )
         self._centrifuge_phase = self.host.reader(CENTRIFUGE, "phase")
         self._centrifuge_rpm = self.host.reader(CENTRIFUGE, "rpm")
         self._state = "RUNNING"
@@ -129,6 +132,8 @@ class SyntheticSource:
                 now = time.monotonic()
                 elapsed = now - self._last_clock
                 self._last_clock = now
+                for event in self.host.drain_events():
+                    self._events.put_nowait(event)
                 if self._state != "RUNNING":
                     self._actual_rtf = 0.0
                     continue

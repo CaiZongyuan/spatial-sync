@@ -53,6 +53,7 @@ async def test_real_centrifuge_lifecycle_is_authoritative_paused_and_final_obser
     source = SyntheticSource("info-tracer")
     try:
         manifest, catalog = await source.start("lab-demo", SessionOptions())
+        current = dict(state(source)[CENTRIFUGE])
         await source.execute(Command(requestId="pause", command="pause"))
 
         def request(name, params=None, suffix=""):
@@ -72,7 +73,7 @@ async def test_real_centrifuge_lifecycle_is_authoritative_paused_and_final_obser
         assert refused.error.details["failed"][0]["actual"] is True
         accepted = await source.invoke(request("closeLid"))
         assert accepted.status == "accepted"
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(1 / source.options.controlHz)
         assert source.entity_snapshot().entities[1].values["lidOpen"] is True
         await source.execute(Command(requestId="close-step", command="step", args={"count": 300}))
         assert source.host.values()[CENTRIFUGE]["lidOpen"] is False
@@ -80,21 +81,31 @@ async def test_real_centrifuge_lifecycle_is_authoritative_paused_and_final_obser
         assert accepted.status == "accepted"
         await source.execute(Command(requestId="run-step", command="step", args={"count": 900}))
         stream = source.events()
-        current, events = {}, []
-        while True:
-            event = await asyncio.wait_for(anext(stream), 0.5)
-            events.append(event.type)
-            if event.type == "entity.observations":
-                for change in event.changes:
-                    if change.key == CENTRIFUGE:
-                        current.update(change.values)
-            if (
-                event.type == "invocation.update"
-                and event.invocationId == "start"
-                and event.status == "succeeded"
-            ):
-                assert current["phase"] == "idle" and current["rpm"] == 0 and current["remainingSeconds"] == 0
-                break
+        events = []
+        rate_period = max(
+            1 / prop["maxRateHz"]
+            for prop in catalog.types["centrifuge/v1"]["properties"].values()
+            if prop.get("maxRateHz")
+        )
+        async with asyncio.timeout(rate_period + 2 / source.options.controlHz):
+            while True:
+                event = await anext(stream)
+                events.append(event.type)
+                if event.type == "entity.observations":
+                    for change in event.changes:
+                        if change.key == CENTRIFUGE:
+                            current.update(change.values)
+                if (
+                    event.type == "invocation.update"
+                    and event.invocationId == "start"
+                    and event.status == "succeeded"
+                ):
+                    assert (
+                        current["phase"] == "idle"
+                        and current["rpm"] == 0
+                        and current["remainingSeconds"] == 0
+                    )
+                    break
         assert "entity.event" in events
         assert manifest.sceneRevision == catalog.sceneRevision
     finally:
@@ -121,7 +132,7 @@ async def test_paused_intake_cancel_before_start_and_reset_are_authoritative():
         assert state(source)[ROBOT]["jointPositions"] == original
         accepted = await invoke(source, CENTRIFUGE, "closeLid")
         before = source.entity_snapshot()
-        await asyncio.sleep(0.03)
+        await asyncio.sleep(2 / source.options.controlHz)
         assert source.entity_snapshot().model_dump(exclude={"sampleTimeMs"}) == before.model_dump(
             exclude={"sampleTimeMs"}
         )

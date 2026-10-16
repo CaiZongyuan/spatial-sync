@@ -46,12 +46,14 @@ class Program(Protocol):
 class _EntitySlot:
     """Integer property slots are private; only exports carry property names."""
 
-    def __init__(self, key, definitions, validators):
+    def __init__(self, key, definitions, validators, clock):
         self.key = key
         self.names = tuple(definitions)
         self.indices = {name: index for index, name in enumerate(self.names)}
         self.validators = tuple(validators[name] for name in self.names)
-        self.diff = PropertyDiff({index: definitions[name] for index, name in enumerate(self.names)})
+        self.diff = PropertyDiff(
+            {index: definitions[name] for index, name in enumerate(self.names)}, clock=clock
+        )
         self.reset()
 
     def reset(self):
@@ -149,6 +151,7 @@ class InvocationHandle:
         self._host, self.invocation = host, invocation
         self.started = False
         self.last_progress_at = -float("inf")
+        self._pending_progress = None
         self.accepted_at = host.sim_time
         self.entity_index = host._entity_indices[invocation.entityKey]
 
@@ -165,14 +168,23 @@ class InvocationHandle:
         return self.invocation.invocationId
 
     def progress(self, value):
-        value = max(0.0, min(1.0, float(value)))
-        if self._host.sim_time - self.last_progress_at + 1e-10 >= 0.25:
-            self.last_progress_at = self._host.sim_time
-            self._update(progress=value)
+        self._pending_progress = max(0.0, min(1.0, float(value)))
+
+    def flush_progress(self, now):
+        if (
+            self._pending_progress is not None
+            and self.invocation.status not in TERMINAL
+            and now - self.last_progress_at + 1e-10 >= 0.25
+        ):
+            self.last_progress_at = now
+            self._update(progress=self._pending_progress)
+            self._pending_progress = None
 
     def _update(self, *, force=False, **fields):
         if self.invocation.status in TERMINAL and not force:
             return
+        if fields.get("status") in TERMINAL:
+            self._pending_progress = None
         self.invocation = self.invocation.model_copy(update=fields)
         self._host._updates[self.id] = self.invocation
 
@@ -193,10 +205,21 @@ class InvocationHandle:
 
 
 class HostCore:
-    def __init__(self, catalog, registry, *, epoch=0, source="virtual", physics=None, fact_hz=10):
+    def __init__(
+        self,
+        catalog,
+        registry,
+        *,
+        epoch=0,
+        source="virtual",
+        physics=None,
+        fact_hz=10,
+        publication_clock=None,
+    ):
         self.catalog, self.epoch, self.source, self.physics = catalog, epoch, source, physics
         self.sim_time, self.tick_index, self.fact_due = 0.0, 0, True
         self.fact_hz, self._next_fact = fact_hz, 0.0
+        self._publication_clock = publication_clock or time.monotonic
         self._entity_indices = {key: index for index, key in enumerate(catalog.entities)}
         self._states, self._programs, self._contexts, self._errors = [], [], [], []
         self._disabled = set()
@@ -206,7 +229,10 @@ class HostCore:
         for key, binding in catalog.entities.items():
             self._states.append(
                 _EntitySlot(
-                    key, catalog.types[binding["type"]]["properties"], catalog.property_validators(key)
+                    key,
+                    catalog.types[binding["type"]]["properties"],
+                    catalog.property_validators(key),
+                    self._publication_clock,
                 )
             )
             self._programs.append(registry[binding["program"]]())
@@ -418,10 +444,13 @@ class HostCore:
         return self._drain()
 
     def _drain(self):
+        now = self._publication_clock()
+        for handle in self._active.values():
+            handle.flush_progress(now)
         changes = []
         for key in self._order:
             state = self._states[key]
-            outgoing = state.diff.update(state.dirty, self.sim_time)
+            outgoing = state.diff.update(state.dirty, now)
             if outgoing:
                 changes.append(
                     {
@@ -468,11 +497,12 @@ class HostCore:
         return result
 
     def _prime_diff(self):
+        now = self._publication_clock()
         for state in self._states:
             state.diff.reset()
             state.diff.update(
                 {prop: value for prop, value in enumerate(state.values) if value is not UNKNOWN},
-                self.sim_time,
+                now,
             )
             state.dirty.clear()
 

@@ -1,5 +1,6 @@
-"""Deadband and simulation-time publication limits with a final pending value."""
+"""Deadband and monotonic publication limits with a final pending value."""
 
+import time
 from copy import deepcopy
 
 from .schema_subset import json_equal
@@ -20,13 +21,15 @@ def changed(previous, value, deadband):
 
 
 class PropertyDiff:
-    def __init__(self, definitions):
+    def __init__(self, definitions, *, clock=None):
         self.definitions = definitions
+        self.clock = clock or time.monotonic
         self.sent = {}
         self.at = {}
         self.pending = {}
 
-    def update(self, values, sim_time):
+    def update(self, values, publication_time=None):
+        now = self.clock() if publication_time is None else publication_time
         self.pending.update(deepcopy(values))
         outgoing = {}
         for prop, value in list(self.pending.items()):
@@ -35,10 +38,10 @@ class PropertyDiff:
                 del self.pending[prop]
                 continue
             rate = definition.get("maxRateHz")
-            if rate and prop in self.at and sim_time - self.at[prop] + 1e-10 < 1 / rate:
+            if rate and prop in self.at and now - self.at[prop] + 1e-10 < 1 / rate:
                 continue
             outgoing[prop] = deepcopy(value)
-            self.sent[prop], self.at[prop] = deepcopy(value), sim_time
+            self.sent[prop], self.at[prop] = deepcopy(value), now
             del self.pending[prop]
         return outgoing
 
