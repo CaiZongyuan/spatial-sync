@@ -2,12 +2,14 @@ import asyncio
 import json
 
 from fastapi.testclient import TestClient
+from ws_messages import receive_message
 
 from apps.api.app.main import create_app
 from apps.api.app.session_manager import SessionManager, default_source_factory
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
 from packages.protocol.schema import Command, SessionOptions, Subscribe
+from packages.transport import FrameCodec
 
 
 def observer(session):
@@ -35,7 +37,15 @@ async def test_zero_one_two_zero_subscribers_pause_and_resume_only_by_policy():
         assert session.state == "PAUSED"
         await subscribe(session, first)
         assert session.state == "RUNNING" and not session.summary()["autoPaused"]
-        messages = [json.loads(item.payload) for item in list(first.reliable._queue)]
+        codec = FrameCodec(
+            session.session_id, session.manifest.sceneRevision, session.manifest.revisionNumericId
+        )
+        messages = [
+            codec.decode(item.payload).model_dump(mode="json")
+            if isinstance(item.payload, bytes)
+            else json.loads(item.payload)
+            for item in list(first.reliable._queue)
+        ]
         assert [item["type"] for item in messages[:2]] == ["subscription.ack", "stream.snapshot"]
         resumed = next(item for item in messages if item["type"] == "session.state")
         assert resumed["cause"]["kind"] == "lifecycle"
@@ -108,20 +118,19 @@ def test_create_api_exposes_strict_observer_policy_default_and_option():
         assert session["state"] == "PAUSED" and session["continueWithoutObservers"] is False
         sid = session["sessionId"]
         with client.websocket_connect(f"/api/v1/sessions/{sid}/ws") as ws:
-            assert ws.receive_json()["sessionState"] == "PAUSED"
+            assert receive_message(ws)["sessionState"] == "PAUSED"
             ws.send_json(
                 {
                     "type": "client.subscribe",
-                    "protocolVersion": 1,
+                    "protocolVersion": 2,
                     "sceneRevision": session["sceneRevision"],
-                    "scope": "all",
                     "rateHz": 30,
                 }
             )
-            assert ws.receive_json()["type"] == "subscription.ack"
-            assert ws.receive_json()["type"] == "stream.snapshot"
+            assert receive_message(ws)["type"] == "subscription.ack"
+            assert receive_message(ws)["type"] == "stream.snapshot"
             for _ in range(10):
-                message = ws.receive_json()
+                message = receive_message(ws)
                 if message["type"] == "session.state":
                     assert message["state"] == "RUNNING" and message["cause"]["kind"] == "lifecycle"
                     break

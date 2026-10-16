@@ -9,13 +9,11 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 
-from apps.api.app.sources import stress_scene
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
     Command,
     CommandAck,
-    EntityState,
     SceneManifest,
     SessionState,
     TransformFrame,
@@ -45,41 +43,20 @@ class SyntheticSource:
         self._state = "CREATED"
         self._latest: TransformFrame | None = None
         self._complete: TransformFrame | None = None
-        self._interest: frozenset[int] | None = None
         self._last_clock = time.monotonic()
         self._accumulator = 0.0
         self._actual_rtf = 0.0
 
     async def start(self, scene_id: str, options: SessionOptions) -> SceneManifest:
-        if scene_id != "lab-demo" and scene_id not in stress_scene.STRESS_SCENES:
+        if scene_id != "lab-demo":
             raise ValueError("unknown synthetic scene")
-        self._stress_counts = stress_scene.STRESS_SCENES.get(scene_id)
         self.options = options.model_copy()
-        self.manifest = (
-            stress_scene.manifest(self.session_id, "rev-" + uuid.uuid4().hex, scene_id, options)
-            if self._stress_counts
-            else self._manifest()
-        )
+        self.manifest = self._manifest()
         self._state = "RUNNING"
         self._publish("stream.snapshot")
         self._last_clock = time.monotonic()
         self._task = asyncio.create_task(self._run(), name=f"synthetic-{self.session_id}")
-        if not self._stress_counts:
-            self._device_state()
         return self.manifest
-
-    def _device_state(self):
-        self._events.put_nowait(
-            EntityState(
-                sessionId=self.session_id,
-                sceneRevision=self.manifest.sceneRevision,
-                entityKey=BASE + "/Centrifuge",
-                schema="device.centrifuge/0",
-                stateSeq=1,
-                simTime=0,
-                payload={"running": True, "lidOpen": False, "rpm": 1200},
-            )
-        )
 
     @property
     def sim_time(self) -> float:
@@ -91,15 +68,6 @@ class SyntheticSource:
 
     async def snapshot(self) -> TransformFrame:
         async with self._lock:
-            frame = self._complete if self._state == "PAUSED" else self._publish("stream.snapshot")
-            return frame.model_copy(update={"type": "stream.snapshot"})
-
-    async def set_interest(self, stream_ids) -> TransformFrame:
-        from packages.transport.source_state import SourceFrames
-
-        ids = SourceFrames(self.manifest).interest(stream_ids)
-        async with self._lock:
-            self._interest = ids
             frame = self._complete if self._state == "PAUSED" else self._publish("stream.snapshot")
             return frame.model_copy(update={"type": "stream.snapshot"})
 
@@ -132,10 +100,6 @@ class SyntheticSource:
                 self._actual_rtf = steps * self.options.physicsDt / elapsed if elapsed > 0 else 0.0
                 if now >= next_publish:
                     self._publish()
-                    if self._interest is not None:
-                        self._latest = self._latest.model_copy(
-                            update={"poses": [row for row in self._latest.poses if row[0] in self._interest]}
-                        )
                     period = 1 / self.options.basePublishHz
                     # Preserve the cadence across coarse timer wakeups; skip missed slots.
                     next_publish += (int((now - next_publish) / period) + 1) * period
@@ -156,8 +120,6 @@ class SyntheticSource:
         return self._latest
 
     def _poses(self):
-        if self._stress_counts:
-            return stress_scene.poses(self.sim_time, *self._stress_counts)
         t = self.sim_time
         a, b = 0.45 * math.sin(t), 0.6 * math.sin(t * 0.7 + 0.5)
         first = {"p": [0, 0, 0.65], "q": [0, math.sin(a / 2), 0, math.cos(a / 2)]}

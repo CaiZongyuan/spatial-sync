@@ -2,7 +2,9 @@
 
 import time
 
+import pytest
 from fastapi.testclient import TestClient
+from ws_messages import receive_message
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
@@ -14,24 +16,23 @@ def subscribe(client, session_id):
 
 
 def handshake(ws, revision):
-    assert ws.receive_json()["type"] == "server.ready"
+    assert receive_message(ws)["type"] == "server.ready"
     ws.send_json(
         {
             "type": "client.subscribe",
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "sceneRevision": revision,
-            "scope": "all",
             "rateHz": 30,
         }
     )
-    assert ws.receive_json()["type"] == "subscription.ack"
-    assert ws.receive_json()["type"] == "stream.snapshot"
+    assert receive_message(ws)["type"] == "subscription.ack"
+    assert receive_message(ws)["type"] == "stream.snapshot"
 
 
 def until_state(ws, request_id):
     trace = []
     for _ in range(100):
-        message = ws.receive_json()
+        message = receive_message(ws)
         trace.append(message)
         if message["type"] == "session.state" and message["cause"].get("requestId") == request_id:
             return trace
@@ -103,12 +104,13 @@ def test_two_observers_pause_step_reset_resume_share_authority_and_order():
                 assert frame == requester_frame
                 if command in ("step", "reset"):
                     snapshot = client.get(f"/api/v1/sessions/{sid}/snapshot").json()
-                    assert (snapshot["seq"], snapshot["epoch"], snapshot["simTime"], snapshot["poses"]) == (
+                    assert (snapshot["seq"], snapshot["epoch"], snapshot["simTime"]) == (
                         frame["seq"],
                         frame["epoch"],
                         frame["simTime"],
-                        frame["poses"],
                     )
+                    for actual, expected in zip(frame["poses"], snapshot["poses"], strict=True):
+                        assert actual == pytest.approx(expected, abs=1e-6)
                 if command == "step":
                     assert abs(state["simTime"] - paused_time - 3 / 240) < 1e-10
                     step_seq = state["seq"]

@@ -11,21 +11,17 @@ from collections.abc import Callable
 
 from fastapi import HTTPException
 
-from apps.api.app.delta_stream import DeltaBaseline
 from apps.api.app.settings import Settings
 from apps.api.app.sources.base import SpatialSource
-from apps.api.app.sources.stress_scene import STRESS_SCENES
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
-from apps.api.app.subscription_scope import ScopeResolver
 from packages.protocol.internal import SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
     Cause,
     Command,
     CommandAck,
-    EntityState,
     Heartbeat,
     SceneManifest,
     SceneReplaced,
@@ -33,12 +29,10 @@ from packages.protocol.schema import (
     SessionState,
     Subscribe,
     SubscriptionAck,
-    TransformDelta,
     TransformFrame,
     validate_command_args,
 )
 from packages.transport import FrameCodec
-from packages.transport.scoped_frames import encode_scoped_frame
 
 SCENES = [
     {
@@ -50,15 +44,6 @@ SCENES = [
     {"sceneId": "falling-boxes", "name": "Newton Falling Boxes", "sources": ["newton"]},
     {"sceneId": "robot-and-tubes", "name": "Newton Robot and Tubes", "sources": ["newton"]},
     {"sceneId": "usd-lab", "name": "Newton USD Laboratory", "sources": ["newton"]},
-]
-SCENES += [
-    {
-        "sceneId": scene_id,
-        "name": f"Synthetic stress · {moving} moving / {static} static",
-        "sources": ["synthetic"],
-        "description": "Deterministic kinematic load fixture; no physical solver or GPU",
-    }
-    for scene_id, (moving, static) in STRESS_SCENES.items()
 ]
 
 
@@ -97,12 +82,10 @@ class Session:
         self._revision_number = 0
         self._frame: TransformFrame | None = None
         self._complete_frame: TransformFrame | None = None
-        self._interest: frozenset[int] | None = None
         self._last_published_seq = -1
         self._tasks: list[asyncio.Task] = []
         self._heartbeat_task: asyncio.Task | None = None
         self.clients: set[ClientConnection] = set()
-        self.entity_states: dict[str, EntityState] = {}
         self.command_lock = asyncio.Lock()
         self._acks: OrderedDict[str, CommandAck] = OrderedDict()
         self._rtf_samples = deque(maxlen=60)
@@ -110,9 +93,7 @@ class Session:
         self.payload_bytes = 0
         self.error: dict | None = None
         self._auto_paused = False
-        self._scope_resolver: ScopeResolver | None = None
         self._body_stream_ids = frozenset()
-        self._next_keyframe_at = 0.0
 
     async def start(self):
         self.state = "LOADING"
@@ -126,26 +107,21 @@ class Session:
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
             manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number + 1})
-            resolver = ScopeResolver(manifest)
-            body_ids = frozenset(resolver.body_ids.values())
-            # With no observers, periodic GPU captures need no body rows. The
-            # reliable barrier remains a single complete recovery sample.
-            interest_frame = await candidate.set_interest(frozenset())
-            if not self._complete_for(interest_frame, manifest, body_ids):
-                raise ValueError("Initial source interest barrier is not a complete Manifest sample")
+            body_ids = frozenset(node.streamId for node in manifest.nodes if node.kind == "body")
+            initial_frame = await candidate.snapshot()
+            if not self._complete_for(initial_frame, manifest, body_ids):
+                raise ValueError("Initial source snapshot is not a complete Manifest sample")
             # Prepare the initial policy before exposing the candidate revision.
             # Creation is exclusive; reload already holds command_lock.
             policy_change = await self._observer_policy_change(candidate, "RUNNING", False)
             self.source = candidate
             self._revision_number += 1
-            self.manifest, self._scope_resolver = manifest, resolver
+            self.manifest = manifest
             self._body_stream_ids = body_ids
-            self._interest = frozenset()
             self._frame = self._complete_frame = None
-            self._next_keyframe_at = time.monotonic() + 1
             self.state, self.error = "RUNNING", None
             self._auto_paused = False
-            self._cache_frame(self._source_frame(interest_frame))
+            self._cache_frame(self._source_frame(initial_frame))
             if policy_change:
                 self._apply_observer_policy_change(*policy_change, publish=False)
             self._last_published_seq = self.seq
@@ -206,9 +182,7 @@ class Session:
         return frame.model_copy(update={"seq": frame.seq + self._seq_offset})
 
     def _is_complete(self, frame):
-        return self.manifest is not None and self._complete_for(
-            frame, self.manifest, self._body_stream_ids
-        )
+        return self.manifest is not None and self._complete_for(frame, self.manifest, self._body_stream_ids)
 
     @staticmethod
     def _complete_for(frame, manifest, ids):
@@ -320,12 +294,7 @@ class Session:
                         or event.sceneRevision != self.manifest.sceneRevision
                     ):
                         continue
-                if isinstance(event, EntityState):
-                    previous = self.entity_states.get(event.entityKey)
-                    if previous and event.stateSeq <= previous.stateSeq:
-                        continue
-                    self.entity_states[event.entityKey] = event
-                elif isinstance(event, SessionState):
+                if isinstance(event, SessionState):
                     event = event.model_copy(update={"seq": event.seq + self._seq_offset})
                     self._apply_state(event)
                 elif isinstance(event, SceneReplaced):
@@ -336,15 +305,14 @@ class Session:
                     ):
                         raise ValueError("Source replaced a scene without exposing its new Manifest")
                     self.manifest = manifest
-                    self._scope_resolver = ScopeResolver(manifest)
-                    self._body_stream_ids = frozenset(self._scope_resolver.body_ids.values())
+                    self._body_stream_ids = frozenset(
+                        node.streamId for node in manifest.nodes if node.kind == "body"
+                    )
                     self._revision_number = event.revisionNumericId
-                    self.entity_states.clear()
                     self._cache_frame(self.latest_frame())
                     for client in self.clients:
                         client.subscribed = False
                         client.latest = None
-                        client.delta_baseline = None
                 self.broadcast(event)
             if self.state in ("RUNNING", "PAUSED"):
                 self.fail("Source event stream ended")
@@ -420,84 +388,23 @@ class Session:
     def broadcast_frame(self, frame: TransformFrame, reliable: bool):
         if reliable:
             self._log_event(frame.type)
-        now = time.monotonic()
-        keyframe_due = now >= self._next_keyframe_at
-        if keyframe_due:
-            self._next_keyframe_at = now + 1
-        selected, encoded = {}, {}
         self._last_published_seq = max(self._last_published_seq, frame.seq)
         self.published_frames += 1
+        payload = self._encode_frame(frame)
+        self.payload_bytes += len(payload)
         for client in tuple(self.clients):
             if not client.subscribed:
                 continue
-            scope = client.scope_filter
-            scope_key = scope.key
-            if scope_key not in selected:
-                selected[scope_key] = scope.select(frame.poses)
-            scoped = frame.model_copy(
-                update={
-                    "poses": selected[scope_key],
-                    "subscriptionId": client.subscription_id if client.scoped_wire else None,
-                    "keyframe": True if client.scoped_wire else None,
-                }
-            )
-            baseline = client.delta_baseline
-            full = (
-                reliable
-                or not client.delta_enabled
-                or keyframe_due
-                or baseline is None
-                or baseline.frame.epoch != frame.epoch
-                or baseline.frame.sceneRevision != frame.sceneRevision
-            )
-            # A control may return an already observed sample. It still carries a full
-            # reliable frame before its ack/state; a delta must strictly follow its base.
-            if not full and frame.seq <= baseline.frame.seq:
-                continue
-            if full:
-                message = scoped
-                if client.delta_enabled:
-                    client.delta_baseline = DeltaBaseline(scoped)
+            if reliable:
+                client.enqueue_reliable(payload, seq=frame.seq, force=True)
             else:
-                delta = baseline.difference(scoped)
-                message = TransformDelta.model_construct(
-                    type="transform.delta",
-                    sessionId=frame.sessionId,
-                    sceneRevision=frame.sceneRevision,
-                    epoch=frame.epoch,
-                    seq=frame.seq,
-                    simTime=frame.simTime,
-                    sampleTimeMs=frame.sampleTimeMs,
-                    subscriptionId=client.subscription_id,
-                    baseSeq=delta.base_seq,
-                    poses=delta.poses,
-                    removedStreamIds=delta.removed_stream_ids,
-                )
-            key = (
-                scope_key,
-                client.frame_format,
-                message.subscriptionId,
-                message.type,
-                None if full else message.baseSeq,
-            )
-            if key not in encoded:
-                encoded[key] = self._encode_frame(message, client.frame_format)
-                payload = encoded[key]
-                self.payload_bytes += len(payload.encode("utf-8") if isinstance(payload, str) else payload)
-            if reliable or (keyframe_due and client.delta_enabled):
-                client.enqueue_reliable(encoded[key], seq=frame.seq, force=True)
-            else:
-                client.offer_frame(encoded[key], frame.seq, client.subscription_id)
+                client.offer_frame(payload, frame.seq)
 
-    def _encode_frame(self, frame, format_name: str) -> str | bytes:
-        if format_name == "binary":
-            if frame.subscriptionId is not None:
-                return encode_scoped_frame(frame, self.manifest.revisionNumericId)
-            # Source-local IPC revision/seq differ after a gateway-owned reload.
-            return FrameCodec(
-                self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
-            ).encode(frame)
-        return encode(frame)
+    def _encode_frame(self, frame: TransformFrame) -> bytes:
+        # Source-local IPC revision/seq differ after a gateway-owned reload.
+        return FrameCodec(
+            self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
+        ).encode(frame)
 
     def _apply_state(self, state: SessionState):
         self._seq_high_water = max(self._seq_high_water, state.seq)
@@ -609,106 +516,47 @@ class Session:
         if len(self._acks) > 256:
             self._acks.popitem(last=False)
 
-    def _resolve_subscription(self, client, request):
-        if request.sceneRevision != self.manifest.sceneRevision:
-            client.enqueue_reliable(
-                encode(
-                    ServerError(
-                        code="revision_mismatch",
-                        message="Reload the Manifest before subscribing",
-                        requestId=request.requestId,
-                    )
-                )
-            )
-            return None
-        try:
-            scope = self._scope_resolver.resolve(
-                request.scope,
-                entity_keys=request.entityKeys,
-                device_key=request.deviceKey,
-                viewport_planes=request.viewport.planes if request.viewport else (),
-            )
-        except ValueError as exc:
-            client.enqueue_reliable(
-                encode(
-                    ServerError(
-                        code="invalid_subscription",
-                        message=str(exc),
-                        requestId=request.requestId,
-                    )
-                )
-            )
-            return None
-        return scope
-
-    def subscribe(self, client: ClientConnection, request: Subscribe, *, scope=None, frame=None):
-        scope = scope or self._resolve_subscription(client, request)
-        if scope is None:
-            return
-        client.subscription_id += 1
-        client.scoped_wire = request.delta or request.requestId is not None
-        client.scope_filter = scope
-        client.delta_enabled = request.delta
-        client.delta_baseline = None
+    def subscribe(self, client: ClientConnection, request: Subscribe, *, frame: TransformFrame):
         client.granted_rate_hz = min(max(request.rateHz, 1), self.options.basePublishHz)
-        client.frame_format = request.format
+        client.info = request.info
         client.subscribed = True
-        # Only the lossy periodic slot is discarded. Reliable FIFO preserves earlier
-        # command frame -> ack -> state, then this ack -> snapshot barrier.
+        # Preserve earlier command frame -> ack -> state before this ack -> snapshot.
         client.latest = None
         client.enqueue_reliable(
             encode(
                 SubscriptionAck(
-                    scope=request.scope,
                     grantedRateHz=client.granted_rate_hz,
-                    format=request.format,
-                    delta=request.delta,
+                    info=request.info,
                     requestId=request.requestId,
-                    subscriptionId=client.subscription_id if client.scoped_wire else None,
                 )
             )
         )
-        frame = frame if frame is not None else self.latest_frame()
-        if frame is None:
-            client.enqueue_reliable(
-                encode(
-                    ServerError(
-                        code="session_not_ready",
-                        message="No published snapshot yet",
-                    )
-                )
-            )
-            return
-        snapshot = frame.model_copy(
-            update={
-                "type": "stream.snapshot",
-                "poses": scope.select(frame.poses),
-                "subscriptionId": client.subscription_id if client.scoped_wire else None,
-                "keyframe": True if client.scoped_wire else None,
-            }
-        )
-        if client.delta_enabled:
-            client.delta_baseline = DeltaBaseline(snapshot)
+        snapshot = frame.model_copy(update={"type": "stream.snapshot"})
         # Re-subscription deliberately permits a complete snapshot at the same seq.
-        client.enqueue_reliable(
-            self._encode_frame(snapshot, client.frame_format),
-            seq=snapshot.seq,
-            force=True,
-        )
-        for event in self.entity_states.values():
-            client.enqueue_reliable(encode(event))
+        client.enqueue_reliable(self._encode_frame(snapshot), seq=snapshot.seq, force=True)
 
     async def observer_subscribe(self, client: ClientConnection, request: Subscribe):
         async with self.command_lock:
-            scope = self._resolve_subscription(client, request)
-            if scope is None:
+            if request.sceneRevision != self.manifest.sceneRevision:
+                client.enqueue_reliable(
+                    encode(
+                        ServerError(
+                            code="revision_mismatch",
+                            message="Reload the Manifest before subscribing",
+                            requestId=request.requestId,
+                        )
+                    )
+                )
                 return
-            if self.state in ("FAILED", "STOPPED") and self._complete_frame is not None:
-                if self._is_complete(self._complete_frame):
-                    self.subscribe(client, request, scope=scope, frame=self._complete_frame)
-                    if self.error:
-                        client.enqueue_reliable(encode(ServerError(**self.error)))
-                    return
+            if (
+                self.state in ("FAILED", "STOPPED")
+                and self._complete_frame is not None
+                and self._is_complete(self._complete_frame)
+            ):
+                self.subscribe(client, request, frame=self._complete_frame)
+                if self.error:
+                    client.enqueue_reliable(encode(ServerError(**self.error)))
+                return
             if self.state not in ("RUNNING", "PAUSED") or self.source is None:
                 client.enqueue_reliable(
                     encode(
@@ -720,66 +568,34 @@ class Session:
                     )
                 )
                 return
-            interest = self._observer_interest(client, scope)
             try:
-                frame = await self._sync_interest_locked(interest)
-            except TimeoutError as exc:
-                if interest != self._interest:
-                    self.fail(str(exc) or "Source interest change timed out")
-                else:
-                    client.enqueue_reliable(
-                        encode(
-                            ServerError(
-                                code="session_not_ready",
-                                message="Snapshot query timed out; retry the subscription",
-                                requestId=request.requestId,
-                            )
+                frame = self._source_frame(await self.source.snapshot())
+                if not self._is_complete(frame):
+                    raise ValueError("Source snapshot is not a complete Manifest sample")
+            except TimeoutError:
+                client.enqueue_reliable(
+                    encode(
+                        ServerError(
+                            code="session_not_ready",
+                            message="Snapshot query timed out; retry the subscription",
+                            requestId=request.requestId,
                         )
                     )
+                )
                 return
             except Exception as exc:
                 self.fail(str(exc))
                 return
-            self.subscribe(client, request, scope=scope, frame=frame)
+            self._cache_frame(frame)
+            self._last_published_seq = max(self._last_published_seq, frame.seq)
+            self.subscribe(client, request, frame=frame)
             await self._sync_observer_policy_locked()
 
     async def remove_client(self, client: ClientConnection):
         async with self.command_lock:
             self.clients.discard(client)
             client.subscribed = False
-            if self.source and self.state in ("RUNNING", "PAUSED"):
-                try:
-                    interest = self._observer_interest()
-                    if interest != self._interest:
-                        await self._sync_interest_locked(interest)
-                except Exception as exc:
-                    self.fail(str(exc))
             await self._sync_observer_policy_locked()
-
-    def _observer_interest(self, replacing=None, scope=None):
-        scopes = [
-            client.scope_filter
-            for client in self.clients
-            if client is not replacing and client.subscribed and not client.closed.is_set()
-        ]
-        if scope is not None:
-            scopes.append(scope)
-        if any(item.stream_ids is None for item in scopes):
-            return None  # A viewport must gather moving bodies that may enter it.
-        return frozenset(value for item in scopes for value in item.stream_ids)
-
-    async def _sync_interest_locked(self, interest):
-        changed = interest != self._interest
-        frame = await (self.source.set_interest(interest) if changed else self.source.snapshot())
-        frame = self._source_frame(frame)
-        if not self._is_complete(frame):
-            raise ValueError("Source interest barrier is not a complete Manifest sample")
-        self._cache_frame(frame)
-        self._interest = interest
-        self._last_published_seq = max(self._last_published_seq, frame.seq)
-        if changed:
-            self.broadcast_frame(frame.model_copy(update={"type": "transform.frame"}), reliable=True)
-        return frame
 
     async def _observer_policy_change(self, source, state, auto_paused):
         if self.options.continueWithoutObservers or state not in ("RUNNING", "PAUSED"):
@@ -818,9 +634,7 @@ class Session:
 
     async def _sync_observer_policy_locked(self):
         try:
-            policy_change = await self._observer_policy_change(
-                self.source, self.state, self._auto_paused
-            )
+            policy_change = await self._observer_policy_change(self.source, self.state, self._auto_paused)
             if policy_change:
                 self._apply_observer_policy_change(*policy_change)
         except Exception as exc:
@@ -880,12 +694,8 @@ class Session:
             "clients": [
                 {
                     "subscribed": c.subscribed,
+                    "info": c.info,
                     "grantedRateHz": c.granted_rate_hz,
-                    "format": c.frame_format,
-                    "scope": c.scope_filter.key[0] if c.scope_filter else None,
-                    "subscriptionId": c.subscription_id,
-                    "delta": c.delta_enabled,
-                    "baseSeq": c.delta_baseline.frame.seq if c.delta_baseline else None,
                     "reliableQueueDepth": c.reliable.qsize(),
                     "droppedFrames": c.dropped_frames,
                     "sentMessages": c.sent_messages,
@@ -916,12 +726,10 @@ class Session:
                 # subscriptions may already have exposed a newer frame in the meantime.
                 # Sources starting at either 0 or 1 must exceed every observed seq.
                 self._seq_offset = self._seq_high_water + 1
-                self.entity_states.clear()
                 self._rtf_samples.clear()
                 for client in self.clients:
                     client.subscribed = False
                     client.latest = None
-                    client.delta_baseline = None
                 await self.start()
             except Exception as exc:
                 if self.state != "FAILED":

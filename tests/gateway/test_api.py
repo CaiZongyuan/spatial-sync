@@ -5,6 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from ws_messages import receive_message
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
@@ -20,7 +21,7 @@ def setup_session(client):
 
 def next_type(ws, kind, request_id=None):
     for _ in range(100):
-        value = ws.receive_json()
+        value = receive_message(ws)
         if value["type"] == kind and (request_id is None or value.get("requestId") == request_id):
             return value
     raise AssertionError(f"No {kind}")
@@ -36,9 +37,8 @@ def open_subscription(ws, revision, **kwargs):
     ws.send_json(
         {
             "type": "client.subscribe",
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "sceneRevision": revision,
-            "scope": "all",
             "rateHz": 30,
             **kwargs,
         }
@@ -85,64 +85,39 @@ def test_catalog_whitelist_etag_identity_and_pause_heartbeat():
             assert repeated == client.get(f"/api/v1/sessions/{sid}/snapshot").json()
 
 
-def test_revisions_scopes_rate_clamp_entity_cache_and_reconnect():
+def test_revisions_full_frames_rate_clamp_and_reconnect():
     with TestClient(create_app(Settings(heartbeat_interval_seconds=0.03))) as client:
         summary = setup_session(client)
         sid, revision = summary["sessionId"], summary["sceneRevision"]
         with client.websocket_connect(f"/api/v1/sessions/{sid}/ws") as ws:
             next_type(ws, "server.ready")
-            ws.send_json(
-                {
-                    "type": "client.subscribe",
-                    "protocolVersion": 1,
-                    "sceneRevision": "stale",
-                    "scope": "all",
-                    "rateHz": 30,
-                }
-            )
+            ws.send_json({"type": "client.subscribe", "protocolVersion": 2, "sceneRevision": "stale"})
             assert next_type(ws, "server.error")["code"] == "revision_mismatch"
             ws.send_json(
                 {
                     "type": "client.subscribe",
-                    "protocolVersion": 1,
                     "sceneRevision": revision,
-                    "scope": "entities",
-                    "entityKeys": ["/Missing"],
-                    "rateHz": 30,
-                }
-            )
-            assert next_type(ws, "server.error")["code"] == "invalid_subscription"
-            ws.send_json(
-                {
-                    "type": "client.subscribe",
-                    "protocolVersion": 1,
-                    "sceneRevision": revision,
-                    "scope": "entities",
-                    "entityKeys": ["/World/Lab/Robot/tcp"],
                     "rateHz": 999,
+                    "requestId": "full",
+                    "info": False,
                 }
             )
-            assert next_type(ws, "subscription.ack")["grantedRateHz"] == 30
-            assert [p[0] for p in next_type(ws, "stream.snapshot")["poses"]] == [2]
-            event = next_type(ws, "entity.state")
-            assert event["schema"] == "device.centrifuge/0" and event["payload"]["rpm"] == 1200
+            ack = next_type(ws, "subscription.ack")
+            assert ack == {
+                "type": "subscription.ack",
+                "grantedRateHz": 30,
+                "info": False,
+                "requestId": "full",
+            }
+            assert len(next_type(ws, "stream.snapshot")["poses"]) == 24
             assert command(ws, "pause", "pause")["status"] == "applied"
-            # A same-seq re-subscribe still returns a complete snapshot.
-            ws.send_json(
-                {
-                    "type": "client.subscribe",
-                    "protocolVersion": 1,
-                    "sceneRevision": revision,
-                    "scope": "all",
-                    "rateHz": 0.1,
-                }
-            )
+            ws.send_json({"type": "client.subscribe", "sceneRevision": revision, "rateHz": 0.1})
             assert next_type(ws, "subscription.ack")["grantedRateHz"] == 1
             assert len(next_type(ws, "stream.snapshot")["poses"]) == 24
         with client.websocket_connect(f"/api/v1/sessions/{sid}/ws") as ws:
             ready, _, snapshot = open_subscription(ws, revision)
+            assert ready["protocolVersion"] == snapshot["protocolVersion"] == 2
             assert ready["sessionState"] == "PAUSED" and len(snapshot["poses"]) == 24
-            assert next_type(ws, "entity.state")["payload"]["rpm"] == 1200
 
 
 @pytest.mark.parametrize(
@@ -154,7 +129,7 @@ def test_revisions_scopes_rate_clamp_entity_cache_and_reconnect():
         ("step", {"count": True}, "invalid_args"),
         ("step", {"count": "2"}, "invalid_args"),
         ("step", {"count": 1.5}, "invalid_args"),
-    ("step", {"count": 1001}, "invalid_args"),
+        ("step", {"count": 1001}, "invalid_args"),
         ("pause", {"surprise": 1}, "invalid_args"),
         ("set_realtime_factor", {"value": -1}, "invalid_args"),
     ],
@@ -345,3 +320,43 @@ def test_creating_after_failure_closes_old_source_before_starting_replacement():
         assert second["sessionId"] != first["sessionId"]
         assert observed_peak == 1
     assert not active
+
+
+@pytest.mark.parametrize(
+    "legacy", [{"protocolVersion": 1}, {"scope": "all"}, {"format": "json"}, {"delta": True}]
+)
+def test_removed_subscription_options_are_rejected_at_the_websocket_boundary(legacy):
+    with TestClient(create_app()) as client:
+        session = setup_session(client)
+        assert client.get("/api/v1/health").json()["protocolVersion"] == 2
+        assert len(client.get("/api/v1/scenes").json()["scenes"]) == 4
+        with client.websocket_connect(f"/api/v1/sessions/{session['sessionId']}/ws") as ws:
+            next_type(ws, "server.ready")
+            ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"], **legacy})
+            assert next_type(ws, "server.error")["code"] == "invalid_message"
+            ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"]})
+            assert next_type(ws, "subscription.ack")["info"] is True
+            assert len(next_type(ws, "stream.snapshot")["poses"]) == 24
+
+
+def test_pose_http_queries_read_cached_complete_frames_without_source_capture():
+    captures = 0
+
+    class CountingSource(SyntheticSource):
+        async def snapshot(self):
+            nonlocal captures
+            captures += 1
+            return await super().snapshot()
+
+    with TestClient(create_app(source_factory=lambda kind, sid: CountingSource(sid))) as client:
+        session = setup_session(client)
+        assert captures == 1
+        route = f"/api/v1/sessions/{session['sessionId']}"
+        for key in ["/World/Lab/Robot/Link2", "/World/Lab/Robot/tcp", "/World/Lab/Table"]:
+            response = client.get(route + "/pose", params={"key": key})
+            assert response.status_code == 200
+            assert response.json()["entityKey"] == key
+        assert captures == 1
+        snapshot = client.get(route + "/snapshot")
+        assert snapshot.status_code == 200 and len(snapshot.json()["poses"]) == 24
+        assert captures == 2

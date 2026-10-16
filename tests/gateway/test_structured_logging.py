@@ -4,13 +4,14 @@ import logging
 from contextlib import redirect_stderr
 
 from fastapi.testclient import TestClient
+from ws_messages import receive_message
 
 from apps.api.app.main import create_app
 
 
 def receive(ws, kind, request_id=None):
     for _ in range(50):
-        message = ws.receive_json()
+        message = receive_message(ws)
         if message["type"] == kind and (request_id is None or message.get("requestId") == request_id):
             return message
     raise AssertionError(f"No {kind}")
@@ -31,9 +32,8 @@ def test_default_gateway_launch_emits_correlated_json_for_real_command_and_lifec
                 ws.send_json(
                     {
                         "type": "client.subscribe",
-                        "protocolVersion": 1,
+                        "protocolVersion": 2,
                         "sceneRevision": session["sceneRevision"],
-                        "scope": "all",
                         "rateHz": 30,
                     }
                 )

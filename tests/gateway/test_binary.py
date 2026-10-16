@@ -17,41 +17,41 @@ def read_until(ws, codec, predicate):
             if packet.get("bytes") is not None
             else json.loads(packet["text"])
         )
+        if value["type"] in ("transform.frame", "stream.snapshot"):
+            assert isinstance(packet.get("bytes"), bytes)
         seen.append(value)
         if predicate(value):
             return seen
     raise AssertionError("Expected stream response was not delivered")
 
 
-def subscribe(ws, sid, revision, numeric, format_name):
+def subscribe(ws, sid, revision, numeric):
     assert ws.receive_json()["type"] == "server.ready"
     ws.send_json(
         {
             "type": "client.subscribe",
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "sceneRevision": revision,
-            "scope": "all",
             "rateHz": 30,
-            "format": format_name,
         }
     )
-    assert ws.receive_json()["format"] == format_name
+    assert ws.receive_json()["type"] == "subscription.ack"
     codec = FrameCodec(sid, revision, numeric)
     read_until(ws, codec, lambda m: m["type"] == "stream.snapshot")
     return codec
 
 
-def test_mixed_json_binary_observers_share_reliable_final_frames_and_global_reload_metadata():
+def test_binary_observers_share_reliable_final_frames_and_global_reload_metadata():
     with TestClient(create_app(Settings(heartbeat_interval_seconds=0.03))) as client:
         session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
         sid, revision = session["sessionId"], session["sceneRevision"]
         route = f"/api/v1/sessions/{sid}"
         with (
             client.websocket_connect(route + "/ws") as binary,
-            client.websocket_connect(route + "/ws") as text,
+            client.websocket_connect(route + "/ws") as observer,
         ):
-            codec = subscribe(binary, sid, revision, 1, "binary")
-            subscribe(text, sid, revision, 1, "json")
+            codec = subscribe(binary, sid, revision, 1)
+            subscribe(observer, sid, revision, 1)
             for command in ("pause", "step", "reset", "resume"):
                 binary.send_json({"type": "command.request", "requestId": command, "command": command})
 
@@ -59,7 +59,7 @@ def test_mixed_json_binary_observers_share_reliable_final_frames_and_global_relo
                     return message["type"] == "session.state" and message["cause"].get("requestId") == command
 
                 first = read_until(binary, codec, matches)
-                second = read_until(text, codec, matches)
+                second = read_until(observer, codec, matches)
                 ordered = [
                     m
                     for m in first
@@ -81,14 +81,12 @@ def test_mixed_json_binary_observers_share_reliable_final_frames_and_global_relo
             binary.send_json(
                 {
                     "type": "client.subscribe",
-                    "protocolVersion": 1,
+                    "protocolVersion": 2,
                     "sceneRevision": reloaded["sceneRevision"],
-                    "scope": "all",
-                    "format": "binary",
                 }
             )
             ack = read_until(binary, codec, lambda m: m["type"] == "subscription.ack")[-1]
-            assert ack["format"] == "binary"
+            assert "format" not in ack
             payload = binary.receive_bytes()
             with pytest.raises(ValueError, match="revision"):
                 codec.decode(payload)

@@ -9,9 +9,7 @@ from dataclasses import dataclass
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from apps.api.app.delta_stream import DeltaBaseline
 from apps.api.app.settings import Settings
-from apps.api.app.subscription_scope import ScopeFilter
 
 
 @dataclass(frozen=True)
@@ -19,7 +17,6 @@ class Delivery:
     payload: str | bytes
     seq: int | None = None
     force: bool = False
-    subscription_id: int | None = None
 
 
 class ClientConnection:
@@ -32,13 +29,8 @@ class ClientConnection:
         self.wake = asyncio.Event()
         self.closed = asyncio.Event()
         self.subscribed = False
+        self.info = True
         self.granted_rate_hz = 30.0
-        self.frame_format = "json"
-        self.subscription_id = 0
-        self.scoped_wire = False
-        self.scope_filter: ScopeFilter | None = None
-        self.delta_enabled = False
-        self.delta_baseline: DeltaBaseline | None = None
         self.dropped_frames = 0
         self.sent_messages = 0
         self.last_sent_seq = -1
@@ -66,12 +58,12 @@ class ClientConnection:
             self.request_close(1013)
         self.wake.set()
 
-    def offer_frame(self, payload: str | bytes, seq: int, subscription_id: int | None = None):
+    def offer_frame(self, payload: str | bytes, seq: int):
         if self.closed.is_set() or self._close_requested or seq <= self.last_sent_seq:
             return
         if self.latest is not None:
             self.dropped_frames += 1
-        self.latest = Delivery(payload, seq, subscription_id=subscription_id)
+        self.latest = Delivery(payload, seq)
         self.wake.set()
 
     def request_close(self, code=1000):
@@ -119,9 +111,7 @@ class ClientConnection:
                     if next_periodic == 0:
                         next_periodic = now
                     delivery, self.latest = self.latest, None
-                    if (
-                        delivery.subscription_id is None or delivery.subscription_id == self.subscription_id
-                    ) and delivery.seq > self.last_sent_seq:
+                    if delivery.seq > self.last_sent_seq:
                         await self._send(delivery)
                     period = 1 / self.granted_rate_hz
                     next_periodic += (int((time.monotonic() - next_periodic) / period) + 1) * period

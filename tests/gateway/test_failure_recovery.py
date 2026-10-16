@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from ws_messages import receive_message
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
@@ -14,7 +15,7 @@ from packages.protocol.schema import CommandAck, CommandResult
 
 def receive(ws, kind, **fields):
     for _ in range(100):
-        message = ws.receive_json()
+        message = receive_message(ws)
         if message["type"] == kind and all(message.get(key) == value for key, value in fields.items()):
             return message
     pytest.fail(f"No {kind} matching {fields}")
@@ -33,9 +34,7 @@ def test_non_ascii_bearer_is_rejected_without_breaking_valid_roles():
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:
         response = client.get("/api/v1/scenes", headers=malformed)
         assert response.status_code == 401, response.text
-        summary = client.post(
-            "/api/v1/sessions", headers=operator, json={"sceneId": "lab-demo"}
-        ).json()
+        summary = client.post("/api/v1/sessions", headers=operator, json={"sceneId": "lab-demo"}).json()
         route = f"/api/v1/sessions/{summary['sessionId']}"
         with pytest.raises(WebSocketDisconnect) as disconnected:
             with client.websocket_connect(route + "/ws", headers=malformed):
@@ -44,10 +43,10 @@ def test_non_ascii_bearer_is_rejected_without_breaking_valid_roles():
         assert client.get(route, headers=viewer).status_code == 200
         assert client.post(route + "/reload", headers=viewer).status_code == 403
         with client.websocket_connect(route + "/ws", headers=operator) as ws:
-            assert ws.receive_json()["type"] == "server.ready"
+            assert receive_message(ws)["type"] == "server.ready"
             ws.send_json({"type": "command.request", "requestId": "valid", "command": "pause"})
             for _ in range(100):
-                message = ws.receive_json()
+                message = receive_message(ws)
                 if message["type"] == "command.ack":
                     assert message["status"] == "applied"
                     break
@@ -102,14 +101,13 @@ def test_failed_reload_and_restart_keep_last_valid_sample_heartbeat_and_recover(
                 current = client.get(route).json()
                 assert current["state"] == "FAILED"
                 assert current["error"] == {
-                    "code": "source_unavailable", "message": "replacement source unavailable"
+                    "code": "source_unavailable",
+                    "message": "replacement source unavailable",
                 }
                 for key in ("sceneRevision", "revisionNumericId", "epoch", "seq", "simTime"):
                     assert current[key] == previous[key], (key, current, previous)
                 assert client.get(route + "/snapshot").json() == snapshot
-                joint_state = client.get(
-                    route + "/joints/state", params={"key": "/World/Lab/Robot/Joint2"}
-                )
+                joint_state = client.get(route + "/joints/state", params={"key": "/World/Lab/Robot/Joint2"})
                 assert joint_state.status_code == 503, joint_state.text
                 assert joint_state.json()["detail"]["code"] == "source_unavailable"
                 receive(ws, "session.state", state="LOADING")
@@ -119,7 +117,9 @@ def test_failed_reload_and_restart_keep_last_valid_sample_heartbeat_and_recover(
                 state = receive(ws, "session.state", state="FAILED")
                 assert state["sceneRevision"] == snapshot["sceneRevision"]
                 assert state["cause"] == {
-                    "kind": "error", "code": "source_unavailable", "message": error["message"]
+                    "kind": "error",
+                    "code": "source_unavailable",
+                    "message": error["message"],
                 }
                 heartbeat = receive(ws, "server.heartbeat", state="FAILED")
                 assert heartbeat["lastSeq"] == snapshot["seq"]
@@ -166,7 +166,8 @@ def test_initial_start_failure_has_details_releases_source_and_allows_later_crea
         failed = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"})
         assert failed.status_code == 503
         assert failed.json()["detail"] == {
-            "code": "source_unavailable", "message": "initial source unavailable"
+            "code": "source_unavailable",
+            "message": "initial source unavailable",
         }
         assert len(closed) == 1
         assert client.get("/api/v1/health").json()["sessionCount"] == 0
@@ -186,8 +187,11 @@ def test_startup_policy_rejection_does_not_commit_or_announce_candidate_revision
             await asyncio.sleep(0.04)
             return CommandResult(
                 ack=CommandAck(
-                    requestId=command.requestId, status="rejected", reason="source_unavailable",
-                    simTime=0, epoch=0,
+                    requestId=command.requestId,
+                    status="rejected",
+                    reason="source_unavailable",
+                    simTime=0,
+                    epoch=0,
                 )
             )
 
@@ -221,7 +225,7 @@ def test_startup_policy_rejection_does_not_commit_or_announce_candidate_revision
             assert client.get(route + "/snapshot").json() == snapshot
             seen = []
             for _ in range(100):
-                message = ws.receive_json()
+                message = receive_message(ws)
                 seen.append(message)
                 if message["type"] == "session.state" and message["state"] == "FAILED":
                     assert message["sceneRevision"] == previous["sceneRevision"]

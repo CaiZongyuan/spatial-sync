@@ -12,6 +12,7 @@ from apps.api.app.settings import Settings
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from packages.protocol.schema import Command, SessionOptions, Subscribe
+from packages.transport import FrameCodec
 
 
 class DelayedControlSource(SyntheticSource):
@@ -80,10 +81,13 @@ async def test_reload_sequence_exceeds_frames_observed_before_delayed_control_re
             await asyncio.sleep(0)  # reload now waits behind the delayed control/subscription
             source.release_control.set()
             await asyncio.wait_for(asyncio.gather(*tasks), timeout=2)
+            codec = FrameCodec(session.session_id, initial.sceneRevision, 1)
             delivered = []
             while not client.reliable.empty():
                 delivery = client.reliable.get_nowait()
-                if isinstance(delivery.payload, str):
+                if isinstance(delivery.payload, bytes):
+                    delivered.append(codec.decode(delivery.payload).model_dump(mode="json"))
+                else:
                     delivered.append(json.loads(delivery.payload))
             if observed is None:
                 observed = next(message for message in delivered if message["type"] == "stream.snapshot")

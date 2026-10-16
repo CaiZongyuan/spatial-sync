@@ -24,6 +24,7 @@ from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
+    PROTOCOL_VERSION,
     ClientMessage,
     Command,
     Model,
@@ -33,7 +34,6 @@ from packages.protocol.schema import (
     ServerError,
     Subscribe,
 )
-from packages.transport.remote import RemoteConfig
 
 CLIENT_MESSAGE = TypeAdapter(ClientMessage)
 
@@ -71,16 +71,6 @@ def create_app(
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
-    if settings.runner_config is not None and source_factory is default_source_factory:
-        from apps.api.app.sources.remote_source import RemoteSource
-
-        remote_config = settings.runner_config
-
-        def source_factory(kind, session_id):
-            if kind == remote_config.source_kind:
-                return RemoteSource(session_id, remote_config)
-            return default_source_factory(kind, session_id)
-
     manager = SessionManager(settings, source_factory)
     asset_registry = asset_registry or AssetRegistry.from_file()
 
@@ -89,7 +79,7 @@ def create_app(
         yield
         await manager.close()
 
-    app = FastAPI(title="Newton Spatial Gateway", version="1", lifespan=lifespan)
+    app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
     app.state.manager, app.state.settings = manager, settings
     request_times = defaultdict(deque)
 
@@ -131,7 +121,7 @@ def create_app(
     async def health():
         return {
             "status": "ok",
-            "protocolVersion": 1,
+            "protocolVersion": PROTOCOL_VERSION,
             "sessionCount": len(manager.sessions),
             "sessions": [
                 {"sessionId": s.session_id, "state": s.state, "source": s.kind}
@@ -314,7 +304,7 @@ def create_app(
                 except ValidationError:
                     connection.enqueue_reliable(
                         encode(
-                            ServerError(code="invalid_message", message="Message does not match protocol v1")
+                            ServerError(code="invalid_message", message="Message does not match protocol v2")
                         )
                     )
                     continue
@@ -360,7 +350,6 @@ def create_app(
 
 app = create_app(
     Settings(
-        runner_config=RemoteConfig.from_env(),
         remote=os.getenv("SPATIAL_REMOTE") == "1",
         operator_token=os.getenv("SPATIAL_OPERATOR_TOKEN"),
         viewer_token=os.getenv("SPATIAL_VIEWER_TOKEN"),

@@ -58,8 +58,6 @@ def verify(rows, expected):
 
 
 def codecs(iterations):
-    from apps.api.app.session_manager import encode
-
     results = []
     for count in (35, 100, 500, 2000, 10000):
         rows = corpus(count)[0]
@@ -73,34 +71,30 @@ def codecs(iterations):
             poses=rows,
         )
         codec = FrameCodec("profile", "profile", 1)
-        for name, pack, parse in (
-            ("json", lambda: encode(frame), TransformFrame.model_validate_json),
-            ("binary", lambda: codec.encode(frame), codec.decode),
-        ):
-            for _ in range(5):
-                verify(parse(pack()).poses, rows)
-            encode_times, decode_times = [], []
-            for _ in range(iterations):
-                start = time.perf_counter()
-                payload = pack()
-                end = time.perf_counter()
-                decoded = parse(payload)
-                done = time.perf_counter()
-                verify(decoded.poses, rows)
-                encode_times.append((end - start) * 1000)
-                decode_times.append((done - end) * 1000)
-            results.append(
-                {
-                    "bodies": count,
-                    "format": name,
-                    "validSamples": iterations,
-                    "payloadBytes": len(payload.encode() if isinstance(payload, str) else payload),
-                    "encodeP50Ms": median(encode_times),
-                    "encodeP95Ms": percentile(encode_times),
-                    "parseValidateP50Ms": median(decode_times),
-                    "parseValidateP95Ms": percentile(decode_times),
-                }
-            )
+        for _ in range(5):
+            verify(codec.decode(codec.encode(frame)).poses, rows)
+        encode_times, decode_times = [], []
+        for _ in range(iterations):
+            start = time.perf_counter()
+            payload = codec.encode(frame)
+            end = time.perf_counter()
+            decoded = codec.decode(payload)
+            done = time.perf_counter()
+            verify(decoded.poses, rows)
+            encode_times.append((end - start) * 1000)
+            decode_times.append((done - end) * 1000)
+        results.append(
+            {
+                "bodies": count,
+                "format": "binary",
+                "validSamples": iterations,
+                "payloadBytes": len(payload),
+                "encodeP50Ms": median(encode_times),
+                "encodeP95Ms": percentile(encode_times),
+                "parseValidateP50Ms": median(decode_times),
+                "parseValidateP95Ms": percentile(decode_times),
+            }
+        )
     return results
 
 
@@ -116,9 +110,9 @@ def serve(count, port):
     encode_samples = []
     original_encode = session_module.Session._encode_frame
 
-    def measured_encode(session, value, format_name):
+    def measured_encode(session, value):
         start = time.perf_counter()
-        result = original_encode(session, value, format_name)
+        result = original_encode(session, value)
         encode_samples.append((time.perf_counter() - start) * 1000)
         return result
 
@@ -159,10 +153,7 @@ def serve(count, port):
                 )
                 for rows in frozen
             ]
-            manifest = await super().start(scene_id, options)
-            # This fixture has no device-state producer or robot joints.
-            self._events.get_nowait()
-            return manifest
+            return await super().start(scene_id, options)
 
         def _publish(self, kind="transform.frame"):
             self._seq += 1
@@ -175,6 +166,7 @@ def serve(count, port):
                     "sampleTimeMs": time.monotonic() * 1000,
                 }
             )
+            self._complete = self._latest
             return self._latest
 
     app = create_app(
@@ -201,57 +193,7 @@ def serve(count, port):
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", ws_per_message_deflate=False)
 
 
-def demo_app():
-    """The actual production sources, with the isolated browser verification origin."""
-    from apps.api.app.main import create_app
-    from apps.api.app.session_manager import encode
-    from apps.api.app.settings import Settings
-
-    app = create_app(Settings(allowed_origins=("http://127.0.0.1:5185",)))
-
-    @app.get("/profile/corpus/{count}")
-    async def browser_corpus(count: int):
-        if count not in (35, 100, 500, 2000, 10000):
-            from fastapi import HTTPException
-
-            raise HTTPException(400, "unsupported profiling body count")
-        manifest = SceneManifest.model_validate(
-            {
-                "sessionId": "profile",
-                "sceneRevision": "profile",
-                "revisionNumericId": 1,
-                "sceneName": "Frozen browser corpus",
-                "source": {"kind": "synthetic", "physicsDt": 1 / 240},
-                "nodes": [
-                    {"kind": "body", "entityKey": f"/Profile/Body{i}", "name": f"Body{i}", "streamId": i}
-                    for i in range(count)
-                ],
-            }
-        )
-        codec = FrameCodec("profile", "profile", 1)
-        frames = [
-            TransformFrame(
-                sessionId="profile",
-                sceneRevision="profile",
-                epoch=0,
-                seq=i + 1,
-                simTime=i / 30,
-                sampleTimeMs=1000 + i * 1000 / 30,
-                poses=rows,
-            )
-            for i, rows in enumerate(corpus(count))
-        ]
-        return {
-            "manifest": manifest.model_dump(mode="json"),
-            "frames": [
-                {"json": encode(frame), "binaryHex": codec.encode(frame).hex()} for frame in frames
-            ],
-        }
-
-    return app
-
-
-def reader(url, count, format_name, ready, results, go, stop):
+def reader(url, count, ready, results, go, stop):
     async def run():
         from websockets.asyncio.client import connect
 
@@ -262,13 +204,10 @@ def reader(url, count, format_name, ready, results, go, stop):
             revision = greeting["sceneRevision"]
             request = {
                 "type": "client.subscribe",
-                "protocolVersion": 1,
+                "protocolVersion": 2,
                 "sceneRevision": revision,
-                "scope": "all",
                 "rateHz": 30,
             }
-            if format_name != "json":
-                request["format"] = format_name
             await ws.send(json.dumps(request))
             announced = False
             while not stop.is_set():
@@ -294,11 +233,9 @@ def reader(url, count, format_name, ready, results, go, stop):
                     }
                 else:
                     value = json.loads(payload)
-                if value.get("type") == "subscription.ack":
-                    assert value["format"] == format_name
                 if value.get("type") not in ("stream.snapshot", "transform.frame"):
                     continue
-                assert isinstance(payload, bytes) == (format_name == "binary")
+                assert isinstance(payload, bytes)
                 try:
                     phase = round(value["simTime"] * 240) % 8
                     verify(value["poses"], expected[phase])
@@ -314,7 +251,7 @@ def reader(url, count, format_name, ready, results, go, stop):
                     announced = True
                 if go.is_set():
                     received += 1
-                    payload_bytes += len(payload.encode() if isinstance(payload, str) else payload)
+                    payload_bytes += len(payload)
                     parse_ms.append(elapsed)
         results.put(
             {
@@ -332,12 +269,13 @@ def reader(url, count, format_name, ready, results, go, stop):
         results.put({"failures": [f"{type(exc).__name__}: {exc}"], "validAppliedFrames": 0})
 
 
-def network(count, clients, seconds, format_name, port):
+def network(count, clients, seconds, port):
     import httpx
 
     context = mp.get_context("spawn")
     ready, results, go, stop = context.Queue(), context.Queue(), context.Event(), context.Event()
-    log_path = ROOT / f".scratch/p2-a/network-{count}-{clients}-{format_name}.log"
+    log_path = ROOT / f".scratch/profile-stream/network-{count}-{clients}-binary.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as log:
         server = subprocess.Popen(
             [sys.executable, __file__, "serve", "--count", str(count), "--port", str(port)],
@@ -365,9 +303,7 @@ def network(count, clients, seconds, format_name, port):
                 sid = response.json()["sessionId"]
                 url = f"ws://127.0.0.1:{port}/api/v1/sessions/{sid}/ws"
                 for _ in range(clients):
-                    process = context.Process(
-                        target=reader, args=(url, count, format_name, ready, results, go, stop)
-                    )
+                    process = context.Process(target=reader, args=(url, count, ready, results, go, stop))
                     process.start()
                     readers.append(process)
                 assert all(ready.get(timeout=30) for _ in readers), "profile reader failed"
@@ -386,7 +322,7 @@ def network(count, clients, seconds, format_name, port):
                 return {
                     "bodies": count,
                     "clients": clients,
-                    "format": format_name,
+                    "format": "binary",
                     "seconds": elapsed,
                     "compression": "disabled equally at server and clients",
                     "readers": records,
@@ -410,7 +346,6 @@ def main():
     parser.add_argument("--count", type=int, default=10000)
     parser.add_argument("--clients", type=int, default=8)
     parser.add_argument("--seconds", type=float, default=3)
-    parser.add_argument("--format", choices=("json", "binary"), default="json")
     parser.add_argument("--port", type=int, default=8005)
     parser.add_argument("--iterations", type=int, default=15)
     parser.add_argument("--output", type=Path)
@@ -431,7 +366,7 @@ def main():
         "mode": args.mode,
         "results": codecs(args.iterations)
         if args.mode == "codec"
-        else network(args.count, args.clients, args.seconds, args.format, args.port),
+        else network(args.count, args.clients, args.seconds, args.port),
     }
     rendered = json.dumps(result, indent=2)
     if args.output:
