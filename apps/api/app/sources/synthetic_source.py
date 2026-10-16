@@ -141,9 +141,9 @@ class SyntheticSource:
                 now = time.monotonic()
                 elapsed = now - self._last_clock
                 self._last_clock = now
-                for event in self.host.drain_events():
-                    self._events.put_nowait(event)
                 if self._state != "RUNNING":
+                    for event in self.host.drain_events():
+                        self._events.put_nowait(event)
                     self._actual_rtf = 0.0
                     continue
                 rtf = self.options.realtimeFactor
@@ -153,6 +153,11 @@ class SyntheticSource:
                     self._accumulator += min(elapsed, self.options.maxLagMs / 1000) * rtf
                     steps = int(self._accumulator / self.options.physicsDt)
                     self._accumulator -= steps * self.options.physicsDt
+                target_sim_time = (self._step_index + steps) * self.options.physicsDt
+                will_tick = int(target_sim_time * self.options.controlHz + 1e-9) > self._control_index
+                if not will_tick:
+                    for event in self.host.drain_events():
+                        self._events.put_nowait(event)
                 self._advance(steps)
                 self._actual_rtf = steps * self.options.physicsDt / elapsed if elapsed > 0 else 0.0
                 if now >= next_publish:
