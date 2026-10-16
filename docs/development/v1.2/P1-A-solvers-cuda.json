@@ -1,0 +1,71 @@
+{
+  "scope": "Local solver support check; precontact timings do not establish full-demo throughput",
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "versions": {
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "mujoco": "3.15.0",
+    "mujoco-warp": "3.15.0"
+  },
+  "sceneHash": "577491633c8540c5fc3abb182c3d19d36d8ddacb83cdced015430e58a42b64b9",
+  "assetManifestHash": "3c4528431908dfb4806222f75fe102819f00964f32043cbafc5556ea65bc7392",
+  "results": [
+    {
+      "solver": "SolverMuJoCo",
+      "device": "cuda:0",
+      "physicsDt": 0.004166666666666667,
+      "bodyCount": 35,
+      "armDofs": 7,
+      "fingerDofs": 2,
+      "dynamicTubes": 20,
+      "contacts": "native MuJoCo",
+      "setupMs": 4622.769199995673,
+      "warmupSteps": 30,
+      "timingScope": "30 steps / 0.125 s precontact physics; motor/control/contact traversal; synchronized completion",
+      "samplesMs": [
+        450.7766000024276,
+        442.02009998844005,
+        454.0536999993492
+      ],
+      "medianMs": 450.7766000024276,
+      "fullContactJourney": {
+        "steps": 120,
+        "simTime": 0.49999999999999944,
+        "finite": true,
+        "supportedAtDefaultDt": true,
+        "tubeMinZ": 0.7909269332885742,
+        "tubeMaxZ": 0.820632815361023,
+        "maxJointPositionError": 5.3726900748371916e-08
+      }
+    },
+    {
+      "solver": "SolverFeatherstone",
+      "device": "cuda:0",
+      "physicsDt": 0.004166666666666667,
+      "bodyCount": 35,
+      "armDofs": 7,
+      "fingerDofs": 2,
+      "dynamicTubes": 20,
+      "contacts": "Newton CollisionPipeline",
+      "setupMs": 34671.762600002694,
+      "warmupSteps": 30,
+      "timingScope": "30 steps / 0.125 s precontact physics; motor/control/contact traversal; synchronized completion",
+      "samplesMs": [
+        118.83839999791235,
+        107.84779999812599,
+        110.5944000009913
+      ],
+      "medianMs": 110.5944000009913,
+      "fullContactJourney": {
+        "steps": 120,
+        "simTime": 0.49999999999999944,
+        "finite": true,
+        "supportedAtDefaultDt": false,
+        "tubeMinZ": 2.341200590133667,
+        "tubeMaxZ": 2.514359951019287,
+        "maxJointPositionError": 1.3328003749250113e-07
+      }
+    }
+  ]
+}
