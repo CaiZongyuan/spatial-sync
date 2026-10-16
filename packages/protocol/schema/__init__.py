@@ -394,6 +394,7 @@ class Subscribe(Model):
     sceneRevision: NonEmpty
     scope: Literal["all", "entities"] = "all"
     rateHz: Positive = 30
+    format: Literal["json", "binary"] = "json"
     entityKeys: list[EntityKey] | None = None
 
     @model_validator(mode="after")
@@ -411,6 +412,7 @@ class SubscriptionAck(Model):
     type: Literal["subscription.ack"] = "subscription.ack"
     scope: Literal["all", "entities"]
     grantedRateHz: Positive
+    format: Literal["json", "binary"] = "json"
 
 
 class SceneReplaced(Model):

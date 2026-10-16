@@ -1,0 +1,116 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "python": "3.13.14",
+  "versions": {
+    "pydantic": "2.12.4",
+    "numpy": "2.5.4",
+    "fastapi": "0.143.2",
+    "uvicorn": "0.54.0",
+    "websockets": "16.1.1"
+  },
+  "corpusHash": "58aeadc9578d84c5b3273416924c7680386d60828609021215e3e56ba24d888e",
+  "mode": "codec",
+  "results": [
+    {
+      "bodies": 35,
+      "format": "json",
+      "validSamples": 15,
+      "payloadBytes": 2041,
+      "encodeP50Ms": 0.12599999899975955,
+      "encodeP95Ms": 0.2800699905492365,
+      "parseValidateP50Ms": 0.03800001286435872,
+      "parseValidateP95Ms": 0.07692000363022089
+    },
+    {
+      "bodies": 35,
+      "format": "binary",
+      "validSamples": 15,
+      "payloadBytes": 1164,
+      "encodeP50Ms": 0.006199989002197981,
+      "encodeP95Ms": 0.014750006084796041,
+      "parseValidateP50Ms": 0.03060000017285347,
+      "parseValidateP95Ms": 0.0488499892526306
+    },
+    {
+      "bodies": 100,
+      "format": "json",
+      "validSamples": 15,
+      "payloadBytes": 5631,
+      "encodeP50Ms": 0.3623000084189698,
+      "encodeP95Ms": 0.5188499970245174,
+      "parseValidateP50Ms": 0.10320000001229346,
+      "parseValidateP95Ms": 0.12337000371189788
+    },
+    {
+      "bodies": 100,
+      "format": "binary",
+      "validSamples": 15,
+      "payloadBytes": 3244,
+      "encodeP50Ms": 0.012100004823878407,
+      "encodeP95Ms": 0.013460000627674162,
+      "parseValidateP50Ms": 0.0644000101601705,
+      "parseValidateP95Ms": 0.07064999517751858
+    },
+    {
+      "bodies": 500,
+      "format": "json",
+      "validSamples": 15,
+      "payloadBytes": 28439,
+      "encodeP50Ms": 1.7574999947100878,
+      "encodeP95Ms": 2.0312600085162558,
+      "parseValidateP50Ms": 0.46600001223850995,
+      "parseValidateP95Ms": 0.5378699963330291
+    },
+    {
+      "bodies": 500,
+      "format": "binary",
+      "validSamples": 15,
+      "payloadBytes": 16044,
+      "encodeP50Ms": 0.05649999366141856,
+      "encodeP95Ms": 0.05847000429639593,
+      "parseValidateP50Ms": 0.3074999985983595,
+      "parseValidateP95Ms": 0.32517000363441184
+    },
+    {
+      "bodies": 2000,
+      "format": "json",
+      "validSamples": 15,
+      "payloadBytes": 114689,
+      "encodeP50Ms": 7.391999999526888,
+      "encodeP95Ms": 8.244189994002227,
+      "parseValidateP50Ms": 1.9137999915983528,
+      "parseValidateP95Ms": 2.102500003820751
+    },
+    {
+      "bodies": 2000,
+      "format": "binary",
+      "validSamples": 15,
+      "payloadBytes": 64044,
+      "encodeP50Ms": 0.269199998001568,
+      "encodeP95Ms": 0.4272299964213743,
+      "parseValidateP50Ms": 1.5293000033125281,
+      "parseValidateP95Ms": 5.010000005131577
+    },
+    {
+      "bodies": 10000,
+      "format": "json",
+      "validSamples": 15,
+      "payloadBytes": 577262,
+      "encodeP50Ms": 41.183399996953085,
+      "encodeP95Ms": 48.68328000593464,
+      "parseValidateP50Ms": 13.129000013577752,
+      "parseValidateP95Ms": 14.244630002940537
+    },
+    {
+      "bodies": 10000,
+      "format": "binary",
+      "validSamples": 15,
+      "payloadBytes": 320044,
+      "encodeP50Ms": 1.7949999892152846,
+      "encodeP95Ms": 2.8387300044414583,
+      "parseValidateP50Ms": 10.465500003192574,
+      "parseValidateP95Ms": 16.267699992749836
+    }
+  ]
+}

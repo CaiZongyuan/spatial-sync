@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from '../../../../../packages/protocol/fixtures/manifest.json';
+import binaryFixture from '../../../../../packages/protocol/fixtures/binary-frame.json';
 import type {
   Ready,
   TransformFrame,
@@ -12,9 +13,10 @@ class Socket {
   static OPEN = 1;
   static instances: Socket[] = [];
   readyState = 0;
+  binaryType = 'blob';
   sent: Record<string, unknown>[] = [];
   onopen?: () => void;
-  onmessage?: (event: { data: string }) => void;
+  onmessage?: (event: { data: string | ArrayBuffer }) => void;
   onerror?: () => void;
   onclose?: () => void;
   constructor(readonly url: string) {
@@ -29,6 +31,9 @@ class Socket {
   }
   emit(message: ServerMessage) {
     this.onmessage?.({ data: JSON.stringify(message) });
+  }
+  emitBytes(bytes: ArrayBuffer) {
+    this.onmessage?.({ data: bytes });
   }
   close() {
     this.readyState = 3;
@@ -113,6 +118,32 @@ describe('WebSocket lifecycle and authoritative control', () => {
       scope: 'all',
     });
     expect(client.buffer.readLatest('/World/Arm')!.p).toEqual([1, 2, 3]);
+  });
+
+  it('negotiates binary, skips malformed input and preserves binary frame before JSON state', async () => {
+    client.stop();
+    client = new SessionClient(fixture.sessionId, 'binary');
+    await client.start();
+    const ws = Socket.instances.at(-1)!;
+    ws.open();
+    ws.emit(ready);
+    await flush();
+    expect(ws.binaryType).toBe('arraybuffer');
+    expect(ws.sent[0].format).toBe('binary');
+    const bytes = Uint8Array.from(binaryFixture.hex.match(/../g)!, (hex) =>
+      parseInt(hex, 16),
+    ).buffer;
+    new DataView(bytes).setBigUint64(16, 5n, true);
+    const wrong = bytes.slice(0);
+    new DataView(wrong).setUint32(8, 99, true);
+    ws.emitBytes(wrong);
+    ws.emitBytes(bytes);
+    ws.emit(paused);
+    await flush();
+    expect(client.buffer.readLatest('/World/Arm')!.p).toEqual([1, 2, 3]);
+    expect(client.getSnapshot().sessionState).toBe('PAUSED');
+    expect(client.getStreamMetrics().invalidBinaryFrames).toBe(1);
+    expect(client.getStreamMetrics().receivedFrames).toBe(1);
   });
 
   it('waits for applied ack for command success and session.state for displayed lifecycle', async () => {

@@ -1,0 +1,125 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "python": "3.13.14",
+  "versions": {
+    "pydantic": "2.12.4",
+    "numpy": "2.5.4",
+    "fastapi": "0.143.2",
+    "uvicorn": "0.54.0",
+    "websockets": "16.1.1"
+  },
+  "corpusHash": "b5a6f0dc62f7d3b2f499f822e89638b713d826dfad47e8105f20eeb174ad7c9d",
+  "mode": "network",
+  "results": {
+    "bodies": 35,
+    "clients": 1,
+    "format": "json",
+    "seconds": 3.0263329000008525,
+    "compression": "disabled equally at server and clients",
+    "readers": [
+      {
+        "validAppliedFrames": 92,
+        "payloadBytes": 193157,
+        "parseVerifyP95Ms": 0.19787499768426645,
+        "failures": []
+      }
+    ],
+    "before": {
+      "encodeSamples": 0,
+      "encodeP95Ms": null,
+      "sessions": [
+        {
+          "sessionId": "session-44d32c76a4a4",
+          "sceneId": "lab-demo",
+          "source": "synthetic",
+          "state": "RUNNING",
+          "sceneRevision": "profile",
+          "revisionNumericId": 1,
+          "epoch": 0,
+          "seq": 44,
+          "simTime": 1.4333333333333333,
+          "realtimeFactor": 1.0,
+          "actualRtf": 0.9971381061582656,
+          "solver": null,
+          "counts": {
+            "nodes": 35,
+            "bodies": 35,
+            "sites": 0,
+            "joints": 0,
+            "warnings": 0
+          },
+          "error": null,
+          "continueWithoutObservers": true,
+          "autoPaused": false,
+          "physicsDt": 0.004166666666666667,
+          "basePublishHz": 30.0,
+          "publishedFrames": 43,
+          "encodedPayloadBytes": 65107,
+          "readbackMode": "not_applicable",
+          "clients": [
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "format": "json",
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 34
+            }
+          ]
+        }
+      ],
+      "sourceSeqs": [
+        44
+      ]
+    },
+    "after": {
+      "encodeSamples": 90,
+      "encodeP95Ms": 0.3744099987670779,
+      "sessions": [
+        {
+          "sessionId": "session-44d32c76a4a4",
+          "sceneId": "lab-demo",
+          "source": "synthetic",
+          "state": "RUNNING",
+          "sceneRevision": "profile",
+          "revisionNumericId": 1,
+          "epoch": 0,
+          "seq": 134,
+          "simTime": 4.433333333333334,
+          "realtimeFactor": 1.0,
+          "actualRtf": 1.0005264936084943,
+          "solver": null,
+          "counts": {
+            "nodes": 35,
+            "bodies": 35,
+            "sites": 0,
+            "joints": 0,
+            "warnings": 0
+          },
+          "error": null,
+          "continueWithoutObservers": true,
+          "autoPaused": false,
+          "physicsDt": 0.004166666666666667,
+          "basePublishHz": 30.0,
+          "publishedFrames": 133,
+          "encodedPayloadBytes": 254066,
+          "readbackMode": "not_applicable",
+          "clients": [
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "format": "json",
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 128
+            }
+          ]
+        }
+      ],
+      "sourceSeqs": [
+        134
+      ]
+    }
+  }
+}
