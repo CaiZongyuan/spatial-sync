@@ -19,6 +19,7 @@ class ActionPipeline:
         self._reserved = {}
         self._approval_timers = {}
         self._approving = {}
+        self._cleanup_tasks = set()
         self.approval_timeout = approval_timeout
 
     def _new(self, request, actor):
@@ -55,6 +56,9 @@ class ActionPipeline:
         return self.table.get(invocation.invocationId)
 
     def _reject(self, invocation, code, message, *, details=None, status="rejected"):
+        known = self.table.get(invocation.invocationId)
+        if status == "rejected" and known and known.status in ("accepted", "running"):
+            status = "failed"
         return self._emit(
             invocation.model_copy(
                 update={
@@ -83,7 +87,7 @@ class ActionPipeline:
                 {"errors": exc.errors(include_url=False, include_context=False)},
             )
         if not action.get("concurrent", False):
-            for active in [*self.table.active.values(), *self._reserved.values()]:
+            for active in [*self.table.active_for(invocation.entityKey), *self._reserved.values()]:
                 if active.invocationId == invocation.invocationId or active.entityKey != invocation.entityKey:
                     continue
                 if not self.catalog.action(active.entityKey, active.action).get("concurrent", False):
@@ -155,13 +159,24 @@ class ActionPipeline:
                 if key in InvokeRequest.model_fields
             }
         )
+        source = self.session.source
         try:
-            update = await asyncio.wait_for(self.session.source.invoke(request), 0.5)
+            update = await asyncio.wait_for(source.invoke(request), 0.5)
         except Exception:
+            task = asyncio.create_task(self._cancel_unconfirmed(source, invocation.invocationId))
+            self._cleanup_tasks.add(task)
+            task.add_done_callback(self._cleanup_tasks.discard)
             return self._reject(invocation, "source_unavailable", "Device host did not accept the request")
         # A host event can reach the table before this direct acceptance reply.
         self.update(update)
         return self.table.get(invocation.invocationId)
+
+    @staticmethod
+    async def _cancel_unconfirmed(source, invocation_id):
+        try:
+            await asyncio.wait_for(source.cancel(invocation_id), 0.5)
+        except Exception:
+            pass  # transport failure may also prevent cancellation; keep the audited failure
 
     def _approval_expired(self, invocation_id):
         invocation = self.table.get(invocation_id)
@@ -173,7 +188,7 @@ class ActionPipeline:
             raise PermissionError("Only a human operator can approve actions")
         if invocation_id in self._approving:
             return await asyncio.shield(self._approving[invocation_id])
-        invocation = self.table.get(invocation_id)
+        invocation = await self.table.lookup(invocation_id)
         if invocation is None:
             raise KeyError(invocation_id)
         if invocation.status != "pending_approval":
@@ -203,7 +218,7 @@ class ActionPipeline:
     async def cancel(self, invocation_id, role):
         if role != "operator":
             raise PermissionError("Operator permission is required")
-        invocation = self.table.get(invocation_id)
+        invocation = await self.table.lookup(invocation_id)
         if invocation is None:
             raise KeyError(invocation_id)
         if invocation.status in TERMINAL:
@@ -214,7 +229,10 @@ class ActionPipeline:
             update = await asyncio.wait_for(self.session.source.cancel(invocation_id), 0.5)
         except Exception:
             return self._reject(invocation, "source_unavailable", "Device host unavailable", status="failed")
-        self.update(update)
+        # A cancellation reply coordinates control. The reliable event stream owns
+        # terminal publication after any final property observations.
+        if update.status not in TERMINAL:
+            self.update(update)
         return self.table.get(invocation_id)
 
     def fail_active(self, code, message):
@@ -223,6 +241,9 @@ class ActionPipeline:
             self._reject(invocation, code, message, status="failed")
 
     def close(self):
+        for task in self._cleanup_tasks:
+            task.cancel()
+        self._cleanup_tasks.clear()
         for timer in self._approval_timers.values():
             timer.cancel()
         self._approval_timers.clear()

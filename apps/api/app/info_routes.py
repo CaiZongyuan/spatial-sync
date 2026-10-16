@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import StrictBool
 
 from packages.info.conditions import OPERATORS, evaluate_conditions
 from packages.info.invocations import TERMINAL
@@ -18,7 +19,7 @@ def actor_from_headers(headers):
 
 
 class HttpAction(ActionRequest):
-    wait: bool = False
+    wait: StrictBool = False
     timeoutSeconds: Positive = 120
 
 
@@ -26,7 +27,7 @@ class Approval(Model):
     decision: Literal["approve", "deny"]
 
 
-def invocation_response(value, *, waiting=False, timed_out=False):
+def invocation_response(value, *, waiting=False, timed_out=False, query=False):
     code = value.error.code if value.error else None
     status = {
         "invalid_params": 422,
@@ -35,7 +36,12 @@ def invocation_response(value, *, waiting=False, timed_out=False):
         "unknown_entity": 404,
         "unknown_action": 404,
         "not_permitted": 403,
+        "source_unavailable": 503,
     }.get(code)
+    if query:
+        status = 200
+    elif status is None and value.status == "rejected":
+        status = 409
     if status is None:
         status = 200 if waiting or value.status in TERMINAL else 202
     data = value.model_dump(mode="json")
@@ -54,11 +60,9 @@ def install_info_routes(app, manager, role_for):
         binding = session.catalog.entities[key]
         return {
             "key": key,
-            "type": binding["type"] if isinstance(binding, dict) else binding.type,
+            "type": binding["type"],
             **(value.model_dump(mode="json") if value else {"rev": 0, "values": {}, "meta": {}}),
-            "active": [
-                item.invocationId for item in session.pipeline.table.active.values() if item.entityKey == key
-            ],
+            "active": [item.invocationId for item in session.pipeline.table.active_for(key)],
         }
 
     @app.get(prefix + "/catalog")
@@ -99,11 +103,7 @@ def install_info_routes(app, manager, role_for):
             "binding": binding,
             "definition": session.catalog.types[binding["type"]],
             "state": value,
-            "active": [
-                item.model_dump(mode="json")
-                for item in session.pipeline.table.active.values()
-                if item.entityKey == key
-            ],
+            "active": [item.model_dump(mode="json") for item in session.pipeline.table.active_for(key)],
             "recent": [item.model_dump(mode="json") for item in recent],
         }
 
@@ -151,9 +151,9 @@ def install_info_routes(app, manager, role_for):
         if value is None:
             raise HTTPException(404, {"code": "unknown_invocation"})
         timed_out = False
-        if wait:
+        if wait and value.status not in TERMINAL:
             value, timed_out = await table.wait(invocation_id, timeoutSeconds)
-        return invocation_response(value, waiting=wait, timed_out=timed_out)
+        return invocation_response(value, waiting=wait, timed_out=timed_out, query=True)
 
     async def control(session_id, invocation_id, role, actor=None, decision=None):
         pipeline = manager.get(session_id).pipeline

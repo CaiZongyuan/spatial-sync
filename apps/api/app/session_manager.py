@@ -489,6 +489,8 @@ class Session:
         ).encode(frame)
 
     def _apply_state(self, state: SessionState):
+        if state.state in ("FAILED", "STOPPED") and self.pipeline:
+            self.pipeline.fail_active("source_unavailable", state.cause.message or "Device host unavailable")
         self._seq_high_water = max(self._seq_high_water, state.seq)
         if (self.state, self.epoch, self.options.realtimeFactor) != (
             state.state,

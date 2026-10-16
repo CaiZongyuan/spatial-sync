@@ -1,5 +1,4 @@
 import asyncio
-import math
 import time
 
 import pytest
@@ -69,7 +68,7 @@ def test_catalog_whitelist_etag_identity_and_pause_heartbeat():
             ).status_code
             == 304
         )
-        assert manifest.sessionId == sid and len([n for n in manifest.nodes if n.kind == "body"]) == 24
+        assert manifest.sessionId == sid and len([n for n in manifest.nodes if n.kind == "body"]) == 26
         with client.websocket_connect(f"/api/v1/sessions/{sid}/ws") as ws:
             ready, _, snapshot = open_subscription(ws, revision)
             assert ready["sessionId"] == snapshot["sessionId"] == sid
@@ -109,15 +108,15 @@ def test_revisions_full_frames_rate_clamp_and_reconnect():
                 "info": False,
                 "requestId": "full",
             }
-            assert len(next_type(ws, "stream.snapshot")["poses"]) == 24
+            assert len(next_type(ws, "stream.snapshot")["poses"]) == 26
             assert command(ws, "pause", "pause")["status"] == "applied"
             ws.send_json({"type": "client.subscribe", "sceneRevision": revision, "rateHz": 0.1})
             assert next_type(ws, "subscription.ack")["grantedRateHz"] == 1
-            assert len(next_type(ws, "stream.snapshot")["poses"]) == 24
+            assert len(next_type(ws, "stream.snapshot")["poses"]) == 26
         with client.websocket_connect(f"/api/v1/sessions/{sid}/ws") as ws:
             ready, _, snapshot = open_subscription(ws, revision)
             assert ready["protocolVersion"] == snapshot["protocolVersion"] == 2
-            assert ready["sessionState"] == "PAUSED" and len(snapshot["poses"]) == 24
+            assert ready["sessionState"] == "PAUSED" and len(snapshot["poses"]) == 26
 
 
 @pytest.mark.parametrize(
@@ -182,8 +181,9 @@ def test_pose_sites_joints_rtf_stats_reload_and_delete():
             frame = client.get(f"/api/v1/sessions/{sid}/snapshot").json()
             body = client.get(f"/api/v1/sessions/{sid}/pose", params={"key": "/World/Lab/Robot/Link2"}).json()
             tcp = client.get(f"/api/v1/sessions/{sid}/pose", params={"key": "/World/Lab/Robot/tcp"}).json()
-            angle = 0.6 * math.sin(0.5)
-            assert tcp["p"] == pytest.approx([0.5 * math.sin(angle), 0, 1.25 + 0.5 * math.cos(angle)])
+            angle = -0.6
+            # Taught HOME uses shoulder0.3/elbow-0.6 on the declared0.6m/0.5m links.
+            assert tcp["p"] == pytest.approx([0.0295520207, 0, 1.700870138], abs=1e-9)
             assert (
                 tcp["p"] != body["p"]
                 and tcp["seq"] == frame["seq"]
@@ -336,7 +336,7 @@ def test_removed_subscription_options_are_rejected_at_the_websocket_boundary(leg
             assert next_type(ws, "server.error")["code"] == "invalid_message"
             ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"]})
             assert next_type(ws, "subscription.ack")["info"] is True
-            assert len(next_type(ws, "stream.snapshot")["poses"]) == 24
+            assert len(next_type(ws, "stream.snapshot")["poses"]) == 26
 
 
 def test_pose_http_queries_read_cached_complete_frames_without_source_capture():
@@ -358,5 +358,5 @@ def test_pose_http_queries_read_cached_complete_frames_without_source_capture():
             assert response.json()["entityKey"] == key
         assert captures == 1
         snapshot = client.get(route + "/snapshot")
-        assert snapshot.status_code == 200 and len(snapshot.json()["poses"]) == 24
+        assert snapshot.status_code == 200 and len(snapshot.json()["poses"]) == 26
         assert captures == 2
