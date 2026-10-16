@@ -1097,17 +1097,19 @@ P0-A 与 P0-B 可并行；P0-C 与 P0-D 在 P0-B 之后并行（P0-D 先用 fixt
 
 ### MVP Definition of Done
 
-- [ ] `uv` + `pnpm` 的 README 一键启动说明可复现，包括无需 GPU 的 SyntheticSource 模式。
-- [ ] Newton Python 场景可运行；USD 与 MJCF 示例可导入，或给出具体兼容性问题和测试结论。
-- [ ] Web Viewer 能显示至少一台有动态关节的机器人和可移动对象。
-- [ ] 浏览器选中 Body，获得同一 `simTime` 下准确的世界 XYZ + 四元数。
-- [ ] 关节锚点来自 Site，与 Body 原点明确区分并经过测试。
-- [ ] Pause / Resume / Reset / Step 经过 Runner ack；状态变化全员可见；暂停不误报断线；reset 无画面回绕。
-- [ ] 不逐帧同步 USD、完整 Newton State 或静态 Mesh。
-- [ ] 两个客户端可以观看同一 Session；断线重连后正常恢复。
-- [ ] 渲染 FPS、物理步频、实际 RTF、readback / publish 指标可见。
-- [ ] 协议与 Newton 实现隔离：同一前端在 SyntheticSource 与 NewtonSource 下无需改动。
+- [x] `uv` + `pnpm` 的 README 一键启动说明可复现，包括无需 GPU 的 SyntheticSource 模式。
+- [x] Newton Python 场景可运行；USD 与 MJCF 示例可导入，或给出具体兼容性问题和测试结论。
+- [x] Web Viewer 能显示至少一台有动态关节的机器人和可移动对象。
+- [x] 浏览器选中 Body，获得同一 `simTime` 下准确的世界 XYZ + 四元数。
+- [x] 关节锚点来自 Site，与 Body 原点明确区分并经过测试。
+- [x] Pause / Resume / Reset / Step 经过 Runner ack；状态变化全员可见；暂停不误报断线；reset 无画面回绕。
+- [x] 不逐帧同步 USD、完整 Newton State 或静态 Mesh。
+- [x] 两个客户端可以观看同一 Session；断线重连后正常恢复。
+- [x] 渲染 FPS、物理步频、实际 RTF、readback / publish 指标可见。
+- [x] 协议与 Newton 实现隔离：同一前端在 SyntheticSource 与 NewtonSource 下无需改动。
 - [ ] CI 门禁全部通过，且不依赖 GPU。
+
+Local delivery receipt: [FINAL-VALIDATION.md](../development/v1.2/FINAL-VALIDATION.md). All equivalent local gates passed at3896875; the external CI checkbox remains open because this repository has no remote or external CI run. Optional Newton/CUDA evidence and performance limits are recorded separately.
 
 ## 14. 交付给开发者的执行要求
 

@@ -1,46 +1,35 @@
 # v1.2 delivery tracker
 
-Authority: [Technical specification v1.2](../../spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md).
-Baseline: `633735534aa05376138904582ebb7712a0ea19c9`. Delivery target: local integrated application on `master`.
+Authority: [Technical specification](../../spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md). Baseline633735534aa05376138904582ebb7712a0ea19c9. Delivery target: local integrated master. Tested product candidate389687587435150665d10b3e0d726943c661f15d; later delivery changes are documentation/evidence only. User authorized development against the specification. Phase3 is interfaces only. No remote origin, external CI or deployment is configured.
 
-The repository has no remote tracker or remote Git origin. This file is the task tracker. The user authorized development against the specification; no additional product clarification is required because section 17 supplies defaults. Phase 3 requires interfaces only. Phase 2 starts after the MVP works, and evidence governs optimizations and shared memory.
+**Local implementation and acceptance are complete.** Both independent review axes have no unresolved mandatory finding. [Final gate](FINAL-VALIDATION.md), [review](FINAL-REVIEW.md), [simplification survey](SIMPLIFICATION.md).
 
-| Issue | Owner | Branch / worktree | Status | Acceptance / next |
-|---|---|---|---|---|
-| P0-A Newton baseline | Newton developer | `issue/p0-a-newton` | Integrated | CPU/CUDA/FK/import/Site evidence and review repairs |
-| P0-B Protocol | Protocol developer | `issue/p0-b-protocol` | Integrated | Pydantic authority, generated TS/schema, contract tests |
-| P0-C Gateway/Synthetic | Protocol developer | `issue/p0-c-gateway` | Integrated | Commands, reliable pause final sample, global reload sequence, step bound |
-| P0-D Viewer | Viewer developer | `issue/p0-d-viewer` | Integrated | Real Synthetic/Newton browser and exact Inspector/Site acceptance |
-| P0-E Newton integration | Newton developer | `issue/p0-e-newton-source` | Integrated | Spawn, dual Pipe, real CPU/CUDA, failure/restart and cleanup |
-| P1-A Robot | Newton developer | `issue/p1-a-robot` | Integrated | `d60804f`; official FR3, MuJoCo CPU/CUDA, exact TCP golden; Featherstone contact limitation |
-| P1-B USD/assets | Protocol developer | `issue/p1-b-assets` | Integrated | `aadf7d6`; real Y-up USD, content-hashed GLB/assets, complete fallback groups/browser |
-| P1-C Reliability | Viewer developer | `issue/p1-c-reliability` | Integrated | `fc6bf49`; actual Newton recovery, observer policy, fallback, default correlated logs |
-| P2-A Binary | Newton developer | `issue/p2-a-binary` / `../spatial-sync-worktrees/p2-a` | Integrated | `ec32d8a` via `4bb6217`; non-author review, actual mixed-format browser and comparable profiling |
-| P2-B Subscriptions/keyframes | Protocol developer (parked) | `issue/p2-b-subscriptions` | Integrated | `930aaca` via `9a93c83`; real JSON/binary stream and C renderer/raycast verification retained; GPU interest repair below |
-| P2-C Extraction/scaling | Viewer developer (parked) | `issue/p2-c-scaling` / `../spatial-sync-worktrees/p2-c` | Integrated with review gap | `0cf3e25` integrated; stress/render/readback evidence retained; active-observer GPU target repair below |
-| P2-D Remote transport | Newton developer | `issue/p2-d-remote` / `../spatial-sync-worktrees/p2-d` | Integrated | `15c2bcc` via `5d6533f`; TLS auth, shared scene registry, read-only deadline recovery, real CPU/browser evidence |
-| FINAL-G Gateway repair | `/root/gateway_repair` | `issue/v1.2-gateway-review` / `../spatial-sync-worktrees/review-gateway` | Integrated | `40e1a8e` via `465a152`; PM5public regressions and author170base checks pass; complete final review pending |
-| FINAL-R TLS repair | `/root/gateway_repair` | `issue/v1.2-remote-review` / `../spatial-sync-worktrees/review-remote` | In progress | Typed interest/snapshot barrier exchange, exact membership and relative heartbeat age across real TLS |
-| FINAL-S Source repair | `/root/newton` | `issue/v1.2-source-review` / `../spatial-sync-worktrees/review-source` | In progress | Subscription-driven GPU gather plus complete snapshot recovery; actual Shape/Runner heartbeat diagnostics |
+| Issue | Author / branch | Delivery |
+| --- | --- | --- |
+| P0-A Newton baseline | Newton / issue/p0-a-newton | Integrated: realCPU/CUDA/FK/import/Site and labels |
+| P0-B Protocol | Protocol / issue/p0-b-protocol | Integrated: Pydantic authority, generatedTS/schema/contracts |
+| P0-C Gateway/Synthetic | Protocol / issue/p0-c-gateway | Integrated: commands/order/dedupe/heartbeat/lifecycle/CPU-only source |
+| P0-D Viewer | Viewer / issue/p0-d-viewer | Integrated: actual pose/Site/Inspector/control/recovery |
+| P0-E Newton integration | Newton / issue/p0-e-newton-source | Integrated: single spawnedRunner,dualPipe,crash/restart/cleanup |
+| P1-A Robot | Newton / issue/p1-a-robot | Integrated d60804f: FR3/MuJoCoCPU+CUDA/TCP; Featherstone contact limitation recorded |
+| P1-B USD/assets | Protocol / issue/p1-b-assets | Integrated aadf7d6: actualY-upUSD,hashedGLB/assets,exclusive fallback groups |
+| P1-C Reliability | Viewer / issue/p1-c-reliability | Integrated fc6bf49: observerpolicy/failure/restart/fallback/logs |
+| P2-A Binary | Newton / issue/p2-a-binary | Integrated ec32d8a: actualmixedformat controls/recovery and comparable codec evidence |
+| P2-B Subscriptions | Protocol / issue/p2-b-subscriptions | Integrated930aaca: scopes/cumulative deltas/keyframes; actualvisibility/raycast closed byC |
+| P2-C Scaling | Viewer / issue/p2-c-scaling | Integrated0cf3e25: stress100/500/2k/10k/mixed,instances/LOD/culling,gather/lifetime and honest profiling |
+| P2-D Remote | Newton / issue/p2-d-remote | Integrated15c2bcc: authenticatedboundedTLS,receiptclock,scene registry and querydeadline recovery |
+| FINAL-G Auth/lifecycle | gateway_repair / issue/v1.2-gateway-review | Integrated40e1a8e via465a152: stagedstartup/error/HB/recovery/WS ownership |
+| FINAL-S GPU interests/diagnostics/Pose | Newton / issue/v1.2-source-review | Integratedba48bc5: actualobserverunionGPUreadback,fullrecovery,realShape/HB,cache-onlyPose |
+| FINAL-R TLS interests/heartbeat | gateway_repair / issue/v1.2-remote-review | Integrated5d7292d: strictcapture/barriers,readonlydeadlines,realageforwarding,shutdownownership |
 
-PM owns integration, tracker, reports and resource allocation. Independent Developers own source implementation. Final review uses non-authors, with Standards and Spec reported separately. The installed Matt implementation/retro entrypoints have no runtime-specific tracker configuration; direct developer dispatch and the installed thin methods are the host equivalent.
+## Final evidence
 
-## Resources and verification risks
+Root204Python/2optional skips in18.32s ran withoutNewton/Warp. Root64Web/6TS/generation/build/fullRuff passed. New actualNewtonCPU TLS narrow/full/heartbeat/cleanup test passed separately in8.08s. All15realChromium paths passed in1.9min with optionalflags enabled, including realUSD/robot/reliability/diagnostics. Source author10CPU/CUDA checks plus2post-Pose CPU/CUDA checks are retained with exact semantic-delta coverage; do not sum per-slice counts into the204rootgate.
 
-- Root worktree: PM and local integration only. Every implementation issue has its own branch/worktree and evidence under `.scratch/<issue>`; dependencies/build output stay within that worktree.
-- Python root project and `uv.lock`: Newton developer during P0-A. Protocol developer owns `packages/protocol`, root pnpm configuration and protocol contract tests. Shared contract changes require PM coordination.
-- GPU: RTX 3070 Ti Laptop, 8 GiB, driver 610.62; reserved by Newton developer for bounded smoke/benchmark execution. API/UI tests use SyntheticSource and require no GPU.
-- Ports: API `127.0.0.1:8000`, web `127.0.0.1:5173`, reference viewer `127.0.0.1:8080`; reserve only when launched. Integration PM owns final preview processes. Developer tests must use distinct ports.
-- No database, accounts, cloud services, remote publication or shared memory are introduced for the MVP.
-- High-risk failures: wrong quaternion/axis or doubled hierarchy transforms; anchor confused with body origin; reset seq rollback; interpolation over pause gaps; command frames overwritten; duplicate commands executed twice; concurrent websocket writers; slow observers blocking solver; CUDA staging reused before copy completion; failed Runner killing API.
-- Verification entrypoints are new: developers must document and execute the smallest public entrypoints, then supply commands, actual versions, exit results and remaining gaps. No passing-test or independence claims without execution evidence.
+Standards `/root/final_standards_refresh` and Spec `/root/final_spec` are independent non-authors. The new Pose regression and PM-found repeated-snapshot hotloop were repaired and re-reviewed. Optional shared scene-registry extraction is deferred; required distinctions remain. Authors/reviewers are parked, no implementation work remains in their worktrees.
 
-## Current continuation
+## Retained resources and limits
 
-Integrated candidate is `465a152518437051e637a3213212c7f083eb8414` including Gateway repair. Phase0/1 and P2 A?D code are integrated; final acceptance remains open because independent Standards/Spec reviews found four mandatory gaps. See [findings and repair acceptance](FINAL-REVIEW.md). No scope or specification relaxation was accepted.
+Final production preview http://127.0.0.1:5189, API8009 PID23700/exec38910, webPID1904/exec99530. PM-owned paused/resetrobot session-289bc03f6231, Runner28972,epoch1seq1937simTime0 withTCPselected. Browser tab286453117 marked deliverable. No later tests should share this active manual session. Developer8008/5188 and testchildren were cleaned. Prior8000/5173/8009/5189 processes were absent after interruption; PM did not reset/close or fabricate the earlier unknown-owner authority. Foreign5175PID5676 is untouched.
 
-Gateway repair is integrated; its author now owns the isolated TLS subissue, while Newton owns local source/Session/UI integration. Root plus at most two children only. Gateway owns authentication and source-failure lifecycle; Newton owns source interests/snapshots/local+TLS transport and diagnostics. Their shared session-manager changes require integration inspection. The first GPU-interest safety example needs a bounded PM check before broad validation. After integration, refresh affected independent review, complete GPU-free gates, actual browser journeys, and affected CPU/CUDA/TLS paths.
-
-Before repairs, final root checks passed165Python (1optional skipped) without Newton/Warp,64Web,6TS,regeneration,build and full Ruff. Final integrated browser/optional source journeys are pending. SwiftShader render measurements do not prove a hardware FPS result; suggested45FPS remains unmet, including two valid10k runs near4.03FPS. No shared-memory, solver-overlap, WAN or end-to-end freshness improvement is claimed.
-
-Root final preview is reserved at8009/5189: API PID40616 exec10943, web PID38344 exec3114, matching candidate before repairs. Rebuild/restart for latest source. Preserve old8000 PID36204 and frozen5173 PID41600, including unknown-owner paused `session-b469c0e4cf99`; do not reset/close it. Foreign5175 PID5676 is outside task ownership. Latest inventory shows developer ports8002/5184/8006/5186/8007/5187/8008/5188/8766 absent. Use `uv run --no-sync` to preserve optional extras. No Git remote, external CI or deployment is configured.
+Suggested45FPS remains unmet in the measured SwiftShader large scenes (two valid10k runs near4.03FPS). No new variable-target total speedup,solveroverlap,WAN,hardware-renderer or end-to-end freshness claim. ExternalCI was not run; the specification's externalCI checkbox remains open while equivalent local gates are complete. Offline timeline interactive visual QA remains unverified after the earlier fileURL rejection; static JSON/links are validated without circumventing that restriction.

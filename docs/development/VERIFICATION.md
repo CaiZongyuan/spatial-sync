@@ -1,6 +1,6 @@
 # Launch and verification
 
-The demonstrated baseline is the integrated Phase 0 application at `b794d0f`; later milestone reports state which paths were refreshed. Desktop web is the supported verification scope. API and web must use one checkout's source and frozen locks.
+The final integrated product candidate is `3896875`; [the final receipt](v1.2/FINAL-VALIDATION.md) records its exact checks and retained preview. Earlier milestone reports preserve their original input revisions. Desktop web is the supported verification scope. API and web must use one checkout's source and frozen locks.
 
 ## Start
 
@@ -46,3 +46,19 @@ Newton/import/GPU checks live under `tests/sim_runtime` and the `tools/smoke_new
 ## Evidence and cleanup
 
 Per-issue reports, receipts and browser images are under `docs/development/v1.2`; the tracker and offline timeline distinguish integrated results from pending work. No GitHub CI result exists without an actual remote run. Close owned sessions, stop API/web/reference servers with their creating terminal or known process tree, and verify listeners/children are gone. Preserve the final preview only when its owner and retained address are recorded. Ignored `.scratch` logs are local evidence, not committed delivery artifacts.
+
+## Optional final journeys
+
+For a fresh isolated owned API with the simulation and USD extras installed, set both flags to run all optional browser journeys:
+
+```powershell
+$env:SPATIAL_NEWTON_E2E='1'
+$env:SPATIAL_TEST_NEWTON='1'
+$env:SPATIAL_API_URL='http://127.0.0.1:8009'
+$env:SPATIAL_WEB_URL='http://127.0.0.1:5189'
+pnpm test:e2e
+```
+
+The final integrated run executed15tests without skips. With both flags unset, four optional Newton/asset scenarios are skipped and11Synthetic/core tests remain. The diagnostics test terminates only the Runner belonging to its own created session. Do not run that suite against the retained manual demonstration; use an isolated API or close only a session you own first. A custom preview origin must be included in `SPATIAL_ALLOWED_ORIGINS` when launching its API. Final preview5189 uses origin `http://127.0.0.1:5189`.
+
+Ordinary HTTP Pose reads the most recent complete published cache without a source RPC. Its seq/simTime/staleMs belong to that sample. Explicit snapshot and subscription recovery may request a full capture; narrow periodic interests never justify merging stale rows into a new complete sample.

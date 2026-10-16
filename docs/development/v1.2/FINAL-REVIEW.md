@@ -1,5 +1,9 @@
 # Final independent review and repairs
 
+Final status: product3896875 is locally integrated and verified; Standards and Spec have no unresolved mandatory finding. Earlier sections preserve the historical findings and repairs. See [final validation](FINAL-VALIDATION.md).
+
+Final status: product3896875 is locally integrated and verified; Standards and Spec have no unresolved mandatory finding. Earlier sections preserve the historical findings and repairs. See [final validation](FINAL-VALIDATION.md).
+
 Frozen candidate: `5d6533f67e1fec0cd457d0843eddcafffa74f291`, milestone baseline `633735534aa05376138904582ebb7712a0ea19c9`. Reviewers `/root/final_standards` and `/root/final_spec` did not author the implementation. Both inspected the complete milestone range and real consumers. This candidate is not accepted as complete.
 
 Standards found a mandatory authentication defect: `_role` passes untrusted non-ASCII strings to `hmac.compare_digest`, producing `TypeError`. A raw HTTP bearer header containing byte `E9` returned 500. Valid credentials still worked. Repair acceptance is HTTP 401 and WS 1008 for malformed credentials while preserving operator/viewer behavior.
@@ -27,3 +31,11 @@ Source delivery `b21b00c` and TLS delivery `5d7292d` implement the original four
 PM found a remote paused hotloop that revalidated an unchanged complete snapshot every two milliseconds. `5d7292d` guards all observations by seq, validates a newer control snapshot once, and retains late-query barriers. The Spec reviewer inspected this incremental fix and found no new issue.
 
 One new mandatory Spec regression remains open at this checkpoint: section6:674 requires ordinary Pose HTTP to use the published read-only snapshot without GPU synchronization. The source repair routed Pose through explicit full capture; the prior stronger `pose.seq > full.seq` test was an unrequested oracle and is superseded. The narrow repair keeps explicit snapshot/subscription capture while serving Pose from one complete cache with its original seq/simTime/staleMs. Public capture-call stability and metadata regressions are assigned to the original Source author. The specification is unchanged.
+
+## Final acceptance at integrated candidate3896875
+
+Spec: `/root/final_spec` reused its full milestone review through5d6533f, traced both repaired branches, verified646af0f closes the cache-only Pose requirement, and checked the actual integrated merge against both reviewed heads. **No unresolved mandatory finding or material scope creep.**
+
+Standards: `/root/final_standards_refresh`, a non-author, captured the milestone diff/log and inspected5d6533f...3896875 plus affected producers/consumers. It reused unchanged earlier review coverage. **No mandatory documented-standard breach.** Safe bearer bytes, ownership, complete barriers, real target indices, generated Shape consumers and producer heartbeat age are preserved. The small shared scene-registry extraction remains an optional heuristic, not a delivery blocker.
+
+PM independently inspected both repairs, discovered and closed the remote unchanged-snapshot hotloop, integrated both branches without conflicts and read back3896875. The complete root runtime gate passed204base/64Web/6TS/generation/build/Ruff, one new actualNewtonCPU TLS journey and15actual browser tests. See [final validation](FINAL-VALIDATION.md). Per-slice receipts remain distinct and earlier failed/unsupported measurements are retained.
