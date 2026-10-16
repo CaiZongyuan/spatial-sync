@@ -1,0 +1,10 @@
+<mujoco model="label-smoke">
+  <option gravity="0 0 -9.81"/>
+  <worldbody>
+    <body name="Link" pos="0 0 1">
+      <joint name="Hinge" type="hinge" axis="0 1 0"/>
+      <geom name="LinkGeometry" type="box" size="0.05 0.05 0.2"/>
+      <site name="tip" pos="0 0 0.2"/>
+    </body>
+  </worldbody>
+</mujoco>

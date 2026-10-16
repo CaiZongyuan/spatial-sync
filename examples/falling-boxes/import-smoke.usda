@@ -1,0 +1,27 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Xform "Body" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        def Cube "Box" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 0.3
+        }
+    }
+    def PhysicsRevoluteJoint "Hinge"
+    {
+        rel physics:body1 = </World/Body>
+        uniform token physics:axis = "Y"
+    }
+}
