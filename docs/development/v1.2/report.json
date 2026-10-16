@@ -1,0 +1,30 @@
+﻿{
+    "tickets":  [
+
+                ],
+    "project":  "Newton Spatial Sync",
+    "findings":  [
+
+                 ],
+    "events":  [
+
+               ],
+    "scope":  {
+                  "platform":  "desktop-web",
+                  "baseline":  "6337355",
+                  "spec":  "docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md",
+                  "mobile":  false
+              },
+    "task":  {
+                 "status":  "in-progress",
+                 "startedAt":  "2026-10-16T03:32:50.8480765Z",
+                 "goal":  "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
+             },
+    "snapshotAt":  "2026-10-16T03:32:50.8480765Z",
+    "checkpoint":  {
+                       "revision":  "6337355",
+                       "authorization":  "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
+                       "next":  "P0-A Newton baseline and P0-B protocol, followed by gateway and viewer"
+                   },
+    "title":  "Specification v1.2 delivery"
+}
