@@ -70,7 +70,7 @@ test('native End applies the final reliable record at a fractional millisecond d
   }
   const duration = Math.ceil(segment.endSampleTimeMs - segment.startSampleTimeMs) + 0.75;
   const terminal = Buffer.from(JSON.stringify({
-    type: 'session.state', protocolVersion: 2, sessionId: metadata.sessionId,
+    type: 'session.state', sessionId: metadata.sessionId,
     sceneRevision: metadata.sceneRevision, state: 'STOPPED', epoch: 0,
     seq: lastSeq, simTime: segment.endSimTime,
     realtimeFactor: 1, actualRtf: 0, cause: { kind: 'lifecycle' },
