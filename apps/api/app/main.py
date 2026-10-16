@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import json
 import math
 import os
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Literal
 
 import anyio
@@ -191,6 +193,18 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}")
     async def session_summary(session_id: str):
         return manager.get(session_id).summary()
+
+    @app.post("/api/v1/sessions/{session_id}/commands")
+    async def session_command(session_id: str, body: Command, request: Request):
+        session = manager.get(session_id)
+        replies = []
+        # The HTTP caller is an acknowledgement sink, not a stream observer.
+        caller = SimpleNamespace(
+            role=_role(request.headers, settings),
+            enqueue_reliable=lambda payload: replies.append(json.loads(payload)),
+        )
+        await session.execute(caller, body)
+        return {"ack": replies[-1], "state": session.summary()}
 
     @app.get("/api/v1/sessions/{session_id}/scene")
     async def scene(session_id: str, request: Request):

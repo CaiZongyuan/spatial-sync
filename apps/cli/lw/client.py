@@ -1,0 +1,191 @@
+"""One HTTP client shared by the command line and the generic MCP tools."""
+
+from __future__ import annotations
+
+import json
+import os
+import uuid
+from collections.abc import AsyncIterator
+from urllib.parse import quote
+
+import httpx
+
+TERMINAL = {"succeeded", "rejected", "failed", "cancelled"}
+INVOCATION_STATES = TERMINAL | {"accepted", "running", "pending_approval"}
+
+
+class GatewayError(Exception):
+    def __init__(self, message, *, detail=None, status_code=None):
+        super().__init__(message)
+        self.detail, self.status_code = detail, status_code
+
+    def document(self):
+        return {"error": {"message": str(self), "statusCode": self.status_code, "detail": self.detail}}
+
+
+class GatewayClient:
+    def __init__(self, url=None, token=None, session=None, *, http=None):
+        self.url = (url or os.getenv("LW_URL", "http://127.0.0.1:8000")).rstrip("/")
+        self.token = token if token is not None else os.getenv("LW_TOKEN")
+        self._session_id = session or os.getenv("LW_SESSION")
+        try:
+            self.http = http or httpx.AsyncClient(base_url=self.url, timeout=30, trust_env=False)
+        except httpx.InvalidURL as exc:
+            raise GatewayError("Invalid LW_URL") from exc
+        self._owns_http = http is None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        if self._owns_http:
+            await self.http.aclose()
+
+    async def request(self, method, path, *, actor="cli:lw", timeout=30, **kwargs):
+        headers = {"X-Actor": actor}
+        if self.token:
+            headers["Authorization"] = "Bearer " + self.token
+        try:
+            response = await self.http.request(method, path, headers=headers, timeout=timeout, **kwargs)
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            # Exception URLs/messages can contain credentials. Keep diagnostics local and generic.
+            raise GatewayError(f"Gateway connection failed ({type(exc).__name__})") from exc
+        try:
+            document = response.json()
+        except ValueError as exc:
+            raise GatewayError("Gateway returned invalid JSON", status_code=response.status_code) from exc
+        if response.is_error and not (
+            isinstance(document, dict)
+            and document.get("invocationId")
+            and document.get("status") in INVOCATION_STATES
+        ):
+            detail = document.get("detail", document) if isinstance(document, dict) else document
+            raise GatewayError("Gateway request failed", detail=detail, status_code=response.status_code)
+        return document
+
+    async def route(self):
+        if not self._session_id:
+            health = await self.request("GET", "/api/v1/health")
+            active = [
+                item for item in health["sessions"] if item["state"] in ("RUNNING", "PAUSED", "LOADING")
+            ]
+            if len(active) != 1:
+                raise GatewayError(f"Set LW_SESSION: expected one active session, found {len(active)}")
+            self._session_id = active[0]["sessionId"]
+        return "/api/v1/sessions/" + quote(self._session_id, safe="")
+
+    async def status(self):
+        return await self.request("GET", await self.route())
+
+    async def catalog(self):
+        return await self.request("GET", await self.route() + "/catalog")
+
+    async def list_entities(self, type=None, query=None):
+        params = {key: value for key, value in {"type": type, "q": query}.items() if value is not None}
+        return (await self.request("GET", await self.route() + "/entities", params=params))["entities"]
+
+    async def describe_entity(self, key):
+        return await self.request("GET", await self.route() + "/entity", params={"key": key})
+
+    async def get_state(self, keys):
+        return await self.request("GET", await self.route() + "/state", params={"keys": ",".join(keys)})
+
+    async def invoke_action(self, key, action, params=None, *, wait=True, timeout=120, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            await self.route() + "/actions",
+            actor=actor,
+            timeout=timeout + 10,
+            json={
+                "requestId": uuid.uuid4().hex,
+                "entityKey": key,
+                "action": action,
+                "params": params or {},
+                "wait": wait,
+                "timeoutSeconds": timeout,
+            },
+        )
+
+    async def get_invocation(self, invocation_id, *, wait=False, timeout=120):
+        return await self.request(
+            "GET",
+            await self.route() + "/invocations/" + quote(invocation_id, safe=""),
+            params={"wait": wait, "timeoutSeconds": timeout},
+            timeout=timeout + 10,
+        )
+
+    async def cancel_invocation(self, invocation_id, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            await self.route() + "/invocations/" + quote(invocation_id, safe="") + "/cancel",
+            actor=actor,
+        )
+
+    async def approve_invocation(self, invocation_id, *, deny=False):
+        return await self.request(
+            "POST",
+            await self.route() + "/invocations/" + quote(invocation_id, safe="") + "/approve",
+            json={"decision": "deny" if deny else "approve"},
+        )
+
+    async def wait_until(self, key, prop, op, value, *, timeout=120):
+        return await self.request(
+            "GET",
+            await self.route() + "/wait",
+            timeout=timeout + 10,
+            params={
+                "key": key,
+                "property": prop,
+                "op": op,
+                "value": json.dumps(value, ensure_ascii=False, allow_nan=False),
+                "timeoutSeconds": timeout,
+            },
+        )
+
+    async def session_control(self, action, *, count=1, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            await self.route() + "/commands",
+            actor=actor,
+            json={
+                "requestId": uuid.uuid4().hex,
+                "command": action,
+                "args": {"count": count} if action == "step" else {},
+            },
+        )
+
+    async def recordings(self):
+        return await self.request("GET", "/api/v1/recordings")
+
+    async def watch(self, key=None) -> AsyncIterator[dict]:
+        path = await self.route() + "/events"
+        initial = await self.request("GET", path, params={"after": 0, "timeoutSeconds": 0})
+        cursor = initial["lastSeq"]
+        while True:
+            result = await self.request(
+                "GET", path, params={"after": cursor, "timeoutSeconds": 30}, timeout=40
+            )
+            if result["gap"]:
+                raise GatewayError("Event history gap; restart watch", detail={"after": cursor})
+            cursor = result["lastSeq"]
+            for item in result["events"]:
+                message = item["message"]
+                if message["type"] == "entity.observations":
+                    changes = [change for change in message["changes"] if key is None or change["key"] == key]
+                    if changes:
+                        yield message | {"changes": changes}
+                elif message["type"] in ("entity.event", "invocation.update"):
+                    if key is None or message["entityKey"] == key:
+                        yield message
+
+
+def exit_code(document):
+    if isinstance(document, dict):
+        if document.get("timedOut"):
+            return 4
+        status = document.get("status")
+        if status == "rejected" or document.get("ack", {}).get("status") == "rejected":
+            return 2
+        if status in ("failed", "cancelled"):
+            return 3
+    return 0
