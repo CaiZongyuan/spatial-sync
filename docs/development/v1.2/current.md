@@ -1,6 +1,6 @@
 # Newton Spatial Sync — current checkpoint
 
-Snapshot: 2026-10-16T14:54:43.667Z
+Snapshot: 2026-10-16T15:12:12.920Z
 Task status (PM supplied): completed
 
 ## Goal and scope
@@ -15,7 +15,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **revision**
 
-> 389687587435150665d10b3e0d726943c661f15d plus final PM documentation/evidence
+> bf85f35315302d7760a1603936c539aa591fd169 plus Chinese README and shutdown documentation
 
 **authorization**
 
@@ -23,7 +23,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **next**
 
-> Local delivery complete. Retained pausedrobot preview5189 is ready for use. No publication or externalCI performed.
+> Services closed at the user request. Use README.zh-CN.md to restart the workbench or the independent Newton ViewerViser reference.
 
 **roles**
 
@@ -75,11 +75,11 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 ## Recent recorded facts
 
+- 2026-10-16T15:12:12.920Z: User requested shutdown and Chinese README — passed; actor Unknown; revision Unknown
 - 2026-10-16T14:54:43.667Z: Local product integrated, independently reviewed and accepted — passed; actor Unknown; revision 389687587435150665d10b3e0d726943c661f15d
 - 2026-10-16T14:16:22.263Z: Independent Spec review rejects ordinary Pose GPU capture — failed; actor Unknown; revision sourceb21b00c +remote5d7292d
 - 2026-10-16T13:46:24.420Z: Actual CPU/CUDA interest and recovery journeys passed — passed; actor Unknown; revision review-source working candidate after5c44309
 - 2026-10-16T13:28:36.246Z: Actual CPU source slice green; TLS split into available author capacity — passed; actor Unknown; revision 91942f79dbec3c822975e13fdd313c6ea9e82e24 source branch
-- 2026-10-16T13:06:28.540Z: Independent first variable-gather CPU oracle passed — passed; actor Unknown; revision 3eb0c71 source branch including6459339 and465a152
 
 ## Resources
 
@@ -93,10 +93,11 @@ The generator does not infer completion, authorization, or merge readiness from 
 - B API8007/web5187; owner Protocol developer; cleaned; All E2E sessions deleted; author verified both listeners absent
 - Unknown-owner paused Synthetic session-b469c0e4cf99; owner Unconfirmed; active C/D developers deny creating it and PM-owned E2E sessions are stopped; unknown; Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration. Latest post-interruption inventory:8000/5173 listeners absent; prior authority no longer observable. PM issued no stop/reset/close for this unknown session; cause of process exit not established.
 - Final candidate API8009/web5189; owner PM; cleaned; Prior API/web listeners absent at post-interruption inventory. Root will relaunch fresh after final integration; foreign5175 remains untouched.
-- Final integrated production preview and paused robot; owner PM /root; retained; API8009PID23700exec38910;web5189PID1904exec99530;robotSession289bc03f6231Runner28972PAUSEDepoch1seq1937simTime0;ChromeTab286453117marked deliverable. Onlytheseownedresourcesretained; no test sessions remain active.
+- Final integrated production preview and paused robot; owner PM /root; cleaned; API8009PID23700exec38910;web5189PID1904exec99530;robotSession289bc03f6231Runner28972PAUSEDepoch1seq1937simTime0;ChromeTab286453117marked deliverable. Onlytheseownedresourcesretained; no test sessions remain active. User requested shutdown. DELETE completed for the owned demo, Runner28972 exited, API23700 and preview1904 stopped. Ports8009/5189/8080/8766 were absent; foreign5175 was preserved. The previously owned browser tab was already absent.
 
 ## Evidence
 
+- [Chinese usage guide](../../../README.zh-CN.md)
 - [Finalcheckmatrixandpreview](./FINAL-VALIDATION.md)
 - [Independentreview](./FINAL-REVIEW.md)
 - [Retaineddemo](./final-preview.png)

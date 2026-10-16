@@ -1,5 +1,7 @@
 # v1.2 completed local delivery
 
+LATEST USER UPDATE: user asked to close the application and create a Chinese README. Owned demo session was DELETEd, Runner28972 exited, API23700/web1904 stopped;8009/5189/8080/8766 have no listener. Foreign5175PID5676 untouched. Old owned browser tab286453117 already absent. README.zh-CN.md added and linked from English README. Do not restart the preview unless requested. Earlier retained-preview statements below are delivery history.
+
 User requested `$pm-development` implementation of `docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md`. Originaldevelopment continued after the status question. Phase0/1,P2A?D implemented and integrated;Phase3interfacesonly. Localmaster deliverycomplete,noGitremote/externalCI/deployment/publication.
 
 Testedproduct389687587435150665d10b3e0d726943c661f15d includesGateway40e1a8e,Sourceba48bc5(code646af0f cachePose),Remote5d7292d. Productfilesunchangedsinceverifiedcandidate;finalPMcommitsdocs/evidenceonly. BothindependentSpec/Standardsreviewscompletewithnomandatoryfindings. Authors/reviewersparked,noimplementationpending. OptionalSCENESregistryextractiondeferred.

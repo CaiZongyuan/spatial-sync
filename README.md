@@ -1,5 +1,7 @@
 # Newton Spatial Sync
 
+English | [简体中文](README.zh-CN.md)
+
 A source-independent spatial gateway and browser workbench. Synthetic mode runs
 without Newton, Warp, CUDA, or a GPU. Newton mode uses one separate runner process
 for the active session; the API process owns HTTP and WebSocket connections.

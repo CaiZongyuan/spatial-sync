@@ -28,7 +28,9 @@ Root204Python/2optional skips in18.32s ran withoutNewton/Warp. Root64Web/6TS/gen
 
 Standards `/root/final_standards_refresh` and Spec `/root/final_spec` are independent non-authors. The new Pose regression and PM-found repeated-snapshot hotloop were repaired and re-reviewed. Optional shared scene-registry extraction is deferred; required distinctions remain. Authors/reviewers are parked, no implementation work remains in their worktrees.
 
-## Retained resources and limits
+## Resource handoff and limits
+
+The user subsequently requested shutdown. The owned demo/Runner/API/frontend are closed; no listener remains on8009/5189/8080. [Chinese restart guide](../../../README.zh-CN.md). The following records the original delivery resources:
 
 Final production preview http://127.0.0.1:5189, API8009 PID23700/exec38910, webPID1904/exec99530. PM-owned paused/resetrobot session-289bc03f6231, Runner28972,epoch1seq1937simTime0 withTCPselected. Browser tab286453117 marked deliverable. No later tests should share this active manual session. Developer8008/5188 and testchildren were cleaned. Prior8000/5173/8009/5189 processes were absent after interruption; PM did not reset/close or fabricate the earlier unknown-owner authority. Foreign5175PID5676 is untouched.
 

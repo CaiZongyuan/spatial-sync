@@ -1,5 +1,7 @@
 # Final integrated validation
 
+Service status update: the user subsequently requested shutdown. The owned demo, Runner, API and frontend are now closed. The addresses and PIDs below describe the verified delivery session, not currently running services. Restart instructions are in [the Chinese README](../../../README.zh-CN.md).
+
 Tested product candidate: `389687587435150665d10b3e0d726943c661f15d`. Milestone baseline: `633735534aa05376138904582ebb7712a0ea19c9`. Gateway `40e1a8e`, Source `ba48bc5` and TLS `5d7292d` are integrated on local master. Later delivery edits affect documentation and evidence only. No Git remote, external CI run, deployment or publication is configured.
 
 | Integrated check | Result |

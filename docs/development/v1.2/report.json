@@ -301,11 +301,11 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T14:54:43.667826Z",
+  "snapshotAt": "2026-10-16T15:12:12.920389Z",
   "checkpoint": {
-    "revision": "389687587435150665d10b3e0d726943c661f15d plus final PM documentation/evidence",
+    "revision": "bf85f35315302d7760a1603936c539aa591fd169 plus Chinese README and shutdown documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
-    "next": "Local delivery complete. Retained pausedrobot preview5189 is ready for use. No publication or externalCI performed.",
+    "next": "Services closed at the user request. Use README.zh-CN.md to restart the workbench or the independent Newton ViewerViser reference.",
     "roles": [
       {
         "role": "PM/integration and retained demo",
@@ -399,8 +399,8 @@
     {
       "name": "Final integrated production preview and paused robot",
       "owner": "PM /root",
-      "purpose": "API8009PID23700exec38910;web5189PID1904exec99530;robotSession289bc03f6231Runner28972PAUSEDepoch1seq1937simTime0;ChromeTab286453117marked deliverable. Onlytheseownedresourcesretained; no test sessions remain active.",
-      "disposition": "retained"
+      "purpose": "API8009PID23700exec38910;web5189PID1904exec99530;robotSession289bc03f6231Runner28972PAUSEDepoch1seq1937simTime0;ChromeTab286453117marked deliverable. Onlytheseownedresourcesretained; no test sessions remain active. User requested shutdown. DELETE completed for the owned demo, Runner28972 exited, API23700 and preview1904 stopped. Ports8009/5189/8080/8766 were absent; foreign5175 was preserved. The previously owned browser tab was already absent.",
+      "disposition": "cleaned"
     }
   ],
   "tests": [
