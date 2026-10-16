@@ -39,8 +39,8 @@ and reducers. Replay must make no live session requests or WebSocket connection,
 and its action, approval, cancellation and lifecycle controls must be disabled.
 
 ```powershell
-uv run --no-sync python tools/bench_info.py --entities 1000 --rate-hz 20 --http-hz 10 --seconds 10 --repeats 3
-uv run --no-sync python tools/bench_info.py --entities 1000 --rate-hz 20 --http-hz 10 --seconds 12 --repeats 3 --include-newton
+uv run --no-sync python tools/bench_info.py --entities 1000 --rate-hz 15 --generation-hz 15 --http-hz 10 --seconds 12 --repeats 3
+uv run --no-sync python tools/bench_info.py --entities 1000 --rate-hz 15 --generation-hz 15 --http-hz 10 --seconds 12 --repeats 3 --include-newton
 uv run --no-sync python tools/bench_recording.py
 ```
 
@@ -48,6 +48,13 @@ Run performance commands with an exclusive measurement window. Inspect actual
 changes/s, completed HTTP rate, both readers' exact counts/digests, transform
 cadence and every budget in specification section12. A `measured` receipt only
 means measurements completed; it does not declare the latency budgets passed.
+`--generation-hz` controls real property writes and defaults to `--rate-hz`,
+which independently limits publication. Inspect generated writes, Source
+publication and each reader's actual received rows separately. Every loaded
+measurement window must deliver at least10,000 changes/s to both readers.
+The earlier publication-only stress workload is reproducible with
+`--rate-hz 20 --generation-hz 60`; its results are a different workload and
+cannot establish a before/after speedup against15Hz generation.
 The log benchmark measures admission through actual drain, buffered flush and
 metadata close, validates every written frame, and reports queue depth and loop
 delay separately. It does not measure fsync durability. Keep benchmark output
