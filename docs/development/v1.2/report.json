@@ -259,11 +259,11 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T10:19:39.570511Z",
+  "snapshotAt": "2026-10-16T10:45:15.813090Z",
   "checkpoint": {
     "revision": "9a93c83b5cdb47607afacb752d242ad322aa1267 plus PM documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
-    "next": "Complete C scoped rendering/scaling and D remote transport, then integrate, refresh whole-epic simplification, final gates and independent Standards/Spec reviews.",
+    "next": "Complete C/D and independent review; validate latest integration on separate8009/5189 to preserve the unknown-owner paused B session on8000/5173.",
     "roles": [
       {
         "role": "PM/integration",
@@ -290,9 +290,9 @@
   "title": "Specification v1.2 delivery",
   "resources": [
     {
-      "name": "Root API8000 and web5173",
+      "name": "Retained B preview8000/5173",
       "owner": "PM",
-      "purpose": "Root API8000 PID36204 exec8139 restarted after B integration; web5173 PID13676 exec1257 retained",
+      "purpose": "B API PID36204 exec8139 retained for unknown-owner paused Synthetic session-b469c0e4cf99. B production bundle copied to.scratch/preview-b-9a93c83, preview5173 PID41600 exec69500. Dev Vite13676 stopped; temporary5191 verification server stopped.",
       "disposition": "retained"
     },
     {
@@ -336,6 +336,12 @@
       "owner": "Protocol developer",
       "purpose": "All E2E sessions deleted; author verified both listeners absent",
       "disposition": "cleaned"
+    },
+    {
+      "name": "Unknown-owner paused Synthetic session-b469c0e4cf99",
+      "owner": "Unconfirmed; active C/D developers deny creating it and PM-owned E2E sessions are stopped",
+      "purpose": "Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration.",
+      "disposition": "retained"
     }
   ],
   "tests": [

@@ -1,6 +1,6 @@
 # Newton Spatial Sync — current checkpoint
 
-Snapshot: 2026-10-16T10:19:39.570Z
+Snapshot: 2026-10-16T10:45:15.813Z
 Task status (PM supplied): in-progress
 
 ## Goal and scope
@@ -23,7 +23,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **next**
 
-> Complete C scoped rendering/scaling and D remote transport, then integrate, refresh whole-epic simplification, final gates and independent Standards/Spec reviews.
+> Complete C/D and independent review; validate latest integration on separate8009/5189 to preserve the unknown-owner paused B session on8000/5173.
 
 **roles**
 
@@ -79,15 +79,15 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 ## Recent recorded facts
 
+- 2026-10-16T10:45:15.813Z: Preserve unknown-owner paused scene; freeze existing UI build — passed; actor Unknown; revision Unknown
 - 2026-10-16T10:18:24.224Z: Scoped stream integrated; remote Runner developer resumed — passed; actor Unknown; revision 9a93c83b5cdb47607afacb752d242ad322aa1267
 - 2026-10-16T10:01:54.541Z: Scoped JSON and binary consumers verified on final local candidate — passed; actor Unknown; revision 4bca2acffef4a17412c8f1242082d8b703bb4058
 - 2026-10-16T08:46:21.187Z: Binary reviewed/integrated; scaling dispatched — passed; actor Unknown; revision 4bb62179999667fcd596d216082bff8a5d23ab02
 - 2026-10-16T08:38:43.540Z: Profile equal stream work and implement justified opt-in binary — passed; actor Unknown; revision b7cc387051405366087ab8667736f9be2f2ce682
-- 2026-10-16T08:35:46.673Z: Robot, USD assets and reliability integrated; Phase2 profiling authorized — unknown; actor Unknown; revision b76a78213d29a77e89ca21f5fcf9f1c1fe3c9a4a
 
 ## Resources
 
-- Root API8000 and web5173; owner PM; retained; Root API8000 PID36204 exec8139 restarted after B integration; web5173 PID13676 exec1257 retained
+- Retained B preview8000/5173; owner PM; retained; B API PID36204 exec8139 retained for unknown-owner paused Synthetic session-b469c0e4cf99. B production bundle copied to.scratch/preview-b-9a93c83, preview5173 PID41600 exec69500. Dev Vite13676 stopped; temporary5191 verification server stopped.
 - Old root API8000 and FR3; owner PM; cleaned; Owned session STOPPED and API stopped before integration
 - P1-C API8002/web5184; owner Viewer developer; retained; Sessions STOPPED; owner to reconcile reuse or cleanup for P2-C
 - OldAPI8001/web5174; owner PM/developers; cleaned; Exact owned processes stopped and listeners verified gone
@@ -95,6 +95,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 - P2-C CPU/network/GPU execution; owner Viewer developer; unknown; Must announce bounded heavy reservation and release
 - Foreign5175; owner External process; unknown; Outside task ownership; preserved
 - B API8007/web5187; owner Protocol developer; cleaned; All E2E sessions deleted; author verified both listeners absent
+- Unknown-owner paused Synthetic session-b469c0e4cf99; owner Unconfirmed; active C/D developers deny creating it and PM-owned E2E sessions are stopped; retained; Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration.
 
 ## Evidence
 
