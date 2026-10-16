@@ -1,0 +1,30 @@
+[
+  {
+    "scene": "stress-100",
+    "mode": "individual",
+    "format": "json",
+    "key": "/World/Stress/Moving/Body00017",
+    "hits": [
+      {
+        "key": "/World/Stress/Moving/Body00017"
+      },
+      {
+        "key": "/World/Stress/Moving/Body00017"
+      }
+    ],
+    "hiddenHits": []
+  },
+  {
+    "scene": "lab-demo",
+    "mode": "individual",
+    "format": "json",
+    "members": [
+      1,
+      2
+    ],
+    "visibleAfterParentHidden": [
+      "/World/Lab/Robot/Joint1/anchor",
+      "/World/Lab/Robot/Link1"
+    ]
+  }
+]

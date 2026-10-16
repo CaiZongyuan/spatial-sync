@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
-import { Canvas, useFrame } from '@react-three/fiber';
+import {
+  InstancedPrimitives,
+  canInstance,
+  type InstanceController,
+} from './InstancedPrimitives';
+import { Canvas, events, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { CameraSubscription } from './CameraSubscription';
 import {
@@ -10,6 +15,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   type Material,
+  type Object3D,
 } from 'three';
 import {
   resolveVisualTiers,
@@ -48,6 +54,17 @@ export interface VisualGeometryInfo {
   max: number[];
 }
 export type InspectVisuals = (key: string) => VisualGeometryInfo | undefined;
+
+function isVisible(object: Object3D): boolean {
+  for (let current: Object3D | null = object; current; current = current.parent)
+    if (!current.visible) return false;
+  return true;
+}
+
+const visibleEvents: typeof events = (state) => ({
+  ...events(state),
+  filter: (hits) => hits.filter((hit) => isVisible(hit.object)),
+});
 
 function Asset({
   visual,
@@ -267,6 +284,7 @@ function Body({
   select,
   register,
   warn,
+  client,
 }: {
   node: PhysicalNode;
   manifest: SceneManifest;
@@ -276,6 +294,7 @@ function Body({
   select: (key: string) => void;
   register: (key: string, id: number | undefined, object: Group | null) => void;
   warn: (message: string) => void;
+  client: SessionClient;
 }) {
   const ownSites = manifest.sites.filter(
     (site) => site.parentBodyKey === node.entityKey,
@@ -284,6 +303,7 @@ function Body({
   const pose: Pose = node.kind === 'static' ? node.initialPose : IDENTITY;
   return (
     <group
+      userData={{ entityKey: node.entityKey }}
       ref={(object) =>
         register(
           node.entityKey,
@@ -295,6 +315,12 @@ function Body({
       quaternion={pose.q}
       visible={!hidden.has(node.entityKey)}
       onPointerDown={(event) => {
+        if (
+          !isVisible(event.eventObject) ||
+          hidden.has(node.entityKey) ||
+          !client.isEntityVisible(node.entityKey)
+        )
+          return;
         event.stopPropagation();
         select(node.entityKey);
       }}
@@ -316,6 +342,7 @@ function Body({
           }
           selected={selected === site.entityKey}
           select={select}
+          client={client}
         />
       ))}
     </group>
@@ -327,18 +354,30 @@ function SiteMarker({
   visible,
   selected,
   select,
+  client,
 }: {
   site: SceneManifest['sites'][number];
   visible: boolean;
   selected: boolean;
   select: (key: string) => void;
+  client: SessionClient;
 }) {
+  const object = useRef<Group>(null);
+  useFrame(() => {
+    if (object.current)
+      object.current.visible =
+        visible &&
+        (site.parentBodyKey != null || client.isEntityVisible(site.entityKey));
+  });
   return (
     <group
+      ref={object}
+      userData={{ entityKey: site.entityKey }}
       position={site.localPose.p}
       quaternion={site.localPose.q}
       visible={visible}
       onPointerDown={(event) => {
+        if (!isVisible(event.eventObject)) return;
         event.stopPropagation();
         select(site.entityKey);
       }}
@@ -373,10 +412,35 @@ function SceneContents({
       ?.anchorSiteKey ?? selected;
   const bodies = useRef(new Map<number, Group>());
   const physicalNodes = useRef(new Map<string, Group>());
+  const instances = useRef<InstanceController | undefined>(undefined);
+  const renderMode =
+    new URLSearchParams(location.search).get('render') ?? 'auto';
+  const useInstances =
+    !layers.colliders &&
+    !layers.origins &&
+    (renderMode === 'instanced' ||
+      (renderMode === 'auto' && manifest.nodes.length >= 200));
+  const instancedNodes = useMemo(
+    () =>
+      useInstances
+        ? manifest.nodes.filter(
+            (node): node is PhysicalNode =>
+              node.kind !== 'group' && canInstance(node, manifest),
+          )
+        : [],
+    [manifest, useInstances],
+  );
+  const instancedKeys = useMemo(
+    () => new Set(instancedNodes.map((node) => node.entityKey)),
+    [instancedNodes],
+  );
   const registrationCounts = useCallback(
     () => ({
-      registeredBodies: bodies.current.size,
-      registeredPhysicalNodes: physicalNodes.current.size,
+      registeredBodies:
+        bodies.current.size + (instances.current?.registeredBodies ?? 0),
+      registeredPhysicalNodes:
+        physicalNodes.current.size +
+        (instances.current?.registeredPhysicalNodes ?? 0),
       appliedBodies: rendered.current.size,
     }),
     [rendered],
@@ -396,6 +460,8 @@ function SceneContents({
   };
   useEffect(() => {
     inspectVisuals.current = (key) => {
+      const instance = instances.current?.inspect(key);
+      if (instance) return instance;
       const group = physicalNodes.current
         .get(key)
         ?.children.find((child) => child.name === 'visual-group');
@@ -431,11 +497,17 @@ function SceneContents({
   useFrame(({ gl, scene }, delta) => {
     const start = performance.now();
     const data = client.buffer.sample(start);
+    for (const [key, object] of physicalNodes.current)
+      object.visible = !hidden.has(key) && client.isEntityVisible(key);
     for (const node of manifest.nodes) {
       if (node.kind !== 'body') continue;
       const object = bodies.current.get(node.streamId);
       const index = client.buffer.indexForKey(node.entityKey);
       if (!object || index === undefined) continue;
+      if (!client.buffer.isMember(node.streamId)) {
+        rendered.current.delete(node.entityKey);
+        continue;
+      }
       const offset = index * 7;
       object.position.fromArray(data, offset);
       object.quaternion.fromArray(data, offset + 3);
@@ -447,6 +519,7 @@ function SceneContents({
       object.position.toArray(receipt.p);
       object.quaternion.toArray(receipt.q);
     }
+    instances.current?.apply(data);
     metrics.current.applyMs = performance.now() - start;
     recorder.record(
       start,
@@ -468,7 +541,10 @@ function SceneContents({
   });
   return (
     <>
-      <SceneDiagnostics counts={registrationCounts} />
+      <SceneDiagnostics
+        counts={registrationCounts}
+        mode={useInstances ? 'instanced' : 'individual'}
+      />
       <CameraSubscription client={client} />
       <color attach="background" args={['#172329']} />
       <ambientLight intensity={1.5} />
@@ -485,13 +561,36 @@ function SceneContents({
         />
       )}
       <group name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
+        {useInstances && (
+          <InstancedPrimitives
+            nodes={instancedNodes}
+            client={client}
+            selected={selectedEntity}
+            hidden={hidden}
+            rendered={rendered}
+            controller={instances}
+            select={select}
+          />
+        )}
         <axesHelper args={[0.6]} />
         {manifest.nodes
-          .filter((node): node is PhysicalNode => node.kind !== 'group')
+          .filter(
+            (node): node is PhysicalNode =>
+              node.kind !== 'group' && !instancedKeys.has(node.entityKey),
+          )
           .map((node) => (
             <Body
               key={node.entityKey}
-              {...{ node, manifest, layers, hidden, select, register, warn }}
+              {...{
+                node,
+                manifest,
+                layers,
+                hidden,
+                select,
+                register,
+                warn,
+                client,
+              }}
               selected={selectedEntity}
             />
           ))}
@@ -507,6 +606,7 @@ function SceneContents({
               }
               selected={selectedEntity === site.entityKey}
               select={select}
+              client={client}
             />
           ))}
       </group>
@@ -538,6 +638,7 @@ export function SceneViewport(props: ViewportProps) {
   return (
     <div className="viewport" data-testid="scene-viewport">
       <Canvas
+        events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
         gl={{ antialias: true }}

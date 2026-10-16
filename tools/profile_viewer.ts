@@ -208,6 +208,18 @@ async function main() {
         await expect(page.getByTestId('connection-status')).toHaveText(
           'connected',
         );
+        // P2-B defaults to sparse deltas. Compare renderers using the same full
+        // frames as the original baseline, and wait for the accepted resubscribe.
+        await page.getByRole('checkbox', { name: 'Sparse deltas' }).uncheck();
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const subscription =
+                window.__spatialDebug!.getSubscriptionMetrics();
+              return !subscription.delta && !subscription.resyncPending;
+            }),
+          )
+          .toBe(true);
         const bodies = manifest.nodes.filter((node) => node.kind === 'body');
         if (!bodies.length)
           throw new Error(

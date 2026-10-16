@@ -1,0 +1,1161 @@
+{
+  "schemaVersion": 1,
+  "status": "measured",
+  "claim": "Baseline evidence only; no optimization or scaling claim",
+  "recordedAt": "2026-10-16T09:51:49.152Z",
+  "sourceIdentity": {
+    "revision": "bf414b10d42169631eefb5f5700747ca31f97e5d",
+    "uncommitted": "M apps/web/src/routeTree.gen.ts\n?? docs/development/v1.2/p2c-evidence/",
+    "treeSha256": "85fa15b7658fca69759efdd7d6700361a493de47562bf6d6872a51af3752b013",
+    "lockSha256": "0df4624af3de35b65a677ddfe615345140e47530754f84a387b5d136aa72b080",
+    "sceneFileHashes": {
+      "apps/api/app/sources/synthetic_source.py": "160282e4d1d0363d40ba7cd51eacdf143ba479c7e821e61a0d2c97da23935a3c"
+    }
+  },
+  "configuration": {
+    "web": "http://127.0.0.1:5186",
+    "api": "http://127.0.0.1:8006",
+    "scene": "stress-500",
+    "source": "synthetic",
+    "format": "binary",
+    "render-mode": "individual",
+    "fit-scene": true,
+    "duration": "6",
+    "warmup": "2",
+    "repeats": "1",
+    "renderer": "swiftshader",
+    "output": "docs/development/v1.2/p2c-evidence/baseline-500.json"
+  },
+  "hardware": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "architecture": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "logicalProcessors": 20,
+    "memoryBytes": 34070847488,
+    "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU, 610.62, 8192"
+  },
+  "versions": {
+    "node": "v24.18.0",
+    "browser": "156.0.8078.4",
+    "webPackages": {
+      "react": "19.3.1",
+      "three": "0.186.1",
+      "vite": "8.3.4",
+      "@react-three/fiber": "9.8.2"
+    },
+    "pythonVersions": {
+      "python": "3.13.14 (main, Jun 23 2026, 15:19:27) [MSC v.1944 64 bit (AMD64)]",
+      "packages": {
+        "fastapi": "0.143.2",
+        "pydantic": "2.12.4",
+        "numpy": "2.5.4",
+        "newton": "1.7.0",
+        "warp-lang": "1.18.0"
+      }
+    }
+  },
+  "methodology": {
+    "fps": "Nearest-rank distribution of completed one-second RAF windows; incomplete final window excluded",
+    "apply": "performance.now around interpolation, pose writes and render receipts inside useFrame; GPU draw execution excluded",
+    "frameAge": "Local time since accepted network receipt; playout delay separate",
+    "source": "Distribution of polled latest stats at approximately 1 Hz; repeated latest values may occur, not a per-step/per-publish timing distribution",
+    "timing": "Startup, correctness pause/resume and warmup excluded from raw frame window",
+    "comparison": "Use identical source tree, scene assets, source configuration, viewport, camera, WebGL renderer and useful output counts; no candidate comparison is performed here",
+    "limitations": [
+      "Shared workstation; background contention is not isolated",
+      "Browser clock quantization may produce zero apply samples; zeros do not imply zero work",
+      "Source latest-stat polling cannot establish per-operation readback/publish p95"
+    ]
+  },
+  "runs": [
+    {
+      "repeat": 1,
+      "sessionId": "session-23450e7e14c1",
+      "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+      "manifestSha256": "1bc56ba64d5ecf026159119be32e8e1bb4709c4fb577895c9f111f42cecec40e",
+      "stableManifestSha256": "b14e5be1ae679ef8213c0c147217c0dade1332e33277cb4a25006d44a4a9c704",
+      "source": {
+        "kind": "synthetic",
+        "solver": "DeterministicKinematics",
+        "physicsDt": 0.004166666666666667,
+        "basePublishHz": 30,
+        "realtimeFactor": 1
+      },
+      "bodyCount": 500,
+      "physicalNodeCount": 500,
+      "initialPoseCount": 500,
+      "correctness": {
+        "checkedBodyCount": 500,
+        "missing": 0,
+        "positionMaxErrorM": 5.077877044401546e-7,
+        "quaternionMaxError": 5.6229428113674373e-8,
+        "sequence": 27,
+        "simTime": 0.8541666666666666,
+        "referenceRowsSha256": "ca10788d676928780f50e2ec517d06a704493cdded5e9b3d0ce9d7cbf847f8c1"
+      },
+      "camera": {
+        "position": [
+          6.3911415740161726,
+          7.370180769029252,
+          7.6696508755059565
+        ],
+        "target": [
+          0.00005893247693222747,
+          0.339989863336086,
+          0.0003517056588677736
+        ],
+        "fov": 44,
+        "near": 0.01,
+        "far": 100
+      },
+      "geometry": {
+        "registeredBodies": 500,
+        "registeredPhysicalNodes": 500,
+        "appliedBodies": 500,
+        "potentialVisualInstances": 500,
+        "potentialTriangles": 191300,
+        "drawCalls": 502,
+        "submittedTriangles": 191300,
+        "mode": "individual"
+      },
+      "startupMs": 23.2432,
+      "warmupMs": 2000,
+      "buildMode": "production",
+      "browserEnvironment": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+        "devicePixelRatio": 1,
+        "canvasCss": {
+          "width": 904,
+          "height": 752
+        },
+        "drawingBuffer": {
+          "width": 904,
+          "height": 752
+        },
+        "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "vendor": "Google Inc. (Google)"
+      },
+      "streamStart": {
+        "timeMs": 5599.399999991059,
+        "receivedFrames": 84,
+        "payloadBytes": 1349639,
+        "skippedNonFinite": 0,
+        "discardedFrames": 0,
+        "invalidBinaryFrames": 0,
+        "frameFormat": "binary",
+        "revision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+        "epoch": 0,
+        "seq": 92,
+        "sessionState": "RUNNING",
+        "connection": "connected"
+      },
+      "streamEnd": {
+        "timeMs": 11637,
+        "receivedFrames": 266,
+        "payloadBytes": 4270499,
+        "skippedNonFinite": 0,
+        "discardedFrames": 0,
+        "invalidBinaryFrames": 0,
+        "frameFormat": "binary",
+        "revision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+        "epoch": 0,
+        "seq": 276,
+        "sessionState": "RUNNING",
+        "connection": "connected"
+      },
+      "receivedFrameRateHz": 30.144428249590977,
+      "render": {
+        "sampleCount": 95,
+        "measuredDurationMs": 6008.0999999940395,
+        "renderFps": {
+          "count": 5,
+          "min": 14.743463730992847,
+          "p05": 14.743463730992847,
+          "p50": 15.193239008727147,
+          "p95": 17.17885092579805,
+          "max": 17.17885092579805,
+          "mean": 15.78391837345446
+        },
+        "frameIntervalMs": {
+          "count": 94,
+          "min": 5.699999988079071,
+          "p05": 7.4000000059604645,
+          "p50": 64.19999998807907,
+          "p95": 123.29999999701977,
+          "max": 144.40000000596046,
+          "mean": 63.915957446745104
+        },
+        "transformApplyMs": {
+          "count": 95,
+          "min": 0.19999998807907104,
+          "p05": 0.19999998807907104,
+          "p50": 0.29999999701976776,
+          "p95": 0.4000000059604645,
+          "max": 0.5,
+          "mean": 0.28421052615893516
+        },
+        "frameAgeSinceReceiveMs": {
+          "count": 95,
+          "min": 0.20000000298023224,
+          "p05": 0.6000000089406967,
+          "p50": 18.799999997019768,
+          "p95": 38,
+          "max": 44.599999994039536,
+          "mean": 18.81578947368421
+        },
+        "drawCalls": {
+          "count": 95,
+          "min": 502,
+          "p05": 502,
+          "p50": 502,
+          "p95": 502,
+          "max": 502,
+          "mean": 502
+        },
+        "sceneObjects": {
+          "count": 95,
+          "min": 2007,
+          "p05": 2007,
+          "p50": 2007,
+          "p95": 2007,
+          "max": 2007,
+          "mean": 2007
+        },
+        "zeroApplySamples": 0
+      },
+      "sourcePolledLatest": {
+        "actualRtf": {
+          "count": 6,
+          "min": 1.0004753341175916,
+          "p05": 1.0004753341175916,
+          "p50": 1.0005964917571228,
+          "p95": 1.0050109761734562,
+          "max": 1.0050109761734562,
+          "mean": 1.0014236454531098
+        }
+      },
+      "rawSource": [
+        {
+          "timeMs": 6602.7504,
+          "stats": {
+            "sessionId": "session-23450e7e14c1",
+            "sceneId": "stress-500",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 97,
+            "simTime": 3.1083333333333334,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0005964917571228,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 504,
+              "bodies": 500,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 96,
+            "encodedPayloadBytes": 1411872,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 99
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 7614.737,
+          "stats": {
+            "sessionId": "session-23450e7e14c1",
+            "sceneId": "stress-500",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 127,
+            "simTime": 4.104166666666667,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0005208826425838,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 504,
+              "bodies": 500,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 125,
+            "encodedPayloadBytes": 1877148,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 130
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 8625.6218,
+          "stats": {
+            "sessionId": "session-23450e7e14c1",
+            "sceneId": "stress-500",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 157,
+            "simTime": 5.1125,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0050109761734562,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 504,
+              "bodies": 500,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 155,
+            "encodedPayloadBytes": 2358468,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 161
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 9629.9459,
+          "stats": {
+            "sessionId": "session-23450e7e14c1",
+            "sceneId": "stress-500",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 188,
+            "simTime": 6.141666666666667,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0004753341175916,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 504,
+              "bodies": 500,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 186,
+            "encodedPayloadBytes": 2855832,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 192
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 10652.8077,
+          "stats": {
+            "sessionId": "session-23450e7e14c1",
+            "sceneId": "stress-500",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 218,
+            "simTime": 7.141666666666667,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0008738986301429,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 504,
+              "bodies": 500,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 216,
+            "encodedPayloadBytes": 3337152,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 224
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 11661.8235,
+          "stats": {
+            "sessionId": "session-23450e7e14c1",
+            "sceneId": "stress-500",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-f6b38f4899bf4a5e8e3f8f4b646103cf",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 248,
+            "simTime": 8.15,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0010642893977608,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 504,
+              "bodies": 500,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 246,
+            "encodedPayloadBytes": 3818472,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 1,
+                "sentMessages": 254
+              }
+            ]
+          }
+        }
+      ],
+      "rawFrames": [
+        {
+          "timeMs": 5599.5999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 8.700000002980232
+        },
+        {
+          "timeMs": 5619.899999991059,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 10.799999997019768
+        },
+        {
+          "timeMs": 5657.899999991059,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 20.899999991059303
+        },
+        {
+          "timeMs": 5669.29999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 32.29999999701977
+        },
+        {
+          "timeMs": 5738.5,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 5.9000000059604645
+        },
+        {
+          "timeMs": 5822.199999988079,
+          "applyMs": 0.5,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 18.899999991059303
+        },
+        {
+          "timeMs": 5884,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 13.700000002980232
+        },
+        {
+          "timeMs": 5946.899999991059,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 11.200000002980232
+        },
+        {
+          "timeMs": 6019.79999999702,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 0.20000000298023224
+        },
+        {
+          "timeMs": 6079.0999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 4
+        },
+        {
+          "timeMs": 6140.29999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 2.9000000059604645
+        },
+        {
+          "timeMs": 6209.5999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 38
+        },
+        {
+          "timeMs": 6342.29999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 2.6000000089406967
+        },
+        {
+          "timeMs": 6350.399999991059,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 10.700000002980232
+        },
+        {
+          "timeMs": 6405,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 34.400000005960464
+        },
+        {
+          "timeMs": 6531.0999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 11.799999997019768
+        },
+        {
+          "timeMs": 6537.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 18.399999991059303
+        },
+        {
+          "timeMs": 6602.0999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 27.700000002980232
+        },
+        {
+          "timeMs": 6668.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 33.29999999701977
+        },
+        {
+          "timeMs": 6730.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 18.899999991059303
+        },
+        {
+          "timeMs": 6858.0999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 19.5
+        },
+        {
+          "timeMs": 6867.79999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 29.200000002980232
+        },
+        {
+          "timeMs": 6924.5999999940395,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 13.700000002980232
+        },
+        {
+          "timeMs": 7047.899999991059,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 11.200000002980232
+        },
+        {
+          "timeMs": 7113.79999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 38.900000005960464
+        },
+        {
+          "timeMs": 7120.199999988079,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 0.3999999910593033
+        },
+        {
+          "timeMs": 7239.899999991059,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 1.2000000029802322
+        },
+        {
+          "timeMs": 7303.0999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 33.29999999701977
+        },
+        {
+          "timeMs": 7364.5999999940395,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 17.400000005960464
+        },
+        {
+          "timeMs": 7427.5,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 17.200000002980232
+        },
+        {
+          "timeMs": 7495.899999991059,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 22.799999997019768
+        },
+        {
+          "timeMs": 7557,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 20.80000001192093
+        },
+        {
+          "timeMs": 7619.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 4.9000000059604645
+        },
+        {
+          "timeMs": 7690.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 14.099999994039536
+        },
+        {
+          "timeMs": 7742,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 1.800000011920929
+        },
+        {
+          "timeMs": 7806.199999988079,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 2.7999999970197678
+        },
+        {
+          "timeMs": 7868.79999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 32.70000000298023
+        },
+        {
+          "timeMs": 7930.699999988079,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 15.299999997019768
+        },
+        {
+          "timeMs": 8047.5999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 7.200000002980232
+        },
+        {
+          "timeMs": 8069.0999999940395,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 28.700000002980232
+        },
+        {
+          "timeMs": 8127.5,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 24.200000002980232
+        },
+        {
+          "timeMs": 8194.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 18.19999998807907
+        },
+        {
+          "timeMs": 8339.09999999404,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 22.599999994039536
+        },
+        {
+          "timeMs": 8411.39999999106,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 3.5999999940395355
+        },
+        {
+          "timeMs": 8418.199999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 10.399999991059303
+        },
+        {
+          "timeMs": 8481,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 11.900000005960464
+        },
+        {
+          "timeMs": 8536.79999999702,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 13.100000008940697
+        },
+        {
+          "timeMs": 8603.09999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 24.599999994039536
+        },
+        {
+          "timeMs": 8672.59999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 25.900000005960464
+        },
+        {
+          "timeMs": 8740.699999988079,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 1.699999988079071
+        },
+        {
+          "timeMs": 8805.29999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 31.400000005960464
+        },
+        {
+          "timeMs": 8868,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 29.80000001192093
+        },
+        {
+          "timeMs": 8934.09999999404,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 18.900000005960464
+        },
+        {
+          "timeMs": 8997.39999999106,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 20.5
+        },
+        {
+          "timeMs": 9063.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 25.799999997019768
+        },
+        {
+          "timeMs": 9129.59999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 16.700000002980232
+        },
+        {
+          "timeMs": 9195.09999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 18.799999997019768
+        },
+        {
+          "timeMs": 9312.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 42.1000000089407
+        },
+        {
+          "timeMs": 9379.39999999106,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 44.599999994039536
+        },
+        {
+          "timeMs": 9437.29999999702,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 24.299999997019768
+        },
+        {
+          "timeMs": 9500.79999999702,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 29.700000002980232
+        },
+        {
+          "timeMs": 9562.79999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 15.700000002980232
+        },
+        {
+          "timeMs": 9625.09999999404,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 14.700000002980232
+        },
+        {
+          "timeMs": 9634,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 23.600000008940697
+        },
+        {
+          "timeMs": 9750.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 14.799999997019768
+        },
+        {
+          "timeMs": 9813.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 42.900000005960464
+        },
+        {
+          "timeMs": 9876.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 0.29999999701976776
+        },
+        {
+          "timeMs": 9884.09999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 7.700000002980232
+        },
+        {
+          "timeMs": 10001.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 31.900000005960464
+        },
+        {
+          "timeMs": 10063.199999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 16.899999991059303
+        },
+        {
+          "timeMs": 10129.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 20
+        },
+        {
+          "timeMs": 10135.199999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 25.69999998807907
+        },
+        {
+          "timeMs": 10206.09999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 37.099999994039536
+        },
+        {
+          "timeMs": 10314.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 6
+        },
+        {
+          "timeMs": 10368.199999988079,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 28.899999991059303
+        },
+        {
+          "timeMs": 10386.59999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 14.099999994039536
+        },
+        {
+          "timeMs": 10470.39999999106,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 0.3999999910593033
+        },
+        {
+          "timeMs": 10539.699999988079,
+          "applyMs": 0.5,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 16
+        },
+        {
+          "timeMs": 10605.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 0.6000000089406967
+        },
+        {
+          "timeMs": 10617,
+          "applyMs": 0.3999999910593033,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 12.100000008940697
+        },
+        {
+          "timeMs": 10673.699999988079,
+          "applyMs": 0.30000001192092896,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 37.69999998807907
+        },
+        {
+          "timeMs": 10735.39999999106,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 21.700000002980232
+        },
+        {
+          "timeMs": 10798.09999999404,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 27.799999997019768
+        },
+        {
+          "timeMs": 10869.59999999404,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 9.099999994039536
+        },
+        {
+          "timeMs": 10938.09999999404,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 26.5
+        },
+        {
+          "timeMs": 11009.59999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 37.70000000298023
+        },
+        {
+          "timeMs": 11063.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 26.400000005960464
+        },
+        {
+          "timeMs": 11131.79999999702,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 16.900000005960464
+        },
+        {
+          "timeMs": 11201.09999999404,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 24.599999994039536
+        },
+        {
+          "timeMs": 11270.5,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 31.900000005960464
+        },
+        {
+          "timeMs": 11337.199999988079,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 20.69999998807907
+        },
+        {
+          "timeMs": 11401.59999999404,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 23.700000002980232
+        },
+        {
+          "timeMs": 11467,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 28.5
+        },
+        {
+          "timeMs": 11537.5,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 7
+        },
+        {
+          "timeMs": 11607.699999988079,
+          "applyMs": 0.4000000059604645,
+          "drawCalls": 502,
+          "objects": 2007,
+          "frameAgeMs": 0.699999988079071
+        }
+      ]
+    }
+  ]
+}

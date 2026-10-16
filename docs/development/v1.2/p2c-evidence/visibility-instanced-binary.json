@@ -1,0 +1,34 @@
+[
+  {
+    "scene": "stress-100",
+    "mode": "instanced",
+    "format": "binary",
+    "key": "/World/Stress/Moving/Body00017",
+    "initialInstanceId": 5,
+    "packedInstanceId": 0,
+    "hits": [
+      {
+        "key": "/World/Stress/Moving/Body00017",
+        "instanceId": 5
+      },
+      {
+        "key": "/World/Stress/Moving/Body00017",
+        "instanceId": 5
+      }
+    ],
+    "hiddenHits": []
+  },
+  {
+    "scene": "lab-demo",
+    "mode": "instanced",
+    "format": "binary",
+    "members": [
+      1,
+      2
+    ],
+    "visibleAfterParentHidden": [
+      "/World/Lab/Robot/Joint1/anchor",
+      "/World/Lab/Robot/Link1"
+    ]
+  }
+]
