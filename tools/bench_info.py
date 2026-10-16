@@ -13,6 +13,7 @@ import contextlib
 import hashlib
 import json
 import math
+import os
 import platform
 import shutil
 import socket
@@ -628,6 +629,7 @@ async def run(args, directory, log_path):
                     str(args.port),
                 ],
                 cwd=ROOT,
+                env=os.environ | {"SPATIAL_RECORDINGS_ROOT": str(directory / "recordings")},
                 stdout=log,
                 stderr=log,
             )
