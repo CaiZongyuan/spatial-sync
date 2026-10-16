@@ -188,7 +188,15 @@ def serve(count, port):
             "encodeSamples": len(encode_samples),
             "encodeP95Ms": percentile(encode_samples),
             "sessions": [session.stats() for session in app.state.manager.sessions.values()],
+            "sourceSeqs": [
+                session.source.latest_frame().seq for session in app.state.manager.sessions.values()
+            ],
         }
+
+    @app.post("/profile/reset")
+    async def reset_profile():
+        encode_samples.clear()
+        return await profile()
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", ws_per_message_deflate=False)
 
@@ -196,9 +204,51 @@ def serve(count, port):
 def demo_app():
     """The actual production sources, with the isolated browser verification origin."""
     from apps.api.app.main import create_app
+    from apps.api.app.session_manager import encode
     from apps.api.app.settings import Settings
 
-    return create_app(Settings(allowed_origins=("http://127.0.0.1:5185",)))
+    app = create_app(Settings(allowed_origins=("http://127.0.0.1:5185",)))
+
+    @app.get("/profile/corpus/{count}")
+    async def browser_corpus(count: int):
+        if count not in (35, 100, 500, 2000, 10000):
+            from fastapi import HTTPException
+
+            raise HTTPException(400, "unsupported profiling body count")
+        manifest = SceneManifest.model_validate(
+            {
+                "sessionId": "profile",
+                "sceneRevision": "profile",
+                "revisionNumericId": 1,
+                "sceneName": "Frozen browser corpus",
+                "source": {"kind": "synthetic", "physicsDt": 1 / 240},
+                "nodes": [
+                    {"kind": "body", "entityKey": f"/Profile/Body{i}", "name": f"Body{i}", "streamId": i}
+                    for i in range(count)
+                ],
+            }
+        )
+        codec = FrameCodec("profile", "profile", 1)
+        frames = [
+            TransformFrame(
+                sessionId="profile",
+                sceneRevision="profile",
+                epoch=0,
+                seq=i + 1,
+                simTime=i / 30,
+                sampleTimeMs=1000 + i * 1000 / 30,
+                poses=rows,
+            )
+            for i, rows in enumerate(corpus(count))
+        ]
+        return {
+            "manifest": manifest.model_dump(mode="json"),
+            "frames": [
+                {"json": encode(frame), "binaryHex": codec.encode(frame).hex()} for frame in frames
+            ],
+        }
+
+    return app
 
 
 def reader(url, count, format_name, ready, results, go, stop):
@@ -322,7 +372,7 @@ def network(count, clients, seconds, format_name, port):
                     readers.append(process)
                 assert all(ready.get(timeout=30) for _ in readers), "profile reader failed"
                 time.sleep(1)  # Explicit warmup, outside the measurement window.
-                before = client.get("/profile").json()
+                before = client.post("/profile/reset").json()
                 started = time.monotonic()
                 go.set()
                 time.sleep(seconds)

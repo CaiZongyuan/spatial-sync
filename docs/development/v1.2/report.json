@@ -11,7 +11,7 @@
         "Non-author review and two targeted repairs integrated at78f07c6"
       ],
       "pending": [
-        "Full browser parity belongs to P0-E"
+        "Final complete-milestone review and affected validation"
       ]
     },
     {
@@ -25,7 +25,7 @@
         "Non-author PM review; integrated at053055f"
       ],
       "pending": [
-        "Integrated consumer verification"
+        "Final complete-milestone review and affected validation"
       ]
     },
     {
@@ -40,84 +40,133 @@
         "Manualstep1000 limit and generatedschema followup merged"
       ],
       "pending": [
-        "Final author evidence/simplification",
-        "Complete frozen-dependency real browser recovery journey",
-        "Real Newton adapter merge"
+        "Final complete-milestone review and affected validation"
       ]
     },
     {
       "id": "P0-D",
       "title": "Web viewer",
-      "status": "in-progress",
+      "status": "integrated",
       "blockers": [],
       "delivered": [
-        "Productionbuild and42unit tests green",
-        "Realbrowser exactBody/Site coords, pauseheartbeats,step/reset,two-clientresume passed"
+        "43 unit tests, TypeScript and production build passed",
+        "Real SyntheticSource browser acceptance passed in 13.8s",
+        "PM independently drove Synthetic and Newton UI controls and exact Site/HTTP sample checks"
       ],
       "pending": [
-        "Controlled actualWSdisconnect/reconnect, reload, finalsourcefreeze and review"
+        "Final complete-milestone review and affected validation"
       ]
     },
     {
       "id": "P0-E",
       "title": "Newton source integration",
-      "status": "in-progress",
+      "status": "integrated",
       "blockers": [],
       "delivered": [
-        "Author realCPU/CUDA source+doublebuffer+crash tests green",
-        "ActualGateway twoWS sameRunnerPID, pausepose/order, childtermination andsameSessionrestart passed"
+        "Spawned single Runner, dual Pipe transport and safe CUDA extraction implemented",
+        "Independent non-author review found no blocking issues",
+        "Real CPU/CUDA, Gateway shared PID, termination/health/restart and cleanup receipts"
       ],
       "pending": [
-        "Finalreceipt/sourcefreeze and integration/review"
+        "Final complete-milestone review and affected validation"
       ]
     },
     {
       "id": "P1-A",
       "title": "Articulated robot",
-      "status": "not-started",
-      "blockers": [
-        "Verified P0"
+      "status": "integrated",
+      "blockers": [],
+      "delivered": [
+        "Official FR3 asset provenance/license; MuJoCo CPU/CUDA contact, reset and exact TCP/joint acceptance",
+        "d60804f integrated; PM non-author review and manual root Site/HTTP golden check",
+        "Featherstone full-contact instability explicitly unsupported"
       ],
-      "delivered": [],
       "pending": [
-        "7DOF import and solver evidence"
+        "Final milestone independent review and affected validation"
       ]
     },
     {
       "id": "P1-B",
       "title": "USD scene and visual binding",
-      "status": "not-started",
-      "blockers": [
-        "Verified P0"
+      "status": "integrated",
+      "blockers": [],
+      "delivered": [
+        "Content-hashed native GLB, registered asset whitelist/cache/ETag and actual Y-up USD golden values",
+        "Complete fallback groups and binding/native/collider browser journeys",
+        "aadf7d6 integrated;131 Python passes with2GPU deselected; PM delivery notes"
       ],
-      "delivered": [],
       "pending": [
-        "USD/mesh/binding actual user journey"
+        "Final milestone independent review and affected validation"
       ]
     },
     {
       "id": "P1-C",
       "title": "Workbench reliability",
-      "status": "in-progress",
+      "status": "integrated",
       "blockers": [],
       "delivered": [
-        "Implementation overlaps source-independent workbench diagnostics and gateway endpoints"
+        "Observer policy and actual Newton failure/restart/reload browser acceptance",
+        "fc6bf49 integrated; default correlated JSON server logs and asset fallback proven",
+        "Production profile harness and24body baseline; large scenes not yet measured"
       ],
       "pending": [
-        "Actual integrated reliability evidence"
+        "Final milestone independent review and affected validation"
       ]
     },
     {
-      "id": "P2-A..D",
-      "title": "Scaling and remote transport",
-      "status": "not-started",
-      "blockers": [
-        "Verified MVP and profiling"
+      "id": "P2-A",
+      "title": "Binary transform stream",
+      "status": "integrated",
+      "delivered": [
+        "ec32d8a integrated at 4bb62179999667fcd596d216082bff8a5d23ab02",
+        "Opt-in binary, common scalar ingestion and reliable mixed-format observers",
+        "115Python/55Web/6TS/2E2E author receipts; PM4focusedPython pass",
+        "Same-scheduler10kx8 encodep95 JSON61.23ms/binary2.42ms"
       ],
+      "pending": [
+        "Windows generated artifact LF checkout repair assigned to B",
+        "Final full-head validation/review"
+      ],
+      "blockers": []
+    },
+    {
+      "id": "P2-B",
+      "title": "Scopes, cumulative deltas and keyframes",
+      "status": "in-progress",
+      "delivered": [
+        "8f33d1a real-source high-water regression and repair; PM checked oracle"
+      ],
+      "pending": [
+        "Device/entities/viewport UI consumer, keyframe baseline and membership recovery",
+        "Frozen candidate and real browser evidence"
+      ],
+      "blockers": []
+    },
+    {
+      "id": "P2-C",
+      "title": "GPU extraction and render scaling",
+      "status": "in-progress",
+      "delivered": [
+        "Isolated issue/p2-c-scaling dispatched from 4bb62179999667fcd596d216082bff8a5d23ab02"
+      ],
+      "pending": [
+        "Measured2000static+500moving and2k/10k workloads",
+        "Instancing/selection/LOD/culling; actual Warp gather/readback benchmark",
+        "Shared memory only if real Pipe bottleneck proven"
+      ],
+      "blockers": []
+    },
+    {
+      "id": "P2-D",
+      "title": "Remote Runner transport",
+      "status": "not-started",
       "delivered": [],
       "pending": [
-        "Binary/subscriptions/keyframes/gather/render scaling/remote transport; shared memory only if justified"
-      ]
+        "Resume original Newton developer after B frees an implementation slot",
+        "Typed bounded JSON plus binary frames, auth/TLS and no network pickle",
+        "Gateway receive clock, failure/cleanup, loopback and real Newton evidence"
+      ],
+      "blockers": []
     }
   ],
   "project": "Newton Spatial Sync",
@@ -125,37 +174,60 @@
     {
       "id": "labels",
       "title": "Engine defaults hide omitted labels",
-      "mechanism": "Newton fills absent names beforefinalize; regexcannotdistinguish deliberatelysameexplicitname.",
-      "impact": "Wrongheuristicwouldbreak validstableIDs.",
-      "proposal": "Carryomissionprovenance; retainnonemptyunknownoriginlabelswithdocumentedlimit.",
+      "mechanism": "Newton fills absent labels before finalization. Explicit and omitted names can become identical, so spelling cannot identify provenance.",
+      "impact": "A regex would change valid user identities.",
+      "proposal": "Carry known omission provenance and document unknown external builders.",
       "confidence": "verified",
       "evidence": [
         {
           "href": "P0-A.md",
-          "label": "Realengine findings"
+          "label": "Real engine findings"
         }
       ]
     },
     {
       "id": "pause",
-      "title": "Pause can strand different lastperiodicsamples",
-      "mechanism": "Periodiclatestslot andstate transition mayleave latestsourceposeundelivered.",
-      "impact": "Browserseq94 versuspausedsnapshot95.",
-      "proposal": "Reliablyflushfinalsample beforepauseack/state; same-seqposeoracle remains exact.",
+      "title": "Pause can strand different final samples",
+      "mechanism": "A final periodic frame can remain in a replaceable slot when PAUSED is broadcast.",
+      "impact": "One browser displayed seq94 while the authoritative paused snapshot was seq95.",
+      "proposal": "Reliably flush the final sample before pause acknowledgement and state.",
       "confidence": "verified",
       "evidence": [
         {
           "href": "P0-C-review.md",
-          "label": "Review/repair record"
+          "label": "Review and repair record"
         }
       ]
     },
     {
       "id": "browser-probe",
-      "title": "Chromium offline toggle leaves openWebSocket alive",
-      "mechanism": "HTTPofflinesimulation didnotstopexistingWSmessages.",
-      "impact": "Reconnect assertioncouldrejectlegalapplicationbehavior.",
-      "proposal": "UsecontrolledactualWebSocketclose/drop withrealupstreampassthrough andkeepfailuretrace.",
+      "title": "HTTP offline simulation did not close WebSockets",
+      "mechanism": "Chromium kept an existing WebSocket receiving after the HTTP offline toggle.",
+      "impact": "The original fault probe could reject a healthy application.",
+      "proposal": "Use a controlled real upstream WebSocket close and retain the failed trace.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "href": "P0-D.md",
+          "label": "Browser evidence"
+        }
+      ]
+    },
+    {
+      "id": "usd-axis",
+      "title": "USD axis flag adopts stage coordinates",
+      "mechanism": "In pinned Newton1.7, apply_up_axis_from_stage=True adopts Y-up instead of preserving a Z-up builder.",
+      "impact": "A Z-up Manifest could misdescribe imported Y-up transforms.",
+      "proposal": "Keep the builder Z-up and verify actual imported world pose and mesh bounds against independent golden values.",
+      "confidence": "verified",
+      "evidence": []
+    },
+    {
+      "id": "file-report-browser",
+      "title": "Offline report browser inspection unavailable",
+      "mechanism": "The browser policy rejects file URLs. The requested local report file was not opened; no alternate browser route was attempted.",
+      "impact": "JSON and local evidence paths were checked, but offline filters/details have not been visually verified in this environment.",
+      "proposal": "Keep the directly openable artifact and its static verification separate from actual app HTTP/browser checks.",
       "confidence": "verified",
       "evidence": []
     }
@@ -163,7 +235,7 @@
   "events": [],
   "scope": {
     "platform": "desktop-web",
-    "baseline": "6337355",
+    "baseline": "633735534aa05376138904582ebb7712a0ea19c9",
     "spec": "docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md",
     "mobile": false
   },
@@ -172,65 +244,93 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T04:51:52.299Z",
+  "snapshotAt": "2026-10-16T09:00:58.593049Z",
   "checkpoint": {
-    "revision": "a7cd4b05f29c915523c6dbfb08eb017080d18f7c plus PM notes",
+    "revision": "4bb62179999667fcd596d216082bff8a5d23ab02 plus PM documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
-    "next": "Complete actual Synthetic browser journeys; integrate gateway/viewer; validate spawned Newton source; then robot/USD and evidence-driven Phase 2.",
+    "next": "Complete B and C, then D; integrate, simplify, final gates and independent Standards/Spec milestone reviews.",
     "roles": [
       {
-        "role": "PM/integration/review",
+        "role": "PM/integration",
         "owner": "/root",
         "ticket": "v1.2"
       },
       {
-        "role": "Newton Developer",
-        "owner": "/root/newton",
-        "ticket": "P0-E"
-      },
-      {
-        "role": "Gateway Developer",
+        "role": "Subscriptions developer",
         "owner": "/root/protocol",
-        "ticket": "P0-C"
+        "ticket": "P2-B"
       },
       {
-        "role": "Viewer Developer",
+        "role": "Scaling developer",
         "owner": "/root/viewer",
-        "ticket": "P0-D"
+        "ticket": "P2-C"
+      },
+      {
+        "role": "Remote developer idle pending capacity",
+        "owner": "/root/newton",
+        "ticket": "P2-D"
       }
     ]
   },
   "title": "Specification v1.2 delivery",
   "resources": [
     {
-      "name": "Root integration worktree and .venv",
+      "name": "Root API8000 and web5173",
       "owner": "PM",
-      "purpose": "Integrated default environment, no Newton installed",
+      "purpose": "Integrated preview API PID27012 exec13628; web PID13676 exec1257; actual Synthetic E2E closed its sessions",
       "disposition": "retained"
     },
     {
-      "name": "API127.0.0.1:8001",
-      "owner": "Gateway developer",
-      "purpose": "Viewer integration; uv parent18104/reload watcher18736 and owned child",
-      "disposition": "retained"
-    },
-    {
-      "name": "Web127.0.0.1:5174",
-      "owner": "Viewer developer",
-      "purpose": "Preview proxy toAPI8001",
-      "disposition": "retained"
-    },
-    {
-      "name": "GPU/Viser P0-A processes",
-      "owner": "Newton developer",
-      "purpose": "Completed real-engine baseline smoke; exit/ports verified",
+      "name": "Old root API8000 and FR3",
+      "owner": "PM",
+      "purpose": "Owned session STOPPED and API stopped before integration",
       "disposition": "cleaned"
     },
     {
-      "name": "GPU P0-E execution reservation",
-      "owner": "Newton developer",
-      "purpose": "Bounded asynchronous extractor verification",
+      "name": "P1-C API8002/web5184",
+      "owner": "Viewer developer",
+      "purpose": "Sessions STOPPED; owner to reconcile reuse or cleanup for P2-C",
       "disposition": "retained"
+    },
+    {
+      "name": "OldAPI8001/web5174",
+      "owner": "PM/developers",
+      "purpose": "Exact owned processes stopped and listeners verified gone",
+      "disposition": "cleaned"
+    },
+    {
+      "name": "P2-A8005/5185 and benchmark children",
+      "owner": "Newton developer",
+      "purpose": "Owner verified stopped and heavy reservation released",
+      "disposition": "cleaned"
+    },
+    {
+      "name": "P2-C CPU/network/GPU execution",
+      "owner": "Viewer developer",
+      "purpose": "Must announce bounded heavy reservation and release",
+      "disposition": "unknown"
+    },
+    {
+      "name": "Foreign5175",
+      "owner": "External process",
+      "purpose": "Outside task ownership; preserved",
+      "disposition": "unknown"
+    }
+  ],
+  "tests": [
+    {
+      "id": "root-p2a-gates",
+      "label": "Integrated P2-A local gates",
+      "method": "uv --no-sync explicit gate paths; protocol TS; web unit; production build; actual Chromium against root8000/5173",
+      "uiExecuted": true,
+      "outcome": "passed",
+      "cause": "115Python3.17s;55Web;6TS after generated LF refresh; build;2 actual E2E26.1s.3optional Newton/asset scenarios skipped as configured, not counted as passes. No remote CI run.",
+      "evidence": [
+        {
+          "href": "P2-A-review.md",
+          "label": "Review and evidence boundaries"
+        }
+      ]
     }
   ]
 }
