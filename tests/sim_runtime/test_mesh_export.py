@@ -43,3 +43,29 @@ def test_newton_mesh_is_content_hash_glb_with_scale_kept_in_manifest():
     assert payload[:4] == b"glTF"
     decoded = trimesh.load(BytesIO(payload), file_type="glb", force="scene")
     np.testing.assert_allclose(decoded.bounds, [[0, 0, 0], [1, 2, 3]])
+
+
+def test_offline_fr3_imported_meshes_export_as_real_glbs_without_shape_placeholders():
+    from packages.sim_runtime.robot_scene import build_robot_and_tubes
+    from packages.sim_runtime.sites import add_joint_anchor_sites
+
+    with wp.ScopedDevice("cpu"):
+        builder = build_robot_and_tubes()
+        anchors = add_joint_anchor_sites(builder)
+        model = builder.finalize(device="cpu")
+    sim = SimpleNamespace(
+        builder=builder,
+        model=model,
+        anchor_sites=anchors,
+        epoch=0,
+        scene_id="robot-and-tubes",
+        physics_dt=1 / 240,
+        solver=None,
+    )
+    manifest = export_manifest(sim, session_id="fr3-mesh", scene_revision="rev", revision_numeric_id=1)
+    visuals = [visual for node in manifest.nodes if node.kind != "group" for visual in node.visuals]
+    meshes = [visual for visual in visuals if visual.kind == "mesh"]
+    assert len(meshes) >= 8
+    assert not [warning for warning in manifest.warnings if warning.code == "unsupported_shape"]
+    for visual in meshes:
+        assert sim.meshes.read(visual.meshId)[:4] == b"glTF" and visual.assetUpAxis == "Z"

@@ -66,3 +66,13 @@ def test_binding_requires_axis_scale_pose_and_preserves_complete_native_group(tm
     path.write_text("/World/Body: {url: /api/v1/assets/cover.glb}\n", encoding="utf-8")
     with pytest.raises(ValueError):
         load_bindings(path)
+
+
+def test_body_without_visuals_reports_collider_or_placeholder_fallback(tmp_path):
+    nodes = [{"entityKey": "/World/Invisible", "kind": "body", "visuals": [], "colliders": []}]
+    warnings = []
+    apply_bindings(
+        nodes, "unbound", warnings, path=tmp_path / "absent.yaml", registry=AssetRegistry(root=tmp_path)
+    )
+    assert [warning["code"] for warning in warnings] == ["asset_fallback"]
+    assert warnings[0]["entityKey"] == "/World/Invisible"

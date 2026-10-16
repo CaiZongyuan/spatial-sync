@@ -65,7 +65,10 @@ def test_exporter_forwards_known_construction_omission_provenance():
     manifest = export_manifest(scene, session_id="test", scene_revision="rev", revision_numeric_id=1)
     body = next(n for n in manifest.nodes if n.kind == "body")
     assert body.entityKey == "/__unlabeled/body_0" and not body.stableKey
-    assert [w.code for w in manifest.warnings] == ["unlabeled_entity", "unlabeled_entity"]
+    assert [w.code for w in manifest.warnings if w.code == "unlabeled_entity"] == [
+        "unlabeled_entity",
+        "unlabeled_entity",
+    ]
     with pytest.raises(ValueError, match="Missing label"):
         export_manifest(
             scene,
