@@ -30,11 +30,13 @@ An optional real Newton CPU TLS test is provided with `pytest.importorskip` insi
 
 The implementation reuses `SourceFrames` and `RunnerHeartbeat` instead of maintaining separate duplicate cache/age logic. One host capture method handles the two new reliable full-result operations; existing Outbox batching supplies atomic metadata/frame delivery. No shared scene-registry extraction or unrelated transport redesign is included. No ports or sessions belonging to another user/task are modified.
 
+PM inspection of the frozen diff found that the pulse would revalidate an unchanged full snapshot on every tick, especially after a PAUSED reset. The bounded follow-up makes the observed-seq guard cover snapshots and advances it after successful control classification. An unchanged full snapshot is therefore validated once, remains off the periodic channel, and a newer late capture still advances its control floor. No generic redesign or performance benchmark was added.
+
 ## Final validation
 
 Final focused gate on the complete remote repair:
 
-- Base-only Python `-m pytest tests/gateway/test_remote_runner.py tests/gateway/test_remote_interest.py tests/gateway/test_remote_interest_validation.py tests/unit/test_remote_transport.py -q -W error::pytest.PytestUnraisableExceptionWarning --junitxml=.scratch/final-remote-repair.xml -o junit_family=xunit1`: **55 passed, 2 skipped in 8.73 s**. Both skips require the optional Newton installation: the existing full-scope test and the new narrowed CPU test. No unraisable/pending-task warning appears in the final run.
+- Base-only Python `-m pytest tests/gateway/test_remote_runner.py tests/gateway/test_remote_interest.py tests/gateway/test_remote_interest_validation.py tests/unit/test_remote_transport.py -q -W error::pytest.PytestUnraisableExceptionWarning --junitxml=.scratch/final-remote-repair.xml -o junit_family=xunit1`: **55 passed, 2 skipped in 8.35 s** after the observed-snapshot follow-up (previous frozen run: 8.73 s). Both skips require the optional Newton installation: the existing full-scope test and the new narrowed CPU test. No unraisable/pending-task warning appears in the final run.
 - Root development Python `-m ruff check .`: **passed**.
 - `git diff --check`: **passed**.
 

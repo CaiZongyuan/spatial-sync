@@ -244,12 +244,13 @@ class _Peer:
         while True:
             if self.ready and not self._samples.transition:
                 frame = self.source.latest_frame()
-                if frame is not None:
+                if frame is not None and frame.seq > last_seq:
                     if frame.type == "stream.snapshot":
                         # A timed-out local capture can complete later. It remains a
                         # full control sample and cannot become narrowed periodic data.
                         self._samples.control(frame)
-                    elif frame.seq > last_seq and self._samples.periodic(frame):
+                        last_seq = frame.seq
+                    elif self._samples.periodic(frame):
                         self.frames.offer((FRAME, self.codec.encode(frame)))
                         last_seq = frame.seq
             now = loop.time()
