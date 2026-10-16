@@ -32,7 +32,10 @@ class Socket {
     this.sent.push(JSON.parse(value));
   }
   emit(message: ServerMessage) {
-    if (message.type === 'stream.snapshot' || message.type === 'transform.frame') {
+    if (
+      message.type === 'stream.snapshot' ||
+      message.type === 'transform.frame'
+    ) {
       const bytes = new ArrayBuffer(44 + message.poses.length * 32);
       const view = new DataView(bytes);
       view.setUint32(0, 0x4e59534e, true);
@@ -46,7 +49,11 @@ class Socket {
       view.setUint32(40, message.poses.length, true);
       message.poses.forEach((pose, i) => {
         view.setUint32(44 + i * 32, pose[0], true);
-        pose.slice(1).forEach((value, j) => view.setFloat32(48 + i * 32 + j * 4, value, true));
+        pose
+          .slice(1)
+          .forEach((value, j) =>
+            view.setFloat32(48 + i * 32 + j * 4, value, true),
+          );
       });
       this.emitBytes(bytes);
     } else this.onmessage?.({ data: JSON.stringify(message) });
@@ -62,6 +69,7 @@ class Socket {
 
 const ready: Ready = {
   type: 'server.ready',
+  role: 'operator',
   protocolVersion: 2,
   sessionId: fixture.sessionId,
   sceneRevision: fixture.sceneRevision,
@@ -129,7 +137,17 @@ describe('WebSocket lifecycle and authoritative control', () => {
       'fetch',
       vi.fn(async (url: string) => ({
         ok: true,
-        json: async () => (url.endsWith('/scene') ? fixture : {}),
+        headers: new Headers(),
+        json: async () =>
+          url.endsWith('/scene')
+            ? fixture
+            : url.endsWith('/catalog')
+              ? {
+                  sceneRevision: fixture.sceneRevision,
+                  types: {},
+                  entities: {},
+                }
+              : {},
       })),
     );
     Socket.instances.length = 0;
@@ -335,5 +353,107 @@ describe('WebSocket lifecycle and authoritative control', () => {
     );
     expect(client.buffer.lastSeq).toBe(5);
     expect(client.buffer.awaitingSnapshot).toBe(false);
+  });
+  it('uses the same information handler for snapshots and action outcomes with authorized identity', async () => {
+    const ws = Socket.instances[0];
+    ws.emit({
+      type: 'entity.snapshot',
+      sceneRevision: fixture.sceneRevision,
+      epoch: 0,
+      simTime: 0,
+      sampleTimeMs: 0,
+      entities: [
+        { key: '/machine', rev: 1, values: { phase: 'idle' }, meta: {} },
+      ],
+      invocations: [],
+    });
+    await flush();
+    const requestId = client.action('/machine', 'closeLid', {});
+    expect(ws.sent.at(-1)).toEqual({
+      type: 'action.request',
+      requestId,
+      entityKey: '/machine',
+      action: 'closeLid',
+      params: {},
+    });
+    ws.emit({
+      type: 'invocation.update',
+      sceneRevision: fixture.sceneRevision,
+      invocationId: 'inv-1',
+      requestId,
+      entityKey: '/machine',
+      action: 'closeLid',
+      params: {},
+      actor: { kind: 'user', name: 'web' },
+      epoch: 0,
+      createdSimTime: 0,
+      createdAtMs: 1,
+      status: 'succeeded',
+    });
+    await flush();
+    expect(client.info.getEntity('/machine')?.values.phase).toBe('idle');
+    expect(client.info.getInvocations('/machine')[0].status).toBe('succeeded');
+    expect(client.getSnapshot().role).toBe('operator');
+  });
+  it('revalidates the Catalog with its ETag after reconnect and retains the matching definition', async () => {
+    client.stop();
+    const catalog = {
+      sceneRevision: fixture.sceneRevision,
+      types: {},
+      entities: {},
+    };
+    let catalogRequests = 0;
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      if (String(url).endsWith('/scene'))
+        return new Response(JSON.stringify(fixture));
+      if (String(url).endsWith('/catalog')) {
+        catalogRequests++;
+        return catalogRequests === 1
+          ? new Response(JSON.stringify(catalog), {
+              headers: { ETag: '"catalog-a"' },
+            })
+          : new Response(null, { status: 304 });
+      }
+      return new Response('{}');
+    });
+    client = new SessionClient(fixture.sessionId);
+    await client.start();
+    const first = Socket.instances.at(-1)!;
+    first.open();
+    await subscribeReady(first);
+    await flush();
+    expect(client.info.getMetadata().catalog).toEqual(catalog);
+    first.close();
+    await vi.advanceTimersByTimeAsync(500);
+    const second = Socket.instances.at(-1)!;
+    second.open();
+    await subscribeReady(second);
+    await flush();
+    expect(fetch).toHaveBeenCalledWith(
+      `/api/v1/sessions/${fixture.sessionId}/catalog`,
+      { headers: { 'If-None-Match': '"catalog-a"' } },
+    );
+    expect(client.info.getMetadata().catalog).toEqual(catalog);
+  });
+
+  it('keeps viewer action requests read only even after synchronized state arrives', async () => {
+    const ws = Socket.instances[0];
+    await subscribeReady(ws, { ...ready, role: 'viewer' });
+    ws.emit({
+      type: 'entity.snapshot',
+      sceneRevision: fixture.sceneRevision,
+      epoch: 0,
+      simTime: 0,
+      sampleTimeMs: 0,
+      entities: [],
+      invocations: [],
+    });
+    await flush();
+    expect(() => client.action('/machine', 'start', {})).toThrow(
+      'Operator access',
+    );
+    expect(ws.sent.some((message) => message.type === 'action.request')).toBe(
+      false,
+    );
   });
 });

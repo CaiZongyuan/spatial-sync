@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { deviceKey } from '../lib/info/binding';
+import { EntityPanel } from './EntityPanel';
 import type { SceneManifest, Pose } from '../lib/protocol';
 import type { SessionClient, ViewState } from '../lib/stream/client';
 import { multiplyPose } from '../lib/scene/pose';
@@ -19,6 +21,18 @@ export function Inspector({
   state: ViewState;
 }) {
   const [jointState, setJointState] = useState<unknown>();
+  const [tab, setTab] = useState<'spatial' | 'device'>('spatial');
+  const metadata = useSyncExternalStore(
+    client.info.subscribeMetadata,
+    client.info.getMetadata,
+  );
+  const key = deviceKey(manifest, metadata.catalog, selected);
+  const device = key ? metadata.catalog?.entities[key] : undefined;
+  const definition = device ? metadata.catalog?.types[device.type] : undefined;
+  useEffect(
+    () => setTab(key && key === selected ? 'device' : 'spatial'),
+    [selected, key],
+  );
   const node = manifest.nodes.find((node) => node.entityKey === selected);
   const joint = manifest.joints.find((joint) => joint.entityKey === selected);
   const site = manifest.sites.find(
@@ -71,7 +85,43 @@ export function Inspector({
         <h2>Inspector</h2>
         <span className="inspect-icon">⌖</span>
       </div>
-      {!selected ? (
+      {device && (
+        <div
+          className="inspector-tabs"
+          role="tablist"
+          aria-label="Inspector view"
+        >
+          <button
+            role="tab"
+            aria-selected={tab === 'spatial'}
+            onClick={() => setTab('spatial')}
+          >
+            Spatial
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'device'}
+            onClick={() => setTab('device')}
+          >
+            Device
+          </button>
+        </div>
+      )}
+      {tab === 'device' && device && definition ? (
+        <EntityPanel
+          key={device.key}
+          store={client.info}
+          binding={device}
+          definition={definition}
+          disabled={
+            state.connection !== 'connected' ||
+            state.role !== 'operator' ||
+            !metadata.ready ||
+            !['RUNNING', 'PAUSED'].includes(state.sessionState)
+          }
+          onAction={(key, action, params) => client.action(key, action, params)}
+        />
+      ) : !selected ? (
         <div className="inspector-empty">
           <div>⌖</div>
           <h3>Explore a world coordinate</h3>

@@ -12,6 +12,7 @@ import { request } from '../lib/api';
 import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { SceneTree } from './SceneTree';
 import { Inspector } from './Inspector';
+import { ApprovalBanner, InvocationsPanel } from './InvocationsPanel';
 import { Diagnostics } from './Diagnostics';
 import {
   SceneViewport,
@@ -123,6 +124,15 @@ export function Workbench({ sessionId }: { sessionId: string }) {
   }, [hidden, manifest]);
   const pending = state.pending.length > 0 || operationPending;
   const connected = state.connection === 'connected';
+  const canControl = connected && state.role === 'operator';
+  const info = useSyncExternalStore(
+    client.info.subscribeMetadata,
+    client.info.getMetadata,
+  );
+  const actionsDisabled =
+    !canControl ||
+    !info.ready ||
+    !['RUNNING', 'PAUSED'].includes(state.sessionState);
   const paused = state.sessionState === 'PAUSED';
   const active = paused || state.sessionState === 'RUNNING';
   const warningCount = (manifest?.warnings.length ?? 0) + warnings.length;
@@ -160,7 +170,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
             Sessions ↗
           </Link>
           <button
-            disabled={pending}
+            disabled={pending || state.role !== 'operator'}
             onClick={async () => {
               try {
                 await request<void>(
@@ -187,35 +197,35 @@ export function Workbench({ sessionId }: { sessionId: string }) {
           </span>
           <button
             className="primary"
-            disabled={!connected || pending || !active}
+            disabled={!canControl || pending || !active}
             onClick={() => client.command(paused ? 'resume' : 'pause')}
             aria-label={paused ? 'Resume simulation' : 'Pause simulation'}
           >
             <span>{paused ? '▶' : 'Ⅱ'}</span> {paused ? 'Resume' : 'Pause'}
           </button>
           <button
-            disabled={!connected || pending || !paused}
+            disabled={!canControl || pending || !paused}
             onClick={() => client.command('step', { count: 1 })}
             aria-label="Step simulation"
           >
             ▹│ Step
           </button>
           <button
-            disabled={!connected || pending || !active}
+            disabled={!canControl || pending || !active}
             onClick={() => client.command('reset')}
             aria-label="Reset simulation"
           >
             ↺ Reset
           </button>
           <button
-            disabled={pending || !active}
+            disabled={pending || !active || state.role !== 'operator'}
             onClick={() => void lifecycle('reload')}
           >
             Reload scene
           </button>
           {state.sessionState === 'FAILED' && (
             <button
-              disabled={pending}
+              disabled={pending || state.role !== 'operator'}
               onClick={() => void lifecycle('restart')}
             >
               Restart source
@@ -245,7 +255,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
                       : Number(event.target.value),
                 });
               }}
-              disabled={!connected || pending || !active}
+              disabled={!canControl || pending || !active}
             >
               <option value="0.25">0.25×</option>
               <option value="0.5">0.5×</option>
@@ -256,9 +266,14 @@ export function Workbench({ sessionId }: { sessionId: string }) {
           </label>
         </div>
       </div>
-      {(loadError || state.error) && (
+      <ApprovalBanner
+        store={client.info}
+        disabled={actionsDisabled}
+        onDecision={(id, decision) => client.approveInvocation(id, decision)}
+      />
+      {(loadError || state.error || state.infoError) && (
         <div role="alert" className="banner error">
-          {loadError ?? state.error}
+          {loadError ?? state.error ?? state.infoError}
         </div>
       )}
       {(pending || state.commandResult) && (
@@ -285,6 +300,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
       ) : (
         <div className="workbench-main">
           <SceneTree
+            info={client.info}
             manifest={manifest}
             selected={selected}
             select={setSelected}
@@ -361,6 +377,12 @@ export function Workbench({ sessionId }: { sessionId: string }) {
                 />
               )}
             </div>
+            <InvocationsPanel
+              store={client.info}
+              {...{ manifest, selected, simTime: state.simTime }}
+              disabled={actionsDisabled}
+              onCancel={(id) => client.cancelInvocation(id)}
+            />
           </section>
           <Inspector {...{ manifest, selected, client, state }} />
         </div>

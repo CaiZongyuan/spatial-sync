@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
+import type { InfoStore } from '../lib/info/store';
 import type { SceneManifest } from '../lib/protocol';
 
 export function SceneTree({
+  info,
   manifest,
   selected,
   select,
   hidden,
   toggle,
 }: {
+  info: InfoStore;
   manifest: SceneManifest;
   selected?: string;
   select: (key: string) => void;
@@ -15,6 +18,11 @@ export function SceneTree({
   toggle: (key: string) => void;
 }) {
   const [query, setQuery] = useState('');
+  const { catalog } = useSyncExternalStore(
+    info.subscribeMetadata,
+    info.getMetadata,
+  );
+  const phases = useSyncExternalStore(info.subscribeTree, info.getTree);
   const [collapsed, setCollapsed] = useState(
     () =>
       new Set<string>(
@@ -86,15 +94,25 @@ export function SceneTree({
           data-testid={`entity-${key}`}
         >
           <span className={`entity-icon ${kind}`}>
-            {kind === 'group'
-              ? '▱'
-              : kind === 'site'
-                ? '⊕'
-                : kind === 'joint'
-                  ? '◇'
-                  : '▣'}
+            {catalog?.entities[key]
+              ? '◈'
+              : kind === 'group'
+                ? '▱'
+                : kind === 'site'
+                  ? '⊕'
+                  : kind === 'joint'
+                    ? '◇'
+                    : '▣'}
           </span>
           <span>{name}</span>
+          {catalog?.entities[key] && phases[key] && (
+            <span
+              className={`phase-badge phase-${phases[key]}`}
+              data-testid={`phase-${key}`}
+            >
+              {phases[key]}
+            </span>
+          )}
           <small>{kind}</small>
         </button>
         <button

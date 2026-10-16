@@ -715,9 +715,9 @@ pre {
   color: #526d77;
 }
 .inspector-panel {
-  width: 280px;
-  min-width: 255px;
-  max-width: 280px;
+  width: 350px;
+  min-width: 310px;
+  max-width: 350px;
   background: #142027;
   border-left: 1px solid var(--line);
   display: flex;
@@ -1062,8 +1062,9 @@ pre {
     min-width: 195px;
   }
   .inspector-panel {
-    width: 250px;
-    min-width: 230px;
+    width: 310px;
+    min-width: 290px;
+    max-width: 310px;
   }
   .scene-toolbar {
     padding: 0 10px;
@@ -1100,5 +1101,326 @@ pre {
   }
   .version-tag {
     font-size: 8px;
+  }
+}
+
+/* Information plane: panels reserve space so the scene remains operable. */
+.inspector-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.inspector-tabs button {
+  flex: 1;
+  font-size: 11px;
+  padding: 6px;
+}
+.inspector-tabs button[aria-selected='true'] {
+  color: var(--accent);
+  border-color: #638f7a;
+  background: #233c32;
+}
+.entity-panel {
+  padding: 16px;
+}
+.entity-panel .entity-key {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+.device-properties {
+  margin: 12px 0;
+}
+.device-properties > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #26343d;
+}
+.device-properties dt {
+  font-size: 11px;
+  color: #91a8af;
+  overflow-wrap: anywhere;
+}
+.device-properties dd {
+  margin: 0;
+  font-size: 12px;
+  min-width: 0;
+}
+.device-properties output {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.device-properties small {
+  display: block;
+  font-size: 9px;
+  color: #6f8992;
+  margin-top: 4px;
+}
+.unit {
+  margin-left: 5px;
+  font-size: 10px;
+  color: #a7bbbd;
+}
+.action-card {
+  border: 1px solid #30414a;
+  border-radius: 6px;
+  margin: 9px 0;
+  overflow: hidden;
+}
+.action-card summary {
+  cursor: pointer;
+  padding: 10px;
+  font-size: 12px;
+}
+.action-card summary > span {
+  display: block;
+  color: #829ba5;
+  font-size: 9px;
+  margin: 4px 0 0 14px;
+}
+.action-card form {
+  padding: 0 11px 12px;
+}
+.action-description {
+  color: #a9bcc3;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+.action-field {
+  display: block;
+  margin: 10px 0;
+  font-size: 11px;
+}
+.action-field > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #afc5cd;
+}
+.action-field small {
+  margin-left: 6px;
+  color: #78939e;
+}
+.action-field input,
+.action-field select,
+.action-field textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 8px;
+  border: 1px solid #40505b;
+  border-radius: 4px;
+  color: #e1e9eb;
+  background: #101c23;
+}
+.action-field textarea {
+  resize: vertical;
+  min-height: 56px;
+  max-height: 160px;
+}
+.action-card form > button {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.conditions {
+  padding: 0;
+  margin: 10px 0;
+  list-style: none;
+}
+.condition {
+  display: flex;
+  gap: 7px;
+  margin: 6px 0;
+  font-size: 10px;
+}
+.condition > span:first-child {
+  width: 12px;
+  flex-shrink: 0;
+}
+.condition.met {
+  color: #a6d8be;
+}
+.condition.unmet {
+  color: #d7b77c;
+}
+.condition small {
+  display: block;
+  color: #8fa5ad;
+  margin-top: 2px;
+}
+.action-error {
+  font-size: 11px;
+  color: #f1ad9b;
+  overflow-wrap: anywhere;
+}
+.action-outcome {
+  font-size: 10px;
+  color: #a4d6bc;
+  overflow-wrap: anywhere;
+}
+.action-outcome.rejected,
+.action-outcome.failed {
+  color: #f1ad9b;
+}
+.recent-invocation {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 6px 0;
+}
+.invocation-status {
+  color: #9fbbb0;
+  font-size: 10px;
+}
+.invocation-status.running {
+  color: #a6e4c4;
+}
+.invocation-status.failed,
+.invocation-status.rejected {
+  color: #e5a191;
+}
+.invocation-status.pending_approval {
+  color: #e6c78b;
+}
+.phase-badge {
+  flex-shrink: 0;
+  font-size: 8px;
+  line-height: 1.3;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #263b36;
+  color: #b3d7c5;
+}
+.phase-badge.phase-fault {
+  color: #f0af9e;
+  background: #53352e;
+}
+.phase-badge.phase-running,
+.phase-badge.phase-moving {
+  color: #a8e6c7;
+  background: #2b4a3c;
+}
+.invocations-panel {
+  flex: 0 0 auto;
+  height: 185px;
+  min-height: 100px;
+  max-height: 25vh;
+  background: #142027;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.invocations-heading {
+  padding: 8px 14px;
+  min-height: 41px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.invocations-heading h2 {
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0;
+}
+.invocations-heading h2 span {
+  color: #6e8d95;
+  margin-left: 7px;
+}
+.invocations-heading select {
+  font-size: 10px;
+  padding: 4px 8px;
+}
+.invocations-list {
+  overflow: auto;
+  padding: 4px 12px 12px;
+  flex: 1;
+}
+.invocations-list > .field-note {
+  padding: 8px 0;
+}
+.invocation-row {
+  border-bottom: 1px solid #2a3a43;
+  font-size: 10px;
+}
+.invocation-row summary {
+  display: grid;
+  grid-template-columns:
+    minmax(65px, 1fr) minmax(60px, 1fr) 90px 60px minmax(70px, 1fr)
+    45px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  cursor: pointer;
+}
+.invocation-row summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.invocation-row summary > strong::before {
+  content: '› ';
+  color: #6c8f8c;
+}
+.invocation-row[open] summary > strong::before {
+  content: '⌄ ';
+}
+.invocation-row progress {
+  width: 60px;
+  height: 5px;
+  accent-color: #a6e4c4;
+}
+.invocation-details {
+  padding: 4px 9px 13px;
+  color: #9fb5bd;
+}
+.invocation-details p {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+.invocation-details pre {
+  font-size: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.invocation-details button {
+  font-size: 10px;
+}
+.approval-banner {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: #3a3224;
+  border-bottom: 1px solid #756140;
+  max-height: 140px;
+  overflow: auto;
+}
+.approval-banner > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11px;
+}
+.approval-banner span {
+  flex: 1;
+}
+.approval-banner button {
+  font-size: 10px;
+  padding: 5px 10px;
+  border-color: #7d704d;
+}
+@media (max-width: 1200px) {
+  .invocation-row summary {
+    grid-template-columns: 1fr 1fr 85px 50px;
+  }
+  .invocation-row summary > span:nth-last-child(2),
+  .invocation-row time {
+    display: none;
   }
 }
