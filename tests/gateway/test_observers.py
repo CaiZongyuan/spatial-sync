@@ -73,7 +73,10 @@ async def test_default_continues_without_subscribers_and_policy_survives_reload_
     manager = SessionManager(Settings(), default_source_factory)
     try:
         running = await manager.create("lab-demo", "synthetic", SessionOptions())
-        await asyncio.sleep(0.03)
+        for _ in range(100):
+            if running.latest_frame().simTime > 0:
+                break
+            await asyncio.sleep(0.005)
         assert running.state == "RUNNING" and running.latest_frame().simTime > 0
         await running.close()
         session = await manager.create(

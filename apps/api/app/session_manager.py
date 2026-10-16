@@ -15,6 +15,7 @@ from apps.api.app.settings import Settings
 from apps.api.app.sources.base import SpatialSource
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
+from apps.api.app.structured_logging import log_event
 from packages.protocol.internal import SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
@@ -33,7 +34,6 @@ from packages.protocol.schema import (
     validate_command_args,
 )
 
-logger = logging.getLogger("spatial.gateway")
 SCENES = [
     {
         "sceneId": "lab-demo",
@@ -94,8 +94,9 @@ class Session:
 
     async def start(self):
         self.state = "LOADING"
-        self.source = self.factory(self.kind, self.session_id)
+        self._log_event("session.lifecycle", state=self.state)
         try:
+            self.source = self.factory(self.kind, self.session_id)
             manifest = await self.source.start(self.scene_id, self.options)
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
@@ -105,6 +106,7 @@ class Session:
             self._auto_paused = False
             self._cache_frame(self.latest_frame())
             self._last_published_seq = self.seq
+            self._log_event("session.lifecycle", state=self.state)
             # Creation is exclusive; reload already holds command_lock.
             await self._sync_observer_policy_locked()
             if self.state == "FAILED":
@@ -114,8 +116,15 @@ class Session:
                 asyncio.create_task(self._events(), name="session-events"),
                 asyncio.create_task(self._heartbeat(), name="session-heartbeat"),
             ]
-        except Exception:
+        except Exception as exc:
             self.state = "FAILED"
+            self._log_event(
+                "source.error",
+                state=self.state,
+                code="source_unavailable",
+                message=str(exc),
+                level=logging.ERROR,
+            )
             with contextlib.suppress(Exception):
                 await self.source.close()
             raise
@@ -276,11 +285,29 @@ class Session:
             )
 
     def broadcast(self, message):
+        if isinstance(message, SessionState):
+            self._log_event(
+                "session.state",
+                state=message.state,
+                cause=message.cause.kind,
+                requestId=message.cause.requestId,
+                command=message.cause.command,
+            )
+        elif isinstance(message, ServerError):
+            self._log_event(
+                "source.error",
+                code=message.code,
+                message=message.message,
+                requestId=message.requestId,
+                level=logging.ERROR,
+            )
         payload = encode(message)
         for client in tuple(self.clients):
             client.enqueue_reliable(payload)
 
     def broadcast_frame(self, frame: TransformFrame, reliable: bool):
+        if reliable:
+            self._log_event(frame.type)
         encoded = {}
         self._last_published_seq = max(self._last_published_seq, frame.seq)
         self.published_frames += 1
@@ -322,6 +349,7 @@ class Session:
                 reason = "unauthorized"
             elif command.requestId in self._acks:
                 client.enqueue_reliable(encode(self._acks[command.requestId]))
+                self._log_event("command.replayed", requestId=command.requestId, command=command.command)
                 return
             elif self.state not in ("RUNNING", "PAUSED"):
                 reason = "source_unavailable"
@@ -359,6 +387,13 @@ class Session:
                         frame = result.frame.model_copy(update={"seq": result.frame.seq + self._seq_offset})
                         self._cache_frame(frame)
                         self.broadcast_frame(frame, reliable=True)
+                    self._log_event(
+                        "command.ack",
+                        requestId=ack.requestId,
+                        command=command.command,
+                        status=ack.status,
+                        code=ack.reason,
+                    )
                     client.enqueue_reliable(encode(ack))
                     if result.state is not None:
                         state = result.state.model_copy(update={"seq": result.state.seq + self._seq_offset})
@@ -370,27 +405,37 @@ class Session:
                         self._remember(ack)
                     await self._sync_observer_policy_locked()
                     return
+            self._log_event(
+                "command.ack",
+                requestId=ack.requestId,
+                command=command.command,
+                status=ack.status,
+                code=ack.reason,
+            )
             client.enqueue_reliable(encode(ack))
             if client.role == "operator":
                 self._remember(ack)
+
+    def _log_event(self, event, **fields):
+        metrics = {}
+        if self.source and callable(getattr(self.source, "stats", None)):
+            with contextlib.suppress(Exception):
+                metrics = self.source.stats()
+        log_event(
+            event,
+            session_id=self.session_id,
+            scene_revision=self.manifest.sceneRevision if self.manifest else None,
+            epoch=self.epoch,
+            seq=self.seq,
+            source=self.kind,
+            runnerPID=metrics.get("runnerPID"),
+            **fields,
+        )
 
     def _remember(self, ack):
         self._acks[ack.requestId] = ack
         if len(self._acks) > 256:
             self._acks.popitem(last=False)
-        logger.info(
-            encode(
-                {
-                    "event": "command.ack",
-                    "sessionId": self.session_id,
-                    "sceneRevision": self.manifest.sceneRevision,
-                    "epoch": self.epoch,
-                    "seq": self.seq,
-                    "requestId": ack.requestId,
-                    "status": ack.status,
-                }
-            )
-        )
 
     def subscribe(self, client: ClientConnection, request: Subscribe):
         if request.sceneRevision != self.manifest.sceneRevision:
