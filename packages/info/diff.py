@@ -5,6 +5,14 @@ from copy import deepcopy
 
 from .schema_subset import json_equal
 
+_JSON_SCALARS = (type(None), bool, int, float, str)
+
+
+def _copy_value(value):
+    # Subclasses and unknown values may own mutable state; only exact primitive
+    # JSON types can share a reference without weakening defensive ownership.
+    return value if type(value) in _JSON_SCALARS else deepcopy(value)
+
 
 def changed(previous, value, deadband):
     if deadband is not None:
@@ -30,7 +38,10 @@ class PropertyDiff:
 
     def update(self, values, publication_time=None):
         now = self.clock() if publication_time is None else publication_time
-        self.pending.update(deepcopy(values))
+        if not values and not self.pending:
+            return {}
+        for prop, value in values.items():
+            self.pending[prop] = _copy_value(value)
         outgoing = {}
         for prop, value in list(self.pending.items()):
             definition = self.definitions[prop]
@@ -40,8 +51,8 @@ class PropertyDiff:
             rate = definition.get("maxRateHz")
             if rate and prop in self.at and now - self.at[prop] + 1e-10 < 1 / rate:
                 continue
-            outgoing[prop] = deepcopy(value)
-            self.sent[prop], self.at[prop] = deepcopy(value), now
+            outgoing[prop] = _copy_value(value)
+            self.sent[prop], self.at[prop] = _copy_value(value), now
             del self.pending[prop]
         return outgoing
 

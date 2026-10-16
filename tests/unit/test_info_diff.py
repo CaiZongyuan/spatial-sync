@@ -31,3 +31,42 @@ def test_injected_publication_clock_flushes_latest_pending_without_simulation_ad
     assert diff.update({}) == {}
     now[0] = 0.5
     assert diff.update({}) == {"value": 20}
+
+
+def test_nested_input_pending_sent_and_outgoing_have_separate_ownership():
+    diff = PropertyDiff({"value": {"maxRateHz": 2}})
+    source = {"items": [[1]]}
+    outgoing = diff.update({"value": source}, 0)
+    source["items"][0].append(2)
+    outgoing["value"]["items"][0].append(3)
+    assert diff.sent["value"] == {"items": [[1]]}
+    pending = {"items": [[4]]}
+    assert diff.update({"value": pending}, 0.1) == {}
+    pending["items"][0].append(5)
+    assert diff.update({}, 0.49) == {}
+    assert diff.update({}, 0.5) == {"value": {"items": [[4]]}}
+    assert diff.sent["value"] == {"items": [[4]]}
+
+
+def test_scalar_subclasses_keep_defensive_copy_of_their_mutable_state():
+    class TaggedInt(int):
+        def __new__(cls, value):
+            result = super().__new__(cls, value)
+            result.tags = []
+            return result
+
+    diff = PropertyDiff({"value": {}})
+    source = TaggedInt(1)
+    outgoing = diff.update({"value": source}, 0)
+    source.tags.append("input")
+    outgoing["value"].tags.append("output")
+    assert diff.sent["value"].tags == []
+
+
+def test_empty_updates_preserve_injected_clock_reads_and_bool_numeric_changes():
+    times = iter((0, 1, 2, 3))
+    diff = PropertyDiff({"value": {}}, clock=lambda: next(times))
+    assert diff.update({}) == {}
+    assert diff.update({"value": False}) == {"value": False}
+    assert diff.update({"value": 0}) == {"value": 0}
+    assert diff.update({"value": None}) == {"value": None}

@@ -1,6 +1,7 @@
 """Single-writer immutable entity snapshots and event-driven readers."""
 
 import asyncio
+import json
 from collections import defaultdict, deque
 from copy import deepcopy
 
@@ -17,7 +18,7 @@ class StateStore:
         self.scene_revision, self.epoch = scene_revision, epoch
         self.entities: dict[str, EntityValues] = {}
         self._waiters = defaultdict(set)
-        self._events = deque(maxlen=10_000)
+        self._events: deque[str] = deque(maxlen=10_000)
         self.event_seq = 0
         self._changed = asyncio.Event()
         self._snapshot_time = -1
@@ -130,14 +131,16 @@ class StateStore:
 
     def record(self, message):
         self.event_seq += 1
-        document = message.model_dump(mode="json")
-        self._events.append({"seq": self.event_seq, "message": document})
+        document = encode(message.model_dump(mode="json"))
+        # Keep the complete audit as immutable JSON, so retained observations
+        # do not leave every historical change dictionary for GC to traverse.
+        self._events.append(f'{{"seq":{self.event_seq},"message":{document}}}')
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
         # Observations have no nullable model fields, so their full audit dump
         # is also the exact wire document (including null JsonValue properties).
         # Other messages retain their original exclude-none wire semantics.
-        return encode(document if isinstance(message, EntityObservations) else message)
+        return document if isinstance(message, EntityObservations) else encode(message)
 
     async def events_after(self, after, timeout):
         changed = self._changed
@@ -146,9 +149,14 @@ class StateStore:
                 await asyncio.wait_for(changed.wait(), timeout)
             except TimeoutError:
                 return {"events": [], "lastSeq": self.event_seq, "timedOut": True, "gap": False}
+        first_seq = self.event_seq - len(self._events) + 1
         return {
-            "events": [item for item in self._events if item["seq"] > after],
+            "events": [
+                json.loads(document)
+                for seq, document in enumerate(self._events, first_seq)
+                if seq > after
+            ],
             "lastSeq": self.event_seq,
             "timedOut": False,
-            "gap": bool(self._events and after < self._events[0]["seq"] - 1),
+            "gap": bool(self._events and after < first_seq - 1),
         }

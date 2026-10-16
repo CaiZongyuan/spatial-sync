@@ -1,6 +1,7 @@
 """Compile the supported JSON Schema subset once at Catalog loading time."""
 
 import math
+import operator
 import re
 from copy import deepcopy
 from typing import Annotated, Any
@@ -223,6 +224,16 @@ def compile_schema(schema: dict) -> TypeAdapter:
         ):
             raise ValueError(f"required must name declared properties at {path}")
         item = compile_node(node["items"], f"{path}[]") if "items" in node else None
+        bounds = tuple(
+            (name, compare, node[name])
+            for name, compare in (
+                ("minimum", operator.ge),
+                ("maximum", operator.le),
+                ("exclusiveMinimum", operator.gt),
+                ("exclusiveMaximum", operator.lt),
+            )
+            if name in node
+        )
 
         def validate(value):
             actual = (
@@ -257,14 +268,9 @@ def compile_schema(schema: dict) -> TypeAdapter:
             if actual in ("integer", "number"):
                 if type(value) is float and not math.isfinite(value):
                     raise ValueError(f"{path}: number must be finite")
-                for name, passes in (
-                    ("minimum", lambda limit: value >= limit),
-                    ("maximum", lambda limit: value <= limit),
-                    ("exclusiveMinimum", lambda limit: value > limit),
-                    ("exclusiveMaximum", lambda limit: value < limit),
-                ):
-                    if name in node and not passes(node[name]):
-                        raise ValueError(f"{path}: violates {name} {node[name]}")
+                for name, compare, limit in bounds:
+                    if not compare(value, limit):
+                        raise ValueError(f"{path}: violates {name} {limit}")
             if actual == "string":
                 if len(value) < node.get("minLength", 0) or len(value) > node.get("maxLength", math.inf):
                     raise ValueError(f"{path}: string length is outside limits")

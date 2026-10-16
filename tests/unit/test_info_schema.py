@@ -105,3 +105,24 @@ def test_large_json_integer_yields_schema_result_or_validation_error_without_flo
     assert compile_schema({"type": "number", "minimum": huge}).validate_python(huge) == huge
     with pytest.raises(ValidationError):
         compile_schema({"type": "number", "maximum": 15000}).validate_python(huge)
+
+
+def test_numeric_bounds_keep_error_order_original_values_and_compiled_schema_ownership():
+    definition = {"type": ["number", "null"], "minimum": 5, "maximum": 3}
+    adapter = compile_schema(definition)
+    definition["minimum"] = 100
+    assert adapter.validate_python(None) is None
+    with pytest.raises(ValidationError, match="minimum 5"):
+        adapter.validate_python(4)
+    with pytest.raises(ValidationError, match="maximum 3"):
+        adapter.validate_python(6)
+    with pytest.raises(ValidationError, match="expected"):
+        adapter.validate_python(True)
+    for value in (float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValidationError, match="finite"):
+            adapter.validate_python(value)
+    integer = compile_schema({"type": "integer", "minimum": 0, "exclusiveMaximum": 3})
+    assert type(integer.validate_python(2.0)) is float
+    assert integer.validate_python(2.0) == 2.0
+    with pytest.raises(ValidationError, match="exclusiveMaximum"):
+        integer.validate_python(3)

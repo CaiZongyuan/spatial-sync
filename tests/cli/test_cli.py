@@ -132,6 +132,8 @@ def test_cli_watch_streams_only_the_selected_entity(lab):
             assert message["type"] == "invocation.update" and message["entityKey"] == CENTRIFUGE
     finally:
         stop(watcher)
+        watcher.stdout.close()
+        watcher.stderr.close()
 
 
 def test_default_human_rejection_includes_condition_next_step(lab):

@@ -1,5 +1,6 @@
 """Ownership, epoch and JSON export behavior at the validated-message boundary."""
 
+import asyncio
 import json
 
 import pytest
@@ -110,3 +111,33 @@ async def test_recorded_wire_and_event_history_preserve_null_and_large_integer_s
     assert json.loads(payload) == message.model_dump(mode="json", exclude_none=True)
     history = await state.events_after(0, 0)
     assert history["events"][0]["message"] == message.model_dump(mode="json")
+
+
+async def test_event_history_rollover_preserves_order_gaps_and_reader_ownership():
+    state = store()
+    message = observation(values={"nil": None, "huge": 10**100, "quoted": '"\\\u4e2d'})
+    expected = message.model_dump(mode="json")
+    for _ in range(10_001):
+        state.record(message)
+    result = await state.events_after(0, 0)
+    assert result["lastSeq"] == 10_001 and result["gap"] and not result["timedOut"]
+    assert [item["seq"] for item in result["events"]] == list(range(2, 10_002))
+    assert result["events"][0]["message"] == result["events"][-1]["message"] == expected
+    assert not (await state.events_after(1, 0))["gap"]
+    result["events"][-1]["message"]["changes"][0]["values"]["huge"] = 0
+    assert (await state.events_after(10_000, 0))["events"] == [{"seq": 10_001, "message": expected}]
+
+
+async def test_event_history_timeout_and_registered_longpoll_wake_keep_cursor():
+    state = store()
+    assert await state.events_after(0, 0) == {"events": [], "lastSeq": 0, "timedOut": True, "gap": False}
+    waiting = asyncio.create_task(state.events_after(0, 1))
+    await asyncio.sleep(0)
+    message = observation(values={"nil": None, "huge": 10**100})
+    state.record(message)
+    assert await waiting == {
+        "events": [{"seq": 1, "message": message.model_dump(mode="json")}],
+        "lastSeq": 1,
+        "timedOut": False,
+        "gap": False,
+    }
