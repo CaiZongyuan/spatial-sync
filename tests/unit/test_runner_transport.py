@@ -76,6 +76,7 @@ def test_importing_gateway_adapter_and_spawn_target_does_not_load_physics_engine
             sys.executable,
             "-c",
             "import sys; import apps.api.app.sources.newton_source; "
+            "import apps.api.app.sources.remote_source; import packages.transport.remote_server; "
             "import packages.sim_runtime.runner; assert 'newton' not in sys.modules; "
             "assert 'warp' not in sys.modules",
         ],

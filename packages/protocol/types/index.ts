@@ -89,6 +89,7 @@ export interface SourceInfo {
   physicsDt: number
   basePublishHz: number
   realtimeFactor: number | null
+  sampleTimeClock: 'runner-monotonic' | 'gateway-receive'
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -362,6 +363,7 @@ export interface Ready {
   basePublishHz: number
   realtimeFactor: number | null
   heartbeatIntervalMs: number
+  sampleTimeClock: 'runner-monotonic' | 'gateway-receive'
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

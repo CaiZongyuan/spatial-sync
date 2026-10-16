@@ -1,0 +1,10 @@
+{
+  "actualTlsPayloadBytes": 16777216,
+  "inputReadTimeoutSeconds": 10,
+  "packetWriterDeadlineSeconds": 0.1,
+  "closeObservationSeconds": 2,
+  "syncPeerReceiveBufferBytes": 4096,
+  "syncPeer": "real ssl.SSLSocket, no background reader after setup",
+  "result": "no writer-deadline closure established; not a passing writer-timeout receipt",
+  "conclusion": "Actual TLS evidence is complete mesh capacity and peer-loss cleanup; a separate controlled drain red/green proves deadline logic. No further backpressure experiment was run."
+}

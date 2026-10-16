@@ -1054,6 +1054,14 @@
           "default": 1000,
           "exclusiveMinimum": 0,
           "type": "number"
+        },
+        "sampleTimeClock": {
+          "default": "runner-monotonic",
+          "enum": [
+            "runner-monotonic",
+            "gateway-receive"
+          ],
+          "type": "string"
         }
       },
       "required": [
@@ -1067,7 +1075,8 @@
         "simTime",
         "basePublishHz",
         "realtimeFactor",
-        "heartbeatIntervalMs"
+        "heartbeatIntervalMs",
+        "sampleTimeClock"
       ],
       "type": "object"
     },
@@ -1704,13 +1713,22 @@
             }
           ],
           "default": 1.0
+        },
+        "sampleTimeClock": {
+          "default": "runner-monotonic",
+          "enum": [
+            "runner-monotonic",
+            "gateway-receive"
+          ],
+          "type": "string"
         }
       },
       "required": [
         "kind",
         "physicsDt",
         "basePublishHz",
-        "realtimeFactor"
+        "realtimeFactor",
+        "sampleTimeClock"
       ],
       "type": "object"
     },

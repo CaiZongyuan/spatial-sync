@@ -55,6 +55,7 @@ const ready: Ready = {
   basePublishHz: 30,
   realtimeFactor: 1,
   heartbeatIntervalMs: 1000,
+  sampleTimeClock: 'runner-monotonic',
 };
 const snapshot: TransformFrame = {
   type: 'stream.snapshot',

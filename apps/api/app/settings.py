@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from packages.transport.remote import RemoteConfig
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -18,6 +20,7 @@ class Settings:
     operator_token: str | None = None
     viewer_token: str | None = None
     remote_requests_per_minute: int = 120
+    runner_config: RemoteConfig | None = None
 
     def __post_init__(self):
         if self.remote and (not self.operator_token or not self.allowed_origins):

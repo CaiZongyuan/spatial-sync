@@ -10,7 +10,8 @@
     "simTime": 0.0,
     "basePublishHz": 30.0,
     "realtimeFactor": 1.0,
-    "heartbeatIntervalMs": 1000.0
+    "heartbeatIntervalMs": 1000.0,
+    "sampleTimeClock": "runner-monotonic"
   },
   {
     "type": "client.subscribe",

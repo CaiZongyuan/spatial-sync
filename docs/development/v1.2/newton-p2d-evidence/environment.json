@@ -1,0 +1,16 @@
+{
+  "codeCandidate": "30e330b0f9153da4ac0662e53c48e1a19e33b89c",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.13.14",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "versions": {
+    "pydantic": "2.12.4",
+    "fastapi": "0.143.2",
+    "uvicorn": "0.54.0",
+    "pytest": "9.1.1",
+    "websockets": "16.1.1",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0"
+  },
+  "savedAt": "2026-10-16T11:52:06.336537+00:00"
+}

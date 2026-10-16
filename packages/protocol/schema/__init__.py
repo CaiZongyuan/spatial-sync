@@ -240,6 +240,7 @@ class SourceInfo(Model):
     physicsDt: Positive
     basePublishHz: Positive = 30
     realtimeFactor: Positive | None = 1.0
+    sampleTimeClock: Literal["runner-monotonic", "gateway-receive"] = "runner-monotonic"
 
 
 class Coordinates(Model):
@@ -459,6 +460,7 @@ class Ready(Model):
     basePublishHz: Positive
     realtimeFactor: Positive | None
     heartbeatIntervalMs: Positive = 1000
+    sampleTimeClock: Literal["runner-monotonic", "gateway-receive"] = "runner-monotonic"
 
 
 class Viewport(Model):

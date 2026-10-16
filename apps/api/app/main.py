@@ -32,6 +32,7 @@ from packages.protocol.schema import (
     ServerError,
     Subscribe,
 )
+from packages.transport.remote import RemoteConfig
 
 CLIENT_MESSAGE = TypeAdapter(ClientMessage)
 
@@ -62,6 +63,16 @@ def create_app(
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
+    if settings.runner_config is not None and source_factory is default_source_factory:
+        from apps.api.app.sources.remote_source import RemoteSource
+
+        remote_config = settings.runner_config
+
+        def source_factory(kind, session_id):
+            if kind == remote_config.source_kind:
+                return RemoteSource(session_id, remote_config)
+            return default_source_factory(kind, session_id)
+
     manager = SessionManager(settings, source_factory)
     asset_registry = asset_registry or AssetRegistry.from_file()
 
@@ -272,6 +283,7 @@ def create_app(
                     basePublishHz=session.options.basePublishHz,
                     realtimeFactor=session.options.realtimeFactor,
                     heartbeatIntervalMs=settings.heartbeat_interval_seconds * 1000,
+                    sampleTimeClock=session.manifest.source.sampleTimeClock,
                 )
             )
         )
@@ -327,6 +339,7 @@ def create_app(
 
 app = create_app(
     Settings(
+        runner_config=RemoteConfig.from_env(),
         remote=os.getenv("SPATIAL_REMOTE") == "1",
         operator_token=os.getenv("SPATIAL_OPERATOR_TOKEN"),
         viewer_token=os.getenv("SPATIAL_VIEWER_TOKEN"),

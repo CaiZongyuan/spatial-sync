@@ -1,0 +1,41 @@
+{
+  "codeCandidate": "ab9fdc520d3ad9053f6fd9995ca52567acde949c",
+  "hashMode": "UTF-8 text bytes normalize CRLF to LF",
+  "files": [
+    {
+      "path": "client-query-green.xml",
+      "bytes": 1225,
+      "sha256": "673ebd7c082315c56cb3892e0b7023f23219113505bd6c867fe96c2d6b11e716"
+    },
+    {
+      "path": "client-query-red.xml",
+      "bytes": 3162,
+      "sha256": "f16917c6563f583a9e86076ce7cc9693f411f3c10f3abc866826ba3b6ef72789"
+    },
+    {
+      "path": "integration-affected.xml",
+      "bytes": 7976,
+      "sha256": "bd786c1a893d01bd1d3211d3a268570a0255717a014e18d8d3c9600db4d52598"
+    },
+    {
+      "path": "integration-newton-cpu.xml",
+      "bytes": 1279,
+      "sha256": "d2b894a2f2b9fe687b765321158ee72868c6bd4e3f4682b7c1d99808662fbfcb"
+    },
+    {
+      "path": "integration-stress-green.xml",
+      "bytes": 974,
+      "sha256": "a26033b797e440723cabf627be1f9d7bf6abfcda393f1ea7eec0ee04c36e7422"
+    },
+    {
+      "path": "integration-stress-red.xml",
+      "bytes": 2414,
+      "sha256": "9dfa30210a8aac7c89910cbd560010db5340d357194bdbb6ea42b36eff87b4d2"
+    },
+    {
+      "path": "summary.json",
+      "bytes": 4082,
+      "sha256": "e57ce340946ff69278ea228b9fd8d0052ce056db4ed9de365543098fab233d2c"
+    }
+  ]
+}
