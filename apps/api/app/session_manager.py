@@ -219,7 +219,7 @@ class Session:
         return value if value is not None and value.status in TERMINAL else None
 
     def _record_json(self, message, payload):
-        if self.recording and self._recording_revision_ready:
+        if self.recording:
             self.recording.append_json(
                 payload,
                 getattr(message, "sampleTimeMs", time.monotonic() * 1000),
@@ -467,7 +467,8 @@ class Session:
     def broadcast_info(self, message):
         self.info.record(message)
         payload = encode(message)
-        self._record_json(message, payload)
+        if self._recording_revision_ready:
+            self._record_json(message, payload)
         for client in tuple(self.clients):
             if client.subscribed and client.info:
                 client.enqueue_reliable(payload)

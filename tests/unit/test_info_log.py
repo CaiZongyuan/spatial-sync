@@ -303,3 +303,40 @@ async def test_authoritative_entity_snapshot_removes_old_active_invocation_from_
     await log.close()
     records = read_segment((tmp_path / "session-test/seg-000002.bin").read_bytes()).records
     assert json.loads(records[1].payload)["invocations"] == []
+
+
+@pytest.mark.parametrize("header", [b"", b"LW", b"LWLG\x01"])
+def test_crash_before_first_segment_header_flush_still_recovers_incomplete(tmp_path, header):
+    directory = tmp_path / "session-crashed"
+    directory.mkdir()
+    (directory / "recording.json").write_text(
+        json.dumps(
+            {
+                "formatVersion": 1,
+                "protocolVersion": 2,
+                "sessionId": directory.name,
+                "status": "recording",
+                "segments": [],
+            }
+        )
+    )
+    (directory / "seg-000001.bin").write_bytes(header)
+    recover_recordings(tmp_path)
+    metadata = json.loads((directory / "recording.json").read_bytes())
+    assert metadata["status"] == "incomplete"
+    assert metadata["durationMs"] == 0 and metadata["segments"] == []
+
+
+async def test_crash_in_later_segment_header_keeps_earlier_playable_segment(tmp_path):
+    log = new_log(tmp_path)
+    log.append_frame(frame(3400, 2), 3400)
+    await log.close()
+    directory = tmp_path / "session-test"
+    metadata = json.loads((directory / "recording.json").read_bytes())
+    metadata["status"] = "recording"
+    (directory / "recording.json").write_text(json.dumps(metadata))
+    (directory / "seg-000002.bin").write_bytes(b"LW")
+    recover_recordings(tmp_path)
+    recovered = json.loads((directory / "recording.json").read_bytes())
+    assert recovered["status"] == "incomplete" and recovered["durationMs"] == 2400
+    assert [segment["file"] for segment in recovered["segments"]] == ["seg-000001.bin"]

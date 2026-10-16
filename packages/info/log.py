@@ -117,14 +117,20 @@ def recover_recordings(root: Path):
             metadata = json.loads(metadata_file.read_bytes())
             if metadata.get("formatVersion") != 1 or metadata.get("status") != "recording":
                 continue
+            metadata["status"] = "incomplete"
             metadata["segments"] = []
             for path in sorted(directory.glob("seg-*.bin")):
                 if path.is_symlink():
                     continue
-                result = read_segment(path.read_bytes())
-                if len(result.records) >= 2:
-                    metadata["segments"].append(segment_metadata(path.name, result))
-            metadata["status"] = "incomplete"
+                try:
+                    result = read_segment(path.read_bytes())
+                    if len(result.records) >= 2:
+                        metadata["segments"].append(segment_metadata(path.name, result))
+                except (OSError, ValueError, KeyError, struct.error):
+                    # A crash can precede even the first buffered header flush.
+                    # Keep every independently playable segment and still close
+                    # the known recording when this segment has no valid prefix.
+                    continue
             _duration(metadata)
             _atomic_json(metadata_file, metadata)
         except (OSError, ValueError, KeyError, struct.error):

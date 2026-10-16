@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from apps.api.app.sources.synthetic_source import SyntheticSource
 from packages.info.log import read_segment
 
 
@@ -176,3 +177,68 @@ def test_remote_recording_files_and_list_share_viewer_authorization(tmp_path):
                 ).status_code
                 == 403
             )
+
+
+def recorded_messages(root, sid):
+    metadata = json.loads((root / sid / "recording.json").read_bytes())
+    return [
+        json.loads(record.payload)
+        for segment in metadata["segments"]
+        for record in read_segment((root / sid / segment["file"]).read_bytes()).records
+        if record.kind == 2
+    ]
+
+
+def test_failed_reload_records_global_loading_error_failed_and_stopped_broadcasts(tmp_path):
+    calls = 0
+
+    def factory(kind, sid):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("Injected reload startup failure")
+        return SyntheticSource(sid)
+
+    with TestClient(create_app(Settings(recordings_root=tmp_path), source_factory=factory)) as client:
+        session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
+        sid = session["sessionId"]
+        route = f"/api/v1/sessions/{sid}"
+        assert client.post(route + "/reload").status_code == 503
+        assert client.get(route).json()["state"] == "FAILED"
+        assert client.delete(route).status_code == 204
+        messages = recorded_messages(tmp_path, sid)
+        assert [message["state"] for message in messages if message["type"] == "session.state"] == [
+            "RUNNING",
+            "STOPPING",
+            "LOADING",
+            "FAILED",
+            "STOPPING",
+            "STOPPED",
+        ]
+        assert [message["code"] for message in messages if message["type"] == "server.error"] == [
+            "source_unavailable"
+        ]
+
+
+def test_normal_reload_records_old_loading_before_independent_new_revision_prefix(tmp_path):
+    with TestClient(create_app(Settings(recordings_root=tmp_path))) as client:
+        session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
+        sid = session["sessionId"]
+        route = f"/api/v1/sessions/{sid}"
+        replacement = client.post(route + "/reload").json()
+        assert client.delete(route).status_code == 204
+        messages = recorded_messages(tmp_path, sid)
+        loading = [
+            message
+            for message in messages
+            if message["type"] == "session.state" and message["state"] == "LOADING"
+        ]
+        assert len(loading) == 1 and loading[0]["sceneRevision"] == session["sceneRevision"]
+        replaced = next(message for message in messages if message["type"] == "scene.replaced")
+        assert replaced["sceneRevision"] == replacement["sceneRevision"] != session["sceneRevision"]
+        metadata = json.loads((tmp_path / sid / "recording.json").read_bytes())
+        assert len(metadata["segments"]) == len(metadata["revisions"]) == 2
+        for segment in metadata["segments"]:
+            records = read_segment((tmp_path / sid / segment["file"]).read_bytes()).records
+            assert records[0].kind == 1
+            assert json.loads(records[1].payload)["sceneRevision"] == segment["sceneRevision"]
