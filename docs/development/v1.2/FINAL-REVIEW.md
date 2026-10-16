@@ -15,3 +15,7 @@ Repair ownership: `/root/gateway_repair` owns authentication and failed-start li
 Optional Standards suggestion: move the shared scene registry out of session orchestration while retaining one source/scene compatibility authority. This is a maintenance proposal, not a delivery blocker.
 
 The suggested 45 FPS target is unmet under SwiftShader. No hardware-renderer, WAN, end-to-end freshness or solver-overlap improvement was proved. Those limits remain explicit; they do not excuse the mandatory gaps above.
+
+## Gateway repair integration
+
+`40e1a8efe272f0e845bb73e2604c053a3bfc4811` was merged at `465a152518437051e637a3213212c7f083eb8414`. PM independently inspected the code/tests and ran all five public repair regressions: **5 passed in 0.88 s**, with unraisable warnings treated as errors. The author's complete base gate passed **170 tests, 1 optional skip in 14.26 s**; full Ruff passed. The repair additionally stages startup through initial observer policy, guards source-backed queries after failure, and guarantees WebSocket pump cleanup under ASGI cancellation. See [the repair evidence](FINAL-gateway-repair.md). Complete-candidate independent review and final validation remain pending with the source-interest repair.

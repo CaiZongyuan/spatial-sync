@@ -1,6 +1,6 @@
 # Newton Spatial Sync — current checkpoint
 
-Snapshot: 2026-10-16T12:45:42.112Z
+Snapshot: 2026-10-16T13:00:48.929Z
 Task status (PM supplied): in-progress
 
 ## Goal and scope
@@ -15,7 +15,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **revision**
 
-> 5d6533f67e1fec0cd457d0843eddcafffa74f291 plus PM documentation
+> 465a152518437051e637a3213212c7f083eb8414 plus PM documentation
 
 **authorization**
 
@@ -23,7 +23,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **next**
 
-> Repair four mandatory final-review gaps, inspect first GPU-interest safety example, integrate repairs, then refresh complete final gates and affected independent review.
+> Finish FINAL-S source interests/full snapshots and diagnostics; inspect integrated transition behavior; refresh final gates and independent review.
 
 **roles**
 
@@ -34,7 +34,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 >     "ticket": "v1.2"
 >   },
 >   {
->     "role": "Gateway review repairs",
+>     "role": "Gateway repair author (parked after integration)",
 >     "owner": "/root/gateway_repair",
 >     "ticket": "FINAL-G"
 >   },
@@ -76,23 +76,23 @@ The generator does not infer completion, authorization, or merge readiness from 
 - P2-A: Binary transform stream — integrated
   Pending: Final full-head validation/review; persistent generated LF checkout repair integrated with B
 - P2-B: Scopes, cumulative deltas and keyframes — integrated
-  Pending: C-owned actual mesh/instance/Site/raycast visibility must close overall subscription acceptance; Final complete-head checks and independent review
+  Pending: Final complete-head checks/review; actual renderer/raycast condition closed by C; GPU interest repair tracked as FINAL-S
 - P2-C: GPU extraction and render scaling — integrated
-  Pending: Instancing/selection/LOD/culling and complete scoped visibility; Actual Warp gather/readback/Pipe benchmark; shared memory only if justified; Comparable critical repeats with exclusive heavy resources
+  Pending: Mandatory active-observer GPU interest filtering and diagnostics tracked as FINAL-S; Final complete-head validation/review; suggested45FPS unmet under software WebGL
 - P2-D: Remote Runner transport — integrated
-  Pending: Implement typed bounded control/frame channels, sampleTimeClock and receipt stamping; Real loopback/publicGateway failure/cleanup/auth/cert tests and optional NewtonCPU journey
-- FINAL-G: Authentication and failed-replacement lifecycle repairs — in-progress
-  Pending: Public malformed bearer rejection; Failed reload/restart details and live heartbeats
+  Pending: Refresh source-interest/diagnostics delta through TLS in FINAL-S; Final complete-head validation and independent review
+- FINAL-G: Authentication and failed-replacement lifecycle repairs — integrated
+  Pending: Affected complete-candidate independent review and final gates
 - FINAL-S: Subscription-driven GPU targets and complete diagnostics — in-progress
   Pending: GPU interests with complete recovery snapshots; Actual Shape count and Runner heartbeat
 
 ## Recent recorded facts
 
+- 2026-10-16T13:06:28.540Z: Independent first variable-gather CPU oracle passed — passed; actor Unknown; revision 3eb0c71 source branch including6459339 and465a152
+- 2026-10-16T13:00:48.929Z: Authentication and failed-source recovery repair integrated — passed; actor Unknown; revision 465a152518437051e637a3213212c7f083eb8414
+- 2026-10-16T12:57:09.410Z: Accepted first concrete variable-target safety oracle — passed; actor Unknown; revision review-source working tree based5d6533f
 - 2026-10-16T12:45:42.112Z: Final independent review found four mandatory gaps; repairs dispatched — failed; actor Unknown; revision 5d6533f67e1fec0cd457d0843eddcafffa74f291
 - 2026-10-16T12:18:42.870Z: Shared registry and client read-only deadline repairs verified — passed; actor Unknown; revision ab9fdc520d3ad9053f6fd9995ca52567acde949c
-- 2026-10-16T11:55:58.880Z: Complete bounded failure coverage and final delivery — passed; actor Unknown; revision 30e330b0f9153da4ac0662e53c48e1a19e33b89c
-- 2026-10-16T11:55:58.880Z: Narrow unsupported TLS timeout claim; verified controlled deadline red/green — passed; actor Unknown; revision 30e330b0f9153da4ac0662e53c48e1a19e33b89c
-- 2026-10-16T10:45:15.813Z: Preserve unknown-owner paused scene; freeze existing UI build — passed; actor Unknown; revision Unknown
 
 ## Resources
 
@@ -109,10 +109,9 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 ## Evidence
 
+- [Repair design, red/green and complete checks](./FINAL-gateway-repair.md)
 - [Frozen-candidate findings and repair acceptance](./FINAL-REVIEW.md)
 - [Repair evidence](./newton-p2d-evidence/integration-refresh/summary.json)
-- [Final check receipt](./P2-D-validation.txt)
-- [Scope and evidence limits](./P2-D.md)
 - [Real engine findings](./P0-A.md)
 - [Review and repair record](./P0-C-review.md)
 - [Browser evidence](./P0-D.md)

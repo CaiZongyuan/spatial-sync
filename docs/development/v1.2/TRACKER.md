@@ -19,7 +19,7 @@ The repository has no remote tracker or remote Git origin. This file is the task
 | P2-B Subscriptions/keyframes | Protocol developer (parked) | `issue/p2-b-subscriptions` | Integrated | `930aaca` via `9a93c83`; real JSON/binary stream and C renderer/raycast verification retained; GPU interest repair below |
 | P2-C Extraction/scaling | Viewer developer (parked) | `issue/p2-c-scaling` / `../spatial-sync-worktrees/p2-c` | Integrated with review gap | `0cf3e25` integrated; stress/render/readback evidence retained; active-observer GPU target repair below |
 | P2-D Remote transport | Newton developer | `issue/p2-d-remote` / `../spatial-sync-worktrees/p2-d` | Integrated | `15c2bcc` via `5d6533f`; TLS auth, shared scene registry, read-only deadline recovery, real CPU/browser evidence |
-| FINAL-G Gateway repair | `/root/gateway_repair` | `issue/v1.2-gateway-review` / `../spatial-sync-worktrees/review-gateway` | In progress | Malformed credentials reject cleanly; failed reload/restart retain error and heartbeats and recover |
+| FINAL-G Gateway repair | `/root/gateway_repair` | `issue/v1.2-gateway-review` / `../spatial-sync-worktrees/review-gateway` | Integrated | `40e1a8e` via `465a152`; PM5public regressions and author170base checks pass; complete final review pending |
 | FINAL-S Source repair | `/root/newton` | `issue/v1.2-source-review` / `../spatial-sync-worktrees/review-source` | In progress | Subscription-driven GPU gather plus complete snapshot recovery; actual Shape/Runner heartbeat diagnostics |
 
 PM owns integration, tracker, reports and resource allocation. Independent Developers own source implementation. Final review uses non-authors, with Standards and Spec reported separately. The installed Matt implementation/retro entrypoints have no runtime-specific tracker configuration; direct developer dispatch and the installed thin methods are the host equivalent.
@@ -36,9 +36,9 @@ PM owns integration, tracker, reports and resource allocation. Independent Devel
 
 ## Current continuation
 
-Integrated candidate is `5d6533f67e1fec0cd457d0843eddcafffa74f291`. Phase0/1 and P2 A?D code are integrated; final acceptance remains open because independent Standards/Spec reviews found four mandatory gaps. See [findings and repair acceptance](FINAL-REVIEW.md). No scope or specification relaxation was accepted.
+Integrated candidate is `465a152518437051e637a3213212c7f083eb8414` including Gateway repair. Phase0/1 and P2 A?D code are integrated; final acceptance remains open because independent Standards/Spec reviews found four mandatory gaps. See [findings and repair acceptance](FINAL-REVIEW.md). No scope or specification relaxation was accepted.
 
-Two isolated repair authors are active, root plus two children only. Gateway owns authentication and source-failure lifecycle; Newton owns source interests/snapshots/local+TLS transport and diagnostics. Their shared session-manager changes require integration inspection. The first GPU-interest safety example needs a bounded PM check before broad validation. After integration, refresh affected independent review, complete GPU-free gates, actual browser journeys, and affected CPU/CUDA/TLS paths.
+Gateway repair is integrated and its author parked; Source repair remains active. Root plus at most two children only. Gateway owns authentication and source-failure lifecycle; Newton owns source interests/snapshots/local+TLS transport and diagnostics. Their shared session-manager changes require integration inspection. The first GPU-interest safety example needs a bounded PM check before broad validation. After integration, refresh affected independent review, complete GPU-free gates, actual browser journeys, and affected CPU/CUDA/TLS paths.
 
 Before repairs, final root checks passed165Python (1optional skipped) without Newton/Warp,64Web,6TS,regeneration,build and full Ruff. Final integrated browser/optional source journeys are pending. SwiftShader render measurements do not prove a hardware FPS result; suggested45FPS remains unmet, including two valid10k runs near4.03FPS. No shared-memory, solver-overlap, WAN or end-to-end freshness improvement is claimed.
 
