@@ -36,7 +36,9 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   expect(manifestResponse.ok()).toBe(true);
   const manifest = (await manifestResponse.json()) as SceneManifest;
   const site = manifest.sites.find(
-    (site) => site.parentBodyKey && Math.hypot(...site.localPose.p) > 0.01,
+    (site) =>
+      site.parentBodyKey === '/World/Lab/Centrifuge/Rotor' &&
+      Math.hypot(...site.localPose.p) > 0.01,
   )!;
   expect(site).toBeTruthy();
   const body = manifest.nodes.find(
@@ -53,14 +55,44 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     )
     .toBe(3);
   const initialRendered = await page.evaluate(
-    (key) => window.__spatialDebug?.getRenderedPose(key)?.p,
+    (key) => window.__spatialDebug?.getRenderedPose(key),
     body.entityKey,
   );
+  // Device programs remain idle until called. Drive the Site's actual parent;
+  // its origin stays fixed while its quaternion rotates the offset Site.
+  const closed = await request.post(
+    `${api}/api/v1/sessions/${sessionId}/actions`,
+    {
+      data: {
+        requestId: 'workbench-close-lid',
+        entityKey: '/World/Lab/Centrifuge',
+        action: 'closeLid',
+        params: {},
+        wait: true,
+        timeoutSeconds: 5,
+      },
+    },
+  );
+  expect(closed.ok()).toBe(true);
+  expect((await closed.json()).status).toBe('succeeded');
+  const started = await request.post(
+    `${api}/api/v1/sessions/${sessionId}/actions`,
+    {
+      data: {
+        requestId: 'workbench-start',
+        entityKey: '/World/Lab/Centrifuge',
+        action: 'start',
+        params: { rpm: 500, durationSeconds: 60 },
+      },
+    },
+  );
+  expect(started.status()).toBe(202);
+  expect(['accepted', 'running']).toContain((await started.json()).status);
   await expect
     .poll(async () =>
       JSON.stringify(
         await page.evaluate(
-          (key) => window.__spatialDebug?.getRenderedPose(key)?.p,
+          (key) => window.__spatialDebug?.getRenderedPose(key),
           body.entityKey,
         ),
       ),
