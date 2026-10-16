@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 import uuid
@@ -56,7 +57,12 @@ SCENES = [
 
 def encode(model) -> str:
     data = model.model_dump(mode="json", exclude_none=True) if hasattr(model, "model_dump") else model
-    return orjson.dumps(data).decode("utf-8")
+    try:
+        return orjson.dumps(data).decode("utf-8")
+    except TypeError:
+        # Rejected untrusted JSON can contain integers outside orjson's 64-bit
+        # range. Preserve the original audit value without changing the hot path.
+        return json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
 
 
 def default_source_factory(kind: str, session_id: str) -> SpatialSource:
@@ -132,9 +138,7 @@ class Session:
             if self.info is None:
                 self.info = StateStore(manifest.sceneRevision)
             else:
-                self.info.scene_revision = manifest.sceneRevision
-                self.info.epoch = 0
-                self.info.entities.clear()
+                self.info.configure(manifest.sceneRevision)
             previous_table = self.pipeline.table if self.pipeline else None
             if self.pipeline:
                 self.pipeline.close()
@@ -562,6 +566,14 @@ class Session:
                         state = result.state.model_copy(update={"seq": result.state.seq + self._seq_offset})
                         self._apply_state(state)
                         self.broadcast(state)
+                    if ack.status == "applied" and command.command == "reset":
+                        self.pipeline.fail_active("session_reset", "Session was reset")
+                        snapshot = (
+                            self.source.entity_snapshot()
+                            if callable(getattr(self.source, "entity_snapshot", None))
+                            else EntitySnapshot(sceneRevision=self.manifest.sceneRevision, epoch=self.epoch)
+                        )
+                        self.apply_info(snapshot)
                     if ack.status == "applied" and command.command in ("pause", "resume"):
                         self._auto_paused = False
                     if client.role == "operator":

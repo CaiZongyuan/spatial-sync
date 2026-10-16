@@ -14,11 +14,23 @@ class StateStore:
         self._events = deque(maxlen=10_000)
         self.event_seq = 0
         self._changed = asyncio.Event()
+        self._snapshot_time = -1
+
+    def configure(self, scene_revision, epoch=0):
+        self.scene_revision, self.epoch = scene_revision, epoch
+        self.entities.clear()
+        self._snapshot_time = -1
+        for waiters in self._waiters.values():
+            for waiter in waiters:
+                waiter.set()
 
     def apply(self, message):
         if message.sceneRevision != self.scene_revision or message.epoch < self.epoch:
             return False
         if isinstance(message, EntitySnapshot):
+            if message.epoch == self.epoch and message.sampleTimeMs < self._snapshot_time:
+                return False
+            self._snapshot_time = message.sampleTimeMs
             self.epoch = message.epoch
             self.entities = {entity.key: entity.model_copy(deep=True) for entity in message.entities}
             for waiters in self._waiters.values():

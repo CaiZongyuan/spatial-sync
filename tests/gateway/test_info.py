@@ -510,7 +510,12 @@ async def test_dispatch_timeout_is_bounded_and_concurrent_reset_cancels_reserved
             task = asyncio.create_task(
                 client.post(
                     route + "/actions",
-                    json={"requestId": "reload-reserved", "entityKey": CENTRIFUGE, "action": "closeLid"},
+                    json={
+                        "requestId": "reload-reserved",
+                        "entityKey": ROBOT,
+                        "action": "moveJoints",
+                        "params": {"positions": [1, 0.3, -0.6, 0, 0, 0, 0]},
+                    },
                 )
             )
             await asyncio.sleep(0.02)
@@ -643,6 +648,143 @@ def test_remote_mutation_limit_is_shared_by_actions_cancellation_approval_and_co
                 assert error["type"] == "server.error", error
                 assert error["code"] == "invalid_message" and "rate limit" in error["message"].lower()
         assert len(client.get(route + "/invocations", params={"limit": 1000}).json()["invocations"]) == 60
+
+
+@pytest.mark.parametrize("rpm", [10**20, 10**1000], ids=["over64bits", "overfloatrange"])
+def test_oversized_numeric_parameter_is_rejected_and_audited_without_losing_original_integer(rpm):
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        session, route = create(client, realtimeFactor=10)
+        with client.websocket_connect(route + "/ws") as ws:
+            until(ws, "server.ready")
+            ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"]})
+            until(ws, "entity.snapshot")
+            rejected = action(
+                client, route, "huge-number", "start", params={"rpm": rpm, "durationSeconds": 1}
+            )
+            assert rejected.status_code == 422, rejected.text
+            value = rejected.json()
+            assert value["error"]["code"] == "invalid_params" and value["params"]["rpm"] == rpm
+            observed = until(ws, "invocation.update", requestId="huge-number")
+            assert observed["params"]["rpm"] == rpm
+        retained = client.get(route + f"/invocations/{value['invocationId']}")
+        assert retained.status_code == 200 and retained.json()["params"]["rpm"] == rpm
+        assert (
+            action(client, route, "healthy-after-number", "closeLid", wait=True).json()["status"]
+            == "succeeded"
+        )
+
+
+def test_authoritative_acceptance_precedes_running_even_when_direct_reply_is_delayed():
+    class DelayedReplySource(SyntheticSource):
+        async def invoke(self, request):
+            accepted = await super().invoke(request)
+            await asyncio.sleep(0.08)
+            return accepted
+
+    with TestClient(create_app(source_factory=lambda kind, sid: DelayedReplySource(sid))) as client:
+        session, route = create(client, realtimeFactor=10)
+        with client.websocket_connect(route + "/ws") as ws:
+            until(ws, "server.ready")
+            ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"]})
+            until(ws, "entity.snapshot")
+            ws.send_json(
+                {
+                    "type": "action.request",
+                    "requestId": "delayed-acceptance",
+                    "entityKey": CENTRIFUGE,
+                    "action": "closeLid",
+                }
+            )
+            statuses = []
+            for _ in range(100):
+                message = receive_message(ws)
+                if message["type"] == "invocation.update" and message["requestId"] == "delayed-acceptance":
+                    statuses.append(message["status"])
+                    if message["status"] == "succeeded":
+                        break
+            assert statuses[0] == "accepted" and statuses[-1] == "succeeded", statuses
+            assert "running" in statuses
+
+
+def test_unrepresentable_json_number_returns_structured_validation_error_and_keeps_gateway_usable():
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        _, route = create(client)
+        response = client.post(
+            route + "/actions",
+            headers={"Content-Type": "application/json"},
+            content='{"requestId":"infinite-literal","entityKey":"/World/Lab/Centrifuge",'
+            '"action":"start","params":{"rpm":1e1000,"durationSeconds":1}}',
+        )
+        assert response.status_code == 422, response.text
+        assert any(
+            item["type"] == "finite_number" and "rpm" in item["loc"] for item in response.json()["detail"]
+        )
+        assert client.get("/api/v1/health").json()["status"] == "ok"
+
+
+def test_reset_acknowledgement_closes_old_work_before_delayed_information_snapshot():
+    class DelayedResetSnapshot(SyntheticSource):
+        def __init__(self, session_id):
+            super().__init__(session_id)
+            self.deferred = self.forwarded = False
+            self.defer_task = None
+
+        async def events(self):
+            async for event in super().events():
+                if isinstance(event, EntitySnapshot) and event.epoch == 1 and not self.deferred:
+                    self.deferred = True
+
+                    async def later(snapshot):
+                        await asyncio.sleep(0.15)
+                        self._events.put_nowait(snapshot)
+
+                    self.defer_task = asyncio.create_task(later(event))
+                    continue
+                yield event
+                if isinstance(event, EntitySnapshot) and event.epoch == 1:
+                    self.forwarded = True
+
+        def stats(self):
+            return {"deferredResetSnapshotApplied": self.forwarded}
+
+        async def close(self):
+            if self.defer_task:
+                self.defer_task.cancel()
+                await asyncio.gather(self.defer_task, return_exceptions=True)
+            await super().close()
+
+    with TestClient(create_app(source_factory=lambda kind, sid: DelayedResetSnapshot(sid))) as client:
+        _, route = create(client)
+        original = action(client, route, "before-reset", "closeLid").json()
+        with client.websocket_connect(route + "/ws") as ws:
+            until(ws, "server.ready")
+            assert control(ws, "reset-barrier", "reset")["status"] == "applied"
+            ended = client.get(route + f"/invocations/{original['invocationId']}").json()
+            assert ended["status"] == "failed" and ended["error"]["code"] == "session_reset"
+            cursor = client.get(route + "/events", params={"after": 0, "timeoutSeconds": 0}).json()["lastSeq"]
+            fresh = action(client, route, "after-reset", "closeLid")
+            assert fresh.status_code == 202 and fresh.json()["epoch"] == 1, fresh.text
+            moving = action(
+                client,
+                route,
+                "moving-after-reset",
+                "moveJoints",
+                key=ROBOT,
+                params={"positions": [1, 0.3, -0.6, 0, 0, 0, 0]},
+            )
+            assert moving.status_code == 202
+            deadline = time.monotonic() + 2
+            while not client.get(route + "/stats").json()["deferredResetSnapshotApplied"]:
+                assert time.monotonic() < deadline
+                time.sleep(0.005)
+            robot = client.get(route + "/state", params={"keys": ROBOT}).json()["entities"][ROBOT]
+            assert robot["values"]["phase"] == "moving"
+            active = client.get(route + "/entity", params={"key": CENTRIFUGE}).json()["active"]
+            assert fresh.json()["invocationId"] in {item["invocationId"] for item in active}
+            following = client.get(route + "/events", params={"after": cursor, "timeoutSeconds": 0}).json()[
+                "events"
+            ]
+            assert not any(item["message"]["type"] == "entity.snapshot" for item in following)
 
 
 def test_session_deduplication_survives_terminal_eviction_and_event_gap_is_explicit():

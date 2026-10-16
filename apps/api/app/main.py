@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hmac
+import math
 import os
 import time
 from collections import defaultdict, deque
@@ -13,6 +14,8 @@ from typing import Literal
 
 import anyio
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError
@@ -41,6 +44,16 @@ from packages.protocol.schema import (
 )
 
 CLIENT_MESSAGE = TypeAdapter(ClientMessage)
+
+
+def _validation_diagnostics(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        return f"<non-finite: {value}>"
+    if isinstance(value, list):
+        return [_validation_diagnostics(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _validation_diagnostics(item) for key, item in value.items()}
+    return value
 
 
 class CreateSession(Model):
@@ -88,6 +101,15 @@ def create_app(
         await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, error):
+        # A valid JSON numeric literal can overflow the parser's float range.
+        # Its diagnostic input must itself remain valid JSON in the 422 response.
+        return JSONResponse(
+            {"detail": _validation_diagnostics(jsonable_encoder(error.errors()))}, status_code=422
+        )
+
     app.state.manager, app.state.settings = manager, settings
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     request_times = defaultdict(deque)
