@@ -104,7 +104,10 @@ async def benchmark_log(directory: Path, *, frames=1024, bodies=2048):
     ordered = sorted(lags)
     p95 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))] if ordered else 0
     return {
-        "scope": "writer admission through completed drain/buffered flush/metadata; file output verified; no fsync",
+        "scope": (
+            "writer admission through drain/flush/metadata; "
+            "verified file output; buffered flush, no fsync"
+        ),
         "frames": frames,
         "bodiesPerFrame": bodies,
         "verifiedDataFrames": data_frames,
