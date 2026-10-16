@@ -20,7 +20,7 @@ async def test_spawned_source_preserves_command_frames_reset_seq_and_cleanup(dev
         initial = source.latest_frame()
         assert manifest.sessionId == "source-test"
         assert source.stats()["runnerPID"] != os.getpid()
-        assert source.stats()["gatherMode"] == "manifest-targets-full-recovery"
+        assert source.stats()["gatherMode"] == "subscription-union-periodic-full-control"
         bodies = [node for node in manifest.nodes if node.kind == "body"]
         assert source.stats()["gatherBodyCount"] == len(bodies)
         assert {row[0] for row in initial.poses} == {node.streamId for node in bodies}

@@ -241,6 +241,7 @@ class SourceInfo(Model):
     basePublishHz: Positive = 30
     realtimeFactor: Positive | None = 1.0
     sampleTimeClock: Literal["runner-monotonic", "gateway-receive"] = "runner-monotonic"
+    shapeCount: UInt32 | None = None
 
 
 class Coordinates(Model):

@@ -194,6 +194,7 @@ def export_manifest(
                 "physicsDt": sim.physics_dt,
                 "basePublishHz": publish_hz,
                 "realtimeFactor": realtime_factor,
+                "shapeCount": int(model.shape_count),
             },
             "nodes": [*groups.values(), *nodes],
             "sites": sites,

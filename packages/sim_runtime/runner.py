@@ -46,6 +46,10 @@ class _Runner:
             strict_labels=options.strictLabels,
         )
         body_indices, self.stream_ids = _body_targets(self.manifest)
+        self.body_indices = body_indices
+        self._body_by_stream = dict(zip(self.stream_ids, body_indices, strict=True))
+        self._interest = None
+        self._last_complete = None
         self.extractor = TransformExtractor(
             self.sim.model.body_count, device=self.sim.model.device, body_indices=body_indices
         )
@@ -76,6 +80,8 @@ class _Runner:
         wp.synchronize_device(self.sim.model.device)
         self._joint_starts = self.sim.model.joint_q_start.numpy()
         self._joint_keys = {joint.entityKey: index for index, joint in enumerate(self.manifest.joints)}
+        self._heartbeat_seq = 1
+        self._heartbeat_at = time.monotonic()
 
     def stats(self):
         return {
@@ -88,9 +94,14 @@ class _Runner:
             "gatherEnqueueMs": self.extractor.enqueue_ms,
             "hostCopyMs": self.extractor.host_copy_ms,
             "poseFilterMs": self.extractor.filter_ms,
-            "gatherBodyCount": len(self.stream_ids),
+            "gatherBodyCount": len(self.stream_ids) if self._interest is None else len(self._interest),
+            "readbackBodyCount": self.extractor.last_metrics.get("readbackBodies", 0),
+            "readbackBytes": self.extractor.last_metrics.get("readbackBytes", 0),
             "modelBodyCount": self.sim.model.body_count,
-            "gatherMode": "manifest-targets-full-recovery",
+            "shapeCount": int(self.sim.model.shape_count),
+            "gatherMode": "subscription-union-periodic-full-control",
+            "runnerHeartbeatSeq": self._heartbeat_seq,
+            "runnerHeartbeatMs": (time.monotonic() - self._heartbeat_at) * 1000,
             "publish_ms": self.publish_ms,
             "readbackMode": self.extractor.readback_mode,
             "stepHz": self.step_hz,
@@ -98,13 +109,19 @@ class _Runner:
             "invalidCounts": {
                 "total": self.extractor.filter.total_invalid,
                 "consecutiveByBody": self.extractor.filter.consecutive_invalid.tolist(),
-                "newtonBodyIndices": self.extractor.body_indices.tolist(),
+                "newtonBodyIndices": list(range(self.sim.model.body_count)),
             },
             "droppedPeriodicFrames": self.frames.slot.overwritten + self.extractor.dropped_captures,
             "droppedCatchupSeconds": self.pacer.dropped_wall_seconds,
         }
 
     def _frame(self, kind="transform.frame", *, reliable=False):
+        stream_ids = (
+            self.stream_ids
+            if reliable or self._interest is None
+            else [value for value in self.stream_ids if value in self._interest]
+        )
+        body_indices = [self._body_by_stream[value] for value in stream_ids]
         self.seq += 1
         metadata = {
             "type": kind,
@@ -119,9 +136,7 @@ class _Runner:
         def make_frame(poses):
             return TransformFrame(
                 **metadata,
-                poses=[
-                    (stream_id, *row) for stream_id, row in zip(self.stream_ids, poses.tolist(), strict=True)
-                ],
+                poses=[(stream_id, *row) for stream_id, row in zip(stream_ids, poses.tolist(), strict=True)],
             )
 
         def publish(poses):
@@ -132,17 +147,19 @@ class _Runner:
 
         future = self.extractor.capture(
             self.sim.state.body_q,
+            body_indices=body_indices,
             on_complete=None if reliable else publish,
             block=reliable,
         )
         if reliable:
             frame = make_frame(future.result(timeout=5))
+            self._last_complete = frame
             self._warn_invalid_poses()
             return frame
         return None
 
     def _warn_invalid_poses(self):
-        indices = [int(self.extractor.body_indices[index]) for index in self.extractor.filter.warning_indices]
+        indices = self.extractor.filter.warning_indices
         if indices:
             self.control.offer(
                 {
@@ -223,6 +240,29 @@ class _Runner:
         if kind == "close":
             self.control.offer({"kind": "closed", "token": token})
             return False
+        if kind in ("interest", "snapshot"):
+            if kind == "interest":
+                values = packet["streamIds"]
+                if values is not None and (
+                    any(type(value) is not int for value in values)
+                    or len(values) != len(set(values))
+                    or not set(values) <= self._body_by_stream.keys()
+                ):
+                    raise ValueError("Unknown or invalid interest stream IDs")
+                self._interest = None if values is None else frozenset(values)
+            frame = self._last_complete if self.sim.paused else None
+            if frame is None:
+                frame = self._frame("stream.snapshot", reliable=True)
+            self.control.offer(
+                {
+                    "kind": kind + "_result",
+                    "token": token,
+                    "frame": frame.model_copy(update={"type": "stream.snapshot"}).model_dump(),
+                    "streamIds": None if self._interest is None else sorted(self._interest),
+                    "stats": self.stats(),
+                }
+            )
+            return True
         if kind == "command":
             result = self._execute(Command.model_validate(packet["command"]))
             self.control.offer(
@@ -296,6 +336,8 @@ class _Runner:
                 count = 0
                 self.pacer.reset_clock(now)
             if now >= next_stats:
+                self._heartbeat_seq += 1
+                self._heartbeat_at = now
                 elapsed = now - self._metric_clock
                 self.step_hz = (self._steps - self._metric_steps) / elapsed if elapsed else 0.0
                 self.actual_rtf = self.step_hz * self.sim.physics_dt

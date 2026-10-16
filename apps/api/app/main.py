@@ -173,9 +173,7 @@ def create_app(
 
     @app.get("/api/v1/sessions/{session_id}/snapshot")
     async def snapshot(session_id: str):
-        frame = manager.get(session_id).latest_frame()
-        if frame is None:
-            raise HTTPException(503, {"code": "session_not_ready"})
+        frame = await manager.get(session_id).snapshot()
         return Response(
             content=encode(frame.model_copy(update={"type": "stream.snapshot"})),
             media_type="application/json",
@@ -183,7 +181,7 @@ def create_app(
 
     @app.get("/api/v1/sessions/{session_id}/pose")
     async def pose(session_id: str, key: str):
-        return manager.get(session_id).pose(key)
+        return await manager.get(session_id).pose(key)
 
     @app.get("/api/v1/sessions/{session_id}/joints/state")
     async def joint_state(session_id: str, key: str):
