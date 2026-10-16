@@ -98,6 +98,7 @@ class Session:
         self._frame: TransformFrame | None = None
         self._last_published_seq = -1
         self._tasks: list[asyncio.Task] = []
+        self._heartbeat_task: asyncio.Task | None = None
         self.clients: set[ClientConnection] = set()
         self.entity_states: dict[str, EntityState] = {}
         self.command_lock = asyncio.Lock()
@@ -113,45 +114,53 @@ class Session:
     async def start(self):
         self.state = "LOADING"
         self._log_event("session.lifecycle", state=self.state)
+        if self.manifest:
+            self.broadcast(self._lifecycle_state())
+        candidate = None
         try:
-            self.source = self.factory(self.kind, self.session_id)
-            manifest = await self.source.start(self.scene_id, self.options)
+            candidate = self.factory(self.kind, self.session_id)
+            manifest = await candidate.start(self.scene_id, self.options)
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
+            manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number + 1})
+            resolver = ScopeResolver(manifest)
+            # Prepare the initial policy before exposing the candidate revision.
+            # Creation is exclusive; reload already holds command_lock.
+            policy_change = await self._observer_policy_change(candidate, "RUNNING", False)
+            self.source = candidate
             self._revision_number += 1
-            self.manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number})
-            self._scope_resolver = ScopeResolver(self.manifest)
+            self.manifest, self._scope_resolver = manifest, resolver
             self._next_keyframe_at = time.monotonic() + 1
             self.state, self.error = "RUNNING", None
             self._auto_paused = False
             self._cache_frame(self.latest_frame())
+            if policy_change:
+                self._apply_observer_policy_change(*policy_change, publish=False)
             self._last_published_seq = self.seq
             self._log_event("session.lifecycle", state=self.state)
-            # Creation is exclusive; reload already holds command_lock.
-            await self._sync_observer_policy_locked()
-            if self.state == "FAILED":
-                raise RuntimeError(self.error["message"])
             self._tasks = [
                 asyncio.create_task(self._monitor(), name="session-frames"),
                 asyncio.create_task(self._events(), name="session-events"),
-                asyncio.create_task(self._heartbeat(), name="session-heartbeat"),
             ]
+            if self._heartbeat_task is None:
+                self._heartbeat_task = asyncio.create_task(self._heartbeat(), name="session-heartbeat")
         except Exception as exc:
-            self.state = "FAILED"
-            self._log_event(
-                "source.error",
-                state=self.state,
-                code="source_unavailable",
-                message=str(exc),
-                level=logging.ERROR,
-            )
             with contextlib.suppress(Exception):
-                await self.source.close()
+                if candidate:
+                    await candidate.close()
+            # A failed candidate must never be read as the previous valid sample.
+            self.source = None
+            if self.state != "FAILED":
+                self.fail(str(exc))
             raise
 
     def latest_frame(self) -> TransformFrame | None:
         try:
-            frame = self.source.latest_frame() if self.source else None
+            frame = (
+                self.source.latest_frame()
+                if self.source and self.state not in ("FAILED", "STOPPED")
+                else None
+            )
         except Exception:
             frame = None
         if frame is not None:
@@ -284,10 +293,16 @@ class Session:
             self.fail(str(exc))
 
     def fail(self, message):
+        message = str(message) or "Source unavailable"
+        self._cache_frame(self.latest_frame())
         self.error = {"code": "source_unavailable", "message": message}
         self.state, self.actual_rtf = "FAILED", 0
+        for client in self.clients:
+            client.latest = None
         self.broadcast(ServerError(code="source_unavailable", message=message))
-        self.broadcast(self._lifecycle_state("error", message))
+        # Initial creation may fail before there is a valid revision to publish.
+        if self.manifest:
+            self.broadcast(self._lifecycle_state("error", message))
 
     def _lifecycle_state(self, kind="lifecycle", message=None):
         return SessionState(
@@ -299,7 +314,11 @@ class Session:
             simTime=self.sim_time,
             realtimeFactor=self.options.realtimeFactor,
             actualRtf=self.actual_rtf if self.state == "RUNNING" else 0,
-            cause={"kind": kind, **({"message": message} if message else {})},
+            cause={
+                "kind": kind,
+                **({"code": self.error["code"]} if kind == "error" and self.error else {}),
+                **({"message": message} if message else {}),
+            },
         )
 
     async def _heartbeat(self):
@@ -623,38 +642,48 @@ class Session:
             client.subscribed = False
             await self._sync_observer_policy_locked()
 
-    async def _sync_observer_policy_locked(self):
-        if self.options.continueWithoutObservers or self.state not in ("RUNNING", "PAUSED"):
+    async def _observer_policy_change(self, source, state, auto_paused):
+        if self.options.continueWithoutObservers or state not in ("RUNNING", "PAUSED"):
             return
         observing = any(client.subscribed and not client.closed.is_set() for client in self.clients)
-        if not observing and self.state == "RUNNING":
+        if not observing and state == "RUNNING":
             kind, auto_paused = "pause", True
-        elif observing and self._auto_paused and self.state == "PAUSED":
+        elif observing and auto_paused and state == "PAUSED":
             kind, auto_paused = "resume", False
         else:
             return
-        try:
-            result = await self.source.execute(
-                Command(requestId=f"observer-{uuid.uuid4().hex}", command=kind)
-            )
-            if result.ack.status != "applied" or result.state is None:
-                raise RuntimeError(f"Source rejected observer-policy {kind}")
-            if result.frame is not None:
-                frame = result.frame.model_copy(update={"seq": result.frame.seq + self._seq_offset})
-                self._cache_frame(frame)
+        result = await source.execute(Command(requestId=f"observer-{uuid.uuid4().hex}", command=kind))
+        if result.ack.status != "applied" or result.state is None:
+            raise RuntimeError(f"Source rejected observer-policy {kind}")
+        return result, auto_paused
+
+    def _apply_observer_policy_change(self, result, auto_paused, *, publish=True):
+        if result.frame is not None:
+            frame = result.frame.model_copy(update={"seq": result.frame.seq + self._seq_offset})
+            self._cache_frame(frame)
+            if publish:
                 self.broadcast_frame(frame, reliable=True)
-            state = result.state.model_copy(
-                update={
-                    "seq": result.state.seq + self._seq_offset,
-                    "cause": Cause(
-                        kind="lifecycle",
-                        message="No subscribers" if auto_paused else "First subscriber returned",
-                    ),
-                }
-            )
-            self._apply_state(state)
-            self._auto_paused = auto_paused
+        state = result.state.model_copy(
+            update={
+                "seq": result.state.seq + self._seq_offset,
+                "cause": Cause(
+                    kind="lifecycle",
+                    message="No subscribers" if auto_paused else "First subscriber returned",
+                ),
+            }
+        )
+        self._apply_state(state)
+        self._auto_paused = auto_paused
+        if publish:
             self.broadcast(state)
+
+    async def _sync_observer_policy_locked(self):
+        try:
+            policy_change = await self._observer_policy_change(
+                self.source, self.state, self._auto_paused
+            )
+            if policy_change:
+                self._apply_observer_policy_change(*policy_change)
         except Exception as exc:
             self.fail(str(exc))
 
@@ -730,23 +759,32 @@ class Session:
         self._tasks.clear()
         if self.source:
             await self.source.close()
+            self.source = None
 
     async def reload(self):
         async with self.command_lock:
+            self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
             self.broadcast(self._lifecycle_state())
-            await self._stop_source()
-            # Delayed control replies retain their old sample seq/time. HTTP and
-            # subscriptions may already have exposed a newer frame in the meantime.
-            # Sources starting at either 0 or 1 must exceed every observed seq.
-            self._seq_offset = self._seq_high_water + 1
-            self.entity_states.clear()
-            self._rtf_samples.clear()
-            for client in self.clients:
-                client.subscribed = False
-                client.latest = None
-                client.delta_baseline = None
-            await self.start()
+            try:
+                await self._stop_source()
+                # Delayed control replies retain their old sample seq/time. HTTP and
+                # subscriptions may already have exposed a newer frame in the meantime.
+                # Sources starting at either 0 or 1 must exceed every observed seq.
+                self._seq_offset = self._seq_high_water + 1
+                self.entity_states.clear()
+                self._rtf_samples.clear()
+                for client in self.clients:
+                    client.subscribed = False
+                    client.latest = None
+                    client.delta_baseline = None
+                await self.start()
+            except Exception as exc:
+                if self.state != "FAILED":
+                    self.fail(str(exc))
+                if isinstance(exc, HTTPException):
+                    raise
+                raise HTTPException(503, self.error) from exc
             self.broadcast(
                 SceneReplaced(
                     sessionId=self.session_id,
@@ -769,6 +807,11 @@ class Session:
                 self.broadcast(self._lifecycle_state())
             await asyncio.gather(*(client.finish(drain=True) for client in tuple(self.clients)))
             self.clients.clear()
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._heartbeat_task
+                self._heartbeat_task = None
 
 
 I_WORLD = {"p": [0, 0, 0], "q": [0, 0, 0, 1]}

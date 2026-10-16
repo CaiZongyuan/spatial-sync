@@ -147,7 +147,7 @@
     {
       "id": "P2-C",
       "title": "GPU extraction and render scaling",
-      "status": "in-progress",
+      "status": "integrated",
       "delivered": [
         "0433db1 real100/500/2k/10k/mixed fixtures; PM5source tests pass",
         "bf414b1 full-workload/camera profile harness; actual SwiftShader baseline100/500/mixed/2k",
@@ -163,7 +163,7 @@
     {
       "id": "P2-D",
       "title": "Remote Runner transport",
-      "status": "in-progress",
+      "status": "integrated",
       "delivered": [
         "Original Newton developer resumed in issue/p2-d-remote from 9a93c83b5cdb47607afacb752d242ad322aa1267",
         "Accepted separate authenticated TLS host reusing NewtonSource; Gateway RemoteSource, no network pickle or C runner/extractor overlap"
@@ -173,6 +173,28 @@
         "Real loopback/publicGateway failure/cleanup/auth/cert tests and optional NewtonCPU journey"
       ],
       "blockers": []
+    },
+    {
+      "id": "FINAL-G",
+      "title": "Authentication and failed-replacement lifecycle repairs",
+      "status": "in-progress",
+      "blockers": [],
+      "delivered": [],
+      "pending": [
+        "Public malformed bearer rejection",
+        "Failed reload/restart details and live heartbeats"
+      ]
+    },
+    {
+      "id": "FINAL-S",
+      "title": "Subscription-driven GPU targets and complete diagnostics",
+      "status": "in-progress",
+      "blockers": [],
+      "delivered": [],
+      "pending": [
+        "GPU interests with complete recovery snapshots",
+        "Actual Shape count and Runner heartbeat"
+      ]
     }
   ],
   "project": "Newton Spatial Sync",
@@ -259,11 +281,11 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T10:45:15.813090Z",
+  "snapshotAt": "2026-10-16T12:45:42.112229Z",
   "checkpoint": {
-    "revision": "9a93c83b5cdb47607afacb752d242ad322aa1267 plus PM documentation",
+    "revision": "5d6533f67e1fec0cd457d0843eddcafffa74f291 plus PM documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
-    "next": "Complete C/D and independent review; validate latest integration on separate8009/5189 to preserve the unknown-owner paused B session on8000/5173.",
+    "next": "Repair four mandatory final-review gaps, inspect first GPU-interest safety example, integrate repairs, then refresh complete final gates and affected independent review.",
     "roles": [
       {
         "role": "PM/integration",
@@ -271,19 +293,24 @@
         "ticket": "v1.2"
       },
       {
-        "role": "Subscriptions developer parked after frozen delivery",
-        "owner": "/root/protocol",
-        "ticket": "P2-B"
+        "role": "Gateway review repairs",
+        "owner": "/root/gateway_repair",
+        "ticket": "FINAL-G"
       },
       {
-        "role": "Scaling/scoped renderer developer",
-        "owner": "/root/viewer",
-        "ticket": "P2-C"
-      },
-      {
-        "role": "Remote Runner developer",
+        "role": "Source/subscription GPU and diagnostics repairs",
         "owner": "/root/newton",
-        "ticket": "P2-D"
+        "ticket": "FINAL-S"
+      },
+      {
+        "role": "Independent Spec reviewer (parked)",
+        "owner": "/root/final_spec",
+        "ticket": "v1.2"
+      },
+      {
+        "role": "Independent Standards reviewer (parked)",
+        "owner": "/root/final_standards",
+        "ticket": "v1.2"
       }
     ]
   },
@@ -304,8 +331,8 @@
     {
       "name": "P1-C API8002/web5184",
       "owner": "Viewer developer",
-      "purpose": "Sessions STOPPED; owner to reconcile reuse or cleanup for P2-C",
-      "disposition": "retained"
+      "purpose": "Latest listener inventory confirms both absent.",
+      "disposition": "cleaned"
     },
     {
       "name": "OldAPI8001/web5174",
@@ -322,8 +349,8 @@
     {
       "name": "P2-C CPU/network/GPU execution",
       "owner": "Viewer developer",
-      "purpose": "Must announce bounded heavy reservation and release",
-      "disposition": "unknown"
+      "purpose": "Author execution finished; developer ports8006/5186 absent. Repair runtime window will be announced separately.",
+      "disposition": "cleaned"
     },
     {
       "name": "Foreign5175",
@@ -341,6 +368,12 @@
       "name": "Unknown-owner paused Synthetic session-b469c0e4cf99",
       "owner": "Unconfirmed; active C/D developers deny creating it and PM-owned E2E sessions are stopped",
       "purpose": "Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration.",
+      "disposition": "retained"
+    },
+    {
+      "name": "Final candidate API8009/web5189",
+      "owner": "PM",
+      "purpose": "API PID40616 exec10943; preview PID38344 exec3114 at5d6533f. Reserved for latest integrated tests; restart/rebuild after repairs. No manual session yet.",
       "disposition": "retained"
     }
   ],

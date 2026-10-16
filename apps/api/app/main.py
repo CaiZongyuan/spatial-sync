@@ -11,6 +11,7 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import Literal
 
+import anyio
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -49,9 +50,16 @@ def _role(headers, settings: Settings):
         return "operator"
     authorization = headers.get("authorization", "")
     token = authorization[7:] if authorization.startswith("Bearer ") else ""
-    if token and settings.operator_token and hmac.compare_digest(token, settings.operator_token):
+    # Headers are untrusted text; compare_digest(str, str) rejects non-ASCII.
+    # Consistent UTF-8 bytes keep malformed credentials on the unauthorized path.
+    token = token.encode("utf-8")
+    if (
+        token
+        and settings.operator_token
+        and hmac.compare_digest(token, settings.operator_token.encode("utf-8"))
+    ):
         return "operator"
-    if token and settings.viewer_token and hmac.compare_digest(token, settings.viewer_token):
+    if token and settings.viewer_token and hmac.compare_digest(token, settings.viewer_token.encode("utf-8")):
         return "viewer"
     return None
 
@@ -182,6 +190,8 @@ def create_app(
         session = manager.get(session_id)
         if key not in {joint.entityKey for joint in session.scene().joints}:
             raise HTTPException(404, {"code": "unknown_entity"})
+        if session.source is None or session.state == "FAILED":
+            raise HTTPException(503, session.error or {"code": "source_unavailable"})
         try:
             value = await asyncio.wait_for(session.source.query_joint_state(key), timeout=0.2)
         except TimeoutError as exc:
@@ -210,6 +220,8 @@ def create_app(
         cache_headers = {"Cache-Control": "public,max-age=31536000,immutable", "ETag": etag}
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers=cache_headers)
+        if session.source is None or session.state == "FAILED":
+            raise HTTPException(503, session.error or {"code": "source_unavailable"})
         try:
             data = await session.source.read_mesh(mesh_id)
         except KeyError as exc:
@@ -265,6 +277,10 @@ def create_app(
             session = manager.get(session_id)
         except HTTPException:
             await websocket.close(code=1008)
+            return
+        if session.manifest is None:
+            # Ready requires a real revision; do not invent one before first startup.
+            await websocket.close(code=1013)
             return
         await websocket.accept()
         connection = ClientConnection(websocket, settings, role)
@@ -328,11 +344,18 @@ def create_app(
                 with contextlib.suppress(WebSocketDisconnect, asyncio.CancelledError):
                     task.result()
         finally:
-            receiver.cancel()
-            with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
-                await receiver
-            await asyncio.shield(session.remove_client(connection))
-            await connection.finish()
+            # ASGI cancellation must not abandon a pump after removing its owner.
+            # finish() retains its existing bounded WebSocket close timeout.
+            with anyio.CancelScope(shield=True):
+                receiver.cancel()
+                try:
+                    with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
+                        await receiver
+                finally:
+                    try:
+                        await session.remove_client(connection)
+                    finally:
+                        await connection.finish()
 
     return app
 
