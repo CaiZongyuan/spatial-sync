@@ -1,0 +1,43 @@
+[project]
+name = "newton-spatial-sync"
+version = "0.1.0"
+description = "Newton spatial transforms over a source-independent web protocol"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "pydantic==2.12.4",
+  "orjson>=3.10,<4",
+  "numpy>=2.2,<3",
+  "trimesh>=4.6,<5",
+  "pyyaml>=6,<7",
+  "httpx>=0.28,<1",
+]
+
+[project.optional-dependencies]
+simulation = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "viser>=1.1.1,<2"]
+usd = ["usd-core==26.8", "newton-usd-schemas>=0.5,<1"]
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.9,<1"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = ["newton: optional integration tests requiring the simulation extra", "gpu: optional CUDA integration tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/*.py" = ["E402"] # Direct scripts add the repository root before local imports.
+"tests/sim_runtime/*.py" = ["E402"] # Optional Newton is skipped before importing its consumers.
