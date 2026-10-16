@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError
 
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
+from apps.api.app.recordings import RecordingRepository, install_recording_routes
 from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -93,11 +94,13 @@ def create_app(
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
-    manager = SessionManager(settings, source_factory)
     asset_registry = asset_registry or AssetRegistry.from_file()
+    recordings = RecordingRepository(settings, asset_registry)
+    manager = SessionManager(settings, source_factory, recordings)
 
     @asynccontextmanager
     async def lifespan(app):
+        await recordings.startup()
         yield
         await manager.close()
 
@@ -113,6 +116,7 @@ def create_app(
 
     app.state.manager, app.state.settings = manager, settings
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
+    install_recording_routes(app, recordings)
     request_times = defaultdict(deque)
 
     @app.middleware("http")

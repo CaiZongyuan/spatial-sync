@@ -12,11 +12,14 @@ from collections.abc import Callable
 import orjson
 from fastapi import HTTPException
 
+from apps.api.app.recordings import RecordingRepository, freeze_manifest
 from apps.api.app.settings import Settings
 from apps.api.app.sources.base import SpatialSource
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
+from packages.assets.registry import AssetRegistry
+from packages.info.invocations import InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
 from packages.protocol.internal import SessionOptions
@@ -81,7 +84,9 @@ def default_source_factory(kind: str, session_id: str) -> SpatialSource:
 
 
 class Session:
-    def __init__(self, scene_id: str, kind: str, options: SessionOptions, settings: Settings, factory):
+    def __init__(
+        self, scene_id: str, kind: str, options: SessionOptions, settings: Settings, factory, recordings
+    ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.options, self.settings, self.factory = options, settings, factory
@@ -110,8 +115,12 @@ class Session:
         self.catalog = None
         self.info = None
         self.pipeline = None
+        self.recordings = recordings
+        self.recording = None
+        self._recording_revision_ready = False
 
     async def start(self):
+        self._recording_revision_ready = False
         self.state = "LOADING"
         self._log_event("session.lifecycle", state=self.state)
         if self.manifest:
@@ -151,6 +160,8 @@ class Session:
             )
             if previous_table:
                 self.pipeline.table = previous_table
+            else:
+                self.pipeline.table = InvocationTable(evicted_lookup=self._recorded_invocation)
             self._body_stream_ids = body_ids
             self._frame = self._complete_frame = None
             self.state, self.error = "RUNNING", None
@@ -161,6 +172,7 @@ class Session:
             self._last_published_seq = self.seq
             if callable(getattr(candidate, "entity_snapshot", None)):
                 self.apply_info(candidate.entity_snapshot())
+            await self._record_revision()
             self._log_event("session.lifecycle", state=self.state)
             self._tasks = [
                 asyncio.create_task(self._monitor(), name="session-frames"),
@@ -177,6 +189,39 @@ class Session:
             if self.state != "FAILED":
                 self.fail(str(exc))
             raise
+
+    async def _record_revision(self):
+        if self.recording is None:
+            self.recording = self.recordings.create(self.session_id, self.scene_id)
+        if self.recording is None:
+            return
+        try:
+            manifest, assets = await freeze_manifest(
+                self.manifest, self.source, self.recordings.asset_registry
+            )
+            self.recording.add_revision(
+                manifest,
+                self.catalog.model_dump(mode="json"),
+                self._encode_frame(self._complete_frame.model_copy(update={"type": "stream.snapshot"})),
+                encode(self.info_snapshot()),
+                state=encode(self._lifecycle_state()),
+                assets=assets,
+            )
+            self._recording_revision_ready = True
+        except Exception as exc:
+            self.recording.stop_incomplete(f"Scene capture failed: {exc}")
+            self._log_event("recording.failed", message=str(exc), level=logging.ERROR)
+
+    async def _recorded_invocation(self, invocation_id):
+        return await self.recording.lookup_invocation(invocation_id) if self.recording else None
+
+    def _record_json(self, message, payload):
+        if self.recording and self._recording_revision_ready:
+            self.recording.append_json(
+                payload,
+                getattr(message, "sampleTimeMs", time.monotonic() * 1000),
+                invocation_id=message.invocationId if isinstance(message, InvocationUpdate) else None,
+            )
 
     def latest_frame(self) -> TransformFrame | None:
         try:
@@ -419,6 +464,7 @@ class Session:
     def broadcast_info(self, message):
         self.info.record(message)
         payload = encode(message)
+        self._record_json(message, payload)
         for client in tuple(self.clients):
             if client.subscribed and client.info:
                 client.enqueue_reliable(payload)
@@ -468,6 +514,8 @@ class Session:
                 level=logging.ERROR,
             )
         payload = encode(message)
+        if isinstance(message, (SessionState, SceneReplaced, ServerError)):
+            self._record_json(message, payload)
         for client in tuple(self.clients):
             client.enqueue_reliable(payload)
 
@@ -477,6 +525,8 @@ class Session:
         self._last_published_seq = max(self._last_published_seq, frame.seq)
         self.published_frames += 1
         payload = self._encode_frame(frame)
+        if self.recording and self._recording_revision_ready:
+            self.recording.append_frame(payload, frame.sampleTimeMs, reliable=reliable)
         self.payload_bytes += len(payload)
         for client in tuple(self.clients):
             if not client.subscribed:
@@ -866,14 +916,19 @@ class Session:
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._heartbeat_task
                 self._heartbeat_task = None
+            if self.recording:
+                await self.recording.close()
+                self._recording_revision_ready = False
+                await asyncio.to_thread(self.recordings.retain)
 
 
 I_WORLD = {"p": [0, 0, 0], "q": [0, 0, 0, 1]}
 
 
 class SessionManager:
-    def __init__(self, settings: Settings, factory: Callable = default_source_factory):
+    def __init__(self, settings: Settings, factory: Callable = default_source_factory, recordings=None):
         self.settings, self.factory = settings, factory
+        self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
         self.sessions: dict[str, Session] = {}
         self._create_lock = asyncio.Lock()
 
@@ -897,7 +952,7 @@ class SessionManager:
                             "message": "Close the active session before starting another scene",
                         },
                     )
-            session = Session(scene_id, source, options, self.settings, self.factory)
+            session = Session(scene_id, source, options, self.settings, self.factory, self.recordings)
             try:
                 await session.start()
             except HTTPException:

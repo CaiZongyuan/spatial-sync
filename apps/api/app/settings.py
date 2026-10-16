@@ -1,8 +1,17 @@
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(frozen=True)
 class Settings:
+    recordings_root: Path = field(
+        default_factory=lambda: Path(os.getenv("SPATIAL_RECORDINGS_ROOT", "recordings"))
+    )
+    recordings_keep: int = field(default_factory=lambda: int(os.getenv("SPATIAL_RECORDINGS_KEEP", "20")))
+    recordings_enabled: bool = field(
+        default_factory=lambda: os.getenv("SPATIAL_RECORDINGS_ENABLED", "1") != "0"
+    )
     approval_timeout_seconds: float = 600
     heartbeat_interval_seconds: float = 1.0
     send_timeout_seconds: float = 2.0
@@ -21,6 +30,8 @@ class Settings:
     remote_requests_per_minute: int = 120
 
     def __post_init__(self):
+        if self.recordings_keep < 1:
+            raise ValueError("recordings_keep must be positive")
         if self.remote and (not self.operator_token or not self.allowed_origins):
             raise ValueError("remote mode requires an operator token and explicit allowed origins")
         if min(self.heartbeat_interval_seconds, self.send_timeout_seconds, self.reliable_queue_size) <= 0:
