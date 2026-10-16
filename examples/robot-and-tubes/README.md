@@ -44,8 +44,6 @@ with the installed CLI and a gateway:
 
 ```powershell
 uv run --no-sync python tools/smoke_info_newton.py --url http://127.0.0.1:8000 --cli .venv/Scripts/lw.exe --duration 20
-uv run --no-sync lw do /World/Lab/RobotA pickPlace from=rack.A1 to=centrifuge.slot1 --wait
-uv run --no-sync lw do /World/Lab/RobotA home --wait
 ```
 
 On Unix, use `.venv/bin/lw` for the installed executable. The smoke command creates
