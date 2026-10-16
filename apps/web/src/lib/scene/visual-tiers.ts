@@ -34,12 +34,20 @@ export async function loadVisualAsset(
   visual: Visual,
 ): Promise<Group | undefined> {
   if (visual.kind === 'primitive') return;
-  const object = (await new GLTFLoader().loadAsync(visual.url)).scene;
-  object.traverse((child) => {
-    if (child instanceof Mesh && !child.geometry.getAttribute('normal'))
-      child.geometry.computeVertexNormals();
-  });
-  return object;
+  let object: Group | undefined;
+  try {
+    object = (await new GLTFLoader().loadAsync(visual.url)).scene;
+    object.traverse((child) => {
+      if (child instanceof Mesh && !child.geometry.getAttribute('normal'))
+        child.geometry.computeVertexNormals();
+    });
+    return object;
+  } catch (error) {
+    if (object) disposeObject(object);
+    throw new Error(
+      `${visual.url}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /** A tier is an entire simultaneous visual group. Never mix partially loaded tiers. */
