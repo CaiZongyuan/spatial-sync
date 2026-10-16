@@ -55,8 +55,12 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
     await start.getByLabel('start rpm', { exact: true }).fill('3000');
     await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
     await start.getByRole('button', { name: 'Run start', exact: true }).click();
-    await expect(invocation(page, 'start').locator('.invocation-status')).toHaveText('rejected');
-    await expect(start.getByRole('status')).toContainText('precondition_failed');
+    await expect(
+      invocation(page, 'start').locator('.invocation-status'),
+    ).toHaveText('rejected');
+    await expect(start.getByRole('status')).toContainText(
+      'precondition_failed',
+    );
     await (await action(page, 'closeLid'))
       .getByRole('button', { name: 'Run closeLid', exact: true })
       .click();
@@ -83,7 +87,9 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
       observer.getByTestId(id).locator('.invocation-status'),
     ).toHaveText('running');
     const canvas = await page.locator('canvas').boundingBox();
-    await expect(page.getByTestId(`phase-${centrifuge}`)).toHaveText(/accelerating|running|decelerating/);
+    await expect(page.getByTestId(`phase-${centrifuge}`)).toHaveText(
+      /accelerating|running|decelerating/,
+    );
     expect(canvas!.width).toBeGreaterThan(500);
     expect(canvas!.height).toBeGreaterThan(300);
     expect(
@@ -159,6 +165,66 @@ test('an operator can cancel a running invocation from its details', async ({
     await expect(
       page.getByTestId('property-phase').locator('output'),
     ).toHaveText('idle');
+  } finally {
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});
+
+test('an operator can deny and approve a declared high risk action', async ({
+  page,
+  request,
+}, info) => {
+  test.skip(
+    process.env.SPATIAL_TEST_APPROVAL !== '1',
+    'Requires the temporary high risk definition fixture',
+  );
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: {
+      sceneId: 'lab-demo',
+      source: 'synthetic',
+      approval: { high: 'require' },
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  try {
+    await device(page, sessionId);
+    const close = await action(page, 'closeLid');
+    await close
+      .getByRole('button', { name: 'Run closeLid', exact: true })
+      .click();
+    const approvals = page.getByRole('region', { name: 'Pending approvals' });
+    await expect(approvals).toBeVisible();
+    await expect(
+      invocation(page, 'closeLid').locator('.invocation-status'),
+    ).toHaveText('pending_approval');
+    await page.screenshot({
+      path: info.outputPath('operator-approval-banner.png'),
+    });
+    await approvals
+      .getByRole('button', { name: 'Deny closeLid', exact: true })
+      .click();
+    await expect(
+      invocation(page, 'closeLid').locator('.invocation-status'),
+    ).toHaveText('rejected');
+    await expect(close.getByRole('status')).toContainText('approval_denied');
+    await expect(
+      page.getByTestId('property-lidOpen').locator('output'),
+    ).toHaveText('true');
+    await close
+      .getByRole('button', { name: 'Run closeLid', exact: true })
+      .click();
+    await expect(approvals).toBeVisible();
+    await approvals
+      .getByRole('button', { name: 'Approve closeLid', exact: true })
+      .click();
+    await expect(
+      invocation(page, 'closeLid').locator('.invocation-status'),
+    ).toHaveText('succeeded');
+    await expect(approvals).toHaveCount(0);
+    await expect(
+      page.getByTestId('property-lidOpen').locator('output'),
+    ).toHaveText('false');
   } finally {
     await request.delete(`${api}/api/v1/sessions/${sessionId}`);
   }
