@@ -1,5 +1,5 @@
 /** Real browser/real source baseline. Run with pnpm exec tsx tools/profile_viewer.ts --help. */
-import { chromium, expect } from '@playwright/test';
+import { chromium, expect as baseExpect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -9,6 +9,7 @@ import { parseArgs } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { distribution, summarizeFrames } from './viewer_profile_stats';
 import type { SceneManifest, Snapshot } from '../packages/protocol/types';
+const expect = baseExpect.configure({ timeout: 60_000 });
 
 const { values } = parseArgs({
   options: {
@@ -24,6 +25,11 @@ const { values } = parseArgs({
     output: { type: 'string', default: '.scratch/viewer-profile.json' },
     'scene-file': { type: 'string', multiple: true },
     'allow-development': { type: 'boolean' },
+    format: { type: 'string', default: 'json' },
+    'render-mode': { type: 'string', default: 'individual' },
+    quality: { type: 'string', default: 'full' },
+    'fit-scene': { type: 'boolean' },
+    'camera-file': { type: 'string' },
   },
 });
 if (values.help) {
@@ -176,7 +182,43 @@ async function main() {
         viewport: { width: 1440, height: 960 },
       });
       const page = await context.newPage();
+      await page.addInitScript(() => {
+        const closes: { code: number; reason: string }[] = [];
+        Object.assign(window, { __spatialSocketCloses: closes });
+        const NativeSocket = window.WebSocket;
+        window.WebSocket = class extends NativeSocket {
+          constructor(url: string | URL, protocols?: string | string[]) {
+            super(url, protocols);
+            this.addEventListener('close', (event) =>
+              closes.push({ code: event.code, reason: event.reason }),
+            );
+          }
+        };
+      });
       const pageErrors: string[] = [];
+      const wire = {
+        receivedBinary: 0,
+        closedSockets: 0,
+        commands: [] as unknown[],
+        acknowledgments: [] as unknown[],
+      };
+      page.on('websocket', (socket) => {
+        socket.on('framesent', ({ payload }) => {
+          if (typeof payload !== 'string') return;
+          const message = JSON.parse(payload);
+          if (message.type === 'command.request') wire.commands.push(message);
+        });
+        socket.on('framereceived', ({ payload }) => {
+          if (typeof payload !== 'string') {
+            wire.receivedBinary++;
+            return;
+          }
+          const message = JSON.parse(payload);
+          if (message.type === 'command.ack')
+            wire.acknowledgments.push(message);
+        });
+        socket.on('close', () => wire.closedSockets++);
+      });
       page.on('pageerror', (error) => pageErrors.push(error.message));
       let sid: string | undefined;
       try {
@@ -191,7 +233,7 @@ async function main() {
         const startupMs = performance.now() - startCreation;
         const manifest = await api<SceneManifest>(`/sessions/${sid}/scene`);
         const response = await page.goto(
-          `${values.web}/sessions/${encodeURIComponent(sid!)}`,
+          `${values.web}/sessions/${encodeURIComponent(sid!)}?format=${values.format}&render=${values['render-mode']}&quality=${values.quality}`,
         );
         const buildMode = (await response!.text()).includes('/@vite/client')
           ? 'development'
@@ -203,11 +245,46 @@ async function main() {
         await expect(page.getByTestId('connection-status')).toHaveText(
           'connected',
         );
+        // P2-B defaults to sparse deltas. Compare renderers using the same full
+        // frames as the original baseline, and wait for the accepted resubscribe.
+        await page.getByRole('checkbox', { name: 'Sparse deltas' }).uncheck();
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const subscription =
+                window.__spatialDebug!.getSubscriptionMetrics();
+              return !subscription.delta && !subscription.resyncPending;
+            }),
+          )
+          .toBe(true);
         const bodies = manifest.nodes.filter((node) => node.kind === 'body');
         if (!bodies.length)
           throw new Error(
             'A transform profile requires at least one streamed Body',
           );
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => window.__spatialRenderDebug?.frameStats().registeredBodies,
+            ),
+          )
+          .toBe(bodies.length);
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                window.__spatialRenderDebug?.frameStats().appliedBodies ?? 0,
+            ),
+          )
+          .toBeGreaterThan(0);
+        if (values['camera-file']) {
+          const saved = JSON.parse(readFileSync(values['camera-file'], 'utf8'));
+          await page.evaluate(
+            (camera) => window.__spatialRenderDebug!.setCamera(camera),
+            saved.runs[0].camera,
+          );
+        } else if (values['fit-scene'])
+          await page.evaluate(() => window.__spatialRenderDebug!.fitScene());
         await expect
           .poll(() =>
             page.evaluate(
@@ -221,24 +298,83 @@ async function main() {
             ),
           )
           .toBe(true);
+        await expect(page.getByTestId('connection-status')).toHaveText(
+          'connected',
+        );
+        await expect(
+          page.getByRole('button', { name: 'Pause simulation' }),
+        ).toBeEnabled();
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => window.__spatialDebug!.getStreamMetrics().socketReadyState,
+            ),
+          )
+          .toBe(1);
         await page.getByRole('button', { name: 'Pause simulation' }).click();
         await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
         const snapshot = await api<Snapshot>(`/sessions/${sid}/snapshot`);
-        const expected = snapshot.poses.find(
-          (row) => row[0] === bodies[0].streamId,
-        )!;
+        const wireRows = new Map(snapshot.poses.map((row) => [row[0], row]));
+        const references = bodies.map((node) => ({
+          key: node.entityKey,
+          pose: wireRows.get(node.streamId),
+        }));
+        if (references.some((item) => !item.pose))
+          throw new Error('Snapshot omits declared Bodies');
+        await page
+          .getByRole('textbox', { name: 'Filter objects' })
+          .fill(bodies[0].entityKey);
         await page.getByTestId(`entity-${bodies[0].entityKey}`).click();
         await expect(page.getByTestId('inspector-seq')).toHaveText(
           String(snapshot.seq),
         );
-        const actual = await page.evaluate(
-          (key) => window.__spatialDebug!.getRenderedPose(key),
-          bodies[0].entityKey,
-        );
-        const error = Math.max(
-          ...actual!.p.map((value, i) => Math.abs(value - expected[i + 1])),
-        );
-        if (error > 1e-5 || snapshot.poses.length !== bodies.length)
+        const checkPoses = () =>
+          page.evaluate((references) => {
+            let positionMaxErrorM = 0,
+              quaternionMaxError = 0,
+              missing = 0;
+            for (const item of references) {
+              const actual = window.__spatialDebug!.getRenderedPose(item.key);
+              if (!actual || !item.pose) {
+                missing++;
+                continue;
+              }
+              for (let i = 0; i < 3; i++)
+                positionMaxErrorM = Math.max(
+                  positionMaxErrorM,
+                  Math.abs(actual.p[i] - item.pose[i + 1]),
+                );
+              let same = 0,
+                opposite = 0;
+              for (let i = 0; i < 4; i++) {
+                same = Math.max(same, Math.abs(actual.q[i] - item.pose[i + 4]));
+                opposite = Math.max(
+                  opposite,
+                  Math.abs(actual.q[i] + item.pose[i + 4]),
+                );
+              }
+              quaternionMaxError = Math.max(
+                quaternionMaxError,
+                Math.min(same, opposite),
+              );
+            }
+            return {
+              checkedBodyCount: references.length,
+              missing,
+              positionMaxErrorM,
+              quaternionMaxError,
+            };
+          }, references);
+        await expect
+          .poll(async () => {
+            const checked = await checkPoses();
+            return checked.missing
+              ? 1
+              : Math.max(checked.positionMaxErrorM, checked.quaternionMaxError);
+          })
+          .toBeLessThan(1e-4);
+        const correctness = await checkPoses();
+        if (correctness.missing || snapshot.poses.length !== bodies.length)
           throw new Error(
             'The rendered workload failed its authoritative-pose/count precondition',
           );
@@ -271,6 +407,9 @@ async function main() {
         const streamStart = await page.evaluate(() =>
           window.__spatialDebug!.startProfile(),
         );
+        const camera = await page.evaluate(() =>
+          window.__spatialRenderDebug?.camera(),
+        );
         const rawSource: { timeMs: number; stats: any }[] = [];
         const deadline = performance.now() + durationMs;
         while (performance.now() < deadline) {
@@ -285,11 +424,33 @@ async function main() {
         const stopped = await page.evaluate(() => ({
           recording: window.__spatialDebug!.stopProfile(),
           stream: window.__spatialDebug!.getStreamMetrics(),
+          geometry: window.__spatialRenderDebug?.frameStats(),
         }));
         const frames = summarizeFrames(
           stopped.recording.samples,
           stopped.recording.overflow,
         );
+        const physicalCount = manifest.nodes.filter(
+          (node) => node.kind !== 'group',
+        ).length;
+        if (
+          !stopped.geometry ||
+          stopped.geometry.registeredBodies !== bodies.length ||
+          stopped.geometry.appliedBodies !== bodies.length ||
+          stopped.geometry.registeredPhysicalNodes !== physicalCount ||
+          stopped.geometry.potentialVisualInstances < physicalCount
+        )
+          throw new Error(
+            'Registered/applied/renderable workload counts differ from the Manifest',
+          );
+        if (
+          (values['fit-scene'] || values['camera-file']) &&
+          stopped.geometry.submittedTriangles <
+            stopped.geometry.potentialTriangles * 0.99
+        )
+          throw new Error(
+            'Fitted workload was unexpectedly culled; do not count empty drawing as performance',
+          );
         if (
           stopped.stream.sessionState !== 'RUNNING' ||
           stopped.stream.connection !== 'connected' ||
@@ -336,10 +497,13 @@ async function main() {
           ).length,
           initialPoseCount: snapshot.poses.length,
           correctness: {
+            ...correctness,
             sequence: snapshot.seq,
             simTime: snapshot.simTime,
-            positionMaxErrorM: error,
+            referenceRowsSha256: hash(JSON.stringify(snapshot.poses)),
           },
+          camera,
+          geometry: stopped.geometry,
           startupMs,
           warmupMs,
           buildMode,
@@ -354,10 +518,50 @@ async function main() {
           sourcePolledLatest,
           rawSource,
           rawFrames: stopped.recording.samples,
+          wire,
         });
         process.stdout.write(
           `Run ${repeat + 1}/${repeats}: ${frames.sampleCount} actual R3F samples, FPS p50 ${frames.renderFps.p50.toFixed(1)}, apply p95 ${frames.transformApplyMs.p95.toFixed(3)} ms\n`,
         );
+      } catch (error) {
+        const observed = await page
+          .evaluate(() => ({
+            stream: window.__spatialDebug?.getStreamMetrics(),
+            subscription: window.__spatialDebug?.getSubscriptionMetrics(),
+            geometry: window.__spatialRenderDebug?.frameStats(),
+            camera: window.__spatialRenderDebug?.camera(),
+            socketCloses: (
+              window as Window & { __spatialSocketCloses?: unknown[] }
+            ).__spatialSocketCloses,
+            feedback: document.querySelector('[role="status"]')?.textContent,
+          }))
+          .catch(() => undefined);
+        const failedOutput = path.resolve(
+          values.output!.replace(/\.json$/, '') + '-failed.json',
+        );
+        mkdirSync(path.dirname(failedOutput), { recursive: true });
+        writeFileSync(
+          failedOutput,
+          JSON.stringify(
+            {
+              status: 'invalid-measurement',
+              recordedAt: new Date().toISOString(),
+              sourceIdentity,
+              configuration: values,
+              error: String(error),
+              observed,
+              wire,
+              pageErrors,
+              completedRuns: runs,
+              fps: null,
+              reason:
+                'Current attempt did not complete every required correctness/measurement condition; no FPS or ratio is inferred from it.',
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+        throw error;
       } finally {
         if (sid) await api(`/sessions/${sid}`, 'DELETE');
         await context.close();

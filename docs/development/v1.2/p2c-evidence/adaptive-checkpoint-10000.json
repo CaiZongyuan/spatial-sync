@@ -1,0 +1,779 @@
+{
+  "schemaVersion": 1,
+  "status": "measured",
+  "claim": "Baseline evidence only; no optimization or scaling claim",
+  "recordedAt": "2026-10-16T10:56:41.949Z",
+  "sourceIdentity": {
+    "revision": "823efee5467696a67f664b4097861b3eea718f3e",
+    "uncommitted": "M apps/web/src/components/SceneTree.tsx\n M apps/web/src/components/viewer/InstancedPrimitives.tsx\n M apps/web/src/components/viewer/SceneDiagnostics.tsx\n M apps/web/src/components/viewer/SceneViewport.tsx\n M apps/web/src/lib/geometry/primitives.ts\n M apps/web/src/routeTree.gen.ts\n M packages/sim_runtime/runner.py\n M packages/sim_runtime/transform_extractor.py\n M tests/e2e/render-scaling.spec.ts\n M tests/sim_runtime/test_transform_extractor.py\n M tools/profile_viewer.ts",
+    "treeSha256": "7dc14bb753b03a03b451aeeb8b279e86181177724c43088c8889aa9ef3f21667",
+    "lockSha256": "0df4624af3de35b65a677ddfe615345140e47530754f84a387b5d136aa72b080",
+    "sceneFileHashes": {
+      "apps/api/app/sources/stress_scene.py": "6aef00173799ca3ba617a98137c3f96fc9683a42c245cbd8bb727dcce39f1d85"
+    }
+  },
+  "configuration": {
+    "api": "http://127.0.0.1:8006",
+    "web": "http://127.0.0.1:5186",
+    "scene": "stress-10000",
+    "render-mode": "instanced",
+    "quality": "adaptive",
+    "format": "binary",
+    "duration": "6",
+    "warmup": "3",
+    "repeats": "1",
+    "fit-scene": true,
+    "scene-file": [
+      "apps/api/app/sources/stress_scene.py"
+    ],
+    "output": "docs/development/v1.2/p2c-evidence/adaptive-checkpoint-10000.json",
+    "source": "synthetic",
+    "renderer": "default"
+  },
+  "hardware": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "architecture": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "logicalProcessors": 20,
+    "memoryBytes": 34070847488,
+    "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU, 610.62, 8192"
+  },
+  "versions": {
+    "node": "v24.18.0",
+    "browser": "156.0.8078.4",
+    "webPackages": {
+      "react": "19.3.1",
+      "three": "0.186.1",
+      "vite": "8.3.4",
+      "@react-three/fiber": "9.8.2"
+    },
+    "pythonVersions": {
+      "python": "3.13.14 (main, Jun 23 2026, 15:19:27) [MSC v.1944 64 bit (AMD64)]",
+      "packages": {
+        "fastapi": "0.143.2",
+        "pydantic": "2.12.4",
+        "numpy": "2.5.4",
+        "newton": "1.7.0",
+        "warp-lang": "1.18.0"
+      }
+    }
+  },
+  "methodology": {
+    "fps": "Nearest-rank distribution of completed one-second RAF windows; incomplete final window excluded",
+    "apply": "performance.now around interpolation, pose writes and render receipts inside useFrame; GPU draw execution excluded",
+    "frameAge": "Local time since accepted network receipt; playout delay separate",
+    "source": "Distribution of polled latest stats at approximately 1 Hz; repeated latest values may occur, not a per-step/per-publish timing distribution",
+    "timing": "Startup, correctness pause/resume and warmup excluded from raw frame window",
+    "comparison": "Use identical source tree, scene assets, source configuration, viewport, camera, WebGL renderer and useful output counts; no candidate comparison is performed here",
+    "limitations": [
+      "Shared workstation; background contention is not isolated",
+      "Browser clock quantization may produce zero apply samples; zeros do not imply zero work",
+      "Source latest-stat polling cannot establish per-operation readback/publish p95"
+    ]
+  },
+  "runs": [
+    {
+      "repeat": 1,
+      "sessionId": "session-6aa103071df1",
+      "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+      "manifestSha256": "70de48dc71fc8a92beb2363aacee2c1ba698e18965685dec9e8048b55ceac034",
+      "stableManifestSha256": "c2cefc05f977bf95f6f5ecc89d1b916284dbfe26c91dc2acf93aeb02ecdc0581",
+      "source": {
+        "kind": "synthetic",
+        "solver": "DeterministicKinematics",
+        "physicsDt": 0.004166666666666667,
+        "basePublishHz": 30,
+        "realtimeFactor": 1
+      },
+      "bodyCount": 10000,
+      "physicalNodeCount": 10000,
+      "initialPoseCount": 10000,
+      "correctness": {
+        "checkedBodyCount": 10000,
+        "missing": 0,
+        "positionMaxErrorM": 5.252952575141023e-7,
+        "quaternionMaxError": 6.656055986931086e-8,
+        "sequence": 574,
+        "simTime": 22.154166666666665,
+        "referenceRowsSha256": "2eee1b01749c3e3d01a3c8c39e02be2c70a7a1c1d65a3f2c7809150f0da881bb"
+      },
+      "camera": {
+        "position": [
+          28.42457025897678,
+          31.607024673840073,
+          34.109481855038865
+        ],
+        "target": [
+          0.000002099215339335103,
+          0.33999969810247305,
+          6.3325140686743e-8
+        ],
+        "fov": 44,
+        "near": 0.01,
+        "far": 271.52530609510296
+      },
+      "geometry": {
+        "registeredBodies": 10000,
+        "registeredPhysicalNodes": 10000,
+        "appliedBodies": 10000,
+        "potentialVisualInstances": 10000,
+        "potentialTriangles": 679944,
+        "lowDetailInstances": 6666,
+        "drawCalls": 5,
+        "submittedTriangles": 679944,
+        "mode": "instanced"
+      },
+      "startupMs": 195.26909999999998,
+      "warmupMs": 3000,
+      "buildMode": "production",
+      "browserEnvironment": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+        "devicePixelRatio": 1,
+        "canvasCss": {
+          "width": 904,
+          "height": 690
+        },
+        "drawingBuffer": {
+          "width": 904,
+          "height": 690
+        },
+        "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "vendor": "Google Inc. (Google)"
+      },
+      "streamStart": {
+        "timeMs": 43443.70000000298,
+        "receivedFrames": 25,
+        "payloadBytes": 12167167,
+        "skippedNonFinite": 0,
+        "discardedFrames": 13,
+        "invalidBinaryFrames": 0,
+        "frameFormat": "binary",
+        "revision": "rev-cab75d297c934fb0966cdb65390967c9",
+        "epoch": 0,
+        "seq": 583,
+        "sessionState": "RUNNING",
+        "connection": "connected"
+      },
+      "streamEnd": {
+        "timeMs": 49852.90000000596,
+        "receivedFrames": 31,
+        "payloadBytes": 14087757,
+        "skippedNonFinite": 0,
+        "discardedFrames": 13,
+        "invalidBinaryFrames": 0,
+        "frameFormat": "binary",
+        "revision": "rev-cab75d297c934fb0966cdb65390967c9",
+        "epoch": 0,
+        "seq": 637,
+        "sessionState": "RUNNING",
+        "connection": "connected"
+      },
+      "receivedFrameRateHz": 0.9361542782246162,
+      "render": {
+        "sampleCount": 26,
+        "measuredDurationMs": 6161.79999999702,
+        "renderFps": {
+          "count": 5,
+          "min": 3.9755108531823105,
+          "p05": 3.9755108531823105,
+          "p50": 4.057453542166755,
+          "p95": 4.117937736771313,
+          "max": 4.117937736771313,
+          "mean": 4.049344474309786
+        },
+        "frameIntervalMs": {
+          "count": 25,
+          "min": 235.40000000596046,
+          "p05": 237.20000000298023,
+          "p50": 246.29999999701977,
+          "p95": 260.70000000298023,
+          "max": 267.29999999701977,
+          "mean": 246.47199999988078
+        },
+        "transformApplyMs": {
+          "count": 26,
+          "min": 6.5,
+          "p05": 6.5,
+          "p50": 7,
+          "p95": 9.200000002980232,
+          "max": 13,
+          "mean": 7.59999999919763
+        },
+        "frameAgeSinceReceiveMs": {
+          "count": 26,
+          "min": 2.2000000029802322,
+          "p05": 2.2999999970197678,
+          "p50": 485.40000000596046,
+          "p95": 991.7000000029802,
+          "max": 1004.7999999970198,
+          "mean": 420.46538461744785
+        },
+        "drawCalls": {
+          "count": 26,
+          "min": 5,
+          "p05": 5,
+          "p50": 5,
+          "p95": 5,
+          "max": 5,
+          "mean": 5
+        },
+        "sceneObjects": {
+          "count": 26,
+          "min": 12,
+          "p05": 12,
+          "p50": 12,
+          "p95": 12,
+          "max": 12,
+          "mean": 12
+        },
+        "zeroApplySamples": 0
+      },
+      "sourcePolledLatest": {
+        "actualRtf": {
+          "count": 6,
+          "min": 0.9972881909282055,
+          "p05": 0.9972881909282055,
+          "p50": 0.9994294212883316,
+          "p95": 1.0048628297480893,
+          "max": 1.0048628297480893,
+          "mean": 1.0004174183900634
+        }
+      },
+      "rawSource": [
+        {
+          "timeMs": 44987.3587,
+          "stats": {
+            "sessionId": "session-6aa103071df1",
+            "sceneId": "stress-10000",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 720,
+            "simTime": 27.375,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0048628297480893,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 10004,
+              "bodies": 10000,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 717,
+            "encodedPayloadBytes": 272361592,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 2,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 512,
+                "sentMessages": 51
+              },
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 1,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 1,
+                "droppedFrames": 127,
+                "sentMessages": 32
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 46080.3705,
+          "stats": {
+            "sessionId": "session-6aa103071df1",
+            "sceneId": "stress-10000",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 752,
+            "simTime": 28.458333333333332,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0018057265851807,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 10004,
+              "bodies": 10000,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 749,
+            "encodedPayloadBytes": 292844664,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 2,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 512,
+                "sentMessages": 51
+              },
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 1,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 159,
+                "sentMessages": 32
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 47148.5501,
+          "stats": {
+            "sessionId": "session-6aa103071df1",
+            "sceneId": "stress-10000",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 781,
+            "simTime": 29.508333333333333,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0008568836208023,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 10004,
+              "bodies": 10000,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 779,
+            "encodedPayloadBytes": 312047544,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 2,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 512,
+                "sentMessages": 51
+              },
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 1,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 1,
+                "droppedFrames": 186,
+                "sentMessages": 37
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 48214.2719,
+          "stats": {
+            "sessionId": "session-6aa103071df1",
+            "sceneId": "stress-10000",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 810,
+            "simTime": 30.570833333333333,
+            "realtimeFactor": 1,
+            "actualRtf": 0.9972881909282055,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 10004,
+              "bodies": 10000,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 808,
+            "encodedPayloadBytes": 330610328,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 2,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 512,
+                "sentMessages": 51
+              },
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 1,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 1,
+                "droppedFrames": 215,
+                "sentMessages": 38
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 49296.1487,
+          "stats": {
+            "sessionId": "session-6aa103071df1",
+            "sceneId": "stress-10000",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 842,
+            "simTime": 31.670833333333334,
+            "realtimeFactor": 1,
+            "actualRtf": 0.9994294212883316,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 10004,
+              "bodies": 10000,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 839,
+            "encodedPayloadBytes": 350453304,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 2,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 512,
+                "sentMessages": 51
+              },
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 1,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 246,
+                "sentMessages": 38
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 50357.968,
+          "stats": {
+            "sessionId": "session-6aa103071df1",
+            "sceneId": "stress-10000",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-cab75d297c934fb0966cdb65390967c9",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 871,
+            "simTime": 32.704166666666666,
+            "realtimeFactor": 1,
+            "actualRtf": 0.9982614581697711,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 10004,
+              "bodies": 10000,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 869,
+            "encodedPayloadBytes": 369656184,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 2,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 2,
+                "droppedFrames": 512,
+                "sentMessages": 51
+              },
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "scope": "all",
+                "subscriptionId": 1,
+                "delta": false,
+                "baseSeq": null,
+                "reliableQueueDepth": 1,
+                "droppedFrames": 273,
+                "sentMessages": 43
+              }
+            ]
+          }
+        }
+      ],
+      "rawFrames": [
+        {
+          "timeMs": 43444.40000000596,
+          "applyMs": 7.5999999940395355,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 503.80000001192093
+        },
+        {
+          "timeMs": 43691.29999999702,
+          "applyMs": 7,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 750.7000000029802
+        },
+        {
+          "timeMs": 43932.29999999702,
+          "applyMs": 8.400000005960464,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 991.7000000029802
+        },
+        {
+          "timeMs": 44193,
+          "applyMs": 6.5999999940395355,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 4.9000000059604645
+        },
+        {
+          "timeMs": 44441.40000000596,
+          "applyMs": 13,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 253.30000001192093
+        },
+        {
+          "timeMs": 44702.09999999404,
+          "applyMs": 6.800000011920929,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 514
+        },
+        {
+          "timeMs": 44940.90000000596,
+          "applyMs": 8.199999988079071,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 752.8000000119209
+        },
+        {
+          "timeMs": 45185.79999999702,
+          "applyMs": 7.299999997019768,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 2.2999999970197678
+        },
+        {
+          "timeMs": 45433.70000000298,
+          "applyMs": 6.5,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 250.20000000298023
+        },
+        {
+          "timeMs": 45671.59999999404,
+          "applyMs": 7.800000011920929,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 488.09999999403954
+        },
+        {
+          "timeMs": 45916.29999999702,
+          "applyMs": 7,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 732.7999999970198
+        },
+        {
+          "timeMs": 46165.79999999702,
+          "applyMs": 6.700000002980232,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 6.0999999940395355
+        },
+        {
+          "timeMs": 46412.40000000596,
+          "applyMs": 6.899999991059303,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 252.70000000298023
+        },
+        {
+          "timeMs": 46650.90000000596,
+          "applyMs": 8.599999994039536,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 491.20000000298023
+        },
+        {
+          "timeMs": 46918.20000000298,
+          "applyMs": 8.399999991059303,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 758.5
+        },
+        {
+          "timeMs": 47164.5,
+          "applyMs": 7.5,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 1004.7999999970198
+        },
+        {
+          "timeMs": 47415.59999999404,
+          "applyMs": 6.5,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 5.799999997019768
+        },
+        {
+          "timeMs": 47651,
+          "applyMs": 7.9000000059604645,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 241.20000000298023
+        },
+        {
+          "timeMs": 47895.20000000298,
+          "applyMs": 6.799999997019768,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 485.40000000596046
+        },
+        {
+          "timeMs": 48136.70000000298,
+          "applyMs": 9.200000002980232,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 726.9000000059605
+        },
+        {
+          "timeMs": 48388.20000000298,
+          "applyMs": 6.799999997019768,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 2.2000000029802322
+        },
+        {
+          "timeMs": 48628.70000000298,
+          "applyMs": 7.799999997019768,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 242.70000000298023
+        },
+        {
+          "timeMs": 48875.5,
+          "applyMs": 6.5999999940395355,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 489.5
+        },
+        {
+          "timeMs": 49124.29999999702,
+          "applyMs": 6.9000000059604645,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 738.2999999970198
+        },
+        {
+          "timeMs": 49369,
+          "applyMs": 6.5,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 2.5
+        },
+        {
+          "timeMs": 49606.20000000298,
+          "applyMs": 8.299999997019768,
+          "drawCalls": 5,
+          "objects": 12,
+          "frameAgeMs": 239.70000000298023
+        }
+      ]
+    }
+  ]
+}

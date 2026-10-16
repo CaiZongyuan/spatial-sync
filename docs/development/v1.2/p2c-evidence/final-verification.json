@@ -1,0 +1,59 @@
+{
+  "recordedAt": "2026-10-16T11:37:32.435704+00:00",
+  "sourceSha256": {
+    "apps/web/src/components/viewer/InstancedPrimitives.tsx": "2d23bdfadf8c38f9e5d2ae7d009b77f905394745c27eec63048da8c316a3d5b2",
+    "apps/web/src/lib/stream/client.ts": "d663f56db61e582a8610de9707e21260d5c8547b4a5313553911bd6b5fe69f95",
+    "tests/e2e/render-scaling.spec.ts": "fa1397f1ebe42d5ef279aaaaf3d36acc564f12007e30a4eedaaffcae048bfccd",
+    "apps/web/src/lib/stream/client.test.ts": "2404db57d5b8ba271df1d588d5dd76e82f732b8411b9b808baf26618694d8c5e"
+  },
+  "checks": {
+    "webUnit": {
+      "passed": 64,
+      "durationSeconds": 0.486
+    },
+    "productionBuild": "passed",
+    "rendererE2E": {
+      "passed": 6,
+      "durationSeconds": 15.7
+    },
+    "typescriptProtocol": {
+      "passed": 6
+    },
+    "pythonContractUnitGateway": {
+      "passed": 133,
+      "durationSeconds": 11.26,
+      "warnings": 1
+    },
+    "actualCpuCudaExtraction": {
+      "passed": 10,
+      "durationSeconds": 2.71
+    },
+    "actualSpawnedRunner": {
+      "passed": 3,
+      "durationSeconds": 13.99
+    },
+    "cudaRunnerSmoke": "passed",
+    "ownedRuff": "passed"
+  },
+  "counterexample": {
+    "before": "Production at c651685: opposite multi-visual batch order has one submitted visual per target but a missing matrix receipt; expected red in 3.5 seconds",
+    "after": "Both target actual matrix receipts match independent real HTTP Snapshot; part of final six green E2Es"
+  },
+  "repositoryRuff": {
+    "errors": 42,
+    "issueBaseline": "c3ebe6d",
+    "allAffectedFilesUnchangedFromIssueBaseline": true,
+    "files": [
+      "packages/protocol/math.py",
+      "packages/protocol/scripts/export_schema.py",
+      "tests/contract/test_protocol.py",
+      "tests/unit/test_protocol_math.py"
+    ]
+  },
+  "tenThousandPostRepair": {
+    "validRuns": 2,
+    "invalidCurrentAttempt": 1,
+    "artifact": "final-adaptive-10000-failed.json",
+    "retriedAgain": false
+  }
+}
