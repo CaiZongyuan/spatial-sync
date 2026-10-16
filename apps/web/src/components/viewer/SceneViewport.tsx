@@ -65,6 +65,9 @@ const visibleEvents: typeof events = (state) => ({
   filter: (hits) => hits.filter((hit) => isVisible(hit.object)),
 });
 
+// Axes guide orientation; body meshes and Site marker spheres own picking.
+const skipPicking = () => {};
+
 function Asset({
   visual,
   object,
@@ -330,7 +333,7 @@ function Body({
         colliders={layers.colliders}
         warn={warn}
       />
-      {layers.origins && <axesHelper args={[0.18]} />}
+      {layers.origins && <axesHelper args={[0.18]} raycast={skipPicking} />}
       {ownSites.map((site) => (
         <SiteMarker
           key={site.entityKey}
@@ -381,7 +384,7 @@ function SiteMarker({
         select(site.entityKey);
       }}
     >
-      <axesHelper args={[selected ? 0.26 : 0.14]} />
+      <axesHelper args={[selected ? 0.26 : 0.14]} raycast={skipPicking} />
       <mesh>
         <sphereGeometry args={[selected ? 0.045 : 0.025, 12, 8]} />
         <meshBasicMaterial
@@ -572,7 +575,7 @@ function SceneContents({
             select={select}
           />
         )}
-        <axesHelper args={[0.6]} />
+        <axesHelper args={[0.6]} raycast={skipPicking} />
         {manifest.nodes
           .filter(
             (node): node is PhysicalNode =>
