@@ -1,4 +1,5 @@
 import { Quaternion } from 'three';
+import { decodeBinaryFrame } from './binary-frame';
 import type {
   SceneManifest,
   TransformFrame,
@@ -7,6 +8,10 @@ import type {
 } from '../protocol';
 
 type WireFrame = TransformFrame | Snapshot;
+type FrameHeader = Pick<
+  WireFrame,
+  'type' | 'sceneRevision' | 'epoch' | 'seq' | 'simTime' | 'sampleTimeMs'
+>;
 type BufferedFrame = {
   sample: number;
   simTime: number;
@@ -25,6 +30,7 @@ export class PoseBuffer {
   private qa = new Quaternion();
   private qb = new Quaternion();
   revision = '';
+  private revisionNumericId = 0;
   epoch = -1;
   lastSeq = -1;
   displayedSeq = -1;
@@ -34,12 +40,14 @@ export class PoseBuffer {
   grantedRateHz = 30;
   skippedNonFinite = 0;
   discardedFrames = 0;
+  invalidBinaryFrames = 0;
   discontinuities = 0;
   paused = false;
   awaitingSnapshot = true;
 
   configure(manifest: SceneManifest) {
     this.revision = manifest.sceneRevision;
+    this.revisionNumericId = manifest.revisionNumericId;
     this.epoch = manifest.epoch;
     this.lastSeq = -1;
     this.displayedSeq = -1;
@@ -69,6 +77,98 @@ export class PoseBuffer {
   }
 
   push(frame: WireFrame, received: number): boolean {
+    return this.ingest(frame, received, (data) => {
+      for (const pose of frame.poses) {
+        this.writePose(
+          data,
+          this.indices.get(pose[0]),
+          pose[1],
+          pose[2],
+          pose[3],
+          pose[4],
+          pose[5],
+          pose[6],
+          pose[7],
+        );
+      }
+    });
+  }
+
+  pushBinary(bytes: ArrayBuffer, received: number): boolean {
+    const frame = decodeBinaryFrame(
+      bytes,
+      this.revisionNumericId,
+      this.indices.size,
+    );
+    if (!frame) {
+      this.invalidBinaryFrames++;
+      return false;
+    }
+    return this.ingest(
+      { ...frame, sceneRevision: this.revision },
+      received,
+      (data) => {
+        const values = frame.values;
+        for (let body = 0; body < frame.count; body++) {
+          const word = body * 8;
+          this.writePose(
+            data,
+            this.indices.get(frame.ids[word]),
+            values[word + 1],
+            values[word + 2],
+            values[word + 3],
+            values[word + 4],
+            values[word + 5],
+            values[word + 6],
+            values[word + 7],
+          );
+        }
+      },
+    );
+  }
+
+  private writePose(
+    data: Float64Array,
+    index: number | undefined,
+    px: number,
+    py: number,
+    pz: number,
+    qx: number,
+    qy: number,
+    qz: number,
+    qw: number,
+  ) {
+    if (index === undefined) return;
+    const norm = Math.hypot(qx, qy, qz, qw);
+    if (
+      !Number.isFinite(px) ||
+      !Number.isFinite(py) ||
+      !Number.isFinite(pz) ||
+      !Number.isFinite(qx) ||
+      !Number.isFinite(qy) ||
+      !Number.isFinite(qz) ||
+      !Number.isFinite(qw) ||
+      !Number.isFinite(norm) ||
+      norm < 1e-12
+    ) {
+      this.skippedNonFinite++;
+      return;
+    }
+    const start = index * 7;
+    data[start] = px;
+    data[start + 1] = py;
+    data[start + 2] = pz;
+    data[start + 3] = qx / norm;
+    data[start + 4] = qy / norm;
+    data[start + 5] = qz / norm;
+    data[start + 6] = qw / norm;
+  }
+
+  private ingest(
+    frame: FrameHeader,
+    received: number,
+    write: (data: Float64Array) => void,
+  ): boolean {
     const snapshot = frame.type === 'stream.snapshot';
     const repeatedRecoverySnapshot =
       snapshot &&
@@ -77,6 +177,9 @@ export class PoseBuffer {
       frame.epoch === this.epoch;
     if (
       frame.sceneRevision !== this.revision ||
+      !Number.isSafeInteger(frame.seq) ||
+      !Number.isFinite(frame.sampleTimeMs) ||
+      !Number.isFinite(frame.simTime) ||
       (frame.seq <= this.lastSeq && !repeatedRecoverySnapshot) ||
       frame.epoch < this.epoch ||
       (!snapshot && (this.awaitingSnapshot || frame.epoch !== this.epoch))
@@ -98,19 +201,7 @@ export class PoseBuffer {
       this.discontinuities++;
     }
     const data = new Float64Array(prior?.data ?? this.displayed);
-    for (const pose of frame.poses) {
-      const index = this.indices.get(pose[0]);
-      if (index === undefined) continue;
-      const values = pose.slice(1);
-      const norm = Math.hypot(...values.slice(3));
-      if (!values.every(Number.isFinite) || norm < 1e-12) {
-        this.skippedNonFinite++;
-        continue;
-      }
-      const start = index * 7;
-      for (let i = 0; i < 7; i++)
-        data[start + i] = i < 3 ? values[i] : values[i] / norm;
-    }
+    write(data);
     this.authoritative = {
       sample: frame.sampleTimeMs,
       simTime: frame.simTime,

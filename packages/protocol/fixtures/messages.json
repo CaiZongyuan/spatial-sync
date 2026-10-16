@@ -17,7 +17,8 @@
     "protocolVersion": 1,
     "sceneRevision": "rev-fixture",
     "scope": "all",
-    "rateHz": 30.0
+    "rateHz": 30.0,
+    "format": "json"
   },
   {
     "type": "client.subscribe",
@@ -25,6 +26,7 @@
     "sceneRevision": "rev-fixture",
     "scope": "entities",
     "rateHz": 30.0,
+    "format": "json",
     "entityKeys": [
       "/World/Arm"
     ]
@@ -32,7 +34,8 @@
   {
     "type": "subscription.ack",
     "scope": "all",
-    "grantedRateHz": 30.0
+    "grantedRateHz": 30.0,
+    "format": "json"
   },
   {
     "type": "stream.snapshot",

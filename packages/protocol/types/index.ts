@@ -320,6 +320,7 @@ export interface Subscribe {
   sceneRevision: string
   scope: 'all' | 'entities'
   rateHz: number
+  format: 'json' | 'binary'
   entityKeys?: string[] | null
 }
 /**
@@ -347,6 +348,7 @@ export interface SubscriptionAck {
   type: 'subscription.ack'
   scope: 'all' | 'entities'
   grantedRateHz: number
+  format: 'json' | 'binary'
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

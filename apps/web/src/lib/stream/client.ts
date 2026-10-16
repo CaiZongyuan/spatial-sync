@@ -56,8 +56,12 @@ export class SessionClient {
   private receivedFrames = 0;
   private payloadBytes = 0;
   private publishSample?: { frames: number; time: number; revision: unknown };
+  private frameFormat: 'json' | 'binary' = 'json';
 
-  constructor(readonly sessionId: string) {}
+  constructor(
+    readonly sessionId: string,
+    readonly format: 'json' | 'binary' = 'json',
+  ) {}
   getSnapshot = () => this.state;
   getStreamMetrics = () => ({
     timeMs: performance.now(),
@@ -65,6 +69,8 @@ export class SessionClient {
     payloadBytes: this.payloadBytes,
     skippedNonFinite: this.buffer.skippedNonFinite,
     discardedFrames: this.buffer.discardedFrames,
+    invalidBinaryFrames: this.buffer.invalidBinaryFrames,
+    frameFormat: this.frameFormat,
     revision: this.buffer.revision,
     epoch: this.buffer.epoch,
     seq: this.buffer.lastSeq,
@@ -179,6 +185,7 @@ export class SessionClient {
     );
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(url);
+    ws.binaryType = 'arraybuffer';
     this.ws = ws;
     let messages = Promise.resolve();
     ws.onopen = () => {
@@ -189,10 +196,17 @@ export class SessionClient {
       this.payloadBytes +=
         typeof event.data === 'string'
           ? new TextEncoder().encode(event.data).length
-          : event.data.size;
+          : event.data.byteLength;
       messages = messages
         .then(async () => {
           if (this.stopped || this.ws !== ws) return;
+          if (event.data instanceof ArrayBuffer) {
+            if (this.buffer.pushBinary(event.data, performance.now())) {
+              this.receivedFrames++;
+              this.rates.push(performance.now());
+            }
+            return;
+          }
           await this.receive(
             JSON.parse(event.data) as ServerMessage,
             generation,
@@ -228,6 +242,7 @@ export class SessionClient {
         sceneRevision: this.state.manifest.sceneRevision,
         scope: 'all',
         rateHz: this.state.manifest.source.basePublishHz,
+        format: this.format,
       }),
     );
   }
@@ -251,6 +266,7 @@ export class SessionClient {
         break;
       case 'subscription.ack':
         this.buffer.grantedRateHz = message.grantedRateHz;
+        this.frameFormat = message.format ?? 'json';
         break;
       case 'transform.frame':
       case 'stream.snapshot':

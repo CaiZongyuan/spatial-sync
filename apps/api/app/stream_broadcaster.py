@@ -14,7 +14,7 @@ from apps.api.app.settings import Settings
 
 @dataclass(frozen=True)
 class Delivery:
-    payload: str
+    payload: str | bytes
     seq: int | None = None
     force: bool = False
 
@@ -31,6 +31,7 @@ class ClientConnection:
         self.subscribed = False
         self.stream_ids: frozenset[int] | None = None
         self.granted_rate_hz = 30.0
+        self.frame_format = "json"
         self.dropped_frames = 0
         self.sent_messages = 0
         self.last_sent_seq = -1
@@ -42,7 +43,7 @@ class ClientConnection:
     def start(self):
         self.task = asyncio.create_task(self._pump(), name="websocket-pump")
 
-    def enqueue_reliable(self, payload: str, seq: int | None = None, force: bool = False):
+    def enqueue_reliable(self, payload: str | bytes, seq: int | None = None, force: bool = False):
         if self.closed.is_set() or self._close_requested:
             return
         if seq is not None and self.latest is not None and self.latest.seq <= seq:
@@ -53,7 +54,7 @@ class ClientConnection:
             self.request_close(1013)
         self.wake.set()
 
-    def offer_frame(self, payload: str, seq: int):
+    def offer_frame(self, payload: str | bytes, seq: int):
         if self.closed.is_set() or self._close_requested or seq <= self.last_sent_seq:
             return
         if self.latest is not None:
@@ -80,9 +81,8 @@ class ClientConnection:
                 await self.task
 
     async def _send(self, delivery: Delivery):
-        await asyncio.wait_for(
-            self.websocket.send_text(delivery.payload), timeout=self.settings.send_timeout_seconds
-        )
+        send = self.websocket.send_bytes if isinstance(delivery.payload, bytes) else self.websocket.send_text
+        await asyncio.wait_for(send(delivery.payload), timeout=self.settings.send_timeout_seconds)
         self.sent_messages += 1
         if delivery.seq is not None:
             self.last_sent_seq = max(self.last_sent_seq, delivery.seq)

@@ -119,6 +119,8 @@ export function Diagnostics({
               ],
               ['Published frames', stats.publishedFrames as number],
               ['Received frames', state.receivedFrames],
+              ['Frame format', client.format],
+              ['Malformed binary frames', client.buffer.invalidBinaryFrames],
               [
                 'Received payload',
                 `${(state.payloadBytes / 1024).toFixed(1)} KiB`,
