@@ -14,11 +14,16 @@ def upright(quaternion):
 
 
 def _site_positions(pose, sites):
-    delta = np.asarray(pose, dtype=float)[:3] - sites[:, :3]
+    pose = np.asarray(pose, dtype=float)
     q = sites[:, 3:] / np.linalg.norm(sites[:, 3:], axis=1)[:, None]
-    inverse = -q[:, :3]
+    if pose.ndim == 1:
+        delta = pose[:3] - sites[:, :3]
+    else:
+        delta = pose[None, :, :3] - sites[:, None, :3]
+        q = q[:, None, :]
+    inverse = -q[..., :3]
     turn = 2 * np.cross(inverse, delta)
-    return delta + q[:, 3, None] * turn + np.cross(inverse, turn)
+    return delta + q[..., 3, None] * turn + np.cross(inverse, turn)
 
 
 def site_relative_velocities(previous_pose, pose, previous_sites, sites, dt):
@@ -26,6 +31,7 @@ def site_relative_velocities(previous_pose, pose, previous_sites, sites, dt):
 
     This includes the rotational velocity field at an offset tube; subtracting
     only Site-origin world velocity misses that term.
+    Batched body poses return [Site, body, xyz]; one body returns [Site, xyz].
     """
     if not math.isfinite(dt) or dt <= 0:
         raise ValueError("The shared physics sample interval must be positive")

@@ -56,3 +56,14 @@ def test_velocity_threshold_is_evaluated_for_each_candidate_site():
     sites = [[0, 0, 0, 0, 0, 0, 1], [0.01, 0, 0, 0, 0, 0, 1]]
     pose = [0.005, 0, 0, 0, 0, 0, 1]
     assert tube_location(pose, [[0.06, 0, 0], [0, 0, 0]], sites, ["moving", "stationary"]) == "stationary"
+
+
+def test_batched_bottom_origins_keep_independent_corotation_and_slip():
+    previous = [[0.014, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 1]]
+    current = [[0, 0.014, 0, 0, 0, 0, 1], [0, 0.014, 0, 0, 0, 0, 1]]
+    before = [[0, 0, 0, 0, 0, 0, 1], [0.01, 0, 0, 0, 0, math.sqrt(0.5), math.sqrt(0.5)]]
+    after = [[0, 0, 0, 0, 0, math.sqrt(0.5), math.sqrt(0.5)], [0, 0.01, 0, 0, 0, 1, 0]]
+    velocity = site_relative_velocities(previous, current, before, after, 0.25)
+    np.testing.assert_allclose(
+        velocity, [[[0, 0, 0], [0.056, 0, 0]], [[0, 0, 0], [0, -0.056, 0]]], atol=1e-15
+    )
