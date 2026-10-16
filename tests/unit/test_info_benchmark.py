@@ -1,6 +1,7 @@
 """The Source's typed digest must describe the same real work as client JSON."""
 
 import hashlib
+import json
 import struct
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from apps.api.app.sources.synthetic_source import REGISTRY, SyntheticSource
 from packages.info.catalog import load_catalog
 from packages.info.program import HostCore
 from packages.protocol.schema import Actor, EntityObservations, InvokeRequest, ObservationChange
+from tools import bench_info
 from tools.bench_info import (
     CONTROL,
     PREFIX,
@@ -131,3 +133,82 @@ def test_fixture_keeps_generation_configuration_separate_from_publication_limit(
     definition = yaml.safe_load((root / "types/bench-telemetry.v1.yaml").read_text(encoding="utf-8"))
     assert entity["config"]["generationHz"] == (15 if generation is None else 60)
     assert definition["properties"]["value"]["maxRateHz"] == 15
+
+
+@pytest.mark.parametrize(
+    "arrivals,expected_window",
+    [([(at, at - 1) for at in range(1100, 2000, 100)] + [(2003, 1999)], 9000), ([(1003, 999)], 1000)],
+)
+async def test_reader_throughput_uses_receive_window_and_keeps_delayed_batches_in_complete_digest(
+    monkeypatch, arrivals, expected_window
+):
+    clock = [1000]
+    keys = [PREFIX + f"{index:08d}" for index in range(1000)]
+
+    class Socket:
+        async def recv(self):
+            return json.dumps({"type": "server.ready", "protocolVersion": 2})
+
+        async def send(self, message):
+            pass
+
+        async def __aiter__(self):
+            yield json.dumps(
+                {
+                    "type": "entity.snapshot",
+                    "sceneRevision": "revision",
+                    "epoch": 0,
+                    "sampleTimeMs": 1000,
+                    "entities": [{"key": key} for key in keys],
+                }
+            )
+            for value, (received, sampled) in enumerate(arrivals, 1):
+                clock[0] = received
+                yield json.dumps(
+                    {
+                        "type": "entity.observations",
+                        "sceneRevision": "revision",
+                        "epoch": 0,
+                        "sampleTimeMs": sampled,
+                        "changes": [
+                            {"key": key, "rev": value + 1, "values": {"value": value}} for key in keys
+                        ],
+                    }
+                )
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return Socket()
+
+        async def __aexit__(self, *args):
+            pass
+
+    monkeypatch.setattr(bench_info, "connect", Connection)
+    monkeypatch.setattr(bench_info.time, "monotonic", lambda: clock[0] / 1000)
+    reader = bench_info.Reader(
+        "ws://unused",
+        {
+            "sessionId": "reader-window",
+            "sceneRevision": "revision",
+            "revisionNumericId": 1,
+            "nodes": [],
+        },
+        1000,
+    )
+    await reader.run()
+    assert reader.error is None
+    assert (
+        sum(count for received, count in reader.change_samples if 1000 <= received <= 2000) == expected_window
+    )
+    assert reader.changes == len(arrivals) * 1000
+    assert len(reader.latencies) == len(arrivals)
+    assert reader.latencies[-1][0] == arrivals[-1][1]
+    assert reader.latencies[-1][1] == pytest.approx(arrivals[-1][0] - arrivals[-1][1])
+    expected_digest = hashlib.sha256()
+    for value in range(1, len(arrivals) + 1):
+        for index in range(1000):
+            expected_digest.update(struct.pack("<QQQ", index, value + 1, value))
+    assert reader.digest.digest() == expected_digest.digest()

@@ -314,7 +314,7 @@ class Reader:
                                 self.revisions[index], self.values[index] = rev, value
                             self.changes += update_digest(self.digest, rows)
                             self.batches += 1
-                            self.change_samples.append((message["sampleTimeMs"], len(rows)))
+                            self.change_samples.append((received, len(rows)))
                             latency = received - message["sampleTimeMs"]
                             assert latency >= 0
                             self.latencies.append((message["sampleTimeMs"], latency))
@@ -889,6 +889,10 @@ def main():
             "throughput": (
                 "actual generated counter increments and separately published Source/two-reader rows "
                 "per measured window; never theoretical entity*Hz"
+            ),
+            "readerThroughput": (
+                "fixed same-machine receive-time window; "
+                "receive completion timestamp is taken before JSON parsing"
             ),
             "limits": "CPU contention and instrumentation included; interpret budgets separately",
             "correctnessCohort": "all post-cursor messages through drain, including warmup and controls",
