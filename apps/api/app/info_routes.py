@@ -6,6 +6,7 @@ from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool
 
+from apps.api.app.session_manager import encode
 from packages.info.conditions import OPERATORS, evaluate_conditions
 from packages.info.invocations import TERMINAL
 from packages.protocol.schema import ActionRequest, Actor, Catalog, Model, Positive
@@ -97,7 +98,7 @@ def install_info_routes(app, manager, role_for):
         value = state(session, key)
         binding = session.catalog.entities[key]
         recent = session.pipeline.table.list(entity=key, limit=10)
-        return {
+        document = {
             "key": key,
             "type": binding["type"],
             "binding": binding,
@@ -106,12 +107,14 @@ def install_info_routes(app, manager, role_for):
             "active": [item.model_dump(mode="json") for item in session.pipeline.table.active_for(key)],
             "recent": [item.model_dump(mode="json") for item in recent],
         }
+        return Response(content=encode(document), media_type="application/json")
 
     @app.get(prefix + "/state")
     async def states(session_id: str, keys: str | None = None):
         session = manager.get(session_id)
         selected = keys.split(",") if keys else session.catalog.entities.keys()
-        return {"entities": {key: state(session, key) for key in selected}}
+        document = {"entities": {key: state(session, key) for key in selected}}
+        return Response(content=encode(document), media_type="application/json")
 
     @app.post(prefix + "/actions")
     async def action(session_id: str, body: HttpAction, request: Request):

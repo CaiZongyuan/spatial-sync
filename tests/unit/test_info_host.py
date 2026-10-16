@@ -101,6 +101,25 @@ def test_host_deadline_uses_execution_time_and_fails_a_nonterminating_program(tm
     assert failure.error.code == "timeout" and failure.createdSimTime == 0
 
 
+def test_active_invocations_are_device_scoped_defensive_and_expire_with_work(tmp_path):
+    manifest = definition_root(tmp_path)
+    catalog = load_catalog(manifest, "test", {CounterProgram.id: CounterProgram}, root=tmp_path)
+    host = HostCore(catalog, {CounterProgram.id: CounterProgram})
+    host.invoke(request("/good", token="good"))
+    host.invoke(request("/bad", token="bad"))
+    exported = host.active_invocations("/good")
+    assert [item.invocationId for item in exported] == ["good"]
+    exported[0].params["intrusion"] = [1]
+    exported[0].actor.name = "changed"
+    canonical = next(item for item in host.snapshot().invocations if item.invocationId == "good")
+    assert canonical.params == {} and canonical.actor.name != "changed"
+    host.tick(1 / 60, 1 / 60)
+    assert host.active_invocations("/good")[0].status == "running"
+    assert host.active_invocations("/bad") == []
+    host.reset(1)
+    assert host.active_invocations("/good") == []
+
+
 def test_program_cannot_write_another_entity_even_with_a_retained_context(tmp_path):
     class Intruder(CounterProgram):
         contexts = {}

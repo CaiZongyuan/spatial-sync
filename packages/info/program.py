@@ -250,6 +250,14 @@ class HostCore:
     def values(self):
         return {state.key: state.export_values() for state in self._states}
 
+    def active_invocations(self, entity_key):
+        """Read one device's active work without exporting all entity state."""
+        return [
+            handle.invocation.model_copy(deep=True)
+            for handle in self._active.values()
+            if handle.invocation.entityKey == entity_key
+        ]
+
     def reader(self, entity_key, prop):
         index = self._entity_indices[entity_key]
         property_index = self._states[index].indices[prop]

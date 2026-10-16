@@ -68,6 +68,11 @@ class SyntheticSource:
         )
         self._centrifuge_phase = self.host.reader(CENTRIFUGE, "phase")
         self._centrifuge_rpm = self.host.reader(CENTRIFUGE, "rpm")
+        self._joint_positions = self.host.reader(ROBOT, "jointPositions")
+        self._lid_open = self.host.reader(CENTRIFUGE, "lidOpen")
+        self._tube_locations = [
+            self.host.reader(BASE + f"/Tubes/Tube{index + 1:02d}", "location") for index in range(20)
+        ]
         self._state = "RUNNING"
         self._publish("stream.snapshot")
         self._last_clock = time.monotonic()
@@ -172,8 +177,7 @@ class SyntheticSource:
         return self._latest
 
     def _poses(self):
-        values = self.host.values()
-        first, second, hand = kinematics(values[ROBOT]["jointPositions"])
+        first, second, hand = kinematics(self._joint_positions())
         poses = [(1, *first["p"], *first["q"]), (2, *second["p"], *second["q"]), (3, *hand["p"], *hand["q"])]
         rotor = {
             "p": [-0.5, 0.4, 0.85],
@@ -185,9 +189,8 @@ class SyntheticSource:
             site_poses[CENTRIFUGE + f"/Rotor/Slot{i + 1}"] = compose_pose(
                 rotor, {"p": local, "q": [0, 0, 0, 1]}
             )
-        for index in range(20):
-            key = BASE + f"/Tubes/Tube{index + 1:02d}"
-            location = values[key]["location"]
+        for index, read_location in enumerate(self._tube_locations):
+            location = read_location()
             pose = (
                 {"p": hand["p"], "q": [0, 0, 0, 1]}
                 if location == "held"
@@ -197,8 +200,8 @@ class SyntheticSource:
                 )
             )
             poses.append((10 + index, *pose["p"], *pose["q"]))
-        lid_angle = 1.4 if values[CENTRIFUGE]["lidOpen"] else 0.0
-        for invocation in self.entity_snapshot().invocations:
+        lid_angle = 1.4 if self._lid_open() else 0.0
+        for invocation in self.host.active_invocations(CENTRIFUGE):
             if (
                 invocation.entityKey == CENTRIFUGE
                 and invocation.status == "running"
@@ -521,7 +524,7 @@ class SyntheticSource:
     async def query_joint_state(self, joint_key: str) -> JointState:
         if joint_key not in (JOINT1, JOINT2):
             raise KeyError(joint_key)
-        joints = self.host.values()[ROBOT]["jointPositions"]
+        joints = self._joint_positions()
         return JointState(
             entityKey=joint_key,
             simTime=self.sim_time,

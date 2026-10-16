@@ -1,4 +1,5 @@
 import asyncio
+import math
 import uuid
 
 import pytest
@@ -47,6 +48,35 @@ async def complete(source, key, action, **params):
             assert value.status == "succeeded", value.model_dump()
             return value
     raise AssertionError("Virtual action exceeded its bounded expected duration")
+
+
+async def test_spatial_lid_pose_tracks_running_action_completion_and_reset():
+    source = SyntheticSource("lid-geometry")
+
+    async def lid_rotation():
+        frame = await source.snapshot()
+        return next(row[4:] for row in frame.poses if row[0] == 32)
+
+    try:
+        await source.start("lab-demo", SessionOptions())
+        await source.execute(Command(requestId="pause-lid", command="pause"))
+        accepted = await invoke(source, CENTRIFUGE, "closeLid")
+        await advance(source, 0.5)
+        invocation = next(
+            item
+            for item in source.entity_snapshot().invocations
+            if item.invocationId == accepted.invocationId
+        )
+        progress = source.sim_time - invocation.startedSimTime
+        angle = 1.4 * (1 - progress)
+        assert await lid_rotation() == pytest.approx([0, math.sin(angle / 2), 0, math.cos(angle / 2)])
+        await advance(source, 1)
+        assert await lid_rotation() == pytest.approx([0, 0, 0, 1])
+        await source.execute(Command(requestId="reset-lid", command="reset"))
+        assert await lid_rotation() == pytest.approx([0, math.sin(0.7), 0, math.cos(0.7)])
+        assert state(source)[CENTRIFUGE]["lidOpen"] is True
+    finally:
+        await source.close()
 
 
 async def test_real_centrifuge_lifecycle_is_authoritative_paused_and_final_observations_precede_success():
