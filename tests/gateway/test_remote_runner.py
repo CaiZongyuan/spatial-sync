@@ -20,7 +20,7 @@ from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.api.app.sources.remote_source import RemoteSource
 from apps.api.app.sources.synthetic_source import SyntheticSource
-from packages.protocol.schema import Command, SceneManifest, SessionOptions, TransformFrame
+from packages.protocol.schema import Command, SceneManifest, SessionOptions
 from packages.transport import FrameCodec
 from packages.transport.remote import (
     FRAME,
@@ -187,6 +187,78 @@ async def public_subscribe(ws, revision):
     await ws.send(json.dumps({"type": "client.subscribe", "sceneRevision": revision, "scope": "all"}))
     await read_until(ws, lambda item: item["type"] == "subscription.ack")
     return (await read_until(ws, lambda item: item["type"] == "stream.snapshot"))[-1]
+
+
+async def test_registered_stress_scene_uses_remote_tls_with_complete_sparse_ids(
+    tls_material, record_property
+):
+    cert, key, token = tls_material
+    async with RunnerServer(
+        ServerConfig(cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic")
+    ) as remote:
+        config = RemoteConfig(port=remote.port, ca_file=cert, token=token, source_kind="synthetic")
+        async with public_gateway(config) as base, httpx.AsyncClient(base_url=base) as http:
+            scenes = (await http.get("/api/v1/scenes")).json()["scenes"]
+            advertised = {scene["sceneId"] for scene in scenes if "synthetic" in scene["sources"]}
+            assert {"stress-100", "stress-500", "stress-2000", "stress-10000", "stress-mixed"} <= advertised
+            created = await http.post(
+                "/api/v1/sessions", json={"sceneId": "stress-100", "source": "synthetic"}
+            )
+            assert created.status_code == 201, created.text
+            route = f"/api/v1/sessions/{created.json()['sessionId']}"
+            manifest = (await http.get(route + "/scene")).json()
+            ids = {100 + 3 * index for index in range(100)}
+            assert {node["streamId"] for node in manifest["nodes"] if node["kind"] == "body"} == ids
+            initial = (await http.get(route + "/snapshot")).json()
+            assert len(initial["poses"]) == 100 and {row[0] for row in initial["poses"]} == ids
+            assert initial["poses"][1][0] == 121  # Independent fixture fact: rows are permuted by seven.
+            async with connect(
+                base.replace("http:", "ws:") + route + "/ws", origin="http://127.0.0.1:5188"
+            ) as ws:
+                assert json.loads(await ws.recv())["sampleTimeClock"] == "gateway-receive"
+                baseline = await public_subscribe(ws, manifest["sceneRevision"])
+                assert len(baseline["poses"]) == 100 and {row[0] for row in baseline["poses"]} == ids
+                periodic = (
+                    await read_until(
+                        ws, lambda item: item["type"] == "transform.frame" and item["seq"] > baseline["seq"]
+                    )
+                )[-1]
+                assert len(periodic["poses"]) == 100 and {row[0] for row in periodic["poses"]} == ids
+                await ws.send(
+                    json.dumps({"type": "command.request", "requestId": "pause-stress", "command": "pause"})
+                )
+                trace = await read_until(
+                    ws,
+                    lambda item: (
+                        item["type"] == "session.state" and item["cause"].get("requestId") == "pause-stress"
+                    ),
+                )
+                state = trace[-1]
+                frame = next(
+                    item
+                    for item in trace
+                    if item["type"] == "transform.frame" and item["seq"] == state["seq"]
+                )
+                snapshot = (await http.get(route + "/snapshot")).json()
+                assert snapshot["seq"] == state["seq"] and snapshot["poses"] == frame["poses"]
+                assert len(snapshot["poses"]) == 100 and {row[0] for row in snapshot["poses"]} == ids
+                assert manifest["source"]["sampleTimeClock"] == "gateway-receive"
+            assert (await http.delete(route)).status_code == 204
+            await eventually(lambda: remote.active_sessions == 0)
+            record_property(
+                "remote_stress_registry",
+                json.dumps(
+                    {
+                        "scene": "stress-100",
+                        "bodies": 100,
+                        "firstIds": sorted(ids)[:3],
+                        "lastId": max(ids),
+                        "httpWsSameSeq": snapshot["seq"],
+                        "completeHttpWs": True,
+                        "ownedSourceReleased": True,
+                    }
+                ),
+            )
 
 
 async def test_actual_tcp_gateway_two_observers_reload_peer_loss_and_restart(tls_material, record_property):
@@ -590,17 +662,11 @@ async def test_gateway_rejects_malformed_nsynthrough_actual_tls_frame_channel(tl
                 _, payload = await receive(reader, limits, allowed=(JSON,))
                 start = parse_json(payload)
                 fixture = SyntheticSource(start.sessionId)
-                manifest = fixture._manifest()
-                frame = TransformFrame(
-                    type="stream.snapshot",
-                    sessionId=start.sessionId,
-                    sceneRevision=manifest.sceneRevision,
-                    epoch=0,
-                    seq=1,
-                    simTime=0,
-                    sampleTimeMs=1,
-                    poses=fixture._poses(),
-                )
+                try:
+                    manifest = await fixture.start("lab-demo", start.options)
+                    frame = fixture.latest_frame().model_copy(update={"sampleTimeMs": 1.0})
+                finally:
+                    await fixture.close()
                 malicious = bytearray(FrameCodec(start.sessionId, manifest.sceneRevision, 1).encode(frame))
                 if corruption == "magic":
                     malicious[:4] = b"BAD!"

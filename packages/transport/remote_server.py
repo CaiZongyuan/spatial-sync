@@ -178,12 +178,13 @@ class _Peer:
             self.reader, self.limits, timeout=self.limits.handshake_seconds, allowed=(JSON,)
         )
         start = parse_json(payload)
-        scenes = (
-            ("lab-demo",)
-            if self.server.config.source_kind == "synthetic"
-            else ("falling-boxes", "robot-and-tubes", "usd-lab")
-        )
-        if not isinstance(start, Start) or start.sceneId not in scenes:
+        # Share the public registry, including newly registered source/scene combinations.
+        from apps.api.app.session_manager import SCENES
+
+        if not isinstance(start, Start) or not any(
+            scene["sceneId"] == start.sceneId and self.server.config.source_kind in scene["sources"]
+            for scene in SCENES
+        ):
             raise ValueError("Remote scene is not registered for this fixed source")
         self.control, self.frames = (
             Outbox(self.writer, self.limits),
