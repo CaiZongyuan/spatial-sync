@@ -40,7 +40,9 @@ def export_manifest(
     strict_labels=False,
 ) -> SceneManifest:
     model = sim.model
-    labels = labels_for_model(model, strict=strict_labels)
+    labels = labels_for_model(
+        model, missing_labels=getattr(sim, "missing_labels", ()), strict=strict_labels,
+    )
     warnings = list(labels.warnings)
     shape_bodies = model.shape_body.numpy()
     shape_flags = model.shape_flags.numpy()

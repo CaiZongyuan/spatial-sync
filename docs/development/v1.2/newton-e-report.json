@@ -1,0 +1,57 @@
+{
+    "task":  {
+                 "status":  "partial",
+                 "startedAt":  "2026-10-16T04:18:30.995Z",
+                 "goal":  "P0-E isolated NewtonSource with real CPU/CUDA, transport, readback and gateway evidence"
+             },
+    "title":  "P0-E isolated Newton source",
+    "resources":  [
+                      {
+                          "disposition":  "cleaned",
+                          "name":  "GPU",
+                          "owner":  "Newton Developer",
+                          "purpose":  "bounded CUDA readback/source smoke"
+                      },
+                      {
+                          "disposition":  "retained",
+                          "name":  "p0-e .venv and .scratch",
+                          "owner":  "Newton Developer",
+                          "purpose":  "isolated follow-on development and evidence"
+                      }
+                  ],
+    "project":  "Newton Spatial Sync",
+    "snapshotAt":  "2026-10-16T04:54:35.1819672Z",
+    "findings":  [
+                     {
+                         "mechanism":  "WS rounds positions to six decimals while Pose API retains source precision; exact comparison rejected a valid 3.5e-7m difference",
+                         "title":  "Wire precision oracle",
+                         "proposal":  "Compare same-seq poses at abs1e-6m, preserving specification precision",
+                         "confidence":  "verified"
+                     }
+                 ],
+    "scope":  {
+                  "mobile":  false,
+                  "platform":  "desktop-web"
+              },
+    "tickets":  [
+                    {
+                        "id":  "P0-E",
+                        "pending":  [
+                                        "independent Standards/Spec review",
+                                        "PM integration",
+                                        "browser visual comparison"
+                                    ],
+                        "delivered":  [
+                                          "spawn source + independent periodic/control pipes",
+                                          "CPU/CUDA immutable readback and bounded pacing",
+                                          "single Runner across two WS observers, crash/health/restart proof",
+                                          "CPU/CUDA public CLI receipts and cleanup"
+                                      ],
+                        "blockers":  [
+
+                                     ],
+                        "title":  "Newton integration",
+                        "status":  "ready"
+                    }
+                ]
+}

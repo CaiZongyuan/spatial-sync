@@ -18,6 +18,7 @@ class NewtonSimulation:
         self.scene_id = scene_id
         self.physics_dt = physics_dt
         self.builder = build_scene(scene_id)
+        self.missing_labels = set(getattr(self.builder, "spatial_missing_labels", ()))
         self.anchor_sites = add_joint_anchor_sites(self.builder)
         self.model = self.builder.finalize(device=device)
         self.state = self.model.state()
