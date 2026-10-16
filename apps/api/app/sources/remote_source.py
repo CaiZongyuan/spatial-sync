@@ -271,7 +271,10 @@ class RemoteSource:
             return await asyncio.wait_for(future, timeout)
         except RemoteQueryTimeout:
             raise
-        except TimeoutError:
+        except TimeoutError as exc:
+            if kind in ("joint", "mesh"):
+                # Keep the reader alive to drain a late reply whose token has expired.
+                raise RemoteQueryTimeout("Remote query timed out") from exc
             self._fail("request timeout")
             raise
         except (OSError, asyncio.QueueFull, ValueError) as exc:

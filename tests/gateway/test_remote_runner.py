@@ -1001,6 +1001,90 @@ async def test_read_only_query_timeout_keeps_authority_and_http_504_behavior(tls
             await http.delete(route)
 
 
+async def test_client_query_deadline_preserves_live_source_and_drains_late_reply(
+    tls_material, record_property
+):
+    cert, key, token = tls_material
+    replied = asyncio.Event()
+
+    class DelayedJoint(SyntheticSource):
+        async def query_joint_state(self, key):
+            await asyncio.sleep(0.12)
+            result = await super().query_joint_state(key)
+            replied.set()
+            return result
+
+    server_limits = Limits(request_seconds=0.5, heartbeat_seconds=0.02, read_seconds=1)
+    client_limits = Limits(request_seconds=0.04, heartbeat_seconds=0.02, read_seconds=1)
+    async with RunnerServer(
+        ServerConfig(
+            cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic", limits=server_limits
+        ),
+        source_factory=DelayedJoint,
+    ) as remote:
+        config = RemoteConfig(
+            port=remote.port, ca_file=cert, token=token, source_kind="synthetic", limits=client_limits
+        )
+        async with public_gateway(config) as base, httpx.AsyncClient(base_url=base) as http:
+            created = await http.post("/api/v1/sessions", json={"sceneId": "lab-demo", "source": "synthetic"})
+            assert created.status_code == 201, created.text
+            route = f"/api/v1/sessions/{created.json()['sessionId']}"
+            manifest = (await http.get(route + "/scene")).json()
+            async with connect(
+                base.replace("http:", "ws:") + route + "/ws", origin="http://127.0.0.1:5188"
+            ) as ws:
+                await ws.recv()
+                baseline = await public_subscribe(ws, manifest["sceneRevision"])
+                query = await http.get(
+                    route + "/joints/state", params={"key": manifest["joints"][0]["entityKey"]}
+                )
+                assert query.status_code == 504
+                assert (await http.get(route)).json()["state"] == "RUNNING"
+                periodic = (
+                    await read_until(
+                        ws, lambda item: item["type"] == "transform.frame" and item["seq"] > baseline["seq"]
+                    )
+                )[-1]
+                await asyncio.wait_for(replied.wait(), 1)
+                # Its expired token has no pending future. Control remains ordered, so that
+                # late joint reply is consumed before the following command result.
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "command.request",
+                            "requestId": "pause-after-local-timeout",
+                            "command": "pause",
+                        }
+                    )
+                )
+                trace = await read_until(
+                    ws,
+                    lambda item: (
+                        item["type"] == "session.state"
+                        and item["cause"].get("requestId") == "pause-after-local-timeout"
+                    ),
+                )
+                assert trace[-1]["state"] == "PAUSED" and trace[-1]["seq"] > periodic["seq"]
+                assert any(item["type"] == "command.ack" and item["status"] == "applied" for item in trace)
+            assert (await http.delete(route)).status_code == 204
+            await eventually(lambda: remote.active_sessions == 0)
+            record_property(
+                "client_query_deadline",
+                json.dumps(
+                    {
+                        "clientSeconds": 0.04,
+                        "queryDelaySeconds": 0.12,
+                        "hostSeconds": 0.5,
+                        "httpStatus": 504,
+                        "sourceRemainedRunning": True,
+                        "periodicSeqAdvanced": True,
+                        "lateReplyThenPauseApplied": True,
+                        "ownedSourceReleased": True,
+                    }
+                ),
+            )
+
+
 @pytest.mark.newton
 async def test_optional_actual_newton_cpu_remote_gateway_and_cleanup(tls_material, record_property):
     import importlib.util
