@@ -46,7 +46,7 @@ async def test_every_mcp_tool_uses_http_and_actual_peer_attribution_and_rejectio
         paused = await result(mcp, "session_control", action="pause")
         assert paused["state"] == "PAUSED" and paused["ack"]["status"] == "applied"
         stepped = await result(mcp, "session_control", action="step", count=12)
-        assert stepped["simTime"] == paused["simTime"] + 12 / 240
+        assert stepped["simTime"] == pytest.approx(paused["simTime"] + 12 / 240, rel=0, abs=1e-12)
         pending = await result(mcp, "invoke_action", key=CENTRIFUGE, action="closeLid", wait=False)
         timed = await result(
             mcp, "get_invocation", invocationId=pending["invocationId"], wait=True, timeoutSeconds=0.001

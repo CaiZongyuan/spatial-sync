@@ -1,5 +1,6 @@
 """HTTP and WS controls share the real command lock, authority and request IDs."""
 
+import pytest
 from fastapi.testclient import TestClient
 from ws_messages import receive_message
 
@@ -41,7 +42,9 @@ def test_http_commands_reuse_websocket_idempotency_and_do_not_create_an_observer
             ws.send_json({"type": "client.subscribe", "sceneRevision": ready["sceneRevision"]})
             until(ws, "entity.snapshot")
             stepped = command("shared-step", "step", count=12)
-            assert stepped["ack"]["simTime"] == paused["ack"]["simTime"] + 12 / 240
+            assert stepped["ack"]["simTime"] == pytest.approx(
+                paused["ack"]["simTime"] + 12 / 240, rel=0, abs=1e-12
+            )
             assert until(ws, "transform.frame")["simTime"] == stepped["ack"]["simTime"]
             assert until(ws, "session.state")["cause"]["requestId"] == "shared-step"
             replay = command("shared-step", "step", count=999)

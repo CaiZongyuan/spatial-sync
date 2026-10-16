@@ -14,6 +14,12 @@ TERMINAL = {"succeeded", "rejected", "failed", "cancelled"}
 INVOCATION_STATES = TERMINAL | {"accepted", "running", "pending_approval"}
 
 
+def condition_hint(invocation):
+    error = invocation.get("error") or {}
+    failed = error.get("details", {}).get("failed", [])
+    return "\n".join(dict.fromkeys(item["message"] for item in failed if item.get("message")))
+
+
 class GatewayError(Exception):
     def __init__(self, message, *, detail=None, status_code=None):
         super().__init__(message)

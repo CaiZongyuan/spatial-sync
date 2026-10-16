@@ -9,7 +9,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
-from .client import GatewayClient, GatewayError
+from .client import GatewayClient, GatewayError, condition_hint
 
 
 def catalog_instructions(catalog):
@@ -57,12 +57,8 @@ def actor(context):
 
 
 def with_hint(invocation):
-    error = invocation.get("error")
-    if not error:
-        return invocation
-    failed = error.get("details", {}).get("failed", [])
-    hints = list(dict.fromkeys(item["message"] for item in failed if item.get("message")))
-    return invocation | {"hint": "\n".join(hints)} if hints else invocation
+    hint = condition_hint(invocation)
+    return invocation | {"hint": hint} if hint else invocation
 
 
 async def checked(request):

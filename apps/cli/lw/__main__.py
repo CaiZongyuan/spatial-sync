@@ -6,7 +6,7 @@ import json
 import math
 import sys
 
-from .client import GatewayClient, GatewayError, exit_code
+from .client import GatewayClient, GatewayError, condition_hint, exit_code
 
 
 class UsageError(Exception):
@@ -102,6 +102,8 @@ def human(document):
         if "invocationId" in document and "status" in document:
             error = document.get("error")
             suffix = f" {error['code']}: {error['message']}" if error else ""
+            if hint := condition_hint(document):
+                suffix += "\n" + hint
             if document.get("timedOut"):
                 suffix += " (wait timed out)"
             return f"{document['invocationId']} {document['status']} {document['action']}{suffix}"

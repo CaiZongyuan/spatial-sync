@@ -132,3 +132,17 @@ def test_cli_watch_streams_only_the_selected_entity(lab):
             assert message["type"] == "invocation.update" and message["entityKey"] == CENTRIFUGE
     finally:
         stop(watcher)
+
+
+def test_default_human_rejection_includes_condition_next_step(lab):
+    rejected = subprocess.run(
+        [str(LW), "do", CENTRIFUGE, "start", "rpm=3000", "durationSeconds=30"],
+        env=lab[2],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+    assert rejected.returncode == 2
+    assert "The lid is open" in rejected.stdout and "call closeLid first" in rejected.stdout
