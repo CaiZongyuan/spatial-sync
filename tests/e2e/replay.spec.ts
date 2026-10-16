@@ -160,10 +160,22 @@ test('native End applies the final reliable record at a fractional millisecond d
   const segment = metadata.segments[0];
   const originalSegment = readFileSync(join(fixture, segment.file));
   let lastSeq = 0;
+  let lastSpatial = Buffer.alloc(0);
   for (let offset = 6; offset < originalSegment.length;) {
-    if (originalSegment.readUInt8(offset + 4) === 1) lastSeq = Number(originalSegment.readBigUInt64LE(offset + 29));
+    if (originalSegment.readUInt8(offset + 4) === 1) {
+      lastSeq = Number(originalSegment.readBigUInt64LE(offset + 29));
+      lastSpatial = originalSegment.subarray(offset + 13, offset + 4 + originalSegment.readUInt32LE(offset));
+    }
     offset += 4 + originalSegment.readUInt32LE(offset);
   }
+  // Independent raw NSYN tail oracle, beyond the tenth golden's earlier time.
+  let lastHandPose: { p: number[]; q: number[] } | undefined;
+  for (let offset = 44; offset < lastSpatial.length; offset += 32) {
+    if (lastSpatial.readUInt32LE(offset) !== 3) continue;
+    const pose = Array.from({ length: 7 }, (_, index) => lastSpatial.readFloatLE(offset + 4 + index * 4));
+    lastHandPose = { p: pose.slice(0, 3), q: pose.slice(3) };
+  }
+  expect(lastHandPose).toBeTruthy();
   const duration = Math.ceil(segment.endSampleTimeMs - segment.startSampleTimeMs) + 0.75;
   const terminal = Buffer.from(JSON.stringify({
     type: 'session.state', sessionId: metadata.sessionId,
@@ -226,6 +238,8 @@ test('native End applies the final reliable record at a fractional millisecond d
     (window as unknown as { __tailReceipt?: { actual: number; sessionState: string } }).__tailReceipt,
   )).toEqual({ requested: Math.ceil(actualDuration), actual: actualDuration, sessionState: 'STOPPED' });
   await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  expect(await page.evaluate(() => window.__spatialDebug?.getSample()?.seq)).toBe(lastSeq);
+  await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getRenderedPose('/World/Lab/RobotA/Hand'))).toEqual(lastHandPose);
   await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey)).toEqual(expected.samples.at(-1)!.tubePose);
   const atEnd = await page.evaluate(async () => {
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
