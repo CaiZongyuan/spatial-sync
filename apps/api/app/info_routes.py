@@ -1,14 +1,15 @@
 """Information-plane HTTP boundary, shared with WebSocket actions."""
 
+from functools import lru_cache
 from typing import Literal
 
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool
 
-from apps.api.app.session_manager import encode
 from packages.info.conditions import OPERATORS, evaluate_conditions
 from packages.info.invocations import TERMINAL, HistoryUnavailable
+from packages.protocol.json import encode
 from packages.protocol.schema import ActionRequest, Actor, Catalog, Model, Positive
 
 
@@ -51,6 +52,12 @@ def invocation_response(value, *, waiting=False, timed_out=False, query=False):
     return JSONResponse(data, status_code=status)
 
 
+@lru_cache(maxsize=4096)
+def _state_prefix(key, type_id):
+    # Catalog identity is immutable. The state and active IDs below remain live.
+    return encode({"key": key, "type": type_id})[:-1]
+
+
 def install_info_routes(app, manager, role_for):
     prefix = "/api/v1/sessions/{session_id}"
 
@@ -67,17 +74,18 @@ def install_info_routes(app, manager, role_for):
             status_code=503,
         )
 
-    def state(session, key):
+    def binding(session, key):
         if key not in session.catalog.entities:
             raise HTTPException(404, {"code": "unknown_entity"})
-        value = session.info.entities.get(key)
-        binding = session.catalog.entities[key]
-        return {
-            "key": key,
-            "type": binding["type"],
-            **(value.model_dump(mode="json") if value else {"rev": 0, "values": {}, "meta": {}}),
-            "active": [item.invocationId for item in session.pipeline.table.active_for(key)],
-        }
+        return session.catalog.entities[key]
+
+    def state_json(session, key):
+        definition = binding(session, key)
+        fields = session.info.export_json(key) or '{"rev":0,"values":{},"meta":{}}'
+        active = [item.invocationId for item in session.pipeline.table.active_for(key)]
+        return (
+            _state_prefix(key, definition["type"]) + "," + fields[1:-1] + ',"active":' + encode(active) + "}"
+        )
 
     @app.get(prefix + "/catalog")
     async def catalog(session_id: str, request: Request):
@@ -100,34 +108,36 @@ def install_info_routes(app, manager, role_for):
                 continue
             if q and q.casefold() not in (key + " " + title).casefold():
                 continue
+            value = session.info.entities.get(key)
             result.append(
-                {"key": key, "type": type_id, "title": title, "summary": state(session, key)["values"]}
+                {"key": key, "type": type_id, "title": title, "summary": value.values if value else {}}
             )
         return {"entities": result}
 
     @app.get(prefix + "/entity")
     async def entity(session_id: str, key: str):
         session = manager.get(session_id)
-        value = state(session, key)
-        binding = session.catalog.entities[key]
+        value = state_json(session, key)
+        definition = binding(session, key)
         recent = session.pipeline.table.list(entity=key, limit=10)
         document = {
             "key": key,
-            "type": binding["type"],
-            "binding": binding,
-            "definition": session.catalog.types[binding["type"]],
-            "state": value,
+            "type": definition["type"],
+            "binding": definition,
+            "definition": session.catalog.types[definition["type"]],
             "active": [item.model_dump(mode="json") for item in session.pipeline.table.active_for(key)],
             "recent": [item.model_dump(mode="json") for item in recent],
         }
-        return Response(content=encode(document), media_type="application/json")
+        return Response(
+            content=encode(document)[:-1] + ',"state":' + value + "}", media_type="application/json"
+        )
 
     @app.get(prefix + "/state")
     async def states(session_id: str, keys: str | None = None):
         session = manager.get(session_id)
-        selected = keys.split(",") if keys else session.catalog.entities.keys()
-        document = {"entities": {key: state(session, key) for key in selected}}
-        return Response(content=encode(document), media_type="application/json")
+        selected = dict.fromkeys(keys.split(",")) if keys else session.catalog.entities.keys()
+        entries = (encode(key) + ":" + state_json(session, key) for key in selected)
+        return Response(content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json")
 
     @app.post(prefix + "/actions")
     async def action(session_id: str, body: HttpAction, request: Request):
@@ -210,7 +220,7 @@ def install_info_routes(app, manager, role_for):
         import json
 
         session = manager.get(session_id)
-        state(session, key)
+        binding(session, key)
         try:
             session.catalog.property(key, property)
         except KeyError as exc:

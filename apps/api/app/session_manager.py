@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import time
 import uuid
 from collections import OrderedDict, deque
 from collections.abc import Callable
 
-import orjson
 from fastapi import HTTPException
 
 from apps.api.app.recordings import RecordingRepository, freeze_manifest
@@ -23,6 +21,7 @@ from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
 from packages.protocol.internal import SessionOptions
+from packages.protocol.json import encode
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
     Catalog,
@@ -56,16 +55,6 @@ SCENES = [
     {"sceneId": "robot-and-tubes", "name": "Newton Robot and Tubes", "sources": ["newton"]},
     {"sceneId": "usd-lab", "name": "Newton USD Laboratory", "sources": ["newton"]},
 ]
-
-
-def encode(model) -> str:
-    data = model.model_dump(mode="json", exclude_none=True) if hasattr(model, "model_dump") else model
-    try:
-        return orjson.dumps(data).decode("utf-8")
-    except TypeError:
-        # Rejected untrusted JSON can contain integers outside orjson's 64-bit
-        # range. Preserve the original audit value without changing the hot path.
-        return json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
 
 
 def default_source_factory(kind: str, session_id: str) -> SpatialSource:
@@ -479,8 +468,7 @@ class Session:
         )
 
     def broadcast_info(self, message):
-        self.info.record(message)
-        payload = encode(message)
+        payload = self.info.record(message)
         if self._recording_revision_ready:
             self._record_json(message, payload)
         for client in tuple(self.clients):
