@@ -1,4 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import type {} from '../../apps/web/src/components/Workbench';
 import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
@@ -93,7 +94,12 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
             id: node.streamId,
             pose: window.__spatialDebug?.getAuthoritativePose(node.entityKey),
           })),
-        manifest.nodes.filter((node) => node.kind === 'body'),
+        manifest.nodes
+          .filter((node) => node.kind === 'body')
+          .map((node) => ({
+            streamId: node.streamId,
+            entityKey: node.entityKey,
+          })),
       );
       for (const row of snapshot.poses) {
         const pose = poses.find((value) => value.id === row[0])!.pose!;
