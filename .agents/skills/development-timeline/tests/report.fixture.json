@@ -1,0 +1,32 @@
+{
+  "project": "Example workbench",
+  "title": "Development progress and execution timeline",
+  "snapshotAt": "2026-01-02T12:00:00Z",
+  "task": { "status": "partial", "goal": "Deliver the approval workflow and export; export still awaits integration verification.", "startedAt": "2026-01-02T09:00:00Z" },
+  "tickets": [
+    { "id": "A", "title": "Approval workflow", "status": "integrated", "blockers": [], "delivered": ["Approval and withdrawal", "Permission checks"], "pending": [] },
+    { "id": "B", "title": "Result export", "status": "in-progress", "blockers": [], "delivered": ["Export view"], "pending": ["Integration verification"] },
+    { "id": "C", "title": "Release acceptance", "status": "blocked", "blockers": ["B"], "delivered": [], "pending": ["Complete workflow acceptance"] }
+  ],
+  "events": [
+    { "id": "implementation", "lane": "Developer", "kind": "phase", "category": "implementation", "label": "Approval workflow implementation", "start": "2026-01-02T09:00:00Z", "end": "2026-01-02T09:45:00Z", "outcome": "passed", "confidence": "verified", "detail": "Approval and withdrawal implemented through public behavior.", "actor": "Developer", "revision": "candidate-a", "evidence": [] },
+    { "id": "expected-red", "lane": "Developer", "kind": "command", "category": "validation", "label": "Permission denial - expected red", "start": "2026-01-02T09:10:00Z", "end": "2026-01-02T09:15:00Z", "outcome": "expected-red", "confidence": "verified", "reason": "Withdrawal permission check not yet implemented.", "evidence": [] },
+    { "id": "green", "lane": "Developer", "kind": "command", "category": "validation", "label": "Approval behavior verification", "start": "2026-01-02T09:38:00Z", "end": "2026-01-02T09:45:00Z", "outcome": "passed", "confidence": "verified", "detail": "Covers rejection, success, and repeated submissions.", "evidence": [] },
+    { "id": "review", "lane": "Reviewer", "kind": "command", "category": "review", "label": "Independent spec review", "start": "2026-01-02T09:40:00Z", "end": "2026-01-02T09:50:00Z", "outcome": "passed", "confidence": "verified", "detail": "The pinned candidate has been reviewed.", "actor": "Reviewer", "revision": "candidate-a", "evidence": [] },
+    { "id": "integrated", "lane": "Integration", "kind": "point", "category": "integration", "label": "Approval workflow integration", "start": "2026-01-02T10:00:00Z", "outcome": "passed", "confidence": "verified", "detail": "The integration result for A is verified.", "evidence": [] },
+    { "id": "wait", "lane": "Integration", "kind": "wait", "category": "coordination", "label": "Awaiting export candidate", "start": "2026-01-02T10:00:00Z", "end": "2026-01-02T10:30:00Z", "outcome": "unknown", "confidence": "verified", "reason": "Release acceptance explicitly depends on B.", "evidence": [] },
+    { "id": "export", "lane": "Developer", "kind": "phase", "category": "implementation", "label": "Export view implementation", "start": "2026-01-02T10:30:00Z", "end": "2026-01-02T11:35:00Z", "outcome": "unknown", "confidence": "verified", "detail": "The view is ready; integration remains unverified.", "evidence": [] },
+    { "id": "artifact", "lane": "Records", "kind": "point", "category": "coordination", "label": "Export screenshot saved", "start": "2026-01-02T11:40:00Z", "outcome": "unknown", "confidence": "verified", "detail": "The file save time records only a point, not implementation boundaries.", "evidence": [] }
+  ],
+  "findings": [
+    { "id": "F1", "title": "Establish permission boundaries early", "mechanism": "Approval and withdrawal share one permission matrix; the red test distinguishes missing permissions from setup errors.", "impact": "Rejection behavior needs no reinterpretation during review.", "proposal": "Retain public behavior checks and reuse evidence according to actual changes.", "confidence": "verified", "evidence": [] }
+  ],
+  "rules": [
+    { "id": "R1", "title": "Evidence reuse", "quote": "Verification results with the same inputs can be reused.", "actual": "The export view still needs its own integration verification.", "mechanism": "Approval verification cannot establish delivery of another workflow.", "proposal": "Record the candidate revision and covered behavior.", "retain": "Final integration acceptance.", "classification": "necessary", "confidence": "verified", "evidence": [] }
+  ],
+  "tests": [
+    { "id": "test-a", "label": "Approval behavior verification", "method": "Node public API behavior test", "start": "2026-01-02T09:38:00Z", "end": "2026-01-02T09:45:00Z", "uiExecuted": false, "outcome": "passed", "cause": "Rejection, success, and repeated submissions match the specification.", "fix": "No repair needed.", "evidence": [] },
+    { "id": "test-b", "label": "Export integration verification", "method": "Pending execution", "uiExecuted": false, "outcome": "skipped", "cause": "The candidate has not entered integration verification.", "evidence": [] }
+  ],
+  "resources": [{ "name": "Example verification environment", "owner": "Example developer", "purpose": "Approval behavior verification", "disposition": "cleaned" }]
+}

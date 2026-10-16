@@ -1,0 +1,6 @@
+interface:
+  display_name: "Development Timeline"
+  short_description: "Record stages and evidence; generate offline delivery timelines"
+  default_prompt: "Use $development-timeline to report this development delivery with an evidence-backed HTML timeline and practical improvements."
+policy:
+  allow_implicit_invocation: true
