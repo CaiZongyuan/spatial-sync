@@ -600,16 +600,16 @@ Runner 应用后返回（仅发给请求者）：
 
 | 命令 | 参数 | 语义 |
 |---|---|---|
-| `pause` | — | RUNNING → PAUSED |
+| `pause` | — | 在停止周期发布前可靠送出最终完整位姿帧，再按 frame → ack → state 顺序进入 PAUSED，使观察者停在同一权威采样 |
 | `resume` | — | PAUSED → RUNNING；立即发出一帧当前状态，不等下个发布周期 |
 | `reset` | — | 恢复初始状态并执行 `eval_fk`；epoch +1；保持当前 RUNNING / PAUSED 状态 |
-| `step` | `count`（默认 1） | 仅在 PAUSED 下接受，推进 `count` 个 physics step；执行后**必须**发出一帧 `transform.frame`（多步只发最终状态） |
+| `step` | `count`（默认 1，整数范围 1–1000，D-16） | 仅在 PAUSED 下接受，推进 `count` 个 physics step；执行后**必须**发出一帧 `transform.frame`（多步只发最终状态）；超限返回 `invalid_args`，不得静默截断 |
 | `set_realtime_factor` | `value`（正数或 null） | P1；修改节拍并广播 `session.state` |
 
 规则：
 
 - `command.ack` 只关闭请求者的 pending 状态；所有客户端的状态显示以 `session.state` 为准。UI 必须等 `applied` 后才显示执行成功。
-- **命令产生的帧与保序**：`resume`、`step` 产生的帧和 `reset` 产生的快照，由 Runner 经可靠通道发出（§7.3）。Gateway 按以下顺序投递：先向所有订阅者发 `transform.frame` / `stream.snapshot`，再向请求者发 `command.ack`，最后向所有客户端广播 `session.state`。之后到达的旧周期帧由客户端按 seq 规则丢弃。
+- **命令产生的帧与保序**：`pause` 的最终位姿帧、`resume`、`step` 产生的帧和 `reset` 产生的快照，由 Runner 经可靠通道发出（§7.3）。Gateway 按以下顺序投递：先向所有订阅者发 `transform.frame` / `stream.snapshot`，再向请求者发 `command.ack`，最后向所有客户端广播 `session.state`。之后到达的旧周期帧由客户端按 seq 规则丢弃。
 - `reset` 后向所有订阅者发送新 epoch 的 `stream.snapshot`；场景结构不变时 `sceneRevision` 不变。
 - `status ∈ {applied, rejected}`；`rejected` 时带 `reason ∈ {invalid_state, unknown_command, invalid_args, unauthorized, source_unavailable}`。例如 RUNNING 下发送 `step` 返回 `invalid_state`。
 - **幂等**：`requestId` 在 Session 内去重（保留最近 256 个），重复请求返回原 ack。
@@ -1154,7 +1154,7 @@ P0-A 与 P0-B 可并行；P0-C 与 P0-D 在 P0-B 之后并行（P0-D 先用 fixt
 
 | ID | 决策项 | 默认值 | 状态 | 确定时点 |
 |---|---|---|---|---|
-| D-01 | Newton / Warp 及相关依赖的锁定版本 | P0-A 开始时的最新稳定发布版，精确版本写入 `pyproject.toml`；SolverMuJoCo 所需的 `mujoco` / `mujoco-warp` 通过对应的 Newton extra 安装，解析出的版本由 `uv.lock` 锁定并记入报告 | 待实测 | P0-A 开始前 |
+| D-01 | Newton / Warp 及相关依赖的锁定版本 | Newton **1.7.0**、Warp **1.18.0**、Python **3.13.14**；精确版本见 `pyproject.toml` / `.python-version`。Newton 的 `sim` extra 安装 SolverMuJoCo 依赖；`uv.lock` 锁定 `mujoco` / `mujoco-warp` **3.15.0**。默认环境不安装 Newton / Warp，CPU/CUDA smoke 与版本证据见 `docs/development/v1.2/P0-A.md` | 已定 | P0-A 已实测 |
 | D-02 | 机械臂资产 | 7-DOF 机械臂的 MJCF（如 Franka Panda），优先使用 Newton 示例资产 | 默认生效 | P1-A 开始前 |
 | D-03 | 机械臂默认 Solver | SolverMuJoCo；SolverFeatherstone 作对照；依赖锁定见 D-01 | 待实测 | P1-A 结束 |
 | D-04 | 实时率策略 | `realtimeFactor=1.0`，`max_lag=250 ms`，允许 null（不限速） | 默认生效 | — |
@@ -1162,13 +1162,18 @@ P0-A 与 P0-B 可并行；P0-C 与 P0-D 在 P0-B 之后并行（P0-D 先用 fixt
 | D-06 | 多客户端控制权 | localhost：所有客户端可控制，结果全员广播；远程：仅 operator | 默认生效 | 开启远程访问前复核 |
 | D-07 | Primitive 参数语义 | Newton 语义（半边长、halfHeight、轴为 Z） | 已定 | — |
 | D-08 | 缺失 label 的处理 | 自动生成 `/__unlabeled/...`，`stableKey=false` + warning；strict 模式加载失败 | 默认生效 | — |
-| D-09 | USD 实体的 entityKey 来源 | `add_usd()` 后用 `path_*_map` 把 label 改写为 Prim Path，下游只认 label | 已定 | P0-A 验证可行性 |
+| D-09 | USD 实体的 entityKey 来源 | `add_usd()` 后用 `path_*_map` 把 label 改写为 Prim Path，下游只认 label；Newton 1.7.0 的 `body_label` / `shape_label` / `joint_label` 可写，三个 path map 的索引及 finalize 后结果已实测通过 | 已定 | P0-A 已验证可行性 |
 | D-10 | 无观察者时是否继续仿真 | 继续 | 默认生效 | — |
 | D-11 | 插值 playoutDelay | `2 × 帧周期`（30 Hz 下约 66 ms），随 grantedRateHz 变化 | 默认生效 | P0-D 后按体验调整系数 |
 | D-12 | 发布频率与订阅上限 | `basePublishHz=30`；客户端 `rateHz ∈ [1, basePublishHz]` | 默认生效 | — |
 | D-13 | `joint_q` 是否进入实时流 | 否；P1 通过 HTTP 按需查询；P2 可考虑为选中的少量关节提供轻量订阅 | 默认生效 | — |
 | D-14 | 关节锚点 Site 生成范围 | 所有非 free 关节 | 默认生效 | — |
 | D-15 | 约束误差显示范围 | MVP 只显示位置误差；角度误差放到 P1 后段 | 默认生效 | — |
+| D-16 | 单次手动步进范围 | `step.count` 为 1–1000 的整数；超限返回 `invalid_args`，不静默截断。默认 `physics_dt` 下单次最多推进约 4.167 s 仿真；实际执行仍受命令超时和资源清理约束 | 默认生效 | P0-C / P0-E 参数校验 |
+
+P0-A 身份实测补充：MJCF 导入后的 label 保留完整模型 / `worldbody` 层级，不能假定只有 link 名。Newton 1.7.0 会在 finalize 前自动填充未命名实体；支持的构建 / 导入适配器应保留缺失 label 的来源记录，以执行 D-08，不能凭 `body_0` 等拼写把用户显式标签误判为缺失。未知第三方 builder 未提供此记录时，非空 Newton label 仍按权威值保留，此来源辨识限制须在兼容报告中明确说明。
+
+P0-C 浏览器实测补充：仅广播 PAUSED 状态而未可靠送出最终位姿时，观察者可能停在不同的最后周期帧。因此 `pause` 在状态变更之前可靠送出最终采样；PAUSED 状态下仍不发送周期帧，心跳及显式 `step` 保持原语义。
 
 ---
 

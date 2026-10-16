@@ -7,11 +7,11 @@ The repository has no remote tracker or remote Git origin. This file is the task
 
 | Issue | Owner | Branch / worktree | Status | Acceptance / next |
 |---|---|---|---|---|
-| P0-A Newton baseline | Newton developer | `issue/p0-a-newton` / `../spatial-sync-worktrees/p0-a` | In progress | Pin real Newton APIs; CPU/GPU smoke; labels, FK, reference viewer |
-| P0-B Protocol | Protocol developer | `issue/p0-b-protocol` / `../spatial-sync-worktrees/p0-b` | In progress | Pydantic authority, generated JSON Schema/TS, cross-language fixtures |
-| P0-C Gateway + SyntheticSource | Unassigned | Pending P0-B | Blocked | Ordered reliable commands, sessions, heartbeats, two clients, slow-client isolation |
-| P0-D Viewer | Unassigned | Pending P0-B | Blocked | TanStack file routing, R3F, inspector, interpolation and visible controls |
-| P0-E Newton integration | Newton developer | To be created after P0-A | Blocked | Spawned single runner, two pipes, reliable command frames, failure isolation |
+| P0-A Newton baseline | Newton developer | `issue/p0-a-newton` / `../spatial-sync-worktrees/p0-a` | Integrated WIP | `cdbd039d` via `78f07c6`; CPU/CUDA/FK/import/Site evidence; two review repairs verified |
+| P0-B Protocol | Protocol developer | `issue/p0-b-protocol` / `../spatial-sync-worktrees/p0-b` | Integrated WIP | `80b5b1d` via `053055f`; 57 Python + 5 Node tests, TS compilation and generation check; non-author PM review |
+| P0-C Gateway + SyntheticSource | Protocol developer | `issue/p0-c-gateway` / `../spatial-sync-worktrees/p0-c` | Integrated WIP | `255f77c` via `080bb12`; PM independently ran 80 tests; final bound/evidence/browser follow-up pending |
+| P0-D Viewer | Viewer developer | `issue/p0-d-viewer` / `../spatial-sync-worktrees/p0-d` | In progress | Shared protocol merged; 29 unit tests + production build passed; actual browser integration pending |
+| P0-E Newton integration | Newton developer | `issue/p0-e-newton-source` / `../spatial-sync-worktrees/p0-e` | In progress | Spawned single runner, two pipes, reliable command frames, failure isolation; source interface coordinated with gateway |
 | P1-A Robot | Unassigned | Pending P0 | Not started | Imported 7-DOF arm, site anchors, solver comparison, pose/joint queries |
 | P1-B USD/assets | Unassigned | Pending P0 | Not started | USD path labels, GLB export/binding/fallback, compatibility evidence |
 | P1-C Reliability | Unassigned | Pending P0 | Not started | Diagnostics, scene replacement, restart/reconnect, entity state |

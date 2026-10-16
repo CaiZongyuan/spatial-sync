@@ -1,30 +1,236 @@
-﻿{
-    "tickets":  [
-
-                ],
-    "project":  "Newton Spatial Sync",
-    "findings":  [
-
-                 ],
-    "events":  [
-
-               ],
-    "scope":  {
-                  "platform":  "desktop-web",
-                  "baseline":  "6337355",
-                  "spec":  "docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md",
-                  "mobile":  false
-              },
-    "task":  {
-                 "status":  "in-progress",
-                 "startedAt":  "2026-10-16T03:32:50.8480765Z",
-                 "goal":  "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
-             },
-    "snapshotAt":  "2026-10-16T03:32:50.8480765Z",
-    "checkpoint":  {
-                       "revision":  "6337355",
-                       "authorization":  "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
-                       "next":  "P0-A Newton baseline and P0-B protocol, followed by gateway and viewer"
-                   },
-    "title":  "Specification v1.2 delivery"
+{
+  "tickets": [
+    {
+      "id": "P0-A",
+      "title": "Newton baseline",
+      "status": "integrated",
+      "blockers": [],
+      "delivered": [
+        "Pinned Newton1.7.0/Warp1.18.0/Python3.13.14",
+        "CPU/CUDA FK/step/reset/import receipts",
+        "Non-author review and two targeted repairs integrated at78f07c6"
+      ],
+      "pending": [
+        "Full browser parity belongs to P0-E"
+      ]
+    },
+    {
+      "id": "P0-B",
+      "title": "Protocol schema",
+      "status": "integrated",
+      "blockers": [],
+      "delivered": [
+        "Pydantic authority; generated TS/JSON schema",
+        "57Python+5Node+TS+regeneration checks",
+        "Non-author PM review; integrated at053055f"
+      ],
+      "pending": [
+        "Integrated consumer verification"
+      ]
+    },
+    {
+      "id": "P0-C",
+      "title": "Gateway and SyntheticSource",
+      "status": "integrated",
+      "blockers": [],
+      "delivered": [
+        "Gateway/SyntheticSource20gateway tests; registered APIs and GPU-free CI config",
+        "Independent integrated default-environment80Python tests in2.10s",
+        "Pause final-sample convergence repair; global reloadseq and failed-source ownership regressions",
+        "Manualstep1000 limit and generatedschema followup merged"
+      ],
+      "pending": [
+        "Final author evidence/simplification",
+        "Complete frozen-dependency real browser recovery journey",
+        "Real Newton adapter merge"
+      ]
+    },
+    {
+      "id": "P0-D",
+      "title": "Web viewer",
+      "status": "in-progress",
+      "blockers": [],
+      "delivered": [
+        "Productionbuild and42unit tests green",
+        "Realbrowser exactBody/Site coords, pauseheartbeats,step/reset,two-clientresume passed"
+      ],
+      "pending": [
+        "Controlled actualWSdisconnect/reconnect, reload, finalsourcefreeze and review"
+      ]
+    },
+    {
+      "id": "P0-E",
+      "title": "Newton source integration",
+      "status": "in-progress",
+      "blockers": [],
+      "delivered": [
+        "Author realCPU/CUDA source+doublebuffer+crash tests green",
+        "ActualGateway twoWS sameRunnerPID, pausepose/order, childtermination andsameSessionrestart passed"
+      ],
+      "pending": [
+        "Finalreceipt/sourcefreeze and integration/review"
+      ]
+    },
+    {
+      "id": "P1-A",
+      "title": "Articulated robot",
+      "status": "not-started",
+      "blockers": [
+        "Verified P0"
+      ],
+      "delivered": [],
+      "pending": [
+        "7DOF import and solver evidence"
+      ]
+    },
+    {
+      "id": "P1-B",
+      "title": "USD scene and visual binding",
+      "status": "not-started",
+      "blockers": [
+        "Verified P0"
+      ],
+      "delivered": [],
+      "pending": [
+        "USD/mesh/binding actual user journey"
+      ]
+    },
+    {
+      "id": "P1-C",
+      "title": "Workbench reliability",
+      "status": "in-progress",
+      "blockers": [],
+      "delivered": [
+        "Implementation overlaps source-independent workbench diagnostics and gateway endpoints"
+      ],
+      "pending": [
+        "Actual integrated reliability evidence"
+      ]
+    },
+    {
+      "id": "P2-A..D",
+      "title": "Scaling and remote transport",
+      "status": "not-started",
+      "blockers": [
+        "Verified MVP and profiling"
+      ],
+      "delivered": [],
+      "pending": [
+        "Binary/subscriptions/keyframes/gather/render scaling/remote transport; shared memory only if justified"
+      ]
+    }
+  ],
+  "project": "Newton Spatial Sync",
+  "findings": [
+    {
+      "id": "labels",
+      "title": "Engine defaults hide omitted labels",
+      "mechanism": "Newton fills absent names beforefinalize; regexcannotdistinguish deliberatelysameexplicitname.",
+      "impact": "Wrongheuristicwouldbreak validstableIDs.",
+      "proposal": "Carryomissionprovenance; retainnonemptyunknownoriginlabelswithdocumentedlimit.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "href": "P0-A.md",
+          "label": "Realengine findings"
+        }
+      ]
+    },
+    {
+      "id": "pause",
+      "title": "Pause can strand different lastperiodicsamples",
+      "mechanism": "Periodiclatestslot andstate transition mayleave latestsourceposeundelivered.",
+      "impact": "Browserseq94 versuspausedsnapshot95.",
+      "proposal": "Reliablyflushfinalsample beforepauseack/state; same-seqposeoracle remains exact.",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "href": "P0-C-review.md",
+          "label": "Review/repair record"
+        }
+      ]
+    },
+    {
+      "id": "browser-probe",
+      "title": "Chromium offline toggle leaves openWebSocket alive",
+      "mechanism": "HTTPofflinesimulation didnotstopexistingWSmessages.",
+      "impact": "Reconnect assertioncouldrejectlegalapplicationbehavior.",
+      "proposal": "UsecontrolledactualWebSocketclose/drop withrealupstreampassthrough andkeepfailuretrace.",
+      "confidence": "verified",
+      "evidence": []
+    }
+  ],
+  "events": [],
+  "scope": {
+    "platform": "desktop-web",
+    "baseline": "6337355",
+    "spec": "docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md",
+    "mobile": false
+  },
+  "task": {
+    "status": "in-progress",
+    "startedAt": "2026-10-16T03:32:50.8480765Z",
+    "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
+  },
+  "snapshotAt": "2026-10-16T04:51:52.299Z",
+  "checkpoint": {
+    "revision": "a7cd4b05f29c915523c6dbfb08eb017080d18f7c plus PM notes",
+    "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
+    "next": "Complete actual Synthetic browser journeys; integrate gateway/viewer; validate spawned Newton source; then robot/USD and evidence-driven Phase 2.",
+    "roles": [
+      {
+        "role": "PM/integration/review",
+        "owner": "/root",
+        "ticket": "v1.2"
+      },
+      {
+        "role": "Newton Developer",
+        "owner": "/root/newton",
+        "ticket": "P0-E"
+      },
+      {
+        "role": "Gateway Developer",
+        "owner": "/root/protocol",
+        "ticket": "P0-C"
+      },
+      {
+        "role": "Viewer Developer",
+        "owner": "/root/viewer",
+        "ticket": "P0-D"
+      }
+    ]
+  },
+  "title": "Specification v1.2 delivery",
+  "resources": [
+    {
+      "name": "Root integration worktree and .venv",
+      "owner": "PM",
+      "purpose": "Integrated default environment, no Newton installed",
+      "disposition": "retained"
+    },
+    {
+      "name": "API127.0.0.1:8001",
+      "owner": "Gateway developer",
+      "purpose": "Viewer integration; uv parent18104/reload watcher18736 and owned child",
+      "disposition": "retained"
+    },
+    {
+      "name": "Web127.0.0.1:5174",
+      "owner": "Viewer developer",
+      "purpose": "Preview proxy toAPI8001",
+      "disposition": "retained"
+    },
+    {
+      "name": "GPU/Viser P0-A processes",
+      "owner": "Newton developer",
+      "purpose": "Completed real-engine baseline smoke; exit/ports verified",
+      "disposition": "cleaned"
+    },
+    {
+      "name": "GPU P0-E execution reservation",
+      "owner": "Newton developer",
+      "purpose": "Bounded asynchronous extractor verification",
+      "disposition": "retained"
+    }
+  ]
 }
