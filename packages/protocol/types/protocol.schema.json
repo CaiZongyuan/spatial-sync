@@ -1768,6 +1768,7 @@
       "properties": {
         "count": {
           "default": 1,
+          "maximum": 1000,
           "minimum": 1,
           "type": "integer"
         }

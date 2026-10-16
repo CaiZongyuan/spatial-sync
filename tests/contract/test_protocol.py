@@ -85,7 +85,7 @@ def test_frame_wire_precision():
     assert frame.model_dump(mode="json")["poses"][0] == [2, 1.123457, 0, 0, 0, 0, 0.7071068, 0.7071068]
 
 
-@pytest.mark.parametrize("count", [0, -1, 1.5, True, "2", None])
+@pytest.mark.parametrize("count", [0, -1, 1.5, True, "2", None, 1001])
 def test_step_count_is_positive_integer(count):
     with pytest.raises(ValidationError):
         validate_command_args(Command(requestId="x", command="step", args={"count": count}))
@@ -93,6 +93,7 @@ def test_step_count_is_positive_integer(count):
 
 def test_command_validation_supports_rejection_semantics():
     assert validate_command_args(Command(requestId="x", command="step")) == StepArgs(count=1)
+    assert validate_command_args(Command(requestId="x", command="step", args={"count": 1000})).count == 1000
     with pytest.raises(ValueError, match="unknown_command"):
         validate_command_args(Command(requestId="x", command="future-command"))
     with pytest.raises(ValidationError):

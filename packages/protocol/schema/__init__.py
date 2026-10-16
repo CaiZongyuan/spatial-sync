@@ -11,6 +11,7 @@ from typing import Annotated, Literal, TypeAliasType
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, field_serializer, field_validator, model_validator
 
 PROTOCOL_VERSION = 1
+MAX_MANUAL_STEPS = 1000
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 JsonValue = TypeAliasType("JsonValue", "None | StrictBool | StrictInt | StrictStr | Finite | list[JsonValue] | dict[str, JsonValue]")
 Positive = Annotated[Finite, Field(gt=0)]
@@ -341,7 +342,7 @@ class EmptyArgs(Model):
 
 
 class StepArgs(Model):
-    count: Annotated[int, Field(strict=True, ge=1)] = 1
+    count: Annotated[int, Field(strict=True, ge=1, le=MAX_MANUAL_STEPS)] = 1
 
 
 class RealtimeFactorArgs(Model):
