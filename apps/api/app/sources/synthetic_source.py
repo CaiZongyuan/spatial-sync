@@ -228,8 +228,8 @@ class SyntheticSource:
                 "entityKey": BASE + "/Table",
                 "name": "Workbench",
                 "parentEntityKey": BASE,
-                "initialPose": {"p": [0.7, 0, 0.35], "q": [0, 0, 0, 1]},
-                "visuals": [_primitive({"type": "box", "halfExtents": [1.3, 0.8, 0.05]})],
+                "initialPose": {"p": [0.4, 0, 0.375], "q": [0, 0, 0, 1]},
+                "visuals": [_primitive({"type": "box", "halfExtents": [1.3, 0.8, 0.375]})],
             },
             {
                 "kind": "body",
@@ -292,6 +292,22 @@ class SyntheticSource:
             [
                 {"kind": "group", "entityKey": ROBOT, "name": "Robot arm", "parentEntityKey": BASE},
                 {"kind": "group", "entityKey": BASE + "/Rack", "name": "Tube rack", "parentEntityKey": BASE},
+                {
+                    "kind": "static",
+                    "entityKey": BASE + "/Rack/Base",
+                    "name": "Tube rack base",
+                    "parentEntityKey": BASE + "/Rack",
+                    "initialPose": {"p": [0.7, -0.2, 0.78], "q": [0, 0, 0, 1]},
+                    "visuals": [_primitive({"type": "box", "halfExtents": [0.25, 0.18, 0.02]})],
+                },
+                {
+                    "kind": "static",
+                    "entityKey": CENTRIFUGE + "/Housing",
+                    "name": "Centrifuge housing",
+                    "parentEntityKey": CENTRIFUGE,
+                    "initialPose": {"p": [-0.5, 0.4, 0.8], "q": [0, 0, 0, 1]},
+                    "visuals": [_primitive({"type": "box", "halfExtents": [0.22, 0.22, 0.05]})],
+                },
                 {
                     "kind": "body",
                     "entityKey": ROBOT + "/Hand",

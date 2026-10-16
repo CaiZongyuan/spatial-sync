@@ -92,6 +92,7 @@ class InvocationHandle:
         self._host, self.invocation = host, invocation
         self.started = False
         self.last_progress_at = -float("inf")
+        self.accepted_at = host.sim_time
 
     @property
     def params(self):
@@ -111,8 +112,8 @@ class InvocationHandle:
             self.last_progress_at = self._host.sim_time
             self._update(progress=value)
 
-    def _update(self, **fields):
-        if self.invocation.status in TERMINAL:
+    def _update(self, *, force=False, **fields):
+        if self.invocation.status in TERMINAL and not force:
             return
         self.invocation = self.invocation.model_copy(update=fields)
         self._host._updates[self.id] = self.invocation
@@ -302,6 +303,9 @@ class HostCore:
         handle = self._active.get(invocation_id)
         if handle is None:
             return self._recent[invocation_id].model_copy(deep=True)
+        if not handle.started:
+            handle.cancelled()
+            return handle.invocation.model_copy(deep=True)
         self._call(handle.invocation.entityKey, "cancel", handle, self._contexts[handle.invocation.entityKey])
         return handle.invocation.model_copy(deep=True)
 
@@ -329,12 +333,18 @@ class HostCore:
             action = self.catalog.action(handle.invocation.entityKey, handle.action)
             if (
                 handle.invocation.status not in TERMINAL
-                and sim_time - handle.invocation.createdSimTime >= action["timeoutSeconds"]
+                and sim_time - (handle.invocation.startedSimTime or handle.accepted_at)
+                >= action["timeoutSeconds"]
             ):
                 self._call(
                     handle.invocation.entityKey, "cancel", handle, self._contexts[handle.invocation.entityKey]
                 )
-                handle.fail("timeout", "Action exceeded its simulation-time deadline")
+                handle._update(
+                    force=True,
+                    status="failed",
+                    endedSimTime=self.sim_time,
+                    error=Reject(code="timeout", message="Action exceeded its simulation-time deadline"),
+                )
         return self._drain()
 
     def _drain(self):

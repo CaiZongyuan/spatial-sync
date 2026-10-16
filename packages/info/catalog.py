@@ -138,4 +138,20 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT):
                 key,
                 lambda entity, prop: catalog.property(entity, prop)["schema"],
             )
+
+        def validate_config(value):
+            if isinstance(value, dict):
+                if "requires" in value:
+                    validate_conditions(
+                        value["requires"], key, lambda entity, prop: catalog.property(entity, prop)["schema"]
+                    )
+                if "site" in value and value["site"] not in sites:
+                    raise ValueError(f"Config references an unknown Site: {value['site']}")
+                for child in value.values():
+                    validate_config(child)
+            elif isinstance(value, list):
+                for child in value:
+                    validate_config(child)
+
+        validate_config(binding["config"])
     return catalog
