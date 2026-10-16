@@ -101,6 +101,9 @@ test('native End applies the final reliable record at a fractional millisecond d
     const original = ReplaySource.prototype.seek;
     (window as unknown as { __tailReceipt?: unknown }).__tailReceipt = undefined;
     ReplaySource.prototype.seek = async function(this: ReplaySource, position: number) {
+      (window as unknown as { __clearReplayCache: () => void }).__clearReplayCache = () => {
+        (this as unknown as { segments: Map<number, unknown> }).segments.clear();
+      };
       await original.call(this, position);
       (window as unknown as { __tailReceipt?: unknown }).__tailReceipt = {
         requested: position, actual: this.getPlayback().timeMs,
@@ -112,4 +115,10 @@ test('native End applies the final reliable record at a fractional millisecond d
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { __tailReceipt?: { actual: number; sessionState: string } }).__tailReceipt,
   )).toEqual({ requested: Math.ceil(actualDuration), actual: actualDuration, sessionState: 'STOPPED' });
+  await page.evaluate(() => (window as unknown as { __clearReplayCache: () => void }).__clearReplayCache());
+  await page.getByLabel('Replay position').press('Home');
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __tailReceipt?: { actual: number; sessionState: string } }).__tailReceipt,
+  )).toEqual({ requested: 0, actual: 0, sessionState: 'RUNNING' });
+  expect(await page.evaluate(() => window.__spatialDebug?.getSample()?.seq)).toBe(expected.samples[0].seq);
 });

@@ -7,6 +7,7 @@ interface PlaybackState {
   ready: boolean;
   playing: boolean;
   seeking: boolean;
+  seekTargetMs?: number;
   timeMs: number;
   durationMs: number;
   rate: number;
@@ -54,6 +55,8 @@ export class ReplaySource extends SessionClient {
   override async start() {
     this.abort = new AbortController();
     const version = ++this.seekVersion;
+    clearTimeout(this.timer);
+    this.updatePlayback({ ready: false, playing: false, seeking: false, seekTargetMs: undefined });
     const recording = await this.fetchJson<Recording>(this.documentUrl);
     if (version !== this.seekVersion) return;
     if (recording.formatVersion !== 1 || recording.protocolVersion !== 2)
@@ -71,6 +74,7 @@ export class ReplaySource extends SessionClient {
     this.seekVersion++;
     this.abort.abort();
     clearTimeout(this.timer);
+    this.updatePlayback({ ready: false, playing: false, seeking: false, seekTargetMs: undefined });
     this.segments.clear();
     this.documents.clear();
     this.info.dispose();
@@ -131,7 +135,7 @@ export class ReplaySource extends SessionClient {
   }
 
   async seek(timeMs: number) {
-    if (!this.recording) return;
+    if (!this.recording || this.abort.signal.aborted) return;
     clearTimeout(this.timer);
     const version = ++this.seekVersion;
     const position = Math.max(0, Math.min(this.playback.durationMs, timeMs));
@@ -141,7 +145,7 @@ export class ReplaySource extends SessionClient {
       if (segment.startSampleTimeMs <= target) index = candidate;
     });
     const revision = this.recording.segments[index].sceneRevision ?? this.recording.sceneRevision;
-    this.updatePlayback({ seeking: true });
+    this.updatePlayback({ seeking: true, seekTargetMs: position });
     try {
       const [segment, documents] = await Promise.all([this.loadSegment(index), this.loadDocuments(revision)]);
       if (version !== this.seekVersion) return;
@@ -155,11 +159,11 @@ export class ReplaySource extends SessionClient {
       this.anchor = performance.now();
       this.anchorPosition = position;
       this.refreshView();
-      this.updatePlayback({ ready: true, seeking: false, timeMs: position });
+      this.updatePlayback({ ready: true, seeking: false, seekTargetMs: undefined, timeMs: position });
       if (this.playback.playing) this.schedule();
     } catch (error) {
       if (version !== this.seekVersion) return;
-      this.updatePlayback({ seeking: false, playing: false });
+      this.updatePlayback({ seeking: false, seekTargetMs: undefined, playing: false });
       this.update({ error: (error as Error).message });
       throw error;
     }
@@ -206,6 +210,10 @@ export class ReplaySource extends SessionClient {
 
   setRate(rate: number) {
     if (![0.25, 0.5, 1, 2, 4].includes(rate)) throw new Error('Unsupported playback rate');
+    if (this.playback.seeking) {
+      this.updatePlayback({ rate });
+      return;
+    }
     this.anchorPosition = this.position();
     this.anchor = performance.now();
     this.updatePlayback({ rate, timeMs: this.anchorPosition });
