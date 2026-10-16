@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError
 
+from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -25,6 +26,10 @@ from packages.assets.registry import AssetRegistry
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
     PROTOCOL_VERSION,
+    ActionApprove,
+    ActionCancel,
+    ActionRequest,
+    ApprovalPolicy,
     ClientMessage,
     Command,
     Model,
@@ -43,6 +48,9 @@ class CreateSession(Model):
     source: Literal["synthetic", "newton"] = "synthetic"
     realtimeFactor: Positive | None = 1.0
     continueWithoutObservers: StrictBool = True
+    approval: ApprovalPolicy = ApprovalPolicy()
+    controlHz: Positive = 60
+    factHz: Positive = 10
 
 
 def _role(headers, settings: Settings):
@@ -81,6 +89,7 @@ def create_app(
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
     app.state.manager, app.state.settings = manager, settings
+    install_info_routes(app, manager, lambda headers: _role(headers, settings))
     request_times = defaultdict(deque)
 
     @app.middleware("http")
@@ -98,7 +107,11 @@ def create_app(
             role = _role(request.headers, settings)
             if role is None:
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=401)
-            if request.method in ("POST", "DELETE", "PUT", "PATCH") and role != "operator":
+            if (
+                request.method in ("POST", "DELETE", "PUT", "PATCH")
+                and role != "operator"
+                and not request.url.path.endswith("/actions")
+            ):
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=403)
             now = time.monotonic()
             key = request.client.host if request.client else "unknown"
@@ -114,7 +127,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "If-None-Match"],
+        allow_headers=["Authorization", "Content-Type", "If-None-Match", "X-Actor"],
     )
 
     @app.get("/api/v1/health")
@@ -141,6 +154,9 @@ def create_app(
             SessionOptions(
                 realtimeFactor=body.realtimeFactor,
                 continueWithoutObservers=body.continueWithoutObservers,
+                approval=body.approval,
+                controlHz=body.controlHz,
+                factHz=body.factHz,
             ),
         )
         return session.summary()
@@ -278,6 +294,7 @@ def create_app(
         connection.enqueue_reliable(
             encode(
                 Ready(
+                    role=role,
                     sessionId=session_id,
                     sceneRevision=summary["sceneRevision"],
                     revisionNumericId=summary["revisionNumericId"],
@@ -310,6 +327,29 @@ def create_app(
                     continue
                 if isinstance(message, Subscribe):
                     await session.observer_subscribe(connection, message)
+                elif isinstance(message, (ActionRequest, ActionCancel, ActionApprove)):
+                    try:
+                        actor = actor_from_headers(websocket.headers)
+                        if isinstance(message, ActionRequest):
+                            await session.pipeline.invoke(message, role, actor)
+                        elif isinstance(message, ActionCancel):
+                            await session.pipeline.cancel(message.invocationId, role)
+                        else:
+                            await session.pipeline.approve(
+                                message.invocationId, message.decision, role, actor
+                            )
+                    except (PermissionError, KeyError, HTTPException) as exc:
+                        connection.enqueue_reliable(
+                            encode(
+                                ServerError(
+                                    code="unauthorized"
+                                    if isinstance(exc, PermissionError)
+                                    else "invalid_message",
+                                    message=str(exc),
+                                    requestId=message.requestId,
+                                )
+                            )
+                        )
                 elif isinstance(message, Command):
                     if settings.remote:
                         now = time.monotonic()

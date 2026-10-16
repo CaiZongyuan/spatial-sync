@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Settings:
+    approval_timeout_seconds: float = 600
     heartbeat_interval_seconds: float = 1.0
     send_timeout_seconds: float = 2.0
     reliable_queue_size: int = 128

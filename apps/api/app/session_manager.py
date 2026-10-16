@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import time
 import uuid
 from collections import OrderedDict, deque
 from collections.abc import Callable
 
+import orjson
 from fastapi import HTTPException
 
 from apps.api.app.settings import Settings
@@ -16,13 +16,20 @@ from apps.api.app.sources.base import SpatialSource
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
+from packages.info.pipeline import ActionPipeline
+from packages.info.store import StateStore
 from packages.protocol.internal import SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
+    Catalog,
     Cause,
     Command,
     CommandAck,
+    EntityEvent,
+    EntityObservations,
+    EntitySnapshot,
     Heartbeat,
+    InvocationUpdate,
     SceneManifest,
     SceneReplaced,
     ServerError,
@@ -49,7 +56,7 @@ SCENES = [
 
 def encode(model) -> str:
     data = model.model_dump(mode="json", exclude_none=True) if hasattr(model, "model_dump") else model
-    return json.dumps(data, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return orjson.dumps(data).decode("utf-8")
 
 
 def default_source_factory(kind: str, session_id: str) -> SpatialSource:
@@ -94,6 +101,9 @@ class Session:
         self.error: dict | None = None
         self._auto_paused = False
         self._body_stream_ids = frozenset()
+        self.catalog = None
+        self.info = None
+        self.pipeline = None
 
     async def start(self):
         self.state = "LOADING"
@@ -103,7 +113,8 @@ class Session:
         candidate = None
         try:
             candidate = self.factory(self.kind, self.session_id)
-            manifest = await candidate.start(self.scene_id, self.options)
+            started = await candidate.start(self.scene_id, self.options)
+            manifest, catalog = started if isinstance(started, tuple) else (started, None)
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
             manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number + 1})
@@ -117,6 +128,25 @@ class Session:
             self.source = candidate
             self._revision_number += 1
             self.manifest = manifest
+            self.catalog = catalog or Catalog(sceneRevision=manifest.sceneRevision)
+            if self.info is None:
+                self.info = StateStore(manifest.sceneRevision)
+            else:
+                self.info.scene_revision = manifest.sceneRevision
+                self.info.epoch = 0
+                self.info.entities.clear()
+            previous_table = self.pipeline.table if self.pipeline else None
+            if self.pipeline:
+                self.pipeline.close()
+            self.pipeline = ActionPipeline(
+                self,
+                self.catalog,
+                self.info,
+                self.broadcast_info,
+                approval_timeout=self.settings.approval_timeout_seconds,
+            )
+            if previous_table:
+                self.pipeline.table = previous_table
             self._body_stream_ids = body_ids
             self._frame = self._complete_frame = None
             self.state, self.error = "RUNNING", None
@@ -125,6 +155,8 @@ class Session:
             if policy_change:
                 self._apply_observer_policy_change(*policy_change, publish=False)
             self._last_published_seq = self.seq
+            if callable(getattr(candidate, "entity_snapshot", None)):
+                self.apply_info(candidate.entity_snapshot())
             self._log_event("session.lifecycle", state=self.state)
             self._tasks = [
                 asyncio.create_task(self._monitor(), name="session-frames"),
@@ -288,6 +320,10 @@ class Session:
     async def _events(self):
         try:
             async for event in self.source.events():
+                if isinstance(event, (EntitySnapshot, EntityObservations, EntityEvent, InvocationUpdate)):
+                    async with self.command_lock:
+                        self.apply_info(event)
+                    continue
                 if not isinstance(event, (ServerError, SceneReplaced)):
                     if (
                         event.sessionId != self.session_id
@@ -326,6 +362,8 @@ class Session:
         self._cache_frame(self.latest_frame())
         self.error = {"code": "source_unavailable", "message": message}
         self.state, self.actual_rtf = "FAILED", 0
+        if self.pipeline:
+            self.pipeline.fail_active("source_unavailable", message)
         for client in self.clients:
             client.latest = None
         self.broadcast(ServerError(code="source_unavailable", message=message))
@@ -363,6 +401,50 @@ class Session:
                     serverTimeMs=time.monotonic() * 1000,
                 )
             )
+
+    def info_snapshot(self):
+        return EntitySnapshot(
+            sceneRevision=self.manifest.sceneRevision,
+            epoch=self.info.epoch,
+            simTime=self.sim_time,
+            sampleTimeMs=time.monotonic() * 1000,
+            entities=list(self.info.entities.values()),
+            invocations=self.pipeline.table.snapshot(),
+        )
+
+    def broadcast_info(self, message):
+        self.info.record(message)
+        payload = encode(message)
+        for client in tuple(self.clients):
+            if client.subscribed and client.info:
+                client.enqueue_reliable(payload)
+
+    def apply_info(self, message):
+        if message.sceneRevision != self.manifest.sceneRevision:
+            return
+        if isinstance(message, InvocationUpdate):
+            self.pipeline.update(message)
+            return
+        if isinstance(message, EntitySnapshot):
+            if message.epoch > self.info.epoch:
+                self.pipeline.fail_active("session_reset", "Session was reset")
+            if not self.info.apply(message):
+                return
+            for invocation in message.invocations:
+                if invocation.epoch == message.epoch or invocation.status in (
+                    "rejected",
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                ):
+                    self.pipeline.table.apply(invocation)
+            message = self.info_snapshot()
+        elif isinstance(message, EntityObservations):
+            if not self.info.apply(message):
+                return
+        elif message.epoch != self.info.epoch:
+            return
+        self.broadcast_info(message)
 
     def broadcast(self, message):
         if isinstance(message, SessionState):
@@ -534,6 +616,8 @@ class Session:
         snapshot = frame.model_copy(update={"type": "stream.snapshot"})
         # Re-subscription deliberately permits a complete snapshot at the same seq.
         client.enqueue_reliable(self._encode_frame(snapshot), seq=snapshot.seq, force=True)
+        if client.info:
+            client.enqueue_reliable(encode(self.info_snapshot()))
 
     async def observer_subscribe(self, client: ClientConnection, request: Subscribe):
         async with self.command_lock:
@@ -719,6 +803,7 @@ class Session:
         async with self.command_lock:
             self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
+            self.pipeline.fail_active("session_reset", "Scene was reloaded")
             self.broadcast(self._lifecycle_state())
             try:
                 await self._stop_source()
@@ -750,6 +835,9 @@ class Session:
     async def close(self):
         async with self.command_lock:
             self._auto_paused = False
+            if self.pipeline:
+                self.pipeline.fail_active("source_unavailable", "Session was stopped")
+                self.pipeline.close()
             self.state = "STOPPING"
             if self.manifest:
                 self.broadcast(self._lifecycle_state())
