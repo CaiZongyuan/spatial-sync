@@ -121,7 +121,6 @@ def create_app(
     install_recording_routes(app, recordings)
     request_times = defaultdict(deque)
 
-    @app.middleware("http")
     async def access_control(request: Request, call_next):
         if (
             settings.remote
@@ -151,6 +150,9 @@ def create_app(
                 return JSONResponse({"detail": {"code": "rate_limited"}}, status_code=429)
             times.append(now)
         return await call_next(request)
+
+    if settings.remote:
+        app.middleware("http")(access_control)
 
     app.add_middleware(
         CORSMiddleware,
