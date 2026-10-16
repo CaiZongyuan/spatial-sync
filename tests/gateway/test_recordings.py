@@ -1,8 +1,13 @@
+import asyncio
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from apps.api.app import session_manager
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.api.app.sources.synthetic_source import SyntheticSource
@@ -242,3 +247,131 @@ def test_normal_reload_records_old_loading_before_independent_new_revision_prefi
             records = read_segment((tmp_path / sid / segment["file"]).read_bytes()).records
             assert records[0].kind == 1
             assert json.loads(records[1].payload)["sceneRevision"] == segment["sceneRevision"]
+
+
+def test_reload_capture_intake_waits_for_prefix_then_archives_exact_rejection(tmp_path, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    original_freeze = session_manager.freeze_manifest
+    calls = 0
+
+    async def slow_second_capture(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 5)
+        return await original_freeze(*args)
+
+    monkeypatch.setattr(session_manager, "freeze_manifest", slow_second_capture)
+    with (
+        TestClient(create_app(Settings(recordings_root=tmp_path))) as client,
+        ThreadPoolExecutor(2) as executor,
+    ):
+        session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
+        sid = session["sessionId"]
+        route = f"/api/v1/sessions/{sid}"
+        body = {"requestId": "during-capture", "entityKey": "/World/Lab/Centrifuge", "action": "missing"}
+        reload = executor.submit(client.post, route + "/reload")
+        assert entered.wait(2)
+        action = executor.submit(client.post, route + "/actions", json=body)
+        try:
+            with pytest.raises(TimeoutError):
+                action.result(timeout=0.05)
+        finally:
+            release.set()
+        assert reload.result(timeout=5).status_code == 200
+        original = action.result(timeout=5)
+        assert original.status_code == 404 and original.json()["error"]["code"] == "unknown_action"
+        for i in range(1001):
+            result = client.post(route + "/actions", json=body | {"requestId": f"capture-eviction-{i}"})
+            assert result.status_code == 404
+        stored = client.get(route + "/invocations/" + original.json()["invocationId"])
+        assert stored.status_code == 200 and stored.json() == original.json()
+        assert client.post(route + "/actions", json=body).json() == original.json()
+        assert client.app.state.manager.get(sid).recording.error is None
+
+
+def test_failed_reload_still_audits_subsequent_source_unavailable_rejection(tmp_path):
+    calls = 0
+
+    def factory(kind, sid):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("Injected reload startup failure")
+        return SyntheticSource(sid)
+
+    with TestClient(create_app(Settings(recordings_root=tmp_path), source_factory=factory)) as client:
+        session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
+        sid = session["sessionId"]
+        route = f"/api/v1/sessions/{sid}"
+        assert client.post(route + "/reload").status_code == 503
+        result = client.post(
+            route + "/actions",
+            json={
+                "requestId": "after-failed-reload",
+                "entityKey": "/World/Lab/Centrifuge",
+                "action": "closeLid",
+            },
+        )
+        assert result.status_code == 503 and result.json()["error"]["code"] == "source_unavailable"
+        client.delete(route)
+        updates = [
+            message for message in recorded_messages(tmp_path, sid) if message["type"] == "invocation.update"
+        ]
+        assert updates[-1]["invocationId"] == result.json()["invocationId"]
+
+
+def test_viewer_denial_after_archived_lookup_rebinds_to_reloaded_pipeline(tmp_path, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    settings = Settings(
+        recordings_root=tmp_path,
+        remote=True,
+        operator_token="operator",
+        viewer_token="viewer",
+        remote_requests_per_minute=5000,
+    )
+    operator = {"Authorization": "Bearer operator"}
+    viewer = {"Authorization": "Bearer viewer"}
+    with TestClient(create_app(settings)) as client, ThreadPoolExecutor(2) as executor:
+        session = client.post("/api/v1/sessions", headers=operator, json={"sceneId": "lab-demo"}).json()
+        sid = session["sessionId"]
+        route = f"/api/v1/sessions/{sid}"
+        body = {
+            "requestId": "archived-operator-request",
+            "entityKey": "/World/Lab/Centrifuge",
+            "action": "missing",
+        }
+        original = client.post(route + "/actions", headers=operator, json=body).json()
+        for i in range(1001):
+            assert (
+                client.post(
+                    route + "/actions", headers=operator, json=body | {"requestId": f"viewer-race-evict-{i}"}
+                ).status_code
+                == 404
+            )
+        owned = client.app.state.manager.get(sid)
+        lookup = owned.recording.lookup_invocation
+
+        async def delayed_lookup(identifier):
+            if identifier == original["invocationId"]:
+                entered.set()
+                assert await asyncio.to_thread(release.wait, 5)
+            return await lookup(identifier)
+
+        monkeypatch.setattr(owned.recording, "lookup_invocation", delayed_lookup)
+        denied = executor.submit(client.post, route + "/actions", headers=viewer, json=body)
+        try:
+            assert entered.wait(2)
+            replacement = client.post(route + "/reload", headers=operator).json()
+        finally:
+            release.set()
+        response = denied.result(timeout=5)
+        assert response.status_code == 403 and response.json()["error"]["code"] == "not_permitted"
+        client.delete(route, headers=operator)
+        audit = next(
+            message
+            for message in recorded_messages(tmp_path, sid)
+            if message.get("invocationId") == response.json()["invocationId"]
+        )
+        assert audit["sceneRevision"] == replacement["sceneRevision"] != session["sceneRevision"]

@@ -120,6 +120,8 @@ class Session:
         self._recording_revision_ready = False
 
     async def start(self):
+        previous_manifest = self.manifest
+        recording_was_ready = self._recording_revision_ready
         self._recording_revision_ready = False
         self.state = "LOADING"
         self._log_event("session.lifecycle", state=self.state)
@@ -186,9 +188,21 @@ class Session:
                     await candidate.close()
             # A failed candidate must never be read as the previous valid sample.
             self.source = None
+            if self.manifest is previous_manifest:
+                self._recording_revision_ready = recording_was_ready
             if self.state != "FAILED":
                 self.fail(str(exc))
             raise
+
+    async def action_pipeline(self):
+        """Wait for revision capture, then select the pipeline for immediate intake.
+
+        Callers immediately invoke/cancel/approve after this returns. Fresh intake
+        reserves work before its first suspending host call; that call remains
+        outside the lifecycle lock so reload can fail reserved work promptly.
+        """
+        async with self.command_lock:
+            return self.pipeline
 
     async def _record_revision(self):
         if self.recording is None:

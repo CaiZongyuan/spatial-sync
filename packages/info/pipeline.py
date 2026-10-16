@@ -110,6 +110,11 @@ class ActionPipeline:
             prior = await self.table.lookup_request(request.requestId)
             if prior and prior.error and prior.error.code == "not_permitted":
                 return prior
+            # An archived lookup may yield across reload. Bind a new denial to
+            # the current revision after its recording prefix is established.
+            current = await self.session.action_pipeline()
+            if current is not self:
+                return await current.invoke(request, role, actor)
             return self._reject(self._new(request, actor), "not_permitted", "Operator permission is required")
         # Publish the Future before yielding: concurrent duplicate request IDs share dispatch.
         pending = self._inflight.get(request.requestId)

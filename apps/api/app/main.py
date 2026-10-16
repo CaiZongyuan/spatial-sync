@@ -389,14 +389,13 @@ def create_app(
                 elif isinstance(message, (ActionRequest, ActionCancel, ActionApprove)):
                     try:
                         actor = actor_from_headers(websocket.headers)
+                        pipeline = await session.action_pipeline()
                         if isinstance(message, ActionRequest):
-                            await session.pipeline.invoke(message, role, actor)
+                            await pipeline.invoke(message, role, actor)
                         elif isinstance(message, ActionCancel):
-                            await session.pipeline.cancel(message.invocationId, role)
+                            await pipeline.cancel(message.invocationId, role)
                         else:
-                            await session.pipeline.approve(
-                                message.invocationId, message.decision, role, actor
-                            )
+                            await pipeline.approve(message.invocationId, message.decision, role, actor)
                     except HistoryUnavailable as exc:
                         connection.enqueue_reliable(
                             encode(

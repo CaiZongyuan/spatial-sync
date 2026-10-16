@@ -132,12 +132,11 @@ def install_info_routes(app, manager, role_for):
     @app.post(prefix + "/actions")
     async def action(session_id: str, body: HttpAction, request: Request):
         session = manager.get(session_id)
-        value = await session.pipeline.invoke(
-            body, role_for(request.headers), actor_from_headers(request.headers)
-        )
+        pipeline = await session.action_pipeline()
+        value = await pipeline.invoke(body, role_for(request.headers), actor_from_headers(request.headers))
         timed_out = False
         if body.wait and value.status not in TERMINAL:
-            value, timed_out = await session.pipeline.table.wait(value.invocationId, body.timeoutSeconds)
+            value, timed_out = await pipeline.table.wait(value.invocationId, body.timeoutSeconds)
         return invocation_response(value, waiting=body.wait, timed_out=timed_out)
 
     @app.get(prefix + "/invocations")
@@ -172,7 +171,7 @@ def install_info_routes(app, manager, role_for):
         return invocation_response(value, waiting=wait, timed_out=timed_out, query=True)
 
     async def control(session_id, invocation_id, role, actor=None, decision=None):
-        pipeline = manager.get(session_id).pipeline
+        pipeline = await manager.get(session_id).action_pipeline()
         try:
             value = await (
                 pipeline.approve(invocation_id, decision, role, actor)
