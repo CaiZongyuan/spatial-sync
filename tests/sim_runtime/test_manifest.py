@@ -1,7 +1,11 @@
+from types import SimpleNamespace
+
 import pytest
 
 newton = pytest.importorskip("newton")
 pytestmark = pytest.mark.newton
+
+from newton.solvers import SolverXPBD
 
 from packages.protocol.math import compose_pose
 from packages.sim_runtime.labels import labels_for_model
@@ -43,3 +47,30 @@ def test_omitted_newton_label_provenance_is_distinct_from_explicit_body_0():
     explicit_labels = labels_for_model(explicit.finalize(device="cpu"))
     assert explicit_labels.bodies[0].entity_key == "/body_0"
     assert explicit_labels.bodies[0].stable
+
+
+def test_exporter_forwards_known_construction_omission_provenance():
+    builder = newton.ModelBuilder()
+    builder.add_body()
+    model = builder.finalize(device="cpu")
+    scene = SimpleNamespace(
+        model=model,
+        anchor_sites={},
+        epoch=0,
+        scene_id="known-omission",
+        physics_dt=1 / 240,
+        solver=SolverXPBD(model),
+        missing_labels={("body", 0), ("joint", 0)},
+    )
+    manifest = export_manifest(scene, session_id="test", scene_revision="rev", revision_numeric_id=1)
+    body = next(n for n in manifest.nodes if n.kind == "body")
+    assert body.entityKey == "/__unlabeled/body_0" and not body.stableKey
+    assert [w.code for w in manifest.warnings] == ["unlabeled_entity", "unlabeled_entity"]
+    with pytest.raises(ValueError, match="Missing label"):
+        export_manifest(
+            scene,
+            session_id="test",
+            scene_revision="rev",
+            revision_numeric_id=1,
+            strict_labels=True,
+        )
