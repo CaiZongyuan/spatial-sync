@@ -106,7 +106,9 @@ class SyntheticSource:
                 self._actual_rtf = steps * self.options.physicsDt / elapsed if elapsed > 0 else 0.0
                 if now >= next_publish:
                     self._publish()
-                    next_publish = now + 1 / self.options.basePublishHz
+                    period = 1 / self.options.basePublishHz
+                    # Preserve the cadence across coarse timer wakeups; skip missed slots.
+                    next_publish += (int((now - next_publish) / period) + 1) * period
 
     def _publish(self, kind="transform.frame") -> TransformFrame:
         self._seq += 1
