@@ -229,3 +229,44 @@ test('an operator can deny and approve a declared high risk action', async ({
     await request.delete(`${api}/api/v1/sessions/${sessionId}`);
   }
 });
+
+test('schema string fields preserve JSON Schema Unicode and pattern semantics', async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    process.env.SPATIAL_TEST_SCHEMA_FIELDS !== '1',
+    'Requires the temporary schema annotation fixture',
+  );
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneId: 'lab-demo', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  try {
+    await page.goto(`/sessions/${sessionId}`);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await page.getByTestId('entity-/World/Lab/RobotA').click();
+    const move = await action(page, 'moveJoints');
+    await move
+      .getByLabel('moveJoints positions', { exact: true })
+      .fill('[0,0,0,0,0,0,0]');
+    await move.getByLabel('moveJoints note', { exact: true }).fill('😀');
+    await move.getByLabel('moveJoints code', { exact: true }).fill('a');
+    await move
+      .getByRole('button', { name: 'Run moveJoints', exact: true })
+      .click();
+    await expect(
+      invocation(page, 'moveJoints').locator('.invocation-status'),
+    ).toHaveText('succeeded');
+    await invocation(page, 'moveJoints').locator('summary').click();
+    await expect(
+      invocation(page, 'moveJoints').locator('.invocation-details'),
+    ).toContainText('😀');
+    await expect(
+      invocation(page, 'moveJoints').locator('.invocation-details'),
+    ).toContainText('"label": ""');
+  } finally {
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});

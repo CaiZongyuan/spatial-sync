@@ -10,7 +10,11 @@ import type {
 import type { InfoStore } from '../lib/info/store';
 import { useEntity, useInvocations } from '../lib/info/hooks';
 import { evaluateConditions } from '../lib/info/conditions';
-import { isJsonField, parseActionParams } from '../lib/info/action-params';
+import {
+  isJsonField,
+  isTextField,
+  parseActionParams,
+} from '../lib/info/action-params';
 
 const display = (value: unknown) =>
   typeof value === 'string' ? value : JSON.stringify(value);
@@ -74,7 +78,7 @@ function Parameter({
       >,
     ) => change(event.target.value),
     'aria-label': label,
-    required,
+    required: required && !isTextField(schema),
   };
   return (
     <label className="action-field">
@@ -115,15 +119,6 @@ function Parameter({
           step={schema.type === 'integer' ? 1 : 'any'}
           min={typeof schema.minimum === 'number' ? schema.minimum : undefined}
           max={typeof schema.maximum === 'number' ? schema.maximum : undefined}
-          minLength={
-            typeof schema.minLength === 'number' ? schema.minLength : undefined
-          }
-          maxLength={
-            typeof schema.maxLength === 'number' ? schema.maxLength : undefined
-          }
-          pattern={
-            typeof schema.pattern === 'string' ? schema.pattern : undefined
-          }
         />
       )}
     </label>
@@ -149,7 +144,16 @@ function ActionForm({
     params: Record<string, JsonValue>,
   ) => string;
 }) {
-  const [input, setInput] = useState<Record<string, string>>({});
+  const [input, setInput] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(action.params)
+        .filter(
+          ([name, schema]) =>
+            action.required.includes(name) && isTextField(schema),
+        )
+        .map(([name]) => [name, '']),
+    ),
+  );
   const [error, setError] = useState<string>();
   const [requestId, setRequestId] = useState<string>();
   const [waiting, setWaiting] = useState(false);

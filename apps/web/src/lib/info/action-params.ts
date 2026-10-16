@@ -6,6 +6,8 @@ export const isJsonField = (schema: JsonSchema) =>
   schema.type === 'array' ||
   schema.type === 'object' ||
   (!schema.type && !schema.enum);
+export const isTextField = (schema: JsonSchema) =>
+  schema.type === 'string' && !schema.enum;
 
 export function parseActionParams(
   action: ActionDefinition,
@@ -13,6 +15,10 @@ export function parseActionParams(
 ): Record<string, JsonValue> {
   const params: Record<string, JsonValue> = {};
   for (const [name, schema] of Object.entries(action.params)) {
+    if (isTextField(schema)) {
+      if (Object.hasOwn(input, name)) params[name] = input[name];
+      continue;
+    }
     const raw = input[name] ?? '';
     if (!raw.trim()) continue;
     try {
