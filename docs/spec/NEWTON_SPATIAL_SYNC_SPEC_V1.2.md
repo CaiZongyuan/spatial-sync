@@ -461,6 +461,7 @@ Schema 的唯一事实源是 `packages/protocol` 中的 Pydantic 模型；由其
 - `kind ∈ {group, body, static}`。`streamId` 只出现在 `kind=body` 节点，`uint32`，在 revision 内唯一。
 - `parentEntityKey` 必须指向 Manifest 中存在的节点，或为 `null`（根）。它只表达逻辑层级，不表达 Transform 继承。
 - `visuals[].kind ∈ {primitive, mesh, glb}`。mesh 指由 Newton mesh shape 导出的 GLB（§4.5），形如 `{"kind":"mesh","meshId":"sha256-…","url":"/api/v1/sessions/session-001/meshes/sha256-…","assetUpAxis":"Z","scale":[1,1,1],"localPose":{…}}`；glb 指外部绑定的资产。
+- Body / Static 节点可带可选 `fallbackVisuals`，保留被外部 GLB 绑定替换的整组 Newton visual shapes。`visuals`、`fallbackVisuals`、`colliders` 各自都是同时显示的几何组；按该顺序选择首个可完整加载的非空组，全部不可用时显示占位几何，不得把绑定与所有回退组叠加显示。未使用绑定的旧 Manifest 可省略 `fallbackVisuals`。
 - primitive 的 `geometry` 字段严格遵守 §4.3 的 Newton 语义。
 - `sites[].parentBodyKey` 为 `null` 表示固定在世界系的 Site。
 - `joints[].parentLocalPose` 为关节在父 Body 坐标系中的锚点位姿；`parentBodyKey` 为 `null` 时即世界系位姿。`axis` 只对单自由度关节（revolute、prismatic）给出，定义在父侧锚点坐标系中；free 关节两者都省略。
@@ -1155,15 +1156,15 @@ P0-A 与 P0-B 可并行；P0-C 与 P0-D 在 P0-B 之后并行（P0-D 先用 fixt
 | ID | 决策项 | 默认值 | 状态 | 确定时点 |
 |---|---|---|---|---|
 | D-01 | Newton / Warp 及相关依赖的锁定版本 | Newton **1.7.0**、Warp **1.18.0**、Python **3.13.14**；精确版本见 `pyproject.toml` / `.python-version`。Newton 的 `sim` extra 安装 SolverMuJoCo 依赖；`uv.lock` 锁定 `mujoco` / `mujoco-warp` **3.15.0**。默认环境不安装 Newton / Warp，CPU/CUDA smoke 与版本证据见 `docs/development/v1.2/P0-A.md` | 已定 | P0-A 已实测 |
-| D-02 | 机械臂资产 | 7-DOF 机械臂的 MJCF（如 Franka Panda），优先使用 Newton 示例资产 | 默认生效 | P1-A 开始前 |
-| D-03 | 机械臂默认 Solver | SolverMuJoCo；SolverFeatherstone 作对照；依赖锁定见 D-01 | 待实测 | P1-A 结束 |
+| D-02 | 机械臂资产 | Newton 1.7.0 官方示例资产的 Franka Research 3 URDF（7 个机械臂转动自由度及双指夹爪），固定资产 revision `f8fb7abcbeba2318814a74f3eeb02780ad7925d6`；原文件、许可证及 SHA-256 随仓库提供。保留 MJCF smoke 示例；实际版本的官方机器人示例采用 URDF，沿用 §1.2 / §12 允许的导入路径 | 已定 | P1-A 已实测 |
+| D-03 | 机械臂默认 Solver | SolverMuJoCo，CPU 使用 native MuJoCo，CUDA 使用 mujoco-warp，两者完整 0.5 s 接触场景均通过。Featherstone 相同完整配置接触不稳定，记录为不支持该配置；只将正确的接触前对照计入测量。小场景 GPU 未捕获 graph 时较 CPU 慢，不宣称 GPU 加速；依赖见 D-01，实测见 `docs/development/v1.2/P1-A.md` | 已定 | P1-A 已实测 |
 | D-04 | 实时率策略 | `realtimeFactor=1.0`，`max_lag=250 ms`，允许 null（不限速） | 默认生效 | — |
 | D-05 | seq / epoch 语义 | seq 在 Session 内全局单调；epoch 每次 reset +1 | 已定 | — |
 | D-06 | 多客户端控制权 | localhost：所有客户端可控制，结果全员广播；远程：仅 operator | 默认生效 | 开启远程访问前复核 |
 | D-07 | Primitive 参数语义 | Newton 语义（半边长、halfHeight、轴为 Z） | 已定 | — |
 | D-08 | 缺失 label 的处理 | 自动生成 `/__unlabeled/...`，`stableKey=false` + warning；strict 模式加载失败 | 默认生效 | — |
 | D-09 | USD 实体的 entityKey 来源 | `add_usd()` 后用 `path_*_map` 把 label 改写为 Prim Path，下游只认 label；Newton 1.7.0 的 `body_label` / `shape_label` / `joint_label` 可写，三个 path map 的索引及 finalize 后结果已实测通过 | 已定 | P0-A 已验证可行性 |
-| D-10 | 无观察者时是否继续仿真 | 继续 | 默认生效 | — |
+| D-10 | 无观察者时是否继续仿真 | 默认继续；可设 `continueWithoutObservers=false`，无订阅者时自动暂停，首位订阅者返回时仅恢复由该策略暂停的会话，不覆盖用户显式暂停 | 默认生效 | P1-C 已验证 |
 | D-11 | 插值 playoutDelay | `2 × 帧周期`（30 Hz 下约 66 ms），随 grantedRateHz 变化 | 默认生效 | P0-D 后按体验调整系数 |
 | D-12 | 发布频率与订阅上限 | `basePublishHz=30`；客户端 `rateHz ∈ [1, basePublishHz]` | 默认生效 | — |
 | D-13 | `joint_q` 是否进入实时流 | 否；P1 通过 HTTP 按需查询；P2 可考虑为选中的少量关节提供轻量订阅 | 默认生效 | — |

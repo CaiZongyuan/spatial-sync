@@ -1,0 +1,41 @@
+........................................................................ [ 55%]
+..........................................F...............               [100%]
+================================== FAILURES ===================================
+________ test_exporter_forwards_known_construction_omission_provenance ________
+
+    def test_exporter_forwards_known_construction_omission_provenance():
+        builder = newton.ModelBuilder()
+        builder.add_body()
+        model = builder.finalize(device="cpu")
+        scene = SimpleNamespace(
+            model=model,
+            anchor_sites={},
+            epoch=0,
+            scene_id="known-omission",
+            physics_dt=1 / 240,
+            solver=SolverXPBD(model),
+            missing_labels={("body", 0), ("joint", 0)},
+        )
+        manifest = export_manifest(scene, session_id="test", scene_revision="rev", revision_numeric_id=1)
+        body = next(n for n in manifest.nodes if n.kind == "body")
+        assert body.entityKey == "/__unlabeled/body_0" and not body.stableKey
+>       assert [w.code for w in manifest.warnings] == ["unlabeled_entity", "unlabeled_entity"]
+E       AssertionError: assert ['unlabeled_e...set_fallback'] == ['unlabeled_e...beled_entity']
+E         
+E         Left contains one more item: 'asset_fallback'
+E         Use -v to get more diff
+
+tests\sim_runtime\test_manifest.py:68: AssertionError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\Projects\Robots\spatial-sync-worktrees\p1-b\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/sim_runtime/test_mesh_export.py::test_newton_mesh_is_content_hash_glb_with_scale_kept_in_manifest
+  D:\Projects\Robots\spatial-sync-worktrees\p1-b\tests\sim_runtime\test_mesh_export.py:24: UserWarning: Inertia validation corrected 1 bodies. Set validate_inertia_detailed=True for detailed per-body warnings.
+    model=builder.finalize(device="cpu"),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/sim_runtime/test_manifest.py::test_exporter_forwards_known_construction_omission_provenance
+1 failed, 129 passed, 2 deselected, 2 warnings in 35.34s
