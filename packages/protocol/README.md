@@ -52,3 +52,11 @@ The discriminator mappings and all constraints remain derived from Pydantic.
 mapping, quaternion hemisphere and Body × SiteLocal expected values. Viewer
 geometry/interpolation tests should consume this same math fixture. Pure Python
 math and label helpers live in `math.py` and require no physics engine.
+
+`BodyNode` and `StaticNode` may include `fallbackVisuals` when an external GLB
+binding replaces native Newton visuals. Each array is a simultaneous group.
+Choose the first nonempty group whose assets all load, in this order: `visuals`,
+`fallbackVisuals`, `colliders`, then a recognizable placeholder. Render one group
+only; never concatenate a binding with its fallback shapes. Missing optional
+`fallbackVisuals` preserves the original v1 behavior. Asset transforms remain
+Body-local, with asset up-axis conversion applied once inside that transform.

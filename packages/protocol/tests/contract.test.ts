@@ -63,6 +63,17 @@ test('shared convention fixtures expose all six primitive cases and independent 
   assert.deepEqual(math.axisCases[0].expected, [1, 3, -2])
 })
 
+test('optional fallback groups accept meshes and validate their local quaternion', () => {
+  const value = structuredClone(validateManifest(manifest))
+  const body = value.nodes.find(node => node.kind === 'body')!
+  assert.equal(body.kind, 'body')
+  if (body.kind !== 'body') return
+  body.fallbackVisuals = [{ kind: 'mesh', meshId: 'sha256-fallback', url: '/meshes/sha256-fallback', assetUpAxis: 'Z', scale: [1, 1, 1], localPose: { p: [0, 0, 0], q: [0, 0, 0, 1] } }]
+  assert.equal(validateManifest(value).nodes.length, manifest.nodes.length)
+  body.fallbackVisuals[0].localPose.q = [0, 0, 0, 2]
+  assert.throws(() => validateManifest(value), /Quaternion/)
+})
+
 test('TS generated artifact is deterministic', () => {
   const path = new URL('../types/index.ts', import.meta.url)
   const before = readFileSync(path, 'utf8')
