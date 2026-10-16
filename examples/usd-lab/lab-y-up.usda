@@ -1,0 +1,81 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "World"
+{
+    def PhysicsScene "Physics"
+    {
+        vector3f physics:gravityDirection = (0, -1, 0)
+        float physics:gravityMagnitude = 9.81
+    }
+    def Cube "Floor" (prepend apiSchemas = ["PhysicsCollisionAPI"])
+    {
+        double size = 1
+        double3 xformOp:translate = (0, -0.05, 0)
+        float3 xformOp:scale = (4, 0.1, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+    def Xform "Equipment"
+    {
+        def Mesh "Housing"
+        {
+            point3f[] points = [(-0.3, 0, -0.2), (0.3, 0, -0.2), (0.3, 0.6, -0.2), (-0.3, 0.6, -0.2), (-0.3, 0, 0.2), (0.3, 0, 0.2), (0.3, 0.6, 0.2), (-0.3, 0.6, 0.2)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 3, 7, 6, 2, 0, 4, 7, 3, 1, 2, 6, 5]
+            uniform token subdivisionScheme = "none"
+            double3 xformOp:translate = (-0.8, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+        def BasisCurves "Cable"
+        {
+            point3f[] points = [(-0.8, 0.2, 0), (-0.5, 0.2, 0), (-0.4, 0.1, 0)]
+            int[] curveVertexCounts = [3]
+            float[] widths = [0.02]
+            uniform token type = "linear"
+        }
+        def Xform "Rotor" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"])
+        {
+            float physics:mass = 0.5
+            double3 xformOp:translate = (-0.8, 0.7, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            def Cylinder "Geometry" (prepend apiSchemas = ["PhysicsCollisionAPI"])
+            {
+                double radius = 0.25
+                double height = 0.06
+                uniform token axis = "Y"
+            }
+        }
+        def PhysicsRevoluteJoint "Spindle" (prepend apiSchemas = ["PhysicsDriveAPI:angular"])
+        {
+            rel physics:body1 = </World/Equipment/Rotor>
+            uniform token physics:axis = "Y"
+            point3f physics:localPos0 = (-0.8, 0.7, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            float drive:angular:physics:targetVelocity = 90
+            float drive:angular:physics:damping = 0.5
+            float drive:angular:physics:stiffness = 0
+            float drive:angular:physics:maxForce = 2
+        }
+    }
+    def Xform "MovingPart" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"])
+    {
+        float physics:mass = 1
+        double3 xformOp:translate = (1, 1.5, 0.2)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Mesh "Visual"
+        {
+            point3f[] points = [(-0.1, -0.2, -0.3), (0.1, -0.2, -0.3), (0.1, 0.2, -0.3), (-0.1, 0.2, -0.3), (-0.1, -0.2, 0.3), (0.1, -0.2, 0.3), (0.1, 0.2, 0.3), (-0.1, 0.2, 0.3)]
+            int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+            int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 3, 7, 6, 2, 0, 4, 7, 3, 1, 2, 6, 5]
+            uniform token subdivisionScheme = "none"
+        }
+        def Cube "Collider" (prepend apiSchemas = ["PhysicsCollisionAPI"])
+        {
+            double size = 0.2
+        }
+    }
+}

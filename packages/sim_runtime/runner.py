@@ -227,7 +227,12 @@ class _Runner:
                 )
                 self.control.offer({"kind": "joint_result", "token": token, "state": state.model_dump()})
         elif kind == "mesh":
-            self.control.offer({"kind": "unknown_entity", "token": token, "key": packet["key"]})
+            try:
+                data = self.sim.meshes.read(packet["key"])
+            except KeyError:
+                self.control.offer({"kind": "unknown_entity", "token": token, "key": packet["key"]})
+            else:
+                self.control.offer({"kind": "mesh_result", "token": token, "data": data})
         else:
             raise ValueError(f"Unknown runner control operation: {kind}")
         return True

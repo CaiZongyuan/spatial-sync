@@ -4,10 +4,12 @@ from importlib.metadata import version
 
 import newton
 
+from packages.assets.bindings import apply_bindings
 from packages.protocol.math import normalize_quaternion
 from packages.protocol.schema import SceneManifest
 
 from .labels import labels_for_model
+from .mesh_assets import MeshStore
 
 
 def _pose(transform):
@@ -40,8 +42,11 @@ def export_manifest(
     strict_labels=False,
 ) -> SceneManifest:
     model = sim.model
+    sim.meshes = MeshStore()
     labels = labels_for_model(
-        model, missing_labels=getattr(sim, "missing_labels", ()), strict=strict_labels,
+        model,
+        missing_labels=getattr(sim, "missing_labels", ()),
+        strict=strict_labels,
     )
     warnings = list(labels.warnings)
     shape_bodies = model.shape_body.numpy()
@@ -83,7 +88,27 @@ def export_manifest(
             )
             continue
         geometry = _primitive(shape_types[shape], scales[shape])
-        if geometry is None:
+        visual = None
+        if shape_types[shape] in (newton.GeoType.MESH, newton.GeoType.CONVEX_MESH):
+            try:
+                mesh_id = sim.meshes.register(model.shape_source[shape])
+                visual = {
+                    "kind": "mesh",
+                    "meshId": mesh_id,
+                    "url": f"/api/v1/sessions/{session_id}/meshes/{mesh_id}",
+                    "assetUpAxis": "Z",
+                    "scale": [float(x) for x in scales[shape]],
+                    "localPose": _pose(transforms[shape]),
+                }
+            except (AttributeError, ValueError) as exc:
+                warnings.append(
+                    {
+                        "code": "unsupported_shape",
+                        "entityKey": identity.entity_key,
+                        "message": f"Mesh export failed: {exc}",
+                    }
+                )
+        if geometry is None and visual is None:
             geometry = {"type": "box", "halfExtents": [max(abs(float(x)), 0.05) for x in scales[shape]]}
             warnings.append(
                 {
@@ -92,7 +117,8 @@ def export_manifest(
                     "message": f"{newton.GeoType(shape_types[shape]).name} rendered as a box placeholder",
                 }
             )
-        visual = {"kind": "primitive", "geometry": geometry, "localPose": _pose(transforms[shape])}
+        if visual is None:
+            visual = {"kind": "primitive", "geometry": geometry, "localPose": _pose(transforms[shape])}
         if body == -1:
             node = {
                 "entityKey": identity.entity_key,
@@ -152,6 +178,8 @@ def export_manifest(
             info["axis"] = [float(v) for v in axes[starts[index]]]
         joints.append(info)
 
+    warnings.extend(getattr(sim.builder, "spatial_warnings", ()) if hasattr(sim, "builder") else ())
+    apply_bindings(nodes, sim.scene_id, warnings)
     return SceneManifest.model_validate(
         {
             "sessionId": session_id,

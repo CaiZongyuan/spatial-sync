@@ -136,6 +136,8 @@ class NewtonSource:
                     value = result
                 elif kind == "joint_result":
                     value = JointState.model_validate(packet["state"])
+                elif kind == "mesh_result":
+                    value = packet["data"]
                 elif kind == "unknown_entity":
                     if future is not None and not future.done():
                         future.set_exception(KeyError(packet["key"]))
