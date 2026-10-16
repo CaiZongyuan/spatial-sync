@@ -1,4 +1,4 @@
-"""Authoritative Pydantic v2 models for spatial protocol version 1.
+"""Authoritative Pydantic v2 models for spatial protocol version 2.
 
 Use model_dump(mode="json", exclude_none=True) for outbound wire messages.
 Validate low-frequency/untrusted boundaries, not every rendered high-frequency frame.
@@ -6,7 +6,6 @@ Validate low-frequency/untrusted boundaries, not every rendered high-frequency f
 
 from __future__ import annotations
 
-from math import hypot, isfinite
 from typing import Annotated, Literal, TypeAliasType
 
 from pydantic import (
@@ -21,7 +20,7 @@ from pydantic import (
     model_validator,
 )
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 MAX_MANUAL_STEPS = 1000
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 JsonValue = TypeAliasType(
@@ -50,7 +49,6 @@ ErrorCode = Literal[
     "source_unavailable",
     "internal_error",
     "unauthorized",
-    "invalid_subscription",
 ]
 
 
@@ -66,7 +64,7 @@ class Model(BaseModel):
     @classmethod
     def validate_protocol_version(cls, data):
         if isinstance(data, dict) and "protocolVersion" in data and type(data["protocolVersion"]) is not int:
-            raise ValueError("protocolVersion must be integer 1")
+            raise ValueError("protocolVersion must be integer 2")
         return data
 
 
@@ -254,7 +252,7 @@ class Coordinates(Model):
 
 
 class SceneManifest(Model):
-    protocolVersion: Literal[1] = 1
+    protocolVersion: Literal[2] = 2
     sessionId: NonEmpty
     sceneRevision: NonEmpty
     revisionNumericId: UInt32
@@ -317,7 +315,7 @@ PoseRow = tuple[UInt32, Finite, Finite, Finite, Finite, Finite, Finite, Finite]
 
 
 class PoseMessage(Model):
-    protocolVersion: Literal[1] = 1
+    protocolVersion: Literal[2] = 2
     sessionId: NonEmpty
     sceneRevision: NonEmpty
     epoch: UInt32
@@ -343,25 +341,6 @@ class PoseMessage(Model):
 
 class TransformFrame(PoseMessage):
     type: Literal["transform.frame", "stream.snapshot"] = "transform.frame"
-    subscriptionId: UInt32 | None = None
-    keyframe: StrictBool | None = None
-
-
-class TransformDelta(PoseMessage):
-    type: Literal["transform.delta"] = "transform.delta"
-    subscriptionId: UInt32
-    baseSeq: Counter
-    removedStreamIds: list[UInt32] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_baseline(self):
-        if self.baseSeq >= self.seq:
-            raise ValueError("delta sequence must follow its keyframe")
-        if len(set(self.removedStreamIds)) != len(self.removedStreamIds):
-            raise ValueError("removedStreamIds must be unique")
-        if {row[0] for row in self.poses} & set(self.removedStreamIds):
-            raise ValueError("a delta cannot both update and remove a streamId")
-        return self
 
 
 class Snapshot(TransformFrame):
@@ -451,7 +430,7 @@ class CommandAck(Model):
 
 class Ready(Model):
     type: Literal["server.ready"] = "server.ready"
-    protocolVersion: Literal[1] = 1
+    protocolVersion: Literal[2] = 2
     sessionId: NonEmpty
     sceneRevision: NonEmpty
     revisionNumericId: UInt32
@@ -464,58 +443,19 @@ class Ready(Model):
     sampleTimeClock: Literal["runner-monotonic", "gateway-receive"] = "runner-monotonic"
 
 
-class Viewport(Model):
-    planes: Annotated[list[tuple[Finite, Finite, Finite, Finite]], Field(min_length=6, max_length=6)]
-
-    @field_validator("planes")
-    @classmethod
-    def validate_planes(cls, planes):
-        for plane in planes:
-            magnitude = hypot(*plane[:3])
-            if (
-                not isfinite(magnitude)
-                or magnitude < 1e-12
-                or not all(isfinite(x / magnitude) for x in plane)
-            ):
-                raise ValueError("viewport planes require finite nonzero normals")
-        return planes
-
-
 class Subscribe(Model):
     type: Literal["client.subscribe"] = "client.subscribe"
-    protocolVersion: Literal[1] = 1
+    protocolVersion: Literal[2] = 2
     sceneRevision: NonEmpty
-    scope: Literal["all", "entities", "device", "viewport"] = "all"
     rateHz: Positive = 30
-    format: Literal["json", "binary"] = "json"
-    entityKeys: list[EntityKey] | None = None
-    deviceKey: EntityKey | None = None
-    viewport: Viewport | None = None
-    delta: StrictBool = False
+    info: StrictBool = True
     requestId: NonEmpty | None = None
-
-    @model_validator(mode="after")
-    def validate_scope(self):
-        if self.scope == "entities" and not self.entityKeys:
-            raise ValueError("entities scope requires nonempty entityKeys")
-        if self.scope != "entities" and self.entityKeys is not None:
-            raise ValueError("entityKeys only apply to entities scope")
-        if (self.scope == "device") != (self.deviceKey is not None):
-            raise ValueError("device scope requires deviceKey; other scopes omit it")
-        if (self.scope == "viewport") != (self.viewport is not None):
-            raise ValueError("viewport scope requires viewport; other scopes omit it")
-        if self.entityKeys is not None and len(set(self.entityKeys)) != len(self.entityKeys):
-            raise ValueError("entityKeys must be unique")
-        return self
 
 
 class SubscriptionAck(Model):
     type: Literal["subscription.ack"] = "subscription.ack"
-    scope: Literal["all", "entities", "device", "viewport"]
     grantedRateHz: Positive
-    format: Literal["json", "binary"] = "json"
-    delta: StrictBool = False
-    subscriptionId: UInt32 | None = None
+    info: StrictBool = True
     requestId: NonEmpty | None = None
 
 
@@ -525,25 +465,6 @@ class SceneReplaced(Model):
     sceneRevision: NonEmpty
     revisionNumericId: UInt32
     epoch: UInt32 = 0
-
-
-class EntityState(Model):
-    type: Literal["entity.state"] = "entity.state"
-    sessionId: NonEmpty
-    sceneRevision: NonEmpty
-    entityKey: EntityKey
-    schema_: NonEmpty = Field(alias="schema")
-    stateSeq: Counter
-    simTime: NonNegative
-    payload: dict[str, JsonValue]
-
-    model_config = ConfigDict(
-        extra="forbid",
-        validate_default=True,
-        allow_inf_nan=False,
-        serialize_by_alias=True,
-        populate_by_name=True,
-    )
 
 
 class ServerError(Model):
@@ -583,11 +504,9 @@ ServerMessage = TypeAliasType(
         Ready
         | SubscriptionAck
         | TransformFrame
-        | TransformDelta
         | SessionState
         | SceneReplaced
         | CommandAck
-        | EntityState
         | Heartbeat
         | ServerError,
         Field(discriminator="type"),

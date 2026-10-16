@@ -11,12 +11,12 @@ from packages.protocol.schema import (
     ClientMessage,
     Command,
     CommandAck,
-    EntityState,
     Pose,
     SceneManifest,
     ServerMessage,
     Snapshot,
     StepArgs,
+    Subscribe,
     TransformFrame,
     validate_command_args,
 )
@@ -145,20 +145,15 @@ def test_command_validation_supports_rejection_semantics():
             CommandAck(requestId="x", status=status, reason=reason, simTime=0, epoch=0)
 
 
-def test_untrusted_json_payload_is_finite_and_schema_alias_serializes():
-    event = EntityState(
-        sessionId="s",
-        sceneRevision="r",
-        entityKey="/World",
-        schema="unknown/1",
-        stateSeq=0,
-        simTime=0,
-        payload={"array": [None, True, 1, "x", {"nested": 0.3}]},
-    )
-    assert event.model_dump(mode="json")["schema"] == "unknown/1"
-    for bad in [float("nan"), float("inf"), object()]:
+def test_subscription_v2_is_full_binary_and_info_defaults_enabled():
+    request = Subscribe(sceneRevision="r")
+    assert request.protocolVersion == 2 and request.info is True
+    assert Subscribe(sceneRevision="r", info=False).info is False
+    for field, value in [("scope", "all"), ("delta", False), ("format", "binary"),
+                         ("entityKeys", ["/World"]), ("deviceKey", "/World"),
+                         ("viewport", {}), ("protocolVersion", 1), ("info", "true")]:
         with pytest.raises(ValidationError):
-            EntityState(**(event.model_dump() | {"payload": {"nested": [bad]}}))
+            Subscribe.model_validate({"sceneRevision": "r", field: value})
 
 
 def test_quaternion_not_silently_normalized_at_boundary():

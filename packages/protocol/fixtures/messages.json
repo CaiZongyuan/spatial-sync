@@ -1,7 +1,7 @@
 [
   {
     "type": "server.ready",
-    "protocolVersion": 1,
+    "protocolVersion": 2,
     "sessionId": "session-fixture",
     "sceneRevision": "rev-fixture",
     "revisionNumericId": 1,
@@ -15,34 +15,26 @@
   },
   {
     "type": "client.subscribe",
-    "protocolVersion": 1,
+    "protocolVersion": 2,
     "sceneRevision": "rev-fixture",
-    "scope": "all",
     "rateHz": 30.0,
-    "format": "json",
-    "delta": false
+    "info": true
   },
   {
     "type": "client.subscribe",
-    "protocolVersion": 1,
+    "protocolVersion": 2,
     "sceneRevision": "rev-fixture",
-    "scope": "entities",
     "rateHz": 30.0,
-    "format": "json",
-    "entityKeys": [
-      "/World/Arm"
-    ],
-    "delta": false
+    "info": false,
+    "requestId": "spatial-only"
   },
   {
     "type": "subscription.ack",
-    "scope": "all",
     "grantedRateHz": 30.0,
-    "format": "json",
-    "delta": false
+    "info": true
   },
   {
-    "protocolVersion": 1,
+    "protocolVersion": 2,
     "sessionId": "session-fixture",
     "sceneRevision": "rev-fixture",
     "epoch": 0,
@@ -64,7 +56,7 @@
     "type": "stream.snapshot"
   },
   {
-    "protocolVersion": 1,
+    "protocolVersion": 2,
     "sessionId": "session-fixture",
     "sceneRevision": "rev-fixture",
     "epoch": 0,
@@ -84,92 +76,6 @@
       ]
     ],
     "type": "transform.frame"
-  },
-  {
-    "protocolVersion": 1,
-    "sessionId": "session-fixture",
-    "sceneRevision": "rev-fixture",
-    "epoch": 0,
-    "seq": 2,
-    "simTime": 0.0,
-    "sampleTimeMs": 1000.0,
-    "poses": [
-      [
-        7,
-        1.0,
-        2.0,
-        3.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0
-      ]
-    ],
-    "type": "transform.delta",
-    "subscriptionId": 1,
-    "baseSeq": 1,
-    "removedStreamIds": []
-  },
-  {
-    "type": "client.subscribe",
-    "protocolVersion": 1,
-    "sceneRevision": "rev-fixture",
-    "scope": "device",
-    "rateHz": 30.0,
-    "format": "json",
-    "deviceKey": "/World",
-    "delta": true,
-    "requestId": "scope-device"
-  },
-  {
-    "type": "client.subscribe",
-    "protocolVersion": 1,
-    "sceneRevision": "rev-fixture",
-    "scope": "viewport",
-    "rateHz": 30.0,
-    "format": "json",
-    "viewport": {
-      "planes": [
-        [
-          1.0,
-          0.0,
-          0.0,
-          1.0
-        ],
-        [
-          -1.0,
-          0.0,
-          0.0,
-          1.0
-        ],
-        [
-          0.0,
-          1.0,
-          0.0,
-          1.0
-        ],
-        [
-          0.0,
-          -1.0,
-          0.0,
-          1.0
-        ],
-        [
-          0.0,
-          0.0,
-          1.0,
-          1.0
-        ],
-        [
-          0.0,
-          0.0,
-          -1.0,
-          1.0
-        ]
-      ]
-    },
-    "delta": true,
-    "requestId": "scope-camera"
   },
   {
     "type": "session.state",
@@ -215,25 +121,6 @@
     "simTime": 0.0,
     "epoch": 0,
     "reason": "invalid_state"
-  },
-  {
-    "type": "entity.state",
-    "sessionId": "session-fixture",
-    "sceneRevision": "rev-fixture",
-    "entityKey": "/World",
-    "schema": "device.example/0",
-    "stateSeq": 1,
-    "simTime": 0.0,
-    "payload": {
-      "running": true,
-      "rpm": 3000,
-      "unknown": {
-        "nested": [
-          null,
-          "arbitrary"
-        ]
-      }
-    }
   },
   {
     "type": "scene.replaced",

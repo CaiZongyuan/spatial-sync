@@ -13,7 +13,6 @@ sys.path.insert(0, str(ROOT))
 from packages.protocol.schema import (  # noqa: E402
     Command,
     CommandAck,
-    EntityState,
     Heartbeat,
     ProtocolContract,
     Ready,
@@ -24,7 +23,6 @@ from packages.protocol.schema import (  # noqa: E402
     Snapshot,
     Subscribe,
     SubscriptionAck,
-    TransformDelta,
     TransformFrame,
 )
 
@@ -74,7 +72,7 @@ def manifest_sample():
     ]
     return SceneManifest.model_validate(
         {
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "sessionId": "session-fixture",
             "sceneRevision": "rev-fixture",
             "revisionNumericId": 1,
@@ -162,7 +160,7 @@ def main():
     schema = draft7(ProtocolContract.model_json_schema(mode="serialization"))
     schema["title"] = "ProtocolContract"
     schema["$schema"] = "http://json-schema.org/draft-07/schema#"
-    schema["$id"] = "https://spatial-sync.local/protocol/v1/schema.json"
+    schema["$id"] = "https://spatial-sync.local/protocol/v2/schema.json"
     write("types/protocol.schema.json", schema)
     manifest = manifest_sample()
     write("fixtures/manifest.json", manifest.model_dump(mode="json", exclude_none=True))
@@ -176,31 +174,6 @@ def main():
         poses=[(7, 1, 2, 3, 0, 0, 0, 1)],
     )
     from packages.transport import FrameCodec
-    from packages.transport.scoped_frames import encode_scoped_frame
-
-    scoped = [
-        Snapshot(
-            **(frame_args | {"seq": 10, "poses": [(7, 5, 6, 7, 0, 0, 0, 1)]}), subscriptionId=3, keyframe=True
-        ),
-        TransformDelta(
-            **(frame_args | {"seq": 11, "poses": []}), subscriptionId=3, baseSeq=10, removedStreamIds=[7]
-        ),
-        TransformDelta(
-            **(frame_args | {"seq": 12, "poses": [(7, 9, 8, 7, 0, 0, 0, 1)]}), subscriptionId=3, baseSeq=10
-        ),
-        TransformFrame(**(frame_args | {"seq": 13}), subscriptionId=3, keyframe=True),
-    ]
-    write(
-        "fixtures/scoped-binary-frames.json",
-        [
-            {
-                "frame": frame.model_dump(mode="json", exclude_none=True),
-                "revisionNumericId": 1,
-                "hex": encode_scoped_frame(frame, 1).hex(),
-            }
-            for frame in scoped
-        ],
-    )
     binary_frame = Snapshot(**frame_args)
     write(
         "fixtures/binary-frame.json",
@@ -233,48 +206,15 @@ def main():
             realtimeFactor=1,
         ),
         Subscribe(sceneRevision=manifest.sceneRevision),
-        Subscribe(sceneRevision=manifest.sceneRevision, scope="entities", entityKeys=["/World/Arm"]),
-        SubscriptionAck(scope="all", grantedRateHz=30),
+        Subscribe(sceneRevision=manifest.sceneRevision, info=False, requestId="spatial-only"),
+        SubscriptionAck(grantedRateHz=30),
         Snapshot(**frame_args),
         TransformFrame(**frame_args),
-        TransformDelta(**(frame_args | {"seq": 2}), subscriptionId=1, baseSeq=1),
-        Subscribe(
-            sceneRevision=manifest.sceneRevision,
-            scope="device",
-            deviceKey="/World",
-            delta=True,
-            requestId="scope-device",
-        ),
-        Subscribe(
-            sceneRevision=manifest.sceneRevision,
-            scope="viewport",
-            viewport={
-                "planes": [
-                    [1, 0, 0, 1],
-                    [-1, 0, 0, 1],
-                    [0, 1, 0, 1],
-                    [0, -1, 0, 1],
-                    [0, 0, 1, 1],
-                    [0, 0, -1, 1],
-                ]
-            },
-            delta=True,
-            requestId="scope-camera",
-        ),
         SessionState(**state_args),
         Heartbeat(state="PAUSED", simTime=0, lastSeq=1, actualRtf=0, serverTimeMs=1000),
         Command(requestId="cmd-fixture", command="pause"),
         CommandAck(requestId="cmd-fixture", status="applied", simTime=0, epoch=0),
         CommandAck(requestId="cmd-invalid", status="rejected", reason="invalid_state", simTime=0, epoch=0),
-        EntityState(
-            sessionId=manifest.sessionId,
-            sceneRevision=manifest.sceneRevision,
-            entityKey="/World",
-            schema="device.example/0",
-            stateSeq=1,
-            simTime=0,
-            payload={"running": True, "rpm": 3000, "unknown": {"nested": [None, "arbitrary"]}},
-        ),
         SceneReplaced(sessionId=manifest.sessionId, sceneRevision="rev-next", revisionNumericId=2),
         ServerError(code="revision_mismatch", message="Reload scene before subscribing"),
     ]

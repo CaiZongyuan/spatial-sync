@@ -38,16 +38,7 @@ export type ClientMessage = Command | Subscribe
  * via the `definition` "ServerMessage".
  */
 export type ServerMessage =
-  | Ready
-  | SubscriptionAck
-  | TransformFrame
-  | TransformDelta
-  | SessionState
-  | SceneReplaced
-  | CommandAck
-  | EntityState
-  | Heartbeat
-  | ServerError
+  Ready | SubscriptionAck | TransformFrame | SessionState | SceneReplaced | CommandAck | Heartbeat | ServerError
 
 export interface ProtocolContract {
   manifest: SceneManifest
@@ -65,7 +56,7 @@ export interface ProtocolContract {
  * via the `definition` "SceneManifest".
  */
 export interface SceneManifest {
-  protocolVersion: 1
+  protocolVersion: 2
   sessionId: string
   sceneRevision: string
   revisionNumericId: number
@@ -319,34 +310,11 @@ export interface Command {
  */
 export interface Subscribe {
   type: 'client.subscribe'
-  protocolVersion: 1
+  protocolVersion: 2
   sceneRevision: string
-  scope: 'all' | 'entities' | 'device' | 'viewport'
   rateHz: number
-  format: 'json' | 'binary'
-  entityKeys?: string[] | null
-  deviceKey?: string | null
-  viewport?: Viewport | null
-  delta: boolean
+  info: boolean
   requestId?: string | null
-}
-/**
- * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Viewport".
- */
-export interface Viewport {
-  /**
-   * @minItems 6
-   * @maxItems 6
-   */
-  planes: [
-    [number, number, number, number],
-    [number, number, number, number],
-    [number, number, number, number],
-    [number, number, number, number],
-    [number, number, number, number],
-    [number, number, number, number]
-  ]
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -354,7 +322,7 @@ export interface Viewport {
  */
 export interface Ready {
   type: 'server.ready'
-  protocolVersion: 1
+  protocolVersion: 2
   sessionId: string
   sceneRevision: string
   revisionNumericId: number
@@ -372,11 +340,8 @@ export interface Ready {
  */
 export interface SubscriptionAck {
   type: 'subscription.ack'
-  scope: 'all' | 'entities' | 'device' | 'viewport'
   grantedRateHz: number
-  format: 'json' | 'binary'
-  delta: boolean
-  subscriptionId?: number | null
+  info: boolean
   requestId?: string | null
 }
 /**
@@ -384,7 +349,7 @@ export interface SubscriptionAck {
  * via the `definition` "TransformFrame".
  */
 export interface TransformFrame {
-  protocolVersion: 1
+  protocolVersion: 2
   sessionId: string
   sceneRevision: string
   epoch: number
@@ -393,26 +358,6 @@ export interface TransformFrame {
   sampleTimeMs: number
   poses: [number, number, number, number, number, number, number, number][]
   type: 'transform.frame' | 'stream.snapshot'
-  subscriptionId?: number | null
-  keyframe?: boolean | null
-}
-/**
- * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "TransformDelta".
- */
-export interface TransformDelta {
-  protocolVersion: 1
-  sessionId: string
-  sceneRevision: string
-  epoch: number
-  seq: number
-  simTime: number
-  sampleTimeMs: number
-  poses: [number, number, number, number, number, number, number, number][]
-  type: 'transform.delta'
-  subscriptionId: number
-  baseSeq: number
-  removedStreamIds: number[]
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -467,22 +412,6 @@ export interface CommandAck {
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "EntityState".
- */
-export interface EntityState {
-  type: 'entity.state'
-  sessionId: string
-  sceneRevision: string
-  entityKey: string
-  schema: string
-  stateSeq: number
-  simTime: number
-  payload: {
-    [k: string]: JsonValue
-  }
-}
-/**
- * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "Heartbeat".
  */
 export interface Heartbeat {
@@ -509,7 +438,6 @@ export interface ServerError {
     | 'source_unavailable'
     | 'internal_error'
     | 'unauthorized'
-    | 'invalid_subscription'
   message: string
   requestId?: string | null
 }
@@ -518,7 +446,7 @@ export interface ServerError {
  * via the `definition` "Snapshot".
  */
 export interface Snapshot {
-  protocolVersion: 1
+  protocolVersion: 2
   sessionId: string
   sceneRevision: string
   epoch: number
@@ -527,8 +455,6 @@ export interface Snapshot {
   sampleTimeMs: number
   poses: [number, number, number, number, number, number, number, number][]
   type: 'stream.snapshot'
-  subscriptionId?: number | null
-  keyframe?: boolean | null
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

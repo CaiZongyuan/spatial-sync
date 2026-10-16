@@ -453,57 +453,6 @@
       ],
       "type": "object"
     },
-    "EntityState": {
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "entity.state",
-          "default": "entity.state",
-          "type": "string"
-        },
-        "sessionId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "sceneRevision": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "entityKey": {
-          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
-          "type": "string"
-        },
-        "schema": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "stateSeq": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "simTime": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "payload": {
-          "additionalProperties": {
-            "$ref": "#/$defs/JsonValue"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "type",
-        "sessionId",
-        "sceneRevision",
-        "entityKey",
-        "schema",
-        "stateSeq",
-        "simTime",
-        "payload"
-      ],
-      "type": "object"
-    },
     "Glb": {
       "additionalProperties": false,
       "properties": {
@@ -996,8 +945,8 @@
           "type": "string"
         },
         "protocolVersion": {
-          "const": 1,
-          "default": 1,
+          "const": 2,
+          "default": 2,
           "type": "integer"
         },
         "sessionId": {
@@ -1104,8 +1053,8 @@
       "additionalProperties": false,
       "properties": {
         "protocolVersion": {
-          "const": 1,
-          "default": 1,
+          "const": 2,
+          "default": 2,
           "type": "integer"
         },
         "sessionId": {
@@ -1284,8 +1233,7 @@
             "unknown_entity",
             "source_unavailable",
             "internal_error",
-            "unauthorized",
-            "invalid_subscription"
+            "unauthorized"
           ],
           "type": "string"
         },
@@ -1317,7 +1265,6 @@
       "discriminator": {
         "mapping": {
           "command.ack": "#/$defs/CommandAck",
-          "entity.state": "#/$defs/EntityState",
           "scene.replaced": "#/$defs/SceneReplaced",
           "server.error": "#/$defs/ServerError",
           "server.heartbeat": "#/$defs/Heartbeat",
@@ -1325,7 +1272,6 @@
           "session.state": "#/$defs/SessionState",
           "stream.snapshot": "#/$defs/TransformFrame",
           "subscription.ack": "#/$defs/SubscriptionAck",
-          "transform.delta": "#/$defs/TransformDelta",
           "transform.frame": "#/$defs/TransformFrame"
         },
         "propertyName": "type"
@@ -1341,9 +1287,6 @@
           "$ref": "#/$defs/TransformFrame"
         },
         {
-          "$ref": "#/$defs/TransformDelta"
-        },
-        {
           "$ref": "#/$defs/SessionState"
         },
         {
@@ -1351,9 +1294,6 @@
         },
         {
           "$ref": "#/$defs/CommandAck"
-        },
-        {
-          "$ref": "#/$defs/EntityState"
         },
         {
           "$ref": "#/$defs/Heartbeat"
@@ -1549,8 +1489,8 @@
       "additionalProperties": false,
       "properties": {
         "protocolVersion": {
-          "const": 1,
-          "default": 1,
+          "const": 2,
+          "default": 2,
           "type": "integer"
         },
         "sessionId": {
@@ -1618,30 +1558,6 @@
           "const": "stream.snapshot",
           "default": "stream.snapshot",
           "type": "string"
-        },
-        "subscriptionId": {
-          "anyOf": [
-            {
-              "maximum": 4294967295,
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "keyframe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "required": [
@@ -1874,22 +1790,12 @@
           "type": "string"
         },
         "protocolVersion": {
-          "const": 1,
-          "default": 1,
+          "const": 2,
+          "default": 2,
           "type": "integer"
         },
         "sceneRevision": {
           "minLength": 1,
-          "type": "string"
-        },
-        "scope": {
-          "default": "all",
-          "enum": [
-            "all",
-            "entities",
-            "device",
-            "viewport"
-          ],
           "type": "string"
         },
         "rateHz": {
@@ -1897,54 +1803,8 @@
           "exclusiveMinimum": 0,
           "type": "number"
         },
-        "format": {
-          "default": "json",
-          "enum": [
-            "json",
-            "binary"
-          ],
-          "type": "string"
-        },
-        "entityKeys": {
-          "anyOf": [
-            {
-              "items": {
-                "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "deviceKey": {
-          "anyOf": [
-            {
-              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "viewport": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Viewport"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "delta": {
-          "default": false,
+        "info": {
+          "default": true,
           "type": "boolean"
         },
         "requestId": {
@@ -1964,10 +1824,8 @@
         "type",
         "protocolVersion",
         "sceneRevision",
-        "scope",
         "rateHz",
-        "format",
-        "delta"
+        "info"
       ],
       "type": "object"
     },
@@ -1979,43 +1837,13 @@
           "default": "subscription.ack",
           "type": "string"
         },
-        "scope": {
-          "enum": [
-            "all",
-            "entities",
-            "device",
-            "viewport"
-          ],
-          "type": "string"
-        },
         "grantedRateHz": {
           "exclusiveMinimum": 0,
           "type": "number"
         },
-        "format": {
-          "default": "json",
-          "enum": [
-            "json",
-            "binary"
-          ],
-          "type": "string"
-        },
-        "delta": {
-          "default": false,
+        "info": {
+          "default": true,
           "type": "boolean"
-        },
-        "subscriptionId": {
-          "anyOf": [
-            {
-              "maximum": 4294967295,
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "requestId": {
           "anyOf": [
@@ -2032,118 +1860,8 @@
       },
       "required": [
         "type",
-        "scope",
         "grantedRateHz",
-        "format",
-        "delta"
-      ],
-      "type": "object"
-    },
-    "TransformDelta": {
-      "additionalProperties": false,
-      "properties": {
-        "protocolVersion": {
-          "const": 1,
-          "default": 1,
-          "type": "integer"
-        },
-        "sessionId": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "sceneRevision": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "epoch": {
-          "maximum": 4294967295,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "seq": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "simTime": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "sampleTimeMs": {
-          "minimum": 0,
-          "type": "number"
-        },
-        "poses": {
-          "items": {
-            "maxItems": 8,
-            "minItems": 8,
-            "items": [
-              {
-                "maximum": 4294967295,
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              }
-            ],
-            "type": "array"
-          },
-          "type": "array"
-        },
-        "type": {
-          "const": "transform.delta",
-          "default": "transform.delta",
-          "type": "string"
-        },
-        "subscriptionId": {
-          "maximum": 4294967295,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "baseSeq": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "removedStreamIds": {
-          "items": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "protocolVersion",
-        "sessionId",
-        "sceneRevision",
-        "epoch",
-        "seq",
-        "simTime",
-        "sampleTimeMs",
-        "poses",
-        "type",
-        "subscriptionId",
-        "baseSeq",
-        "removedStreamIds"
+        "info"
       ],
       "type": "object"
     },
@@ -2151,8 +1869,8 @@
       "additionalProperties": false,
       "properties": {
         "protocolVersion": {
-          "const": 1,
-          "default": 1,
+          "const": 2,
+          "default": 2,
           "type": "integer"
         },
         "sessionId": {
@@ -2223,30 +1941,6 @@
             "stream.snapshot"
           ],
           "type": "string"
-        },
-        "subscriptionId": {
-          "anyOf": [
-            {
-              "maximum": 4294967295,
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "keyframe": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "required": [
@@ -2259,39 +1953,6 @@
         "sampleTimeMs",
         "poses",
         "type"
-      ],
-      "type": "object"
-    },
-    "Viewport": {
-      "additionalProperties": false,
-      "properties": {
-        "planes": {
-          "items": {
-            "maxItems": 4,
-            "minItems": 4,
-            "items": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "number"
-              }
-            ],
-            "type": "array"
-          },
-          "maxItems": 6,
-          "minItems": 6,
-          "type": "array"
-        }
-      },
-      "required": [
-        "planes"
       ],
       "type": "object"
     },
@@ -2361,5 +2022,5 @@
   "type": "object",
   "title": "ProtocolContract",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://spatial-sync.local/protocol/v1/schema.json"
+  "$id": "https://spatial-sync.local/protocol/v2/schema.json"
 }

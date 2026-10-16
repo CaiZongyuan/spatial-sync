@@ -1,4 +1,4 @@
-# Spatial protocol v1
+# Spatial protocol v2
 
 `schema/__init__.py` is the authoritative Pydantic v2 contract. `types/index.ts`,
 `types/protocol.schema.json` and `fixtures/*.json` are generated; edit the Python
@@ -23,9 +23,7 @@ from packages.protocol.internal import SessionOptions, CommandResult, JointState
 payload = frame.model_dump(mode="json", exclude_none=True)
 ```
 
-`EntityState` uses Python `schema_` (alias `schema`) because BaseModel already has
-a `schema()` method. Its default serialization emits the wire alias. Other
-fields use their wire names directly. Command strings remain open so the
+Command strings remain open so the
 executor can return `unknown_command`; `validate_command_args(command)` checks
 known command arguments and rejects non-integer/non-positive step counts.
 Manual step batches are bounded by the shared `MAX_MANUAL_STEPS = 1000`; larger
@@ -47,7 +45,7 @@ equivalent draft7 `items` tuple representation for Ajv and TypeScript tooling.
 The discriminator mappings and all constraints remain derived from Pydantic.
 
 `fixtures/manifest.json` contains all primitive and asset variants;
-`fixtures/messages.json` covers all thirteen message types;
+`fixtures/messages.json` covers all eleven message types;
 `fixtures/math.json` contains independently specified §4.3 dimensions, Z-up
 mapping, quaternion hemisphere and Body × SiteLocal expected values. Viewer
 geometry/interpolation tests should consume this same math fixture. Pure Python
@@ -58,53 +56,24 @@ binding replaces native Newton visuals. Each array is a simultaneous group.
 Choose the first nonempty group whose assets all load, in this order: `visuals`,
 `fallbackVisuals`, `colliders`, then a recognizable placeholder. Render one group
 only; never concatenate a binding with its fallback shapes. Missing optional
-`fallbackVisuals` preserves the original v1 behavior. Asset transforms remain
+`fallbackVisuals` preserves the default visual fallback behavior. Asset transforms remain
 Body-local, with asset up-axis conversion applied once inside that transform.
 
 
-## Scoped subscriptions and cumulative deltas
+## Full binary subscriptions
 
-`client.subscribe` supports `all`, `entities` (`entityKeys`), `device` (`deviceKey`
-identifying a Group), and `viewport` (`viewport.planes`: six inward-facing
-`[nx,ny,nz,d]` clipping half-spaces in physics Z-up world). Group selection
-includes descendants; a selected Site includes its parent Body, and a Joint
-includes both parent and child Bodies. Viewport filtering uses conservative
-Body-local bounding spheres; unknown GLB/mesh bounds remain subscribed. Static
-geometry stays in the Manifest. HTTP snapshot/pose queries always use the full
-source sample.
+`client.subscribe` contains `sceneRevision`, `rateHz`, optional `requestId`, and
+`info` (default true, reserved for the information plane). The gateway replies
+with `subscription.ack`, including `grantedRateHz`, `info`, and the request ID,
+then a complete binary snapshot. Rates are clamped to 1?basePublishHz.
 
-Set `delta: true` for sparse cumulative updates and send a unique `requestId` on
-every subscription. `subscription.ack` echoes the request and assigns a
-connection-local `subscriptionId`. Its reliable snapshot is the scope barrier.
-On rapid changes, accept only the newest requested acknowledgement, then only
-frames matching its subscription ID, revision and epoch. Earlier reliable
-command batches remain FIFO before subsequent ack/snapshot barriers.
+Every WebSocket transform and snapshot carries every Manifest Body. HTTP
+snapshot and pose endpoints continue returning JSON. Re-subscription and
+reconnect always provide a complete recovery snapshot. Command frames remain
+reliable and precede their acknowledgement and session state.
 
-`transform.delta` declares `baseSeq`, changed/new `poses`, and
-`removedStreamIds`. Reconstruct each delta from the declared full keyframe,
-apply removals, then updated rows. Never patch the preceding delta. A member
-which entered after the baseline is present in every applicable delta; when it
-leaves it disappears by omission. A Body returning to its baseline pose is also
-omitted. The gateway sends reliable full keyframes at least once per second
-while frames advance, and for every applied control frame. These regular
-keyframes rebase deltas without resetting interpolation. Recovery/reset
-`stream.snapshot` resets timing. Unknown baselines cause one fresh subscription
-request until the matching ack/snapshot arrives. Reconnect and visibility
-restoration also request complete snapshots.
-
-The legacy NSYN kinds 1/2 retain their exact 44-byte header and 32-byte rows.
-Opt-in scoped WS packets extend that header as follows (little-endian):
-
-| Kind | Meaning | Extension after byte 44 | Pose offset |
-| --- | --- | --- | --- |
-| 3 | cumulative delta | uint32 subscriptionId, uint64 baseSeq, uint32 removedCount | 60 |
-| 4 | full regular/command keyframe | uint32 subscriptionId | 48 |
-| 5 | recovery/reset snapshot | uint32 subscriptionId | 48 |
-
-Kind 3 appends `removedCount` uint32 IDs after its pose rows. Typed views must
-bound the pose region explicitly to avoid reading the removal tail as poses.
-Legacy subscriptions (no requestId and delta false) keep kinds 1/2. Scoped JSON
-and binary carry identical membership/base semantics; binary has no JSON frame
-fallback. `fixtures/scoped-binary-frames.json` records Python-produced bytes for
-the browser's independent decoder tests. Generated fixtures/types use LF even
-with Git core.autocrlf enabled; GLB files remain binary.
+The NSYN binary format retains its 44-byte header, wire-format version 1,
+32-byte rows, and kinds 1 (full transform) and 2 (snapshot). The spatial protocol
+advertised by Manifest, ready, subscribe and HTTP snapshot is version 2; v1
+JSON contracts are rejected. `fixtures/binary-frame.json` provides produced
+bytes for the browser's independent decoder tests. Generated artifacts use LF.
