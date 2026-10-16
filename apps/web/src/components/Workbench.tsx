@@ -9,6 +9,7 @@ import {
 import { Link, useNavigate } from '@tanstack/react-router';
 import { SessionClient } from '../lib/stream/client';
 import { request } from '../lib/api';
+import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { SceneTree } from './SceneTree';
 import { Inspector } from './Inspector';
 import { Diagnostics } from './Diagnostics';
@@ -17,6 +18,7 @@ import {
   type DebugLayers,
   type RenderMetrics,
   type RenderedPose,
+  type InspectVisuals,
 } from './viewer/SceneViewport';
 
 declare global {
@@ -28,6 +30,10 @@ declare global {
       getSample: () => SessionClient['buffer']['latestSample'];
       getConnection: () => string;
       getDiscardedFrames: () => number;
+      inspectVisuals: InspectVisuals;
+      startProfile: () => ReturnType<SessionClient['getStreamMetrics']>;
+      stopProfile: FrameRecorder['stop'];
+      getStreamMetrics: SessionClient['getStreamMetrics'];
     };
   }
 }
@@ -37,6 +43,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
   const client = useMemo(() => new SessionClient(sessionId), [sessionId]);
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const [loadError, setLoadError] = useState<string>();
+  const [operationPending, setOperationPending] = useState(false);
   const [selected, setSelected] = useState('');
   const [tab, setTab] = useState<'scene' | 'diagnostics'>('scene');
   const [layers, setLayers] = useState<DebugLayers>({
@@ -54,6 +61,8 @@ export function Workbench({ sessionId }: { sessionId: string }) {
     applyMs: 0,
   });
   const rendered = useRef(new Map<string, RenderedPose>());
+  const inspectVisuals = useRef<InspectVisuals | undefined>(undefined);
+  const recorder = useMemo(() => new FrameRecorder(), []);
   const warn = useCallback(
     (message: string) =>
       setWarnings((warnings) =>
@@ -70,12 +79,19 @@ export function Workbench({ sessionId }: { sessionId: string }) {
       getSample: () => client.buffer.latestSample,
       getConnection: () => client.getSnapshot().connection,
       getDiscardedFrames: () => client.buffer.discardedFrames,
+      inspectVisuals: (key) => inspectVisuals.current?.(key),
+      startProfile: () => {
+        recorder.start();
+        return client.getStreamMetrics();
+      },
+      stopProfile: () => recorder.stop(),
+      getStreamMetrics: client.getStreamMetrics,
     };
     return () => {
       client.stop();
       delete window.__spatialDebug;
     };
-  }, [client, sessionId]);
+  }, [client, sessionId, recorder]);
   useEffect(() => {
     setSelected('');
     setHidden(new Set());
@@ -105,12 +121,25 @@ export function Workbench({ sessionId }: { sessionId: string }) {
         result.add(joint.anchorSiteKey);
     return result;
   }, [hidden, manifest]);
-  const pending = state.pending.length > 0;
+  const pending = state.pending.length > 0 || operationPending;
   const connected = state.connection === 'connected';
   const paused = state.sessionState === 'PAUSED';
   const active = paused || state.sessionState === 'RUNNING';
   const warningCount = (manifest?.warnings.length ?? 0) + warnings.length;
   const age = Math.max(0, performance.now() - client.buffer.receivedAt);
+  const lifecycle = async (action: 'reload' | 'restart') => {
+    setOperationPending(true);
+    setLoadError(undefined);
+    try {
+      await request(`/sessions/${encodeURIComponent(sessionId)}/${action}`, {
+        method: 'POST',
+      });
+    } catch (error) {
+      setLoadError((error as Error).message);
+    } finally {
+      setOperationPending(false);
+    }
+  };
   return (
     <main className="workbench">
       <header className="workbench-header">
@@ -178,14 +207,16 @@ export function Workbench({ sessionId }: { sessionId: string }) {
           >
             ↺ Reset
           </button>
+          <button
+            disabled={pending || !active}
+            onClick={() => void lifecycle('reload')}
+          >
+            Reload scene
+          </button>
           {state.sessionState === 'FAILED' && (
             <button
-              onClick={() =>
-                void request(
-                  `/sessions/${encodeURIComponent(sessionId)}/restart`,
-                  { method: 'POST' },
-                ).catch((error: Error) => setLoadError(error.message))
-              }
+              disabled={pending}
+              onClick={() => void lifecycle('restart')}
             >
               Restart source
             </button>
@@ -320,6 +351,8 @@ export function Workbench({ sessionId }: { sessionId: string }) {
                   warn,
                   metrics,
                   rendered,
+                  inspectVisuals,
+                  recorder,
                 }}
               />
               {tab === 'diagnostics' && (

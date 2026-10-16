@@ -9,6 +9,8 @@ function Home() {
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [sceneId, setSceneId] = useState('lab-demo');
   const [source, setSource] = useState('synthetic');
+  const [continueWithoutObservers, setContinueWithoutObservers] =
+    useState(true);
   const [sessionId, setSessionId] = useState('');
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -88,6 +90,16 @@ function Home() {
             {scene?.description ??
               'A shared world with streamed body poses and independently inspectable joint anchors.'}
           </div>
+          <label className="observer-policy">
+            <input
+              type="checkbox"
+              checked={continueWithoutObservers}
+              onChange={(event) =>
+                setContinueWithoutObservers(event.target.checked)
+              }
+            />
+            Keep running without observers
+          </label>
           <button
             className="primary launch-button"
             disabled={loading || !scene}
@@ -95,7 +107,11 @@ function Home() {
               setLoading(true);
               setError(undefined);
               try {
-                const session = await createSession(sceneId, source);
+                const session = await createSession(
+                  sceneId,
+                  source,
+                  continueWithoutObservers,
+                );
                 await navigate({
                   to: '/sessions/$sessionId',
                   params: { sessionId: session.sessionId },
@@ -149,9 +165,11 @@ function Home() {
       {error && (
         <div role="alert" className="banner error">
           {error}
-          <small>
-            Start the API gateway on 127.0.0.1:8000, then refresh this page.
-          </small>
+          {scenes.length === 0 && (
+            <small>
+              Check that the gateway is running, then refresh this page.
+            </small>
+          )}
         </div>
       )}
       <footer className="home-footer">

@@ -259,6 +259,19 @@ pre {
   font-size: 11px;
   margin: -3px 0 20px;
 }
+.launch-grid label.observer-policy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 20px;
+  font-weight: 400;
+}
+.launch-grid .observer-policy input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #a6e4c4;
+}
 .launch-button {
   display: flex;
   justify-content: space-between;

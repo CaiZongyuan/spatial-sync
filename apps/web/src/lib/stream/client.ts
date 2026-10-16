@@ -59,6 +59,18 @@ export class SessionClient {
 
   constructor(readonly sessionId: string) {}
   getSnapshot = () => this.state;
+  getStreamMetrics = () => ({
+    timeMs: performance.now(),
+    receivedFrames: this.receivedFrames,
+    payloadBytes: this.payloadBytes,
+    skippedNonFinite: this.buffer.skippedNonFinite,
+    discardedFrames: this.buffer.discardedFrames,
+    revision: this.buffer.revision,
+    epoch: this.buffer.epoch,
+    seq: this.buffer.lastSeq,
+    sessionState: this.state.sessionState,
+    connection: this.state.connection,
+  });
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
