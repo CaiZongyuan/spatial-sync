@@ -1,0 +1,257 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "python": "3.13.14",
+  "versions": {
+    "pydantic": "2.12.4",
+    "numpy": "2.5.4",
+    "fastapi": "0.143.2",
+    "uvicorn": "0.54.0",
+    "websockets": "16.1.1"
+  },
+  "corpusHash": "58aeadc9578d84c5b3273416924c7680386d60828609021215e3e56ba24d888e",
+  "mode": "network",
+  "results": {
+    "bodies": 10000,
+    "clients": 8,
+    "format": "json",
+    "seconds": 3.087393699999666,
+    "compression": "disabled equally at server and clients",
+    "readers": [
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 27.354899994679727,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 27.72457999526523,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 25.41296000708826,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 26.9934000010835,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 28,
+        "payloadBytes": 16166657,
+        "parseVerifyP95Ms": 25.93742000608472,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 26.78094000730198,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 27.196140002342872,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 29,
+        "payloadBytes": 16744093,
+        "parseVerifyP95Ms": 27.845900002284903,
+        "failures": []
+      }
+    ],
+    "before": {
+      "encodeSamples": 22,
+      "encodeP95Ms": 77.62310500038438,
+      "sessions": [
+        {
+          "sessionId": "session-62c66ff530b2",
+          "sceneId": "lab-demo",
+          "source": "synthetic",
+          "state": "RUNNING",
+          "sceneRevision": "profile",
+          "revisionNumericId": 1,
+          "epoch": 0,
+          "seq": 40,
+          "simTime": 2.2583333333333333,
+          "realtimeFactor": 1.0,
+          "actualRtf": 1.0236259370795062,
+          "solver": null,
+          "counts": {
+            "nodes": 10000,
+            "bodies": 10000,
+            "sites": 0,
+            "joints": 0,
+            "warnings": 0
+          },
+          "error": null,
+          "continueWithoutObservers": true,
+          "autoPaused": false,
+          "physicsDt": 0.004166666666666667,
+          "basePublishHz": 30.0,
+          "publishedFrames": 29,
+          "encodedPayloadBytes": 8083077,
+          "readbackMode": "not_applicable",
+          "clients": [
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 18
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 1,
+              "sentMessages": 17
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 18
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 17
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 17
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 18
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 19
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 18
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "encodeSamples": 50,
+      "encodeP95Ms": 77.60238999981084,
+      "sessions": [
+        {
+          "sessionId": "session-62c66ff530b2",
+          "sceneId": "lab-demo",
+          "source": "synthetic",
+          "state": "RUNNING",
+          "sceneRevision": "profile",
+          "revisionNumericId": 1,
+          "epoch": 0,
+          "seq": 85,
+          "simTime": 5.354166666666667,
+          "realtimeFactor": 1.0,
+          "actualRtf": 1.0015496076509423,
+          "solver": null,
+          "counts": {
+            "nodes": 10000,
+            "bodies": 10000,
+            "sites": 0,
+            "joints": 0,
+            "warnings": 0
+          },
+          "error": null,
+          "continueWithoutObservers": true,
+          "autoPaused": false,
+          "physicsDt": 0.004166666666666667,
+          "basePublishHz": 30.0,
+          "publishedFrames": 57,
+          "encodedPayloadBytes": 24249734,
+          "readbackMode": "not_applicable",
+          "clients": [
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 49
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 1,
+              "sentMessages": 48
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 49
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 48
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 48
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 49
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 50
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 49
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

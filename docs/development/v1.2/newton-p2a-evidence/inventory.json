@@ -1,0 +1,81 @@
+{
+  "candidate": "b7cc387051405366087ab8667736f9be2f2ce682",
+  "savedAt": "2026-10-16T08:38:43.540525Z",
+  "files": [
+    {
+      "path": "baseline-codecs.json",
+      "bytes": 3450,
+      "sha256": "c342b01b7b121a99b4bbc251a2f182e58ae58d44c83f70bdb55b2637a084c2ad"
+    },
+    {
+      "path": "baseline-network-10000-8.json",
+      "bytes": 7457,
+      "sha256": "615117a3a1c38d8613c36a4af830b53548dc2d2200bef7f6311d7a964e2e0518"
+    },
+    {
+      "path": "binary-network-equal.json",
+      "bytes": 7468,
+      "sha256": "051ab75d931f7f2b4f407debf6dcd1f3b23e1a74bb40897136a64e71d3dcdc32"
+    },
+    {
+      "path": "binary-workbench.png",
+      "bytes": 186827,
+      "sha256": "d61b7c83c279564fcff7b982b4001b4a6c8558e5ce376d96e302b9198bf2f982"
+    },
+    {
+      "path": "browser-codecs.json",
+      "bytes": 5726,
+      "sha256": "7894c12283883bee1d2430385c2441bbd1b9a19cd7d6606db7e7c99632192931"
+    },
+    {
+      "path": "browser-wire.json",
+      "bytes": 785,
+      "sha256": "cf071db88f48a33b21197b2aa3d73bf71a3b417d9f7cac9b8316e9bf5b75b499"
+    },
+    {
+      "path": "final-10000-8-binary.json",
+      "bytes": 8113,
+      "sha256": "70b9d0d8a704029088ce601e6bad5c29400942c393a462e1189ad772af0544b6"
+    },
+    {
+      "path": "final-10000-8-json.json",
+      "bytes": 8039,
+      "sha256": "f16a0eddb35aeee5f56e49f9279f505b0c503b39b009bb383170cefb67526d41"
+    },
+    {
+      "path": "final-35-1-binary.json",
+      "bytes": 3481,
+      "sha256": "e6c154eba45246fcfea87d7feede6d3471162c62641ae72d2b187143f4b5e6a2"
+    },
+    {
+      "path": "final-35-1-json.json",
+      "bytes": 3475,
+      "sha256": "6ad71744ee9a77ee33b313d1e66e47bcd57f8be9c794321bb638c8ed5cf7ac29"
+    },
+    {
+      "path": "final-500-2-binary.json",
+      "bytes": 4136,
+      "sha256": "e4ff343668200c21f015215c3418286262834cbd9c0233b2a3945133b91905ab"
+    },
+    {
+      "path": "final-500-2-json.json",
+      "bytes": 4122,
+      "sha256": "5f8e3b5e610cf5215ef8981046ed20e787bd6a230a18a743d98cf1801cd0037b"
+    },
+    {
+      "path": "json-network-35-1-deadline.json",
+      "bytes": 3460,
+      "sha256": "2e4cfbb7787184f981312f6a43319084c3da9f7afd039070131e9b185e40a7fd"
+    },
+    {
+      "path": "json-network-equal.json",
+      "bytes": 7442,
+      "sha256": "4d8bc81ecef44006e2e79be113d3ab0ec7b9da74b59b5d083af6ecf4e3ad303f"
+    },
+    {
+      "path": "timer-probe.json",
+      "bytes": 878,
+      "sha256": "cbcee1cf91badcedd081e7d7d7e0578c2f40891de1a92c84e621f63379fa0351"
+    }
+  ]
+}

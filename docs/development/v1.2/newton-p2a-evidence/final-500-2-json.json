@@ -1,0 +1,147 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "python": "3.13.14",
+  "versions": {
+    "pydantic": "2.12.4",
+    "numpy": "2.5.4",
+    "fastapi": "0.143.2",
+    "uvicorn": "0.54.0",
+    "websockets": "16.1.1"
+  },
+  "corpusHash": "44385c43bafa3d67df7aa7feb224fdbac9e9d78462010ad5ded8b40796724789",
+  "mode": "network",
+  "results": {
+    "bodies": 500,
+    "clients": 2,
+    "format": "json",
+    "seconds": 3.0130517999932636,
+    "compression": "disabled equally at server and clients",
+    "readers": [
+      {
+        "validAppliedFrames": 92,
+        "payloadBytes": 2622497,
+        "parseVerifyP95Ms": 0.9010800007672515,
+        "failures": []
+      },
+      {
+        "validAppliedFrames": 92,
+        "payloadBytes": 2622497,
+        "parseVerifyP95Ms": 0.8722049984498882,
+        "failures": []
+      }
+    ],
+    "before": {
+      "encodeSamples": 0,
+      "encodeP95Ms": null,
+      "sessions": [
+        {
+          "sessionId": "session-b6080a4effbd",
+          "sceneId": "lab-demo",
+          "source": "synthetic",
+          "state": "RUNNING",
+          "sceneRevision": "profile",
+          "revisionNumericId": 1,
+          "epoch": 0,
+          "seq": 45,
+          "simTime": 1.4708333333333332,
+          "realtimeFactor": 1.0,
+          "actualRtf": 0.9895731990104031,
+          "solver": null,
+          "counts": {
+            "nodes": 500,
+            "bodies": 500,
+            "sites": 0,
+            "joints": 0,
+            "warnings": 0
+          },
+          "error": null,
+          "continueWithoutObservers": true,
+          "autoPaused": false,
+          "physicsDt": 0.004166666666666667,
+          "basePublishHz": 30.0,
+          "publishedFrames": 43,
+          "encodedPayloadBytes": 883786,
+          "readbackMode": "not_applicable",
+          "clients": [
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "format": "json",
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 34
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "format": "json",
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 34
+            }
+          ]
+        }
+      ],
+      "sourceSeqs": [
+        45
+      ]
+    },
+    "after": {
+      "encodeSamples": 91,
+      "encodeP95Ms": 2.6560500045889057,
+      "sessions": [
+        {
+          "sessionId": "session-b6080a4effbd",
+          "sceneId": "lab-demo",
+          "source": "synthetic",
+          "state": "RUNNING",
+          "sceneRevision": "profile",
+          "revisionNumericId": 1,
+          "epoch": 0,
+          "seq": 135,
+          "simTime": 4.475,
+          "realtimeFactor": 1.0,
+          "actualRtf": 1.00834238671392,
+          "solver": null,
+          "counts": {
+            "nodes": 500,
+            "bodies": 500,
+            "sites": 0,
+            "joints": 0,
+            "warnings": 0
+          },
+          "error": null,
+          "continueWithoutObservers": true,
+          "autoPaused": false,
+          "physicsDt": 0.004166666666666667,
+          "basePublishHz": 30.0,
+          "publishedFrames": 134,
+          "encodedPayloadBytes": 3477775,
+          "readbackMode": "not_applicable",
+          "clients": [
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "format": "json",
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 128
+            },
+            {
+              "subscribed": true,
+              "grantedRateHz": 30.0,
+              "format": "json",
+              "reliableQueueDepth": 0,
+              "droppedFrames": 0,
+              "sentMessages": 128
+            }
+          ]
+        }
+      ],
+      "sourceSeqs": [
+        135
+      ]
+    }
+  }
+}
