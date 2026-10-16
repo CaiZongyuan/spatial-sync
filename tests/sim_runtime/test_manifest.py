@@ -16,6 +16,8 @@ from packages.sim_runtime.simulation import NewtonSimulation
 def test_manifest_preserves_newton_geometry_and_child_site_anchor():
     with NewtonSimulation() as sim:
         manifest = export_manifest(sim, session_id="test", scene_revision="rev", revision_numeric_id=1)
+        assert manifest.source.shapeCount == sim.model.shape_count
+        assert manifest.source.shapeCount > sim.model.body_count  # static floor is still a Newton shape
         box = next(n for n in manifest.nodes if n.entityKey == "/World/Box")
         assert box.visuals[0].geometry.halfExtents == pytest.approx((0.15, 0.2, 0.15))
         floor = next(n for n in manifest.nodes if n.entityKey == "/World/Floor")

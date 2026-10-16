@@ -92,6 +92,15 @@ export function Diagnostics({
                 'Bodies / Sites',
                 `${manifest.nodes.filter((node) => node.kind === 'body').length} / ${manifest.sites.length}`,
               ],
+              ['Shapes', source.shapeCount],
+              ['Gather bodies', stats.gatherBodyCount as number],
+              ['Readback bodies', stats.readbackBodyCount as number],
+              [
+                'Readback bytes',
+                typeof stats.readbackBytes === 'number'
+                  ? `${stats.readbackBytes} B`
+                  : undefined,
+              ],
               [
                 'Unlabeled bodies',
                 manifest.nodes.filter(
@@ -155,7 +164,19 @@ export function Diagnostics({
                   ? `${(stats.encodedPayloadBytes / 1024).toFixed(1)} KiB`
                   : undefined,
               ],
-              ['Runner heartbeat', stats.runnerHeartbeatMs as number],
+              [
+                'Runner heartbeat',
+                typeof stats.runnerHeartbeatMs === 'number' &&
+                typeof stats.runnerHeartbeatSeq === 'number'
+                  ? `${stats.runnerHeartbeatAlive === false ? 'Unavailable · ' : ''}${Math.round(stats.runnerHeartbeatMs)} ms ago`
+                  : undefined,
+              ],
+              [
+                'Gateway heartbeat',
+                state.gatewayHeartbeatMs === undefined
+                  ? undefined
+                  : `${Math.round(state.gatewayHeartbeatMs)} ms ago`,
+              ],
               ['Clock offset', `${client.buffer.clockOffset.toFixed(1)} ms`],
               ['Playout delay', `${client.buffer.playoutDelay.toFixed(1)} ms`],
               ['Rejected stale frames', client.buffer.discardedFrames],

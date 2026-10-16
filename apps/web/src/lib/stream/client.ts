@@ -33,6 +33,7 @@ export interface ViewState {
   payloadBytes: number;
   receivedRateHz: number;
   publishedRateHz?: number;
+  gatewayHeartbeatMs?: number;
 }
 
 export class SessionClient {
@@ -59,6 +60,7 @@ export class SessionClient {
   private reconnectDelay = 500;
   private lastMessageAt = 0;
   private heartbeatIntervalMs = 1000;
+  private gatewayHeartbeatAt?: number;
   private commandTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private rates: number[] = [];
   private generation = 0;
@@ -193,6 +195,10 @@ export class SessionClient {
         simTime: this.buffer.displayedSimTime,
         receivedFrames: this.receivedFrames,
         payloadBytes: this.payloadBytes,
+        gatewayHeartbeatMs:
+          this.gatewayHeartbeatAt === undefined
+            ? undefined
+            : now - this.gatewayHeartbeatAt,
       });
     }, 250);
     this.statsPoll = setInterval(() => void this.loadStats(), 2000);
@@ -418,10 +424,12 @@ export class SessionClient {
         });
         break;
       case 'server.heartbeat':
+        this.gatewayHeartbeatAt = performance.now();
         this.buffer.paused = message.state === 'PAUSED';
         this.update({
           sessionState: message.state,
           actualRtf: message.actualRtf,
+          gatewayHeartbeatMs: 0,
         });
         break;
       case 'scene.replaced':

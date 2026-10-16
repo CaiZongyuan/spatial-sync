@@ -96,6 +96,8 @@ class Session:
         self._seq_offset = 0
         self._revision_number = 0
         self._frame: TransformFrame | None = None
+        self._complete_frame: TransformFrame | None = None
+        self._interest: frozenset[int] | None = None
         self._last_published_seq = -1
         self._tasks: list[asyncio.Task] = []
         self._heartbeat_task: asyncio.Task | None = None
@@ -109,6 +111,7 @@ class Session:
         self.error: dict | None = None
         self._auto_paused = False
         self._scope_resolver: ScopeResolver | None = None
+        self._body_stream_ids = frozenset()
         self._next_keyframe_at = 0.0
 
     async def start(self):
@@ -124,16 +127,25 @@ class Session:
                 raise ValueError("source manifest sessionId does not match the session")
             manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number + 1})
             resolver = ScopeResolver(manifest)
+            body_ids = frozenset(resolver.body_ids.values())
+            # With no observers, periodic GPU captures need no body rows. The
+            # reliable barrier remains a single complete recovery sample.
+            interest_frame = await candidate.set_interest(frozenset())
+            if not self._complete_for(interest_frame, manifest, body_ids):
+                raise ValueError("Initial source interest barrier is not a complete Manifest sample")
             # Prepare the initial policy before exposing the candidate revision.
             # Creation is exclusive; reload already holds command_lock.
             policy_change = await self._observer_policy_change(candidate, "RUNNING", False)
             self.source = candidate
             self._revision_number += 1
             self.manifest, self._scope_resolver = manifest, resolver
+            self._body_stream_ids = body_ids
+            self._interest = frozenset()
+            self._frame = self._complete_frame = None
             self._next_keyframe_at = time.monotonic() + 1
             self.state, self.error = "RUNNING", None
             self._auto_paused = False
-            self._cache_frame(self.latest_frame())
+            self._cache_frame(self._source_frame(interest_frame))
             if policy_change:
                 self._apply_observer_policy_change(*policy_change, publish=False)
             self._last_published_seq = self.seq
@@ -182,9 +194,56 @@ class Session:
     def _cache_frame(self, frame):
         if frame is not None:
             self._seq_high_water = max(self._seq_high_water, frame.seq)
+            if self._is_complete(frame) and (
+                self._complete_frame is None or frame.seq >= self._complete_frame.seq
+            ):
+                self._complete_frame = frame
         if frame is not None and frame.seq >= self.seq:
             self._frame = frame
             self.seq, self.epoch, self.sim_time = frame.seq, frame.epoch, frame.simTime
+
+    def _source_frame(self, frame):
+        return frame.model_copy(update={"seq": frame.seq + self._seq_offset})
+
+    def _is_complete(self, frame):
+        return self.manifest is not None and self._complete_for(
+            frame, self.manifest, self._body_stream_ids
+        )
+
+    @staticmethod
+    def _complete_for(frame, manifest, ids):
+        return (
+            (frame.sessionId, frame.sceneRevision) == (manifest.sessionId, manifest.sceneRevision)
+            and len(frame.poses) == len(ids)
+            and {row[0] for row in frame.poses} == ids
+        )
+
+    async def snapshot(self) -> TransformFrame:
+        if self.state in ("FAILED", "STOPPED"):
+            frame = self._complete_frame
+        else:
+            # HTTP reads must remain independent of a delayed command reply.
+            source, manifest, offset = self.source, self.manifest, self._seq_offset
+            if source is None or manifest is None:
+                raise HTTPException(503, {"code": "session_not_ready"})
+            try:
+                frame = await source.snapshot()
+            except TimeoutError as exc:
+                raise HTTPException(504, {"code": "query_timeout"}) from exc
+            except Exception as exc:
+                raise HTTPException(503, {"code": "source_unavailable", "message": str(exc)}) from exc
+            if source is not self.source or manifest is not self.manifest or offset != self._seq_offset:
+                raise HTTPException(409, {"code": "revision_mismatch"})
+            frame = self._source_frame(frame)
+            if not self._is_complete(frame):
+                self.fail("Source snapshot is not a complete sample of the current Manifest")
+                raise HTTPException(503, {"code": "source_unavailable"})
+            self._cache_frame(frame)
+            # A read-only snapshot is a recovery sample, not a reset broadcast.
+            self._last_published_seq = max(self._last_published_seq, frame.seq)
+        if frame is None or not self._is_complete(frame):
+            raise HTTPException(503, {"code": "session_not_ready"})
+        return frame.model_copy(update={"type": "stream.snapshot"})
 
     def scene(self) -> SceneManifest:
         if self.manifest is None:
@@ -218,6 +277,7 @@ class Session:
             "counts": {
                 "nodes": len(manifest.nodes),
                 "bodies": sum(n.kind == "body" for n in manifest.nodes),
+                "shapes": manifest.source.shapeCount,
                 "sites": len(manifest.sites),
                 "joints": len(manifest.joints),
                 "warnings": len(manifest.warnings),
@@ -277,6 +337,7 @@ class Session:
                         raise ValueError("Source replaced a scene without exposing its new Manifest")
                     self.manifest = manifest
                     self._scope_resolver = ScopeResolver(manifest)
+                    self._body_stream_ids = frozenset(self._scope_resolver.body_ids.values())
                     self._revision_number = event.revisionNumericId
                     self.entity_states.clear()
                     self._cache_frame(self.latest_frame())
@@ -548,7 +609,7 @@ class Session:
         if len(self._acks) > 256:
             self._acks.popitem(last=False)
 
-    def subscribe(self, client: ClientConnection, request: Subscribe):
+    def _resolve_subscription(self, client, request):
         if request.sceneRevision != self.manifest.sceneRevision:
             client.enqueue_reliable(
                 encode(
@@ -559,7 +620,7 @@ class Session:
                     )
                 )
             )
-            return
+            return None
         try:
             scope = self._scope_resolver.resolve(
                 request.scope,
@@ -577,6 +638,12 @@ class Session:
                     )
                 )
             )
+            return None
+        return scope
+
+    def subscribe(self, client: ClientConnection, request: Subscribe, *, scope=None, frame=None):
+        scope = scope or self._resolve_subscription(client, request)
+        if scope is None:
             return
         client.subscription_id += 1
         client.scoped_wire = request.delta or request.requestId is not None
@@ -601,7 +668,7 @@ class Session:
                 )
             )
         )
-        frame = self.latest_frame()
+        frame = frame if frame is not None else self.latest_frame()
         if frame is None:
             client.enqueue_reliable(
                 encode(
@@ -633,14 +700,86 @@ class Session:
 
     async def observer_subscribe(self, client: ClientConnection, request: Subscribe):
         async with self.command_lock:
-            self.subscribe(client, request)
+            scope = self._resolve_subscription(client, request)
+            if scope is None:
+                return
+            if self.state in ("FAILED", "STOPPED") and self._complete_frame is not None:
+                if self._is_complete(self._complete_frame):
+                    self.subscribe(client, request, scope=scope, frame=self._complete_frame)
+                    if self.error:
+                        client.enqueue_reliable(encode(ServerError(**self.error)))
+                    return
+            if self.state not in ("RUNNING", "PAUSED") or self.source is None:
+                client.enqueue_reliable(
+                    encode(
+                        ServerError(
+                            code="source_unavailable",
+                            message="Source unavailable",
+                            requestId=request.requestId,
+                        )
+                    )
+                )
+                return
+            interest = self._observer_interest(client, scope)
+            try:
+                frame = await self._sync_interest_locked(interest)
+            except TimeoutError as exc:
+                if interest != self._interest:
+                    self.fail(str(exc) or "Source interest change timed out")
+                else:
+                    client.enqueue_reliable(
+                        encode(
+                            ServerError(
+                                code="session_not_ready",
+                                message="Snapshot query timed out; retry the subscription",
+                                requestId=request.requestId,
+                            )
+                        )
+                    )
+                return
+            except Exception as exc:
+                self.fail(str(exc))
+                return
+            self.subscribe(client, request, scope=scope, frame=frame)
             await self._sync_observer_policy_locked()
 
     async def remove_client(self, client: ClientConnection):
         async with self.command_lock:
             self.clients.discard(client)
             client.subscribed = False
+            if self.source and self.state in ("RUNNING", "PAUSED"):
+                try:
+                    interest = self._observer_interest()
+                    if interest != self._interest:
+                        await self._sync_interest_locked(interest)
+                except Exception as exc:
+                    self.fail(str(exc))
             await self._sync_observer_policy_locked()
+
+    def _observer_interest(self, replacing=None, scope=None):
+        scopes = [
+            client.scope_filter
+            for client in self.clients
+            if client is not replacing and client.subscribed and not client.closed.is_set()
+        ]
+        if scope is not None:
+            scopes.append(scope)
+        if any(item.stream_ids is None for item in scopes):
+            return None  # A viewport must gather moving bodies that may enter it.
+        return frozenset(value for item in scopes for value in item.stream_ids)
+
+    async def _sync_interest_locked(self, interest):
+        changed = interest != self._interest
+        frame = await (self.source.set_interest(interest) if changed else self.source.snapshot())
+        frame = self._source_frame(frame)
+        if not self._is_complete(frame):
+            raise ValueError("Source interest barrier is not a complete Manifest sample")
+        self._cache_frame(frame)
+        self._interest = interest
+        self._last_published_seq = max(self._last_published_seq, frame.seq)
+        if changed:
+            self.broadcast_frame(frame.model_copy(update={"type": "transform.frame"}), reliable=True)
+        return frame
 
     async def _observer_policy_change(self, source, state, auto_paused):
         if self.options.continueWithoutObservers or state not in ("RUNNING", "PAUSED"):
@@ -687,10 +826,8 @@ class Session:
         except Exception as exc:
             self.fail(str(exc))
 
-    def pose(self, key: str):
-        frame = self.latest_frame()
-        if frame is None:
-            raise HTTPException(503, {"code": "session_not_ready"})
+    async def pose(self, key: str):
+        frame = await self.snapshot()
         poses = {row[0]: {"p": list(row[1:4]), "q": list(row[4:8])} for row in frame.poses}
         nodes = {node.entityKey: node for node in self.manifest.nodes}
         node = nodes.get(key)

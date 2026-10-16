@@ -42,6 +42,7 @@ async def test_reload_sequence_exceeds_frames_observed_before_delayed_control_re
         # Valid 1 Hz publishing gives a wide scheduling window after the monitor
         # skipped its tick due to the command lock. Source physics remains live.
         session = await app.state.manager.create("lab-demo", "synthetic", SessionOptions(basePublishHz=1))
+        initial = session.latest_frame()
         client = ClientConnection(None, Settings())
         session.clients.add(client)
         command_task = asyncio.create_task(
@@ -55,7 +56,7 @@ async def test_reload_sequence_exceeds_frames_observed_before_delayed_control_re
         try:
             await asyncio.wait_for(source.control_waiting.wait(), timeout=1)
             deadline = time.monotonic() + 3
-            while source.latest_frame().seq < 3:
+            while source.latest_frame().seq < initial.seq + 2:
                 assert time.monotonic() < deadline, "real source did not publish the advanced frame"
                 await asyncio.sleep(0.005)
             observed = None
@@ -92,8 +93,8 @@ async def test_reload_sequence_exceeds_frames_observed_before_delayed_control_re
                 if message["type"] == "session.state"
                 and message["cause"].get("requestId") == "delayed-control"
             )
-            assert observed["seq"] >= 3 and old_state["seq"] == 1
-            assert old_state["simTime"] == 0  # preserve the sample metadata of the real old control result
+            assert observed["seq"] >= initial.seq + 2 and old_state["seq"] == initial.seq
+            assert old_state["simTime"] == initial.simTime  # preserve the actual old control sample
             replacement = session.latest_frame()
             assert replacement.sceneRevision != observed["sceneRevision"]
             assert replacement.seq > observed["seq"], (reader, observed["seq"], replacement.seq)

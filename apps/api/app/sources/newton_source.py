@@ -151,7 +151,12 @@ class NewtonSource:
                         ids = self._samples.interest(packet["streamIds"])
                         if ids != self._requested_interest:
                             raise ValueError("Interest acknowledgement does not match requested IDs")
-                        self._samples.install_interest(ids, value)
+                        # A second channel may already have delivered new-target
+                        # bytes before this ack. Drop that transition slot; only
+                        # future receipts belong to the installed interest.
+                        with self._incoming_lock:
+                            self._incoming = None
+                            self._samples.install_interest(ids, value)
                         self._latest = self._samples.latest
                     else:
                         self._cache(value)

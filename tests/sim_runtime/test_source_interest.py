@@ -25,7 +25,9 @@ async def test_cpu_runner_narrows_readback_but_snapshots_and_control_stay_comple
         assert {row[0] for row in source.latest_frame().poses} == {selected}
         assert source.stats()["gatherBodyCount"] == 1 and source.stats()["readbackBytes"] == 28
         assert manifest.source.shapeCount == source.stats()["shapeCount"]
+        before_full = source.latest_frame()
         full = await source.snapshot()
+        assert full.seq > before_full.seq and full.simTime >= before_full.simTime
         assert {row[0] for row in full.poses} == ids
         async with asyncio.timeout(2):
             while source.latest_frame().seq <= full.seq:

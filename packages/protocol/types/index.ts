@@ -90,6 +90,7 @@ export interface SourceInfo {
   basePublishHz: number
   realtimeFactor: number | null
   sampleTimeClock: 'runner-monotonic' | 'gateway-receive'
+  shapeCount?: number | null
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
