@@ -55,3 +55,18 @@ def test_runner_targets_use_manifest_identity_not_dense_indices():
         SimpleNamespace(kind="body", entityKey="/a", streamId=44, debug={"newtonBodyIndex": 1}),
     ]
     assert _body_targets(SimpleNamespace(nodes=nodes)) == ([1, 5], [44, 103])
+
+
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)])
+def test_control_cpu_snapshot_can_be_published_without_a_second_device_read(device):
+    wp.init()
+    if device.startswith("cuda") and not wp.is_cuda_available():
+        pytest.skip("CUDA unavailable")
+    snapshot = np.array([[1, 2, 3, 0, 0, 0, 1]], dtype=np.float32)
+    extractor = TransformExtractor(1, device=device)
+    try:
+        future = extractor.capture(snapshot, block=True)
+        snapshot[0, 0] = 100
+        np.testing.assert_array_equal(future.result(timeout=5), [[1, 2, 3, 0, 0, 0, 1]])
+    finally:
+        extractor.close()

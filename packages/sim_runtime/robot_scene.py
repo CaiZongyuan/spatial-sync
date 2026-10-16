@@ -1,26 +1,63 @@
-"""Offline official Franka FR3 plus physical laboratory objects and a bounded motor driver."""
+"""Offline FR3, reachable taught rack, bottom-origin tubes and physical centrifuge."""
 
 from pathlib import Path
 
 import newton
-import numpy as np
 import warp as wp
 from newton.solvers import SolverMuJoCo
 
+from .welds import declare_welds
+
 ROBOT_PREFIX = "World/Lab/RobotA"
 HOME = (0.0, -0.4, 0.0, -2.0, 0.0, 1.6, 0.7)
-STIFFNESS = (300, 300, 250, 200, 50, 25, 4)
-DAMPING = (20, 20, 15, 10, 1, 0.4, 0.05)
+STIFFNESS = (24000, 24000, 20000, 16000, 10000, 8000, 4000)
+DAMPING = (240, 240, 200, 160, 100, 80, 40)
 ASSET = Path(__file__).resolve().parents[2] / "assets/robots/franka_emika_panda/urdf/fr3_franka_hand.urdf"
+RACK_POINTS = [
+    (f"{row}{column + 1}", (-0.17 + 0.055 * column, -0.25 + 0.12 * r, 0.84))
+    for r, row in enumerate("AB")
+    for column in range(4)
+]
+ROTOR_CENTER = (0.06, 0.20, 0.85)
+SLOT_OFFSETS = [(0.045, 0, 0.02), (0, 0.045, 0.02), (-0.045, 0, 0.02), (0, -0.045, 0.02)]
+
+
+def _transform(position):
+    return wp.transform(position, wp.quat_identity())
+
+
+def _slot(builder, body, bottom, prefix):
+    """Narrow support lets the real finger pads extend below the bottom Site."""
+    x, y, z = bottom
+    builder.add_shape_box(
+        body,
+        xform=_transform((x, y, z - 0.012)),
+        hx=0.007,
+        hy=0.007,
+        hz=0.012,
+        label=prefix + "/Support",
+        color=(0.3, 0.35, 0.4),
+    )
+    for side in (-1, 1):
+        builder.add_shape_box(
+            body,
+            xform=_transform((x + side * 0.014, y, z + 0.008)),
+            hx=0.002,
+            hy=0.012,
+            hz=0.014,
+            label=prefix + f"/Guide{side + 1}",
+            color=(0.5, 0.55, 0.6),
+        )
 
 
 def build_robot_and_tubes():
     builder = newton.ModelBuilder(up_axis=newton.Axis.Z)
     SolverMuJoCo.register_custom_attributes(builder)
+    builder.default_shape_cfg.mu = 1.5
     builder.add_ground_plane(label="World/Lab/Floor")
     builder.add_shape_box(
         -1,
-        xform=wp.transform((0.3, 0, 0.7), wp.quat_identity()),
+        xform=_transform((0.3, 0, 0.7)),
         hx=1.6,
         hy=0.8,
         hz=0.05,
@@ -30,14 +67,13 @@ def build_robot_and_tubes():
     for index, (x, y) in enumerate(((-1.1, -0.65), (-1.1, 0.65), (1.7, -0.65), (1.7, 0.65))):
         builder.add_shape_box(
             -1,
-            xform=wp.transform((x, y, 0.325), wp.quat_identity()),
+            xform=_transform((x, y, 0.325)),
             hx=0.045,
             hy=0.045,
             hz=0.325,
             label=f"World/Lab/Workbench/Leg{index + 1}",
             color=(0.2, 0.25, 0.3),
         )
-
     robot = newton.ModelBuilder(up_axis=newton.Axis.Z)
     SolverMuJoCo.register_custom_attributes(robot)
     robot.add_urdf(
@@ -47,124 +83,150 @@ def build_robot_and_tubes():
         collapse_fixed_joints=False,
         joint_damping_mode="passive",
     )
-    # Newton 1.7's URDF parser omits label= for every imported shape, including
-    # named URDF visuals. Preserve that known omission independently of spelling.
     imported_shape_count = robot.shape_count
+    robot.shape_material_mu[:] = [2.0] * robot.shape_count
     for joint, label in enumerate(robot.joint_label):
         name = label.rsplit("/", 1)[-1]
+        coord, dof = robot.joint_q_start[joint], robot.joint_qd_start[joint]
         if name in {f"fr3_joint{i}" for i in range(1, 8)}:
             arm = int(name.removeprefix("fr3_joint")) - 1
-            coord, dof = robot.joint_q_start[joint], robot.joint_qd_start[joint]
-            robot.joint_q[coord] = HOME[arm]
-            robot.joint_target_q[coord] = HOME[arm]
+            robot.joint_q[coord] = robot.joint_target_q[coord] = HOME[arm]
             robot.joint_target_mode[dof] = newton.JointTargetMode.POSITION
-            robot.joint_target_ke[dof] = STIFFNESS[arm]
-            robot.joint_target_kd[dof] = DAMPING[arm]
+            robot.joint_target_ke[dof], robot.joint_target_kd[dof] = STIFFNESS[arm], DAMPING[arm]
         elif name.startswith("fr3_finger_joint"):
-            coord, dof = robot.joint_q_start[joint], robot.joint_qd_start[joint]
-            robot.joint_q[coord] = robot.joint_target_q[coord] = 0.02
+            robot.joint_q[coord] = robot.joint_target_q[coord] = 0.04
             robot.joint_target_mode[dof] = newton.JointTargetMode.POSITION
-            robot.joint_target_ke[dof], robot.joint_target_kd[dof] = 100, 1
+            robot.joint_target_ke[dof], robot.joint_target_kd[dof] = 2000, 20
     hand = robot.body_label.index("fr3/fr3_hand")
-    robot.add_site(
-        hand, xform=wp.transform((0, 0, 0.1034), wp.quat_identity()), label="fr3/fr3_hand/tcp", visible=True
-    )
-    shape_offset = builder.shape_count
-    builder.add_builder(
-        robot, xform=wp.transform((-0.5, 0, 0.75), wp.quat_identity()), label_prefix=ROBOT_PREFIX
-    )
-    builder.spatial_missing_labels = {
-        ("shape", shape_offset + index) for index in range(imported_shape_count)
-    }
-
-    for index in range(20):
-        x, y = 0.12 + (index % 5) * 0.13, -0.42 + (index // 5) * 0.16
-        tube = builder.add_body(
-            xform=wp.transform(
-                (x, y, 1.03 + (index // 5) * 0.035),
-                wp.quat_from_axis_angle(wp.vec3(0, 1, 0), 0.03 * (index % 3)),
-            ),
-            label=f"World/Lab/Tubes/Tube{index + 1:02d}",
-        )
-        builder.add_shape_capsule(
-            tube,
-            radius=0.016,
-            half_height=0.055,
-            label=f"World/Lab/Tubes/Tube{index + 1:02d}/Glass",
-            color=(0.15, 0.7, 0.85),
-        )
-
+    robot.add_site(hand, xform=_transform((0, 0, 0.1034)), label="fr3/fr3_hand/tcp", visible=True)
+    shape_offset, body_offset = builder.shape_count, builder.body_count
+    builder.add_builder(robot, xform=_transform((-0.5, 0, 0.75)), label_prefix=ROBOT_PREFIX)
+    builder.spatial_missing_labels = {("shape", shape_offset + i) for i in range(imported_shape_count)}
+    hand += body_offset
     builder.add_shape_box(
         -1,
-        xform=wp.transform((1.13, 0.3, 0.91), wp.quat_identity()),
-        hx=0.25,
-        hy=0.23,
-        hz=0.16,
+        xform=_transform((-0.0875, -0.19, 0.80)),
+        hx=0.13,
+        hy=0.105,
+        hz=0.012,
+        label="World/Lab/Rack/Plate",
+        color=(0.25, 0.5, 0.65),
+    )
+    for name, point in RACK_POINTS:
+        _slot(builder, -1, point, "World/Lab/Rack/" + name + "Geometry")
+        builder.add_site(-1, xform=_transform(point), label="World/Lab/Rack/" + name, visible=True)
+    tubes = []
+    for index in range(20):
+        point = (
+            RACK_POINTS[index][1]
+            if index < 4
+            else (0.12 + (index % 5) * 0.13, -0.42 + (index // 5) * 0.16, 1.03 + (index // 5) * 0.035)
+        )
+        rotation = (
+            wp.quat_identity() if index < 4 else wp.quat_from_axis_angle(wp.vec3(0, 1, 0), 0.03 * (index % 3))
+        )
+        if index >= 4:
+            offset = wp.quat_rotate(rotation, wp.vec3(0, 0, 0.071))
+            point = tuple(point[axis] - offset[axis] for axis in range(3))
+        prefix = f"World/Lab/Tubes/Tube{index + 1:02d}"
+        tube = builder.add_body(xform=wp.transform(point, rotation), label=prefix)
+        if index < 4:
+            # A30mm microtube fits below the palm at a bottom-Site grasp.
+            builder.add_shape_cylinder(
+                tube,
+                xform=_transform((0, 0, 0.015)),
+                radius=0.008,
+                half_height=0.015,
+                label=prefix + "/Glass",
+                color=(0.15, 0.7, 0.85),
+            )
+            builder.add_shape_box(
+                tube,
+                xform=_transform((0, 0, 0.002)),
+                hx=0.005,
+                hy=0.005,
+                hz=0.002,
+                label=prefix + "/FlatBase",
+                color=(0.12, 0.6, 0.75),
+            )
+        else:
+            # Retain legacy world geometry while making every body bottom-origin.
+            builder.add_shape_capsule(
+                tube,
+                xform=_transform((0, 0, 0.071)),
+                radius=0.016,
+                half_height=0.055,
+                label=prefix + "/Glass",
+                color=(0.15, 0.7, 0.85),
+            )
+        tubes.append(tube)
+    builder.add_shape_box(
+        -1,
+        xform=_transform((0.06, 0.20, 0.785)),
+        hx=0.175,
+        hy=0.115,
+        hz=0.035,
         label="World/Lab/Centrifuge/Housing",
         color=(0.75, 0.8, 0.86),
     )
-    rotor = builder.add_link(
-        xform=wp.transform((1.13, 0.3, 1.1), wp.quat_identity()), label="World/Lab/Centrifuge/Rotor"
-    )
-    builder.add_shape_box(
+    rotor = builder.add_link(xform=_transform(ROTOR_CENTER), label="World/Lab/Centrifuge/Rotor")
+    builder.add_shape_cylinder(
         rotor,
-        hx=0.18,
-        hy=0.035,
-        hz=0.015,
+        radius=0.075,
+        half_height=0.004,
         label="World/Lab/Centrifuge/Rotor/Geometry",
         color=(0.95, 0.45, 0.12),
     )
-    joint = builder.add_joint_revolute(
+    spindle = builder.add_joint_revolute(
         -1,
         rotor,
-        parent_xform=wp.transform((1.13, 0.3, 1.1), wp.quat_identity()),
+        parent_xform=_transform(ROTOR_CENTER),
         axis=(0, 0, 1),
-        target_ke=2,
-        target_kd=0.05,
-        actuator_mode=newton.JointTargetMode.POSITION,
+        target_ke=0,
+        target_kd=5,
+        actuator_mode=newton.JointTargetMode.VELOCITY,
         label="World/Lab/Centrifuge/Spindle",
     )
-    builder.add_articulation([joint], label="World/Lab/Centrifuge")
-    return builder
-
-
-@wp.kernel
-def _drive_targets(
-    home: wp.array[float],
-    amplitude: wp.array[float],
-    speed: wp.array[float],
-    time_value: float,
-    targets: wp.array[float],
-):
-    index = wp.tid()
-    targets[index] = home[index] + amplitude[index] * wp.sin(0.7 * time_value) + speed[index] * time_value
-
-
-class RobotDriver:
-    def __init__(self, model):
-        targets = model.joint_target_q.numpy()
-        amplitude, speed = np.zeros_like(targets), np.zeros_like(targets)
-        starts = model.joint_q_start.numpy()
-        for joint, label in enumerate(model.joint_label):
-            name = label.rsplit("/", 1)[-1]
-            if name == "fr3_joint1":
-                amplitude[starts[joint]] = 0.14
-            elif name == "fr3_joint3":
-                amplitude[starts[joint]] = 0.08
-            elif name == "fr3_joint7":
-                amplitude[starts[joint]] = 0.1
-            elif name == "Spindle":
-                speed[starts[joint]] = 0.6
-        self.home = wp.array(targets, dtype=float, device=model.device)
-        self.amplitude = wp.array(amplitude, dtype=float, device=model.device)
-        self.speed = wp.array(speed, dtype=float, device=model.device)
-        self.device = model.device
-
-    def apply(self, control, sim_time):
-        wp.launch(
-            _drive_targets,
-            dim=self.home.size,
-            inputs=[self.home, self.amplitude, self.speed, sim_time],
-            outputs=[control.joint_target_q],
-            device=self.device,
+    joints, slots = [spindle], []
+    for index, offset in enumerate(SLOT_OFFSETS):
+        prefix = f"World/Lab/Centrifuge/Rotor/Slot{index + 1}"
+        body = builder.add_link(
+            xform=_transform(tuple(a + b for a, b in zip(ROTOR_CENTER, offset))), label=prefix + "Body"
         )
+        joints.append(
+            builder.add_joint_fixed(rotor, body, parent_xform=_transform(offset), label=prefix + "Mount")
+        )
+        _slot(builder, body, (0, 0, 0), prefix + "Body")
+        builder.add_site(body, label=prefix, visible=True)
+        slots.append(body)
+    builder.add_articulation(joints, label="World/Lab/Centrifuge/RotorAssembly")
+    # Hinge on the far side keeps the raised physical lid out of the taught
+    # arm corridor. The prior rear hinge intersected link5 and the palm.
+    lid_origin = (0.235, 0.20, 0.985)
+    lid = builder.add_link(xform=_transform(lid_origin), label="World/Lab/Centrifuge/Lid")
+    builder.add_shape_box(
+        lid,
+        xform=_transform((-0.175, 0, 0)),
+        hx=0.175,
+        hy=0.115,
+        hz=0.006,
+        label="World/Lab/Centrifuge/Lid/Geometry",
+        color=(0.4, 0.6, 0.7),
+    )
+    hinge = builder.add_joint_revolute(
+        -1,
+        lid,
+        parent_xform=_transform(lid_origin),
+        axis=(0, 1, 0),
+        limit_lower=0,
+        limit_upper=1.4,
+        target_ke=300,
+        target_kd=20,
+        actuator_mode=newton.JointTargetMode.POSITION,
+        label="World/Lab/Centrifuge/LidHinge",
+    )
+    builder.joint_q[builder.joint_q_start[hinge]] = 1.4
+    builder.joint_target_q[builder.joint_q_start[hinge]] = 1.4
+    builder.add_articulation([hinge], label="World/Lab/Centrifuge/LidAssembly")
+    declare_welds(builder, [hand, *slots], tubes)
+    return builder

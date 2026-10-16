@@ -63,8 +63,9 @@ class TransformExtractor:
         slot = self._slots[index]
         started = perf_counter()
         cpu_copy_ms = 0.0
+        cuda_copy = self.device.is_cuda and not isinstance(body_q, np.ndarray)
         try:
-            if self.device.is_cuda:
+            if cuda_copy:
                 # Each slot owns its staging until the copy and publication finish.
                 # The simulation stream orders this copy before the next state write.
                 with wp.ScopedStream(self.sim_stream, sync_enter=False, sync_exit=False):
@@ -76,10 +77,11 @@ class TransformExtractor:
                     wp.copy(slot["host"], slot["staging"])
                     wp.record_event(slot["done"])
             else:
-                np.copyto(slot["host"], body_q.numpy())
+                target = slot["host"].numpy() if self.device.is_cuda else slot["host"]
+                np.copyto(target, body_q if isinstance(body_q, np.ndarray) else body_q.numpy())
                 cpu_copy_ms = (perf_counter() - started) * 1000
             enqueue_ms = (perf_counter() - started) * 1000
-            self._jobs.put((index, future, on_complete, started, enqueue_ms, cpu_copy_ms))
+            self._jobs.put((index, future, on_complete, started, enqueue_ms, cpu_copy_ms, cuda_copy))
         except BaseException:
             self._free.put(index)
             raise
@@ -87,10 +89,10 @@ class TransformExtractor:
 
     def _run(self):
         while (job := self._jobs.get()) is not None:
-            index, future, callback, started, enqueue_ms, cpu_copy_ms = job
+            index, future, callback, started, enqueue_ms, cpu_copy_ms, cuda_copy = job
             slot = self._slots[index]
             try:
-                if self.device.is_cuda:
+                if cuda_copy:
                     wp.synchronize_event(slot["done"])
                     copied = perf_counter()
                     sample = slot["host"].numpy().copy()
@@ -100,7 +102,7 @@ class TransformExtractor:
                     )
                 else:
                     copied = perf_counter()
-                    sample = slot["host"].copy()
+                    sample = (slot["host"].numpy() if self.device.is_cuda else slot["host"]).copy()
                     self.host_copy_ms = (perf_counter() - copied) * 1000
                     self.readback_ms = cpu_copy_ms
                 self.enqueue_ms = enqueue_ms

@@ -18,7 +18,7 @@ from packages.protocol.schema import Command, SessionOptions, SessionState
 async def smoke(args):
     source = NewtonSource("cli-smoke")
     try:
-        manifest = await source.start(args.scene, SessionOptions(device=args.device))
+        manifest, _ = await source.start(args.scene, SessionOptions(device=args.device))
         initial = source.latest_frame()
         await asyncio.sleep(1.1)
         pause = await source.execute(Command(requestId="pause", command="pause"))

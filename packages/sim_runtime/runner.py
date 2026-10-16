@@ -8,6 +8,7 @@ from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.schema import (
     Command,
     CommandAck,
+    InvokeRequest,
     ServerError,
     SessionState,
     TransformFrame,
@@ -77,9 +78,19 @@ class _Runner:
         self._joint_keys = {joint.entityKey: index for index, joint in enumerate(self.manifest.joints)}
         self._heartbeat_seq = 1
         self._heartbeat_at = time.monotonic()
+        from .info_host import NewtonInfoHost
+
+        self.info = NewtonInfoHost(self.sim, self.manifest, options, self._info_events)
+        if self.info.port:
+            self.extractor.readback_mode = "control-snapshot-reuse"
+
+    def _info_events(self, events):
+        for event in events:
+            self.control.offer({"kind": "info_event", "event": event.model_dump(mode="json")})
 
     def stats(self):
         return {
+            **self.info.stats(),
             "runnerPID": os.getpid(),
             "solver_ms": self.sim.solver_ms,
             "solverTimingMode": "host-submission" if self.sim.model.device.is_cuda else "cpu-wall",
@@ -108,6 +119,9 @@ class _Runner:
         }
 
     def _frame(self, kind="transform.frame", *, reliable=False):
+        port = self.info.port
+        if port and reliable and port.last_time != self.sim.sim_time:
+            port.capture()
         self.seq += 1
         metadata = {
             "type": kind,
@@ -115,8 +129,8 @@ class _Runner:
             "sceneRevision": self.manifest.sceneRevision,
             "epoch": self.sim.epoch,
             "seq": self.seq,
-            "simTime": self.sim.sim_time,
-            "sampleTimeMs": time.monotonic() * 1000,
+            "simTime": port.last_time if port else self.sim.sim_time,
+            "sampleTimeMs": port.sample_time_ms if port else time.monotonic() * 1000,
         }
 
         def make_frame(poses):
@@ -135,7 +149,7 @@ class _Runner:
             self._warn_invalid_poses()
 
         future = self.extractor.capture(
-            self.sim.state.body_q,
+            port.frame_body if port else self.sim.state.body_q,
             on_complete=None if reliable else publish,
             block=reliable,
         )
@@ -248,8 +262,20 @@ class _Runner:
                     "kind": "result",
                     "token": token,
                     "result": result.model_dump(),
+                    "entitySnapshot": self.info.snapshot().model_dump(mode="json")
+                    if packet["command"]["command"] == "reset"
+                    else None,
                     "stats": self.stats(),
                 }
+            )
+        elif kind in ("invoke", "cancel"):
+            result = (
+                self.info.invoke(InvokeRequest.model_validate(packet["request"]))
+                if kind == "invoke"
+                else self.info.cancel(packet["invocationId"])
+            )
+            self.control.offer(
+                {"kind": "invocation_result", "token": token, "update": result.model_dump(mode="json")}
             )
         elif kind == "joint":
             key = packet["key"]
@@ -287,6 +313,8 @@ class _Runner:
                 "kind": "ready",
                 "manifest": self.manifest.model_dump(),
                 "snapshot": snapshot.model_dump(),
+                "catalog": self.info.catalog.model_dump(mode="json"),
+                "entitySnapshot": self.info.snapshot().model_dump(mode="json"),
                 "stats": self.stats(),
             }
         )
@@ -302,6 +330,7 @@ class _Runner:
                     break
                 continue
             now = time.monotonic()
+            self.info.flush()
             if not self.sim.paused:
                 count = self.pacer.steps_due(now)
                 if count:

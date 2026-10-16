@@ -1,8 +1,7 @@
-"""Check real articulated work before reporting bounded solver timings.
+"""Report solver support before timing valid articulated laboratory work.
 
-Thirty-step timings cover the common precontact subset only. The full 0.5 s laboratory
-contact journey has a separate correctness result and is never counted as valid work
-when tubes escape the workbench or poses become nonfinite.
+The scene contains rack contacts from its initial state. Unsupported reference
+runs produce a diagnostic with no timing samples or median.
 """
 
 import argparse
@@ -48,31 +47,85 @@ def anchor_error(sim, manifest):
 
 def check(solver, device):
     setup = perf_counter()
-    with NewtonSimulation("robot-and-tubes", device=device, solver=solver) as sim:
+    reference_dt, reference_steps = 1 / 24000, 1200
+    with NewtonSimulation("robot-and-tubes", device=device, solver=solver, physics_dt=reference_dt) as sim:
         manifest = export_manifest(
             sim, session_id="comparison", scene_revision="comparison", revision_numeric_id=1
         )
         tube_indices = [i for i, label in enumerate(sim.model.body_label) if "/Tubes/Tube" in label]
+        joint = next(i for i, label in enumerate(sim.model.joint_label) if label.endswith("/fr3_joint1"))
+        target_start = int(sim.model.joint_target_q_start.numpy()[joint])
+        coordinate_start = int(sim.model.joint_q_start.numpy()[joint])
         initial = sim.body_poses()
+
+        def result_at_boundary():
+            poses = sim.body_poses()
+            coordinates, velocities = sim.state.joint_q.numpy(), sim.state.joint_qd.numpy()
+            finite = bool(
+                np.isfinite(poses).all() and np.isfinite(coordinates).all() and np.isfinite(velocities).all()
+            )
+            seated = bool(finite and np.all(np.abs(poses[tube_indices[:4], 2] - 0.84) < 0.02))
+            bounded = bool(
+                finite
+                and np.all(poses[tube_indices, 2] > 0.74)
+                and np.all(poses[tube_indices, 2] < initial[tube_indices, 2] + 0.05)
+            )
+            moved = bool(finite and coordinates[coordinate_start] > 0.005)
+            error = anchor_error(sim, manifest) if finite else None
+            supported = bool(finite and seated and bounded and moved and error < 1e-5)
+            return {
+                "supported": supported,
+                "finite": finite,
+                "loadedTubesSeated": seated,
+                "tubeBounds": bounded,
+                "armMoved": moved,
+                "maxJointPositionError": error,
+            }
+
+        def drive():
+            targets = sim.control.joint_target_q.numpy().copy()
+            targets[target_start] = 0.05
+            sim.control.joint_target_q.assign(targets)
+
         setup_ms = (perf_counter() - setup) * 1000
-        sim.step(30)
+        drive()
+        sim.step(reference_steps)
         wp.synchronize_device(sim.model.device)
         samples = []
-        for _ in range(3):
-            sim.reset()
-            wp.synchronize_device(sim.model.device)
-            start = perf_counter()
-            sim.step(30)
-            wp.synchronize_device(sim.model.device)
-            samples.append((perf_counter() - start) * 1000)
-            poses = sim.body_poses()
-            assert np.isfinite(poses).all(), f"{solver} failed the precontact subset"
-            assert np.all(poses[tube_indices, 2] > 0.9)
-            assert anchor_error(sim, manifest) < 1e-5
-        sim.reset()
+        reference = result_at_boundary()
+        if reference["supported"]:
+            for _ in range(3):
+                sim.reset()
+                drive()
+                wp.synchronize_device(sim.model.device)
+                start = perf_counter()
+                sim.step(reference_steps)
+                wp.synchronize_device(sim.model.device)
+                elapsed = (perf_counter() - start) * 1000
+                reference = result_at_boundary()
+                if not reference["supported"]:
+                    samples.clear()
+                    break
+                samples.append(elapsed)
+        reference["diagnostic"] = (
+            None
+            if reference["supported"]
+            else "Unsupported full laboratory reference: invalid articulated/contact work; no timing counted"
+        )
+        if solver == "mujoco":
+            assert reference["supported"], reference
+        solver_name, body_count = type(sim.solver).__name__, sim.model.body_count
+    # Check the actual 240Hz scene independently of the fine-step reference.
+    with NewtonSimulation("robot-and-tubes", device=device, solver=solver) as sim:
+        manifest = export_manifest(sim, session_id="support", scene_revision="support", revision_numeric_id=1)
+        initial = sim.body_poses()
         sim.step(120)
         poses = sim.body_poses()
-        finite = bool(np.isfinite(poses).all())
+        finite = bool(
+            np.isfinite(poses).all()
+            and np.isfinite(sim.state.joint_q.numpy()).all()
+            and np.isfinite(sim.state.joint_qd.numpy()).all()
+        )
         tube_bounds = bool(
             finite
             and np.all(poses[tube_indices, 2] > 0.74)
@@ -82,24 +135,26 @@ def check(solver, device):
         if solver == "mujoco":
             assert full_supported, "Default MuJoCo failed the full laboratory contact journey"
         return {
-            "solver": type(sim.solver).__name__,
+            "solver": solver_name,
             "device": str(sim.model.device),
-            "physicsDt": sim.physics_dt,
-            "bodyCount": sim.model.body_count,
+            "physicsDt": reference_dt,
+            "bodyCount": body_count,
             "armDofs": 7,
             "fingerDofs": 2,
             "dynamicTubes": 20,
             "contacts": "native MuJoCo" if solver == "mujoco" else "Newton CollisionPipeline",
             "setupMs": setup_ms,
-            "warmupSteps": 30,
+            "warmupSteps": reference_steps,
+            "reference": reference,
             "timingScope": (
-                "30 steps / 0.125 s precontact physics; motor/control/contact traversal; "
-                "synchronized completion"
+                "1200 steps / 0.05s at 1/24000s; same actuated joint target and scene; "
+                "rack contacts and airborne loose tubes; synchronized completion"
             ),
             "samplesMs": samples,
-            "medianMs": statistics.median(samples),
+            "medianMs": statistics.median(samples) if samples else None,
             "fullContactJourney": {
                 "steps": 120,
+                "physicsDt": sim.physics_dt,
                 "simTime": sim.sim_time,
                 "finite": finite,
                 "supportedAtDefaultDt": full_supported,
@@ -117,7 +172,7 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     result = {
-        "scope": "Local solver support check; precontact timings do not establish full-demo throughput",
+        "scope": "Local solver support check; no comparison exists when a reference is unsupported",
         "python": platform.python_version(),
         "platform": platform.platform(),
         "versions": {name: version(name) for name in ("newton", "warp-lang", "mujoco", "mujoco-warp")},

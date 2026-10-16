@@ -49,12 +49,6 @@ def robot_and_tubes_builder():
     return build_robot_and_tubes()
 
 
-def robot_driver_factory(model):
-    from .robot_scene import RobotDriver
-
-    return RobotDriver(model)
-
-
 def usd_lab_builder():
     from .usd_scene import usd_lab_builder as build
 
@@ -66,7 +60,6 @@ SCENE_CONFIGS = {
     "robot-and-tubes": SceneConfig(
         robot_and_tubes_builder,
         solver="mujoco",
-        driver_factory=robot_driver_factory,
         warmup_steps=120,
     ),
     "usd-lab": SceneConfig(usd_lab_builder),

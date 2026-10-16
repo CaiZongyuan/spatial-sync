@@ -16,7 +16,8 @@ from packages.protocol.schema import Command, SessionOptions, SessionState
 async def test_spawned_source_preserves_command_frames_reset_seq_and_cleanup(device):
     source = NewtonSource("source-test")
     try:
-        manifest = await source.start("falling-boxes", SessionOptions(device=device))
+        manifest, catalog = await source.start("falling-boxes", SessionOptions(device=device))
+        assert catalog.sceneRevision == manifest.sceneRevision and not catalog.entities
         initial = source.latest_frame()
         assert manifest.sessionId == "source-test"
         assert source.stats()["runnerPID"] != os.getpid()

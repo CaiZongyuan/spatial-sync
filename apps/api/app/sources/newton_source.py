@@ -5,9 +5,23 @@ import contextlib
 import multiprocessing as mp
 import threading
 import uuid
+from collections import OrderedDict
 
+from packages.info.catalog import Catalog
+from packages.info.store import StateStore
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
-from packages.protocol.schema import Command, SceneManifest, ServerError, SessionState, TransformFrame
+from packages.protocol.schema import (
+    Command,
+    EntityEvent,
+    EntityObservations,
+    EntitySnapshot,
+    Invocation,
+    InvocationUpdate,
+    SceneManifest,
+    ServerError,
+    SessionState,
+    TransformFrame,
+)
 from packages.transport import FrameCodec, PipeWriter, create_transport
 from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
@@ -36,8 +50,11 @@ class NewtonSource:
         self._closed = False
         self._watch_task = None
         self._close_task = None
+        self._info_store, self._info_latest = None, None
+        self._invocations = OrderedDict()
+        self._starting = True
 
-    async def start(self, scene_id: str, options: SessionOptions) -> SceneManifest:
+    async def start(self, scene_id: str, options: SessionOptions) -> tuple[SceneManifest, Catalog]:
         from packages.sim_runtime.runner import run_runner
 
         if self._process is not None or self._closed:
@@ -45,6 +62,7 @@ class NewtonSource:
         self._loop = asyncio.get_running_loop()
         self._ready = self._loop.create_future()
         self.options = options.model_copy()
+        self.scene_id = scene_id
         parent, child = create_transport()
         self._transport = parent
         self._process = mp.get_context("spawn").Process(
@@ -62,7 +80,10 @@ class NewtonSource:
             thread.start()
         self._watch_task = asyncio.create_task(self._watch(), name=f"newton-watch-{self.session_id}")
         try:
-            return await asyncio.wait_for(self._ready, timeout=180)
+            result = await asyncio.wait_for(self._ready, timeout=180)
+            self._starting = False
+            self._loop.call_soon(self._drain_frame)
+            return result
         except BaseException:
             await self.close()
             raise
@@ -102,7 +123,7 @@ class NewtonSource:
     def _drain_frame(self):
         with self._incoming_lock:
             self._frame_callback_pending = False
-            if self._codec is None:
+            if self._codec is None or self._starting:
                 return
             payload, self._incoming = self._incoming, None
         if payload is not None:
@@ -120,6 +141,13 @@ class NewtonSource:
                 self._runner_heartbeat.observe(packet["stats"])
             if kind == "ready":
                 self.manifest = SceneManifest.model_validate(packet["manifest"])
+                from packages.sim_runtime.info_catalog import load_info_catalog
+
+                self.catalog = load_info_catalog(self.manifest, self.scene_id)
+                if self.catalog.model_dump(mode="json") != packet["catalog"]:
+                    raise ValueError("Runner and gateway Catalog definitions differ")
+                self._info_store = StateStore(self.manifest.sceneRevision)
+                self._cache_info(EntitySnapshot.model_validate(packet["entitySnapshot"]))
                 self._samples = SourceFrames(self.manifest)
                 self._codec = FrameCodec(
                     self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
@@ -127,7 +155,18 @@ class NewtonSource:
                 self._cache(TransformFrame.model_validate(packet["snapshot"]))
                 self._drain_frame()
                 if not self._ready.done():
-                    self._ready.set_result(self.manifest)
+                    self._ready.set_result((self.manifest, self.catalog))
+            elif kind == "info_event":
+                definition = {
+                    "entity.snapshot": EntitySnapshot,
+                    "entity.observations": EntityObservations,
+                    "entity.event": EntityEvent,
+                    "invocation.update": InvocationUpdate,
+                    "server.error": ServerError,
+                }
+                event = definition[packet["event"]["type"]].model_validate(packet["event"])
+                self._cache_info(event)
+                self._events.put_nowait(event)
             elif kind == "event":
                 self._events.put_nowait(ServerError.model_validate(packet["event"]))
             elif kind == "failed":
@@ -141,7 +180,11 @@ class NewtonSource:
                     if result.frame:
                         self._cache(result.frame)
                     self._samples.state(result.state)
+                    if packet.get("entitySnapshot"):
+                        self._cache_info(EntitySnapshot.model_validate(packet["entitySnapshot"]))
                     value = result
+                elif kind == "invocation_result":
+                    value = InvocationUpdate.model_validate(packet["update"])
                 elif kind == "snapshot_result":
                     value = TransformFrame.model_validate(packet["frame"])
                     if value.type != "stream.snapshot":
@@ -212,6 +255,42 @@ class NewtonSource:
 
     def latest_frame(self) -> TransformFrame | None:
         return self._latest
+
+    def _cache_info(self, event):
+        if isinstance(event, (EntitySnapshot, EntityObservations)):
+            if not self._info_store.apply(event):
+                return
+            self._info_latest = event
+        if isinstance(event, EntitySnapshot):
+            self._invocations = OrderedDict((inv.invocationId, inv) for inv in event.invocations)
+        elif isinstance(event, InvocationUpdate):
+            self._invocations[event.invocationId] = Invocation.model_validate(
+                {k: v for k, v in event.model_dump().items() if k not in ("type", "sceneRevision")}
+            )
+            terminal = [
+                key
+                for key, inv in self._invocations.items()
+                if inv.status in ("succeeded", "failed", "cancelled", "rejected")
+            ]
+            for key in terminal[:-50]:
+                del self._invocations[key]
+
+    def entity_snapshot(self):
+        latest = self._info_latest
+        return EntitySnapshot(
+            sceneRevision=self.manifest.sceneRevision,
+            epoch=self._info_store.epoch,
+            simTime=latest.simTime,
+            sampleTimeMs=latest.sampleTimeMs,
+            entities=list(self._info_store.entities.values()),
+            invocations=list(self._invocations.values()),
+        )
+
+    async def invoke(self, request):
+        return await self._request("invoke", timeout=0.5, request=request.model_dump(mode="json"))
+
+    async def cancel(self, invocation_id):
+        return await self._request("cancel", timeout=0.5, invocationId=invocation_id)
 
     async def snapshot(self) -> TransformFrame:
         if self._samples and self._samples.paused and self._latest is not None:

@@ -38,7 +38,7 @@ class NewtonSimulation:
                     iterations=20,
                     ls_iterations=10,
                     njmax=2048,
-                    nconmax=512,
+                    nconmax=2048,
                 )
                 self.collision_pipeline, self.contacts = None, None
             else:
@@ -54,7 +54,15 @@ class NewtonSimulation:
         self.epoch = 0
         self.paused = False
         self.solver_ms = 0.0
+        self._control_callback, self._reset_callback = None, None
+        self._control_dt, self._last_control_time, self._next_control_time = 1 / 60, 0.0, 1 / 60
         self.reset(increment_epoch=False)
+
+    def install_program_loop(self, control_hz, tick, reset):
+        self._control_dt = 1 / control_hz
+        self._last_control_time = self.sim_time
+        self._next_control_time = self.sim_time + self._control_dt
+        self._control_callback, self._reset_callback = tick, reset
 
     def reset(self, *, increment_epoch=True):
         self.state = self.model.state()
@@ -66,6 +74,9 @@ class NewtonSimulation:
         self.sim_time = 0.0
         if increment_epoch:
             self.epoch += 1
+        self._last_control_time, self._next_control_time = 0.0, self._control_dt
+        if self._reset_callback:
+            self._reset_callback()
 
     def pause(self):
         self.paused = True
@@ -87,6 +98,10 @@ class NewtonSimulation:
                 self.solver.step(self.state, self.next_state, self.control, self.contacts, self.physics_dt)
                 self.state, self.next_state = self.next_state, self.state
                 self.sim_time += self.physics_dt
+                if self._control_callback and self.sim_time + 1e-10 >= self._next_control_time:
+                    self._control_callback(self.sim_time, self.sim_time - self._last_control_time)
+                    self._last_control_time = self.sim_time
+                    self._next_control_time += self._control_dt
         self.solver_ms = (perf_counter() - started) * 1000
 
     def advance(self, wall_seconds):
