@@ -173,7 +173,9 @@ test('native End applies the final reliable record at a fractional millisecond d
   for (let offset = 44; offset < lastSpatial.length; offset += 32) {
     if (lastSpatial.readUInt32LE(offset) !== 3) continue;
     const pose = Array.from({ length: 7 }, (_, index) => lastSpatial.readFloatLE(offset + 4 + index * 4));
-    lastHandPose = { p: pose.slice(0, 3), q: pose.slice(3) };
+    const q = pose.slice(3);
+    const norm = Math.hypot(...q);
+    lastHandPose = { p: pose.slice(0, 3), q: q.map(value => value / norm) };
   }
   expect(lastHandPose).toBeTruthy();
   const duration = Math.ceil(segment.endSampleTimeMs - segment.startSampleTimeMs) + 0.75;
