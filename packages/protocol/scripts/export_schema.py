@@ -11,9 +11,21 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from packages.protocol.schema import (  # noqa: E402
-    Command, CommandAck, EntityState, Heartbeat, ProtocolContract, Ready,
-    SceneManifest, SceneReplaced, ServerError, SessionState, Snapshot, Subscribe,
-    SubscriptionAck, TransformFrame, TransformDelta,
+    Command,
+    CommandAck,
+    EntityState,
+    Heartbeat,
+    ProtocolContract,
+    Ready,
+    SceneManifest,
+    SceneReplaced,
+    ServerError,
+    SessionState,
+    Snapshot,
+    Subscribe,
+    SubscriptionAck,
+    TransformDelta,
+    TransformFrame,
 )
 
 
@@ -22,9 +34,17 @@ def draft7(value):
     if isinstance(value, list):
         return [draft7(item) for item in value]
     if isinstance(value, dict):
-        result = {("items" if key == "prefixItems" else key): draft7(item) for key, item in value.items() if key != "title"}
+        result = {
+            ("items" if key == "prefixItems" else key): draft7(item)
+            for key, item in value.items()
+            if key != "title"
+        }
         if "required" in result:
-            result["required"] = [name for name in result["required"] if result["properties"][name].get("default", False) is not None]
+            result["required"] = [
+                name
+                for name in result["required"]
+                if result["properties"][name].get("default", False) is not None
+            ]
         return result
     return value
 
@@ -34,7 +54,9 @@ def write(path: str, value):
     content = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     if "--check" in sys.argv:
         if not target.exists() or target.read_text(encoding="utf-8") != content:
-            raise SystemExit(f"Generated artifact differs: {target.relative_to(ROOT)}; run pnpm protocol:generate")
+            raise SystemExit(
+                f"Generated artifact differs: {target.relative_to(ROOT)}; run pnpm protocol:generate"
+            )
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8", newline="\n")
@@ -50,25 +72,90 @@ def manifest_sample():
         {"type": "cone", "radius": 0.1, "halfHeight": 0.3},
         {"type": "plane", "width": 0, "length": 0},
     ]
-    return SceneManifest.model_validate({
-        "protocolVersion": 1, "sessionId": "session-fixture", "sceneRevision": "rev-fixture", "revisionNumericId": 1,
-        "epoch": 0, "sceneName": "protocol-fixture",
-        "source": {"kind": "synthetic", "physicsDt": 1 / 240, "basePublishHz": 30, "realtimeFactor": 1},
-        "nodes": [
-            {"entityKey": "/World", "kind": "group", "name": "World", "parentEntityKey": None},
-            {"entityKey": "/World/Arm", "kind": "body", "streamId": 7, "name": "Arm", "parentEntityKey": "/World",
-             "visuals": [{"kind": "primitive", "geometry": geometry, "localPose": identity} for geometry in geometries],
-             "colliders": [{"kind": "primitive", "geometry": geometries[0], "localPose": identity}],
-             "debug": {"newtonBodyIndex": 0}},
-            {"entityKey": "/World/Floor", "kind": "static", "name": "Floor", "initialPose": identity,
-             "visuals": [{"kind": "mesh", "meshId": "sha256-fixture", "url": "/meshes/sha256-fixture", "assetUpAxis": "Z", "scale": [1, 1, 1], "localPose": identity},
-                         {"kind": "glb", "url": "/assets/floor.glb", "assetUpAxis": "Y", "scale": [1, 1, 1], "localPose": identity}]},
-        ],
-        "sites": [{"entityKey": "/World/Hinge/anchor", "role": "joint-anchor", "parentBodyKey": "/World/Arm", "jointKey": "/World/Hinge", "localPose": {"p": [0, 0, 0.3], "q": [0, 0, 0, 1]}},
-                  {"entityKey": "/World/Reference", "role": "generic", "parentBodyKey": None, "localPose": identity}],
-        "joints": [{"entityKey": "/World/Hinge", "type": "revolute", "parentBodyKey": None, "childBodyKey": "/World/Arm", "parentLocalPose": identity, "axis": [0, 0, 1], "anchorSiteKey": "/World/Hinge/anchor", "dofCount": 1}],
-        "warnings": [{"code": "asset_fallback", "entityKey": "/World/Floor", "message": "Fixture illustrates fallback metadata"}],
-    })
+    return SceneManifest.model_validate(
+        {
+            "protocolVersion": 1,
+            "sessionId": "session-fixture",
+            "sceneRevision": "rev-fixture",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "sceneName": "protocol-fixture",
+            "source": {"kind": "synthetic", "physicsDt": 1 / 240, "basePublishHz": 30, "realtimeFactor": 1},
+            "nodes": [
+                {"entityKey": "/World", "kind": "group", "name": "World", "parentEntityKey": None},
+                {
+                    "entityKey": "/World/Arm",
+                    "kind": "body",
+                    "streamId": 7,
+                    "name": "Arm",
+                    "parentEntityKey": "/World",
+                    "visuals": [
+                        {"kind": "primitive", "geometry": geometry, "localPose": identity}
+                        for geometry in geometries
+                    ],
+                    "colliders": [{"kind": "primitive", "geometry": geometries[0], "localPose": identity}],
+                    "debug": {"newtonBodyIndex": 0},
+                },
+                {
+                    "entityKey": "/World/Floor",
+                    "kind": "static",
+                    "name": "Floor",
+                    "initialPose": identity,
+                    "visuals": [
+                        {
+                            "kind": "mesh",
+                            "meshId": "sha256-fixture",
+                            "url": "/meshes/sha256-fixture",
+                            "assetUpAxis": "Z",
+                            "scale": [1, 1, 1],
+                            "localPose": identity,
+                        },
+                        {
+                            "kind": "glb",
+                            "url": "/assets/floor.glb",
+                            "assetUpAxis": "Y",
+                            "scale": [1, 1, 1],
+                            "localPose": identity,
+                        },
+                    ],
+                },
+            ],
+            "sites": [
+                {
+                    "entityKey": "/World/Hinge/anchor",
+                    "role": "joint-anchor",
+                    "parentBodyKey": "/World/Arm",
+                    "jointKey": "/World/Hinge",
+                    "localPose": {"p": [0, 0, 0.3], "q": [0, 0, 0, 1]},
+                },
+                {
+                    "entityKey": "/World/Reference",
+                    "role": "generic",
+                    "parentBodyKey": None,
+                    "localPose": identity,
+                },
+            ],
+            "joints": [
+                {
+                    "entityKey": "/World/Hinge",
+                    "type": "revolute",
+                    "parentBodyKey": None,
+                    "childBodyKey": "/World/Arm",
+                    "parentLocalPose": identity,
+                    "axis": [0, 0, 1],
+                    "anchorSiteKey": "/World/Hinge/anchor",
+                    "dofCount": 1,
+                }
+            ],
+            "warnings": [
+                {
+                    "code": "asset_fallback",
+                    "entityKey": "/World/Floor",
+                    "message": "Fixture illustrates fallback metadata",
+                }
+            ],
+        }
+    )
 
 
 def main():
@@ -79,56 +166,158 @@ def main():
     write("types/protocol.schema.json", schema)
     manifest = manifest_sample()
     write("fixtures/manifest.json", manifest.model_dump(mode="json", exclude_none=True))
-    frame_args = dict(sessionId=manifest.sessionId, sceneRevision=manifest.sceneRevision, epoch=0, seq=1, simTime=0, sampleTimeMs=1000, poses=[(7, 1, 2, 3, 0, 0, 0, 1)])
+    frame_args = dict(
+        sessionId=manifest.sessionId,
+        sceneRevision=manifest.sceneRevision,
+        epoch=0,
+        seq=1,
+        simTime=0,
+        sampleTimeMs=1000,
+        poses=[(7, 1, 2, 3, 0, 0, 0, 1)],
+    )
     from packages.transport import FrameCodec
-
     from packages.transport.scoped_frames import encode_scoped_frame
 
     scoped = [
-        Snapshot(**(frame_args | {"seq": 10, "poses": [(7, 5, 6, 7, 0, 0, 0, 1)]}), subscriptionId=3, keyframe=True),
-        TransformDelta(**(frame_args | {"seq": 11, "poses": []}), subscriptionId=3, baseSeq=10, removedStreamIds=[7]),
-        TransformDelta(**(frame_args | {"seq": 12, "poses": [(7, 9, 8, 7, 0, 0, 0, 1)]}), subscriptionId=3, baseSeq=10),
+        Snapshot(
+            **(frame_args | {"seq": 10, "poses": [(7, 5, 6, 7, 0, 0, 0, 1)]}), subscriptionId=3, keyframe=True
+        ),
+        TransformDelta(
+            **(frame_args | {"seq": 11, "poses": []}), subscriptionId=3, baseSeq=10, removedStreamIds=[7]
+        ),
+        TransformDelta(
+            **(frame_args | {"seq": 12, "poses": [(7, 9, 8, 7, 0, 0, 0, 1)]}), subscriptionId=3, baseSeq=10
+        ),
         TransformFrame(**(frame_args | {"seq": 13}), subscriptionId=3, keyframe=True),
     ]
-    write("fixtures/scoped-binary-frames.json", [
-        {"frame": frame.model_dump(mode="json", exclude_none=True), "revisionNumericId": 1,
-         "hex": encode_scoped_frame(frame, 1).hex()} for frame in scoped
-    ])
+    write(
+        "fixtures/scoped-binary-frames.json",
+        [
+            {
+                "frame": frame.model_dump(mode="json", exclude_none=True),
+                "revisionNumericId": 1,
+                "hex": encode_scoped_frame(frame, 1).hex(),
+            }
+            for frame in scoped
+        ],
+    )
     binary_frame = Snapshot(**frame_args)
-    write("fixtures/binary-frame.json", {
-        "frame": binary_frame.model_dump(mode="json"), "revisionNumericId": 1,
-        "hex": FrameCodec(manifest.sessionId, manifest.sceneRevision, 1).encode(binary_frame).hex(),
-    })
-    state_args = dict(sessionId=manifest.sessionId, state="PAUSED", sceneRevision=manifest.sceneRevision, epoch=0, seq=1, simTime=0, realtimeFactor=1, actualRtf=0, cause={"kind": "command", "requestId": "cmd-fixture", "command": "pause"})
+    write(
+        "fixtures/binary-frame.json",
+        {
+            "frame": binary_frame.model_dump(mode="json"),
+            "revisionNumericId": 1,
+            "hex": FrameCodec(manifest.sessionId, manifest.sceneRevision, 1).encode(binary_frame).hex(),
+        },
+    )
+    state_args = dict(
+        sessionId=manifest.sessionId,
+        state="PAUSED",
+        sceneRevision=manifest.sceneRevision,
+        epoch=0,
+        seq=1,
+        simTime=0,
+        realtimeFactor=1,
+        actualRtf=0,
+        cause={"kind": "command", "requestId": "cmd-fixture", "command": "pause"},
+    )
     messages = [
-        Ready(sessionId=manifest.sessionId, sceneRevision=manifest.sceneRevision, revisionNumericId=1, epoch=0, sessionState="RUNNING", simTime=0, basePublishHz=30, realtimeFactor=1),
+        Ready(
+            sessionId=manifest.sessionId,
+            sceneRevision=manifest.sceneRevision,
+            revisionNumericId=1,
+            epoch=0,
+            sessionState="RUNNING",
+            simTime=0,
+            basePublishHz=30,
+            realtimeFactor=1,
+        ),
         Subscribe(sceneRevision=manifest.sceneRevision),
         Subscribe(sceneRevision=manifest.sceneRevision, scope="entities", entityKeys=["/World/Arm"]),
-        SubscriptionAck(scope="all", grantedRateHz=30), Snapshot(**frame_args), TransformFrame(**frame_args),
+        SubscriptionAck(scope="all", grantedRateHz=30),
+        Snapshot(**frame_args),
+        TransformFrame(**frame_args),
         TransformDelta(**(frame_args | {"seq": 2}), subscriptionId=1, baseSeq=1),
-        Subscribe(sceneRevision=manifest.sceneRevision, scope="device", deviceKey="/World", delta=True, requestId="scope-device"),
-        Subscribe(sceneRevision=manifest.sceneRevision, scope="viewport", viewport={"planes": [[1,0,0,1],[-1,0,0,1],[0,1,0,1],[0,-1,0,1],[0,0,1,1],[0,0,-1,1]]}, delta=True, requestId="scope-camera"),
-        SessionState(**state_args), Heartbeat(state="PAUSED", simTime=0, lastSeq=1, actualRtf=0, serverTimeMs=1000),
+        Subscribe(
+            sceneRevision=manifest.sceneRevision,
+            scope="device",
+            deviceKey="/World",
+            delta=True,
+            requestId="scope-device",
+        ),
+        Subscribe(
+            sceneRevision=manifest.sceneRevision,
+            scope="viewport",
+            viewport={
+                "planes": [
+                    [1, 0, 0, 1],
+                    [-1, 0, 0, 1],
+                    [0, 1, 0, 1],
+                    [0, -1, 0, 1],
+                    [0, 0, 1, 1],
+                    [0, 0, -1, 1],
+                ]
+            },
+            delta=True,
+            requestId="scope-camera",
+        ),
+        SessionState(**state_args),
+        Heartbeat(state="PAUSED", simTime=0, lastSeq=1, actualRtf=0, serverTimeMs=1000),
         Command(requestId="cmd-fixture", command="pause"),
         CommandAck(requestId="cmd-fixture", status="applied", simTime=0, epoch=0),
         CommandAck(requestId="cmd-invalid", status="rejected", reason="invalid_state", simTime=0, epoch=0),
-        EntityState(sessionId=manifest.sessionId, sceneRevision=manifest.sceneRevision, entityKey="/World", schema="device.example/0", stateSeq=1, simTime=0, payload={"running": True, "rpm": 3000, "unknown": {"nested": [None, "arbitrary"]}}),
+        EntityState(
+            sessionId=manifest.sessionId,
+            sceneRevision=manifest.sceneRevision,
+            entityKey="/World",
+            schema="device.example/0",
+            stateSeq=1,
+            simTime=0,
+            payload={"running": True, "rpm": 3000, "unknown": {"nested": [None, "arbitrary"]}},
+        ),
         SceneReplaced(sessionId=manifest.sessionId, sceneRevision="rev-next", revisionNumericId=2),
         ServerError(code="revision_mismatch", message="Reload scene before subscribing"),
     ]
-    write("fixtures/messages.json", [message.model_dump(mode="json", exclude_none=True) for message in messages])
-    # Expected values are independently specified from the convention table, not computed by helpers under test.
-    write("fixtures/math.json", {
-        "primitiveCases": [
-            {"geometry": {"type": "box", "halfExtents": [1, 2, 3]}, "expected": {"size": [2, 4, 6], "rotateX": 0}},
-            {"geometry": {"type": "sphere", "radius": 2}, "expected": {"radius": 2, "rotateX": 0}},
-            *[{"geometry": {"type": kind, "radius": 2, "halfHeight": 3}, "expected": {"radius": 2, "height": 6, "rotateX": math.pi / 2}} for kind in ("capsule", "cylinder", "cone")],
-            {"geometry": {"type": "plane", "width": 0, "length": 4}, "expected": {"size": [100, 4], "rotateX": 0}},
-        ],
-        "poseCases": [{"name": "rotated-body-local-site", "body": {"p": [1, 2, 3], "q": [0, 0, 0.7071067811865476, 0.7071067811865476]}, "local": {"p": [1, 0, 2], "q": [0, 0, 0, 1]}, "expected": {"p": [1, 3, 5], "q": [0, 0, 0.7071067811865476, 0.7071067811865476]}}],
-        "axisCases": [{"input": [1, 2, 3], "expected": [1, 3, -2]}],
-        "hemisphereCases": [{"previous": [0, 0, 0, 1], "current": [0, 0, 0, -1], "expected": [0, 0, 0, 1]}],
-    })
+    write(
+        "fixtures/messages.json", [message.model_dump(mode="json", exclude_none=True) for message in messages]
+    )
+    # Expected values are independently specified from the convention table,
+    # not computed by helpers under test.
+    write(
+        "fixtures/math.json",
+        {
+            "primitiveCases": [
+                {
+                    "geometry": {"type": "box", "halfExtents": [1, 2, 3]},
+                    "expected": {"size": [2, 4, 6], "rotateX": 0},
+                },
+                {"geometry": {"type": "sphere", "radius": 2}, "expected": {"radius": 2, "rotateX": 0}},
+                *[
+                    {
+                        "geometry": {"type": kind, "radius": 2, "halfHeight": 3},
+                        "expected": {"radius": 2, "height": 6, "rotateX": math.pi / 2},
+                    }
+                    for kind in ("capsule", "cylinder", "cone")
+                ],
+                {
+                    "geometry": {"type": "plane", "width": 0, "length": 4},
+                    "expected": {"size": [100, 4], "rotateX": 0},
+                },
+            ],
+            "poseCases": [
+                {
+                    "name": "rotated-body-local-site",
+                    "body": {"p": [1, 2, 3], "q": [0, 0, 0.7071067811865476, 0.7071067811865476]},
+                    "local": {"p": [1, 0, 2], "q": [0, 0, 0, 1]},
+                    "expected": {"p": [1, 3, 5], "q": [0, 0, 0.7071067811865476, 0.7071067811865476]},
+                }
+            ],
+            "axisCases": [{"input": [1, 2, 3], "expected": [1, 3, -2]}],
+            "hemisphereCases": [
+                {"previous": [0, 0, 0, 1], "current": [0, 0, 0, -1], "expected": [0, 0, 0, 1]}
+            ],
+        },
+    )
 
 
 if __name__ == "__main__":

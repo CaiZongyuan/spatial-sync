@@ -70,11 +70,16 @@ def primitive_dimensions(geometry: dict, infinite_plane_size: float = 100) -> di
     if kind in ("capsule", "cylinder", "cone"):
         return {"radius": geometry["radius"], "height": 2 * geometry["halfHeight"], "rotateX": math.pi / 2}
     if kind == "plane":
-        return {"size": [geometry["width"] or infinite_plane_size, geometry["length"] or infinite_plane_size], "rotateX": 0}
+        return {
+            "size": [geometry["width"] or infinite_plane_size, geometry["length"] or infinite_plane_size],
+            "rotateX": 0,
+        }
     raise ValueError(f"unsupported primitive: {kind}")
 
 
-def joint_position_error(kind: str, parent: dict, child: dict, axis: Sequence[float] | None = None) -> float | None:
+def joint_position_error(
+    kind: str, parent: dict, child: dict, axis: Sequence[float] | None = None
+) -> float | None:
     if kind in ("free", "d6") or kind not in ("fixed", "revolute", "prismatic", "ball"):
         return None
     delta = tuple(a - b for a, b in zip(child["p"], parent["p"]))
