@@ -44,6 +44,8 @@ class SyntheticSource:
         self._epoch = 0
         self._state = "CREATED"
         self._latest: TransformFrame | None = None
+        self._complete: TransformFrame | None = None
+        self._interest: frozenset[int] | None = None
         self._last_clock = time.monotonic()
         self._accumulator = 0.0
         self._actual_rtf = 0.0
@@ -87,6 +89,20 @@ class SyntheticSource:
         """Published objects are replaced as a whole and never subsequently mutated."""
         return self._latest
 
+    async def snapshot(self) -> TransformFrame:
+        async with self._lock:
+            frame = self._complete if self._state == "PAUSED" else self._publish("stream.snapshot")
+            return frame.model_copy(update={"type": "stream.snapshot"})
+
+    async def set_interest(self, stream_ids) -> TransformFrame:
+        from packages.transport.source_state import SourceFrames
+
+        ids = SourceFrames(self.manifest).interest(stream_ids)
+        async with self._lock:
+            self._interest = ids
+            frame = self._complete if self._state == "PAUSED" else self._publish("stream.snapshot")
+            return frame.model_copy(update={"type": "stream.snapshot"})
+
     async def events(self) -> AsyncIterator:
         while True:
             event = await self._events.get()
@@ -116,6 +132,10 @@ class SyntheticSource:
                 self._actual_rtf = steps * self.options.physicsDt / elapsed if elapsed > 0 else 0.0
                 if now >= next_publish:
                     self._publish()
+                    if self._interest is not None:
+                        self._latest = self._latest.model_copy(
+                            update={"poses": [row for row in self._latest.poses if row[0] in self._interest]}
+                        )
                     period = 1 / self.options.basePublishHz
                     # Preserve the cadence across coarse timer wakeups; skip missed slots.
                     next_publish += (int((now - next_publish) / period) + 1) * period
@@ -132,6 +152,7 @@ class SyntheticSource:
             sampleTimeMs=time.monotonic() * 1000,
             poses=self._poses(),
         )
+        self._complete = self._latest
         return self._latest
 
     def _poses(self):
