@@ -11,8 +11,11 @@ UNKNOWN = object()
 
 def _test(condition):
     keys = set(condition) & OPERATORS
-    if (len(keys) != 1 or "property" not in condition
-            or set(condition) - OPERATORS - {"property", "entity", "message"}):
+    if (
+        len(keys) != 1
+        or "property" not in condition
+        or set(condition) - OPERATORS - {"property", "entity", "message"}
+    ):
         raise ValueError("Condition requires one supported operator and a property")
     op = next(iter(keys))
     expected = condition[op]
@@ -74,9 +77,13 @@ def evaluate_conditions(conditions, entity_key, values):
     for condition, compare in zip(compiled, compiled.tests, strict=True):
         actual = values.get(condition.get("entity", entity_key), {}).get(condition["property"], UNKNOWN)
         if not compare(actual):
-            failed.append({
-                "condition": dict(condition),
-                "actual": "unknown" if actual is UNKNOWN else deepcopy(actual),
-                "message": condition.get("message", f"Condition on {condition['property']} is not satisfied"),
-            })
+            failed.append(
+                {
+                    "condition": dict(condition),
+                    "actual": "unknown" if actual is UNKNOWN else deepcopy(actual),
+                    "message": condition.get(
+                        "message", f"Condition on {condition['property']} is not satisfied"
+                    ),
+                }
+            )
     return failed

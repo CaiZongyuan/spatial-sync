@@ -9,6 +9,11 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 
+from packages.info.catalog import load_catalog
+from packages.info.program import HostCore
+from packages.programs.centrifuge.virtual import CentrifugeProgram
+from packages.programs.robot_arm.virtual import RobotArmProgram, kinematics
+from packages.programs.tube.virtual import TubeProgram
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
@@ -24,6 +29,8 @@ IDENTITY = {"p": [0, 0, 0], "q": [0, 0, 0, 1]}
 BASE = "/World/Lab"
 LINK1, LINK2 = BASE + "/Robot/Link1", BASE + "/Robot/Link2"
 JOINT1, JOINT2 = BASE + "/Robot/Joint1", BASE + "/Robot/Joint2"
+ROBOT, CENTRIFUGE = BASE + "/RobotA", BASE + "/Centrifuge"
+REGISTRY = {program.id: program for program in (RobotArmProgram, TubeProgram, CentrifugeProgram)}
 
 
 def _primitive(geometry, p=(0, 0, 0)):
@@ -46,17 +53,47 @@ class SyntheticSource:
         self._last_clock = time.monotonic()
         self._accumulator = 0.0
         self._actual_rtf = 0.0
+        self._control_index = 0
+        self._rotor_angle = 0.0
 
-    async def start(self, scene_id: str, options: SessionOptions) -> SceneManifest:
+    async def start(self, scene_id: str, options: SessionOptions):
         if scene_id != "lab-demo":
             raise ValueError("unknown synthetic scene")
         self.options = options.model_copy()
         self.manifest = self._manifest()
+        self.catalog = load_catalog(self.manifest, scene_id, REGISTRY)
+        self.host = HostCore(self.catalog, REGISTRY, fact_hz=options.factHz)
         self._state = "RUNNING"
         self._publish("stream.snapshot")
         self._last_clock = time.monotonic()
         self._task = asyncio.create_task(self._run(), name=f"synthetic-{self.session_id}")
-        return self.manifest
+        return self.manifest, self.catalog
+
+    def entity_snapshot(self):
+        return self.host.snapshot()
+
+    async def invoke(self, request):
+        async with self._lock:
+            return self.host.invoke(request)
+
+    async def cancel(self, invocation_id):
+        async with self._lock:
+            return self.host.cancel(invocation_id)
+
+    def _advance(self, count):
+        self._step_index += count
+        due = int(self.sim_time * self.options.controlHz + 1e-9)
+        while self._control_index < due:
+            self._control_index += 1
+            for event in self.host.tick(
+                self._control_index / self.options.controlHz, 1 / self.options.controlHz
+            ):
+                self._events.put_nowait(event)
+            values = self.host.values()[CENTRIFUGE]
+            if values["phase"] == "idle":
+                self._rotor_angle = 0.0
+            else:
+                self._rotor_angle += min(values["rpm"], 60) / 60 * 2 * math.pi / self.options.controlHz
 
     @property
     def sim_time(self) -> float:
@@ -96,7 +133,7 @@ class SyntheticSource:
                     self._accumulator += min(elapsed, self.options.maxLagMs / 1000) * rtf
                     steps = int(self._accumulator / self.options.physicsDt)
                     self._accumulator -= steps * self.options.physicsDt
-                self._step_index += steps
+                self._advance(steps)
                 self._actual_rtf = steps * self.options.physicsDt / elapsed if elapsed > 0 else 0.0
                 if now >= next_publish:
                     self._publish()
@@ -120,19 +157,44 @@ class SyntheticSource:
         return self._latest
 
     def _poses(self):
-        t = self.sim_time
-        a, b = 0.45 * math.sin(t), 0.6 * math.sin(t * 0.7 + 0.5)
-        first = {"p": [0, 0, 0.65], "q": [0, math.sin(a / 2), 0, math.cos(a / 2)]}
-        second = compose_pose(first, {"p": [0, 0, 0.6], "q": [0, math.sin(b / 2), 0, math.cos(b / 2)]})
-        poses = [(1, *first["p"], *first["q"]), (2, *second["p"], *second["q"])]
+        values = self.host.values()
+        first, second, hand = kinematics(values[ROBOT]["jointPositions"])
+        poses = [(1, *first["p"], *first["q"]), (2, *second["p"], *second["q"]), (3, *hand["p"], *hand["q"])]
+        rotor = {
+            "p": [-0.5, 0.4, 0.85],
+            "q": [0, 0, math.sin(self._rotor_angle / 2), math.cos(self._rotor_angle / 2)],
+        }
+        locations = self.catalog.entities[ROBOT]["config"]["locations"]["locations"]
+        site_poses = {value["site"]: {"p": value["p"], "q": [0, 0, 0, 1]} for value in locations.values()}
+        for i, local in enumerate(((0.1, 0, 0.1), (0, 0.1, 0.1), (-0.1, 0, 0.1), (0, -0.1, 0.1))):
+            site_poses[CENTRIFUGE + f"/Rotor/Slot{i + 1}"] = compose_pose(
+                rotor, {"p": local, "q": [0, 0, 0, 1]}
+            )
         for index in range(20):
-            x = 0.8 + (index % 5) * 0.16
-            y = -0.4 + (index // 5) * 0.2
-            z = 0.91 + 0.06 * math.sin(t * 1.2 + index * 0.4)
-            poses.append((10 + index, x, y, z, 0, 0, 0, 1))
+            key = BASE + f"/Tubes/Tube{index + 1:02d}"
+            location = values[key]["location"]
+            pose = (
+                {"p": hand["p"], "q": [0, 0, 0, 1]}
+                if location == "held"
+                else site_poses.get(
+                    location,
+                    {"p": [1.05 + (index % 4) * 0.08, -0.3 + (index // 4) * 0.1, 0.82], "q": [0, 0, 0, 1]},
+                )
+            )
+            poses.append((10 + index, *pose["p"], *pose["q"]))
+        lid_angle = 1.4 if values[CENTRIFUGE]["lidOpen"] else 0.0
+        for invocation in self.entity_snapshot().invocations:
+            if (
+                invocation.entityKey == CENTRIFUGE
+                and invocation.status == "running"
+                and invocation.action in ("openLid", "closeLid")
+            ):
+                progress = min(1, max(0, self.sim_time - invocation.startedSimTime))
+                lid_angle = 1.4 * (progress if invocation.action == "openLid" else 1 - progress)
         poses += [
-            (30, -0.9, 0.4, 0.85, 0, 0, math.sin(t), math.cos(t)),
-            (31, -0.7, -0.6, 0.5 + 0.15 * math.sin(t), 0, 0, 0, 1),
+            (30, *rotor["p"], *rotor["q"]),
+            (31, -0.7, -0.6, 0.5, 0, 0, 0, 1),
+            (32, -0.7, 0.4, 1.0, 0, math.sin(lid_angle / 2), 0, math.cos(lid_angle / 2)),
         ]
         return poses
 
@@ -144,7 +206,7 @@ class SyntheticSource:
                 "kind": "group",
                 "entityKey": BASE + "/Robot",
                 "name": "Two-link Robot",
-                "parentEntityKey": BASE,
+                "parentEntityKey": ROBOT,
             },
             {"kind": "group", "entityKey": BASE + "/Tubes", "name": "20 Tubes", "parentEntityKey": BASE},
             {
@@ -221,9 +283,61 @@ class SyntheticSource:
                     "name": f"Tube {index + 1:02d}",
                     "parentEntityKey": BASE + "/Tubes",
                     "streamId": 10 + index,
-                    "visuals": [_primitive({"type": "cylinder", "radius": 0.025, "halfHeight": 0.1})],
+                    "visuals": [
+                        _primitive({"type": "cylinder", "radius": 0.008, "halfHeight": 0.04}, (0, 0, 0.04))
+                    ],
                 }
             )
+        nodes.extend(
+            [
+                {"kind": "group", "entityKey": ROBOT, "name": "Robot arm", "parentEntityKey": BASE},
+                {"kind": "group", "entityKey": BASE + "/Rack", "name": "Tube rack", "parentEntityKey": BASE},
+                {
+                    "kind": "body",
+                    "entityKey": ROBOT + "/Hand",
+                    "name": "Hand",
+                    "parentEntityKey": ROBOT,
+                    "streamId": 3,
+                    "visuals": [_primitive({"type": "box", "halfExtents": [0.04, 0.04, 0.025]})],
+                },
+                {
+                    "kind": "body",
+                    "entityKey": CENTRIFUGE + "/Lid",
+                    "name": "Lid",
+                    "parentEntityKey": CENTRIFUGE,
+                    "streamId": 32,
+                    "visuals": [_primitive({"type": "box", "halfExtents": [0.2, 0.2, 0.015]}, (0.2, 0, 0))],
+                },
+            ]
+        )
+        import yaml
+
+        from packages.info.catalog import DEVICE_ROOT
+
+        locations = yaml.safe_load(
+            (DEVICE_ROOT / "scenes/lab-demo.locations.yaml").read_text(encoding="utf-8")
+        )["locations"]
+        sites = []
+        for name, location in locations.items():
+            if name.startswith("centrifuge"):
+                index = int(name[-1]) - 1
+                local = ((0.1, 0, 0.1), (0, 0.1, 0.1), (-0.1, 0, 0.1), (0, -0.1, 0.1))[index]
+                sites.append(
+                    {
+                        "entityKey": location["site"],
+                        "parentBodyKey": CENTRIFUGE + "/Rotor",
+                        "role": "generic",
+                        "localPose": {"p": local, "q": [0, 0, 0, 1]},
+                    }
+                )
+            else:
+                sites.append(
+                    {
+                        "entityKey": location["site"],
+                        "role": "generic",
+                        "localPose": {"p": location["p"], "q": [0, 0, 0, 1]},
+                    }
+                )
         return SceneManifest.model_validate(
             {
                 "sessionId": self.session_id,
@@ -239,7 +353,8 @@ class SyntheticSource:
                     "realtimeFactor": self.options.realtimeFactor,
                 },
                 "nodes": nodes,
-                "sites": [
+                "sites": sites
+                + [
                     {
                         "entityKey": JOINT1 + "/anchor",
                         "role": "joint-anchor",
@@ -257,8 +372,14 @@ class SyntheticSource:
                     {
                         "entityKey": BASE + "/Robot/tcp",
                         "role": "generic",
-                        "parentBodyKey": LINK2,
-                        "localPose": {"p": [0, 0, 0.5], "q": [0, 0, 0, 1]},
+                        "parentBodyKey": ROBOT + "/Hand",
+                        "localPose": IDENTITY,
+                    },
+                    {
+                        "entityKey": ROBOT + "/tcp",
+                        "role": "generic",
+                        "parentBodyKey": ROBOT + "/Hand",
+                        "localPose": IDENTITY,
                     },
                 ],
                 "joints": [
@@ -326,10 +447,14 @@ class SyntheticSource:
                 frame = self._publish()
             elif kind == "reset":
                 self._step_index = 0
+                self._control_index = 0
+                self._rotor_angle = 0.0
                 self._epoch += 1
+                for event in self.host.reset(self._epoch):
+                    self._events.put_nowait(event)
                 frame = self._publish("stream.snapshot")
             elif kind == "step":
-                self._step_index += args.count
+                self._advance(args.count)
                 frame = self._publish()
             elif kind == "set_realtime_factor":
                 self.options.realtimeFactor = args.value
@@ -365,12 +490,12 @@ class SyntheticSource:
     async def query_joint_state(self, joint_key: str) -> JointState:
         if joint_key not in (JOINT1, JOINT2):
             raise KeyError(joint_key)
-        t = self.sim_time
+        joints = self.host.values()[ROBOT]["jointPositions"]
         return JointState(
             entityKey=joint_key,
-            simTime=t,
+            simTime=self.sim_time,
             epoch=self._epoch,
-            positions=[0.45 * math.sin(t) if joint_key == JOINT1 else 0.6 * math.sin(t * 0.7 + 0.5)],
+            positions=[joints[1] if joint_key == JOINT1 else joints[2]],
         )
 
     async def read_mesh(self, mesh_id: str) -> bytes:

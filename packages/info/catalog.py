@@ -1,0 +1,141 @@
+"""Resolve scene bindings and compile reusable definitions before a session runs."""
+
+from copy import deepcopy
+from fnmatch import fnmatchcase
+from pathlib import Path
+
+import yaml
+from pydantic import BaseModel, ConfigDict, PrivateAttr
+
+from packages.protocol.schema import Catalog as CatalogDocument
+
+from .conditions import validate_conditions
+from .schema_subset import compile_schema
+
+DEVICE_ROOT = Path(__file__).resolve().parents[2] / "devices"
+
+
+class Catalog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sceneRevision: str
+    types: dict[str, dict] = {}
+    entities: dict[str, dict] = {}
+    _params: dict = PrivateAttr(default_factory=dict)
+    _properties: dict = PrivateAttr(default_factory=dict)
+    _conditions: dict = PrivateAttr(default_factory=dict)
+    _configs: dict = PrivateAttr(default_factory=dict)
+
+    def action(self, entity_key, action):
+        return self.types[self.entities[entity_key]["type"]]["actions"][action]
+
+    def property(self, entity_key, prop):
+        return self.types[self.entities[entity_key]["type"]]["properties"][prop]
+
+    def validate_params(self, entity_key, action, params):
+        definition = self.entities[entity_key]["type"]
+        return deepcopy(self._params[definition, action].validate_python(params))
+
+    def validate_property(self, entity_key, prop, value):
+        definition = self.entities[entity_key]["type"]
+        return deepcopy(self._properties[definition, prop].validate_python(value))
+
+    def conditions(self, entity_key, action):
+        return self._conditions[entity_key, action]
+
+    def program_config(self, entity_key):
+        return self._configs[entity_key]
+
+
+def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT):
+    root = Path(root)
+    scene_file = root / "scenes" / f"{scene_id}.yaml"
+    scene = yaml.safe_load(scene_file.read_text(encoding="utf-8"))
+    if set(scene) != {"scene", "entities"} or scene["scene"] != scene_id:
+        raise ValueError("Scene binding document must name its registered scene")
+    types = {}
+    for path in sorted((root / "types").glob("*.yaml")):
+        definition = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if definition["type"] in types:
+            raise ValueError(f"Duplicate entity type: {definition['type']}")
+        types[definition["type"]] = definition
+    nodes = {node.entityKey for node in manifest.nodes}
+    sites = {site.entityKey for site in manifest.sites}
+    entities = {}
+    configs = {}
+    for template in scene["entities"]:
+        if ("key" in template) == ("match" in template):
+            raise ValueError("Binding requires exactly one key or match")
+        keys = (
+            sorted(key for key in nodes if fnmatchcase(key, template["match"]))
+            if "match" in template
+            else [template["key"]]
+        )
+        if not keys:
+            raise ValueError(f"Binding glob matched no entities: {template['match']}")
+        for key in keys:
+            if key in entities:
+                raise ValueError(f"Duplicate binding: {key}")
+            binding = deepcopy(template)
+            binding.pop("match", None)
+            binding["key"] = key
+            if key not in nodes and not binding.get("unplaced", False):
+                raise ValueError(f"Binding entity does not exist in Manifest: {key}")
+            cls = registry.get(binding["program"])
+            if cls is None or cls.type != binding["type"]:
+                raise ValueError(f"Unknown program or program/type mismatch: {binding['program']}")
+            config = binding.get("config", {})
+            for name, value in list(config.items()):
+                if isinstance(value, str) and value.endswith(".yaml"):
+                    target = (scene_file.parent / value).resolve()
+                    if not target.is_relative_to(scene_file.parent.resolve()):
+                        raise ValueError("Config documents must stay in the scene directory")
+                    config[name] = yaml.safe_load(target.read_text(encoding="utf-8"))
+                elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+                    expanded = []
+                    for item in value:
+                        expanded.extend(
+                            sorted(s for s in sites if fnmatchcase(s, item)) if "*" in item else [item]
+                        )
+                    config[name] = expanded
+            parsed = cls.Config.model_validate(config)
+            configs[key] = parsed
+            binding["config"] = parsed.model_dump(mode="json")
+            entities[key] = binding
+    document = CatalogDocument(sceneRevision=manifest.sceneRevision, types=types, entities=entities)
+    catalog = Catalog.model_validate(document.model_dump(mode="json", by_alias=True, exclude_none=True))
+    catalog._configs = configs
+    for type_id, definition in catalog.types.items():
+        for prop, value in definition["properties"].items():
+            catalog._properties[type_id, prop] = compile_schema(value["schema"])
+        for action, value in definition["actions"].items():
+            schemas = {
+                name: {k: v for k, v in schema.items() if k != "unit"}
+                for name, schema in value["params"].items()
+            }
+            catalog._params[type_id, action] = compile_schema(
+                {
+                    "type": "object",
+                    "properties": schemas,
+                    "required": value["required"],
+                }
+            )
+            validate_conditions(
+                value["preconditions"],
+                "type-self",
+                lambda _, prop, definition=definition: definition["properties"][prop]["schema"],
+                allow_cross_entity=False,
+            )
+        for event in definition["events"].values():
+            if event.get("schema") is not None:
+                compile_schema(event["schema"])
+    for key, binding in catalog.entities.items():
+        actions = catalog.types[binding["type"]]["actions"]
+        if set(binding["interlocks"]) - actions.keys():
+            raise ValueError(f"Interlock references unknown action on {key}")
+        for name, action in actions.items():
+            catalog._conditions[key, name] = validate_conditions(
+                action["preconditions"] + binding["interlocks"].get(name, []),
+                key,
+                lambda entity, prop: catalog.property(entity, prop)["schema"],
+            )
+    return catalog

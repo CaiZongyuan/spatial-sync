@@ -1,0 +1,19 @@
+type: tube/v1
+title: Sample tube
+properties:
+  location:
+    schema:
+      type: string
+  upright:
+    schema:
+      type: boolean
+actions: {}
+events:
+  dropped:
+    schema:
+      type: object
+      properties:
+        lastHolder:
+          type: string
+      required:
+      - lastHolder

@@ -1,0 +1,310 @@
+robot: /World/Lab/RobotA
+locations:
+  rack.A1:
+    site: /World/Lab/Rack/A1
+    zone: rack
+    p:
+    - 0.55
+    - -0.3
+    - 0.82
+    approach:
+    - -0.49934672168013006
+    - 1.9212920962781146
+    - -1.7950033811530195
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.49934672168013006
+    - 2.1258962043400134
+    - -1.8905506366462828
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.A2:
+    site: /World/Lab/Rack/A2
+    zone: rack
+    p:
+    - 0.65
+    - -0.3
+    - 0.82
+    approach:
+    - -0.43240777557053783
+    - 1.889779696112197
+    - -1.5931315171067875
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.43240777557053783
+    - 2.07871808048228
+    - -1.6853802332684173
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.A3:
+    site: /World/Lab/Rack/A3
+    zone: rack
+    p:
+    - 0.75
+    - -0.3
+    - 0.82
+    approach:
+    - -0.38050637711236485
+    - 1.8319677381994226
+    - -1.3581984473016708
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.38050637711236485
+    - 2.0086356775816556
+    - -1.4515136619631648
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.A4:
+    site: /World/Lab/Rack/A4
+    zone: rack
+    p:
+    - 0.8500000000000001
+    - -0.3
+    - 0.82
+    approach:
+    - -0.3392926144540446
+    - 1.7419310007664028
+    - -1.072799455999989
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.3392926144540446
+    - 1.9113633099158278
+    - -1.174866047608994
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.B1:
+    site: /World/Lab/Rack/B1
+    zone: rack
+    p:
+    - 0.55
+    - -0.1
+    - 0.82
+    approach:
+    - -0.17985349979247828
+    - 1.928351027994509
+    - -1.9344236051545747
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.17985349979247828
+    - 2.1469245234730012
+    - -2.034950548945296
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.B2:
+    site: /World/Lab/Rack/B2
+    zone: rack
+    p:
+    - 0.65
+    - -0.1
+    - 0.82
+    approach:
+    - -0.15264932839526515
+    - 1.9130710758887806
+    - -1.7270986381694227
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.15264932839526515
+    - 2.1118290737956613
+    - -1.821067472570355
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.B3:
+    site: /World/Lab/Rack/B3
+    zone: rack
+    p:
+    - 0.75
+    - -0.1
+    - 0.82
+    approach:
+    - -0.13255153229667402
+    - 1.8674114674461828
+    - -1.493051365086341
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.13255153229667402
+    - 2.0503916785085154
+    - -1.5851301509575593
+    - 0
+    - 0
+    - 0
+    - 0
+  rack.B4:
+    site: /World/Lab/Rack/B4
+    zone: rack
+    p:
+    - 0.8500000000000001
+    - -0.1
+    - 0.82
+    approach:
+    - -0.11710874456686428
+    - 1.790328742672354
+    - -1.2192677247511838
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - -0.11710874456686428
+    - 1.9624434967065119
+    - -1.3157054628127964
+    - 0
+    - 0
+    - 0
+    - 0
+  centrifuge.slot1:
+    site: /World/Lab/Centrifuge/Rotor/Slot1
+    zone: centrifuge
+    p:
+    - -0.4
+    - 0.4
+    - 0.95
+    approach:
+    - 2.356194490192345
+    - 1.7031056691041275
+    - -1.7612794819604578
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - 2.356194490192345
+    - 1.9106332362490188
+    - -1.9106332362490186
+    - 0
+    - 0
+    - 0
+    - 0
+    requires:
+    - entity: /World/Lab/Centrifuge
+      property: lidOpen
+      equals: true
+      message: Open the centrifuge lid first
+    - entity: /World/Lab/Centrifuge
+      property: phase
+      equals: idle
+  centrifuge.slot2:
+    site: /World/Lab/Centrifuge/Rotor/Slot2
+    zone: centrifuge
+    p:
+    - -0.5
+    - 0.5
+    - 0.95
+    approach:
+    - 2.356194490192345
+    - 1.6836045020754875
+    - -1.4599025148845575
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - 2.356194490192345
+    - 1.8779008062704103
+    - -1.6041358360561986
+    - 0
+    - 0
+    - 0
+    - 0
+    requires:
+    - entity: /World/Lab/Centrifuge
+      property: lidOpen
+      equals: true
+      message: Open the centrifuge lid first
+    - entity: /World/Lab/Centrifuge
+      property: phase
+      equals: idle
+  centrifuge.slot3:
+    site: /World/Lab/Centrifuge/Rotor/Slot3
+    zone: centrifuge
+    p:
+    - -0.6
+    - 0.4
+    - 0.95
+    approach:
+    - 2.5535900500422257
+    - 1.6780629540848717
+    - -1.4262939608533702
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - 2.5535900500422257
+    - 1.8712902279268144
+    - -1.5707963267948968
+    - 0
+    - 0
+    - 0
+    - 0
+    requires:
+    - entity: /World/Lab/Centrifuge
+      property: lidOpen
+      equals: true
+      message: Open the centrifuge lid first
+    - entity: /World/Lab/Centrifuge
+      property: phase
+      equals: idle
+  centrifuge.slot4:
+    site: /World/Lab/Centrifuge/Rotor/Slot4
+    zone: centrifuge
+    p:
+    - -0.5
+    - 0.30000000000000004
+    - 0.95
+    approach:
+    - 2.601173153319209
+    - 1.7043029447234406
+    - -1.7274360940808287
+    - 0
+    - 0
+    - 0
+    - 0
+    grasp:
+    - 2.601173153319209
+    - 1.9101038100619372
+    - -1.8754889808102941
+    - 0
+    - 0
+    - 0
+    - 0
+    requires:
+    - entity: /World/Lab/Centrifuge
+      property: lidOpen
+      equals: true
+      message: Open the centrifuge lid first
+    - entity: /World/Lab/Centrifuge
+      property: phase
+      equals: idle
