@@ -21,11 +21,17 @@ TOOLS = {
 
 
 def stop(process):
-    if process.poll() is None:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=5)
-        else:
-            process.terminate()
+    try:
+        if process.poll() is None:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=5
+                )
+            else:
+                process.terminate()
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
         process.wait(timeout=5)
 
 

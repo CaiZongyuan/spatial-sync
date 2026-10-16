@@ -182,8 +182,8 @@ def test_pose_sites_joints_rtf_stats_reload_and_delete():
             body = client.get(f"/api/v1/sessions/{sid}/pose", params={"key": "/World/Lab/Robot/Link2"}).json()
             tcp = client.get(f"/api/v1/sessions/{sid}/pose", params={"key": "/World/Lab/Robot/tcp"}).json()
             angle = -0.6
-            # Taught HOME uses shoulder0.3/elbow-0.6 on the declared0.6m/0.5m links.
-            assert tcp["p"] == pytest.approx([0.0295520207, 0, 1.700870138], abs=1e-9)
+            # HOME uses base0.9m/shoulder0.3/elbow-0.6 and the declared0.6m/0.5m links.
+            assert tcp["p"] == pytest.approx([0.0295520207, 0, 1.950870138], abs=1e-9)
             assert (
                 tcp["p"] != body["p"]
                 and tcp["seq"] == frame["seq"]
