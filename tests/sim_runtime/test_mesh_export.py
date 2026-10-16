@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-import warp as wp
 
 newton = pytest.importorskip("newton")
+wp = pytest.importorskip("warp")
 trimesh = pytest.importorskip("trimesh")
 pytestmark = pytest.mark.newton
 

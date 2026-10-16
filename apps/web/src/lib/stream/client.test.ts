@@ -300,4 +300,80 @@ describe('WebSocket lifecycle and authoritative control', () => {
     expect(client.buffer.lastSeq).toBe(5);
     expect(client.buffer.awaitingSnapshot).toBe(false);
   });
+  it('correlates rapid scope acks and rejects old snapshots, then resyncs an unknown delta base once', async () => {
+    const ws = Socket.instances[0];
+    const first = ws.sent.at(-1)!;
+    ws.emit({
+      type: 'subscription.ack',
+      scope: 'all',
+      format: 'json',
+      delta: true,
+      grantedRateHz: 30,
+      requestId: first.requestId as string,
+      subscriptionId: 1,
+    });
+    ws.emit({ ...snapshot, subscriptionId: 1 });
+    await flush();
+    client.setSubscription({
+      scope: 'entities',
+      entityKeys: ['/World/Arm'],
+      delta: true,
+    });
+    const obsolete = ws.sent.at(-1)!;
+    client.setSubscription({
+      scope: 'device',
+      deviceKey: '/World',
+      delta: true,
+    });
+    const current = ws.sent.at(-1)!;
+    ws.emit({
+      type: 'subscription.ack',
+      scope: 'entities',
+      format: 'json',
+      delta: true,
+      grantedRateHz: 30,
+      requestId: obsolete.requestId as string,
+      subscriptionId: 2,
+    });
+    ws.emit({ ...snapshot, subscriptionId: 2, seq: 100 });
+    ws.emit({
+      type: 'subscription.ack',
+      scope: 'device',
+      format: 'json',
+      delta: true,
+      grantedRateHz: 30,
+      requestId: current.requestId as string,
+      subscriptionId: 3,
+    });
+    ws.emit({ ...snapshot, subscriptionId: 3, seq: 6, poses: [] });
+    ws.emit({
+      ...snapshot,
+      type: 'transform.frame',
+      subscriptionId: 2,
+      seq: 101,
+    });
+    await flush();
+    expect(client.getSubscriptionMetrics()).toMatchObject({
+      subscriptionId: 3,
+      scope: 'device',
+      memberIds: [],
+      resyncPending: false,
+    });
+    expect(client.buffer.lastSeq).toBe(6);
+    expect(client.buffer.readLatest('/World/Arm')).toBeUndefined();
+    const before = ws.sent.length;
+    for (let seq = 7; seq < 10; seq++)
+      ws.emit({
+        ...snapshot,
+        type: 'transform.delta',
+        subscriptionId: 3,
+        seq,
+        baseSeq: 5,
+        poses: [],
+        removedStreamIds: [],
+      });
+    await flush();
+    expect(ws.sent).toHaveLength(before + 1);
+    expect(client.getSubscriptionMetrics().resyncCount).toBe(1);
+  });
 });

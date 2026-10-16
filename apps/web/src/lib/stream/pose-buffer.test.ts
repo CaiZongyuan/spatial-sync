@@ -149,3 +149,99 @@ describe('sample-clock renderer buffer', () => {
     expect(buffer.skippedNonFinite).toBe(2);
   });
 });
+
+describe('cumulative scoped deltas and membership', () => {
+  const scopeFrame = (
+    seq: number,
+    poses: TransformFrame['poses'],
+    extra = {},
+  ) =>
+    makeFrame(seq, seq * 20, 0, {
+      subscriptionId: 3,
+      keyframe: true,
+      poses,
+      ...extra,
+    });
+  const delta = (
+    seq: number,
+    baseSeq: number,
+    poses: TransformFrame['poses'],
+    removedStreamIds: number[] = [],
+  ) => ({
+    ...scopeFrame(seq, poses),
+    type: 'transform.delta' as const,
+    baseSeq,
+    subscriptionId: 3,
+    removedStreamIds,
+  });
+  it('removes a non-origin pose instead of labeling held data with a new seq, then snaps re-entry', () => {
+    const buffer = new PoseBuffer();
+    buffer.configure(manifest);
+    buffer.acceptSubscription(3);
+    buffer.push(
+      scopeFrame(10, [[7, 5, 6, 7, 0, 0, 0, 1]], { type: 'stream.snapshot' }),
+      1000,
+    );
+    expect(buffer.readLatest(key)!.p).toEqual([5, 6, 7]);
+    const revision = buffer.membershipRevision;
+    buffer.push(delta(11, 10, [], [7]), 1020);
+    expect(buffer.latestSample!.seq).toBe(11);
+    expect(buffer.isMember(7)).toBe(false);
+    expect(buffer.readLatest(key)).toBeUndefined();
+    expect(buffer.read(key)).toBeUndefined();
+    expect(buffer.membershipRevision).toBe(revision + 1);
+    buffer.push(delta(12, 10, [[7, 9, 8, 7, 0, 0, 0, 1]]), 1040);
+    buffer.sample(1041);
+    expect(buffer.read(key)!.p).toEqual([9, 8, 7]);
+  });
+  it('reconstructs after a dropped intermediate delta and restores unchanged baseline values', () => {
+    const buffer = new PoseBuffer();
+    buffer.configure(manifest);
+    buffer.acceptSubscription(3);
+    buffer.push(
+      scopeFrame(10, [[7, 5, 6, 7, 0, 0, 0, 1]], { type: 'stream.snapshot' }),
+      1000,
+    );
+    // Delta 11 is lost on the latest-frame transport. Delta 12 remains cumulative.
+    buffer.push(delta(12, 10, [[7, 9, 8, 7, 0, 0, 0, 1]]), 1040);
+    expect(buffer.readLatest(key)!.p).toEqual([9, 8, 7]);
+    buffer.push(delta(13, 10, []), 1060);
+    expect(buffer.readLatest(key)!.p).toEqual([5, 6, 7]);
+    expect(buffer.baseSeq).toBe(10);
+  });
+  it('preserves interpolation on regular keyframes and requests recovery for an unknown base', () => {
+    const buffer = new PoseBuffer();
+    buffer.configure(manifest);
+    buffer.acceptSubscription(3);
+    buffer.push(
+      scopeFrame(10, [[7, 5, 6, 7, 0, 0, 0, 1]], { type: 'stream.snapshot' }),
+      1000,
+    );
+    buffer.push(delta(11, 10, []), 1020);
+    buffer.push(scopeFrame(12, [[7, 6, 6, 7, 0, 0, 0, 1]]), 1040);
+    expect(buffer.frameCount).toBe(3);
+    expect(buffer.baseSeq).toBe(12);
+    expect(buffer.push(delta(13, 10, []), 1060)).toBe(false);
+    expect(buffer.needsResync).toBe(true);
+    expect(buffer.readLatest(key)!.p[0]).toBe(6);
+    expect(buffer.push(scopeFrame(14, [], { subscriptionId: 2 }), 1080)).toBe(
+      false,
+    );
+    expect(buffer.push(delta(14, 12, [], [7]), 1080)).toBe(true);
+  });
+  it('holds the last valid delta pose when a later delta contains an invalid component', () => {
+    const buffer = new PoseBuffer();
+    buffer.configure(manifest);
+    buffer.acceptSubscription(3);
+    buffer.push(
+      scopeFrame(10, [[7, 0, 0, 0, 0, 0, 0, 1]], { type: 'stream.snapshot' }),
+      1000,
+    );
+    buffer.push(delta(11, 10, [[7, 5, 0, 0, 0, 0, 0, 1]]), 1020);
+    buffer.push(delta(12, 10, [[7, NaN, 0, 0, 0, 0, 0, 1]]), 1040);
+    expect(buffer.readLatest(key)!.p[0]).toBe(5);
+    expect(buffer.skippedNonFinite).toBe(1);
+    buffer.push(delta(13, 10, []), 1060);
+    expect(buffer.readLatest(key)!.p[0]).toBe(0);
+  });
+});

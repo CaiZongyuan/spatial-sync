@@ -5,18 +5,25 @@ import type {
   TransformFrame,
   Snapshot,
   Pose,
+  TransformDelta,
 } from '../protocol';
 
-type WireFrame = TransformFrame | Snapshot;
+type WireFrame = TransformFrame | Snapshot | TransformDelta;
 type FrameHeader = Pick<
   WireFrame,
   'type' | 'sceneRevision' | 'epoch' | 'seq' | 'simTime' | 'sampleTimeMs'
->;
+> & {
+  subscriptionId?: number | null;
+  baseSeq?: number;
+  keyframe?: boolean | null;
+  removedStreamIds?: readonly number[] | Uint32Array;
+};
 type BufferedFrame = {
   sample: number;
   simTime: number;
   seq: number;
   data: Float64Array;
+  members: Uint8Array;
 };
 
 /** The renderer owns this mutable buffer. Network frames never enter React state. */
@@ -26,7 +33,12 @@ export class PoseBuffer {
   private indices = new Map<number, number>();
   private keys = new Map<string, number>();
   private displayed = new Float64Array();
+  private enteredAt = new Float64Array();
   private authoritative?: BufferedFrame;
+  private baseline?: BufferedFrame;
+  subscriptionId?: number;
+  membershipRevision = 0;
+  needsResync = false;
   private qa = new Quaternion();
   private qb = new Quaternion();
   revision = '';
@@ -52,6 +64,9 @@ export class PoseBuffer {
     this.lastSeq = -1;
     this.displayedSeq = -1;
     this.authoritative = undefined;
+    this.baseline = undefined;
+    this.subscriptionId = undefined;
+    this.membershipRevision++;
     this.indices.clear();
     this.keys.clear();
     for (const node of manifest.nodes) {
@@ -61,6 +76,7 @@ export class PoseBuffer {
       this.keys.set(node.entityKey, index);
     }
     this.displayed = new Float64Array(this.indices.size * 7);
+    this.enteredAt = new Float64Array(this.indices.size);
     for (let i = 6; i < this.displayed.length; i += 7) this.displayed[i] = 1;
     this.resetTiming();
     this.awaitingSnapshot = true;
@@ -71,16 +87,24 @@ export class PoseBuffer {
     this.offsets.length = 0;
   }
 
+  acceptSubscription(subscriptionId?: number) {
+    this.subscriptionId = subscriptionId;
+    this.expectSnapshot();
+  }
+
   expectSnapshot() {
+    this.baseline = undefined;
+    this.needsResync = false;
     this.resetTiming();
     this.awaitingSnapshot = true;
   }
 
   push(frame: WireFrame, received: number): boolean {
-    return this.ingest(frame, received, (data) => {
+    return this.ingest(frame, received, (data, members) => {
       for (const pose of frame.poses) {
         this.writePose(
           data,
+          members,
           this.indices.get(pose[0]),
           pose[1],
           pose[2],
@@ -94,7 +118,11 @@ export class PoseBuffer {
     });
   }
 
-  pushBinary(bytes: ArrayBuffer, received: number): boolean {
+  pushBinary(
+    bytes: ArrayBuffer,
+    received: number,
+    blockScoped = false,
+  ): boolean {
     const frame = decodeBinaryFrame(
       bytes,
       this.revisionNumericId,
@@ -104,15 +132,20 @@ export class PoseBuffer {
       this.invalidBinaryFrames++;
       return false;
     }
+    if (blockScoped && frame.subscriptionId !== undefined) {
+      this.discardedFrames++;
+      return false;
+    }
     return this.ingest(
       { ...frame, sceneRevision: this.revision },
       received,
-      (data) => {
+      (data, members) => {
         const values = frame.values;
         for (let body = 0; body < frame.count; body++) {
           const word = body * 8;
           this.writePose(
             data,
+            members,
             this.indices.get(frame.ids[word]),
             values[word + 1],
             values[word + 2],
@@ -129,6 +162,7 @@ export class PoseBuffer {
 
   private writePose(
     data: Float64Array,
+    members: Uint8Array,
     index: number | undefined,
     px: number,
     py: number,
@@ -152,8 +186,15 @@ export class PoseBuffer {
       norm < 1e-12
     ) {
       this.skippedNonFinite++;
+      members[index] = this.authoritative?.members[index] ?? 0;
+      if (members[index])
+        data.set(
+          this.authoritative!.data.subarray(index * 7, index * 7 + 7),
+          index * 7,
+        );
       return;
     }
+    members[index] = 1;
     const start = index * 7;
     data[start] = px;
     data[start + 1] = py;
@@ -167,7 +208,7 @@ export class PoseBuffer {
   private ingest(
     frame: FrameHeader,
     received: number,
-    write: (data: Float64Array) => void,
+    write: (data: Float64Array, members: Uint8Array) => void,
   ): boolean {
     const snapshot = frame.type === 'stream.snapshot';
     const repeatedRecoverySnapshot =
@@ -177,6 +218,7 @@ export class PoseBuffer {
       frame.epoch === this.epoch;
     if (
       frame.sceneRevision !== this.revision ||
+      (frame.subscriptionId ?? undefined) !== this.subscriptionId ||
       !Number.isSafeInteger(frame.seq) ||
       !Number.isFinite(frame.sampleTimeMs) ||
       !Number.isFinite(frame.simTime) ||
@@ -187,7 +229,15 @@ export class PoseBuffer {
       this.discardedFrames++;
       return false;
     }
+    const delta = frame.type === 'transform.delta';
+    if (delta && (!this.baseline || this.baseline.seq !== frame.baseSeq)) {
+      this.needsResync = true;
+      this.discardedFrames++;
+      return false;
+    }
     if (snapshot) {
+      this.baseline = undefined;
+      this.needsResync = false;
       this.resetTiming();
       this.epoch = frame.epoch;
       this.awaitingSnapshot = false;
@@ -200,14 +250,36 @@ export class PoseBuffer {
       this.frames.length = 0;
       this.discontinuities++;
     }
-    const data = new Float64Array(prior?.data ?? this.displayed);
-    write(data);
+    const data = new Float64Array(
+      delta ? this.baseline!.data : (prior?.data ?? this.displayed),
+    );
+    const members = delta
+      ? new Uint8Array(this.baseline!.members)
+      : new Uint8Array(this.indices.size);
+    for (const id of frame.removedStreamIds ?? []) {
+      const index = this.indices.get(id);
+      if (index !== undefined) members[index] = 0;
+    }
+    write(data, members);
+    members.forEach((value, index) => {
+      if (value && !this.authoritative?.members[index])
+        this.enteredAt[index] = frame.seq;
+    });
+    if (
+      !this.authoritative ||
+      members.some(
+        (value, index) => value !== this.authoritative!.members[index],
+      )
+    )
+      this.membershipRevision++;
     this.authoritative = {
       sample: frame.sampleTimeMs,
       simTime: frame.simTime,
       seq: frame.seq,
       data,
+      members,
     };
+    if (!delta) this.baseline = this.authoritative;
     this.frames.push(this.authoritative);
     if (this.frames.length > 64) this.frames.shift();
     this.offsets.push({ received, offset: received - frame.sampleTimeMs });
@@ -263,6 +335,17 @@ export class PoseBuffer {
         ? 0
         : Math.max(0, Math.min(1, (target - a.sample) / (b.sample - a.sample)));
     for (let i = 0; i < this.displayed.length; i += 7) {
+      // Newly entering members snap to their current pose instead of crossing a
+      // held pose from a previous scope or an absent baseline member.
+      if (
+        !a.members[i / 7] ||
+        !b.members[i / 7] ||
+        a.seq < this.enteredAt[i / 7] ||
+        b.seq < this.enteredAt[i / 7]
+      ) {
+        this.displayed.set(this.authoritative!.data.subarray(i, i + 7), i);
+        continue;
+      }
       for (let j = 0; j < 3; j++)
         this.displayed[i + j] =
           a.data[i + j] + (b.data[i + j] - a.data[i + j]) * t;
@@ -280,6 +363,18 @@ export class PoseBuffer {
     return this.displayed;
   }
 
+  isMember(streamId: number) {
+    const index = this.indices.get(streamId);
+    return index !== undefined && this.authoritative?.members[index] === 1;
+  }
+  get memberIds() {
+    return [...this.indices]
+      .filter(([, index]) => this.authoritative?.members[index] === 1)
+      .map(([id]) => id);
+  }
+  get baseSeq() {
+    return this.baseline?.seq;
+  }
   indexForKey(key: string) {
     return this.keys.get(key);
   }
@@ -305,7 +400,8 @@ export class PoseBuffer {
   }
   private readData(key: string, data?: Float64Array): Pose | undefined {
     const index = this.keys.get(key);
-    if (index === undefined || !data) return;
+    if (index === undefined || !data || !this.authoritative?.members[index])
+      return;
     const start = index * 7;
     return {
       p: Array.from(data.slice(start, start + 3)) as Pose['p'],

@@ -3,10 +3,19 @@ import type {
   ServerMessage,
   CommandRequest,
   EntityState,
+  Subscribe,
 } from '../protocol';
 import { request } from '../api';
 import { validateManifest } from '../validate-manifest';
 import { PoseBuffer } from './pose-buffer';
+
+export type SubscriptionOptions = {
+  scope: Subscribe['scope'];
+  entityKeys?: string[];
+  deviceKey?: string;
+  viewport?: Subscribe['viewport'];
+  delta?: boolean;
+};
 
 export interface ViewState {
   manifest?: SceneManifest;
@@ -57,6 +66,12 @@ export class SessionClient {
   private payloadBytes = 0;
   private publishSample?: { frames: number; time: number; revision: unknown };
   private frameFormat: 'json' | 'binary' = 'json';
+  private requestedScope: SubscriptionOptions = { scope: 'all', delta: true };
+  private acceptedScope: SubscriptionOptions = { scope: 'all', delta: true };
+  private pendingSubscription?: string;
+  private staticVisible = new Set<string>();
+  private bodyIds = new Map<string, number>();
+  private resyncCount = 0;
 
   constructor(
     readonly sessionId: string,
@@ -77,6 +92,75 @@ export class SessionClient {
     sessionState: this.state.sessionState,
     connection: this.state.connection,
   });
+  getSubscriptionMetrics = () => ({
+    subscriptionId: this.buffer.subscriptionId,
+    scope: this.acceptedScope.scope,
+    requestedScope: this.requestedScope.scope,
+    delta: this.acceptedScope.delta ?? false,
+    memberIds: this.buffer.memberIds,
+    membershipRevision: this.buffer.membershipRevision,
+    baseSeq: this.buffer.baseSeq,
+    resyncPending:
+      Boolean(this.pendingSubscription) || this.buffer.awaitingSnapshot,
+    resyncCount: this.resyncCount,
+  });
+  setSubscription(options: SubscriptionOptions) {
+    this.requestedScope = { ...options, delta: options.delta ?? true };
+    this.subscribeStream();
+  }
+  usesViewport() {
+    return this.requestedScope.scope === 'viewport';
+  }
+  updateViewport(planes: [number, number, number, number][]) {
+    if (this.requestedScope.scope !== 'viewport' || planes.length !== 6) return;
+    this.requestedScope = {
+      ...this.requestedScope,
+      viewport: {
+        planes: planes as NonNullable<Subscribe['viewport']>['planes'],
+      },
+    };
+    this.subscribeStream();
+  }
+  isEntityVisible(entityKey: string): boolean {
+    const manifest = this.state.manifest;
+    if (!manifest) return false;
+    const streamId = this.bodyIds.get(entityKey);
+    if (streamId !== undefined) return this.buffer.isMember(streamId);
+    if (
+      this.acceptedScope.scope === 'all' ||
+      this.acceptedScope.scope === 'viewport'
+    )
+      return true;
+    return this.staticVisible.has(entityKey);
+  }
+  private resolveStaticVisibility() {
+    const manifest = this.state.manifest;
+    this.staticVisible.clear();
+    if (!manifest) return;
+    const requested =
+      this.acceptedScope.scope === 'device'
+        ? [this.acceptedScope.deviceKey!]
+        : (this.acceptedScope.entityKeys ?? []);
+    for (const key of requested) this.staticVisible.add(key);
+    // Manifest nodes are not required to be topologically sorted.
+    const children = new Map<string, string[]>();
+    for (const node of manifest.nodes) {
+      if (node.parentEntityKey) {
+        const list = children.get(node.parentEntityKey) ?? [];
+        list.push(node.entityKey);
+        children.set(node.parentEntityKey, list);
+      }
+    }
+    const pending = [...requested];
+    while (pending.length) {
+      for (const child of children.get(pending.pop()!) ?? []) {
+        if (!this.staticVisible.has(child)) {
+          this.staticVisible.add(child);
+          pending.push(child);
+        }
+      }
+    }
+  }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
@@ -139,6 +223,11 @@ export class SessionClient {
       ),
     );
     if (this.stopped || generation !== this.generation) return;
+    this.bodyIds = new Map(
+      manifest.nodes
+        .filter((node) => node.kind === 'body')
+        .map((node) => [node.entityKey, node.streamId]),
+    );
     this.buffer.configure(manifest);
     this.update({ manifest, entities: {}, error: undefined });
   }
@@ -201,10 +290,17 @@ export class SessionClient {
         .then(async () => {
           if (this.stopped || this.ws !== ws) return;
           if (event.data instanceof ArrayBuffer) {
-            if (this.buffer.pushBinary(event.data, performance.now())) {
+            if (
+              this.buffer.pushBinary(
+                event.data,
+                performance.now(),
+                Boolean(this.pendingSubscription),
+              )
+            ) {
               this.receivedFrames++;
               this.rates.push(performance.now());
             }
+            this.recoverUnknownBase();
             return;
           }
           await this.receive(
@@ -218,6 +314,8 @@ export class SessionClient {
     ws.onclose = () => {
       if (this.stopped || this.ws !== ws || generation !== this.generation)
         return;
+      this.pendingSubscription = undefined;
+      this.buffer.expectSnapshot();
       this.commandTimers.forEach(clearTimeout);
       this.commandTimers.clear();
       this.update({
@@ -234,19 +332,32 @@ export class SessionClient {
 
   private subscribeStream() {
     if (this.ws?.readyState !== WebSocket.OPEN || !this.state.manifest) return;
+    if (
+      this.requestedScope.scope === 'viewport' &&
+      !this.requestedScope.viewport
+    )
+      return;
     this.buffer.expectSnapshot();
+    this.pendingSubscription = crypto.randomUUID();
     this.ws.send(
       JSON.stringify({
         type: 'client.subscribe',
         protocolVersion: 1,
         sceneRevision: this.state.manifest.sceneRevision,
-        scope: 'all',
+        ...this.requestedScope,
+        requestId: this.pendingSubscription,
         rateHz: this.state.manifest.source.basePublishHz,
         format: this.format,
       }),
     );
   }
 
+  private recoverUnknownBase() {
+    if (this.buffer.needsResync && !this.pendingSubscription) {
+      this.resyncCount++;
+      this.subscribeStream();
+    }
+  }
   private async receive(message: ServerMessage, generation: number) {
     switch (message.type) {
       case 'server.ready':
@@ -265,15 +376,26 @@ export class SessionClient {
         this.subscribeStream();
         break;
       case 'subscription.ack':
+        if (message.requestId !== this.pendingSubscription) break;
+        this.pendingSubscription = undefined;
+        this.acceptedScope = { ...this.requestedScope };
+        this.resolveStaticVisibility();
+        this.buffer.acceptSubscription(message.subscriptionId ?? undefined);
         this.buffer.grantedRateHz = message.grantedRateHz;
         this.frameFormat = message.format ?? 'json';
         break;
       case 'transform.frame':
       case 'stream.snapshot':
+      case 'transform.delta':
+        // Older reliable batches remain FIFO on the wire. Only the latest
+        // requested ack can open the new scope's snapshot barrier.
+        if (this.pendingSubscription && message.subscriptionId !== undefined)
+          break;
         if (this.buffer.push(message, performance.now())) {
           this.receivedFrames++;
           this.rates.push(performance.now());
         }
+        this.recoverUnknownBase();
         break;
       case 'session.state':
         if (message.sceneRevision !== this.buffer.revision) break;
@@ -302,6 +424,7 @@ export class SessionClient {
         });
         break;
       case 'scene.replaced':
+        this.pendingSubscription = undefined;
         this.buffer.revision = message.sceneRevision;
         this.buffer.expectSnapshot();
         this.update({

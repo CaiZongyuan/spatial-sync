@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import fixture from '../../../../../packages/protocol/fixtures/manifest.json';
+import scopedFixtures from '../../../../../packages/protocol/fixtures/scoped-binary-frames.json';
 import wireFixture from '../../../../../packages/protocol/fixtures/binary-frame.json';
 import { decodeBinaryFrame } from './binary-frame';
 import { PoseBuffer } from './pose-buffer';
@@ -97,4 +98,53 @@ it('preserves reset/recovery and finite-pose rules for binary snapshots', () => 
   buffer.expectSnapshot();
   expect(buffer.pushBinary(reset, 5000)).toBe(true);
   expect(buffer.pushBinary(packet(2n, 1), 5010)).toBe(false);
+});
+
+it('decodes Python scoped snapshot/full/delta bytes with explicit pose and removal bounds', () => {
+  const buffer = new PoseBuffer();
+  buffer.configure(fixture as never);
+  buffer.acceptSubscription(3);
+  for (const [i, sample] of scopedFixtures.entries()) {
+    const bytes = Uint8Array.from(sample.hex.match(/../g)!, (hex) =>
+      parseInt(hex, 16),
+    ).buffer;
+    const decoded = decodeBinaryFrame(bytes, 1, 1)!;
+    expect(decoded.type).toBe(sample.frame.type);
+    expect(decoded.subscriptionId).toBe(3);
+    expect(decoded.ids.length).toBe(sample.frame.poses.length * 8);
+    expect(buffer.pushBinary(bytes, 2000 + i * 20)).toBe(true);
+    if (
+      sample.frame.type === 'transform.delta' &&
+      sample.frame.removedStreamIds?.length
+    ) {
+      expect(Array.from(decoded.removedStreamIds!)).toEqual([7]);
+      expect(buffer.readLatest('/World/Arm')).toBeUndefined();
+    } else
+      expect(buffer.readLatest('/World/Arm')!.p).toEqual(
+        sample.frame.poses[0].slice(1, 4),
+      );
+    expect(decodeBinaryFrame(bytes.slice(0, -1), 1, 1)).toBeUndefined();
+  }
+  expect(buffer.frameCount).toBe(4);
+  const invalid = Uint8Array.from(scopedFixtures[1].hex.match(/../g)!, (hex) =>
+    parseInt(hex, 16),
+  ).buffer;
+  new DataView(invalid).setBigUint64(48, 11n, true);
+  expect(decodeBinaryFrame(invalid, 1, 1)).toBeUndefined();
+});
+
+it('holds the previous valid binary delta value without replacing cumulative baseline semantics', () => {
+  const buffer = new PoseBuffer();
+  buffer.configure(fixture as never);
+  buffer.acceptSubscription(3);
+  const fromHex = (hex: string) =>
+    Uint8Array.from(hex.match(/../g)!, (value) => parseInt(value, 16)).buffer;
+  buffer.pushBinary(fromHex(scopedFixtures[0].hex), 1000);
+  buffer.pushBinary(fromHex(scopedFixtures[2].hex), 1020);
+  const invalid = fromHex(scopedFixtures[2].hex);
+  new DataView(invalid).setBigUint64(16, 13n, true);
+  new DataView(invalid).setFloat32(64, NaN, true);
+  buffer.pushBinary(invalid, 1040);
+  expect(buffer.readLatest('/World/Arm')!.p).toEqual([9, 8, 7]);
+  expect(buffer.skippedNonFinite).toBe(1);
 });

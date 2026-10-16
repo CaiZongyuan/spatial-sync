@@ -1,6 +1,5 @@
 {
   "frame": {
-    "type": "stream.snapshot",
     "protocolVersion": 1,
     "sessionId": "session-fixture",
     "sceneRevision": "rev-fixture",
@@ -19,7 +18,10 @@
         0.0,
         1.0
       ]
-    ]
+    ],
+    "type": "stream.snapshot",
+    "subscriptionId": null,
+    "keyframe": null
   },
   "revisionNumericId": 1,
   "hex": "4e53594e010002000100000000000000010000000000000000000000000000000000000000408f4001000000070000000000803f00000040000040400000000000000000000000000000803f"

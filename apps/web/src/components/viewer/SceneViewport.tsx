@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import { CameraSubscription } from './CameraSubscription';
 import {
   DoubleSide,
   Box3,
@@ -468,6 +469,7 @@ function SceneContents({
   return (
     <>
       <SceneDiagnostics counts={registrationCounts} />
+      <CameraSubscription client={client} />
       <color attach="background" args={['#172329']} />
       <ambientLight intensity={1.5} />
       <directionalLight position={[3, 6, 3]} intensity={3} />
