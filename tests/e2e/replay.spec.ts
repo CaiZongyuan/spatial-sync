@@ -32,6 +32,8 @@ test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log 
   await expect.poll(() => page.locator('[aria-label="Replay position"]').inputValue().then(Number)).toBeGreaterThan(100);
   await page.getByRole('button', { name: 'Pause replay' }).click();
   await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  const pausedPose = await page.evaluate(key => window.__spatialDebug?.getAuthoritativePose(key), expected.tubeKey);
+  await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey)).toEqual(pausedPose);
   const paused = await page.getByTestId('replay-time').textContent();
   await page.getByLabel('Playback speed').selectOption('4');
   await expect(page.getByTestId('replay-time')).toHaveText(paused!);
@@ -43,6 +45,7 @@ test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log 
     }, sample.timeMs);
     await page.getByLabel('Replay position').press(sample.timeMs > 0 ? 'ArrowRight' : 'ArrowLeft');
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq)).toBe(sample.seq);
+    await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey)).toEqual(sample.tubePose);
     const actual = await page.evaluate(({ tubeKey, robotKey }) => ({
       pose: window.__spatialDebug?.getAuthoritativePose(tubeKey),
       location: window.__spatialDebug?.getEntityState(tubeKey)?.values.location,
@@ -57,6 +60,74 @@ test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log 
   await expect(page.getByRole('button', { name: 'Close session', exact: true })).toBeDisabled();
   expect(liveRequests).toEqual([]);
   await page.screenshot({ path: '../../.scratch/info-i4-replay/fixture-replay.png' });
+});
+
+test('paused replay draws on asset, view and camera changes while idle frames stop', async ({ page, baseURL }) => {
+  let releaseMissing!: () => void;
+  const missingAsset = new Promise<void>(resolve => { releaseMissing = resolve; });
+  await page.route('**/fixture/demand/**', async route => {
+    const relative = new URL(route.request().url()).pathname.split('/fixture/demand/')[1];
+    if (relative.startsWith('assets/missing-')) {
+      await missingAsset;
+      await route.fulfill({ status: 404 });
+    } else if (existsSync(join(fixture, relative))) await route.fulfill({ path: join(fixture, relative) });
+    else await route.fulfill({ status: 404 });
+  });
+  try {
+    const src = new URL('/fixture/demand/recording.json', baseURL).href;
+    await page.goto(`/replay/demand?src=${encodeURIComponent(src)}&render=instanced`);
+    await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+    await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey)).toBeTruthy();
+    expect(await page.evaluate(() => window.__spatialRenderDebug?.frameStats().mode)).toBe('instanced');
+
+    const idle = await page.evaluate(async () => {
+      const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await frame(); await frame();
+      window.__spatialDebug!.startProfile();
+      await frame(); await frame(); await frame();
+      return window.__spatialDebug!.stopProfile();
+    });
+    expect(idle.samples, 'A settled paused scene must not continuously redraw').toEqual([]);
+
+    await page.evaluate(() => window.__spatialDebug!.startProfile());
+    releaseMissing();
+    await expect.poll(() => page.evaluate(() =>
+      window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source,
+    )).toBe('colliders');
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect((await page.evaluate(() => window.__spatialDebug!.stopProfile())).samples.length,
+      'A late asset fallback must draw while playback stays paused').toBeGreaterThan(0);
+
+    await page.getByTestId(`entity-${expected.tubeKey}`).click();
+    await page.getByLabel('Hide Tube 01', { exact: true }).click();
+    await expect.poll(() => page.evaluate(key => window.__spatialRenderDebug!.drawnEntities().includes(key), expected.tubeKey)).toBe(false);
+    await page.getByLabel('Show Tube 01', { exact: true }).click();
+    await expect.poll(() => page.evaluate(key => window.__spatialRenderDebug!.drawnEntities().includes(key), expected.tubeKey)).toBe(true);
+
+    // Test projection-only mutation before introducing OrbitControls damping.
+    const directCamera = await page.evaluate(async () => {
+      const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await frame(); await frame();
+      window.__spatialDebug!.startProfile();
+      const camera = window.__spatialRenderDebug!.camera();
+      window.__spatialRenderDebug!.setCamera({ ...camera, fov: camera.fov - 1 });
+      await frame(); await frame();
+      return window.__spatialDebug!.stopProfile();
+    });
+    expect(directCamera.samples.length, 'A direct projection change must invalidate the paused scene').toBeGreaterThan(0);
+
+    const before = await page.evaluate(() => window.__spatialRenderDebug!.camera());
+    await page.evaluate(() => window.__spatialDebug!.startProfile());
+    await page.locator('.viewport canvas').hover();
+    await page.mouse.wheel(0, 120);
+    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.camera().position)).not.toEqual(before.position);
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    expect((await page.evaluate(() => window.__spatialDebug!.stopProfile())).samples.length,
+      'OrbitControls must draw the changed camera while paused').toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  } finally {
+    releaseMissing();
+  }
 });
 
 test('native End applies the final reliable record at a fractional millisecond duration', async ({ page, baseURL }) => {

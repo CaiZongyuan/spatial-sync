@@ -41,10 +41,11 @@ declare global {
   }
 }
 
-export function Workbench({ sessionId, source, controls }: {
+export function Workbench({ sessionId, source, controls, renderContinuously = true }: {
   sessionId: string;
   source?: SessionClient;
   controls?: ReactNode;
+  renderContinuously?: boolean;
 }) {
   const navigate = useNavigate();
   const client = useMemo(() => source ?? new SessionClient(sessionId), [sessionId, source]);
@@ -381,6 +382,7 @@ export function Workbench({ sessionId, source, controls }: {
                   rendered,
                   inspectVisuals,
                   recorder,
+                  renderContinuously,
                 }}
               />
               {tab === 'diagnostics' && (

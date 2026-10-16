@@ -82,6 +82,7 @@ export function SceneDiagnostics({
       camera.lookAt(new Vector3().fromArray(value.target));
       camera.updateProjectionMatrix();
       controls()?.update?.();
+      state.invalidate();
     };
     const entityKey = (object: Object3D, slot?: number): string | undefined => {
       if (object instanceof InstancedMesh)

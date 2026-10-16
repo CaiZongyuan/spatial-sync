@@ -5,7 +5,7 @@ import {
   canInstance,
   type InstanceController,
 } from './InstancedPrimitives';
-import { Canvas, events, useFrame } from '@react-three/fiber';
+import { Canvas, events, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import {
   DoubleSide,
@@ -192,6 +192,8 @@ type PhysicalNode = Exclude<SceneManifest['nodes'][number], { kind: 'group' }>;
 
 function useVisuals(groups: VisualGroup[], warn: (message: string) => void) {
   const [resolved, setResolved] = useState<ResolvedVisuals>();
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => { invalidate(); }, [resolved, invalidate]);
   useEffect(() => {
     const controller = new AbortController();
     let owned: ResolvedVisuals | undefined;
@@ -408,7 +410,16 @@ function SceneContents({
   rendered,
   inspectVisuals,
   recorder,
+  renderContinuously = true,
 }: ViewportProps) {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    if (!client.readOnly || renderContinuously) return;
+    // Replay reducers mutate pose buffers without changing the manifest identity.
+    // Also draw after view changes and after subscribing, in case a seek just committed.
+    invalidate();
+    return client.subscribe(invalidate);
+  }, [client, renderContinuously, manifest, selected, layers, hidden, invalidate]);
   const selectedEntity =
     manifest.joints.find((joint) => joint.entityKey === selected)
       ?.anchorSiteKey ?? selected;
@@ -634,12 +645,14 @@ interface ViewportProps {
   rendered: React.RefObject<Map<string, RenderedPose>>;
   inspectVisuals: React.RefObject<InspectVisuals | undefined>;
   recorder: FrameRecorder;
+  renderContinuously?: boolean;
 }
 
 export function SceneViewport(props: ViewportProps) {
   return (
     <div className="viewport" data-testid="scene-viewport">
       <Canvas
+        frameloop={props.client.readOnly && props.renderContinuously === false ? 'demand' : 'always'}
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
