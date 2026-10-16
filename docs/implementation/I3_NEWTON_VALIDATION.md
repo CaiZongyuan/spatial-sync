@@ -160,3 +160,28 @@ remain assumed safe, as declared by the type, rather than collision-planned.
 Independent Standards/Spec review and integration with the PM's newer I1/CLI
 baseline remain necessary; refresh the actual Newton consumer if those public
 contracts change during integration.
+
+## Appendix: independent transient review and PM disposition
+
+The non-author reviewer independently reconstructed the 75 spinning boundaries
+and 150 tube classifications from raw parent/local Site poses using SciPy
+Rotation and the preceding complete raw row. It did not call the product fact
+helper. It confirmed all classifications, including eleven transient loose
+results, with zero mismatches and maximum Port/independent speed difference
+4.77e-10 m/s. The diagnostic hook ran after the original tick using that tick's
+staged body array and actual Host values, without another capture or physics
+write; the boundary alignment is valid.
+
+PM accepted these facts under §6.6 and retained §6.5's prescribed physical speed
+`min(rpm, visualRpmCap)` and the original thresholds. Acceptance is the actual
+location classification, completed loading/run/return flow and tick budget;
+there is no additional invented sub-millimetre spin-retention requirement.
+The 48.35 mm startup excursion and braking tilt beyond 90°, followed by recovery,
+remain explicit physical-model limitations. The twenty-second CLI receipt,
+one-second diagnostic probe and original twenty contact trials remain distinct.
+
+An optional later improvement can investigate constraint/contact configuration
+to reduce those measured excursions while preserving the prescribed speed
+curve and truthful location facts. Changing the rotor acceleration curve would
+require a separate specification decision. No such tuning or curve change is
+part of this delivery.
