@@ -12,7 +12,6 @@ import { request } from '../lib/api';
 import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { SceneTree } from './SceneTree';
 import { Inspector } from './Inspector';
-import { SubscriptionControls } from './SubscriptionControls';
 import { Diagnostics } from './Diagnostics';
 import {
   SceneViewport,
@@ -35,25 +34,13 @@ declare global {
       startProfile: () => ReturnType<SessionClient['getStreamMetrics']>;
       stopProfile: FrameRecorder['stop'];
       getStreamMetrics: SessionClient['getStreamMetrics'];
-      getSubscriptionMetrics: SessionClient['getSubscriptionMetrics'];
-      setSubscription: SessionClient['setSubscription'];
-      updateViewport: SessionClient['updateViewport'];
     };
   }
 }
 
 export function Workbench({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
-  const client = useMemo(
-    () =>
-      new SessionClient(
-        sessionId,
-        new URLSearchParams(location.search).get('format') === 'binary'
-          ? 'binary'
-          : 'json',
-      ),
-    [sessionId],
-  );
+  const client = useMemo(() => new SessionClient(sessionId), [sessionId]);
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const [loadError, setLoadError] = useState<string>();
   const [operationPending, setOperationPending] = useState(false);
@@ -99,9 +86,6 @@ export function Workbench({ sessionId }: { sessionId: string }) {
       },
       stopProfile: () => recorder.stop(),
       getStreamMetrics: client.getStreamMetrics,
-      getSubscriptionMetrics: client.getSubscriptionMetrics,
-      setSubscription: (options) => client.setSubscription(options),
-      updateViewport: (planes) => client.updateViewport(planes),
     };
     return () => {
       client.stop();
@@ -272,13 +256,6 @@ export function Workbench({ sessionId }: { sessionId: string }) {
           </label>
         </div>
       </div>
-      {manifest && (
-        <SubscriptionControls
-          client={client}
-          manifest={manifest}
-          selected={selected}
-        />
-      )}
       {(loadError || state.error) && (
         <div role="alert" className="banner error">
           {loadError ?? state.error}

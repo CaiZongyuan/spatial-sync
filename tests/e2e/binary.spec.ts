@@ -16,7 +16,7 @@ async function connected(page: Page) {
   await expect(page.locator('canvas')).toBeVisible();
 }
 
-test('binary and JSON browsers share authoritative controls, recovery and replacement', async ({
+test('binary browsers share authoritative controls, recovery and replacement', async ({
   page,
   browser,
   request,
@@ -31,6 +31,7 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
   const observer = await observerContext.newPage();
   const errors: string[] = [];
   let binaryFrames = 0,
+    observerBinaryFrames = 0,
     jsonFrames = 0,
     jsonCommands = 0,
     block = false;
@@ -41,7 +42,8 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
       if (Buffer.isBuffer(payload)) {
         expect(payload.subarray(0, 4).toString()).toBe('NSYN');
         binaryFrames++;
-      }
+      } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
+        jsonFrames++;
     });
     socket.on('framesent', ({ payload }) => {
       expect(typeof payload).toBe('string');
@@ -51,12 +53,10 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
   });
   observer.on('websocket', (socket) =>
     socket.on('framereceived', ({ payload }) => {
-      expect(typeof payload).toBe('string');
-      if (
-        ['transform.frame', 'stream.snapshot'].includes(
-          JSON.parse(payload as string).type,
-        )
-      )
+      if (Buffer.isBuffer(payload)) {
+        expect(payload.subarray(0, 4).toString()).toBe('NSYN');
+        observerBinaryFrames++;
+      } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
         jsonFrames++;
     }),
   );
@@ -67,14 +67,14 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
     sockets.push(socket);
   });
   try {
-    await page.goto(`/sessions/${sessionId}?format=binary`);
+    await page.goto(`/sessions/${sessionId}`);
     await observer.goto(`/sessions/${sessionId}`);
     await connected(page);
     await connected(observer);
     await expect
       .poll(async () => (await metrics(page))?.frameFormat)
       .toBe('binary');
-    expect((await metrics(observer))?.frameFormat).toBe('json');
+    expect((await metrics(observer))?.frameFormat).toBe('binary');
     await page.getByRole('button', { name: 'Pause simulation' }).click();
     await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
     await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
@@ -160,7 +160,8 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
       .toBeGreaterThan(afterReconnect + 2);
     expect((await metrics(page))?.invalidBinaryFrames).toBe(0);
     expect(binaryFrames).toBeGreaterThan(3);
-    expect(jsonFrames).toBeGreaterThan(3);
+    expect(observerBinaryFrames).toBeGreaterThan(3);
+    expect(jsonFrames).toBe(0);
     expect(jsonCommands).toBe(3);
     expect(errors).toEqual([]);
     await page.screenshot({
@@ -170,10 +171,11 @@ test('binary and JSON browsers share authoritative controls, recovery and replac
       body: JSON.stringify(
         {
           binaryFrames,
+          observerBinaryFrames,
           jsonFrames,
           jsonCommands,
           binary: await metrics(page),
-          json: await metrics(observer),
+          observer: await metrics(observer),
         },
         null,
         2,

@@ -38,7 +38,6 @@ export function Inspector({
         ? client.buffer.readLatest(node.entityKey)
         : undefined;
   const sample = client.buffer.latestSample;
-  const entityState = selected ? state.entities[selected] : undefined;
   const binding = node?.kind === 'body' ? node.debug : undefined;
   const error = joint
     ? jointPositionError(
@@ -94,7 +93,7 @@ export function Inspector({
           <code className="entity-key">{selected}</code>
           {!pose && (node?.kind === 'body' || site || joint) && (
             <p className="field-note" data-testid="pose-unavailable">
-              Pose unavailable in the current subscription.
+              Waiting for the first valid pose.
             </p>
           )}
           {pose && (
@@ -210,17 +209,6 @@ export function Inspector({
                 </div>
               </dl>
               {binding && <pre>{JSON.stringify(binding, null, 2)}</pre>}
-            </section>
-          )}
-          {entityState && (
-            <section className="inspector-section">
-              <div className="section-label">
-                DEVICE STATE <span>{entityState.stateSeq}</span>
-              </div>
-              <code>{entityState.schema}</code>
-              <pre data-testid="entity-state">
-                {JSON.stringify(entityState.payload, null, 2)}
-              </pre>
             </section>
           )}
           {node?.kind === 'group' && (

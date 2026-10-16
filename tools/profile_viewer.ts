@@ -2,7 +2,7 @@
 import { chromium, expect as baseExpect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -25,9 +25,7 @@ const { values } = parseArgs({
     output: { type: 'string', default: '.scratch/viewer-profile.json' },
     'scene-file': { type: 'string', multiple: true },
     'allow-development': { type: 'boolean' },
-    format: { type: 'string', default: 'json' },
     'render-mode': { type: 'string', default: 'individual' },
-    quality: { type: 'string', default: 'full' },
     'fit-scene': { type: 'boolean' },
     'camera-file': { type: 'string' },
   },
@@ -78,7 +76,7 @@ const sourceFiles = git(
   'tools/viewer_profile_stats.ts',
 )
   .split('\0')
-  .filter(Boolean)
+  .filter((file) => file && existsSync(file))
   .sort();
 const sceneFiles = values['scene-file'] ?? [
   values.source === 'synthetic'
@@ -233,7 +231,7 @@ async function main() {
         const startupMs = performance.now() - startCreation;
         const manifest = await api<SceneManifest>(`/sessions/${sid}/scene`);
         const response = await page.goto(
-          `${values.web}/sessions/${encodeURIComponent(sid!)}?format=${values.format}&render=${values['render-mode']}&quality=${values.quality}`,
+          `${values.web}/sessions/${encodeURIComponent(sid!)}?render=${values['render-mode']}`,
         );
         const buildMode = (await response!.text()).includes('/@vite/client')
           ? 'development'
@@ -245,18 +243,6 @@ async function main() {
         await expect(page.getByTestId('connection-status')).toHaveText(
           'connected',
         );
-        // P2-B defaults to sparse deltas. Compare renderers using the same full
-        // frames as the original baseline, and wait for the accepted resubscribe.
-        await page.getByRole('checkbox', { name: 'Sparse deltas' }).uncheck();
-        await expect
-          .poll(() =>
-            page.evaluate(() => {
-              const subscription =
-                window.__spatialDebug!.getSubscriptionMetrics();
-              return !subscription.delta && !subscription.resyncPending;
-            }),
-          )
-          .toBe(true);
         const bodies = manifest.nodes.filter((node) => node.kind === 'body');
         if (!bodies.length)
           throw new Error(
@@ -527,7 +513,6 @@ async function main() {
         const observed = await page
           .evaluate(() => ({
             stream: window.__spatialDebug?.getStreamMetrics(),
-            subscription: window.__spatialDebug?.getSubscriptionMetrics(),
             geometry: window.__spatialRenderDebug?.frameStats(),
             camera: window.__spatialRenderDebug?.camera(),
             socketCloses: (

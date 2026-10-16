@@ -2,7 +2,7 @@ import { Group, Mesh, Texture, type Object3D } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Visual } from '../protocol';
 
-export interface VisualTier {
+export interface VisualGroup {
   name: 'visuals' | 'fallbackVisuals' | 'colliders';
   visuals: Visual[];
 }
@@ -11,7 +11,7 @@ export interface LoadedVisual {
   object: Group | undefined;
 }
 export interface ResolvedVisuals {
-  tier: VisualTier['name'] | 'placeholder';
+  source: VisualGroup['name'] | 'placeholder';
   visuals: LoadedVisual[];
   dispose: () => void;
 }
@@ -50,19 +50,19 @@ export async function loadVisualAsset(
   }
 }
 
-/** A tier is an entire simultaneous visual group. Never mix partially loaded tiers. */
-export async function resolveVisualTiers(
-  tiers: VisualTier[],
+/** Load a complete visual group, falling back only when that group cannot load. */
+export async function resolveVisuals(
+  groups: VisualGroup[],
   signal: AbortSignal,
   warn: (message: string) => void,
   load = loadVisualAsset,
 ): Promise<ResolvedVisuals | undefined> {
   let reportedFailure = false;
-  for (const [index, tier] of tiers.entries()) {
+  for (const [index, source] of groups.entries()) {
     if (signal.aborted) return;
-    if (!tier.visuals.length) continue;
+    if (!source.visuals.length) continue;
     const loaded = await Promise.allSettled(
-      tier.visuals.map(async (visual) => ({
+      source.visuals.map(async (visual) => ({
         visual,
         object: await load(visual),
       })),
@@ -86,15 +86,15 @@ export async function resolveVisualTiers(
       dispose();
       reportedFailure = true;
       warn(
-        `${tier.name}: Asset unavailable: ${failures.map((item) => (item.reason instanceof Error ? item.reason.message : String(item.reason))).join('; ')}; trying the next visual group`,
+        `${source.name}: Asset unavailable: ${failures.map((item) => (item.reason instanceof Error ? item.reason.message : String(item.reason))).join('; ')}; trying the next visual group`,
       );
       continue;
     }
     if (index > 0 && !reportedFailure)
-      warn(`Using ${tier.name} fallback group (${completed.length} visuals)`);
-    return { tier: tier.name, visuals: completed, dispose };
+      warn(`Using ${source.name} fallback group (${completed.length} visuals)`);
+    return { source: source.name, visuals: completed, dispose };
   }
   if (signal.aborted) return;
   warn('No loadable visual group — using placeholder geometry');
-  return { tier: 'placeholder', visuals: [], dispose: () => {} };
+  return { source: 'placeholder', visuals: [], dispose: () => {} };
 }

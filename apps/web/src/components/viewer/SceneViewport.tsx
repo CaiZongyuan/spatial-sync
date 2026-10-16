@@ -7,7 +7,6 @@ import {
 } from './InstancedPrimitives';
 import { Canvas, events, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { CameraSubscription } from './CameraSubscription';
 import {
   DoubleSide,
   Box3,
@@ -18,11 +17,11 @@ import {
   type Object3D,
 } from 'three';
 import {
-  resolveVisualTiers,
+  resolveVisuals,
   type LoadedVisual,
   type ResolvedVisuals,
-  type VisualTier,
-} from '../../lib/scene/visual-tiers';
+  type VisualGroup,
+} from '../../lib/scene/visual-assets';
 import type { SceneManifest, Visual, Pose } from '../../lib/protocol';
 import { IDENTITY } from '../../lib/scene/pose';
 import { createPrimitiveGeometry } from '../../lib/geometry/primitives';
@@ -46,7 +45,7 @@ export interface RenderedPose {
   q: number[];
 }
 export interface VisualGeometryInfo {
-  tier: string;
+  source: string;
   visualCount: number;
   meshCount: number;
   normalsComplete: boolean;
@@ -188,13 +187,13 @@ function Placeholder({ selected }: { selected: boolean }) {
 
 type PhysicalNode = Exclude<SceneManifest['nodes'][number], { kind: 'group' }>;
 
-function useVisuals(tiers: VisualTier[], warn: (message: string) => void) {
+function useVisuals(groups: VisualGroup[], warn: (message: string) => void) {
   const [resolved, setResolved] = useState<ResolvedVisuals>();
   useEffect(() => {
     const controller = new AbortController();
     let owned: ResolvedVisuals | undefined;
     setResolved(undefined);
-    void resolveVisualTiers(tiers, controller.signal, warn).then((result) => {
+    void resolveVisuals(groups, controller.signal, warn).then((result) => {
       owned = result;
       if (result) setResolved(result);
     });
@@ -202,7 +201,7 @@ function useVisuals(tiers: VisualTier[], warn: (message: string) => void) {
       controller.abort();
       owned?.dispose();
     };
-  }, [tiers, warn]);
+  }, [groups, warn]);
   return resolved;
 }
 
@@ -213,11 +212,11 @@ function CollisionVisuals({
   visuals: Visual[];
   warn: (message: string) => void;
 }) {
-  const tiers = useMemo<VisualTier[]>(
+  const groups = useMemo<VisualGroup[]>(
     () => [{ name: 'colliders', visuals }],
     [visuals],
   );
-  const resolved = useVisuals(tiers, warn);
+  const resolved = useVisuals(groups, warn);
   return (
     <group name="collider-debug-group">
       {resolved?.visuals.map((loaded, i) => (
@@ -238,7 +237,7 @@ function NodeVisuals({
   colliders: boolean;
   warn: (message: string) => void;
 }) {
-  const tiers = useMemo<VisualTier[]>(
+  const groups = useMemo<VisualGroup[]>(
     () => [
       { name: 'visuals', visuals: node.visuals },
       { name: 'fallbackVisuals', visuals: node.fallbackVisuals ?? [] },
@@ -250,14 +249,14 @@ function NodeVisuals({
     () => (message: string) => warn(`${node.entityKey}: ${message}`),
     [node.entityKey, warn],
   );
-  const resolved = useVisuals(tiers, report);
+  const resolved = useVisuals(groups, report);
   return (
     <>
       <group
         name="visual-group"
-        userData={{ tier: resolved?.tier ?? 'loading' }}
+        userData={{ source: resolved?.source ?? 'loading' }}
       >
-        {resolved?.tier === 'placeholder' ? (
+        {resolved?.source === 'placeholder' ? (
           <Placeholder selected={selected} />
         ) : (
           resolved?.visuals.map((loaded, i) => (
@@ -267,7 +266,7 @@ function NodeVisuals({
       </group>
       {colliders &&
         resolved &&
-        resolved.tier !== 'colliders' &&
+        resolved.source !== 'colliders' &&
         node.colliders.length > 0 && (
           <CollisionVisuals visuals={node.colliders} warn={report} />
         )}
@@ -468,7 +467,7 @@ function SceneContents({
         ?.children.find((child) => child.name === 'visual-group');
       if (
         !group ||
-        group.userData.tier === 'loading' ||
+        group.userData.source === 'loading' ||
         group.children.length === 0
       )
         return;
@@ -483,7 +482,7 @@ function SceneContents({
         }
       });
       return {
-        tier: group.userData.tier,
+        source: group.userData.source,
         visualCount: group.children.length,
         meshCount,
         normalsComplete,
@@ -505,7 +504,7 @@ function SceneContents({
       const object = bodies.current.get(node.streamId);
       const index = client.buffer.indexForKey(node.entityKey);
       if (!object || index === undefined) continue;
-      if (!client.buffer.isMember(node.streamId)) {
+      if (!client.buffer.hasPose(node.streamId)) {
         rendered.current.delete(node.entityKey);
         continue;
       }
@@ -547,7 +546,6 @@ function SceneContents({
         mode={useInstances ? 'instanced' : 'individual'}
         extraBounds={extraBounds}
       />
-      <CameraSubscription client={client} />
       <color attach="background" args={['#172329']} />
       <ambientLight intensity={1.5} />
       <directionalLight position={[3, 6, 3]} intensity={3} />

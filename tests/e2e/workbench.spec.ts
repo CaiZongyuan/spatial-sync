@@ -99,9 +99,7 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     `${snapshot.simTime.toFixed(6)} s`,
   );
   for (let i = 0; i < 3; i++)
-    await expect(page.getByTestId(`world-${['x', 'y', 'z'][i]}`)).toHaveText(
-      expected[i + 1].toFixed(6),
-    );
+    expect(Number(await page.getByTestId(`world-${['x', 'y', 'z'][i]}`).textContent())).toBeCloseTo(expected[i + 1], 5);
   for (let i = 0; i < 4; i++)
     expect(
       Number(await page.getByTestId(`quaternion-${i}`).textContent()),
@@ -212,13 +210,6 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     })
     .toBeLessThan(10);
 
-  const device = manifest.nodes.find(
-    (node) => node.kind === 'group' && /centrifuge/i.test(node.entityKey),
-  );
-  if (device) {
-    await page.getByTestId(`entity-${device.entityKey}`).click();
-    await expect(page.getByTestId('entity-state')).toContainText('rpm');
-  }
   await page.getByRole('button', { name: /Diagnostics/ }).click();
   await expect(page.getByText('Compatibility & asset warnings')).toBeVisible();
   await expect(page.getByText(/Asset unavailable:/).first()).toBeVisible();

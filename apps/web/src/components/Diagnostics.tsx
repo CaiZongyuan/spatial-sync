@@ -93,7 +93,6 @@ export function Diagnostics({
                 `${manifest.nodes.filter((node) => node.kind === 'body').length} / ${manifest.sites.length}`,
               ],
               ['Shapes', source.shapeCount],
-              ['Gather bodies', stats.gatherBodyCount as number],
               ['Readback bodies', stats.readbackBodyCount as number],
               [
                 'Readback bytes',
@@ -128,7 +127,7 @@ export function Diagnostics({
               ],
               ['Published frames', stats.publishedFrames as number],
               ['Received frames', state.receivedFrames],
-              ['Frame format', client.format],
+              ['Frame format', 'binary'],
               ['Malformed binary frames', client.buffer.invalidBinaryFrames],
               [
                 'Received payload',

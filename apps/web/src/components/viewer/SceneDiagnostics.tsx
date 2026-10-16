@@ -37,7 +37,6 @@ declare global {
         appliedBodies: number;
         potentialVisualInstances: number;
         potentialTriangles: number;
-        lowDetailInstances: number;
         drawCalls: number;
         submittedTriangles: number;
         mode: string;
@@ -185,13 +184,11 @@ export function SceneDiagnostics({
       },
       frameStats: () => {
         let potentialVisualInstances = 0,
-          potentialTriangles = 0,
-          lowDetailInstances = 0;
+          potentialTriangles = 0;
         state.scene.traverseVisible((object) => {
           if (!(object instanceof Mesh)) return;
           const instances = object instanceof InstancedMesh ? object.count : 1;
           potentialVisualInstances += instances;
-          if (object.userData.lod === 'low') lowDetailInstances += instances;
           potentialTriangles +=
             (Math.min(
               object.geometry.index?.count ??
@@ -206,7 +203,6 @@ export function SceneDiagnostics({
           ...counts(),
           potentialVisualInstances,
           potentialTriangles,
-          lowDetailInstances,
           drawCalls: state.gl.info.render.calls,
           submittedTriangles: state.gl.info.render.triangles,
           mode,

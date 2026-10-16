@@ -12,35 +12,33 @@ import type { PrimitiveGeometry } from '../protocol';
 /** Newton dimensions and Z axes are converted exactly once, before localPose. */
 export function createPrimitiveGeometry(
   shape: PrimitiveGeometry,
-  detail: 'full' | 'low' = 'full',
 ): BufferGeometry {
-  const low = detail === 'low';
   switch (shape.type) {
     case 'box':
       return new BoxGeometry(
         ...(shape.halfExtents.map((v) => v * 2) as [number, number, number]),
       );
     case 'sphere':
-      return new SphereGeometry(shape.radius, low ? 8 : 24, low ? 6 : 16);
+      return new SphereGeometry(shape.radius, 24, 16);
     case 'capsule':
       return new CapsuleGeometry(
         shape.radius,
         2 * shape.halfHeight,
-        low ? 3 : 6,
-        low ? 8 : 16,
+        6,
+        16,
       ).rotateX(Math.PI / 2);
     case 'cylinder':
       return new CylinderGeometry(
         shape.radius,
         shape.radius,
         2 * shape.halfHeight,
-        low ? 8 : 24,
+        24,
       ).rotateX(Math.PI / 2);
     case 'cone':
       return new ConeGeometry(
         shape.radius,
         2 * shape.halfHeight,
-        low ? 8 : 24,
+        24,
       ).rotateX(Math.PI / 2);
     case 'plane':
       return new PlaneGeometry(shape.width || 100, shape.length || 100);

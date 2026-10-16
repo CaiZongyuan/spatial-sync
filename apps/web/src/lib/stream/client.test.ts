@@ -32,7 +32,24 @@ class Socket {
     this.sent.push(JSON.parse(value));
   }
   emit(message: ServerMessage) {
-    this.onmessage?.({ data: JSON.stringify(message) });
+    if (message.type === 'stream.snapshot' || message.type === 'transform.frame') {
+      const bytes = new ArrayBuffer(44 + message.poses.length * 32);
+      const view = new DataView(bytes);
+      view.setUint32(0, 0x4e59534e, true);
+      view.setUint16(4, 1, true);
+      view.setUint16(6, message.type === 'stream.snapshot' ? 2 : 1, true);
+      view.setUint32(8, message.sceneRevision === 'rev-replaced' ? 2 : 1, true);
+      view.setUint32(12, message.epoch, true);
+      view.setBigUint64(16, BigInt(message.seq), true);
+      view.setFloat64(24, message.simTime, true);
+      view.setFloat64(32, message.sampleTimeMs, true);
+      view.setUint32(40, message.poses.length, true);
+      message.poses.forEach((pose, i) => {
+        view.setUint32(44 + i * 32, pose[0], true);
+        pose.slice(1).forEach((value, j) => view.setFloat32(48 + i * 32 + j * 4, value, true));
+      });
+      this.emitBytes(bytes);
+    } else this.onmessage?.({ data: JSON.stringify(message) });
   }
   emitBytes(bytes: ArrayBuffer) {
     this.onmessage?.({ data: bytes });
@@ -45,7 +62,7 @@ class Socket {
 
 const ready: Ready = {
   type: 'server.ready',
-  protocolVersion: 1,
+  protocolVersion: 2,
   sessionId: fixture.sessionId,
   sceneRevision: fixture.sceneRevision,
   revisionNumericId: 1,
@@ -59,7 +76,7 @@ const ready: Ready = {
 };
 const snapshot: TransformFrame = {
   type: 'stream.snapshot',
-  protocolVersion: 1,
+  protocolVersion: 2,
   sessionId: fixture.sessionId,
   sceneRevision: fixture.sceneRevision,
   epoch: 0,
@@ -84,6 +101,21 @@ const flush = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 };
 
+async function subscribeReady(ws: Socket, message: Ready = ready) {
+  ws.emit(message);
+  await flush();
+  acknowledge(ws);
+  await flush();
+}
+function acknowledge(ws: Socket) {
+  ws.emit({
+    type: 'subscription.ack',
+    requestId: ws.sent.at(-1)!.requestId as string,
+    grantedRateHz: 30,
+    info: true,
+  });
+}
+
 describe('WebSocket lifecycle and authoritative control', () => {
   let client: SessionClient;
   let doc: EventTarget & { visibilityState: string };
@@ -104,7 +136,7 @@ describe('WebSocket lifecycle and authoritative control', () => {
     client = new SessionClient(fixture.sessionId);
     await client.start();
     Socket.instances[0].open();
-    Socket.instances[0].emit(ready);
+    await subscribeReady(Socket.instances[0]);
     Socket.instances[0].emit(snapshot);
     await flush();
   });
@@ -118,21 +150,23 @@ describe('WebSocket lifecycle and authoritative control', () => {
     expect(Socket.instances[0].sent[0]).toMatchObject({
       type: 'client.subscribe',
       sceneRevision: fixture.sceneRevision,
-      scope: 'all',
+      protocolVersion: 2,
+      info: true,
     });
     expect(client.buffer.readLatest('/World/Arm')!.p).toEqual([1, 2, 3]);
   });
 
-  it('negotiates binary, skips malformed input and preserves binary frame before JSON state', async () => {
+  it('receives binary frames, skips malformed input and preserves binary frame before JSON state', async () => {
     client.stop();
-    client = new SessionClient(fixture.sessionId, 'binary');
+    client = new SessionClient(fixture.sessionId);
     await client.start();
     const ws = Socket.instances.at(-1)!;
     ws.open();
-    ws.emit(ready);
+    await subscribeReady(ws);
     await flush();
     expect(ws.binaryType).toBe('arraybuffer');
-    expect(ws.sent[0].format).toBe('binary');
+    expect(ws.sent[0]).not.toHaveProperty('format');
+    expect(ws.sent[0]).not.toHaveProperty('scope');
     const bytes = Uint8Array.from(binaryFixture.hex.match(/../g)!, (hex) =>
       parseInt(hex, 16),
     ).buffer;
@@ -185,7 +219,7 @@ describe('WebSocket lifecycle and authoritative control', () => {
     await vi.advanceTimersByTimeAsync(500);
     const next = Socket.instances.at(-1)!;
     next.open();
-    next.emit(ready);
+    await subscribeReady(next);
     next.emit(snapshot);
     await flush();
     expect(
@@ -220,7 +254,7 @@ describe('WebSocket lifecycle and authoritative control', () => {
     await vi.advanceTimersByTimeAsync(500);
     const next = Socket.instances[1];
     next.open();
-    next.emit({ ...ready, sessionState: 'PAUSED' });
+    await subscribeReady(next, { ...ready, sessionState: 'PAUSED' });
     next.emit(snapshot);
     await flush();
     expect(client.getSnapshot().connection).toBe('connected');
@@ -231,38 +265,12 @@ describe('WebSocket lifecycle and authoritative control', () => {
   it('requests a complete snapshot after visibility restoration and discards old periodic frames', async () => {
     doc.dispatchEvent(new Event('visibilitychange'));
     expect(client.buffer.awaitingSnapshot).toBe(true);
+    acknowledge(Socket.instances[0]);
     Socket.instances[0].emit({ ...snapshot, type: 'transform.frame' });
     Socket.instances[0].emit(snapshot);
     await flush();
     expect(client.buffer.awaitingSnapshot).toBe(false);
     expect(client.buffer.discardedFrames).toBe(1);
-  });
-
-  it('retains unknown device state schemas as raw data and rejects stateSeq rollback', async () => {
-    Socket.instances[0].emit({
-      type: 'entity.state',
-      sessionId: fixture.sessionId,
-      sceneRevision: fixture.sceneRevision,
-      entityKey: '/World',
-      schema: 'future.device/99',
-      stateSeq: 3,
-      simTime: 0.5,
-      payload: { rpm: 3000 },
-    });
-    Socket.instances[0].emit({
-      type: 'entity.state',
-      sessionId: fixture.sessionId,
-      sceneRevision: fixture.sceneRevision,
-      entityKey: '/World',
-      schema: 'future.device/99',
-      stateSeq: 2,
-      simTime: 0.4,
-      payload: { rpm: 0 },
-    });
-    await flush();
-    expect(client.getSnapshot().entities['/World'].payload).toEqual({
-      rpm: 3000,
-    });
   });
 
   it('replaces the manifest and mapping before accepting the new revision snapshot', async () => {
@@ -283,6 +291,7 @@ describe('WebSocket lifecycle and authoritative control', () => {
     });
     await flush();
     await flush();
+    acknowledge(Socket.instances[0]);
     Socket.instances[0].emit(paused);
     Socket.instances[0].emit(snapshot);
     Socket.instances[0].emit({
@@ -297,7 +306,7 @@ describe('WebSocket lifecycle and authoritative control', () => {
     expect(Socket.instances[0].sent.at(-1)).toMatchObject({
       sceneRevision: 'rev-replaced',
     });
-    expect(client.buffer.discardedFrames).toBe(1);
+    expect(client.buffer.invalidBinaryFrames).toBe(1);
   });
 
   it('ignores an obsolete manifest response after stop/start, including StrictMode remounts', async () => {
@@ -312,7 +321,7 @@ describe('WebSocket lifecycle and authoritative control', () => {
     await client.start();
     const activeSocket = Socket.instances.at(-1)!;
     activeSocket.open();
-    activeSocket.emit(ready);
+    await subscribeReady(activeSocket);
     activeSocket.emit(snapshot);
     await flush();
     release(
@@ -326,81 +335,5 @@ describe('WebSocket lifecycle and authoritative control', () => {
     );
     expect(client.buffer.lastSeq).toBe(5);
     expect(client.buffer.awaitingSnapshot).toBe(false);
-  });
-  it('correlates rapid scope acks and rejects old snapshots, then resyncs an unknown delta base once', async () => {
-    const ws = Socket.instances[0];
-    const first = ws.sent.at(-1)!;
-    ws.emit({
-      type: 'subscription.ack',
-      scope: 'all',
-      format: 'json',
-      delta: true,
-      grantedRateHz: 30,
-      requestId: first.requestId as string,
-      subscriptionId: 1,
-    });
-    ws.emit({ ...snapshot, subscriptionId: 1 });
-    await flush();
-    client.setSubscription({
-      scope: 'entities',
-      entityKeys: ['/World/Arm'],
-      delta: true,
-    });
-    const obsolete = ws.sent.at(-1)!;
-    client.setSubscription({
-      scope: 'device',
-      deviceKey: '/World',
-      delta: true,
-    });
-    const current = ws.sent.at(-1)!;
-    ws.emit({
-      type: 'subscription.ack',
-      scope: 'entities',
-      format: 'json',
-      delta: true,
-      grantedRateHz: 30,
-      requestId: obsolete.requestId as string,
-      subscriptionId: 2,
-    });
-    ws.emit({ ...snapshot, subscriptionId: 2, seq: 100 });
-    ws.emit({
-      type: 'subscription.ack',
-      scope: 'device',
-      format: 'json',
-      delta: true,
-      grantedRateHz: 30,
-      requestId: current.requestId as string,
-      subscriptionId: 3,
-    });
-    ws.emit({ ...snapshot, subscriptionId: 3, seq: 6, poses: [] });
-    ws.emit({
-      ...snapshot,
-      type: 'transform.frame',
-      subscriptionId: 2,
-      seq: 101,
-    });
-    await flush();
-    expect(client.getSubscriptionMetrics()).toMatchObject({
-      subscriptionId: 3,
-      scope: 'device',
-      memberIds: [],
-      resyncPending: false,
-    });
-    expect(client.buffer.lastSeq).toBe(6);
-    expect(client.buffer.readLatest('/World/Arm')).toBeUndefined();
-    const before = ws.sent.length;
-    for (let seq = 7; seq < 10; seq++)
-      ws.emit({
-        ...snapshot,
-        type: 'transform.delta',
-        subscriptionId: 3,
-        seq,
-        baseSeq: 5,
-        poses: [],
-        removedStreamIds: [],
-      });
-    await flush();
-    expect(ws.sent).toHaveLength(before + 1);
-    expect(client.getSubscriptionMetrics().resyncCount).toBe(1);
   });
 });

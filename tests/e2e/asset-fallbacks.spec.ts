@@ -63,7 +63,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
       .poll(() =>
         page.evaluate(
           () =>
-            window.__spatialDebug?.inspectVisuals('/World/MovingPart')?.tier,
+            window.__spatialDebug?.inspectVisuals('/World/MovingPart')?.source,
         ),
       )
       .toBe('fallbackVisuals');
@@ -72,7 +72,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
         page.evaluate(
           () =>
             window.__spatialDebug?.inspectVisuals('/World/Equipment/Housing')
-              ?.tier,
+              ?.source,
         ),
       )
       .toBe('visuals');
@@ -87,14 +87,14 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
     const expectedBounds = [
       {
         key: moving.entityKey,
-        tier: 'fallbackVisuals',
+        source: 'fallbackVisuals',
         count: 2,
         min: [0.9, 1.3, -0.1],
         max: [1.1, 1.7, 0.5],
       },
       {
         key: housing.entityKey,
-        tier: 'visuals',
+        source: 'visuals',
         count: 1,
         min: [-1.1, 0, -0.2],
         max: [-0.5, 0.6, 0.2],
@@ -124,7 +124,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
         expected.key,
       );
       expect(visual).toMatchObject({
-        tier: expected.tier,
+        source: expected.source,
         visualCount: expected.count,
         meshCount: expected.count,
         normalsComplete: true,
@@ -157,7 +157,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
       .poll(() =>
         page.evaluate(
           () =>
-            window.__spatialDebug?.inspectVisuals('/World/MovingPart')?.tier,
+            window.__spatialDebug?.inspectVisuals('/World/MovingPart')?.source,
         ),
       )
       .toBe('colliders');
@@ -170,7 +170,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
       window.__spatialDebug!.inspectVisuals('/World/MovingPart'),
     );
     expect(unchanged).toMatchObject({
-      tier: 'colliders',
+      source: 'colliders',
       visualCount: 1,
       meshCount: 1,
     });
@@ -221,7 +221,7 @@ test('real Franka robot renders every simultaneous native visual and exposes its
         node.entityKey,
       );
       expect(visual).toMatchObject({
-        tier: 'visuals',
+        source: 'visuals',
         visualCount: node.visuals.length,
         normalsComplete: true,
       });

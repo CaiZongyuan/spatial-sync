@@ -1,16 +1,13 @@
 import { useEffect, useMemo } from 'react';
-import { useThree } from '@react-three/fiber';
 import {
   Box3,
   Color,
   DoubleSide,
   DynamicDrawUsage,
-  Frustum,
   InstancedMesh,
   Matrix4,
   MeshStandardMaterial,
   Quaternion,
-  Sphere,
   Vector3,
 } from 'three';
 import type { SceneManifest, Primitive, Pose } from '../../lib/protocol';
@@ -24,7 +21,6 @@ export type PhysicalNode = Exclude<
 >;
 interface Entry {
   node: PhysicalNode;
-  visual: Primitive;
   offset?: number;
   local: Matrix4;
   inverse: Matrix4;
@@ -39,8 +35,6 @@ interface Batch {
   mesh?: InstancedMesh;
   packed: Entry[];
   bind: (mesh: InstancedMesh | null) => void;
-  coarse?: boolean;
-  low?: Batch;
 }
 export interface InstanceController {
   apply: (data: Float64Array) => void;
@@ -70,7 +64,7 @@ export function canInstance(node: PhysicalNode, manifest: SceneManifest) {
   );
 }
 
-/** One actual instance matrix owns each drawn primitive; membership packs live slots. */
+/** A packed instance matrix owns each visible primitive and its picking identity. */
 export function InstancedPrimitives({
   nodes,
   client,
@@ -88,22 +82,14 @@ export function InstancedPrimitives({
   controller: React.RefObject<InstanceController | undefined>;
   select: (key: string) => void;
 }) {
-  const camera = useThree((state) => state.camera);
-  const size = useThree((state) => state.size);
-  const adaptive =
-    new URLSearchParams(location.search).get('quality') !== 'full';
   const batches = useMemo(() => {
     const groups = new Map<string, Batch>();
-    const createBatch = (visual: Primitive, coarse = false): Batch => {
+    const createBatch = (visual: Primitive): Batch => {
       const batch: Batch = {
-        geometry: createPrimitiveGeometry(
-          visual.geometry,
-          coarse ? 'low' : 'full',
-        ),
+        geometry: createPrimitiveGeometry(visual.geometry),
         entries: [],
         packed: [],
         bind: () => {},
-        coarse,
       };
       batch.geometry.computeBoundingBox();
       batch.geometry.computeBoundingSphere();
@@ -114,7 +100,6 @@ export function InstancedPrimitives({
           mesh.instanceMatrix.setUsage(DynamicDrawUsage);
           mesh.userData.instanceKey = (slot: number) =>
             batch.packed[slot]?.node.entityKey;
-          mesh.userData.lod = coarse ? 'low' : 'full';
         }
       };
       return batch;
@@ -126,10 +111,6 @@ export function InstancedPrimitives({
         let batch = groups.get(signature);
         if (!batch) {
           batch = createBatch(visual);
-          if (visual.geometry.type !== 'box') {
-            batch.low = createBatch(visual, true);
-            batch.low.entries = batch.entries;
-          }
           groups.set(signature, batch);
         }
         const local = matrix(visual.localPose);
@@ -139,7 +120,6 @@ export function InstancedPrimitives({
             : undefined;
         batch.entries.push({
           node,
-          visual,
           local,
           inverse: local.clone().invert(),
           first: index === 0,
@@ -149,9 +129,7 @@ export function InstancedPrimitives({
           slot: -1,
         });
       }
-    return [...groups.values()].flatMap((batch) =>
-      batch.low ? [batch, batch.low] : [batch],
-    );
+    return [...groups.values()];
   }, [nodes, client]);
   const material = useMemo(
     () =>
@@ -176,11 +154,7 @@ export function InstancedPrimitives({
       scale = new Vector3(),
       value = new Matrix4(),
       read = new Matrix4(),
-      world = new Matrix4(),
-      projection = new Matrix4();
-    const frustum = new Frustum(),
-      sphere = new Sphere(),
-      cameraPoint = new Vector3();
+      world = new Matrix4();
     const allBounds = new Box3(),
       visualBounds = new Box3();
     const base = new Color('#8dabb5'),
@@ -188,7 +162,7 @@ export function InstancedPrimitives({
     const slots = new Map<string, Entry[]>();
     const appliedAt = new Map<string, number>();
     let frame = 0;
-    for (const batch of batches.filter((batch) => !batch.coarse))
+    for (const batch of batches)
       for (const entry of batch.entries) {
         const owned = slots.get(entry.node.entityKey) ?? [];
         owned.push(entry);
@@ -200,17 +174,10 @@ export function InstancedPrimitives({
       bounds: () => allBounds.clone(),
       apply: (data) => {
         frame++;
-        camera.updateMatrixWorld(true);
-        frustum.setFromProjectionMatrix(
-          projection.multiplyMatrices(
-            camera.projectionMatrix,
-            camera.matrixWorldInverse,
-          ),
-        );
         allBounds.makeEmpty();
         for (const batch of batches) batch.packed.length = 0;
         for (const batch of batches) {
-          if (batch.coarse || !batch.mesh) continue;
+          if (!batch.mesh) continue;
           batch.mesh.updateWorldMatrix(true, false);
           for (const entry of batch.entries) {
             entry.slot = -1;
@@ -235,34 +202,12 @@ export function InstancedPrimitives({
                 .copy(batch.geometry.boundingBox!)
                 .applyMatrix4(world),
             );
-            sphere.copy(batch.geometry.boundingSphere!).applyMatrix4(world);
-            // Bounds include VisualLocal and shape extents, so an origin outside
-            // the view never causes a partly visible primitive to disappear.
-            if (!frustum.intersectsSphere(sphere)) {
-              if (entry.first && appliedAt.get(key) !== frame)
-                rendered.current.delete(key);
-              continue;
-            }
-            cameraPoint
-              .copy(sphere.center)
-              .applyMatrix4(camera.matrixWorldInverse);
-            const diameterPx =
-              (sphere.radius *
-                size.height *
-                camera.projectionMatrix.elements[5]) /
-              Math.max(1e-6, -cameraPoint.z);
-            const target =
-              adaptive && selected !== key && diameterPx < 12 && batch.low
-                ? batch.low
-                : batch;
-            const mesh = target.mesh;
-            if (!mesh) continue;
-            const slot = target.packed.length;
-            entry.batch = target;
+            const mesh = batch.mesh;
+            const slot = batch.packed.length;
             entry.slot = slot;
             mesh.setMatrixAt(slot, value);
             mesh.setColorAt(slot, selected === key ? highlight : base);
-            target.packed.push(entry);
+            batch.packed.push(entry);
             if (entry.node.kind === 'body' && appliedAt.get(key) !== frame) {
               // Read the Float32 matrix that will actually be submitted, then
               // remove VisualLocal to recover the protocol's world Body pose.
@@ -303,7 +248,7 @@ export function InstancedPrimitives({
           bounds.union(batch.geometry.boundingBox!.clone().applyMatrix4(value));
         }
         return {
-          tier: 'visuals',
+          source: 'visuals',
           visualCount: owned.length,
           meshCount: owned.length,
           normalsComplete: true,
@@ -315,18 +260,7 @@ export function InstancedPrimitives({
     return () => {
       controller.current = undefined;
     };
-  }, [
-    batches,
-    client,
-    hidden,
-    selected,
-    rendered,
-    controller,
-    nodes,
-    camera,
-    size.height,
-    adaptive,
-  ]);
+  }, [batches, client, hidden, selected, rendered, controller, nodes]);
   return (
     <>
       {batches.map((batch, index) => (
@@ -334,7 +268,6 @@ export function InstancedPrimitives({
           key={index}
           args={[batch.geometry, material, batch.entries.length]}
           ref={batch.bind}
-          frustumCulled={false}
           dispose={null}
           onPointerDown={(event) => {
             const entry =

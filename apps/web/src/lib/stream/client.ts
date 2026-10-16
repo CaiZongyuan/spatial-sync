@@ -2,20 +2,10 @@ import type {
   SceneManifest,
   ServerMessage,
   CommandRequest,
-  EntityState,
-  Subscribe,
 } from '../protocol';
 import { request } from '../api';
 import { validateManifest } from '../validate-manifest';
 import { PoseBuffer } from './pose-buffer';
-
-export type SubscriptionOptions = {
-  scope: Subscribe['scope'];
-  entityKeys?: string[];
-  deviceKey?: string;
-  viewport?: Subscribe['viewport'];
-  delta?: boolean;
-};
 
 export interface ViewState {
   manifest?: SceneManifest;
@@ -27,7 +17,6 @@ export interface ViewState {
   pending: string[];
   commandResult?: string;
   error?: string;
-  entities: Record<string, EntityState>;
   stats: Record<string, unknown>;
   receivedFrames: number;
   payloadBytes: number;
@@ -45,7 +34,6 @@ export class SessionClient {
     actualRtf: 0,
     realtimeFactor: 1,
     pending: [],
-    entities: {},
     stats: {},
     receivedFrames: 0,
     payloadBytes: 0,
@@ -67,18 +55,10 @@ export class SessionClient {
   private receivedFrames = 0;
   private payloadBytes = 0;
   private publishSample?: { frames: number; time: number; revision: unknown };
-  private frameFormat: 'json' | 'binary' = 'json';
-  private requestedScope: SubscriptionOptions = { scope: 'all', delta: true };
-  private acceptedScope: SubscriptionOptions = { scope: 'all', delta: true };
   private pendingSubscription?: string;
-  private staticVisible = new Set<string>();
   private bodyIds = new Map<string, number>();
-  private resyncCount = 0;
 
-  constructor(
-    readonly sessionId: string,
-    readonly format: 'json' | 'binary' = 'json',
-  ) {}
+  constructor(readonly sessionId: string) {}
   getSnapshot = () => this.state;
   getStreamMetrics = () => ({
     timeMs: performance.now(),
@@ -87,7 +67,7 @@ export class SessionClient {
     skippedNonFinite: this.buffer.skippedNonFinite,
     discardedFrames: this.buffer.discardedFrames,
     invalidBinaryFrames: this.buffer.invalidBinaryFrames,
-    frameFormat: this.frameFormat,
+    frameFormat: 'binary',
     revision: this.buffer.revision,
     epoch: this.buffer.epoch,
     seq: this.buffer.lastSeq,
@@ -95,74 +75,10 @@ export class SessionClient {
     connection: this.state.connection,
     socketReadyState: this.ws?.readyState ?? WebSocket.CLOSED,
   });
-  getSubscriptionMetrics = () => ({
-    subscriptionId: this.buffer.subscriptionId,
-    scope: this.acceptedScope.scope,
-    requestedScope: this.requestedScope.scope,
-    delta: this.acceptedScope.delta ?? false,
-    memberIds: this.buffer.memberIds,
-    membershipRevision: this.buffer.membershipRevision,
-    baseSeq: this.buffer.baseSeq,
-    resyncPending:
-      Boolean(this.pendingSubscription) || this.buffer.awaitingSnapshot,
-    resyncCount: this.resyncCount,
-  });
-  setSubscription(options: SubscriptionOptions) {
-    this.requestedScope = { ...options, delta: options.delta ?? true };
-    this.subscribeStream();
-  }
-  usesViewport() {
-    return this.requestedScope.scope === 'viewport';
-  }
-  updateViewport(planes: [number, number, number, number][]) {
-    if (this.requestedScope.scope !== 'viewport' || planes.length !== 6) return;
-    this.requestedScope = {
-      ...this.requestedScope,
-      viewport: {
-        planes: planes as NonNullable<Subscribe['viewport']>['planes'],
-      },
-    };
-    this.subscribeStream();
-  }
   isEntityVisible(entityKey: string): boolean {
-    const manifest = this.state.manifest;
-    if (!manifest) return false;
+    if (!this.state.manifest) return false;
     const streamId = this.bodyIds.get(entityKey);
-    if (streamId !== undefined) return this.buffer.isMember(streamId);
-    if (
-      this.acceptedScope.scope === 'all' ||
-      this.acceptedScope.scope === 'viewport'
-    )
-      return true;
-    return this.staticVisible.has(entityKey);
-  }
-  private resolveStaticVisibility() {
-    const manifest = this.state.manifest;
-    this.staticVisible.clear();
-    if (!manifest) return;
-    const requested =
-      this.acceptedScope.scope === 'device'
-        ? [this.acceptedScope.deviceKey!]
-        : (this.acceptedScope.entityKeys ?? []);
-    for (const key of requested) this.staticVisible.add(key);
-    // Manifest nodes are not required to be topologically sorted.
-    const children = new Map<string, string[]>();
-    for (const node of manifest.nodes) {
-      if (node.parentEntityKey) {
-        const list = children.get(node.parentEntityKey) ?? [];
-        list.push(node.entityKey);
-        children.set(node.parentEntityKey, list);
-      }
-    }
-    const pending = [...requested];
-    while (pending.length) {
-      for (const child of children.get(pending.pop()!) ?? []) {
-        if (!this.staticVisible.has(child)) {
-          this.staticVisible.add(child);
-          pending.push(child);
-        }
-      }
-    }
+    return streamId === undefined || this.buffer.hasPose(streamId);
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -236,7 +152,7 @@ export class SessionClient {
         .map((node) => [node.entityKey, node.streamId]),
     );
     this.buffer.configure(manifest);
-    this.update({ manifest, entities: {}, error: undefined });
+    this.update({ manifest, error: undefined });
   }
 
   private async loadStats() {
@@ -267,7 +183,7 @@ export class SessionClient {
         this.update({ stats, publishedRateHz });
       }
     } catch {
-      /* P0 gateways may not expose the optional P1 diagnostics yet. */
+      /* Preserve the stream if a diagnostics request is temporarily unavailable. */
     }
   }
 
@@ -298,16 +214,12 @@ export class SessionClient {
           if (this.stopped || this.ws !== ws) return;
           if (event.data instanceof ArrayBuffer) {
             if (
-              this.buffer.pushBinary(
-                event.data,
-                performance.now(),
-                Boolean(this.pendingSubscription),
-              )
+              !this.pendingSubscription &&
+              this.buffer.pushBinary(event.data, performance.now())
             ) {
               this.receivedFrames++;
               this.rates.push(performance.now());
             }
-            this.recoverUnknownBase();
             return;
           }
           await this.receive(
@@ -339,32 +251,20 @@ export class SessionClient {
 
   private subscribeStream() {
     if (this.ws?.readyState !== WebSocket.OPEN || !this.state.manifest) return;
-    if (
-      this.requestedScope.scope === 'viewport' &&
-      !this.requestedScope.viewport
-    )
-      return;
     this.buffer.expectSnapshot();
     this.pendingSubscription = crypto.randomUUID();
     this.ws.send(
       JSON.stringify({
         type: 'client.subscribe',
-        protocolVersion: 1,
+        protocolVersion: 2,
         sceneRevision: this.state.manifest.sceneRevision,
-        ...this.requestedScope,
         requestId: this.pendingSubscription,
         rateHz: this.state.manifest.source.basePublishHz,
-        format: this.format,
+        info: true,
       }),
     );
   }
 
-  private recoverUnknownBase() {
-    if (this.buffer.needsResync && !this.pendingSubscription) {
-      this.resyncCount++;
-      this.subscribeStream();
-    }
-  }
   private async receive(message: ServerMessage, generation: number) {
     switch (message.type) {
       case 'server.ready':
@@ -385,24 +285,7 @@ export class SessionClient {
       case 'subscription.ack':
         if (message.requestId !== this.pendingSubscription) break;
         this.pendingSubscription = undefined;
-        this.acceptedScope = { ...this.requestedScope };
-        this.resolveStaticVisibility();
-        this.buffer.acceptSubscription(message.subscriptionId ?? undefined);
         this.buffer.grantedRateHz = message.grantedRateHz;
-        this.frameFormat = message.format ?? 'json';
-        break;
-      case 'transform.frame':
-      case 'stream.snapshot':
-      case 'transform.delta':
-        // Older reliable batches remain FIFO on the wire. Only the latest
-        // requested ack can open the new scope's snapshot barrier.
-        if (this.pendingSubscription && message.subscriptionId !== undefined)
-          break;
-        if (this.buffer.push(message, performance.now())) {
-          this.receivedFrames++;
-          this.rates.push(performance.now());
-        }
-        this.recoverUnknownBase();
         break;
       case 'session.state':
         if (message.sceneRevision !== this.buffer.revision) break;
@@ -438,7 +321,6 @@ export class SessionClient {
         this.buffer.expectSnapshot();
         this.update({
           manifest: undefined,
-          entities: {},
           sessionState: 'LOADING',
         });
         await this.loadManifest();
@@ -455,17 +337,6 @@ export class SessionClient {
               ? 'Command applied'
               : `Command rejected: ${message.reason}`,
         });
-        break;
-      }
-      case 'entity.state': {
-        const current = this.state.entities[message.entityKey];
-        if (
-          message.sceneRevision === this.buffer.revision &&
-          (!current || message.stateSeq > current.stateSeq)
-        )
-          this.update({
-            entities: { ...this.state.entities, [message.entityKey]: message },
-          });
         break;
       }
       case 'server.error':

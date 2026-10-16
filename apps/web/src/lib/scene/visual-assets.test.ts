@@ -2,7 +2,7 @@ import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
 import { expect, it, vi } from 'vitest';
 import type { Visual } from '../protocol';
 import { IDENTITY } from './pose';
-import { resolveVisualTiers } from './visual-tiers';
+import { resolveVisuals } from './visual-assets';
 
 const external: Visual = {
   kind: 'glb',
@@ -36,7 +36,7 @@ it('uses the entire simultaneous native group when the external binding fails, i
     return visual.kind === 'primitive' ? undefined : mesh;
   });
   const warn = vi.fn();
-  const resolved = await resolveVisualTiers(
+  const resolved = await resolveVisuals(
     [
       { name: 'visuals', visuals: [external] },
       { name: 'fallbackVisuals', visuals: [native, primitive] },
@@ -46,7 +46,7 @@ it('uses the entire simultaneous native group when the external binding fails, i
     warn,
     load,
   );
-  expect(resolved!.tier).toBe('fallbackVisuals');
+  expect(resolved!.source).toBe('fallbackVisuals');
   expect(resolved!.visuals.map((item) => item.visual)).toEqual([
     native,
     primitive,
@@ -57,7 +57,7 @@ it('uses the entire simultaneous native group when the external binding fails, i
   resolved!.dispose();
 });
 
-it('disposes partial asset success before switching the entire failed tier', async () => {
+it('disposes partial asset success before switching the entire failed source', async () => {
   const partiallyLoaded = object();
   const mesh = partiallyLoaded.children[0] as Mesh;
   const disposeGeometry = vi.spyOn(mesh.geometry, 'dispose');
@@ -65,7 +65,7 @@ it('disposes partial asset success before switching the entire failed tier', asy
     mesh.material as MeshStandardMaterial,
     'dispose',
   );
-  const resolved = await resolveVisualTiers(
+  const resolved = await resolveVisuals(
     [
       { name: 'visuals', visuals: [native, external] },
       { name: 'colliders', visuals: [primitive] },
@@ -79,7 +79,7 @@ it('disposes partial asset success before switching the entire failed tier', asy
   );
   expect(disposeGeometry).toHaveBeenCalledTimes(1);
   expect(disposeMaterial).toHaveBeenCalledTimes(1);
-  expect(resolved!.tier).toBe('colliders');
+  expect(resolved!.source).toBe('colliders');
   expect(resolved!.visuals.map((item) => item.visual)).toEqual([primitive]);
 });
 
@@ -87,7 +87,7 @@ it('keeps the primary full group exclusively when all its assets load', async ()
   const load = vi.fn(async (visual: Visual) =>
     visual.kind === 'primitive' ? undefined : object(),
   );
-  const resolved = await resolveVisualTiers(
+  const resolved = await resolveVisuals(
     [
       { name: 'visuals', visuals: [external, primitive] },
       { name: 'fallbackVisuals', visuals: [native] },
@@ -97,7 +97,7 @@ it('keeps the primary full group exclusively when all its assets load', async ()
     vi.fn(),
     load,
   );
-  expect(resolved!.tier).toBe('visuals');
+  expect(resolved!.source).toBe('visuals');
   expect(resolved!.visuals.map((item) => item.visual)).toEqual([
     external,
     primitive,
@@ -107,9 +107,9 @@ it('keeps the primary full group exclusively when all its assets load', async ()
   resolved!.dispose();
 });
 
-it('supports mesh collider fallback and reaches a placeholder only after every tier fails', async () => {
+it('supports mesh collider fallback and reaches a placeholder only after every source fails', async () => {
   const mesh = object();
-  const fallback = await resolveVisualTiers(
+  const fallback = await resolveVisuals(
     [
       { name: 'visuals', visuals: [external] },
       { name: 'colliders', visuals: [native] },
@@ -121,10 +121,10 @@ it('supports mesh collider fallback and reaches a placeholder only after every t
       return mesh;
     },
   );
-  expect(fallback!.tier).toBe('colliders');
+  expect(fallback!.source).toBe('colliders');
   expect(fallback!.visuals[0].object).toBe(mesh);
   fallback!.dispose();
-  const placeholder = await resolveVisualTiers(
+  const placeholder = await resolveVisuals(
     [
       { name: 'visuals', visuals: [external] },
       { name: 'fallbackVisuals', visuals: [native] },
@@ -135,11 +135,11 @@ it('supports mesh collider fallback and reaches a placeholder only after every t
       throw new Error('missing');
     },
   );
-  expect(placeholder!.tier).toBe('placeholder');
+  expect(placeholder!.source).toBe('placeholder');
   expect(placeholder!.visuals).toEqual([]);
 });
 
-it('releases assets that finish after unmount and never loads or reports the next tier', async () => {
+it('releases assets that finish after unmount and never loads or reports the next source', async () => {
   const lateObject = object();
   const dispose = vi.spyOn(
     (lateObject.children[0] as Mesh).geometry,
@@ -152,7 +152,7 @@ it('releases assets that finish after unmount and never loads or reports the nex
   const controller = new AbortController();
   const warn = vi.fn();
   const load = vi.fn(() => delayed);
-  const pending = resolveVisualTiers(
+  const pending = resolveVisuals(
     [
       { name: 'visuals', visuals: [external] },
       { name: 'fallbackVisuals', visuals: [native] },

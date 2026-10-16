@@ -21,7 +21,7 @@ test('synthetic diagnostics keep unmeasured shape count and Runner heartbeat unk
   }
 });
 
-test('real Newton diagnostics show measured shapes, narrow readback and live paused heartbeat', async ({ page, request }, info) => {
+test('real Newton diagnostics show measured shapes, full readback and live paused heartbeat', async ({ page, request }, info) => {
   test.skip(process.env.SPATIAL_TEST_NEWTON !== '1', 'Requires the optional Newton environment and an owned API');
   const created = await request.post(`${api}/api/v1/sessions`, {
     data: { sceneId: 'falling-boxes', source: 'newton' }, timeout: 180_000,
@@ -31,22 +31,19 @@ test('real Newton diagnostics show measured shapes, narrow readback and live pau
   const route = `${api}/api/v1/sessions/${sessionId}`;
   try {
     const manifest = await (await request.get(`${route}/scene`)).json();
-    const body = manifest.nodes.find((node: { kind: string }) => node.kind === 'body');
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`/sessions/${sessionId}?format=binary`);
+    await page.goto(`/sessions/${sessionId}`);
     await expect(page.getByTestId('connection-status')).toHaveText('connected');
-    await page.evaluate((key) => window.__spatialDebug!.setSubscription({
-      scope: 'entities', entityKeys: [key], delta: true,
-    }), body.entityKey);
     await page.getByRole('button', { name: 'Diagnostics' }).click();
     await expect(value(page, 'Shapes')).toHaveText(String(manifest.source.shapeCount));
-    await expect(value(page, 'Gather bodies')).toHaveText('1');
-    await expect(value(page, 'Readback bodies')).toHaveText('1');
-    await expect(value(page, 'Readback bytes')).toHaveText('28 B');
+    const stats = await (await request.get(`${route}/stats`)).json();
+    expect(stats.readbackBodyCount).toBe(stats.modelBodyCount);
+    await expect(value(page, 'Readback bodies')).toHaveText(String(stats.modelBodyCount));
+    await expect(value(page, 'Readback bytes')).toHaveText(`${stats.modelBodyCount * 28} B`);
     await expect(value(page, 'Runner heartbeat')).toHaveText(/^\d+ ms ago$/);
     await expect(value(page, 'Gateway heartbeat')).toHaveText(/^\d+ ms ago$/);
-    await page.screenshot({ path: info.outputPath('newton-narrow-diagnostics.png'), fullPage: true });
+    await page.screenshot({ path: info.outputPath('newton-full-diagnostics.png'), fullPage: true });
     await page.getByRole('button', { name: 'Pause simulation' }).click();
     await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
     const paused = await (await request.get(`${route}/stats`)).json();
