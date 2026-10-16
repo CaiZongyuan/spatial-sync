@@ -125,6 +125,28 @@ def test_program_cannot_write_another_entity_even_with_a_retained_context(tmp_pa
     assert host.values()["/bad"]["value"] == 0
 
 
+def test_public_catalog_exports_closed_nested_object_schemas_matching_compiled_validators(tmp_path):
+    nested = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    manifest = definition_root(
+        tmp_path,
+        definition={
+            "type": "counter/v1",
+            "title": "Nested object contract",
+            "properties": {"value": {"schema": nested}},
+            "actions": {"work": {"params": {"config": nested}, "required": ["config"]}},
+        },
+    )
+    catalog = load_catalog(manifest, "test", {CounterProgram.id: CounterProgram}, root=tmp_path)
+    public = catalog.model_dump()["types"]["counter/v1"]
+    assert public["properties"]["value"]["schema"]["additionalProperties"] is False
+    assert public["actions"]["work"]["params"]["config"]["additionalProperties"] is False
+    assert catalog.validate_params("/good", "work", {"config": {"name": "allowed"}}) == {
+        "config": {"name": "allowed"}
+    }
+    with pytest.raises(ValidationError):
+        catalog.validate_params("/good", "work", {"config": {"name": "allowed", "extra": 1}})
+
+
 @pytest.mark.parametrize(
     "mutation", ["duplicate", "missing", "program_type", "bad_config", "unknown_property", "wrong_operator"]
 )

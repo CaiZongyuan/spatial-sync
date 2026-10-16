@@ -24,6 +24,7 @@ class Catalog(BaseModel):
     _properties: dict = PrivateAttr(default_factory=dict)
     _conditions: dict = PrivateAttr(default_factory=dict)
     _configs: dict = PrivateAttr(default_factory=dict)
+    _events: dict = PrivateAttr(default_factory=dict)
 
     def action(self, entity_key, action):
         return self.types[self.entities[entity_key]["type"]]["actions"][action]
@@ -44,6 +45,11 @@ class Catalog(BaseModel):
 
     def program_config(self, entity_key):
         return self._configs[entity_key]
+
+    def validate_event(self, entity_key, event, data):
+        type_id = self.entities[entity_key]["type"]
+        adapter = self._events[type_id, event]
+        return deepcopy(adapter.validate_python(data)) if adapter else deepcopy(data)
 
 
 def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT):
@@ -125,9 +131,10 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT):
                 lambda _, prop, definition=definition: definition["properties"][prop]["schema"],
                 allow_cross_entity=False,
             )
-        for event in definition["events"].values():
-            if event.get("schema") is not None:
-                compile_schema(event["schema"])
+        for name, event in definition["events"].items():
+            catalog._events[type_id, name] = (
+                compile_schema(event["schema"]) if event.get("schema") is not None else None
+            )
     for key, binding in catalog.entities.items():
         actions = catalog.types[binding["type"]]["actions"]
         if set(binding["interlocks"]) - actions.keys():
@@ -154,4 +161,19 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT):
                     validate_config(child)
 
         validate_config(binding["config"])
+    # Publish exactly the schemas used by compiled validators, including nested
+    # object defaults. Compilation above still reads only the authoring subset.
+    for type_id, definition in catalog.types.items():
+        for prop, value in definition["properties"].items():
+            value["schema"] = catalog._properties[type_id, prop].json_schema()
+        for name, action in definition["actions"].items():
+            exported = catalog._params[type_id, name].json_schema()["properties"]
+            action["params"] = {
+                param: exported[param] | ({"unit": schema["unit"]} if "unit" in schema else {})
+                for param, schema in action["params"].items()
+            }
+        for name, event in definition["events"].items():
+            adapter = catalog._events[type_id, name]
+            if adapter is not None:
+                event["schema"] = adapter.json_schema()
     return catalog

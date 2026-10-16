@@ -20,7 +20,7 @@ from packages.protocol.schema import (
 
 from .conditions import evaluate_conditions
 from .diff import PropertyDiff
-from .schema_subset import compile_schema, json_equal
+from .schema_subset import json_equal
 
 TERMINAL = {"succeeded", "failed", "cancelled", "rejected"}
 Reject = InvocationError
@@ -144,17 +144,12 @@ class HostCore:
         self._active, self._recent, self._updates = {}, OrderedDict(), OrderedDict()
         self._events, self._diagnostics = [], []
         self._executing = None
-        self._event_schemas = {}
         for key, binding in catalog.entities.items():
             self._states[key] = EntityValues(key=key, rev=0)
             self._diffs[key] = PropertyDiff(catalog.types[binding["type"]]["properties"])
             self._programs[key] = registry[binding["program"]]()
             self._contexts[key] = Ctx(self, key, catalog.program_config(key))
             self._errors[key] = 0
-            for event, definition in catalog.types[binding["type"]]["events"].items():
-                self._event_schemas[key, event] = (
-                    compile_schema(definition["schema"]) if definition.get("schema") else None
-                )
         self._order = sorted(
             self._programs, key=lambda key: (getattr(self._programs[key], "tick_priority", 100), key)
         )
@@ -185,9 +180,7 @@ class HostCore:
         self._dirty.setdefault(key, {}).update(changed)
 
     def _emit(self, key, name, data):
-        adapter = self._event_schemas[key, name]  # undeclared events are program errors
-        if adapter is not None:
-            adapter.validate_python(data)
+        data = self.catalog.validate_event(key, name, data)  # undeclared events are program errors
         self._events.append(
             EntityEvent(
                 sceneRevision=self.catalog.sceneRevision,
