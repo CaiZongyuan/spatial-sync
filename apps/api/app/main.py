@@ -19,6 +19,7 @@ from pydantic import TypeAdapter, ValidationError
 from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
+from packages.assets.registry import AssetRegistry
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
     ClientMessage,
@@ -52,9 +53,14 @@ def _role(headers, settings: Settings):
     return None
 
 
-def create_app(settings: Settings | None = None, source_factory=default_source_factory) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    source_factory=default_source_factory,
+    asset_registry: AssetRegistry | None = None,
+) -> FastAPI:
     settings = settings or Settings()
     manager = SessionManager(settings, source_factory)
+    asset_registry = asset_registry or AssetRegistry.from_file()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -170,17 +176,21 @@ def create_app(settings: Settings | None = None, source_factory=default_source_f
         return manager.get(session_id).stats()
 
     @app.get("/api/v1/sessions/{session_id}/meshes/{mesh_id}")
-    async def mesh(session_id: str, mesh_id: str):
+    async def mesh(session_id: str, mesh_id: str, request: Request):
         session = manager.get(session_id)
         registered = {
             visual.meshId
             for node in session.scene().nodes
             if node.kind != "group"
-            for visual in [*node.visuals, *node.colliders]
+            for visual in [*node.visuals, *(node.fallbackVisuals or []), *node.colliders]
             if visual.kind == "mesh"
         }
         if mesh_id not in registered:
             raise HTTPException(404, {"code": "asset_missing"})
+        etag = '"' + mesh_id + '"'
+        cache_headers = {"Cache-Control": "public,max-age=31536000,immutable", "ETag": etag}
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=cache_headers)
         try:
             data = await session.source.read_mesh(mesh_id)
         except KeyError as exc:
@@ -188,18 +198,19 @@ def create_app(settings: Settings | None = None, source_factory=default_source_f
         return Response(
             content=data,
             media_type="model/gltf-binary",
-            headers={"Cache-Control": "public,max-age=31536000,immutable"},
+            headers=cache_headers,
         )
 
-    # Empty until an asset is deliberately registered. Never resolve arbitrary user paths.
-    assets: dict[str, tuple[bytes, str]] = {}
-
     @app.get("/api/v1/assets/{asset_id:path}")
-    async def asset(asset_id: str):
-        if asset_id not in assets:
-            raise HTTPException(404, {"code": "asset_missing"})
-        data, media_type = assets[asset_id]
-        return Response(content=data, media_type=media_type, headers={"Cache-Control": "public,max-age=3600"})
+    async def asset(asset_id: str, request: Request):
+        try:
+            value = asset_registry.read(asset_id)
+        except KeyError as exc:
+            raise HTTPException(404, {"code": "asset_missing"}) from exc
+        headers = {"Cache-Control": "public,max-age=3600", "ETag": value.etag}
+        if request.headers.get("if-none-match") == value.etag:
+            return Response(status_code=304, headers=headers)
+        return Response(content=value.data, media_type=value.media_type, headers=headers)
 
     @app.post("/api/v1/sessions/{session_id}/reload")
     async def reload_scene(session_id: str):

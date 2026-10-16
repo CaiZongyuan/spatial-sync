@@ -1,0 +1,2 @@
+# Preserve the exact upstream bytes recorded in the offline robot provenance ledger.
+assets/robots/franka_emika_panda/** -text
