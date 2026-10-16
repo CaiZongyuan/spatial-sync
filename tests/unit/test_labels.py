@@ -15,7 +15,7 @@ def test_missing_names_use_explicit_provenance_and_do_not_guess_from_spelling():
     assert labels.bodies[1].entity_key == "/__unlabeled/body_1"
     assert not labels.bodies[1].stable
     assert labels.shapes[0].entity_key == "/__unlabeled/shape_0"
-    assert [w["code"] for w in labels.warnings] == ["missing_label", "missing_label"]
+    assert [w["code"] for w in labels.warnings] == ["unlabeled_entity", "unlabeled_entity"]
     with pytest.raises(ValueError, match="Missing label"):
         resolve_labels([None], [], [], strict=True)
 

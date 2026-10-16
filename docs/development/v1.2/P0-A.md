@@ -125,3 +125,23 @@ remain assigned to P0-E and are not implied by these tests.
 Recommended spec §17 update for PM: D-01 = Newton 1.7.0 / Warp 1.18.0 / Python 3.13.14,
 Newton `sim` extra resolves MuJoCo and mujoco-warp 3.15.0; D-09 = verified on 1.7.0.
 Add the MJCF hierarchy and missing-label provenance observations to the implementation notes.
+
+## Nonauthor review repairs
+
+PM identified two concrete specification differences in the frozen baseline. Missing-label
+warnings now use the prescribed `unlabeled_entity` code. Anchor generation now reuses a
+same-name Newton Site, comparing normalized entity paths; it rejects names occupied by
+non-Site geometry, ambiguous duplicates, or a Site attached to a different body. Reused
+Sites retain their original local pose and are exported with `role="joint-anchor"`.
+
+The regression tests first reproduced three target assertion failures: the wrong warning
+code, a newly allocated anchor index instead of the existing Site index, and no error for
+non-Site name occupation. After repair, nine affected label/Site/Manifest/simulation tests
+passed. The new real-Newton fixture proves no shape is added, confirms the exported role,
+and independently composes the child Body and Site pose with Warp to recover the known
+world anchor `(1, 0, 1.5)`. Scoped Ruff and whitespace checks passed. GPU execution was
+not repeated because this repair changes construction/identity logic and no device math.
+
+The bounded repair simplification retained one normalized lookup and explicit invalid
+ownership errors. Missing-label provenance forwarding into the actual exporter/source
+remains a P0-E/P1 follow-up; baseline scenes label all entities explicitly.

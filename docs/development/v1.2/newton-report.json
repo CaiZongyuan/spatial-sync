@@ -1,7 +1,7 @@
 ﻿{
     "project":  "Newton Spatial Sync",
     "title":  "Newton baseline development",
-    "snapshotAt":  "2026-10-16T04:06:39.0425902Z",
+    "snapshotAt":  "2026-10-16T04:13:28.9411269Z",
     "task":  {
                  "status":  "partial",
                  "goal":  "P0-A real Newton baseline, exact versions and CPU/CUDA evidence"
@@ -22,7 +22,8 @@
                                           "Python lock and latest stable Newton/Warp proof",
                                           "Real CPU and CUDA falling-box/pendulum smoke",
                                           "FK initialization/reset, import labels, primitive manifest and child Site tests",
-                                          "ViewerViser reference CLI bounded runs"
+                                          "ViewerViser reference CLI bounded runs",
+                                          "Nonauthor review repairs: unlabeled_entity warning, existing anchor Site reuse and collision rejection"
                                       ],
                         "pending":  [
                                         "independent review",

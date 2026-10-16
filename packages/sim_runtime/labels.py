@@ -49,7 +49,7 @@ def resolve_labels(
             if missing:
                 warnings.append(
                     {
-                        "code": "missing_label",
+                        "code": "unlabeled_entity",
                         "entityKey": key,
                         "message": f"{entity_kind}[{index}] has no stable label; generated an index key",
                     }
