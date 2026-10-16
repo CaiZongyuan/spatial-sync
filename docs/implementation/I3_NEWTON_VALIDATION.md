@@ -76,8 +76,9 @@ Execution windows were exclusive with the other developers' performance work.
   Among the latter, 124 retain the expected locations; two transient samples
   (accelerating at 216.67 rpm and decelerating at zero requested rpm) report both
   tubes loose/all slots null and recover at the next sample. These receipts lack
-  matching per-fact-boundary poses, so the transient's physical cause is not
-  proved. All 4078 control ticks
+  matching per-fact-boundary poses for those exact samples; the cause-equivalent
+  short probe below captures and independently checks the physical transient.
+  All 4078 control ticks
   are retained; p95 is 1.062995 ms, actual RTF 1.0014, invalid poses/dropped
   frames zero, declared welds 100/active zero. This measures readback + programs
   + diff + target commit, not solver throughput or gateway latency.
@@ -91,6 +92,25 @@ Execution windows were exclusive with the other developers' performance work.
   STOPPED, gateway stopped and port closed after cleanup. Initial immediate
   post-terminate port check preceded socket shutdown; subsequent explicit
   `portClosedAfterCleanup=true` records verified closure.
+- `transient-facts-raw.json`, `transient-facts-analysis.json` and
+  `transient-facts-receipt.json`: one PM-approved public-Source probe uses real
+  pick/load of both tubes and shortens only steady duration to one second.
+  Each actual fact boundary retains previous/current bottom poses and actual
+  Site parent/local poses. A separate normalized 3×3 rotation-matrix calculation
+  checks local displacement, velocity, world distance, height and tilt against
+  the unchanged literal thresholds. Across 75 spinning fact boundaries there
+  are zero location mismatches; the maximum Port/literal speed difference is
+  1.6043e-8 m/s. All six actions succeed; close reaps the Runner and reader
+  threads in 17.48 wall seconds. Of 150 tube classifications, eleven are loose
+  during six acceleration/deceleration boundaries because actual physical
+  motion/tilt exceeds the thresholds. Steady running's twenty classifications
+  all match slots, with maximum horizontal offset 1.539 mm and relative speed
+  0.000315 m/s. Acceleration reaches 48.35 mm/0.47546 m/s; deceleration includes
+  a tilt cosine of -0.35539 (a transient tilt beyond 90°), recovering before
+  stop. Correct facts do not establish stable physical retention throughout
+  acceleration and braking. This bounded probe is diagnostic evidence, not a
+  replacement for the full twenty-second CLI acceptance or twenty contact
+  trials. The exact original CLI transient samples are not reconstructed.
 - `solver-support-final.json`: tool exit 0. MuJoCo fine-step reference supports
   real motion and contacts, and the actual default-dt 0.5 second support check
   passes. Featherstone is unsupported at both step sizes, with `samplesMs=[]`
