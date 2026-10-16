@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SceneDiagnostics } from './SceneDiagnostics';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import {
@@ -371,6 +372,14 @@ function SceneContents({
       ?.anchorSiteKey ?? selected;
   const bodies = useRef(new Map<number, Group>());
   const physicalNodes = useRef(new Map<string, Group>());
+  const registrationCounts = useCallback(
+    () => ({
+      registeredBodies: bodies.current.size,
+      registeredPhysicalNodes: physicalNodes.current.size,
+      appliedBodies: rendered.current.size,
+    }),
+    [rendered],
+  );
   const elapsed = useRef({ time: 0, frames: 0 });
   const register = (
     key: string,
@@ -458,6 +467,7 @@ function SceneContents({
   });
   return (
     <>
+      <SceneDiagnostics counts={registrationCounts} />
       <color attach="background" args={['#172329']} />
       <ambientLight intensity={1.5} />
       <directionalLight position={[3, 6, 3]} intensity={3} />

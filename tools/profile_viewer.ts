@@ -1,5 +1,5 @@
 /** Real browser/real source baseline. Run with pnpm exec tsx tools/profile_viewer.ts --help. */
-import { chromium, expect } from '@playwright/test';
+import { chromium, expect as baseExpect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -9,6 +9,7 @@ import { parseArgs } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { distribution, summarizeFrames } from './viewer_profile_stats';
 import type { SceneManifest, Snapshot } from '../packages/protocol/types';
+const expect = baseExpect.configure({ timeout: 60_000 });
 
 const { values } = parseArgs({
   options: {
@@ -24,6 +25,10 @@ const { values } = parseArgs({
     output: { type: 'string', default: '.scratch/viewer-profile.json' },
     'scene-file': { type: 'string', multiple: true },
     'allow-development': { type: 'boolean' },
+    format: { type: 'string', default: 'json' },
+    'render-mode': { type: 'string', default: 'individual' },
+    'fit-scene': { type: 'boolean' },
+    'camera-file': { type: 'string' },
   },
 });
 if (values.help) {
@@ -191,7 +196,7 @@ async function main() {
         const startupMs = performance.now() - startCreation;
         const manifest = await api<SceneManifest>(`/sessions/${sid}/scene`);
         const response = await page.goto(
-          `${values.web}/sessions/${encodeURIComponent(sid!)}`,
+          `${values.web}/sessions/${encodeURIComponent(sid!)}?format=${values.format}&render=${values['render-mode']}`,
         );
         const buildMode = (await response!.text()).includes('/@vite/client')
           ? 'development'
@@ -224,24 +229,75 @@ async function main() {
         await page.getByRole('button', { name: 'Pause simulation' }).click();
         await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
         const snapshot = await api<Snapshot>(`/sessions/${sid}/snapshot`);
-        const expected = snapshot.poses.find(
-          (row) => row[0] === bodies[0].streamId,
-        )!;
+        const wireRows = new Map(snapshot.poses.map((row) => [row[0], row]));
+        const references = bodies.map((node) => ({
+          key: node.entityKey,
+          pose: wireRows.get(node.streamId),
+        }));
+        if (references.some((item) => !item.pose))
+          throw new Error('Snapshot omits declared Bodies');
         await page.getByTestId(`entity-${bodies[0].entityKey}`).click();
         await expect(page.getByTestId('inspector-seq')).toHaveText(
           String(snapshot.seq),
         );
-        const actual = await page.evaluate(
-          (key) => window.__spatialDebug!.getRenderedPose(key),
-          bodies[0].entityKey,
-        );
-        const error = Math.max(
-          ...actual!.p.map((value, i) => Math.abs(value - expected[i + 1])),
-        );
-        if (error > 1e-5 || snapshot.poses.length !== bodies.length)
+        const checkPoses = () =>
+          page.evaluate((references) => {
+            let positionMaxErrorM = 0,
+              quaternionMaxError = 0,
+              missing = 0;
+            for (const item of references) {
+              const actual = window.__spatialDebug!.getRenderedPose(item.key);
+              if (!actual || !item.pose) {
+                missing++;
+                continue;
+              }
+              for (let i = 0; i < 3; i++)
+                positionMaxErrorM = Math.max(
+                  positionMaxErrorM,
+                  Math.abs(actual.p[i] - item.pose[i + 1]),
+                );
+              let same = 0,
+                opposite = 0;
+              for (let i = 0; i < 4; i++) {
+                same = Math.max(same, Math.abs(actual.q[i] - item.pose[i + 4]));
+                opposite = Math.max(
+                  opposite,
+                  Math.abs(actual.q[i] + item.pose[i + 4]),
+                );
+              }
+              quaternionMaxError = Math.max(
+                quaternionMaxError,
+                Math.min(same, opposite),
+              );
+            }
+            return {
+              checkedBodyCount: references.length,
+              missing,
+              positionMaxErrorM,
+              quaternionMaxError,
+            };
+          }, references);
+        await expect
+          .poll(async () => {
+            const checked = await checkPoses();
+            return checked.missing
+              ? 1
+              : Math.max(checked.positionMaxErrorM, checked.quaternionMaxError);
+          })
+          .toBeLessThan(1e-4);
+        const correctness = await checkPoses();
+        if (correctness.missing || snapshot.poses.length !== bodies.length)
           throw new Error(
             'The rendered workload failed its authoritative-pose/count precondition',
           );
+        if (values['camera-file']) {
+          const saved = JSON.parse(readFileSync(values['camera-file'], 'utf8'));
+          await page.evaluate(
+            (camera) => window.__spatialRenderDebug!.setCamera(camera),
+            saved.runs[0].camera,
+          );
+        } else if (values['fit-scene'])
+          await page.evaluate(() => window.__spatialRenderDebug!.fitScene());
         await page.getByRole('button', { name: 'Resume simulation' }).click();
         await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
         await sleep(warmupMs);
@@ -271,6 +327,9 @@ async function main() {
         const streamStart = await page.evaluate(() =>
           window.__spatialDebug!.startProfile(),
         );
+        const camera = await page.evaluate(() =>
+          window.__spatialRenderDebug?.camera(),
+        );
         const rawSource: { timeMs: number; stats: any }[] = [];
         const deadline = performance.now() + durationMs;
         while (performance.now() < deadline) {
@@ -285,11 +344,33 @@ async function main() {
         const stopped = await page.evaluate(() => ({
           recording: window.__spatialDebug!.stopProfile(),
           stream: window.__spatialDebug!.getStreamMetrics(),
+          geometry: window.__spatialRenderDebug?.frameStats(),
         }));
         const frames = summarizeFrames(
           stopped.recording.samples,
           stopped.recording.overflow,
         );
+        const physicalCount = manifest.nodes.filter(
+          (node) => node.kind !== 'group',
+        ).length;
+        if (
+          !stopped.geometry ||
+          stopped.geometry.registeredBodies !== bodies.length ||
+          stopped.geometry.appliedBodies !== bodies.length ||
+          stopped.geometry.registeredPhysicalNodes !== physicalCount ||
+          stopped.geometry.potentialVisualInstances < physicalCount
+        )
+          throw new Error(
+            'Registered/applied/renderable workload counts differ from the Manifest',
+          );
+        if (
+          (values['fit-scene'] || values['camera-file']) &&
+          stopped.geometry.submittedTriangles <
+            stopped.geometry.potentialTriangles * 0.99
+        )
+          throw new Error(
+            'Fitted workload was unexpectedly culled; do not count empty drawing as performance',
+          );
         if (
           stopped.stream.sessionState !== 'RUNNING' ||
           stopped.stream.connection !== 'connected' ||
@@ -336,10 +417,13 @@ async function main() {
           ).length,
           initialPoseCount: snapshot.poses.length,
           correctness: {
+            ...correctness,
             sequence: snapshot.seq,
             simTime: snapshot.simTime,
-            positionMaxErrorM: error,
+            referenceRowsSha256: hash(JSON.stringify(snapshot.poses)),
           },
+          camera,
+          geometry: stopped.geometry,
           startupMs,
           warmupMs,
           buildMode,
