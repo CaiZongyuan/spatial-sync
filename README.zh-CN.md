@@ -69,6 +69,28 @@ agent 不能审批调用。
 1,000 条终态，较早结果从同一会话日志读取；历史不可用时返回带原调用 ID 的
 `503 history_unavailable`，保持请求去重。
 
+浏览器启动一个工作区后，可以使用已安装的 `lw`：
+
+```powershell
+uv run --no-sync lw status
+uv run --no-sync lw ls --type centrifuge/v1
+uv run --no-sync lw show /World/Lab/Centrifuge
+uv run --no-sync lw do /World/Lab/Centrifuge closeLid
+uv run --no-sync lw do /World/Lab/Centrifuge start rpm=3000 durationSeconds=30 --wait
+uv run --no-sync lw rec ls --json
+```
+
+`LW_URL` 默认 `http://127.0.0.1:8000`，`LW_SESSION` 可指定会话，否则查找唯一
+活跃会话；远程权限所需 token 由 `LW_TOKEN` 提供。`do` 默认等到终态，
+`--no-wait` 只等待受理。参数值按 JSON 解析，失败时作为字符串。所有命令支持
+`--json`；完整命令见 `lw --help`。退出码：0 成功，1 用法或连接错误，2 被拒绝，
+3 失败或取消，4 等待超时。
+
+`lw mcp` 通过锁定版本的官方 SDK 提供八个通用 stdio 工具。将
+[英文配置示例](README.md#cli-and-mcp) 中的路径替换为仓库绝对路径，即可连接
+Claude Code。连接前先启动工作区；Agent 可读定义、查询、执行、取消、等待和
+控制会话，不能审批。调用记录包含实际 MCP 客户端名称；拒绝会返回条件提示。
+
 测试、端口隔离及清理步骤见 [验证指南](docs/VERIFICATION.md)。基础检查不依赖
 Newton 或 GPU；实际物理另以 CPU/CUDA 检查验证。本地结果不代表外部 CI。
 

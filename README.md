@@ -124,6 +124,46 @@ The recent query window keeps1000 terminal invocations; older exact results are
 read from the session log. An unavailable archived result returns503
 `history_unavailable` with its original invocation ID, preserving deduplication.
 
+## CLI and MCP
+
+Launch one workspace in the browser, then use the installed `lw` entrypoint:
+
+```powershell
+uv run --no-sync lw status
+uv run --no-sync lw ls --type centrifuge/v1
+uv run --no-sync lw show /World/Lab/Centrifuge
+uv run --no-sync lw do /World/Lab/Centrifuge closeLid
+uv run --no-sync lw do /World/Lab/Centrifuge start rpm=3000 durationSeconds=30 --wait
+uv run --no-sync lw rec ls --json
+```
+
+`LW_URL` defaults to `http://127.0.0.1:8000`; `LW_SESSION` selects a session
+instead of discovering the unique active one. `LW_TOKEN` supplies a bearer token
+when required. `do` waits by default; `--no-wait` returns after acceptance.
+Parameter values use JSON, falling back to strings. Use `lw --help` for all
+commands and `--json` for machine output. Exit codes are0 success,1 usage or
+connection error,2 rejection,3 failure/cancellation and4 wait timeout.
+
+`lw mcp` serves eight generic tools over stdio through the pinned official MCP
+SDK. For a Claude Code MCP configuration, replace the repository path below:
+
+```json
+{
+  "mcpServers": {
+    "lab": {
+      "command": "uv",
+      "args": ["--directory", "<absolute-repository-path>", "run", "--no-sync", "lw", "mcp"],
+      "env": {"LW_URL": "http://127.0.0.1:8000"}
+    }
+  }
+}
+```
+
+Start a workspace before connecting. Tools cover discovery, definitions, state,
+actions, invocation reads/cancellation, property waits and session control.
+Approval remains a human operation in Web or CLI. The agent receives Catalog
+instructions and condition hints, and its client name is recorded as its actor.
+
 ## Verification and assets
 
 The [verification guide](docs/VERIFICATION.md) records commands, optional Newton
