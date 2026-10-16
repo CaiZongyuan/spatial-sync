@@ -91,13 +91,15 @@ class TelemetryProgram:
 
 
 def telemetry_rows(changes):
+    """Identical digest rows from typed Source changes or parsed client JSON."""
     for change in changes:
-        key = change["key"]
+        document = isinstance(change, dict)
+        key = change["key"] if document else change.key
         if key.startswith(PREFIX):
-            value = change["values"]["value"]
+            value = change["values"]["value"] if document else change.values["value"]
             if type(value) is not int or value < 0:
                 raise AssertionError("Telemetry did not contain its declared nonnegative integer counter")
-            yield int(key.removeprefix(PREFIX)), change["rev"], value
+            yield int(key.removeprefix(PREFIX)), change["rev"] if document else change.rev, value
 
 
 def update_digest(digest, rows):
@@ -198,7 +200,7 @@ def serve(args):
         async def events(self):
             async for event in super().events():
                 if isinstance(event, EntityObservations):
-                    rows = list(telemetry_rows([change.model_dump() for change in event.changes]))
+                    rows = list(telemetry_rows(event.changes))
                     if rows:
                         self.changes += update_digest(self.digest, rows)
                         self.batches += 1
