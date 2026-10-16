@@ -104,6 +104,31 @@ test('paused replay draws on asset, view and camera changes while idle frames st
     await page.getByLabel('Show Tube 01', { exact: true }).click();
     await expect.poll(() => page.evaluate(key => window.__spatialRenderDebug!.drawnEntities().includes(key), expected.tubeKey)).toBe(true);
 
+    const sample = expected.samples[5];
+    await page.getByLabel('Replay position').evaluate((element, value) => {
+      (element as HTMLInputElement).value = String(value - 1);
+    }, sample.timeMs);
+    await page.getByLabel('Replay position').press('ArrowRight');
+    await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq)).toBe(sample.seq);
+    await expect.poll(async () => {
+      const pose = await page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey);
+      return pose ? Math.max(...pose.p.map((value, index) => Math.abs(value - sample.tubePose.p[index]))) : Infinity;
+    }).toBeLessThan(1e-5);
+    const handKey = '/World/Lab/RobotA/Hand';
+    const handPose = await page.evaluate(key => window.__spatialDebug?.getAuthoritativePose(key), handKey);
+    await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), handKey)).toEqual(handPose);
+    const parentedSite = await page.evaluate(() => {
+      const debug = window.__spatialRenderDebug!;
+      const hand = debug.projectEntity('/World/Lab/RobotA/Hand');
+      const site = debug.projectEntity('/World/Lab/RobotA/tcp');
+      return { hand, site, pickable: site && debug.pick(site.x, site.y).some(hit => hit.key === '/World/Lab/RobotA/tcp') };
+    });
+    expect(parentedSite.hand).toBeTruthy();
+    expect(parentedSite.site).toBeTruthy();
+    expect(parentedSite.site!.x).toBeCloseTo(parentedSite.hand!.x, 6);
+    expect(parentedSite.site!.y).toBeCloseTo(parentedSite.hand!.y, 6);
+    expect(parentedSite.pickable).toBe(true);
+
     // Test projection-only mutation before introducing OrbitControls damping.
     const directCamera = await page.evaluate(async () => {
       const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -182,10 +207,34 @@ test('native End applies the final reliable record at a fractional millisecond d
       };
     };
   });
+  await page.getByRole('button', { name: 'Play replay' }).click();
+  await expect.poll(() => page.getByLabel('Replay position').inputValue().then(Number)).toBeGreaterThan(100);
+  await page.getByLabel('Replay position').press('Home');
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __tailReceipt?: unknown }).__tailReceipt,
+  )).toEqual({ requested: 0, actual: 0, sessionState: 'RUNNING' });
+  await expect.poll(() => page.getByLabel('Replay position').inputValue().then(Number)).toBeGreaterThan(100);
+  const resumed = await page.evaluate(async () => {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    window.__spatialDebug!.startProfile();
+    await frame(); await frame(); await frame();
+    return window.__spatialDebug!.stopProfile();
+  });
+  expect(resumed.samples.length, 'Playing must resume continuous frames after a seek').toBeGreaterThanOrEqual(2);
   await page.getByLabel('Replay position').press('End');
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { __tailReceipt?: { actual: number; sessionState: string } }).__tailReceipt,
   )).toEqual({ requested: Math.ceil(actualDuration), actual: actualDuration, sessionState: 'STOPPED' });
+  await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey)).toEqual(expected.samples.at(-1)!.tubePose);
+  const atEnd = await page.evaluate(async () => {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    await frame(); await frame();
+    window.__spatialDebug!.startProfile();
+    await frame(); await frame(); await frame();
+    return window.__spatialDebug!.stopProfile();
+  });
+  expect(atEnd.samples, 'EOF must draw the final pose and then stop idle redraws').toEqual([]);
   await page.evaluate(() => (window as unknown as { __clearReplayCache: () => void }).__clearReplayCache());
   await page.getByLabel('Replay position').press('Home');
   await expect.poll(() => page.evaluate(() =>
