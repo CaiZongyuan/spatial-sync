@@ -322,7 +322,7 @@ async def raw_connection(server, cert):
     )
 
 
-async def raw_pair(server, cert, token, sid="raw-peer"):
+async def raw_pair(server, cert, token, sid="raw-peer", *, scene="lab-demo", expect_ready=True):
     control, writer = await raw_connection(server, cert)
     await send(writer, JSON, json_bytes(Hello(role="control", token=token)), server.limits)
     _, payload = await receive(control, server.limits, allowed=(JSON,))
@@ -339,12 +339,13 @@ async def raw_pair(server, cert, token, sid="raw-peer"):
     await send(
         writer,
         JSON,
-        json_bytes(Start(sessionId=sid, sceneId="lab-demo", options=SessionOptions())),
+        json_bytes(Start(sessionId=sid, sceneId=scene, options=SessionOptions())),
         server.limits,
     )
-    await receive(control, server.limits, allowed=(JSON,))
-    kind, payload = await receive(control, server.limits, allowed=(FRAME,))
-    assert kind == FRAME and payload[:4] == b"NSYN"
+    if expect_ready:
+        await receive(control, server.limits, allowed=(JSON,))
+        kind, payload = await receive(control, server.limits, allowed=(FRAME,))
+        assert kind == FRAME and payload[:4] == b"NSYN"
     return control, writer, frames, frame_writer, authenticated.ticket
 
 
@@ -416,6 +417,59 @@ async def test_certificate_verification_is_mandatory(tls_material, case):
         with pytest.raises(ssl.SSLCertVerificationError):
             await source.start("lab-demo", SessionOptions())
         assert starts == [] and source.stats()["remoteTasksAlive"] == 0
+
+
+@pytest.mark.parametrize("case", ["unknown-operation", "unknown-command", "invalid-args", "unknown-scene"])
+async def test_authenticated_invalid_operations_never_reach_source_authority(tls_material, case):
+    cert, key, token = tls_material
+    starts, executions, closed = [], [], asyncio.Event()
+
+    class TrackedSynthetic(SyntheticSource):
+        def __init__(self, sid):
+            starts.append(sid)
+            super().__init__(sid)
+
+        async def execute(self, command):
+            executions.append(command)
+            return await super().execute(command)
+
+        async def close(self):
+            await super().close()
+            closed.set()
+
+    async with RunnerServer(
+        ServerConfig(cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic"),
+        source_factory=TrackedSynthetic,
+    ) as server:
+        control, writer, _, frame_writer, _ = await raw_pair(
+            server,
+            cert,
+            token,
+            scene="unregistered-file.usda" if case == "unknown-scene" else "lab-demo",
+            expect_ready=case != "unknown-scene",
+        )
+        try:
+            if case != "unknown-scene":
+                packet = {"kind": "arbitrary_state_write", "token": "rejected"}
+                if case != "unknown-operation":
+                    packet = {
+                        "kind": "command",
+                        "token": "rejected",
+                        "command": {
+                            "requestId": "invalid",
+                            "command": "execute_code" if case == "unknown-command" else "step",
+                            "args": {} if case == "unknown-command" else {"count": 1001},
+                        },
+                    }
+                await send(writer, JSON, json.dumps(packet).encode(), server.limits)
+                await asyncio.wait_for(closed.wait(), 1)
+            await asyncio.wait_for(control.read(), 1)
+            assert control.at_eof() and executions == []
+            if case == "unknown-scene":
+                assert starts == []
+            await eventually(lambda: server.active_sessions == 0)
+        finally:
+            await asyncio.gather(close_stream(writer, 1), close_stream(frame_writer, 1))
 
 
 async def test_unpaired_control_times_out_and_duplicate_frame_cannot_kill_valid_peer(tls_material):
