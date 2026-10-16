@@ -11,11 +11,13 @@ from collections.abc import Callable
 
 from fastapi import HTTPException
 
+from apps.api.app.delta_stream import DeltaBaseline
 from apps.api.app.settings import Settings
 from apps.api.app.sources.base import SpatialSource
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
+from apps.api.app.subscription_scope import ScopeResolver
 from packages.protocol.internal import SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
@@ -30,10 +32,12 @@ from packages.protocol.schema import (
     SessionState,
     Subscribe,
     SubscriptionAck,
+    TransformDelta,
     TransformFrame,
     validate_command_args,
 )
 from packages.transport import FrameCodec
+from packages.transport.scoped_frames import encode_scoped_frame
 
 SCENES = [
     {
@@ -93,6 +97,8 @@ class Session:
         self.payload_bytes = 0
         self.error: dict | None = None
         self._auto_paused = False
+        self._scope_resolver: ScopeResolver | None = None
+        self._next_keyframe_at = 0.0
 
     async def start(self):
         self.state = "LOADING"
@@ -104,6 +110,8 @@ class Session:
                 raise ValueError("source manifest sessionId does not match the session")
             self._revision_number += 1
             self.manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number})
+            self._scope_resolver = ScopeResolver(self.manifest)
+            self._next_keyframe_at = time.monotonic() + 1
             self.state, self.error = "RUNNING", None
             self._auto_paused = False
             self._cache_frame(self.latest_frame())
@@ -249,12 +257,14 @@ class Session:
                     ):
                         raise ValueError("Source replaced a scene without exposing its new Manifest")
                     self.manifest = manifest
+                    self._scope_resolver = ScopeResolver(manifest)
                     self._revision_number = event.revisionNumericId
                     self.entity_states.clear()
                     self._cache_frame(self.latest_frame())
                     for client in self.clients:
                         client.subscribed = False
                         client.latest = None
+                        client.delta_baseline = None
                 self.broadcast(event)
             if self.state in ("RUNNING", "PAUSED"):
                 self.fail("Source event stream ended")
@@ -320,30 +330,81 @@ class Session:
     def broadcast_frame(self, frame: TransformFrame, reliable: bool):
         if reliable:
             self._log_event(frame.type)
-        encoded = {}
+        now = time.monotonic()
+        keyframe_due = now >= self._next_keyframe_at
+        if keyframe_due:
+            self._next_keyframe_at = now + 1
+        selected, encoded = {}, {}
         self._last_published_seq = max(self._last_published_seq, frame.seq)
         self.published_frames += 1
         for client in tuple(self.clients):
             if not client.subscribed:
                 continue
-            scope = client.stream_ids
-            key = (scope, client.frame_format)
-            if key not in encoded:
-                scoped = (
-                    frame
-                    if scope is None
-                    else frame.model_copy(update={"poses": [row for row in frame.poses if row[0] in scope]})
+            scope = client.scope_filter
+            scope_key = scope.key
+            if scope_key not in selected:
+                selected[scope_key] = scope.select(frame.poses)
+            scoped = frame.model_copy(
+                update={
+                    "poses": selected[scope_key],
+                    "subscriptionId": client.subscription_id if client.scoped_wire else None,
+                    "keyframe": True if client.scoped_wire else None,
+                }
+            )
+            baseline = client.delta_baseline
+            full = (
+                reliable
+                or not client.delta_enabled
+                or keyframe_due
+                or baseline is None
+                or baseline.frame.epoch != frame.epoch
+                or baseline.frame.sceneRevision != frame.sceneRevision
+            )
+            # A control may return an already observed sample. It still carries a full
+            # reliable frame before its ack/state; a delta must strictly follow its base.
+            if not full and frame.seq <= baseline.frame.seq:
+                continue
+            if full:
+                message = scoped
+                if client.delta_enabled:
+                    client.delta_baseline = DeltaBaseline(scoped)
+            else:
+                delta = baseline.difference(scoped)
+                message = TransformDelta.model_construct(
+                    type="transform.delta",
+                    sessionId=frame.sessionId,
+                    sceneRevision=frame.sceneRevision,
+                    epoch=frame.epoch,
+                    seq=frame.seq,
+                    simTime=frame.simTime,
+                    sampleTimeMs=frame.sampleTimeMs,
+                    subscriptionId=client.subscription_id,
+                    baseSeq=delta.base_seq,
+                    poses=delta.poses,
+                    removedStreamIds=delta.removed_stream_ids,
                 )
-                encoded[key] = self._encode_frame(scoped, client.frame_format)
+            key = (
+                scope_key,
+                client.frame_format,
+                message.subscriptionId,
+                message.type,
+                None if full else message.baseSeq,
+            )
+            if key not in encoded:
+                encoded[key] = self._encode_frame(message, client.frame_format)
                 payload = encoded[key]
                 self.payload_bytes += len(payload.encode("utf-8") if isinstance(payload, str) else payload)
-            if reliable:
-                client.enqueue_reliable(encoded[key], seq=frame.seq)
+            if reliable or (keyframe_due and client.delta_enabled):
+                client.enqueue_reliable(
+                    encoded[key], seq=frame.seq, force=True, subscription_id=client.subscription_id
+                )
             else:
-                client.offer_frame(encoded[key], frame.seq)
+                client.offer_frame(encoded[key], frame.seq, client.subscription_id)
 
-    def _encode_frame(self, frame: TransformFrame, format_name: str) -> str | bytes:
+    def _encode_frame(self, frame, format_name: str) -> str | bytes:
         if format_name == "binary":
+            if frame.subscriptionId is not None:
+                return encode_scoped_frame(frame, self.manifest.revisionNumericId)
             # Source-local IPC revision/seq differ after a gateway-owned reload.
             return FrameCodec(
                 self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
@@ -464,70 +525,83 @@ class Session:
         if request.sceneRevision != self.manifest.sceneRevision:
             client.enqueue_reliable(
                 encode(
-                    ServerError(code="revision_mismatch", message="Reload the Manifest before subscribing")
+                    ServerError(
+                        code="revision_mismatch",
+                        message="Reload the Manifest before subscribing",
+                        requestId=request.requestId,
+                    )
                 )
             )
             return
-        scope = None
-        if request.scope == "entities":
-            all_entities = {
-                x.entityKey for x in [*self.manifest.nodes, *self.manifest.sites, *self.manifest.joints]
-            }
-            requested = set(request.entityKeys)
-            if not requested <= all_entities:
-                client.enqueue_reliable(
-                    encode(
-                        ServerError(code="invalid_subscription", message="Unknown entityKey in subscription")
+        try:
+            scope = self._scope_resolver.resolve(
+                request.scope,
+                entity_keys=request.entityKeys,
+                device_key=request.deviceKey,
+                viewport_planes=request.viewport.planes if request.viewport else (),
+            )
+        except ValueError as exc:
+            client.enqueue_reliable(
+                encode(
+                    ServerError(
+                        code="invalid_subscription",
+                        message=str(exc),
+                        requestId=request.requestId,
                     )
                 )
-                return
-            body_keys = set(requested)
-            for site in self.manifest.sites:
-                if site.entityKey in requested:
-                    body_keys.add(site.parentBodyKey)
-            for joint in self.manifest.joints:
-                if joint.entityKey in requested:
-                    body_keys.add(joint.childBodyKey)
-            parents = {node.entityKey: node.parentEntityKey for node in self.manifest.nodes}
-            for node in self.manifest.nodes:
-                parent = node.parentEntityKey
-                while parent is not None:
-                    if parent in requested:
-                        body_keys.add(node.entityKey)
-                        break
-                    parent = parents[parent]
-            scope = frozenset(
-                node.streamId
-                for node in self.manifest.nodes
-                if node.kind == "body" and node.entityKey in body_keys
             )
-        client.stream_ids = scope
+            return
+        client.subscription_id += 1
+        client.scoped_wire = request.delta or request.requestId is not None
+        client.scope_filter = scope
+        client.stream_ids = scope.stream_ids
+        client.delta_enabled = request.delta
+        client.delta_baseline = None
         client.granted_rate_hz = min(max(request.rateHz, 1), self.options.basePublishHz)
         client.frame_format = request.format
         client.subscribed = True
+        # Only the lossy periodic slot is discarded. Reliable FIFO preserves earlier
+        # command frame -> ack -> state, then this ack -> snapshot barrier.
         client.latest = None
         client.enqueue_reliable(
             encode(
                 SubscriptionAck(
-                    scope=request.scope, grantedRateHz=client.granted_rate_hz, format=request.format
+                    scope=request.scope,
+                    grantedRateHz=client.granted_rate_hz,
+                    format=request.format,
+                    delta=request.delta,
+                    requestId=request.requestId,
+                    subscriptionId=client.subscription_id if client.scoped_wire else None,
                 )
             )
         )
         frame = self.latest_frame()
         if frame is None:
             client.enqueue_reliable(
-                encode(ServerError(code="session_not_ready", message="No published snapshot yet"))
+                encode(
+                    ServerError(
+                        code="session_not_ready",
+                        message="No published snapshot yet",
+                    )
+                )
             )
             return
         snapshot = frame.model_copy(
             update={
                 "type": "stream.snapshot",
-                "poses": frame.poses if scope is None else [row for row in frame.poses if row[0] in scope],
+                "poses": scope.select(frame.poses),
+                "subscriptionId": client.subscription_id if client.scoped_wire else None,
+                "keyframe": True if client.scoped_wire else None,
             }
         )
-        # A re-subscription deliberately permits a complete snapshot at the same seq.
+        if client.delta_enabled:
+            client.delta_baseline = DeltaBaseline(snapshot)
+        # Re-subscription deliberately permits a complete snapshot at the same seq.
         client.enqueue_reliable(
-            self._encode_frame(snapshot, client.frame_format), seq=snapshot.seq, force=True
+            self._encode_frame(snapshot, client.frame_format),
+            seq=snapshot.seq,
+            force=True,
+            subscription_id=client.subscription_id,
         )
         for event in self.entity_states.values():
             client.enqueue_reliable(encode(event))
@@ -629,6 +703,10 @@ class Session:
                     "subscribed": c.subscribed,
                     "grantedRateHz": c.granted_rate_hz,
                     "format": c.frame_format,
+                    "scope": c.scope_filter.key[0] if c.scope_filter else None,
+                    "subscriptionId": c.subscription_id,
+                    "delta": c.delta_enabled,
+                    "baseSeq": c.delta_baseline.frame.seq if c.delta_baseline else None,
                     "reliableQueueDepth": c.reliable.qsize(),
                     "droppedFrames": c.dropped_frames,
                     "sentMessages": c.sent_messages,
@@ -661,6 +739,7 @@ class Session:
             for client in self.clients:
                 client.subscribed = False
                 client.latest = None
+                client.delta_baseline = None
             await self.start()
             self.broadcast(
                 SceneReplaced(

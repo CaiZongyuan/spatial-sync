@@ -92,6 +92,11 @@ export function Inspector({
           </span>
           <h3>{node?.name ?? selected.split('/').at(-1)}</h3>
           <code className="entity-key">{selected}</code>
+          {!pose && (node?.kind === 'body' || site || joint) && (
+            <p className="field-note" data-testid="pose-unavailable">
+              Pose unavailable in the current subscription.
+            </p>
+          )}
           {pose && (
             <section className="inspector-section">
               <div className="section-label">

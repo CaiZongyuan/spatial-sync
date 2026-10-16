@@ -30,7 +30,7 @@ test('all Python-produced events validate against generated TS-side schemas', ()
     assert.ok(check(message), ajv.errorsText(check.errors))
     observed.add(message.type)
   }
-  assert.equal(observed.size, 12)
+  assert.equal(observed.size, 13)
   // These assignments prove the exported consumer-facing types are usable.
   const frame = messages.find(message => message.type === 'stream.snapshot')
   assert.ok(server(frame))
