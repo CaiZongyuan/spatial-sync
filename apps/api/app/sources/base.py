@@ -1,0 +1,25 @@
+from collections.abc import AsyncIterator
+from typing import Protocol
+
+from packages.protocol.internal import CommandResult, JointState, SessionOptions
+from packages.protocol.schema import (
+    Command,
+    EntityState,
+    SceneManifest,
+    SceneReplaced,
+    ServerError,
+    SessionState,
+    TransformFrame,
+)
+
+SourceEvent = SessionState | SceneReplaced | EntityState | ServerError
+
+
+class SpatialSource(Protocol):
+    async def start(self, scene_id: str, options: SessionOptions) -> SceneManifest: ...
+    def latest_frame(self) -> TransformFrame | None: ...
+    def events(self) -> AsyncIterator[SourceEvent]: ...
+    async def execute(self, command: Command) -> CommandResult: ...
+    async def query_joint_state(self, joint_key: str) -> JointState: ...
+    async def read_mesh(self, mesh_id: str) -> bytes: ...
+    async def close(self) -> None: ...
