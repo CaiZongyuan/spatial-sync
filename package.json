@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
+    "dev": "pnpm --filter @spatial-sync/web dev",
+    "build": "pnpm --filter @spatial-sync/web build",
+    "test:web": "pnpm --filter @spatial-sync/web test",
+    "test:e2e": "pnpm --filter @spatial-sync/web test:e2e",
     "protocol:generate": "uv run --no-project --python 3.13 --with pydantic==2.12.4 python packages/protocol/scripts/export_schema.py && node packages/protocol/scripts/generate_types.mjs",
     "protocol:check": "pnpm protocol:generate && git diff --exit-code -- packages/protocol/types packages/protocol/fixtures",
     "test:protocol:python": "uv run --no-project --python 3.13 --with pydantic==2.12.4 --with pytest==8.4.2 python -m pytest tests/contract tests/unit/test_protocol_math.py",
@@ -11,6 +15,7 @@
     "test:protocol": "pnpm test:protocol:python && pnpm test:protocol:ts"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/node": "22.18.6",
     "ajv": "8.17.1",
     "json-schema-to-typescript": "15.0.4",
