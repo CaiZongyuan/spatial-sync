@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -36,7 +37,7 @@ async def gathered(source, expected, after):
 
 
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)])
-async def test_real_gateway_union_http_expansion_viewport_reset_and_failed_reconnect(device):
+async def test_real_gateway_union_http_expansion_viewport_reset_and_failed_reconnect(device, monkeypatch):
     wp.init()
     if device.startswith("cuda") and not wp.is_cuda_available():
         pytest.skip("CUDA unavailable")
@@ -62,6 +63,12 @@ async def test_real_gateway_union_http_expansion_viewport_reset_and_failed_recon
 
         selected = await select(first, bodies[0], "one")
         await gathered(source, {bodies[0].streamId}, selected["seq"])
+        captures = AsyncMock(wraps=source.snapshot)
+        interests = AsyncMock(wraps=source.set_interest)
+        commands = AsyncMock(wraps=source.execute)
+        monkeypatch.setattr(source, "snapshot", captures)
+        monkeypatch.setattr(source, "set_interest", interests)
+        monkeypatch.setattr(source, "execute", commands)
         before = source.latest_frame()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as http:
             route = f"/api/v1/sessions/{session.session_id}"
@@ -70,11 +77,23 @@ async def test_real_gateway_union_http_expansion_viewport_reset_and_failed_recon
             full = response.json()
             assert {row[0] for row in full["poses"]} == all_ids
             assert full["seq"] > before.seq and full["simTime"] >= before.simTime
+            await gathered(source, {bodies[0].streamId}, full["seq"])
+            calls = (captures.await_count, interests.await_count, commands.await_count)
             pose = (await http.get(route + "/pose", params={"key": bodies[1].entityKey})).json()
-            assert pose["seq"] > full["seq"] and len(pose["p"]) == 3
+            expected = next(row for row in full["poses"] if row[0] == bodies[1].streamId)
+            assert (pose["seq"], pose["simTime"], pose["epoch"], pose["sceneRevision"]) == (
+                full["seq"], full["simTime"], full["epoch"], full["sceneRevision"],
+            )
+            assert pose["p"] == pytest.approx(expected[1:4], abs=1e-6)
+            assert pose["q"] == pytest.approx(expected[4:8], abs=1e-6)
+            await asyncio.sleep(0.03)
+            aged = (await http.get(route + "/pose", params={"key": bodies[1].entityKey})).json()
+            assert aged["seq"] == full["seq"] and aged["staleMs"] > pose["staleMs"]
+            assert (captures.await_count, interests.await_count, commands.await_count) == calls
             stats = (await http.get(route + "/stats")).json()
             assert stats["counts"]["shapes"] == session.manifest.source.shapeCount
             assert stats["counts"]["shapes"] > len(bodies)
+            assert stats["readbackBodyCount"] == 1 and stats["readbackBytes"] == 28
         await gathered(source, {bodies[0].streamId}, pose["seq"])
         messages(first)
         expanded = await select(second, bodies[1], "two")

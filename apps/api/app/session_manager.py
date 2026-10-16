@@ -827,7 +827,14 @@ class Session:
             self.fail(str(exc))
 
     async def pose(self, key: str):
-        frame = await self.snapshot()
+        # Pose is a read model: observing published bytes must not request a
+        # fresh Runner capture or merge partial rows into a complete sample.
+        latest = self.latest_frame()
+        if latest is not None and self._is_complete(latest):
+            self._cache_frame(latest)
+        frame = self._complete_frame
+        if frame is None or not self._is_complete(frame):
+            raise HTTPException(503, {"code": "session_not_ready"})
         poses = {row[0]: {"p": list(row[1:4]), "q": list(row[4:8])} for row in frame.poses}
         nodes = {node.entityKey: node for node in self.manifest.nodes}
         node = nodes.get(key)

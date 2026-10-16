@@ -18,6 +18,16 @@ class RecordingSource(SyntheticSource):
     def __init__(self, session_id):
         super().__init__(session_id)
         self.interests = []
+        self.snapshot_calls = 0
+        self.execute_calls = 0
+
+    async def snapshot(self):
+        self.snapshot_calls += 1
+        return await super().snapshot()
+
+    async def execute(self, command):
+        self.execute_calls += 1
+        return await super().execute(command)
 
     async def set_interest(self, ids):
         frame = await super().set_interest(ids)
@@ -71,7 +81,7 @@ async def test_observer_union_complete_http_freshness_and_honest_failed_recovery
             excluded = next(row for row in full["poses"] if row[0] == 31)
             assert excluded[3] == pytest.approx(0.5 + 0.15 * math.sin(full["simTime"]), abs=1e-6)
             pose = (await http.get(route + "/pose", params={"key": "/World/Lab/FallbackBox"})).json()
-            assert pose["seq"] > full["seq"]
+            assert (pose["seq"], pose["simTime"]) == (full["seq"], full["simTime"])
             assert pose["p"][2] == pytest.approx(0.5 + 0.15 * math.sin(pose["simTime"]), abs=1e-6)
         await wait_partial(source, {1}, pose["seq"])
 
@@ -178,3 +188,45 @@ async def test_invalid_initial_interest_barrier_cannot_replace_a_valid_revision_
             retained.sceneRevision, retained.seq, retained.simTime, retained.poses,
         )
         assert session.source is None and sources[1]._state == "STOPPED"
+
+
+async def test_running_narrow_pose_reads_complete_cache_without_any_source_control_and_age_increases():
+    app = create_app(Settings(), lambda kind, sid: RecordingSource(sid))
+    async with app.router.lifespan_context(app):
+        session = await app.state.manager.create("lab-demo", "synthetic", SessionOptions())
+        source = session.source
+        client = ClientConnection(None, session.settings)
+        session.clients.add(client)
+        await session.observer_subscribe(
+            client,
+            Subscribe(
+                sceneRevision=session.manifest.sceneRevision, scope="entities",
+                entityKeys=["/World/Lab/Robot/Link1"], requestId="narrow",
+            ),
+        )
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as http:
+            route = f"/api/v1/sessions/{session.session_id}"
+            full = (await http.get(route + "/snapshot")).json()
+            await wait_partial(source, {1}, full["seq"])
+            calls = (source.snapshot_calls, source.execute_calls, list(source.interests))
+            expected = next(row for row in full["poses"] if row[0] == 31)
+            first = (await http.get(route + "/pose", params={"key": "/World/Lab/FallbackBox"})).json()
+            assert (source.snapshot_calls, source.execute_calls, source.interests) == calls
+            await asyncio.sleep(0.03)
+            second = (await http.get(route + "/pose", params={"key": "/World/Lab/FallbackBox"})).json()
+            assert second["staleMs"] > first["staleMs"]
+            for pose in (first, second):
+                assert (pose["seq"], pose["simTime"], pose["epoch"], pose["sceneRevision"]) == (
+                    full["seq"], full["simTime"], full["epoch"], full["sceneRevision"],
+                )
+                assert pose["p"] == pytest.approx(expected[1:4], abs=1e-6)
+                assert pose["q"] == pytest.approx(expected[4:8], abs=1e-6)
+                assert pose["seq"] < source.latest_frame().seq
+            missing = await http.get(route + "/pose", params={"key": "/missing"})
+            assert missing.status_code == 404 and missing.json()["detail"]["code"] == "unknown_entity"
+            session._complete_frame = None
+            unavailable = await http.get(route + "/pose", params={"key": "/World/Lab/FallbackBox"})
+            assert unavailable.status_code == 503
+            assert unavailable.json()["detail"]["code"] == "session_not_ready"
+            assert (source.snapshot_calls, source.execute_calls, source.interests) == calls
+        assert session.state == "RUNNING"
