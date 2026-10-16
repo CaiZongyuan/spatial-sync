@@ -9,6 +9,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 
+from apps.api.app.sources import stress_scene
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
@@ -48,14 +49,24 @@ class SyntheticSource:
         self._actual_rtf = 0.0
 
     async def start(self, scene_id: str, options: SessionOptions) -> SceneManifest:
-        if scene_id != "lab-demo":
+        if scene_id != "lab-demo" and scene_id not in stress_scene.STRESS_SCENES:
             raise ValueError("unknown synthetic scene")
+        self._stress_counts = stress_scene.STRESS_SCENES.get(scene_id)
         self.options = options.model_copy()
-        self.manifest = self._manifest()
+        self.manifest = (
+            stress_scene.manifest(self.session_id, "rev-" + uuid.uuid4().hex, scene_id, options)
+            if self._stress_counts
+            else self._manifest()
+        )
         self._state = "RUNNING"
         self._publish("stream.snapshot")
         self._last_clock = time.monotonic()
         self._task = asyncio.create_task(self._run(), name=f"synthetic-{self.session_id}")
+        if not self._stress_counts:
+            self._device_state()
+        return self.manifest
+
+    def _device_state(self):
         self._events.put_nowait(
             EntityState(
                 sessionId=self.session_id,
@@ -67,7 +78,6 @@ class SyntheticSource:
                 payload={"running": True, "lidOpen": False, "rpm": 1200},
             )
         )
-        return self.manifest
 
     @property
     def sim_time(self) -> float:
@@ -125,6 +135,8 @@ class SyntheticSource:
         return self._latest
 
     def _poses(self):
+        if self._stress_counts:
+            return stress_scene.poses(self.sim_time, *self._stress_counts)
         t = self.sim_time
         a, b = 0.45 * math.sin(t), 0.6 * math.sin(t * 0.7 + 0.5)
         first = {"p": [0, 0, 0.65], "q": [0, math.sin(a / 2), 0, math.cos(a / 2)]}

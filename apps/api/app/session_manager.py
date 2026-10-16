@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from apps.api.app.settings import Settings
 from apps.api.app.sources.base import SpatialSource
+from apps.api.app.sources.stress_scene import STRESS_SCENES
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
@@ -45,6 +46,15 @@ SCENES = [
     {"sceneId": "falling-boxes", "name": "Newton Falling Boxes", "sources": ["newton"]},
     {"sceneId": "robot-and-tubes", "name": "Newton Robot and Tubes", "sources": ["newton"]},
     {"sceneId": "usd-lab", "name": "Newton USD Laboratory", "sources": ["newton"]},
+]
+SCENES += [
+    {
+        "sceneId": scene_id,
+        "name": f"Synthetic stress · {moving} moving / {static} static",
+        "sources": ["synthetic"],
+        "description": "Deterministic kinematic load fixture; no physical solver or GPU",
+    }
+    for scene_id, (moving, static) in STRESS_SCENES.items()
 ]
 
 
