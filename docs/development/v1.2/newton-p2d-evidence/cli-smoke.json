@@ -1,0 +1,47 @@
+{
+  "source": "synthetic",
+  "apiPort": 8008,
+  "runnerPort": 8766,
+  "boundary": "independent CLI TLS host and Uvicorn Gateway processes on loopback",
+  "browser": false,
+  "credentials": "generated for this run; values and private key excluded",
+  "tlsVersion": "TLSv1.3",
+  "certificateSha256": "5a0d71d27ccedc67ed07bc62b72bc64b01f0e73184fd7c1564adc8293f649d57",
+  "processes": {
+    "client": 40552,
+    "runnerHost": 42696,
+    "gateway": 33360
+  },
+  "bodies": 24,
+  "sampleTimeClock": "gateway-receive",
+  "commands": [
+    {
+      "command": "pause",
+      "seq": 2,
+      "epoch": 0,
+      "simTime": 0.0125
+    },
+    {
+      "command": "step",
+      "seq": 3,
+      "epoch": 0,
+      "simTime": 0.016666666666666666
+    },
+    {
+      "command": "reset",
+      "seq": 4,
+      "epoch": 1,
+      "simTime": 0.0
+    },
+    {
+      "command": "resume",
+      "seq": 5,
+      "epoch": 1,
+      "simTime": 0.0
+    }
+  ],
+  "passed": true,
+  "ownedProcessesStopped": true,
+  "temporaryCredentialsRemoved": true,
+  "savedAtEpochSeconds": 1792148294.1704829
+}

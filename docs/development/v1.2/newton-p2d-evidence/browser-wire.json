@@ -1,0 +1,33 @@
+{
+  "binaryFrames": 44,
+  "jsonFrames": 7,
+  "jsonCommands": 3,
+  "binary": {
+    "timeMs": 4980,
+    "receivedFrames": 42,
+    "payloadBytes": 41724,
+    "skippedNonFinite": 0,
+    "discardedFrames": 2,
+    "invalidBinaryFrames": 0,
+    "frameFormat": "binary",
+    "revision": "rev-f4015827d7e0",
+    "epoch": 0,
+    "seq": 96,
+    "sessionState": "RUNNING",
+    "connection": "connected"
+  },
+  "json": {
+    "timeMs": 4868.79999999702,
+    "receivedFrames": 52,
+    "payloadBytes": 69879,
+    "skippedNonFinite": 0,
+    "discardedFrames": 0,
+    "invalidBinaryFrames": 0,
+    "frameFormat": "json",
+    "revision": "rev-f4015827d7e0",
+    "epoch": 0,
+    "seq": 99,
+    "sessionState": "RUNNING",
+    "connection": "connected"
+  }
+}

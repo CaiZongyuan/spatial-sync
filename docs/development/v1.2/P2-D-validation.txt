@@ -1,0 +1,53 @@
+Code/test candidate: 30e330b0f9153da4ac0662e53c48e1a19e33b89c
+Baseline: 9a93c83b5cdb47607afacb752d242ad322aa1267
+
+uv run --no-sync pytest tests/contract tests/gateway tests/unit -m "not newton" -q -o junit_family=xunit1 --junitxml=.scratch/p2-d/final-cpu.xml
+158 passed, 1 optional Newton test deselected, 1 existing Starlette/httpx deprecation warning; 13.70 s
+Includes 29 actual TLS/public TCP network tests plus one controlled drain unit
+
+uv sync --frozen --extra simulation
+uv run --no-sync pytest tests/gateway/test_remote_runner.py -k optional_actual_newton -q --junitxml=.scratch/p2-d/newton-cpu.xml
+1 passed, 23 deselected at that checkpoint; 29.47 s
+Actual Newton 1.7.0 / Warp 1.18.0 CPU child, real TLS and actual Uvicorn HTTP/WebSocket
+Known reset pose/joint, 24-step simTime, child reaped and health alive verified
+Later successful-path-preserving/test-only changes do not invalidate this receipt; no GPU workload ran
+
+pnpm test:web
+9 files, 63 passed
+
+pnpm test:protocol:ts
+6 passed, including generated artifact determinism
+
+pnpm build
+Final tsc -b + Vite build passed; existing large-chunk advisory
+Initial build caught new required sampleTimeClock missing from Ready test literal
+After adding runner-monotonic, final build plus affected client.test.ts 10 tests passed
+
+pnpm protocol:check
+Passed: authoritative Python generation, TS generation and Git diff check
+
+Owned Python Ruff check and format --check
+Passed (7 formatted files checked; all owned changed Python linted)
+
+uv run --no-sync python tools/smoke_remote_runner.py --output .scratch/p2-d/cli-smoke.json
+Passed: actual independent host 42696 / Gateway 33360 / client 40552
+Verified TLSv1.3; 24-body baseline; pause/step/reset/resume; source clock gateway-receive
+Owned processes stopped and temporary credentials removed
+
+uv run --no-sync python tools/smoke_remote_runner.py --browser --output .scratch/p2-d/cli-browser.json
+Passed after explicit UTF-8 capture repair: independent host 44056 / Gateway 11980 / client 4748
+API8008 / web5188 / TLS8766; two real Chromium E2E passed (19.9 s)
+Original browser pipeline's Windows GBK output capture failure was not counted as a passing utility run
+Owned processes stopped and temporary credentials removed
+
+Controlled deadline oracle:
+Internal writer deadline 10 s, independent asyncio.wait observation 0.25 s -> expected explicit unfinished-task failure
+Restore internal deadline 0.02 s -> internal TimeoutError observed, bytes released, healthy channel remains usable
+File restored exactly; no outer timeout is accepted as proof
+
+Actual unread 16 MiB peer probes:
+Both asyncio and synchronous SSLSocket peers failed to establish writer closure inside 2 s with read deadline 10 s
+These are NOT writer-timeout passes. Final actual TLS test verifies complete 16 MiB transfer plus peer-loss cleanup
+
+Final socket inventory: no owned LISTEN socket on 8008/5188/8766
+Final integration and final non-author review remain PM-owned
