@@ -43,11 +43,13 @@ Run the complete CPU acceptance journey, including interlock/imbalance rejection
 with the installed CLI and a gateway:
 
 ```powershell
-uv run --no-sync python tools/smoke_info_newton.py --help
+uv run --no-sync python tools/smoke_info_newton.py --url http://127.0.0.1:8000 --cli .venv/Scripts/lw.exe --duration 20
 uv run --no-sync lw do /World/Lab/RobotA pickPlace from=rack.A1 to=centrifuge.slot1 --wait
 uv run --no-sync lw do /World/Lab/RobotA home --wait
 ```
 
+On Unix, use `.venv/bin/lw` for the installed executable. The smoke command creates
+and closes its own session; run it with no existing workspace session.
 The arm remains in the destination zone after a transfer; move it home before closing
 the lid. Load the second tube into opposite slot3 before starting the centrifuge.
 The declared spindle speed is capped visually at60rpm; requested rpm and the full
