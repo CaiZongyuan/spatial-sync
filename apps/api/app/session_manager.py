@@ -77,6 +77,7 @@ class Session:
         self.manifest: SceneManifest | None = None
         self.state = "CREATED"
         self.epoch, self.seq, self.sim_time = 0, 0, 0.0
+        self._seq_high_water = 0
         self.actual_rtf = 0.0
         self._seq_offset = 0
         self._revision_number = 0
@@ -146,11 +147,14 @@ class Session:
         cached = self._frame
         if cached and self.manifest and cached.sceneRevision != self.manifest.sceneRevision:
             cached = None
-        if frame is None or (cached is not None and frame.seq < cached.seq):
-            return cached
-        return frame
+        selected = cached if frame is None or (cached is not None and frame.seq < cached.seq) else frame
+        if selected is not None:
+            self._seq_high_water = max(self._seq_high_water, selected.seq)
+        return selected
 
     def _cache_frame(self, frame):
+        if frame is not None:
+            self._seq_high_water = max(self._seq_high_water, frame.seq)
         if frame is not None and frame.seq >= self.seq:
             self._frame = frame
             self.seq, self.epoch, self.sim_time = frame.seq, frame.epoch, frame.simTime
@@ -340,6 +344,7 @@ class Session:
         return encode(frame)
 
     def _apply_state(self, state: SessionState):
+        self._seq_high_water = max(self._seq_high_water, state.seq)
         if (self.state, self.epoch, self.options.realtimeFactor) != (
             state.state,
             state.epoch,
@@ -640,8 +645,10 @@ class Session:
             self.state = "STOPPING"
             self.broadcast(self._lifecycle_state())
             await self._stop_source()
-            # Sources may number their first snapshot 0 or 1; both must exceed the old Session seq.
-            self._seq_offset = self.seq + 1
+            # Delayed control replies retain their old sample seq/time. HTTP and
+            # subscriptions may already have exposed a newer frame in the meantime.
+            # Sources starting at either 0 or 1 must exceed every observed seq.
+            self._seq_offset = self._seq_high_water + 1
             self.entity_states.clear()
             self._rtf_samples.clear()
             for client in self.clients:
