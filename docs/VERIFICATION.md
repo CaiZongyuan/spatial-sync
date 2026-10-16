@@ -40,6 +40,7 @@ and its action, approval, cancellation and lifecycle controls must be disabled.
 
 ```powershell
 uv run --no-sync python tools/bench_info.py --entities 1000 --rate-hz 20 --http-hz 10 --seconds 10 --repeats 3
+uv run --no-sync python tools/bench_info.py --entities 1000 --rate-hz 20 --http-hz 10 --seconds 12 --repeats 3 --include-newton
 uv run --no-sync python tools/bench_recording.py
 ```
 
@@ -51,6 +52,11 @@ The log benchmark measures admission through actual drain, buffered flush and
 metadata close, validates every written frame, and reports queue depth and loop
 delay separately. It does not measure fsync durability. Keep benchmark output
 outside Git and summarize final results in the PR description.
+With the simulation extra installed, `--include-newton` adds a separate CPU FR3
+phase after the Synthetic gateway closes. It uses real alternating gripper actions,
+two WebSocket readers, registered waits and Runner control timing. The final log
+phase measures real output after both gateways close. A default run without this
+option explicitly marks Native timing as unavailable; it does not estimate it.
 
 For crash recovery, force-stop only an owned gateway after a session shorter
 than60s has written samples, restart against the same recording root and verify
@@ -62,6 +68,7 @@ partial first header: it must become incomplete without inventing samples.
 ```powershell
 uv run --no-sync python tools/smoke_newton.py --device cpu
 uv run --no-sync python tools/smoke_newton_source.py --scene robot-and-tubes --device cpu --crash
+uv run --no-sync python tools/smoke_info_newton.py --help
 uv run --no-sync python -m pytest tests/sim_runtime -m "not gpu" -q
 ```
 
