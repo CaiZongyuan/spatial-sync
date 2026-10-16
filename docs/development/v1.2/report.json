@@ -124,21 +124,23 @@
         "Same-scheduler10kx8 encodep95 JSON61.23ms/binary2.42ms"
       ],
       "pending": [
-        "Windows generated artifact LF checkout repair assigned to B",
-        "Final full-head validation/review"
+        "Final full-head validation/review; persistent generated LF checkout repair integrated with B"
       ],
       "blockers": []
     },
     {
       "id": "P2-B",
       "title": "Scopes, cumulative deltas and keyframes",
-      "status": "in-progress",
+      "status": "integrated",
       "delivered": [
-        "8f33d1a real-source high-water regression and repair; PM checked oracle"
+        "930aaca (product4bca2ac) integrated at 9a93c83b5cdb47607afacb752d242ad322aa1267",
+        "128Python/63Web/6TS/build/Ruff/regeneration and4actualE2E author evidence",
+        "PM focused11Gateway+30Web then7Gateway+axis pass; root128Python/63Web/regeneration pass",
+        "All/entity/device/viewport, cumulative JSON/binary deltas, full keyframes/recovery, exact Inspector membership, camera bridge"
       ],
       "pending": [
-        "Device/entities/viewport UI consumer, keyframe baseline and membership recovery",
-        "Frozen candidate and real browser evidence"
+        "C-owned actual mesh/instance/Site/raycast visibility must close overall subscription acceptance",
+        "Final complete-head checks and independent review"
       ],
       "blockers": []
     },
@@ -147,24 +149,28 @@
       "title": "GPU extraction and render scaling",
       "status": "in-progress",
       "delivered": [
-        "Isolated issue/p2-c-scaling dispatched from 4bb62179999667fcd596d216082bff8a5d23ab02"
+        "0433db1 real100/500/2k/10k/mixed fixtures; PM5source tests pass",
+        "bf414b1 full-workload/camera profile harness; actual SwiftShader baseline100/500/mixed/2k",
+        "10k original renderer readiness timed out before valid sampling: no FPS claim"
       ],
       "pending": [
-        "Measured2000static+500moving and2k/10k workloads",
-        "Instancing/selection/LOD/culling; actual Warp gather/readback benchmark",
-        "Shared memory only if real Pipe bottleneck proven"
+        "Instancing/selection/LOD/culling and complete scoped visibility",
+        "Actual Warp gather/readback/Pipe benchmark; shared memory only if justified",
+        "Comparable critical repeats with exclusive heavy resources"
       ],
       "blockers": []
     },
     {
       "id": "P2-D",
       "title": "Remote Runner transport",
-      "status": "not-started",
-      "delivered": [],
+      "status": "in-progress",
+      "delivered": [
+        "Original Newton developer resumed in issue/p2-d-remote from 9a93c83b5cdb47607afacb752d242ad322aa1267",
+        "Accepted separate authenticated TLS host reusing NewtonSource; Gateway RemoteSource, no network pickle or C runner/extractor overlap"
+      ],
       "pending": [
-        "Resume original Newton developer after B frees an implementation slot",
-        "Typed bounded JSON plus binary frames, auth/TLS and no network pickle",
-        "Gateway receive clock, failure/cleanup, loopback and real Newton evidence"
+        "Implement typed bounded control/frame channels, sampleTimeClock and receipt stamping",
+        "Real loopback/publicGateway failure/cleanup/auth/cert tests and optional NewtonCPU journey"
       ],
       "blockers": []
     }
@@ -230,6 +236,15 @@
       "proposal": "Keep the directly openable artifact and its static verification separate from actual app HTTP/browser checks.",
       "confidence": "verified",
       "evidence": []
+    },
+    {
+      "id": "renderer-baseline",
+      "title": "Full scene rendering limits the unoptimized load path",
+      "mechanism": "Validated individual meshes submit102/502/2502/2002draws for100/500/mixed/2k cases under SwiftShader;10k cannot reach stable visible pause precondition within30s.",
+      "impact": "No valid10k FPS or acceleration ratio exists for this baseline. Initial small runs may overlap functional browser work.",
+      "proposal": "Measure instancing/LOD on equal fixtures/cameras/settings; repeat critical cases without competing browser load and report10k capability separately.",
+      "confidence": "verified",
+      "evidence": []
     }
   ],
   "events": [],
@@ -244,11 +259,11 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T09:00:58.593049Z",
+  "snapshotAt": "2026-10-16T10:19:39.570511Z",
   "checkpoint": {
-    "revision": "4bb62179999667fcd596d216082bff8a5d23ab02 plus PM documentation",
+    "revision": "9a93c83b5cdb47607afacb752d242ad322aa1267 plus PM documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
-    "next": "Complete B and C, then D; integrate, simplify, final gates and independent Standards/Spec milestone reviews.",
+    "next": "Complete C scoped rendering/scaling and D remote transport, then integrate, refresh whole-epic simplification, final gates and independent Standards/Spec reviews.",
     "roles": [
       {
         "role": "PM/integration",
@@ -256,17 +271,17 @@
         "ticket": "v1.2"
       },
       {
-        "role": "Subscriptions developer",
+        "role": "Subscriptions developer parked after frozen delivery",
         "owner": "/root/protocol",
         "ticket": "P2-B"
       },
       {
-        "role": "Scaling developer",
+        "role": "Scaling/scoped renderer developer",
         "owner": "/root/viewer",
         "ticket": "P2-C"
       },
       {
-        "role": "Remote developer idle pending capacity",
+        "role": "Remote Runner developer",
         "owner": "/root/newton",
         "ticket": "P2-D"
       }
@@ -277,7 +292,7 @@
     {
       "name": "Root API8000 and web5173",
       "owner": "PM",
-      "purpose": "Integrated preview API PID27012 exec13628; web PID13676 exec1257; actual Synthetic E2E closed its sessions",
+      "purpose": "Root API8000 PID36204 exec8139 restarted after B integration; web5173 PID13676 exec1257 retained",
       "disposition": "retained"
     },
     {
@@ -315,6 +330,12 @@
       "owner": "External process",
       "purpose": "Outside task ownership; preserved",
       "disposition": "unknown"
+    },
+    {
+      "name": "B API8007/web5187",
+      "owner": "Protocol developer",
+      "purpose": "All E2E sessions deleted; author verified both listeners absent",
+      "disposition": "cleaned"
     }
   ],
   "tests": [
@@ -329,6 +350,20 @@
         {
           "href": "P2-A-review.md",
           "label": "Review and evidence boundaries"
+        }
+      ]
+    },
+    {
+      "id": "root-p2b-gates",
+      "label": "Integrated P2-B local gate",
+      "method": "Root9a93c83; explicit GPU-free paths, production build, actual Chromium on matching8000/5173",
+      "uiExecuted": true,
+      "outcome": "passed",
+      "cause": "128Python9.57s,63Web,6TS,regeneration,Ruff,build and4actualE2E47.2s.3optionalNewton/asset scenarios skipped by configuration, not passes. Mesh/instance scope visibility remains C-owned.",
+      "evidence": [
+        {
+          "href": "P2-B-review.md",
+          "label": "Independent review and cross-issue condition"
         }
       ]
     }
