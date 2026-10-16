@@ -9,6 +9,7 @@ import uuid
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.schema import Command, SceneManifest, ServerError, SessionState, TransformFrame
 from packages.transport import FrameCodec, PipeWriter, create_transport
+from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
 
 class NewtonSource:
@@ -24,6 +25,10 @@ class NewtonSource:
         self._frame_callback_pending = False
         self._codec = None
         self._latest = None
+        self._samples = None
+        self._interest_lock = asyncio.Lock()
+        self._requested_interest = None
+        self._runner_heartbeat = RunnerHeartbeat()
         self._pending = {}
         self._events = asyncio.Queue()
         self._metrics = {}
@@ -92,8 +97,8 @@ class NewtonSource:
             self._call_loop(self._fail, f"Newton control pipe closed: {exc}")
 
     def _cache(self, frame):
-        if self._latest is None or frame.seq > self._latest.seq:
-            self._latest = frame
+        self._samples.control(frame)
+        self._latest = self._samples.latest
 
     def _drain_frame(self):
         with self._incoming_lock:
@@ -103,7 +108,8 @@ class NewtonSource:
             payload, self._incoming = self._incoming, None
         if payload is not None:
             try:
-                self._cache(self._codec.decode(payload))
+                self._samples.periodic(self._codec.decode(payload))
+                self._latest = self._samples.latest
             except ValueError as exc:
                 self._fail(f"Invalid Newton frame pipe payload: {exc}")
 
@@ -112,8 +118,10 @@ class NewtonSource:
             kind = packet["kind"]
             if "stats" in packet:
                 self._metrics.update(packet["stats"])
+                self._runner_heartbeat.observe(packet["stats"])
             if kind == "ready":
                 self.manifest = SceneManifest.model_validate(packet["manifest"])
+                self._samples = SourceFrames(self.manifest)
                 self._codec = FrameCodec(
                     self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
                 )
@@ -133,7 +141,20 @@ class NewtonSource:
                     result = CommandResult.model_validate(packet["result"])
                     if result.frame:
                         self._cache(result.frame)
+                    self._samples.state(result.state)
                     value = result
+                elif kind in ("interest_result", "snapshot_result"):
+                    value = TransformFrame.model_validate(packet["frame"])
+                    if value.type != "stream.snapshot":
+                        raise ValueError("A full capture must be a snapshot")
+                    if kind == "interest_result":
+                        ids = self._samples.interest(packet["streamIds"])
+                        if ids != self._requested_interest:
+                            raise ValueError("Interest acknowledgement does not match requested IDs")
+                        self._samples.install_interest(ids, value)
+                        self._latest = self._samples.latest
+                    else:
+                        self._cache(value)
                 elif kind == "joint_result":
                     value = JointState.model_validate(packet["state"])
                 elif kind == "mesh_result":
@@ -200,20 +221,41 @@ class NewtonSource:
     def latest_frame(self) -> TransformFrame | None:
         return self._latest
 
+    async def snapshot(self) -> TransformFrame:
+        if self._samples and self._samples.paused and self._samples.complete is not None:
+            return self._samples.complete.model_copy(update={"type": "stream.snapshot"})
+        return await self._request("snapshot")
+
+    async def set_interest(self, stream_ids) -> TransformFrame:
+        ids = self._samples.interest(stream_ids)
+        async with self._interest_lock:
+            self._samples.transition = True
+            self._requested_interest = ids
+            try:
+                return await self._request("interest", streamIds=None if ids is None else sorted(ids))
+            except BaseException:
+                self._fail("Newton interest change failed")
+                asyncio.create_task(self.close(), name="newton-interest-failure-cleanup")
+                raise
+
     async def events(self):
         while (event := await self._events.get()) is not None:
             yield event
 
     async def execute(self, command: Command) -> CommandResult:
-        try:
-            result = await self._request("command", command=command.model_dump())
-            if result.state:
-                self.options.realtimeFactor = result.state.realtimeFactor
-            return result
-        except TimeoutError:
-            self._fail("Newton command timed out")
-            await self.close()
-            raise
+        async with self._interest_lock:
+            self._samples.transition = True
+            try:
+                result = await self._request("command", command=command.model_dump())
+                if result.state:
+                    self.options.realtimeFactor = result.state.realtimeFactor
+                return result
+            except TimeoutError:
+                self._fail("Newton command timed out")
+                await self.close()
+                raise
+            finally:
+                self._samples.transition = False
 
     async def query_joint_state(self, joint_key: str) -> JointState:
         return await self._request("joint", key=joint_key, timeout=0.2)
@@ -222,9 +264,11 @@ class NewtonSource:
         return await self._request("mesh", key=mesh_id)
 
     def stats(self) -> dict:
+        alive = bool(self._process and not self._closed and self._process.is_alive())
         return {
             **self._metrics,
-            "runnerAlive": bool(self._process and not self._closed and self._process.is_alive()),
+            **self._runner_heartbeat.stats(alive and not self._failed),
+            "runnerAlive": alive,
             "readerThreadsAlive": [thread.name for thread in self._threads if thread.is_alive()],
         }
 
