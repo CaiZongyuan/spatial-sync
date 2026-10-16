@@ -225,6 +225,7 @@ class HostCore:
         self._disabled = set()
         self._active, self._recent, self._updates = {}, OrderedDict(), OrderedDict()
         self._events, self._diagnostics = [], []
+        self._needs_publication = False
         self._executing = None
         for key, binding in catalog.entities.items():
             self._states.append(
@@ -280,6 +281,7 @@ class HostCore:
             return
         meta = {"simTime": self.sim_time, "sampleTimeMs": time.monotonic() * 1000, "source": self.source}
         current.rev += len(changed)
+        self._needs_publication = True
         for prop, value in changed.items():
             current.values[prop] = deepcopy(value)
             current.meta[prop] = meta
@@ -456,18 +458,24 @@ class HostCore:
         for handle in self._active.values():
             handle.flush_progress(now)
         changes = []
-        for key in self._order:
-            state = self._states[key]
-            outgoing = state.diff.update(state.dirty, now)
-            if outgoing:
-                changes.append(
-                    {
-                        "key": state.key,
-                        "rev": state.rev,
-                        "values": {state.names[prop]: value for prop, value in outgoing.items()},
-                    }
-                )
-            state.dirty.clear()
+        if self._needs_publication:
+            pending = False
+            for key in self._order:
+                state = self._states[key]
+                if not state.dirty and not state.diff.pending:
+                    continue
+                outgoing = state.diff.update(state.dirty, now)
+                if outgoing:
+                    changes.append(
+                        {
+                            "key": state.key,
+                            "rev": state.rev,
+                            "values": {state.names[prop]: value for prop, value in outgoing.items()},
+                        }
+                    )
+                state.dirty.clear()
+                pending = pending or bool(state.diff.pending)
+            self._needs_publication = pending
         result = []
         if changes:
             result.append(
@@ -505,6 +513,7 @@ class HostCore:
         return result
 
     def _prime_diff(self):
+        self._needs_publication = False
         now = self._publication_clock()
         for state in self._states:
             state.diff.reset()
