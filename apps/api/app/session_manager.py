@@ -395,9 +395,7 @@ class Session:
                 payload = encoded[key]
                 self.payload_bytes += len(payload.encode("utf-8") if isinstance(payload, str) else payload)
             if reliable or (keyframe_due and client.delta_enabled):
-                client.enqueue_reliable(
-                    encoded[key], seq=frame.seq, force=True, subscription_id=client.subscription_id
-                )
+                client.enqueue_reliable(encoded[key], seq=frame.seq, force=True)
             else:
                 client.offer_frame(encoded[key], frame.seq, client.subscription_id)
 
@@ -554,7 +552,6 @@ class Session:
         client.subscription_id += 1
         client.scoped_wire = request.delta or request.requestId is not None
         client.scope_filter = scope
-        client.stream_ids = scope.stream_ids
         client.delta_enabled = request.delta
         client.delta_baseline = None
         client.granted_rate_hz = min(max(request.rateHz, 1), self.options.basePublishHz)
@@ -601,7 +598,6 @@ class Session:
             self._encode_frame(snapshot, client.frame_format),
             seq=snapshot.seq,
             force=True,
-            subscription_id=client.subscription_id,
         )
         for event in self.entity_states.values():
             client.enqueue_reliable(encode(event))

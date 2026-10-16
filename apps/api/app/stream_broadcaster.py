@@ -9,7 +9,9 @@ from dataclasses import dataclass
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from apps.api.app.delta_stream import DeltaBaseline
 from apps.api.app.settings import Settings
+from apps.api.app.subscription_scope import ScopeFilter
 
 
 @dataclass(frozen=True)
@@ -30,14 +32,13 @@ class ClientConnection:
         self.wake = asyncio.Event()
         self.closed = asyncio.Event()
         self.subscribed = False
-        self.stream_ids: frozenset[int] | None = None
         self.granted_rate_hz = 30.0
         self.frame_format = "json"
         self.subscription_id = 0
         self.scoped_wire = False
-        self.scope_filter = None
+        self.scope_filter: ScopeFilter | None = None
         self.delta_enabled = False
-        self.delta_baseline = None
+        self.delta_baseline: DeltaBaseline | None = None
         self.dropped_frames = 0
         self.sent_messages = 0
         self.last_sent_seq = -1
@@ -54,14 +55,13 @@ class ClientConnection:
         payload: str | bytes,
         seq: int | None = None,
         force: bool = False,
-        subscription_id: int | None = None,
     ):
         if self.closed.is_set() or self._close_requested:
             return
         if seq is not None and self.latest is not None and self.latest.seq <= seq:
             self.latest = None
         try:
-            self.reliable.put_nowait(Delivery(payload, seq, force, subscription_id))
+            self.reliable.put_nowait(Delivery(payload, seq, force))
         except asyncio.QueueFull:
             self.request_close(1013)
         self.wake.set()

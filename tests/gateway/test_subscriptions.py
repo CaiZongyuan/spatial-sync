@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import struct
 
 import pytest
@@ -30,6 +31,7 @@ def packet(ws):
         else "transform.frame",
         "seq": struct.unpack_from("<Q", data, 16)[0],
         "epoch": struct.unpack_from("<I", data, 12)[0],
+        "simTime": struct.unpack_from("<d", data, 24)[0],
         "poses": [struct.unpack_from("<I7f", data, offset + i * 32) for i in range(count)],
         "kind": kind,
     }
@@ -224,3 +226,64 @@ async def test_blocked_real_pump_preserves_other_clients_command_before_rapid_sc
         assert [m["subscriptionId"] for m in trace if m["type"] == "stream.snapshot"] == [1, 2, 3]
         await observer.finish()
         session.clients.discard(commander)
+
+
+@pytest.mark.parametrize("format_name", ["json", "binary"])
+def test_real_moving_source_viewport_membership_and_dropped_deltas_use_the_declared_base(format_name):
+    with TestClient(create_app()) as http:
+        summary = http.post("/api/v1/sessions", json={"sceneId": "lab-demo", "realtimeFactor": 4}).json()
+        route = f"/api/v1/sessions/{summary['sessionId']}/ws"
+        # Physics Z-up lower plane; tube origins alone lie outside this bound.
+        planes = [
+            [1, 0, 0, 10],
+            [-1, 0, 0, 10],
+            [0, 1, 0, 10],
+            [0, -1, 0, 10],
+            [0, 0, 1, -1.045],
+            [0, 0, -1, 10],
+        ]
+        with http.websocket_connect(route) as ws:
+            packet(ws)
+            _, initial = send_scope(
+                ws,
+                summary["sceneRevision"],
+                scope="viewport",
+                viewport={"planes": planes},
+                requestId="moving",
+                format=format_name,
+                delta=True,
+            )
+            baseline = {row[0]: row for row in initial["poses"]}
+            base_seq = initial["seq"]
+            initial_ids = set(baseline)
+            changed, skipped, accepted = False, 0, 0
+            for index in range(45):
+                frame = packet(ws)
+                if frame["type"] not in ("transform.frame", "transform.delta"):
+                    continue
+                if frame["type"] == "transform.frame":
+                    baseline = {row[0]: row for row in frame["poses"]}
+                    base_seq = frame["seq"]
+                    continue
+                # Deliberately do not consume alternate periodic deltas.
+                if index % 2 == 0:
+                    skipped += 1
+                    continue
+                assert frame["baseSeq"] == base_seq
+                reconstructed = dict(baseline)
+                for key in frame["removedStreamIds"]:
+                    reconstructed.pop(key, None)
+                reconstructed.update({row[0]: row for row in frame["poses"]})
+                radius = math.hypot(0.025, 0.1)
+                expected = {
+                    10 + i
+                    for i in range(20)
+                    if 0.91 + 0.06 * math.sin(frame["simTime"] * 1.2 + i * 0.4) + radius >= 1.045
+                }
+                assert set(reconstructed) & set(range(10, 30)) == expected
+                assert 31 in reconstructed  # Unknown GLB bounds conservatively stay included.
+                changed |= set(reconstructed) != initial_ids
+                accepted += 1
+                if changed and accepted >= 5:
+                    break
+            assert changed and accepted >= 5 and skipped >= 1

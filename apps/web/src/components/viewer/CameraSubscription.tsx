@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Frustum, Matrix4 } from 'three';
 import type { SessionClient } from '../../lib/stream/client';
+import { physicsViewportPlane } from '../../lib/scene/viewport-planes';
 
 /** Three's Y-up frustum is converted into the protocol's physics Z-up world. */
 export function CameraSubscription({ client }: { client: SessionClient }) {
@@ -26,15 +27,7 @@ export function CameraSubscription({ client }: { client: SessionClient }) {
       camera.matrixWorldInverse,
     );
     value.frustum.setFromProjectionMatrix(value.matrix);
-    const planes = value.frustum.planes.map(
-      ({ normal, constant }) =>
-        [normal.x, -normal.z, normal.y, constant] as [
-          number,
-          number,
-          number,
-          number,
-        ],
-    );
+    const planes = value.frustum.planes.map(physicsViewportPlane);
     const signature = planes
       .flat()
       .map((value) => value.toFixed(5))

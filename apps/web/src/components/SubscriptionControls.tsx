@@ -15,16 +15,18 @@ export function SubscriptionControls({
   const [delta, setDelta] = useState(true);
   const groups = manifest.nodes.filter((node) => node.kind === 'group');
   const [deviceKey, setDeviceKey] = useState(groups[0]?.entityKey ?? '');
+  const selectedEntity = scope === 'entities' ? selected : '';
+  const selectedDevice = scope === 'device' ? deviceKey : '';
   useEffect(() => {
-    if (scope === 'entities' && !selected) return;
-    if (scope === 'device' && !deviceKey) return;
+    if (scope === 'entities' && !selectedEntity) return;
+    if (scope === 'device' && !selectedDevice) return;
     client.setSubscription({
       scope,
       delta,
-      ...(scope === 'entities' ? { entityKeys: [selected] } : {}),
-      ...(scope === 'device' ? { deviceKey } : {}),
+      ...(scope === 'entities' ? { entityKeys: [selectedEntity] } : {}),
+      ...(scope === 'device' ? { deviceKey: selectedDevice } : {}),
     });
-  }, [client, scope, delta, selected, deviceKey]);
+  }, [client, scope, delta, selectedEntity, selectedDevice]);
   return (
     <div className="subscription-controls control-bar">
       <label>
