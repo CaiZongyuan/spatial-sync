@@ -221,6 +221,15 @@
       "proposal": "Keep the builder Z-up and verify actual imported world pose and mesh bounds against independent golden values.",
       "confidence": "verified",
       "evidence": []
+    },
+    {
+      "id": "file-report-browser",
+      "title": "Offline report browser inspection unavailable",
+      "mechanism": "The browser policy rejects file URLs. The requested local report file was not opened; no alternate browser route was attempted.",
+      "impact": "JSON and local evidence paths were checked, but offline filters/details have not been visually verified in this environment.",
+      "proposal": "Keep the directly openable artifact and its static verification separate from actual app HTTP/browser checks.",
+      "confidence": "verified",
+      "evidence": []
     }
   ],
   "events": [],
@@ -235,7 +244,7 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T08:46:21.187940Z",
+  "snapshotAt": "2026-10-16T09:00:58.593049Z",
   "checkpoint": {
     "revision": "4bb62179999667fcd596d216082bff8a5d23ab02 plus PM documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
@@ -266,9 +275,9 @@
   "title": "Specification v1.2 delivery",
   "resources": [
     {
-      "name": "Root web5173",
+      "name": "Root API8000 and web5173",
       "owner": "PM",
-      "purpose": "Retained preview; API8000 stopped, restart integrated source before next browser journey",
+      "purpose": "Integrated preview API PID27012 exec13628; web PID13676 exec1257; actual Synthetic E2E closed its sessions",
       "disposition": "retained"
     },
     {
@@ -306,6 +315,22 @@
       "owner": "External process",
       "purpose": "Outside task ownership; preserved",
       "disposition": "unknown"
+    }
+  ],
+  "tests": [
+    {
+      "id": "root-p2a-gates",
+      "label": "Integrated P2-A local gates",
+      "method": "uv --no-sync explicit gate paths; protocol TS; web unit; production build; actual Chromium against root8000/5173",
+      "uiExecuted": true,
+      "outcome": "passed",
+      "cause": "115Python3.17s;55Web;6TS after generated LF refresh; build;2 actual E2E26.1s.3optional Newton/asset scenarios skipped as configured, not counted as passes. No remote CI run.",
+      "evidence": [
+        {
+          "href": "P2-A-review.md",
+          "label": "Review and evidence boundaries"
+        }
+      ]
     }
   ]
 }

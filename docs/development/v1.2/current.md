@@ -1,6 +1,6 @@
 # Newton Spatial Sync — current checkpoint
 
-Snapshot: 2026-10-16T08:46:21.187Z
+Snapshot: 2026-10-16T09:00:58.593Z
 Task status (PM supplied): in-progress
 
 ## Goal and scope
@@ -87,7 +87,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 ## Resources
 
-- Root web5173; owner PM; retained; Retained preview; API8000 stopped, restart integrated source before next browser journey
+- Root API8000 and web5173; owner PM; retained; Integrated preview API PID27012 exec13628; web PID13676 exec1257; actual Synthetic E2E closed its sessions
 - Old root API8000 and FR3; owner PM; cleaned; Owned session STOPPED and API stopped before integration
 - P1-C API8002/web5184; owner Viewer developer; retained; Sessions STOPPED; owner to reconcile reuse or cleanup for P2-C
 - OldAPI8001/web5174; owner PM/developers; cleaned; Exact owned processes stopped and listeners verified gone
@@ -103,3 +103,4 @@ The generator does not infer completion, authorization, or merge readiness from 
 - [Real engine findings](./P0-A.md)
 - [Review and repair record](./P0-C-review.md)
 - [Browser evidence](./P0-D.md)
+- [Review and evidence boundaries](./P2-A-review.md)
