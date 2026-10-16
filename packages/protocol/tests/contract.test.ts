@@ -26,11 +26,11 @@ test('Python-produced Manifest validates and preserves full contract', () => {
 test('all Python-produced events validate against generated TS-side schemas', () => {
   const observed = new Set<string>()
   for (const message of messages) {
-    const check = message.type === 'client.subscribe' || message.type === 'command.request' ? client : server
+    const check = message.type === 'client.subscribe' || message.type === 'command.request' || message.type.startsWith('action.') ? client : server
     assert.ok(check(message), ajv.errorsText(check.errors))
     observed.add(message.type)
   }
-  assert.equal(observed.size, 11)
+  assert.equal(observed.size, 18)
   // These assignments prove the exported consumer-facing types are usable.
   const frame = messages.find(message => message.type === 'stream.snapshot')
   assert.ok(server(frame))

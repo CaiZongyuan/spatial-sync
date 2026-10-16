@@ -45,7 +45,7 @@ equivalent draft7 `items` tuple representation for Ajv and TypeScript tooling.
 The discriminator mappings and all constraints remain derived from Pydantic.
 
 `fixtures/manifest.json` contains all primitive and asset variants;
-`fixtures/messages.json` covers all eleven message types;
+`fixtures/messages.json` covers all eighteen message types;
 `fixtures/math.json` contains independently specified §4.3 dimensions, Z-up
 mapping, quaternion hemisphere and Body × SiteLocal expected values. Viewer
 geometry/interpolation tests should consume this same math fixture. Pure Python
@@ -77,3 +77,10 @@ The NSYN binary format retains its 44-byte header, wire-format version 1,
 advertised by Manifest, ready, subscribe and HTTP snapshot is version 2; v1
 JSON contracts are rejected. `fixtures/binary-frame.json` provides produced
 bytes for the browser's independent decoder tests. Generated artifacts use LF.
+
+The information plane uses reliable JSON `entity.snapshot`, batched
+`entity.observations`, `entity.event`, and flattened `invocation.update`
+messages. Catalog maps resolved entity keys to type definitions and bindings.
+`InvokeRequest` is a host coordination value; `ActionRequest`, `ActionCancel`
+and `ActionApprove` are public client messages. Actor annotations record
+attribution; only the authenticated connection role grants permissions.

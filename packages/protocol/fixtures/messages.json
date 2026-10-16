@@ -1,5 +1,6 @@
 [
   {
+    "role": "operator",
     "type": "server.ready",
     "protocolVersion": 2,
     "sessionId": "session-fixture",
@@ -121,6 +122,77 @@
     "simTime": 0.0,
     "epoch": 0,
     "reason": "invalid_state"
+  },
+  {
+    "type": "entity.snapshot",
+    "sceneRevision": "rev-fixture",
+    "epoch": 0,
+    "simTime": 0.0,
+    "sampleTimeMs": 0.0,
+    "entities": [],
+    "invocations": []
+  },
+  {
+    "type": "entity.observations",
+    "sceneRevision": "rev-fixture",
+    "epoch": 0,
+    "simTime": 0.0,
+    "sampleTimeMs": 1000.0,
+    "source": "virtual",
+    "changes": [
+      {
+        "key": "/World",
+        "rev": 1,
+        "values": {
+          "phase": "idle"
+        }
+      }
+    ]
+  },
+  {
+    "type": "entity.event",
+    "sceneRevision": "rev-fixture",
+    "epoch": 0,
+    "entityKey": "/World",
+    "event": "runCompleted",
+    "data": {},
+    "simTime": 0.0,
+    "sampleTimeMs": 1000.0
+  },
+  {
+    "invocationId": "inv-fixture",
+    "requestId": "action-fixture",
+    "entityKey": "/World",
+    "action": "start",
+    "params": {},
+    "actor": {
+      "kind": "user",
+      "name": "local"
+    },
+    "epoch": 0,
+    "createdSimTime": 0.0,
+    "createdAtMs": 1000.0,
+    "status": "accepted",
+    "type": "invocation.update",
+    "sceneRevision": "rev-fixture"
+  },
+  {
+    "type": "action.request",
+    "requestId": "action-fixture",
+    "entityKey": "/World",
+    "action": "start",
+    "params": {}
+  },
+  {
+    "type": "action.cancel",
+    "requestId": "cancel-fixture",
+    "invocationId": "inv-fixture"
+  },
+  {
+    "type": "action.approve",
+    "requestId": "approve-fixture",
+    "invocationId": "inv-fixture",
+    "decision": "approve"
   },
   {
     "type": "scene.replaced",

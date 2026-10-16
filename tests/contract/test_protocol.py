@@ -35,7 +35,10 @@ def test_python_sample_roundtrips(manifest):
     assert parsed.model_dump(mode="json", exclude_none=True) == manifest
     for message in json.loads((FIXTURES / "messages.json").read_text(encoding="utf-8")):
         adapter = TypeAdapter(
-            ClientMessage if message["type"] in ("client.subscribe", "command.request") else ServerMessage
+            ClientMessage
+            if message["type"] in ("client.subscribe", "command.request")
+            or message["type"].startswith("action.")
+            else ServerMessage
         )
         result = adapter.validate_json(json.dumps(message))
         assert result.model_dump(mode="json", exclude_none=True) == message
@@ -149,9 +152,16 @@ def test_subscription_v2_is_full_binary_and_info_defaults_enabled():
     request = Subscribe(sceneRevision="r")
     assert request.protocolVersion == 2 and request.info is True
     assert Subscribe(sceneRevision="r", info=False).info is False
-    for field, value in [("scope", "all"), ("delta", False), ("format", "binary"),
-                         ("entityKeys", ["/World"]), ("deviceKey", "/World"),
-                         ("viewport", {}), ("protocolVersion", 1), ("info", "true")]:
+    for field, value in [
+        ("scope", "all"),
+        ("delta", False),
+        ("format", "binary"),
+        ("entityKeys", ["/World"]),
+        ("deviceKey", "/World"),
+        ("viewport", {}),
+        ("protocolVersion", 1),
+        ("info", "true"),
+    ]:
         with pytest.raises(ValidationError):
             Subscribe.model_validate({"sceneRevision": "r", field: value})
 

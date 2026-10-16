@@ -54,6 +54,8 @@ ErrorCode = Literal[
 
 class Model(BaseModel):
     model_config = ConfigDict(
+        serialize_by_alias=True,
+        populate_by_name=True,
         extra="forbid",
         validate_default=True,
         allow_inf_nan=False,
@@ -429,6 +431,7 @@ class CommandAck(Model):
 
 
 class Ready(Model):
+    role: Literal["viewer", "operator"] = "operator"
     type: Literal["server.ready"] = "server.ready"
     protocolVersion: Literal[2] = 2
     sessionId: NonEmpty
@@ -474,6 +477,175 @@ class ServerError(Model):
     requestId: NonEmpty | None = None
 
 
+JsonSchema = TypeAliasType("JsonSchema", dict[str, JsonValue])
+Condition = TypeAliasType("Condition", dict[str, JsonValue])
+
+
+class PropertyDefinition(Model):
+    schema_: JsonSchema = Field(alias="schema")
+    description: StrictStr = ""
+    unit: StrictStr | None = None
+    deadband: NonNegative | None = None
+    maxRateHz: Positive | None = None
+
+
+class ActionDefinition(Model):
+    description: StrictStr = ""
+    params: dict[str, JsonSchema] = Field(default_factory=dict)
+    required: list[NonEmpty] = Field(default_factory=list)
+    preconditions: list[Condition] = Field(default_factory=list)
+    longRunning: StrictBool = False
+    timeoutSeconds: Positive = 30
+    concurrent: StrictBool = False
+    risk: Literal["normal", "high"] = "normal"
+
+
+class EventDefinition(Model):
+    schema_: JsonSchema | None = Field(default=None, alias="schema")
+    description: StrictStr = ""
+
+
+class EntityType(Model):
+    type: NonEmpty
+    title: NonEmpty
+    description: StrictStr = ""
+    properties: dict[str, PropertyDefinition] = Field(default_factory=dict)
+    actions: dict[str, ActionDefinition] = Field(default_factory=dict)
+    events: dict[str, EventDefinition] = Field(default_factory=dict)
+
+
+class EntityBinding(Model):
+    key: EntityKey
+    type: NonEmpty
+    program: NonEmpty
+    config: dict[str, JsonValue] = Field(default_factory=dict)
+    interlocks: dict[str, list[Condition]] = Field(default_factory=dict)
+    unplaced: StrictBool = False
+
+
+class Catalog(Model):
+    sceneRevision: NonEmpty
+    types: dict[str, EntityType] = Field(default_factory=dict)
+    entities: dict[str, EntityBinding] = Field(default_factory=dict)
+
+
+class Actor(Model):
+    kind: Literal["user", "cli", "agent"] = "user"
+    name: NonEmpty = "local"
+
+
+class InvocationError(Model):
+    code: NonEmpty
+    message: NonEmpty
+    details: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+InvocationStatus = Literal[
+    "pending_approval", "accepted", "running", "succeeded", "failed", "cancelled", "rejected"
+]
+
+
+class InvokeRequest(Model):
+    invocationId: NonEmpty
+    requestId: NonEmpty
+    entityKey: EntityKey
+    action: NonEmpty
+    params: dict[str, JsonValue] = Field(default_factory=dict)
+    actor: Actor = Field(default_factory=Actor)
+    epoch: UInt32
+    createdSimTime: NonNegative
+    createdAtMs: NonNegative
+
+
+class Invocation(InvokeRequest):
+    status: InvocationStatus
+    progress: Annotated[Finite, Field(ge=0, le=1)] | None = None
+    result: JsonValue = None
+    error: InvocationError | None = None
+    startedSimTime: NonNegative | None = None
+    endedSimTime: NonNegative | None = None
+
+
+class InvocationUpdate(Invocation):
+    type: Literal["invocation.update"] = "invocation.update"
+    sceneRevision: NonEmpty
+
+
+class ObservationMeta(Model):
+    simTime: NonNegative
+    sampleTimeMs: NonNegative
+    source: Literal["sim", "virtual", "device"]
+
+
+class EntityValues(Model):
+    key: EntityKey
+    rev: Counter
+    values: dict[str, JsonValue] = Field(default_factory=dict)
+    meta: dict[str, ObservationMeta] = Field(default_factory=dict)
+
+
+class EntitySnapshot(Model):
+    type: Literal["entity.snapshot"] = "entity.snapshot"
+    sceneRevision: NonEmpty
+    epoch: UInt32
+    simTime: NonNegative = 0
+    sampleTimeMs: NonNegative = 0
+    entities: list[EntityValues] = Field(default_factory=list)
+    invocations: list[Invocation] = Field(default_factory=list)
+
+
+class ObservationChange(Model):
+    key: EntityKey
+    rev: Counter
+    values: dict[str, JsonValue]
+
+
+class EntityObservations(Model):
+    type: Literal["entity.observations"] = "entity.observations"
+    sceneRevision: NonEmpty
+    epoch: UInt32
+    simTime: NonNegative
+    sampleTimeMs: NonNegative
+    source: Literal["sim", "virtual", "device"]
+    changes: list[ObservationChange]
+
+
+class EntityEvent(Model):
+    type: Literal["entity.event"] = "entity.event"
+    sceneRevision: NonEmpty
+    epoch: UInt32
+    entityKey: EntityKey
+    event: NonEmpty
+    data: dict[str, JsonValue] = Field(default_factory=dict)
+    simTime: NonNegative
+    sampleTimeMs: NonNegative
+
+
+class ActionRequest(Model):
+    type: Literal["action.request"] = "action.request"
+    requestId: NonEmpty
+    entityKey: EntityKey
+    action: NonEmpty
+    params: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class ActionCancel(Model):
+    type: Literal["action.cancel"] = "action.cancel"
+    requestId: NonEmpty
+    invocationId: NonEmpty
+
+
+class ActionApprove(Model):
+    type: Literal["action.approve"] = "action.approve"
+    requestId: NonEmpty
+    invocationId: NonEmpty
+    decision: Literal["approve", "deny"]
+
+
+class ApprovalPolicy(Model):
+    high: Literal["auto", "require"] = "auto"
+
+
 class SessionOptions(Model):
     realtimeFactor: Positive | None = 1.0
     physicsDt: Positive = 1 / 240
@@ -482,6 +654,9 @@ class SessionOptions(Model):
     continueWithoutObservers: StrictBool = True
     strictLabels: StrictBool = False
     device: NonEmpty = "cpu"
+    controlHz: Positive = 60
+    factHz: Positive = 10
+    approval: ApprovalPolicy = Field(default_factory=ApprovalPolicy)
 
 
 class CommandResult(Model):
@@ -497,7 +672,12 @@ class JointState(Model):
     positions: list[Finite]
 
 
-ClientMessage = TypeAliasType("ClientMessage", Annotated[Command | Subscribe, Field(discriminator="type")])
+ClientMessage = TypeAliasType(
+    "ClientMessage",
+    Annotated[
+        Command | Subscribe | ActionRequest | ActionCancel | ActionApprove, Field(discriminator="type")
+    ],
+)
 ServerMessage = TypeAliasType(
     "ServerMessage",
     Annotated[
@@ -508,7 +688,11 @@ ServerMessage = TypeAliasType(
         | SceneReplaced
         | CommandAck
         | Heartbeat
-        | ServerError,
+        | ServerError
+        | EntitySnapshot
+        | EntityObservations
+        | EntityEvent
+        | InvocationUpdate,
         Field(discriminator="type"),
     ],
 )
@@ -524,3 +708,6 @@ class ProtocolContract(Model):
     jointState: JointState
     stepArgs: StepArgs
     realtimeFactorArgs: RealtimeFactorArgs
+    invocation: Invocation
+    invokeRequest: InvokeRequest
+    catalog: Catalog

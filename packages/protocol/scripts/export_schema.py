@@ -11,9 +11,16 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from packages.protocol.schema import (  # noqa: E402
+    ActionApprove,
+    ActionCancel,
+    ActionRequest,
     Command,
     CommandAck,
+    EntityEvent,
+    EntityObservations,
+    EntitySnapshot,
     Heartbeat,
+    InvocationUpdate,
     ProtocolContract,
     Ready,
     SceneManifest,
@@ -27,17 +34,19 @@ from packages.protocol.schema import (  # noqa: E402
 )
 
 
-def draft7(value):
-    """Pydantic 2020-12 fixed tuples use prefixItems; draft7's items is equivalent."""
+def draft7(value, *, names=False):
+    """Convert schema nodes while preserving property names such as title/required."""
     if isinstance(value, list):
         return [draft7(item) for item in value]
     if isinstance(value, dict):
         result = {
-            ("items" if key == "prefixItems" else key): draft7(item)
+            ("items" if key == "prefixItems" and not names else key): draft7(
+                item, names=not names and key in ("properties", "$defs", "patternProperties")
+            )
             for key, item in value.items()
-            if key != "title"
+            if names or key != "title"
         }
-        if "required" in result:
+        if not names and isinstance(result.get("required"), list) and "properties" in result:
             result["required"] = [
                 name
                 for name in result["required"]
@@ -174,6 +183,7 @@ def main():
         poses=[(7, 1, 2, 3, 0, 0, 0, 1)],
     )
     from packages.transport import FrameCodec
+
     binary_frame = Snapshot(**frame_args)
     write(
         "fixtures/binary-frame.json",
@@ -215,6 +225,37 @@ def main():
         Command(requestId="cmd-fixture", command="pause"),
         CommandAck(requestId="cmd-fixture", status="applied", simTime=0, epoch=0),
         CommandAck(requestId="cmd-invalid", status="rejected", reason="invalid_state", simTime=0, epoch=0),
+        EntitySnapshot(sceneRevision=manifest.sceneRevision, epoch=0),
+        EntityObservations(
+            sceneRevision=manifest.sceneRevision,
+            epoch=0,
+            simTime=0,
+            sampleTimeMs=1000,
+            source="virtual",
+            changes=[{"key": "/World", "rev": 1, "values": {"phase": "idle"}}],
+        ),
+        EntityEvent(
+            sceneRevision=manifest.sceneRevision,
+            epoch=0,
+            entityKey="/World",
+            event="runCompleted",
+            simTime=0,
+            sampleTimeMs=1000,
+        ),
+        InvocationUpdate(
+            sceneRevision=manifest.sceneRevision,
+            invocationId="inv-fixture",
+            requestId="action-fixture",
+            entityKey="/World",
+            action="start",
+            status="accepted",
+            epoch=0,
+            createdSimTime=0,
+            createdAtMs=1000,
+        ),
+        ActionRequest(requestId="action-fixture", entityKey="/World", action="start"),
+        ActionCancel(requestId="cancel-fixture", invocationId="inv-fixture"),
+        ActionApprove(requestId="approve-fixture", invocationId="inv-fixture", decision="approve"),
         SceneReplaced(sessionId=manifest.sessionId, sceneRevision="rev-next", revisionNumericId=2),
         ServerError(code="revision_mismatch", message="Reload scene before subscribing"),
     ]

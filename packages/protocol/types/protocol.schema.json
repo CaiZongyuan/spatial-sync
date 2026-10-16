@@ -1,5 +1,198 @@
 {
   "$defs": {
+    "ActionApprove": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "action.approve",
+          "default": "action.approve",
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "invocationId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "deny"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "invocationId",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "ActionCancel": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "action.cancel",
+          "default": "action.cancel",
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "invocationId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "invocationId"
+      ],
+      "type": "object"
+    },
+    "ActionDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonSchema"
+          },
+          "type": "object"
+        },
+        "required": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preconditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "type": "array"
+        },
+        "longRunning": {
+          "default": false,
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "concurrent": {
+          "default": false,
+          "type": "boolean"
+        },
+        "risk": {
+          "default": "normal",
+          "enum": [
+            "normal",
+            "high"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "params",
+        "required",
+        "preconditions",
+        "longRunning",
+        "timeoutSeconds",
+        "concurrent",
+        "risk"
+      ],
+      "type": "object"
+    },
+    "ActionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "action.request",
+          "default": "action.request",
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "action": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "entityKey",
+        "action",
+        "params"
+      ],
+      "type": "object"
+    },
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "user",
+          "enum": [
+            "user",
+            "cli",
+            "agent"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "default": "local",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ApprovalPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "high": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "require"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "high"
+      ],
+      "type": "object"
+    },
     "BodyNode": {
       "additionalProperties": false,
       "properties": {
@@ -146,6 +339,33 @@
       ],
       "type": "object"
     },
+    "Catalog": {
+      "additionalProperties": false,
+      "properties": {
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "types": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EntityType"
+          },
+          "type": "object"
+        },
+        "entities": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EntityBinding"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "sceneRevision",
+        "types",
+        "entities"
+      ],
+      "type": "object"
+    },
     "Cause": {
       "additionalProperties": false,
       "properties": {
@@ -214,6 +434,9 @@
     "ClientMessage": {
       "discriminator": {
         "mapping": {
+          "action.approve": "#/$defs/ActionApprove",
+          "action.cancel": "#/$defs/ActionCancel",
+          "action.request": "#/$defs/ActionRequest",
           "client.subscribe": "#/$defs/Subscribe",
           "command.request": "#/$defs/Command"
         },
@@ -225,6 +448,15 @@
         },
         {
           "$ref": "#/$defs/Subscribe"
+        },
+        {
+          "$ref": "#/$defs/ActionRequest"
+        },
+        {
+          "$ref": "#/$defs/ActionCancel"
+        },
+        {
+          "$ref": "#/$defs/ActionApprove"
         }
       ]
     },
@@ -361,6 +593,12 @@
       ],
       "type": "object"
     },
+    "Condition": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "type": "object"
+    },
     "Cone": {
       "additionalProperties": false,
       "properties": {
@@ -450,6 +688,305 @@
         "type",
         "radius",
         "halfHeight"
+      ],
+      "type": "object"
+    },
+    "EntityBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "program": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "interlocks": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Condition"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "unplaced": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "type",
+        "program",
+        "config",
+        "interlocks",
+        "unplaced"
+      ],
+      "type": "object"
+    },
+    "EntityEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "entity.event",
+          "default": "entity.event",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "event": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "data": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "sceneRevision",
+        "epoch",
+        "entityKey",
+        "event",
+        "data",
+        "simTime",
+        "sampleTimeMs"
+      ],
+      "type": "object"
+    },
+    "EntityObservations": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "entity.observations",
+          "default": "entity.observations",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "source": {
+          "enum": [
+            "sim",
+            "virtual",
+            "device"
+          ],
+          "type": "string"
+        },
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/ObservationChange"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "sceneRevision",
+        "epoch",
+        "simTime",
+        "sampleTimeMs",
+        "source",
+        "changes"
+      ],
+      "type": "object"
+    },
+    "EntitySnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "entity.snapshot",
+          "default": "entity.snapshot",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "default": 0,
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "default": 0,
+          "minimum": 0,
+          "type": "number"
+        },
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/EntityValues"
+          },
+          "type": "array"
+        },
+        "invocations": {
+          "items": {
+            "$ref": "#/$defs/Invocation"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "sceneRevision",
+        "epoch",
+        "simTime",
+        "sampleTimeMs",
+        "entities",
+        "invocations"
+      ],
+      "type": "object"
+    },
+    "EntityType": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PropertyDefinition"
+          }
+        },
+        "actions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ActionDefinition"
+          },
+          "type": "object"
+        },
+        "events": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EventDefinition"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "description",
+        "properties",
+        "actions",
+        "events"
+      ],
+      "type": "object"
+    },
+    "EntityValues": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "meta": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ObservationMeta"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "key",
+        "rev",
+        "values",
+        "meta"
+      ],
+      "type": "object"
+    },
+    "EventDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description"
       ],
       "type": "object"
     },
@@ -590,6 +1127,337 @@
       ],
       "type": "object"
     },
+    "Invocation": {
+      "additionalProperties": false,
+      "properties": {
+        "invocationId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "action": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "createdSimTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "createdAtMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "pending_approval",
+            "accepted",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "result": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InvocationError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "startedSimTime": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endedSimTime": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "invocationId",
+        "requestId",
+        "entityKey",
+        "action",
+        "params",
+        "actor",
+        "epoch",
+        "createdSimTime",
+        "createdAtMs",
+        "status"
+      ],
+      "type": "object"
+    },
+    "InvocationError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "details"
+      ],
+      "type": "object"
+    },
+    "InvocationUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "invocationId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "action": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "createdSimTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "createdAtMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "pending_approval",
+            "accepted",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "result": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InvocationError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "startedSimTime": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "endedSimTime": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "invocation.update",
+          "default": "invocation.update",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "invocationId",
+        "requestId",
+        "entityKey",
+        "action",
+        "params",
+        "actor",
+        "epoch",
+        "createdSimTime",
+        "createdAtMs",
+        "status",
+        "type",
+        "sceneRevision"
+      ],
+      "type": "object"
+    },
+    "InvokeRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "invocationId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "action": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "createdSimTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "createdAtMs": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "invocationId",
+        "requestId",
+        "entityKey",
+        "action",
+        "params",
+        "actor",
+        "epoch",
+        "createdSimTime",
+        "createdAtMs"
+      ],
+      "type": "object"
+    },
     "Joint": {
       "additionalProperties": false,
       "properties": {
@@ -714,6 +1582,12 @@
       ],
       "type": "object"
     },
+    "JsonSchema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "type": "object"
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -798,6 +1672,58 @@
         "assetUpAxis",
         "scale",
         "localPose"
+      ],
+      "type": "object"
+    },
+    "ObservationChange": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "key",
+        "rev",
+        "values"
+      ],
+      "type": "object"
+    },
+    "ObservationMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "source": {
+          "enum": [
+            "sim",
+            "virtual",
+            "device"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "simTime",
+        "sampleTimeMs",
+        "source"
       ],
       "type": "object"
     },
@@ -936,9 +1862,69 @@
         }
       ]
     },
+    "PropertyDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/JsonSchema"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deadband": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "maxRateHz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema",
+        "description"
+      ],
+      "type": "object"
+    },
     "Ready": {
       "additionalProperties": false,
       "properties": {
+        "role": {
+          "default": "operator",
+          "enum": [
+            "viewer",
+            "operator"
+          ],
+          "type": "string"
+        },
         "type": {
           "const": "server.ready",
           "default": "server.ready",
@@ -1014,6 +2000,7 @@
         }
       },
       "required": [
+        "role",
         "type",
         "protocolVersion",
         "sessionId",
@@ -1265,6 +2252,10 @@
       "discriminator": {
         "mapping": {
           "command.ack": "#/$defs/CommandAck",
+          "entity.event": "#/$defs/EntityEvent",
+          "entity.observations": "#/$defs/EntityObservations",
+          "entity.snapshot": "#/$defs/EntitySnapshot",
+          "invocation.update": "#/$defs/InvocationUpdate",
           "scene.replaced": "#/$defs/SceneReplaced",
           "server.error": "#/$defs/ServerError",
           "server.heartbeat": "#/$defs/Heartbeat",
@@ -1300,6 +2291,18 @@
         },
         {
           "$ref": "#/$defs/ServerError"
+        },
+        {
+          "$ref": "#/$defs/EntitySnapshot"
+        },
+        {
+          "$ref": "#/$defs/EntityObservations"
+        },
+        {
+          "$ref": "#/$defs/EntityEvent"
+        },
+        {
+          "$ref": "#/$defs/InvocationUpdate"
         }
       ]
     },
@@ -1345,6 +2348,19 @@
           "default": "cpu",
           "minLength": 1,
           "type": "string"
+        },
+        "controlHz": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "factHz": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "approval": {
+          "$ref": "#/$defs/ApprovalPolicy"
         }
       },
       "required": [
@@ -1354,7 +2370,10 @@
         "maxLagMs",
         "continueWithoutObservers",
         "strictLabels",
-        "device"
+        "device",
+        "controlHz",
+        "factHz",
+        "approval"
       ],
       "type": "object"
     },
@@ -2006,6 +3025,15 @@
     },
     "realtimeFactorArgs": {
       "$ref": "#/$defs/RealtimeFactorArgs"
+    },
+    "invocation": {
+      "$ref": "#/$defs/Invocation"
+    },
+    "invokeRequest": {
+      "$ref": "#/$defs/InvokeRequest"
+    },
+    "catalog": {
+      "$ref": "#/$defs/Catalog"
     }
   },
   "required": [
@@ -2017,7 +3045,10 @@
     "commandResult",
     "jointState",
     "stepArgs",
-    "realtimeFactorArgs"
+    "realtimeFactorArgs",
+    "invocation",
+    "invokeRequest",
+    "catalog"
   ],
   "type": "object",
   "title": "ProtocolContract",

@@ -32,13 +32,24 @@ export type JsonValue =
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "ClientMessage".
  */
-export type ClientMessage = Command | Subscribe
+export type ClientMessage = Command | Subscribe | ActionRequest | ActionCancel | ActionApprove
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "ServerMessage".
  */
 export type ServerMessage =
-  Ready | SubscriptionAck | TransformFrame | SessionState | SceneReplaced | CommandAck | Heartbeat | ServerError
+  | Ready
+  | SubscriptionAck
+  | TransformFrame
+  | SessionState
+  | SceneReplaced
+  | CommandAck
+  | Heartbeat
+  | ServerError
+  | EntitySnapshot
+  | EntityObservations
+  | EntityEvent
+  | InvocationUpdate
 
 export interface ProtocolContract {
   manifest: SceneManifest
@@ -50,6 +61,9 @@ export interface ProtocolContract {
   jointState: JointState
   stepArgs: StepArgs
   realtimeFactorArgs: RealtimeFactorArgs
+  invocation: Invocation
+  invokeRequest: InvokeRequest
+  catalog: Catalog
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -318,9 +332,42 @@ export interface Subscribe {
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ActionRequest".
+ */
+export interface ActionRequest {
+  type: 'action.request'
+  requestId: string
+  entityKey: string
+  action: string
+  params: {
+    [k: string]: JsonValue
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ActionCancel".
+ */
+export interface ActionCancel {
+  type: 'action.cancel'
+  requestId: string
+  invocationId: string
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ActionApprove".
+ */
+export interface ActionApprove {
+  type: 'action.approve'
+  requestId: string
+  invocationId: string
+  decision: 'approve' | 'deny'
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "Ready".
  */
 export interface Ready {
+  role: 'viewer' | 'operator'
   type: 'server.ready'
   protocolVersion: 2
   sessionId: string
@@ -443,6 +490,165 @@ export interface ServerError {
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntitySnapshot".
+ */
+export interface EntitySnapshot {
+  type: 'entity.snapshot'
+  sceneRevision: string
+  epoch: number
+  simTime: number
+  sampleTimeMs: number
+  entities: EntityValues[]
+  invocations: Invocation[]
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntityValues".
+ */
+export interface EntityValues {
+  key: string
+  rev: number
+  values: {
+    [k: string]: JsonValue
+  }
+  meta: {
+    [k: string]: ObservationMeta
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ObservationMeta".
+ */
+export interface ObservationMeta {
+  simTime: number
+  sampleTimeMs: number
+  source: 'sim' | 'virtual' | 'device'
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Invocation".
+ */
+export interface Invocation {
+  invocationId: string
+  requestId: string
+  entityKey: string
+  action: string
+  params: {
+    [k: string]: JsonValue
+  }
+  actor: Actor
+  epoch: number
+  createdSimTime: number
+  createdAtMs: number
+  status: 'pending_approval' | 'accepted' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'rejected'
+  progress?: number | null
+  result?:
+    | boolean
+    | number
+    | string
+    | JsonValue[]
+    | {
+        [k: string]: JsonValue
+      }
+    | null
+  error?: InvocationError | null
+  startedSimTime?: number | null
+  endedSimTime?: number | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Actor".
+ */
+export interface Actor {
+  kind: 'user' | 'cli' | 'agent'
+  name: string
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "InvocationError".
+ */
+export interface InvocationError {
+  code: string
+  message: string
+  details: {
+    [k: string]: JsonValue
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntityObservations".
+ */
+export interface EntityObservations {
+  type: 'entity.observations'
+  sceneRevision: string
+  epoch: number
+  simTime: number
+  sampleTimeMs: number
+  source: 'sim' | 'virtual' | 'device'
+  changes: ObservationChange[]
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ObservationChange".
+ */
+export interface ObservationChange {
+  key: string
+  rev: number
+  values: {
+    [k: string]: JsonValue
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntityEvent".
+ */
+export interface EntityEvent {
+  type: 'entity.event'
+  sceneRevision: string
+  epoch: number
+  entityKey: string
+  event: string
+  data: {
+    [k: string]: JsonValue
+  }
+  simTime: number
+  sampleTimeMs: number
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "InvocationUpdate".
+ */
+export interface InvocationUpdate {
+  invocationId: string
+  requestId: string
+  entityKey: string
+  action: string
+  params: {
+    [k: string]: JsonValue
+  }
+  actor: Actor
+  epoch: number
+  createdSimTime: number
+  createdAtMs: number
+  status: 'pending_approval' | 'accepted' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'rejected'
+  progress?: number | null
+  result?:
+    | boolean
+    | number
+    | string
+    | JsonValue[]
+    | {
+        [k: string]: JsonValue
+      }
+    | null
+  error?: InvocationError | null
+  startedSimTime?: number | null
+  endedSimTime?: number | null
+  type: 'invocation.update'
+  sceneRevision: string
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "Snapshot".
  */
 export interface Snapshot {
@@ -468,6 +674,16 @@ export interface SessionOptions {
   continueWithoutObservers: boolean
   strictLabels: boolean
   device: string
+  controlHz: number
+  factHz: number
+  approval: ApprovalPolicy
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ApprovalPolicy".
+ */
+export interface ApprovalPolicy {
+  high: 'auto' | 'require'
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -501,6 +717,119 @@ export interface StepArgs {
  */
 export interface RealtimeFactorArgs {
   value: number | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "InvokeRequest".
+ */
+export interface InvokeRequest {
+  invocationId: string
+  requestId: string
+  entityKey: string
+  action: string
+  params: {
+    [k: string]: JsonValue
+  }
+  actor: Actor
+  epoch: number
+  createdSimTime: number
+  createdAtMs: number
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Catalog".
+ */
+export interface Catalog {
+  sceneRevision: string
+  types: {
+    [k: string]: EntityType
+  }
+  entities: {
+    [k: string]: EntityBinding
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntityType".
+ */
+export interface EntityType {
+  type: string
+  title: string
+  description: string
+  properties: {
+    [k: string]: PropertyDefinition
+  }
+  actions: {
+    [k: string]: ActionDefinition
+  }
+  events: {
+    [k: string]: EventDefinition
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "PropertyDefinition".
+ */
+export interface PropertyDefinition {
+  schema: JsonSchema
+  description: string
+  unit?: string | null
+  deadband?: number | null
+  maxRateHz?: number | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "JsonSchema".
+ */
+export interface JsonSchema {
+  [k: string]: JsonValue
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "ActionDefinition".
+ */
+export interface ActionDefinition {
+  description: string
+  params: {
+    [k: string]: JsonSchema
+  }
+  required: string[]
+  preconditions: Condition[]
+  longRunning: boolean
+  timeoutSeconds: number
+  concurrent: boolean
+  risk: 'normal' | 'high'
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Condition".
+ */
+export interface Condition {
+  [k: string]: JsonValue
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EventDefinition".
+ */
+export interface EventDefinition {
+  schema?: JsonSchema | null
+  description: string
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntityBinding".
+ */
+export interface EntityBinding {
+  key: string
+  type: string
+  program: string
+  config: {
+    [k: string]: JsonValue
+  }
+  interlocks: {
+    [k: string]: Condition[]
+  }
+  unplaced: boolean
 }
 
 export type CommandRequest = Command
