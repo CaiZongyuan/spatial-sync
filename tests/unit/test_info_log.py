@@ -261,3 +261,45 @@ async def test_persistent_metadata_failure_closes_file_once_and_recovers_incompl
     recover_recordings(tmp_path)
     value = json.loads((tmp_path / "session-test/recording.json").read_bytes())
     assert value["status"] == "incomplete" and len(value["segments"]) == 1
+
+
+def invocation_payload(identifier, status):
+    return json.dumps(
+        {
+            "type": "invocation.update",
+            "sceneRevision": "rev-test",
+            "invocationId": identifier,
+            "requestId": "request-" + identifier,
+            "entityKey": "/tube",
+            "action": "inspect",
+            "params": {},
+            "actor": {"kind": "user", "name": "test"},
+            "epoch": 0,
+            "status": status,
+            "createdSimTime": 0,
+            "createdAtMs": 1,
+        }
+    )
+
+
+async def test_roll_retains_last_fifty_terminal_completions_including_early_accepted_long_action(tmp_path):
+    log = new_log(tmp_path, segment_seconds=1)
+    log.append_json(invocation_payload("long", "accepted"), 1100)
+    for i in range(60):
+        log.append_json(invocation_payload(f"short-{i}", "succeeded"), 1200 + i * 10)
+    log.append_json(invocation_payload("long", "succeeded"), 1850)
+    log.append_frame(frame(2100, 2), 2100)
+    await log.close()
+    records = read_segment((tmp_path / "session-test/seg-000002.bin").read_bytes()).records
+    values = json.loads(records[1].payload)["invocations"]
+    assert [value["invocationId"] for value in values] == [*[f"short-{i}" for i in range(11, 60)], "long"]
+
+
+async def test_authoritative_entity_snapshot_removes_old_active_invocation_from_roll_prefix(tmp_path):
+    log = new_log(tmp_path, segment_seconds=1)
+    log.append_json(invocation_payload("old-active", "accepted"), 1100)
+    log.append_json(snapshot(1500), 1500)
+    log.append_frame(frame(2100, 2), 2100)
+    await log.close()
+    records = read_segment((tmp_path / "session-test/seg-000002.bin").read_bytes()).records
+    assert json.loads(records[1].payload)["invocations"] == []

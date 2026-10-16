@@ -161,7 +161,9 @@ class _Projection:
         value = message if message is not None else json.loads(record.payload)
         kind = value.get("type")
         if kind == "entity.snapshot":
-            self.store.apply(EntitySnapshot.model_validate(value))
+            if not self.store.apply(EntitySnapshot.model_validate(value)):
+                return
+            self.invocations.clear()
             for invocation in value["invocations"]:
                 self._invocation(invocation)
         elif kind == "entity.observations":
@@ -175,6 +177,8 @@ class _Projection:
         self.invocations[value["invocationId"]] = {
             key: item for key, item in value.items() if key not in ("type", "sceneRevision")
         }
+        if value["status"] in TERMINAL:
+            self.invocations.move_to_end(value["invocationId"])
         # Segment prefixes need every active invocation and only the last 50 terminals.
         terminal = [key for key, value in self.invocations.items() if value["status"] in TERMINAL]
         for key in terminal[:-50]:
