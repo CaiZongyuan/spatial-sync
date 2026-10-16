@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -78,3 +79,68 @@ def test_startup_recovery_and_retention_only_touch_owned_recording_directories(t
     with TestClient(create_app(Settings(recordings_root=root, recordings_keep=1))) as client:
         assert [item["sessionId"] for item in client.get("/api/v1/recordings").json()] == ["session-2"]
     assert (foreign / "keep.txt").read_text() == "owned by somebody else"
+
+
+def test_real_writer_open_failure_does_not_fail_session_or_device_action(tmp_path, monkeypatch):
+    root = tmp_path / "logs"
+    original_open = Path.open
+
+    def fail_segment_open(path, mode="r", *args, **kwargs):
+        if path.name.startswith("seg-") and mode == "wb" and path.is_relative_to(root):
+            raise OSError("Injected disk full at segment open")
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_segment_open)
+    with TestClient(create_app(Settings(recordings_root=root))) as client:
+        session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
+        route = f"/api/v1/sessions/{session['sessionId']}"
+        result = client.post(
+            route + "/actions",
+            json={
+                "requestId": "works-with-full-disk",
+                "entityKey": "/World/Lab/Centrifuge",
+                "action": "closeLid",
+                "wait": True,
+                "timeoutSeconds": 3,
+            },
+        )
+        assert result.status_code == 200 and result.json()["status"] == "succeeded", result.text
+        assert client.get(route).json()["state"] == "RUNNING"
+        client.delete(route)
+        metadata = client.get("/api/v1/recordings").json()[0]
+        assert metadata["status"] == "incomplete" and "disk full" in metadata["error"]
+
+
+def test_terminal_lost_after_writer_stops_cannot_return_stale_accepted_or_redispatch(tmp_path):
+    with TestClient(create_app(Settings(recordings_root=tmp_path / "logs"))) as client:
+        session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
+        sid = session["sessionId"]
+        route = f"/api/v1/sessions/{sid}"
+        body = {"requestId": "lost-terminal", "entityKey": "/World/Lab/Centrifuge", "action": "closeLid"}
+        accepted = client.post(route + "/actions", json=body).json()
+        assert accepted["status"] in ("accepted", "running")
+        owned = client.app.state.manager.get(sid)
+        # This real writer drains its admitted accepted update, then stops before
+        # the device emits its terminal result; subsequent actions still run.
+        owned.recording.stop_incomplete("Injected disk failure after acceptance")
+        completed = client.get(route + f"/invocations/{accepted['invocationId']}?wait=true&timeoutSeconds=3")
+        assert completed.json()["status"] == "succeeded"
+        for i in range(1001):
+            result = client.post(
+                route + "/actions",
+                json={
+                    "requestId": f"evict-after-failure-{i}",
+                    "entityKey": "/World/Lab/Centrifuge",
+                    "action": "start",
+                    "params": {"rpm": -1, "durationSeconds": 1},
+                },
+            )
+            assert result.status_code == 422
+        for response in (
+            client.get(route + f"/invocations/{accepted['invocationId']}"),
+            client.post(route + "/actions", json=body),
+        ):
+            assert response.status_code == 503, response.text
+            assert response.json()["detail"]["code"] == "history_unavailable"
+            assert response.json()["detail"]["invocationId"] == accepted["invocationId"]
+        assert not owned.pipeline.table.active

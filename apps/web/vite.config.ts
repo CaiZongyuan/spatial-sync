@@ -10,6 +10,9 @@ export default defineConfig({
   server: {
     strictPort: true,
     proxy: {
+      '/recordings': {
+        target: process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000',
+      },
       '/api': {
         target: process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000',
         ws: true,

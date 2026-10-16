@@ -65,7 +65,7 @@ export function Inspector({
   useEffect(() => {
     let active = true;
     setJointState(undefined);
-    if (joint)
+    if (joint && !client.readOnly)
       request(
         `/sessions/${encodeURIComponent(client.sessionId)}/joints/state?key=${encodeURIComponent(joint.entityKey)}`,
       )
@@ -114,6 +114,7 @@ export function Inspector({
           binding={device}
           definition={definition}
           disabled={
+            client.readOnly ||
             state.connection !== 'connected' ||
             state.role !== 'operator' ||
             !metadata.ready ||

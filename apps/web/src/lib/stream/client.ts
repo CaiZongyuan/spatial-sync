@@ -32,6 +32,7 @@ export interface ViewState {
 }
 
 export class SessionClient {
+  readonly readOnly: boolean = false;
   readonly buffer = new PoseBuffer();
   readonly info = new InfoStore();
   private state: ViewState = {
@@ -96,9 +97,24 @@ export class SessionClient {
       this.listeners.delete(listener);
     };
   };
-  private update(patch: Partial<ViewState>) {
+  protected update(patch: Partial<ViewState>) {
     this.state = { ...this.state, ...patch };
     this.listeners.forEach((listener) => listener());
+  }
+
+  samplePoses(now: number) {
+    return this.buffer.sample(now);
+  }
+
+  protected configureManifest(manifest: SceneManifest) {
+    this.bodyIds = new Map(
+      manifest.nodes
+        .filter((node) => node.kind === 'body')
+        .map((node) => [node.entityKey, node.streamId]),
+    );
+    this.buffer.configure(manifest);
+    this.info.configure(manifest.sceneRevision, manifest.epoch);
+    this.update({ manifest, error: undefined });
   }
 
   async start() {
@@ -157,14 +173,7 @@ export class SessionClient {
       ),
     );
     if (this.stopped || generation !== this.generation) return;
-    this.bodyIds = new Map(
-      manifest.nodes
-        .filter((node) => node.kind === 'body')
-        .map((node) => [node.entityKey, node.streamId]),
-    );
-    this.buffer.configure(manifest);
-    this.info.configure(manifest.sceneRevision, manifest.epoch);
-    this.update({ manifest, error: undefined });
+    this.configureManifest(manifest);
   }
 
   private async loadCatalog(generation = this.generation) {
@@ -318,6 +327,7 @@ export class SessionClient {
   }
 
   private async receive(message: ServerMessage, generation: number) {
+    if (this.applyGlobalMessage(message)) return;
     switch (message.type) {
       case 'server.ready':
         if (this.buffer.revision !== message.sceneRevision)
@@ -340,25 +350,6 @@ export class SessionClient {
         if (message.requestId !== this.pendingSubscription) break;
         this.pendingSubscription = undefined;
         this.buffer.grantedRateHz = message.grantedRateHz;
-        break;
-      case 'session.state':
-        if (message.sceneRevision !== this.buffer.revision) break;
-        this.buffer.paused = message.state === 'PAUSED';
-        if (this.buffer.paused) this.buffer.applyLatest();
-        this.update({
-          sessionState: message.state,
-          simTime: message.simTime,
-          actualRtf: message.actualRtf,
-          realtimeFactor: message.realtimeFactor,
-          ...(message.state === 'FAILED'
-            ? {
-                error:
-                  message.cause.message ??
-                  message.cause.code ??
-                  'Source failed. Restart the session to recover.',
-              }
-            : {}),
-        });
         break;
       case 'server.heartbeat':
         this.gatewayHeartbeatAt = performance.now();
@@ -394,19 +385,42 @@ export class SessionClient {
         });
         break;
       }
+    }
+  }
+
+  /** WebSocket delivery and recorded FIFO share this global state reducer. */
+  protected applyGlobalMessage(message: ServerMessage): boolean {
+    switch (message.type) {
+      case 'session.state':
+        if (message.sceneRevision !== this.buffer.revision) return true;
+        this.buffer.paused = message.state === 'PAUSED';
+        if (this.buffer.paused) this.buffer.applyLatest();
+        this.update({
+          sessionState: message.state,
+          simTime: message.simTime,
+          actualRtf: message.actualRtf,
+          realtimeFactor: message.realtimeFactor,
+          ...(message.state === 'FAILED'
+            ? { error: message.cause.message ?? message.cause.code ?? 'Source failed. Restart the session to recover.' }
+            : {}),
+        });
+        return true;
       case 'entity.snapshot':
       case 'entity.observations':
       case 'entity.event':
       case 'invocation.update':
         this.info.apply(message);
-        break;
+        return true;
       case 'server.error':
         this.update({ error: `${message.code}: ${message.message}` });
-        break;
+        return true;
+      default:
+        return false;
     }
   }
 
   private sendInfo(message: ClientMessage) {
+    if (this.readOnly) throw new Error('Recorded sessions are read-only.');
     if (this.ws?.readyState !== WebSocket.OPEN)
       throw new Error('Connection unavailable. Retry after reconnect.');
     if (this.state.role !== 'operator')
@@ -446,6 +460,7 @@ export class SessionClient {
     command: CommandRequest['command'],
     args: CommandRequest['args'] = {},
   ) {
+    if (this.readOnly) return;
     if (this.ws?.readyState !== WebSocket.OPEN) {
       this.update({
         commandResult: 'Connection unavailable. Retry after reconnect.',

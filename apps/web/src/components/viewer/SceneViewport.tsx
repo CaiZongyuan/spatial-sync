@@ -499,7 +499,7 @@ function SceneContents({
   }, [inspectVisuals]);
   useFrame(({ gl, scene }, delta) => {
     const start = performance.now();
-    const data = client.buffer.sample(start);
+    const data = client.samplePoses(start);
     for (const [key, object] of physicalNodes.current)
       object.visible = !hidden.has(key) && client.isEntityVisible(key);
     for (const node of manifest.nodes) {

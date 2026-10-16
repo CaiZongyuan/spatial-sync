@@ -82,6 +82,9 @@ export function Diagnostics({
               ['Step FPS', (stats.stepHz ?? stats.stepFps) as number],
               ['Solve', solveMs == null ? undefined : `${solveMs} ms`],
               ['Readback', readbackMs == null ? undefined : `${readbackMs} ms`],
+              ['Control tick', typeof stats.tick_ms === 'number' ? `${stats.tick_ms} ms` : undefined],
+              ['Control tick p95', typeof stats.tickP95Ms === 'number' ? `${stats.tickP95Ms} ms` : undefined],
+              ['Control ticks', typeof stats.controlTickCount === 'number' ? stats.controlTickCount : undefined],
               ['Readback mode', stats.readbackMode as string],
               ['Solve timing', stats.solverTimingMode as string],
               [

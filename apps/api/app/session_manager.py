@@ -19,7 +19,7 @@ from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
 from packages.assets.registry import AssetRegistry
-from packages.info.invocations import InvocationTable
+from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
 from packages.protocol.internal import SessionOptions
@@ -213,7 +213,10 @@ class Session:
             self._log_event("recording.failed", message=str(exc), level=logging.ERROR)
 
     async def _recorded_invocation(self, invocation_id):
-        return await self.recording.lookup_invocation(invocation_id) if self.recording else None
+        value = await self.recording.lookup_invocation(invocation_id) if self.recording else None
+        # Eviction only archives terminal results. A D04 prefix may contain an
+        # older accepted/running update whose eventual terminal was never written.
+        return value if value is not None and value.status in TERMINAL else None
 
     def _record_json(self, message, payload):
         if self.recording and self._recording_revision_ready:

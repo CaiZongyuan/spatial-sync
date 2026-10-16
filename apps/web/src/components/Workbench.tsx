@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import type { ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { SessionClient } from '../lib/stream/client';
 import { request } from '../lib/api';
@@ -29,6 +30,7 @@ declare global {
       getRenderedPose: (key: string) => RenderedPose | undefined;
       getAuthoritativePose: SessionClient['buffer']['readLatest'];
       getSample: () => SessionClient['buffer']['latestSample'];
+      getEntityState: SessionClient['info']['getEntity'];
       getConnection: () => string;
       getDiscardedFrames: () => number;
       inspectVisuals: InspectVisuals;
@@ -39,9 +41,13 @@ declare global {
   }
 }
 
-export function Workbench({ sessionId }: { sessionId: string }) {
+export function Workbench({ sessionId, source, controls }: {
+  sessionId: string;
+  source?: SessionClient;
+  controls?: ReactNode;
+}) {
   const navigate = useNavigate();
-  const client = useMemo(() => new SessionClient(sessionId), [sessionId]);
+  const client = useMemo(() => source ?? new SessionClient(sessionId), [sessionId, source]);
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const [loadError, setLoadError] = useState<string>();
   const [operationPending, setOperationPending] = useState(false);
@@ -72,12 +78,17 @@ export function Workbench({ sessionId }: { sessionId: string }) {
     [],
   );
   useEffect(() => {
-    void client.start().catch((error: Error) => setLoadError(error.message));
+    let active = true;
+    setLoadError(undefined);
+    void client.start().catch((error: Error) => {
+      if (active) setLoadError(error.message);
+    });
     window.__spatialDebug = {
       sessionId,
       getRenderedPose: (key) => rendered.current.get(key),
       getAuthoritativePose: (key) => client.buffer.readLatest(key),
       getSample: () => client.buffer.latestSample,
+      getEntityState: (key) => client.info.getEntity(key),
       getConnection: () => client.getSnapshot().connection,
       getDiscardedFrames: () => client.buffer.discardedFrames,
       inspectVisuals: (key) => inspectVisuals.current?.(key),
@@ -89,6 +100,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
       getStreamMetrics: client.getStreamMetrics,
     };
     return () => {
+      active = false;
       client.stop();
       delete window.__spatialDebug;
     };
@@ -124,7 +136,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
   }, [hidden, manifest]);
   const pending = state.pending.length > 0 || operationPending;
   const connected = state.connection === 'connected';
-  const canControl = connected && state.role === 'operator';
+  const canControl = !client.readOnly && connected && state.role === 'operator';
   const info = useSyncExternalStore(
     client.info.subscribeMetadata,
     client.info.getMetadata,
@@ -170,7 +182,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
             Sessions ↗
           </Link>
           <button
-            disabled={pending || state.role !== 'operator'}
+            disabled={client.readOnly || pending || state.role !== 'operator'}
             onClick={async () => {
               try {
                 await request<void>(
@@ -187,7 +199,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
           </button>
         </div>
       </header>
-      <div className="control-bar">
+      {controls ?? <div className="control-bar">
         <div className="playback-controls">
           <span
             className={`state-pill ${state.sessionState.toLowerCase()}`}
@@ -265,7 +277,7 @@ export function Workbench({ sessionId }: { sessionId: string }) {
             </select>
           </label>
         </div>
-      </div>
+      </div>}
       <ApprovalBanner
         store={client.info}
         disabled={actionsDisabled}

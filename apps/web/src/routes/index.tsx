@@ -1,12 +1,14 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { createSession, getScenes, type SceneSummary } from '../lib/api';
+import { createSession, getScenes, request, type SceneSummary } from '../lib/api';
+import type { Recording } from '../lib/replay/reader';
 
 export const Route = createFileRoute('/')({ component: Home });
 
 function Home() {
   const navigate = useNavigate();
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const [sceneId, setSceneId] = useState('lab-demo');
   const [source, setSource] = useState('synthetic');
   const [continueWithoutObservers, setContinueWithoutObservers] =
@@ -15,6 +17,7 @@ function Home() {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   useEffect(() => {
+    void request<Recording[]>('/recordings').then(setRecordings).catch(() => {});
     getScenes()
       .then(({ scenes }) => {
         setScenes(scenes);
@@ -162,6 +165,15 @@ function Home() {
           </div>
         </div>
       </section>
+      {recordings.length > 0 && <section className="recording-list">
+        <h2>Recordings</h2>
+        {recordings.map((recording) => <Link key={recording.sessionId}
+          to="/replay/$recordingId" params={{ recordingId: recording.sessionId }} search={{ src: undefined }}>
+          <strong>{recording.sceneId}</strong>
+          <span>{recording.sessionId} · {recording.status}</span>
+          <span>{((recording.durationMs ?? 0) / 1000).toFixed(1)} s · Replay →</span>
+        </Link>)}
+      </section>}
       {error && (
         <div role="alert" className="banner error">
           {error}

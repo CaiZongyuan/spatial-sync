@@ -6,6 +6,7 @@ import pytest
 
 from packages.info.log import SessionLog, read_segment, recover_recordings
 from packages.protocol.schema import TransformFrame
+from packages.transport import HEADER as FRAME_HEADER
 from packages.transport import FrameCodec
 
 
@@ -158,3 +159,43 @@ async def test_recovery_includes_open_first_segment_and_ignores_truncated_tail(t
 def test_reader_rejects_unknown_versions_or_corrupt_records(raw):
     with pytest.raises(ValueError):
         read_segment(raw)
+
+
+async def test_reset_roll_defers_until_spatial_and_entity_epochs_match(tmp_path):
+    log = new_log(tmp_path, segment_seconds=1)
+    log.append_frame(frame(1600, 2, epoch=1), 1600, reliable=True)
+    state = json.loads(snapshot(2200, "slot"))
+    state["epoch"] = 1
+    log.append_json(json.dumps(state), 2200)
+    log.append_frame(frame(2300, 3, epoch=1), 2300)
+    await log.close()
+    metadata = json.loads((tmp_path / "session-test/recording.json").read_text())
+    assert len(metadata["segments"]) == 2
+    for segment in metadata["segments"]:
+        records = read_segment((tmp_path / "session-test" / segment["file"]).read_bytes()).records
+        assert FRAME_HEADER.unpack_from(records[0].payload)[4] == json.loads(records[1].payload)["epoch"]
+
+
+async def test_reload_keeps_revision_documents_and_independent_new_segment(tmp_path):
+    log = new_log(tmp_path)
+    value = json.loads(snapshot(2000, "new-scene"))
+    value["sceneRevision"] = "rev-next"
+    encoded = bytearray(frame(2000, 2))
+    struct.pack_into("<I", encoded, 8, 2)
+    log.add_revision(
+        {"sceneRevision": "rev-next", "revisionNumericId": 2},
+        {"sceneRevision": "rev-next"},
+        bytes(encoded),
+        json.dumps(value),
+        assets={"assets/shape.glb": b"immutable geometry"},
+    )
+    await log.close()
+    directory = tmp_path / "session-test"
+    metadata = json.loads((directory / "recording.json").read_text())
+    assert metadata["revisions"]["rev-test"]["manifest"] == "manifest.json"
+    assert metadata["revisions"]["rev-next"]["manifest"] == "manifest-000002.json"
+    assert json.loads((directory / "catalog-000002.json").read_text())["sceneRevision"] == "rev-next"
+    assert (directory / "assets/shape.glb").read_bytes() == b"immutable geometry"
+    records = read_segment((directory / "seg-000002.bin").read_bytes()).records
+    assert FRAME_HEADER.unpack_from(records[0].payload)[3] == 2
+    assert json.loads(records[1].payload)["sceneRevision"] == "rev-next"

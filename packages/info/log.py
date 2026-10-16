@@ -310,6 +310,8 @@ class SessionLog:
         if payload is None:
             return None
         value = json.loads(payload)
+        if value.get("invocationId") != invocation_id:
+            raise ValueError("Archived invocation identity does not match the requested ID")
         return Invocation.model_validate(
             {key: item for key, item in value.items() if key not in ("type", "sceneRevision")}
         )

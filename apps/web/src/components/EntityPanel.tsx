@@ -61,6 +61,7 @@ function Parameter({
   value,
   change,
   action,
+  disabled,
 }: {
   name: string;
   schema: JsonSchema;
@@ -68,9 +69,11 @@ function Parameter({
   value: string;
   change: (value: string) => void;
   action: string;
+  disabled: boolean;
 }) {
   const label = `${action} ${name}`;
   const common = {
+    disabled,
     value,
     onChange: (
       event: React.ChangeEvent<
@@ -194,6 +197,7 @@ function ActionForm({
         aria-label={`Action ${name}`}
         onSubmit={(event) => {
           event.preventDefault();
+          if (disabled || waiting) return;
           setError(undefined);
           try {
             setRequestId(
@@ -223,6 +227,7 @@ function ActionForm({
             name={param}
             action={name}
             schema={schema}
+            disabled={disabled || waiting}
             required={action.required.includes(param)}
             value={input[param] ?? ''}
             change={(value) =>

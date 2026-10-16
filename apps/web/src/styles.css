@@ -1424,3 +1424,10 @@ pre {
     display: none;
   }
 }
+.replay-controls { gap: 14px; }
+.replay-controls label { display: flex; align-items: center; gap: 7px; }
+.replay-seek { flex: 1; min-width: 100px; accent-color: var(--accent, #80d6b1); }
+.replay-controls output { min-width: 145px; font-variant-numeric: tabular-nums; }
+.recording-list { margin: 28px auto; max-width: 1120px; }
+.recording-list a { display: flex; justify-content: space-between; gap: 20px; padding: 14px 0; border-bottom: 1px solid #33403d; }
+.recording-list span { font-size: 13px; }

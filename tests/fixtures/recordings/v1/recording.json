@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "protocolVersion": 2,
+  "sessionId": "session-f5fa5a5b2ec9",
+  "sceneId": "lab-demo",
+  "createdAt": "2026-10-16T19:37:07.934804+00:00",
+  "status": "complete",
+  "segments": [
+    {
+      "file": "seg-000001.bin",
+      "sceneRevision": "rev-df517a94b2b6",
+      "startSampleTimeMs": 147938413.1256,
+      "endSampleTimeMs": 147948425.4175,
+      "startSimTime": 0.0,
+      "endSimTime": 10.008333333333333,
+      "bytes": 334684
+    }
+  ],
+  "revisions": {
+    "rev-df517a94b2b6": {
+      "manifest": "manifest.json",
+      "catalog": "catalog.json",
+      "revisionNumericId": 1
+    }
+  },
+  "durationMs": 10012.291899979115,
+  "sceneRevision": "rev-df517a94b2b6"
+}
