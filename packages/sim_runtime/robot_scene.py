@@ -47,6 +47,9 @@ def build_robot_and_tubes():
         collapse_fixed_joints=False,
         joint_damping_mode="passive",
     )
+    # Newton 1.7's URDF parser omits label= for every imported shape, including
+    # named URDF visuals. Preserve that known omission independently of spelling.
+    imported_shape_count = robot.shape_count
     for joint, label in enumerate(robot.joint_label):
         name = label.rsplit("/", 1)[-1]
         if name in {f"fr3_joint{i}" for i in range(1, 8)}:
@@ -66,9 +69,13 @@ def build_robot_and_tubes():
     robot.add_site(
         hand, xform=wp.transform((0, 0, 0.1034), wp.quat_identity()), label="fr3/fr3_hand/tcp", visible=True
     )
+    shape_offset = builder.shape_count
     builder.add_builder(
         robot, xform=wp.transform((-0.5, 0, 0.75), wp.quat_identity()), label_prefix=ROBOT_PREFIX
     )
+    builder.spatial_missing_labels = {
+        ("shape", shape_offset + index) for index in range(imported_shape_count)
+    }
 
     for index in range(20):
         x, y = 0.12 + (index % 5) * 0.13, -0.42 + (index // 5) * 0.16
