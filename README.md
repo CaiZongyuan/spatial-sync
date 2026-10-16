@@ -79,6 +79,51 @@ Commands are serialized and idempotent. Each observer has one writer, a bounded
 reliable queue and a latest-only periodic frame slot. Slow observers cannot
 block others. Heartbeats continue while paused.
 
+## Device state and actions
+
+Select a device or one of its child bodies, then open **Device** in the Inspector.
+Properties, units, parameter forms and conditions come from `devices/types/` and
+the scene's YAML bindings. The invocation panel shows progress, results, errors
+and actors. Robot motion advances only when an action runs.
+
+Information paths use `/api/v1/sessions/{id}`:
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/catalog`, `/entities?type=&q=` | Definitions, bindings and entity summaries |
+| GET | `/entity?key=...`, `/state?keys=a,b` | Definition/details or current properties |
+| POST | `/actions` | `{requestId, entityKey, action, params, wait?, timeoutSeconds?}` |
+| GET | `/invocations`, `/invocations/{id}?wait=true` | Recent calls or terminal wait |
+| POST | `/invocations/{id}/cancel`, `/invocations/{id}/approve` | Cancel or operator approval |
+| GET | `/wait?key=&property=&op=&value=` | Event-driven property wait; `value` is JSON |
+| GET | `/events?after=&timeoutSeconds=` | Ordered information messages with a cursor |
+
+For example, `closeLid` followed by `start` on `/World/Lab/Centrifuge` exercises
+the Synthetic device lifecycle. The arm must leave the centrifuge zone before
+closing the lid. Rejections include structured reasons and condition messages.
+`X-Actor: cli:lw` or `agent:<client name>` records attribution; it grants no
+permissions. Agents cannot approve calls. Reuse a `requestId` to retrieve the
+same invocation without executing it twice.
+
+## Recording and replay
+
+Sessions record automatically to `recordings/<sessionId>/`. Close the session to
+finish its recording, then choose it from **Recordings** on the home page.
+`/replay/<recordingId>` reuses the scene, Inspector and invocation views with
+read-only controls, playback speed from 0.25× to 4×, and seeking. An external
+recording can be opened with `?src=<recording.json URL>`.
+
+`GET /api/v1/recordings` lists recordings. The `/recordings/<id>/` files include
+frozen manifests, catalogs, assets and LWLG format1 segments; replay needs no
+live source session. `SPATIAL_RECORDINGS_ROOT` selects the directory,
+`SPATIAL_RECORDINGS_KEEP` defaults to20, and `SPATIAL_RECORDINGS_ENABLED=0`
+disables recording. Restarting the gateway recovers interrupted recordings as
+`incomplete` and preserves complete records before a truncated tail.
+
+The recent query window keeps1000 terminal invocations; older exact results are
+read from the session log. An unavailable archived result returns503
+`history_unavailable` with its original invocation ID, preserving deduplication.
+
 ## Verification and assets
 
 The [verification guide](docs/VERIFICATION.md) records commands, optional Newton
