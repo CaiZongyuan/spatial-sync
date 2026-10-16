@@ -24,11 +24,13 @@ from packages.protocol.schema import (
     ServerError,
     SessionOptions,
     SessionState,
+    UInt32,
 )
 
 PACKET_HEADER = struct.Struct("!BI")
 JSON, FRAME, MESH = 1, 2, 3
 Token = Annotated[str, Field(strict=True, min_length=1, max_length=128)]
+StreamIds = Annotated[list[UInt32], Field(max_length=131072)]
 
 
 @dataclass(frozen=True)
@@ -157,10 +159,11 @@ class Start(Model):
 
 
 class Request(Model):
-    kind: Literal["command", "joint", "mesh", "close", "ping"]
+    kind: Literal["command", "joint", "mesh", "snapshot", "interest", "close", "ping"]
     token: Token
     command: Command | None = None
     key: Annotated[str, Field(strict=True, min_length=1, max_length=2048)] | None = None
+    streamIds: StreamIds | None = None
 
     @model_validator(mode="after")
     def validate_operation(self):
@@ -170,6 +173,12 @@ class Request(Model):
             raise ValueError("key payload does not match operation")
         if self.command and len(self.command.requestId) > 128:
             raise ValueError("remote command requestId exceeds its bound")
+        if self.kind != "interest" and self.streamIds is not None:
+            raise ValueError("interest payload does not match operation")
+        if self.kind == "interest" and "streamIds" not in self.model_fields_set:
+            raise ValueError("interest operation requires explicit streamIds (null means all)")
+        if self.streamIds is not None and len(self.streamIds) != len(set(self.streamIds)):
+            raise ValueError("interest IDs must be unique")
         return self
 
 
@@ -195,6 +204,17 @@ class JointResult(Model):
 class MeshResult(Model):
     kind: Literal["mesh_result"] = "mesh_result"
     token: Token
+
+
+class SnapshotResult(Model):
+    kind: Literal["snapshot_result"] = "snapshot_result"
+    token: Token
+
+
+class InterestResult(Model):
+    kind: Literal["interest_result"] = "interest_result"
+    token: Token
+    streamIds: StreamIds | None
 
 
 class Unknown(Model):
@@ -239,6 +259,8 @@ PACKET = TypeAdapter(
         | Result
         | JointResult
         | MeshResult
+        | SnapshotResult
+        | InterestResult
         | Unknown
         | Closed
         | QueryTimeout
@@ -251,8 +273,11 @@ PACKET = TypeAdapter(
 
 
 def json_bytes(value: Model):
+    data = value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, InterestResult) or (isinstance(value, Request) and value.kind == "interest"):
+        data["streamIds"] = value.streamIds
     return json.dumps(
-        value.model_dump(mode="json", exclude_none=True),
+        data,
         separators=(",", ":"),
         ensure_ascii=False,
         allow_nan=False,

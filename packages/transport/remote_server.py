@@ -18,6 +18,7 @@ from packages.transport.remote import (
     Failed,
     Heartbeat,
     Hello,
+    InterestResult,
     JointResult,
     MeshResult,
     Outbox,
@@ -26,6 +27,7 @@ from packages.transport.remote import (
     Request,
     Result,
     ServerConfig,
+    SnapshotResult,
     Start,
     Unknown,
     close_stream,
@@ -34,6 +36,7 @@ from packages.transport.remote import (
     receive,
     send,
 )
+from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
 
 class RunnerServer:
@@ -141,10 +144,14 @@ class RunnerServer:
     async def close(self):
         if self._server:
             self._server.close()
+        peers = set(self._peers.values())
         tasks = list(self._handlers)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        # A handler can already be awaiting shielded peer cleanup when it is
+        # cancelled again. Keep and join the resource owners after handlers exit.
+        await asyncio.gather(*(peer.close() for peer in peers), return_exceptions=True)
         if self._server:
             await self._server.wait_closed()
 
@@ -167,6 +174,8 @@ class _Peer:
         self._close_task = None
         self.commands, self.command_bytes = OrderedDict(), 0
         self.owner = asyncio.current_task()
+        self._samples = None
+        self._runner_heartbeat = RunnerHeartbeat()
 
     def abort(self):
         if not self.closing and self.owner is not asyncio.current_task():
@@ -222,17 +231,28 @@ class _Peer:
         raise ConnectionError("Remote frame peer disconnected or sent unexpected input")
 
     def _stats(self):
-        return self.source.stats() if self.source and hasattr(self.source, "stats") else {}
+        stats = self.source.stats() if self.source and hasattr(self.source, "stats") else {}
+        self._runner_heartbeat.observe(stats)
+        return {
+            **stats,
+            **self._runner_heartbeat.stats(not self.source_closed and stats.get("runnerAlive", True)),
+        }
 
     async def _pulse(self):
         last_seq, next_heartbeat = -1, 0.0
         loop = asyncio.get_running_loop()
         while True:
-            if self.ready:
+            if self.ready and not self._samples.transition:
                 frame = self.source.latest_frame()
                 if frame is not None and frame.seq > last_seq:
-                    self.frames.offer((FRAME, self.codec.encode(frame)))
-                    last_seq = frame.seq
+                    if frame.type == "stream.snapshot":
+                        # A timed-out local capture can complete later. It remains a
+                        # full control sample and cannot become narrowed periodic data.
+                        self._samples.control(frame)
+                        last_seq = frame.seq
+                    elif self._samples.periodic(frame):
+                        self.frames.offer((FRAME, self.codec.encode(frame)))
+                        last_seq = frame.seq
             now = loop.time()
             if now >= next_heartbeat:
                 # Data heartbeats also keep paused/loading peers under a finite read timeout.
@@ -258,7 +278,9 @@ class _Peer:
         if manifest.sessionId != start.sessionId or manifest.source.kind != self.server.config.source_kind:
             raise ValueError("Owned source returned inconsistent Manifest identity")
         self.codec = FrameCodec(start.sessionId, manifest.sceneRevision, manifest.revisionNumericId)
+        self._samples = SourceFrames(manifest)
         snapshot = self.source.latest_frame().model_copy(update={"type": "stream.snapshot"})
+        self._samples.control(snapshot)
         self.control.offer(
             (JSON, json_bytes(Ready(manifest=manifest, stats=self._stats()))),
             (FRAME, self.codec.encode(snapshot)),
@@ -286,10 +308,15 @@ class _Peer:
                     return
                 if packet.kind == "ping":
                     continue
+                capturing = packet.kind in ("command", "snapshot", "interest")
+                if capturing:
+                    self._samples.transition = True
                 try:
                     async with asyncio.timeout(self.limits.request_seconds):
                         if packet.kind == "command":
                             await self._command(packet)
+                        elif packet.kind in ("snapshot", "interest"):
+                            await self._capture(packet)
                         elif packet.kind == "joint":
                             state = await self.source.query_joint_state(packet.key)
                             self.control.offer(
@@ -301,11 +328,16 @@ class _Peer:
                                 (JSON, json_bytes(MeshResult(token=packet.token))), (MESH, data)
                             )
                 except KeyError:
+                    if packet.kind not in ("joint", "mesh"):
+                        raise
                     self.control.offer((JSON, json_bytes(Unknown(token=packet.token, key=packet.key))))
                 except TimeoutError:
-                    if packet.kind == "command":
+                    if packet.kind in ("command", "interest"):
                         raise
                     self.control.offer((JSON, json_bytes(QueryTimeout(token=packet.token))))
+                finally:
+                    if capturing:
+                        self._samples.transition = False
         finally:
             if request_task is not None:
                 request_task.cancel()
@@ -319,6 +351,9 @@ class _Peer:
             result, frame, _ = self.commands[key]
         else:
             result = await self.source.execute(packet.command)
+            if result.frame:
+                self._samples.control(result.frame)
+            self._samples.state(result.state)
             frame = self.codec.encode(result.frame) if result.frame else None
             result = result.model_copy(update={"frame": None})
             size = len(
@@ -337,6 +372,22 @@ class _Peer:
         if frame:
             packets.append((FRAME, frame))
         self.control.offer(*packets)
+
+    async def _capture(self, packet):
+        if packet.kind == "interest":
+            ids = self._samples.interest(packet.streamIds)
+            frame = await self.source.set_interest(ids)
+            response = InterestResult(token=packet.token, streamIds=None if ids is None else sorted(ids))
+        else:
+            frame = await self.source.snapshot()
+            response = SnapshotResult(token=packet.token)
+        if frame.type != "stream.snapshot":
+            raise ValueError("Owned source full capture must be a snapshot")
+        if packet.kind == "interest":
+            self._samples.install_interest(ids, frame)
+        else:
+            self._samples.control(frame)
+        self.control.offer((JSON, json_bytes(response)), (FRAME, self.codec.encode(frame)))
 
     async def close(self):
         self.closing = True

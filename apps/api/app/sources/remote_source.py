@@ -17,6 +17,7 @@ from packages.transport.remote import (
     Failed,
     Heartbeat,
     Hello,
+    InterestResult,
     JointResult,
     MeshResult,
     Outbox,
@@ -25,6 +26,7 @@ from packages.transport.remote import (
     RemoteConfig,
     Request,
     Result,
+    SnapshotResult,
     Start,
     Unknown,
     close_stream,
@@ -33,6 +35,7 @@ from packages.transport.remote import (
     receive,
     send,
 )
+from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
 
 class RemoteQueryTimeout(TimeoutError):
@@ -49,6 +52,11 @@ class RemoteSource:
         self._failed = self._closing = self._closed = self._started = False
         self._close_task = None
         self._metrics = {}
+        self._samples = None
+        self._interest_lock = asyncio.Lock()
+        self._requested_interest = None
+        self._pending_kinds = {}
+        self._runner_heartbeat = RunnerHeartbeat()
 
     async def _connect(self, context):
         reader, writer = await asyncio.wait_for(
@@ -114,11 +122,12 @@ class RemoteSource:
                     "source": ready.manifest.source.model_copy(update={"sampleTimeClock": "gateway-receive"})
                 }
             )
-            self._ids = {node.streamId for node in self.manifest.nodes if node.kind == "body"}
+            self._samples = SourceFrames(self.manifest)
             self._codec = FrameCodec(
                 self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
             )
             self._metrics.update(ready.stats)
+            self._runner_heartbeat.observe(ready.stats)
             snapshot = await self._frame(control)
             if snapshot.type != "stream.snapshot":
                 raise ValueError("Remote ready baseline must be a snapshot")
@@ -141,14 +150,12 @@ class RemoteSource:
 
     def _decode_frame(self, payload, received):
         frame = self._codec.decode(payload)
-        if {row[0] for row in frame.poses} != self._ids:
-            raise ValueError("Remote source frame must contain the complete Manifest body set")
         # The host's monotonic clock is deliberately discarded at the actual Gateway.
         return frame.model_copy(update={"sampleTimeMs": received})
 
     def _cache(self, frame):
-        if self._latest is None or frame.seq > self._latest.seq:
-            self._latest = frame
+        self._samples.control(frame)
+        self._latest = self._samples.latest
 
     async def _read_frames(self, reader):
         try:
@@ -159,7 +166,18 @@ class RemoteSource:
                     if not isinstance(parse_json(payload), Heartbeat):
                         raise ValueError("Invalid remote frame heartbeat")
                     continue
-                self._cache(self._decode_frame(payload, received))
+                frame = self._decode_frame(payload, received)
+                if self._samples.transition and frame.seq > self._samples.floor:
+                    ids = frozenset(row[0] for row in frame.poses)
+                    requested = (
+                        self._samples.all_ids
+                        if self._requested_interest is None
+                        else self._requested_interest
+                    )
+                    if len(frame.poses) != len(ids) or ids not in (self._samples.expected_ids, requested):
+                        raise ValueError("Invalid remote frame membership during interest transition")
+                self._samples.periodic(frame)
+                self._latest = self._samples.latest
         except Exception as exc:
             self._fail(type(exc).__name__)
 
@@ -170,6 +188,7 @@ class RemoteSource:
                 packet = parse_json(payload)
                 if isinstance(packet, Heartbeat):
                     self._metrics.update(packet.stats)
+                    self._runner_heartbeat.observe(packet.stats)
                     continue
                 if isinstance(packet, Event):
                     if self._event_bytes + len(payload) > self.limits.pending_bytes:
@@ -179,6 +198,11 @@ class RemoteSource:
                     continue
                 if isinstance(packet, Failed):
                     raise ConnectionError("Remote source failed")
+                operation = self._pending_kinds.get(packet.token)
+                if operation == "interest" and not isinstance(packet, InterestResult):
+                    raise ValueError("Remote interest response has the wrong operation kind")
+                if operation == "snapshot" and not isinstance(packet, (SnapshotResult, QueryTimeout)):
+                    raise ValueError("Remote snapshot response has the wrong operation kind")
                 if isinstance(packet, Result):
                     if packet.result.frame is not None:
                         raise ValueError("Reliable remote poses must use NSYN")
@@ -195,6 +219,24 @@ class RemoteSource:
                             raise ValueError("Remote command frame does not match authoritative state")
                         value = value.model_copy(update={"frame": frame})
                         self._cache(frame)
+                    self._samples.state(value.state)
+                elif isinstance(packet, (SnapshotResult, InterestResult)):
+                    frame = await self._frame(reader)
+                    if frame.type != "stream.snapshot":
+                        raise ValueError("Remote full capture must be a snapshot")
+                    if isinstance(packet, InterestResult):
+                        if self._pending_kinds.get(packet.token) != "interest":
+                            raise ValueError("Unexpected remote interest acknowledgement")
+                        ids = self._samples.interest(packet.streamIds)
+                        if ids != self._requested_interest:
+                            raise ValueError("Remote interest acknowledgement does not match requested IDs")
+                        self._samples.install_interest(ids, frame)
+                        self._latest = self._samples.latest
+                    else:
+                        if operation not in (None, "snapshot"):
+                            raise ValueError("Unexpected remote snapshot acknowledgement")
+                        self._cache(frame)
+                    value = frame
                 elif isinstance(packet, JointResult):
                     value = packet.state
                 elif isinstance(packet, MeshResult):
@@ -265,6 +307,7 @@ class RemoteSource:
         token = uuid.uuid4().hex
         future = asyncio.get_running_loop().create_future()
         self._pending[token] = future
+        self._pending_kinds[token] = kind
         try:
             self._outbox.offer((JSON, json_bytes(Request(kind=kind, token=token, **payload))))
             timeout = self.limits.close_seconds * 4 if kind == "close" else self.limits.request_seconds
@@ -272,7 +315,7 @@ class RemoteSource:
         except RemoteQueryTimeout:
             raise
         except TimeoutError as exc:
-            if kind in ("joint", "mesh"):
+            if kind in ("joint", "mesh", "snapshot"):
                 # Keep the reader alive to drain a late reply whose token has expired.
                 raise RemoteQueryTimeout("Remote query timed out") from exc
             self._fail("request timeout")
@@ -282,13 +325,35 @@ class RemoteSource:
             raise
         finally:
             self._pending.pop(token, None)
+            self._pending_kinds.pop(token, None)
 
     async def execute(self, command: Command) -> CommandResult:
         validate_command_args(command)
-        result = await self._request("command", command=command)
-        if result.state:
-            self.options.realtimeFactor = result.state.realtimeFactor
-        return result
+        async with self._interest_lock:
+            self._samples.transition = True
+            try:
+                result = await self._request("command", command=command)
+                if result.state:
+                    self.options.realtimeFactor = result.state.realtimeFactor
+                return result
+            finally:
+                self._samples.transition = False
+
+    async def snapshot(self):
+        if not self._failed and self._samples.paused and self._samples.complete is not None:
+            return self._samples.complete.model_copy(update={"type": "stream.snapshot"})
+        return await self._request("snapshot")
+
+    async def set_interest(self, stream_ids):
+        ids = self._samples.interest(stream_ids)
+        async with self._interest_lock:
+            self._samples.transition = True
+            self._requested_interest = ids
+            try:
+                return await self._request("interest", streamIds=None if ids is None else sorted(ids))
+            except BaseException:
+                self._fail("interest change failed")
+                raise
 
     async def query_joint_state(self, joint_key):
         return await self._request("joint", key=joint_key)
@@ -309,6 +374,7 @@ class RemoteSource:
         connected = self._started and not (self._failed or self._closed)
         return {
             **self._metrics,
+            **self._runner_heartbeat.stats(connected and self._metrics.get("runnerAlive", True)),
             "transport": "authenticated-tls",
             "sampleTimeClock": "gateway-receive",
             "remoteConnected": connected,
