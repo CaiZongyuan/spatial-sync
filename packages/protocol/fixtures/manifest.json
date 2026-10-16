@@ -1,0 +1,344 @@
+{
+  "protocolVersion": 1,
+  "sessionId": "session-fixture",
+  "sceneRevision": "rev-fixture",
+  "revisionNumericId": 1,
+  "epoch": 0,
+  "sceneName": "protocol-fixture",
+  "source": {
+    "kind": "synthetic",
+    "physicsDt": 0.004166666666666667,
+    "basePublishHz": 30.0,
+    "realtimeFactor": 1.0
+  },
+  "coordinates": {
+    "handedness": "right",
+    "upAxis": "Z",
+    "units": "m",
+    "quaternionOrder": "xyzw",
+    "poseSpace": "world",
+    "primitiveConvention": "newton"
+  },
+  "nodes": [
+    {
+      "entityKey": "/World",
+      "kind": "group",
+      "name": "World",
+      "stableKey": true
+    },
+    {
+      "entityKey": "/World/Arm",
+      "kind": "body",
+      "streamId": 7,
+      "name": "Arm",
+      "parentEntityKey": "/World",
+      "transformMode": "stream",
+      "stableKey": true,
+      "visuals": [
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "box",
+            "halfExtents": [
+              0.2,
+              0.3,
+              0.4
+            ]
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "sphere",
+            "radius": 0.2
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "capsule",
+            "radius": 0.1,
+            "halfHeight": 0.3
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "cylinder",
+            "radius": 0.1,
+            "halfHeight": 0.3
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "cone",
+            "radius": 0.1,
+            "halfHeight": 0.3
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "plane",
+            "width": 0.0,
+            "length": 0.0
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        }
+      ],
+      "colliders": [
+        {
+          "kind": "primitive",
+          "geometry": {
+            "type": "box",
+            "halfExtents": [
+              0.2,
+              0.3,
+              0.4
+            ]
+          },
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        }
+      ],
+      "debug": {
+        "newtonBodyIndex": 0
+      }
+    },
+    {
+      "entityKey": "/World/Floor",
+      "kind": "static",
+      "name": "Floor",
+      "transformMode": "static",
+      "initialPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "stableKey": true,
+      "visuals": [
+        {
+          "kind": "mesh",
+          "meshId": "sha256-fixture",
+          "url": "/meshes/sha256-fixture",
+          "assetUpAxis": "Z",
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "kind": "glb",
+          "url": "/assets/floor.glb",
+          "assetUpAxis": "Y",
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "localPose": {
+            "p": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "q": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          }
+        }
+      ],
+      "colliders": [],
+      "debug": {}
+    }
+  ],
+  "sites": [
+    {
+      "entityKey": "/World/Hinge/anchor",
+      "role": "joint-anchor",
+      "parentBodyKey": "/World/Arm",
+      "jointKey": "/World/Hinge",
+      "localPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.3
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "stableKey": true
+    },
+    {
+      "entityKey": "/World/Reference",
+      "role": "generic",
+      "localPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "stableKey": true
+    }
+  ],
+  "joints": [
+    {
+      "entityKey": "/World/Hinge",
+      "type": "revolute",
+      "childBodyKey": "/World/Arm",
+      "parentLocalPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "anchorSiteKey": "/World/Hinge/anchor",
+      "dofCount": 1,
+      "stableKey": true
+    }
+  ],
+  "warnings": [
+    {
+      "code": "asset_fallback",
+      "entityKey": "/World/Floor",
+      "message": "Fixture illustrates fallback metadata"
+    }
+  ]
+}

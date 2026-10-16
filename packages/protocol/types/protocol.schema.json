@@ -1,0 +1,2020 @@
+{
+  "$defs": {
+    "BodyNode": {
+      "additionalProperties": false,
+      "properties": {
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "body",
+          "default": "body",
+          "type": "string"
+        },
+        "streamId": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parentEntityKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transformMode": {
+          "const": "stream",
+          "default": "stream",
+          "type": "string"
+        },
+        "stableKey": {
+          "default": true,
+          "type": "boolean"
+        },
+        "visuals": {
+          "items": {
+            "$ref": "#/$defs/Visual"
+          },
+          "type": "array"
+        },
+        "colliders": {
+          "items": {
+            "$ref": "#/$defs/Visual"
+          },
+          "type": "array"
+        },
+        "debug": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "entityKey",
+        "kind",
+        "streamId",
+        "name",
+        "transformMode",
+        "stableKey",
+        "visuals",
+        "colliders",
+        "debug"
+      ],
+      "type": "object"
+    },
+    "Box": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "box",
+          "default": "box",
+          "type": "string"
+        },
+        "halfExtents": {
+          "maxItems": 3,
+          "minItems": 3,
+          "items": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "halfExtents"
+      ],
+      "type": "object"
+    },
+    "Capsule": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "capsule",
+          "default": "capsule",
+          "type": "string"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "halfHeight": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "radius",
+        "halfHeight"
+      ],
+      "type": "object"
+    },
+    "Cause": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "command",
+            "lifecycle",
+            "error"
+          ],
+          "type": "string"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "command": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "message": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ClientMessage": {
+      "discriminator": {
+        "mapping": {
+          "client.subscribe": "#/$defs/Subscribe",
+          "command.request": "#/$defs/Command"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Command"
+        },
+        {
+          "$ref": "#/$defs/Subscribe"
+        }
+      ]
+    },
+    "Command": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "command.request",
+          "default": "command.request",
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "command": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "command",
+        "args"
+      ],
+      "type": "object"
+    },
+    "CommandAck": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "command.ack",
+          "default": "command.ack",
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "invalid_state",
+                "unknown_command",
+                "invalid_args",
+                "unauthorized",
+                "source_unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "message": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "type",
+        "requestId",
+        "status",
+        "simTime",
+        "epoch"
+      ],
+      "type": "object"
+    },
+    "CommandResult": {
+      "additionalProperties": false,
+      "properties": {
+        "ack": {
+          "$ref": "#/$defs/CommandAck"
+        },
+        "frame": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformFrame"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ack"
+      ],
+      "type": "object"
+    },
+    "Cone": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "cone",
+          "default": "cone",
+          "type": "string"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "halfHeight": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "radius",
+        "halfHeight"
+      ],
+      "type": "object"
+    },
+    "Coordinates": {
+      "additionalProperties": false,
+      "properties": {
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "type": "string"
+        },
+        "upAxis": {
+          "const": "Z",
+          "default": "Z",
+          "type": "string"
+        },
+        "units": {
+          "const": "m",
+          "default": "m",
+          "type": "string"
+        },
+        "quaternionOrder": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "type": "string"
+        },
+        "poseSpace": {
+          "const": "world",
+          "default": "world",
+          "type": "string"
+        },
+        "primitiveConvention": {
+          "const": "newton",
+          "default": "newton",
+          "type": "string"
+        }
+      },
+      "required": [
+        "handedness",
+        "upAxis",
+        "units",
+        "quaternionOrder",
+        "poseSpace",
+        "primitiveConvention"
+      ],
+      "type": "object"
+    },
+    "Cylinder": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "cylinder",
+          "default": "cylinder",
+          "type": "string"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "halfHeight": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "radius",
+        "halfHeight"
+      ],
+      "type": "object"
+    },
+    "EntityState": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "entity.state",
+          "default": "entity.state",
+          "type": "string"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "schema": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "stateSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "type",
+        "sessionId",
+        "sceneRevision",
+        "entityKey",
+        "schema",
+        "stateSeq",
+        "simTime",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "Glb": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "glb",
+          "default": "glb",
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "assetUpAxis": {
+          "enum": [
+            "Y",
+            "Z"
+          ],
+          "type": "string"
+        },
+        "scale": {
+          "maxItems": 3,
+          "minItems": 3,
+          "items": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        },
+        "localPose": {
+          "$ref": "#/$defs/Pose"
+        }
+      },
+      "required": [
+        "kind",
+        "url",
+        "assetUpAxis",
+        "scale",
+        "localPose"
+      ],
+      "type": "object"
+    },
+    "GroupNode": {
+      "additionalProperties": false,
+      "properties": {
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "group",
+          "default": "group",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parentEntityKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "stableKey": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entityKey",
+        "kind",
+        "name",
+        "stableKey"
+      ],
+      "type": "object"
+    },
+    "Heartbeat": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "server.heartbeat",
+          "default": "server.heartbeat",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "CREATED",
+            "LOADING",
+            "READY",
+            "RUNNING",
+            "PAUSED",
+            "STOPPING",
+            "STOPPED",
+            "FAILED"
+          ],
+          "type": "string"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "lastSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "actualRtf": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "serverTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "state",
+        "simTime",
+        "lastSeq",
+        "actualRtf",
+        "serverTimeMs"
+      ],
+      "type": "object"
+    },
+    "Joint": {
+      "additionalProperties": false,
+      "properties": {
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parentBodyKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "childBodyKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "parentLocalPose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pose"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "axis": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "items": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "anchorSiteKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dofCount": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stableKey": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entityKey",
+        "type",
+        "childBodyKey",
+        "dofCount",
+        "stableKey"
+      ],
+      "type": "object"
+    },
+    "JointState": {
+      "additionalProperties": false,
+      "properties": {
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "positions": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entityKey",
+        "simTime",
+        "epoch",
+        "positions"
+      ],
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Mesh": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mesh",
+          "default": "mesh",
+          "type": "string"
+        },
+        "meshId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "assetUpAxis": {
+          "const": "Z",
+          "default": "Z",
+          "type": "string"
+        },
+        "scale": {
+          "default": [
+            1,
+            1,
+            1
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "items": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        },
+        "localPose": {
+          "$ref": "#/$defs/Pose"
+        }
+      },
+      "required": [
+        "kind",
+        "meshId",
+        "url",
+        "assetUpAxis",
+        "scale",
+        "localPose"
+      ],
+      "type": "object"
+    },
+    "Plane": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "plane",
+          "default": "plane",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "length": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "width",
+        "length"
+      ],
+      "type": "object"
+    },
+    "Pose": {
+      "additionalProperties": false,
+      "properties": {
+        "p": {
+          "default": [
+            0,
+            0,
+            0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "items": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        },
+        "q": {
+          "default": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "maxItems": 4,
+          "minItems": 4,
+          "items": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        }
+      },
+      "required": [
+        "p",
+        "q"
+      ],
+      "type": "object"
+    },
+    "Primitive": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "primitive",
+          "default": "primitive",
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/PrimitiveGeometry"
+        },
+        "localPose": {
+          "$ref": "#/$defs/Pose"
+        }
+      },
+      "required": [
+        "kind",
+        "geometry",
+        "localPose"
+      ],
+      "type": "object"
+    },
+    "PrimitiveGeometry": {
+      "discriminator": {
+        "mapping": {
+          "box": "#/$defs/Box",
+          "capsule": "#/$defs/Capsule",
+          "cone": "#/$defs/Cone",
+          "cylinder": "#/$defs/Cylinder",
+          "plane": "#/$defs/Plane",
+          "sphere": "#/$defs/Sphere"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Box"
+        },
+        {
+          "$ref": "#/$defs/Sphere"
+        },
+        {
+          "$ref": "#/$defs/Capsule"
+        },
+        {
+          "$ref": "#/$defs/Cylinder"
+        },
+        {
+          "$ref": "#/$defs/Cone"
+        },
+        {
+          "$ref": "#/$defs/Plane"
+        }
+      ]
+    },
+    "Ready": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "server.ready",
+          "default": "server.ready",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "type": "integer"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "revisionNumericId": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionState": {
+          "enum": [
+            "CREATED",
+            "LOADING",
+            "READY",
+            "RUNNING",
+            "PAUSED",
+            "STOPPING",
+            "STOPPED",
+            "FAILED"
+          ],
+          "type": "string"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "basePublishHz": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "realtimeFactor": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeatIntervalMs": {
+          "default": 1000,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "sessionId",
+        "sceneRevision",
+        "revisionNumericId",
+        "epoch",
+        "sessionState",
+        "simTime",
+        "basePublishHz",
+        "realtimeFactor",
+        "heartbeatIntervalMs"
+      ],
+      "type": "object"
+    },
+    "RealtimeFactorArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    },
+    "SceneManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "type": "integer"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "revisionNumericId": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epoch": {
+          "default": 0,
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sceneName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceInfo"
+        },
+        "coordinates": {
+          "$ref": "#/$defs/Coordinates"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/SceneNode"
+          },
+          "type": "array"
+        },
+        "sites": {
+          "items": {
+            "$ref": "#/$defs/Site"
+          },
+          "type": "array"
+        },
+        "joints": {
+          "items": {
+            "$ref": "#/$defs/Joint"
+          },
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/SceneWarning"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "sessionId",
+        "sceneRevision",
+        "revisionNumericId",
+        "epoch",
+        "sceneName",
+        "source",
+        "coordinates",
+        "nodes",
+        "sites",
+        "joints",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "SceneNode": {
+      "discriminator": {
+        "mapping": {
+          "body": "#/$defs/BodyNode",
+          "group": "#/$defs/GroupNode",
+          "static": "#/$defs/StaticNode"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/GroupNode"
+        },
+        {
+          "$ref": "#/$defs/BodyNode"
+        },
+        {
+          "$ref": "#/$defs/StaticNode"
+        }
+      ]
+    },
+    "SceneReplaced": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "scene.replaced",
+          "default": "scene.replaced",
+          "type": "string"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "revisionNumericId": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epoch": {
+          "default": 0,
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "sessionId",
+        "sceneRevision",
+        "revisionNumericId",
+        "epoch"
+      ],
+      "type": "object"
+    },
+    "SceneWarning": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entityKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ServerError": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "server.error",
+          "default": "server.error",
+          "type": "string"
+        },
+        "code": {
+          "enum": [
+            "invalid_message",
+            "unsupported_protocol",
+            "revision_mismatch",
+            "session_not_ready",
+            "unknown_session",
+            "unknown_entity",
+            "source_unavailable",
+            "internal_error",
+            "unauthorized",
+            "invalid_subscription"
+          ],
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "type",
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ServerMessage": {
+      "discriminator": {
+        "mapping": {
+          "command.ack": "#/$defs/CommandAck",
+          "entity.state": "#/$defs/EntityState",
+          "scene.replaced": "#/$defs/SceneReplaced",
+          "server.error": "#/$defs/ServerError",
+          "server.heartbeat": "#/$defs/Heartbeat",
+          "server.ready": "#/$defs/Ready",
+          "session.state": "#/$defs/SessionState",
+          "stream.snapshot": "#/$defs/TransformFrame",
+          "subscription.ack": "#/$defs/SubscriptionAck",
+          "transform.frame": "#/$defs/TransformFrame"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Ready"
+        },
+        {
+          "$ref": "#/$defs/SubscriptionAck"
+        },
+        {
+          "$ref": "#/$defs/TransformFrame"
+        },
+        {
+          "$ref": "#/$defs/SessionState"
+        },
+        {
+          "$ref": "#/$defs/SceneReplaced"
+        },
+        {
+          "$ref": "#/$defs/CommandAck"
+        },
+        {
+          "$ref": "#/$defs/EntityState"
+        },
+        {
+          "$ref": "#/$defs/Heartbeat"
+        },
+        {
+          "$ref": "#/$defs/ServerError"
+        }
+      ]
+    },
+    "SessionOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "realtimeFactor": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1.0
+        },
+        "physicsDt": {
+          "default": 0.004166666666666667,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "basePublishHz": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "maxLagMs": {
+          "default": 250,
+          "minimum": 0,
+          "type": "number"
+        },
+        "continueWithoutObservers": {
+          "default": true,
+          "type": "boolean"
+        },
+        "strictLabels": {
+          "default": false,
+          "type": "boolean"
+        },
+        "device": {
+          "default": "cpu",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "realtimeFactor",
+        "physicsDt",
+        "basePublishHz",
+        "maxLagMs",
+        "continueWithoutObservers",
+        "strictLabels",
+        "device"
+      ],
+      "type": "object"
+    },
+    "SessionState": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "session.state",
+          "default": "session.state",
+          "type": "string"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "CREATED",
+            "LOADING",
+            "READY",
+            "RUNNING",
+            "PAUSED",
+            "STOPPING",
+            "STOPPED",
+            "FAILED"
+          ],
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "realtimeFactor": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actualRtf": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "cause": {
+          "$ref": "#/$defs/Cause"
+        }
+      },
+      "required": [
+        "type",
+        "sessionId",
+        "state",
+        "sceneRevision",
+        "epoch",
+        "seq",
+        "simTime",
+        "realtimeFactor",
+        "actualRtf",
+        "cause"
+      ],
+      "type": "object"
+    },
+    "Site": {
+      "additionalProperties": false,
+      "properties": {
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "role": {
+          "default": "generic",
+          "minLength": 1,
+          "type": "string"
+        },
+        "parentBodyKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "jointKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "localPose": {
+          "$ref": "#/$defs/Pose"
+        },
+        "stableKey": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entityKey",
+        "role",
+        "localPose",
+        "stableKey"
+      ],
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "stream.snapshot",
+          "default": "stream.snapshot",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "type": "integer"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "poses": {
+          "items": {
+            "maxItems": 8,
+            "minItems": 8,
+            "items": [
+              {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "sessionId",
+        "sceneRevision",
+        "epoch",
+        "seq",
+        "simTime",
+        "sampleTimeMs",
+        "poses"
+      ],
+      "type": "object"
+    },
+    "SourceInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "newton",
+            "synthetic",
+            "replay",
+            "device"
+          ],
+          "type": "string"
+        },
+        "newtonVersion": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "solver": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "physicsDt": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "basePublishHz": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "realtimeFactor": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1.0
+        }
+      },
+      "required": [
+        "kind",
+        "physicsDt",
+        "basePublishHz",
+        "realtimeFactor"
+      ],
+      "type": "object"
+    },
+    "Sphere": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "sphere",
+          "default": "sphere",
+          "type": "string"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "radius"
+      ],
+      "type": "object"
+    },
+    "StaticNode": {
+      "additionalProperties": false,
+      "properties": {
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "static",
+          "default": "static",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parentEntityKey": {
+          "anyOf": [
+            {
+              "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transformMode": {
+          "const": "static",
+          "default": "static",
+          "type": "string"
+        },
+        "initialPose": {
+          "$ref": "#/$defs/Pose"
+        },
+        "stableKey": {
+          "default": true,
+          "type": "boolean"
+        },
+        "visuals": {
+          "items": {
+            "$ref": "#/$defs/Visual"
+          },
+          "type": "array"
+        },
+        "colliders": {
+          "items": {
+            "$ref": "#/$defs/Visual"
+          },
+          "type": "array"
+        },
+        "debug": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "entityKey",
+        "kind",
+        "name",
+        "transformMode",
+        "initialPose",
+        "stableKey",
+        "visuals",
+        "colliders",
+        "debug"
+      ],
+      "type": "object"
+    },
+    "StepArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "type": "object"
+    },
+    "Subscribe": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "client.subscribe",
+          "default": "client.subscribe",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "type": "integer"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "scope": {
+          "default": "all",
+          "enum": [
+            "all",
+            "entities"
+          ],
+          "type": "string"
+        },
+        "rateHz": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "entityKeys": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "sceneRevision",
+        "scope",
+        "rateHz"
+      ],
+      "type": "object"
+    },
+    "SubscriptionAck": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "subscription.ack",
+          "default": "subscription.ack",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "all",
+            "entities"
+          ],
+          "type": "string"
+        },
+        "grantedRateHz": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "scope",
+        "grantedRateHz"
+      ],
+      "type": "object"
+    },
+    "TransformFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "default": "transform.frame",
+          "enum": [
+            "transform.frame",
+            "stream.snapshot"
+          ],
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "type": "integer"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "poses": {
+          "items": {
+            "maxItems": 8,
+            "minItems": 8,
+            "items": [
+              {
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "sessionId",
+        "sceneRevision",
+        "epoch",
+        "seq",
+        "simTime",
+        "sampleTimeMs",
+        "poses"
+      ],
+      "type": "object"
+    },
+    "Visual": {
+      "discriminator": {
+        "mapping": {
+          "glb": "#/$defs/Glb",
+          "mesh": "#/$defs/Mesh",
+          "primitive": "#/$defs/Primitive"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Primitive"
+        },
+        {
+          "$ref": "#/$defs/Mesh"
+        },
+        {
+          "$ref": "#/$defs/Glb"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "manifest": {
+      "$ref": "#/$defs/SceneManifest"
+    },
+    "clientMessage": {
+      "$ref": "#/$defs/ClientMessage"
+    },
+    "serverMessage": {
+      "$ref": "#/$defs/ServerMessage"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/Snapshot"
+    },
+    "sessionOptions": {
+      "$ref": "#/$defs/SessionOptions"
+    },
+    "commandResult": {
+      "$ref": "#/$defs/CommandResult"
+    },
+    "jointState": {
+      "$ref": "#/$defs/JointState"
+    },
+    "stepArgs": {
+      "$ref": "#/$defs/StepArgs"
+    },
+    "realtimeFactorArgs": {
+      "$ref": "#/$defs/RealtimeFactorArgs"
+    }
+  },
+  "required": [
+    "manifest",
+    "clientMessage",
+    "serverMessage",
+    "snapshot",
+    "sessionOptions",
+    "commandResult",
+    "jointState",
+    "stepArgs",
+    "realtimeFactorArgs"
+  ],
+  "type": "object",
+  "title": "ProtocolContract",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spatial-sync.local/protocol/v1/schema.json"
+}
