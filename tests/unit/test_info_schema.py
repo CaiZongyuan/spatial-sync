@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -78,3 +81,27 @@ def test_schema_subset_constraint_examples(schema, valid, invalid):
 def test_schema_rejects_unsupported_or_invalid_definitions_at_load(schema):
     with pytest.raises(ValueError):
         compile_schema(schema)
+
+
+def test_portable_patterns_match_shared_standard_schema_examples():
+    cases = json.loads(Path("tests/fixtures/schema-patterns.json").read_text(encoding="utf-8"))
+    for case in cases:
+        if not case["accepted"]:
+            with pytest.raises(ValueError, match="portable"):
+                compile_schema(case["schema"])
+            continue
+        adapter = compile_schema(case["schema"])
+        assert adapter.json_schema() == case["schema"], case["name"]
+        for value in case["valid"]:
+            assert adapter.validate_python(value) == value, case["name"]
+        for value in case["invalid"]:
+            with pytest.raises(ValidationError):
+                adapter.validate_python(value)
+
+
+def test_large_json_integer_yields_schema_result_or_validation_error_without_float_overflow():
+    huge = 10**1000
+    assert compile_schema({"type": "integer"}).validate_python(huge) == huge
+    assert compile_schema({"type": "number", "minimum": huge}).validate_python(huge) == huge
+    with pytest.raises(ValidationError):
+        compile_schema({"type": "number", "maximum": 15000}).validate_python(huge)
