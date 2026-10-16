@@ -154,6 +154,7 @@ def test_revisions_scopes_rate_clamp_entity_cache_and_reconnect():
         ("step", {"count": True}, "invalid_args"),
         ("step", {"count": "2"}, "invalid_args"),
         ("step", {"count": 1.5}, "invalid_args"),
+    ("step", {"count": 1001}, "invalid_args"),
         ("pause", {"surprise": 1}, "invalid_args"),
         ("set_realtime_factor", {"value": -1}, "invalid_args"),
     ],

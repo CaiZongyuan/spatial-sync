@@ -28,6 +28,8 @@ a `schema()` method. Its default serialization emits the wire alias. Other
 fields use their wire names directly. Command strings remain open so the
 executor can return `unknown_command`; `validate_command_args(command)` checks
 known command arguments and rejects non-integer/non-positive step counts.
+Manual step batches are bounded by the shared `MAX_MANUAL_STEPS = 1000`; larger
+counts return `invalid_args` without clamping, consistently across all sources.
 State, authorization, idempotency and command ordering are gateway/source duties.
 
 ```typescript
