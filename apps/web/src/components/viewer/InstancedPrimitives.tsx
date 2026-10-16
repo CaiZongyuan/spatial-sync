@@ -186,6 +186,8 @@ export function InstancedPrimitives({
     const base = new Color('#8dabb5'),
       highlight = new Color('#ffbf69');
     const slots = new Map<string, Entry[]>();
+    const appliedAt = new Map<string, number>();
+    let frame = 0;
     for (const batch of batches.filter((batch) => !batch.coarse))
       for (const entry of batch.entries) {
         const owned = slots.get(entry.node.entityKey) ?? [];
@@ -197,6 +199,7 @@ export function InstancedPrimitives({
       registeredPhysicalNodes: nodes.length,
       bounds: () => allBounds.clone(),
       apply: (data) => {
+        frame++;
         camera.updateMatrixWorld(true);
         frustum.setFromProjectionMatrix(
           projection.multiplyMatrices(
@@ -213,7 +216,8 @@ export function InstancedPrimitives({
             entry.slot = -1;
             const key = entry.node.entityKey;
             if (hidden.has(key) || !client.isEntityVisible(key)) {
-              if (entry.first) rendered.current.delete(key);
+              if (entry.first && appliedAt.get(key) !== frame)
+                rendered.current.delete(key);
               continue;
             }
             if (entry.fixed) value.copy(entry.fixed);
@@ -235,7 +239,8 @@ export function InstancedPrimitives({
             // Bounds include VisualLocal and shape extents, so an origin outside
             // the view never causes a partly visible primitive to disappear.
             if (!frustum.intersectsSphere(sphere)) {
-              if (entry.first) rendered.current.delete(key);
+              if (entry.first && appliedAt.get(key) !== frame)
+                rendered.current.delete(key);
               continue;
             }
             cameraPoint
@@ -258,10 +263,7 @@ export function InstancedPrimitives({
             mesh.setMatrixAt(slot, value);
             mesh.setColorAt(slot, selected === key ? highlight : base);
             target.packed.push(entry);
-            if (
-              entry.node.kind === 'body' &&
-              (entry.first || !rendered.current.has(key))
-            ) {
+            if (entry.node.kind === 'body' && appliedAt.get(key) !== frame) {
               // Read the Float32 matrix that will actually be submitted, then
               // remove VisualLocal to recover the protocol's world Body pose.
               mesh.getMatrixAt(slot, read);
@@ -273,6 +275,7 @@ export function InstancedPrimitives({
               }
               p.toArray(receipt.p);
               q.normalize().toArray(receipt.q);
+              appliedAt.set(key, frame);
             }
           }
         }

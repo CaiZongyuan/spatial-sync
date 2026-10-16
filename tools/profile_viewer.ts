@@ -182,7 +182,43 @@ async function main() {
         viewport: { width: 1440, height: 960 },
       });
       const page = await context.newPage();
+      await page.addInitScript(() => {
+        const closes: { code: number; reason: string }[] = [];
+        Object.assign(window, { __spatialSocketCloses: closes });
+        const NativeSocket = window.WebSocket;
+        window.WebSocket = class extends NativeSocket {
+          constructor(url: string | URL, protocols?: string | string[]) {
+            super(url, protocols);
+            this.addEventListener('close', (event) =>
+              closes.push({ code: event.code, reason: event.reason }),
+            );
+          }
+        };
+      });
       const pageErrors: string[] = [];
+      const wire = {
+        receivedBinary: 0,
+        closedSockets: 0,
+        commands: [] as unknown[],
+        acknowledgments: [] as unknown[],
+      };
+      page.on('websocket', (socket) => {
+        socket.on('framesent', ({ payload }) => {
+          if (typeof payload !== 'string') return;
+          const message = JSON.parse(payload);
+          if (message.type === 'command.request') wire.commands.push(message);
+        });
+        socket.on('framereceived', ({ payload }) => {
+          if (typeof payload !== 'string') {
+            wire.receivedBinary++;
+            return;
+          }
+          const message = JSON.parse(payload);
+          if (message.type === 'command.ack')
+            wire.acknowledgments.push(message);
+        });
+        socket.on('close', () => wire.closedSockets++);
+      });
       page.on('pageerror', (error) => pageErrors.push(error.message));
       let sid: string | undefined;
       try {
@@ -262,6 +298,19 @@ async function main() {
             ),
           )
           .toBe(true);
+        await expect(page.getByTestId('connection-status')).toHaveText(
+          'connected',
+        );
+        await expect(
+          page.getByRole('button', { name: 'Pause simulation' }),
+        ).toBeEnabled();
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => window.__spatialDebug!.getStreamMetrics().socketReadyState,
+            ),
+          )
+          .toBe(1);
         await page.getByRole('button', { name: 'Pause simulation' }).click();
         await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
         const snapshot = await api<Snapshot>(`/sessions/${sid}/snapshot`);
@@ -469,10 +518,50 @@ async function main() {
           sourcePolledLatest,
           rawSource,
           rawFrames: stopped.recording.samples,
+          wire,
         });
         process.stdout.write(
           `Run ${repeat + 1}/${repeats}: ${frames.sampleCount} actual R3F samples, FPS p50 ${frames.renderFps.p50.toFixed(1)}, apply p95 ${frames.transformApplyMs.p95.toFixed(3)} ms\n`,
         );
+      } catch (error) {
+        const observed = await page
+          .evaluate(() => ({
+            stream: window.__spatialDebug?.getStreamMetrics(),
+            subscription: window.__spatialDebug?.getSubscriptionMetrics(),
+            geometry: window.__spatialRenderDebug?.frameStats(),
+            camera: window.__spatialRenderDebug?.camera(),
+            socketCloses: (
+              window as Window & { __spatialSocketCloses?: unknown[] }
+            ).__spatialSocketCloses,
+            feedback: document.querySelector('[role="status"]')?.textContent,
+          }))
+          .catch(() => undefined);
+        const failedOutput = path.resolve(
+          values.output!.replace(/\.json$/, '') + '-failed.json',
+        );
+        mkdirSync(path.dirname(failedOutput), { recursive: true });
+        writeFileSync(
+          failedOutput,
+          JSON.stringify(
+            {
+              status: 'invalid-measurement',
+              recordedAt: new Date().toISOString(),
+              sourceIdentity,
+              configuration: values,
+              error: String(error),
+              observed,
+              wire,
+              pageErrors,
+              completedRuns: runs,
+              fps: null,
+              reason:
+                'Current attempt did not complete every required correctness/measurement condition; no FPS or ratio is inferred from it.',
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+        throw error;
       } finally {
         if (sid) await api(`/sessions/${sid}`, 'DELETE');
         await context.close();

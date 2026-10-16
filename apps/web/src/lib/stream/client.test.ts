@@ -11,6 +11,8 @@ import { SessionClient } from './client';
 
 class Socket {
   static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
   static instances: Socket[] = [];
   readyState = 0;
   binaryType = 'blob';
@@ -165,6 +167,30 @@ describe('WebSocket lifecycle and authoritative control', () => {
     Socket.instances[0].emit(paused);
     await flush();
     expect(client.getSnapshot().sessionState).toBe('PAUSED');
+  });
+
+  it('reports an unsent command when the socket is closing before the view receives close', async () => {
+    const socket = Socket.instances[0];
+    expect(client.getSnapshot().connection).toBe('connected');
+    socket.readyState = Socket.CLOSING;
+    const sent = socket.sent.length;
+    client.command('step', { count: 1 });
+    expect(client.getSnapshot().commandResult).toBe(
+      'Connection unavailable. Retry after reconnect.',
+    );
+    expect(client.getSnapshot().pending).toEqual([]);
+    expect(socket.sent).toHaveLength(sent);
+    socket.close();
+    await vi.advanceTimersByTimeAsync(500);
+    const next = Socket.instances.at(-1)!;
+    next.open();
+    next.emit(ready);
+    next.emit(snapshot);
+    await flush();
+    expect(
+      next.sent.some((message) => message.type === 'command.request'),
+    ).toBe(false);
+    expect(client.getSnapshot().pending).toEqual([]);
   });
 
   it('keeps paused sessions connected on heartbeat and disconnects only on silence', async () => {

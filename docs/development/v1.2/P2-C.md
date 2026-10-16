@@ -1,6 +1,6 @@
 # P2-C — GPU extraction and render scaling
 
-Status: implementation in progress; this is the instance-selection and subscription-visibility checkpoint, not final acceptance.
+Status: implementation and issue verification complete; frozen candidate awaits independent review and PM integration. The measured software-browser performance and 10k operational limits below remain explicit.
 
 LOD/culling checkpoint: actual instance bounds include VisualLocal and full primitive extents. Spheres intersecting the frustum remain eligible even when their origins lie outside. Curved primitives below a 12 CSS-pixel projected bounding-sphere diameter use lower tessellation; selected primitives retain full detail. `quality=full` disables tessellation changes for comparable controls. Pixel ratio remains capped at 1.75 and shadows remain disabled. Both detail levels release geometry on unload.
 
@@ -18,7 +18,7 @@ Ten CPU/CUDA tests passed in 2.71 s, including non-contiguous reordered `[5,1,7]
 
 `extraction-pipe.json` contains 3 repeats × 40 checked samples after 10 warmups for 100 / 500 / 2,000 / 10,000, full / quarter and CPU / CUDA. Baseline is a real synchronous bulk `body_q.numpy()` followed by CPU gather/filter; candidate is the actual asynchronous extractor and every Future is awaited. All outputs match independent source-array/index oracles exactly. Quarter experiments reduce transferred pose bytes from 280,000 to 70,000 for 10k, solely in that explicit subset experiment. Full production targets have no claimed byte reduction.
 
-The 10k full CUDA baseline end-to-end p50 was 0.948 / 1.245 / 1.257 ms; asynchronous gather was 1.066 / 1.967 / 1.931 ms. Single-observation latency did **not** improve. The test does not measure solver/readback overlap speedup. CUDA kernel p50 was 0.035 / 0.023 / 0.023 ms and DtoH p50 0.034 / 0.174 / 0.174 ms; the repeat variation is retained. Device event durations are not summed with host wall times.
+The 10k full CUDA baseline end-to-end p50 was 0.948 / 1.245 / 1.257 ms; asynchronous gather was 1.066 / 1.967 / 1.931 ms. Single-observation latency did **not** improve. The test does not measure solver/readback overlap speedup. GPU gather event-interval p50 was 0.035 / 0.023 / 0.023 ms and DtoH event-interval p50 0.034 / 0.174 / 0.174 ms; the repeat variation is retained. These bracketed device intervals can include dispatch/stream gaps and are not pure active-kernel clocks. Device event durations are not summed with host wall times.
 
 The Pipe experiment uses actual spawned processes and the production FrameCodec, checks every decoded ID/pose, and reaps every child. At 10k full, blocking `send_bytes` p95 was 0.295 / 0.340 / 0.360 ms; rows through encode, receive, decode, independent oracle and acknowledgement p95 was 23.655 / 25.052 / 25.246 ms. The latter is a conservative roundtrip with validation, not pure Pipe transfer. Receive wait includes producer wait. This evidence does not establish Pipe as a bottleneck, so the existing latest-only threaded Pipe remains. No shared-memory channel was added.
 
@@ -40,9 +40,34 @@ The unoptimized production viewer recorded six-second RAF windows with independe
 
 Early instance checkpoints verified all 100 / 500 Body matrices with no missing poses and < 1e-4 position/quaternion error; the 500 scene submitted all 191,300 triangles in 5 draw calls. Their source hashes identify the exact intermediate tree; they precede the stable-ref interaction repair and are not final performance results. All comparison runs explicitly disable P2-B sparse deltas and wait for the accepted scope snapshot. A final B-consumer individual control is still required before attributing renderer gains.
 
-## Remaining authorized work
+## Final issue checks and handoff
 
-- Measure the completed renderer with comparable quality and explicit useful-work counts.
-- Run final stress repeats, bounded simplification, applicable checks and independent review.
+Bounded simplification inspected the C-owned range from `4bb6217` through the completed candidate and its immediate consumers. No optional architecture refactor was introduced. It found one concrete diagnostic boundary: a Body's first visual could be culled after another visual in a different batch had already drawn, deleting that Body's actual matrix receipt. A per-Body frame stamp fixes that without another full-array pass or a per-frame collection allocation.
+
+The real-browser counterexample changes only Manifest visual layouts while retaining the real stress Source frames and independent HTTP Snapshot. Body A uses box → sphere, Body B sphere → box; each first visual has a 100 m VisualLocal offset and is culled while the other remains drawn. Before repair the test fails with a missing actual receipt; afterward both Bodies have one submitted visual and accurate matrix-derived Body poses. The final six renderer E2Es pass in 15.7 s. A closing-socket / still-connected-view unit counterexample also proves that unsent commands report `Connection unavailable. Retry after reconnect.`, create no pending entry, and are neither queued nor resent on reconnection. Actual socket readiness is exposed only as an additive diagnostic metric.
+
+Final source checks: 64 Web unit tests, production TypeScript/Vite build, 6 TypeScript protocol checks and 133 contract/unit/Gateway Python tests passed. The earlier actual extraction/Runner checks total 13 tests and a CUDA Runner smoke. C-owned Ruff checks pass. A broader repository Ruff check reports 42 existing issues in four files, all unchanged relative to the integrated C issue baseline `c3ebe6d` (`protocol/math.py`, `protocol/scripts/export_schema.py`, `tests/contract/test_protocol.py`, `tests/unit/test_protocol_math.py`). This is baseline debt within this milestone, not a claim about the user's pre-milestone baseline. PM owns the bounded integrated static cleanup, independent review and final integration.
+
+Cleanup: all 63 Sessions retained by the owned API were STOPPED; the owned API 8006 and production preview 5186 were stopped through their creating terminals and both listeners were verified absent. Test Runner/Pipe children and read threads were reaped by their asserted cleanup paths. Root preview 8000/5173 and foreign services were not used or stopped.
+
+## Comparable viewer observations
+
+The `final-control-*`, `final-full-*` and `final-adaptive-*` reports use the same completed P2-B consumer at `c651685`, production build, renderer default (actual SwiftShader), 1440 × 960 viewport, saved identical camera per scene, JSON full frames with sparse deltas disabled, and the same selected Body/filter. Every run checks all moving Body matrices against an independent paused HTTP Snapshot and verifies registered/applied/visual/triangle counts. Mixed and 2k each have three independent six-second measurement windows after three-second warmups. The source hashes identify the pre-repair diagnostic implementation; the later multi-visual receipt repair does not change these single-visual fixture outputs.
+
+| Workload | Individual full FPS p50 | Instanced full FPS p50 | Instanced adaptive FPS p50 | Full → adaptive triangles |
+|---|---:|---:|---:|---:|
+| 100 moving (one run each) | 53.82 | 54.93 | not measured | 37,896 full |
+| 500 moving (one run each) | 16.36 | 15.96 | not measured | 191,300 full |
+| 500 moving + 2,000 static | 2.61–3.64 | 2.53–2.57 | 10.27–10.61 | 956,296 → 169,944 |
+| 2,000 moving | 2.99–3.06 | 2.97–3.00 | 11.83–12.19 | 765,300 → 135,956 |
+| 10,000 moving, post-repair (two valid runs) | not measured | not measured | 4.027–4.028 | 679,944 adaptive |
+
+Instancing reduces the actual draw calls from 102 / 502 / 2,502 / 2,002 to 5 while retaining the same full geometry. It does **not** show a stable FPS improvement on this software renderer; full instance transform/bounds/receipt work also costs more host time (2k apply p95 3.4–3.8 ms versus individual 1.1–1.2 ms). Adaptive detail preserves all 2,500 / 2,000 physical instances, while 1,666 / 1,333 curved primitives switch to lower tessellation. Its FPS improvement is accompanied by that explicit geometry-quality change. Adaptive apply p95 is 2.8–3.7 ms mixed and 3.3–4.8 ms at 2k. The evidence supports the draw-call and LOD-work reductions, not a claim that instancing alone makes rendering faster.
+
+The first 10k repeat attempt timed out before measurement when a real Pause click did not reach PAUSED, with no server pause acknowledgement and repeated WebSocket reconnections. `final-adaptive-10000-initial-failed.json` preserves that invalid result; it has no FPS and does not erase the earlier valid checkpoint.
+
+The single bounded post-repair retry checks actual socket OPEN before clicking and records native close events. Its first two runs are valid: all 10,000 actual matrices match independent HTTP Snapshots, maximum position/quaternion error < 1e-6, all 10,000 instances and 679,944 triangles submitted in 5 calls, no socket closes, both Pause/Resume acknowledgements received. FPS p50 is 4.027 / 4.028 and apply p95 8.3 / 13.8 ms. The third run fails before a measurement window: a Pause command is observed on the real socket but no acknowledgement arrives, three closes use code 1013, and the UI reports connection lost before acknowledgement. `final-adaptive-10000-failed.json` intentionally retains `completedRuns=2` separately from that invalid current attempt. No third successful run, failed-run FPS or acceleration ratio is inferred. This software-renderer / local-proxy load has an observed operational stability limit at 10k; neither reconnect reliability under all loads nor 30 Hz useful receive rate is claimed. The bounded retry is finished; no automatic command resend, repeated probing or bypass of the UI oracle was added.
+
+The 45 FPS suggested target is not met on the measured 500 / mixed / 2k / 10k software-renderer workloads. `frameAgeSinceReceiveMs` measures the local interval since an accepted network receipt; it does not prove end-to-end freshness p95 below 150 ms. That end-to-end target and hardware-ANGLE browser performance remain unproved. Raw reports retain throughput, source-polled RTF, frame age, p50/p95 distributions and hardware/version/hash identities with their stated timing limits.
 
 The full HTTP Snapshot and arbitrary future scope remain full consumers. The actual Runner gathers all declared Manifest Bodies; subset gather is a separate benchmark. Narrow subscriptions still pay the readback cost for all declared Bodies: per-observer GPU pushdown is not implemented and no byte reduction is claimed. Shared memory will be introduced only if actual Pipe profiling establishes that it is a bottleneck.

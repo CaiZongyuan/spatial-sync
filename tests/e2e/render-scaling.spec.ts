@@ -12,6 +12,102 @@ const members = (page: Page) =>
   );
 const moving = '/World/Stress/Moving/Body';
 
+test('actual matrices survive opposite multi-visual batch order when first visuals are culled', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneId: 'stress-100', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const route = `${api}/api/v1/sessions/${sessionId}`;
+  // Only geometry is varied. Every frame and the independent reference Snapshot
+  // still comes from the real source and gateway; stream IDs remain 100 / 103.
+  await page.route('**/api/v1/sessions/*/scene', async (route) => {
+    const response = await route.fetch();
+    const manifest = await response.json();
+    const a = manifest.nodes.find(
+      (node: { entityKey: string }) => node.entityKey === moving + '00000',
+    );
+    const b = manifest.nodes.find(
+      (node: { entityKey: string }) => node.entityKey === moving + '00001',
+    );
+    const local = (x: number) => ({ p: [x, 0, 0], q: [0, 0, 0, 1] });
+    const box = (x: number) => ({
+      kind: 'primitive',
+      geometry: { type: 'box', halfExtents: [0.08, 0.08, 0.08] },
+      localPose: local(x),
+    });
+    const sphere = (x: number) => ({
+      kind: 'primitive',
+      geometry: { type: 'sphere', radius: 0.08 },
+      localPose: local(x),
+    });
+    a.visuals = [box(100), sphere(0)];
+    b.visuals = [sphere(100), box(0)];
+    await route.fulfill({ response, json: manifest });
+  });
+  try {
+    await page.goto(`/sessions/${sessionId}?render=instanced&quality=full`);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await page.getByRole('button', { name: 'Pause simulation' }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await page.evaluate(() =>
+      window.__spatialRenderDebug!.setCamera({
+        position: [-1, 6, 1.08],
+        target: [-1, 0.45, 1.08],
+        fov: 44,
+        near: 0.01,
+        far: 100,
+      }),
+    );
+    const snapshot = await (await request.get(`${route}/snapshot`)).json();
+    const references = [100, 103].map((id) => ({
+      key: moving + (id === 100 ? '00000' : '00001'),
+      pose: snapshot.poses.find((row: number[]) => row[0] === id),
+    }));
+    for (const reference of references) {
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (key) => window.__spatialDebug!.inspectVisuals(key)?.visualCount,
+            reference.key,
+          ),
+        )
+        .toBe(1);
+      await expect
+        .poll(
+          () =>
+            page.evaluate(({ key, pose }) => {
+              const actual = window.__spatialDebug!.getRenderedPose(key);
+              if (!actual) return 1;
+              const position = Math.max(
+                ...actual.p.map((value, axis) =>
+                  Math.abs(value - pose[axis + 1]),
+                ),
+              );
+              const same = Math.max(
+                ...actual.q.map((value, axis) =>
+                  Math.abs(value - pose[axis + 4]),
+                ),
+              );
+              const opposite = Math.max(
+                ...actual.q.map((value, axis) =>
+                  Math.abs(value + pose[axis + 4]),
+                ),
+              );
+              return Math.max(position, Math.min(same, opposite));
+            }, reference),
+          { timeout: 2000 },
+        )
+        .toBeLessThan(1e-4);
+    }
+  } finally {
+    await request.delete(route);
+  }
+});
+
 test('real instance LOD preserves every fitted Body and culls conservatively at the view edge', async ({
   page,
   request,
@@ -30,8 +126,13 @@ test('real instance LOD preserves every fitted Body and culls conservatively at 
     const camera = await page.evaluate(() =>
       window.__spatialRenderDebug!.fitScene(),
     );
-    camera.position = camera.position.map((value, axis) => camera.target[axis] + (value - camera.target[axis]) * 2);
-    await page.evaluate((camera) => window.__spatialRenderDebug!.setCamera(camera), camera);
+    camera.position = camera.position.map(
+      (value, axis) => camera.target[axis] + (value - camera.target[axis]) * 2,
+    );
+    await page.evaluate(
+      (camera) => window.__spatialRenderDebug!.setCamera(camera),
+      camera,
+    );
     await expect.poll(async () => (await drawn(page)).length).toBe(500);
     const full = await page.evaluate(() =>
       window.__spatialRenderDebug!.frameStats(),
