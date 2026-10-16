@@ -132,6 +132,7 @@ class BodyNode(Model):
     transformMode: Literal["stream"] = "stream"
     stableKey: StrictBool = True
     visuals: list[Visual] = Field(default_factory=list)
+    fallbackVisuals: list[Visual] | None = None
     colliders: list[Visual] = Field(default_factory=list)
     debug: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -145,6 +146,7 @@ class StaticNode(Model):
     initialPose: Pose
     stableKey: StrictBool = True
     visuals: list[Visual] = Field(default_factory=list)
+    fallbackVisuals: list[Visual] | None = None
     colliders: list[Visual] = Field(default_factory=list)
     debug: dict[str, JsonValue] = Field(default_factory=dict)
 

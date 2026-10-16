@@ -53,6 +53,7 @@ def test_python_sample_roundtrips(manifest):
     lambda m: m["coordinates"].update(upAxis="Y"),
     lambda m: m.update(protocolVersion=True),
     lambda m: m["nodes"][1].update(stableKey="true"),
+    lambda m: m["nodes"][1].update(fallbackVisuals=[{"kind": "primitive", "geometry": {"type": "sphere", "radius": 0.1}, "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 2]}}]),
 ])
 def test_manifest_rejects_invalid_boundary(manifest, mutation):
     mutation(manifest)
