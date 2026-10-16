@@ -109,6 +109,9 @@ async def test_paused_intake_cancel_before_start_and_reset_are_authoritative():
         accepted = await invoke(source, CENTRIFUGE, "closeLid")
         cancelled = await source.cancel(accepted.invocationId)
         assert cancelled.status == "cancelled"
+        event = await asyncio.wait_for(anext(source.events()), 0.5)
+        assert event.type == "invocation.update" and event.status == "cancelled"
+        assert event.invocationId == accepted.invocationId and source.sim_time == 0
         await advance(source, 2)
         assert state(source)[CENTRIFUGE]["lidOpen"] is True
         original = state(source)[ROBOT]["jointPositions"]

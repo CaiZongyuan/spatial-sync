@@ -18,7 +18,7 @@ from packages.protocol.schema import (
     ServerError,
 )
 
-from .conditions import evaluate_conditions
+from .conditions import UNKNOWN, evaluate_conditions
 from .diff import PropertyDiff
 from .schema_subset import json_equal
 
@@ -43,13 +43,66 @@ class Program(Protocol):
     def cancel(self, inv, ctx): ...
 
 
+class _EntitySlot:
+    """Integer property slots are private; only exports carry property names."""
+
+    def __init__(self, key, definitions, validators):
+        self.key = key
+        self.names = tuple(definitions)
+        self.indices = {name: index for index, name in enumerate(self.names)}
+        self.validators = tuple(validators[name] for name in self.names)
+        self.diff = PropertyDiff({index: definitions[name] for index, name in enumerate(self.names)})
+        self.reset()
+
+    def reset(self):
+        self.rev = 0
+        self.values = [UNKNOWN] * len(self.names)
+        self.meta = [None] * len(self.names)
+        self.dirty = {}
+        self.diff.reset()
+
+    def get(self, name, default=UNKNOWN):
+        index = self.indices.get(name)
+        return default if index is None or self.values[index] is UNKNOWN else self.values[index]
+
+    def export_values(self):
+        return {
+            name: deepcopy(value)
+            for name, value in zip(self.names, self.values, strict=True)
+            if value is not UNKNOWN
+        }
+
+    def snapshot(self):
+        return EntityValues(
+            key=self.key,
+            rev=self.rev,
+            values=self.export_values(),
+            meta={
+                name: deepcopy(meta)
+                for name, meta in zip(self.names, self.meta, strict=True)
+                if meta is not None
+            },
+        )
+
+
+class _ValuesView:
+    def __init__(self, host):
+        self.host = host
+
+    def get(self, key, default=None):
+        index = self.host._entity_indices.get(key)
+        return default if index is None else self.host._states[index]
+
+
 class Ctx:
-    def __init__(self, host, key, config):
-        self._host, self._key, self.config = host, key, config
+    def __init__(self, host, index, config):
+        self._host, self._index, self.config = host, index, config
+        self._properties = host._states[index].indices
+        self._readers = {}
 
     @property
     def key(self):
-        return self._key
+        return self._host._states[self._index].key
 
     @property
     def sim_time(self):
@@ -68,23 +121,27 @@ class Ctx:
         return self._host.physics
 
     def set(self, **values):
-        if self._host._executing != self.key:
+        if self._host._executing != self._index:
             raise RuntimeError("Programs may only write their own entity during a callback")
-        self._host._set(self.key, values)
+        self._host._set(self._index, {self._properties[name]: value for name, value in values.items()})
 
     def get(self, prop):
         return self.read(self.key, prop)
 
     def read(self, entity_key, prop):
-        return deepcopy(self._host._states[entity_key].values.get(prop))
+        token = entity_key, prop
+        reader = self._readers.get(token)
+        if reader is None:
+            reader = self._readers[token] = self._host.reader(entity_key, prop)
+        return reader()
 
     def emit(self, event, **data):
-        if self._host._executing != self.key:
+        if self._host._executing != self._index:
             raise RuntimeError("Programs may only emit events for their own entity")
-        self._host._emit(self.key, event, data)
+        self._host._emit(self._index, event, data)
 
     def check(self, conditions):
-        return evaluate_conditions(conditions, self.key, self._host.values())
+        return evaluate_conditions(conditions, self.key, self._host._values_view)
 
 
 class InvocationHandle:
@@ -93,6 +150,7 @@ class InvocationHandle:
         self.started = False
         self.last_progress_at = -float("inf")
         self.accepted_at = host.sim_time
+        self.entity_index = host._entity_indices[invocation.entityKey]
 
     @property
     def params(self):
@@ -139,53 +197,68 @@ class HostCore:
         self.catalog, self.epoch, self.source, self.physics = catalog, epoch, source, physics
         self.sim_time, self.tick_index, self.fact_due = 0.0, 0, True
         self.fact_hz, self._next_fact = fact_hz, 0.0
-        self._states, self._dirty, self._diffs = {}, {}, {}
-        self._programs, self._contexts, self._errors, self._disabled = {}, {}, {}, set()
+        self._entity_indices = {key: index for index, key in enumerate(catalog.entities)}
+        self._states, self._programs, self._contexts, self._errors = [], [], [], []
+        self._disabled = set()
         self._active, self._recent, self._updates = {}, OrderedDict(), OrderedDict()
         self._events, self._diagnostics = [], []
         self._executing = None
         for key, binding in catalog.entities.items():
-            self._states[key] = EntityValues(key=key, rev=0)
-            self._diffs[key] = PropertyDiff(catalog.types[binding["type"]]["properties"])
-            self._programs[key] = registry[binding["program"]]()
-            self._contexts[key] = Ctx(self, key, catalog.program_config(key))
-            self._errors[key] = 0
+            self._states.append(
+                _EntitySlot(
+                    key, catalog.types[binding["type"]]["properties"], catalog.property_validators(key)
+                )
+            )
+            self._programs.append(registry[binding["program"]]())
+            self._contexts.append(Ctx(self, self._entity_indices[key], catalog.program_config(key)))
+            self._errors.append(0)
+        self._values_view = _ValuesView(self)
         self._order = sorted(
-            self._programs, key=lambda key: (getattr(self._programs[key], "tick_priority", 100), key)
+            range(len(self._programs)),
+            key=lambda index: (getattr(self._programs[index], "tick_priority", 100), self._states[index].key),
         )
         for key in self._order:
             self._call(key, "init", self._contexts[key])
         self._prime_diff()
 
     def values(self):
-        return {key: deepcopy(state.values) for key, state in self._states.items()}
+        return {state.key: state.export_values() for state in self._states}
+
+    def reader(self, entity_key, prop):
+        index = self._entity_indices[entity_key]
+        property_index = self._states[index].indices[prop]
+
+        def read():
+            value = self._states[index].values[property_index]
+            return None if value is UNKNOWN else deepcopy(value)
+
+        return read
 
     def _set(self, key, values):
-        parsed = {prop: self.catalog.validate_property(key, prop, value) for prop, value in values.items()}
         current = self._states[key]
+        parsed = {prop: current.validators[prop](value) for prop, value in values.items()}
         changed = {
             prop: value
             for prop, value in parsed.items()
-            if prop not in current.values or not json_equal(current.values[prop], value)
+            if current.values[prop] is UNKNOWN or not json_equal(current.values[prop], value)
         }
         if not changed:
             return
         meta = {"simTime": self.sim_time, "sampleTimeMs": time.monotonic() * 1000, "source": self.source}
-        self._states[key] = EntityValues(
-            key=key,
-            rev=current.rev + len(changed),
-            values=current.values | changed,
-            meta=current.meta | {prop: meta for prop in changed},
-        )
-        self._dirty.setdefault(key, {}).update(changed)
+        current.rev += len(changed)
+        for prop, value in changed.items():
+            current.values[prop] = deepcopy(value)
+            current.meta[prop] = meta
+            current.dirty[prop] = current.values[prop]
 
     def _emit(self, key, name, data):
-        data = self.catalog.validate_event(key, name, data)  # undeclared events are program errors
+        entity_key = self._states[key].key
+        data = self.catalog.validate_event(entity_key, name, data)  # undeclared events are program errors
         self._events.append(
             EntityEvent(
                 sceneRevision=self.catalog.sceneRevision,
                 epoch=self.epoch,
-                entityKey=key,
+                entityKey=entity_key,
                 event=name,
                 data=deepcopy(data),
                 simTime=self.sim_time,
@@ -205,10 +278,13 @@ class HostCore:
             if self._errors[key] >= 3:
                 self._disabled.add(key)
             for handle in list(self._active.values()):
-                if handle.invocation.entityKey == key:
+                if handle.entity_index == key:
                     handle.fail("program_error", str(exc) or type(exc).__name__)
             self._diagnostics.append(
-                ServerError(code="internal_error", message=f"Program {key}: {type(exc).__name__}: {exc}")
+                ServerError(
+                    code="internal_error",
+                    message=f"Program {self._states[key].key}: {type(exc).__name__}: {exc}",
+                )
             )
             return Reject(code="program_error", message=str(exc) or type(exc).__name__)
         finally:
@@ -227,12 +303,13 @@ class HostCore:
             return self._recent[request.invocationId].model_copy(deep=True)
         error = None
         key = request.entityKey
+        index = self._entity_indices.get(key)
         action = None
         if request.epoch != self.epoch:
             error = Reject(code="session_reset", message="Request belongs to a previous session epoch")
         elif key not in self.catalog.entities:
             error = Reject(code="unknown_entity", message=f"Unknown entity {key}")
-        elif key in self._disabled:
+        elif index in self._disabled:
             error = Reject(
                 code="source_unavailable",
                 message="Program disabled after three consecutive errors; reset to recover",
@@ -270,7 +347,9 @@ class HostCore:
                         details={"activeInvocationId": busy.id},
                     )
             if error is None:
-                failed = evaluate_conditions(self.catalog.conditions(key, request.action), key, self.values())
+                failed = evaluate_conditions(
+                    self.catalog.conditions(key, request.action), key, self._values_view
+                )
                 if failed:
                     error = Reject(
                         code="precondition_failed",
@@ -278,7 +357,7 @@ class HostCore:
                         details={"failed": failed},
                     )
             if error is None:
-                error = self._call(key, "accept", request, self._contexts[key])
+                error = self._call(index, "accept", request, self._contexts[index])
         update = InvocationUpdate(
             **request.model_dump(),
             sceneRevision=self.catalog.sceneRevision,
@@ -299,7 +378,7 @@ class HostCore:
         if not handle.started:
             handle.cancelled()
             return handle.invocation.model_copy(deep=True)
-        self._call(handle.invocation.entityKey, "cancel", handle, self._contexts[handle.invocation.entityKey])
+        self._call(handle.entity_index, "cancel", handle, self._contexts[handle.entity_index])
         return handle.invocation.model_copy(deep=True)
 
     def tick(self, sim_time, dt):
@@ -314,7 +393,7 @@ class HostCore:
                 continue
             for handle in list(self._active.values()):
                 if (
-                    handle.invocation.entityKey == key
+                    handle.entity_index == key
                     and not handle.started
                     and handle.invocation.status not in TERMINAL
                 ):
@@ -329,9 +408,7 @@ class HostCore:
                 and sim_time - (handle.invocation.startedSimTime or handle.accepted_at)
                 >= action["timeoutSeconds"]
             ):
-                self._call(
-                    handle.invocation.entityKey, "cancel", handle, self._contexts[handle.invocation.entityKey]
-                )
+                self._call(handle.entity_index, "cancel", handle, self._contexts[handle.entity_index])
                 handle._update(
                     force=True,
                     status="failed",
@@ -343,10 +420,17 @@ class HostCore:
     def _drain(self):
         changes = []
         for key in self._order:
-            outgoing = self._diffs[key].update(self._dirty.get(key, {}), self.sim_time)
+            state = self._states[key]
+            outgoing = state.diff.update(state.dirty, self.sim_time)
             if outgoing:
-                changes.append({"key": key, "rev": self._states[key].rev, "values": outgoing})
-        self._dirty.clear()
+                changes.append(
+                    {
+                        "key": state.key,
+                        "rev": state.rev,
+                        "values": {state.names[prop]: value for prop, value in outgoing.items()},
+                    }
+                )
+            state.dirty.clear()
         result = []
         if changes:
             result.append(
@@ -362,7 +446,7 @@ class HostCore:
         waiting = {
             inv.entityKey
             for inv in self._updates.values()
-            if inv.status in TERMINAL and self._diffs[inv.entityKey].pending
+            if inv.status in TERMINAL and self._states[self._entity_indices[inv.entityKey]].diff.pending
         }
         ready_events = [event for event in self._events if event.entityKey not in waiting]
         ready_updates = {
@@ -384,10 +468,17 @@ class HostCore:
         return result
 
     def _prime_diff(self):
-        for key, state in self._states.items():
-            self._diffs[key].reset()
-            self._diffs[key].update(state.values, self.sim_time)
-        self._dirty.clear()
+        for state in self._states:
+            state.diff.reset()
+            state.diff.update(
+                {prop: value for prop, value in enumerate(state.values) if value is not UNKNOWN},
+                self.sim_time,
+            )
+            state.dirty.clear()
+
+    def drain_events(self):
+        """Publish eligible intake outcomes without advancing a paused host."""
+        return self._drain()
 
     def reset(self, epoch, sim_time=0):
         for handle in list(self._active.values()):
@@ -402,7 +493,7 @@ class HostCore:
         self._disabled.clear()
         for key in self._order:
             self._errors[key] = 0
-            self._states[key] = EntityValues(key=key, rev=0)
+            self._states[key].reset()
             method = "reset" if hasattr(self._programs[key], "reset") else "init"
             self._call(key, method, self._contexts[key])
         self._prime_diff()
@@ -415,7 +506,7 @@ class HostCore:
             epoch=self.epoch,
             simTime=self.sim_time,
             sampleTimeMs=time.monotonic() * 1000,
-            entities=[s.model_copy(deep=True) for s in self._states.values()],
+            entities=[state.snapshot() for state in self._states],
             invocations=[
                 Invocation.model_validate(
                     {k: v for k, v in inv.model_dump().items() if k not in ("type", "sceneRevision")}

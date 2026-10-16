@@ -46,6 +46,13 @@ class Catalog(BaseModel):
     def program_config(self, entity_key):
         return self._configs[entity_key]
 
+    def property_validators(self, entity_key):
+        type_id = self.entities[entity_key]["type"]
+        return {
+            name: self._properties[type_id, name].validate_python
+            for name in self.types[type_id]["properties"]
+        }
+
     def validate_event(self, entity_key, event, data):
         type_id = self.entities[entity_key]["type"]
         adapter = self._events[type_id, event]

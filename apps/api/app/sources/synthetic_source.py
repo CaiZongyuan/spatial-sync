@@ -63,6 +63,8 @@ class SyntheticSource:
         self.manifest = self._manifest()
         self.catalog = load_catalog(self.manifest, scene_id, REGISTRY)
         self.host = HostCore(self.catalog, REGISTRY, fact_hz=options.factHz)
+        self._centrifuge_phase = self.host.reader(CENTRIFUGE, "phase")
+        self._centrifuge_rpm = self.host.reader(CENTRIFUGE, "rpm")
         self._state = "RUNNING"
         self._publish("stream.snapshot")
         self._last_clock = time.monotonic()
@@ -78,7 +80,10 @@ class SyntheticSource:
 
     async def cancel(self, invocation_id):
         async with self._lock:
-            return self.host.cancel(invocation_id)
+            result = self.host.cancel(invocation_id)
+            for event in self.host.drain_events():
+                self._events.put_nowait(event)
+            return result
 
     def _advance(self, count):
         self._step_index += count
@@ -89,11 +94,12 @@ class SyntheticSource:
                 self._control_index / self.options.controlHz, 1 / self.options.controlHz
             ):
                 self._events.put_nowait(event)
-            values = self.host.values()[CENTRIFUGE]
-            if values["phase"] == "idle":
+            if self._centrifuge_phase() == "idle":
                 self._rotor_angle = 0.0
             else:
-                self._rotor_angle += min(values["rpm"], 60) / 60 * 2 * math.pi / self.options.controlHz
+                self._rotor_angle += (
+                    min(self._centrifuge_rpm(), 60) / 60 * 2 * math.pi / self.options.controlHz
+                )
 
     @property
     def sim_time(self) -> float:
