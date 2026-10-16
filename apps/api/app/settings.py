@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 
+from packages.transport.remote import RemoteConfig
+
 
 @dataclass(frozen=True)
 class Settings:
+    runner_config: RemoteConfig | None = None
     heartbeat_interval_seconds: float = 1.0
     send_timeout_seconds: float = 2.0
     reliable_queue_size: int = 128

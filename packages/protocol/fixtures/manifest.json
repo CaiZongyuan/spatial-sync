@@ -9,7 +9,8 @@
     "kind": "synthetic",
     "physicsDt": 0.004166666666666667,
     "basePublishHz": 30.0,
-    "realtimeFactor": 1.0
+    "realtimeFactor": 1.0,
+    "sampleTimeClock": "runner-monotonic"
   },
   "coordinates": {
     "handedness": "right",

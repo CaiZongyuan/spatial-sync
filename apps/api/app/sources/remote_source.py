@@ -1,0 +1,341 @@
+"""Gateway-side SpatialSource over authenticated TLS; never imports Newton or network pickle."""
+
+import asyncio
+import time
+import uuid
+
+from packages.protocol.schema import Command, CommandResult, ServerError, SessionState, validate_command_args
+from packages.transport import FrameCodec
+from packages.transport.remote import (
+    FRAME,
+    JSON,
+    MESH,
+    Attached,
+    Authenticated,
+    Closed,
+    Event,
+    Failed,
+    Heartbeat,
+    Hello,
+    JointResult,
+    MeshResult,
+    Outbox,
+    Ready,
+    RemoteConfig,
+    Request,
+    Result,
+    Start,
+    Unknown,
+    close_stream,
+    json_bytes,
+    parse_json,
+    receive,
+    send,
+)
+
+
+class RemoteSource:
+    def __init__(self, session_id: str, config: RemoteConfig):
+        self.session_id, self.config, self.limits = session_id, config, config.limits
+        self._streams, self._tasks, self._pending = [], [], {}
+        self._events = asyncio.Queue(maxsize=self.limits.pending_messages)
+        self._event_bytes = 0
+        self._latest, self._codec, self._outbox = None, None, None
+        self._failed = self._closing = self._closed = self._started = False
+        self._close_task = None
+        self._metrics = {}
+
+    async def _connect(self, context):
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(
+                self.config.host,
+                self.config.port,
+                ssl=context,
+                server_hostname=self.config.server_name,
+                ssl_handshake_timeout=self.limits.handshake_seconds,
+                ssl_shutdown_timeout=self.limits.close_seconds,
+            ),
+            self.limits.handshake_seconds,
+        )
+        self._streams.append(writer)
+        return reader, writer
+
+    async def start(self, scene_id, options):
+        if self._started or self._closed:
+            raise RuntimeError("Remote source cannot be started twice")
+        self._started = True
+        self.options = options.model_copy()
+        try:
+            context = self.config.tls_context()
+            control, writer = await self._connect(context)
+            await send(writer, JSON, json_bytes(Hello(role="control", token=self.config.token)), self.limits)
+            _, payload = await receive(
+                control, self.limits, timeout=self.limits.handshake_seconds, allowed=(JSON,)
+            )
+            authenticated = parse_json(payload)
+            if not isinstance(authenticated, Authenticated):
+                raise ValueError("Remote control authentication failed")
+            frames, frame_writer = await self._connect(context)
+            await send(
+                frame_writer,
+                JSON,
+                json_bytes(Hello(role="frames", token=self.config.token, ticket=authenticated.ticket)),
+                self.limits,
+            )
+            _, payload = await receive(
+                frames, self.limits, timeout=self.limits.handshake_seconds, allowed=(JSON,)
+            )
+            if not isinstance(parse_json(payload), Attached):
+                raise ValueError("Remote frame channel attachment failed")
+            await send(
+                writer,
+                JSON,
+                json_bytes(Start(sessionId=self.session_id, sceneId=scene_id, options=options)),
+                self.limits,
+            )
+            _, payload = await receive(
+                control, self.limits, timeout=self.limits.start_seconds, allowed=(JSON,)
+            )
+            ready = parse_json(payload)
+            if not isinstance(ready, Ready):
+                raise ValueError("Remote Runner did not provide a complete ready baseline")
+            if (
+                ready.manifest.sessionId != self.session_id
+                or ready.manifest.source.kind != self.config.source_kind
+            ):
+                raise ValueError("Remote Manifest does not match the configured source/session")
+            self.manifest = ready.manifest.model_copy(
+                update={
+                    "source": ready.manifest.source.model_copy(update={"sampleTimeClock": "gateway-receive"})
+                }
+            )
+            self._ids = {node.streamId for node in self.manifest.nodes if node.kind == "body"}
+            self._codec = FrameCodec(
+                self.session_id, self.manifest.sceneRevision, self.manifest.revisionNumericId
+            )
+            self._metrics.update(ready.stats)
+            snapshot = await self._frame(control)
+            if snapshot.type != "stream.snapshot":
+                raise ValueError("Remote ready baseline must be a snapshot")
+            self._cache(snapshot)
+            self._outbox = Outbox(writer, self.limits)
+            self._tasks = [
+                asyncio.create_task(self._read_control(control), name="remote-control-reader"),
+                asyncio.create_task(self._read_frames(frames), name="remote-frame-reader"),
+                asyncio.create_task(self._heartbeat(), name="remote-heartbeat"),
+            ]
+            return self.manifest
+        except BaseException:
+            self._failed = True
+            await self.close()
+            raise
+
+    async def _frame(self, reader):
+        _, payload = await receive(reader, self.limits, allowed=(FRAME,))
+        received = time.monotonic() * 1000
+        frame = self._codec.decode(payload)
+        if {row[0] for row in frame.poses} != self._ids:
+            raise ValueError("Remote source frame must contain the complete Manifest body set")
+        # The host's monotonic clock is deliberately discarded at the actual Gateway.
+        return frame.model_copy(update={"sampleTimeMs": received})
+
+    def _cache(self, frame):
+        if self._latest is None or frame.seq > self._latest.seq:
+            self._latest = frame
+
+    async def _read_frames(self, reader):
+        try:
+            while True:
+                kind, payload = await receive(reader, self.limits, allowed=(JSON, FRAME))
+                received = time.monotonic() * 1000
+                if kind == JSON:
+                    if not isinstance(parse_json(payload), Heartbeat):
+                        raise ValueError("Invalid remote frame heartbeat")
+                    continue
+                frame = self._codec.decode(payload)
+                if {row[0] for row in frame.poses} != self._ids:
+                    raise ValueError("Remote periodic frame must be complete")
+                self._cache(frame.model_copy(update={"sampleTimeMs": received}))
+        except Exception as exc:
+            self._fail(type(exc).__name__)
+
+    async def _read_control(self, reader):
+        try:
+            while True:
+                _, payload = await receive(reader, self.limits, allowed=(JSON,))
+                packet = parse_json(payload)
+                if isinstance(packet, Heartbeat):
+                    self._metrics.update(packet.stats)
+                    continue
+                if isinstance(packet, Event):
+                    if self._event_bytes + len(payload) > self.limits.pending_bytes:
+                        raise ValueError("Remote event byte capacity exceeded")
+                    self._events.put_nowait((packet.event, len(payload)))
+                    self._event_bytes += len(payload)
+                    continue
+                if isinstance(packet, Failed):
+                    raise ConnectionError("Remote source failed")
+                if isinstance(packet, Result):
+                    if packet.result.frame is not None:
+                        raise ValueError("Reliable remote poses must use NSYN")
+                    value = packet.result
+                    if packet.hasFrame:
+                        frame = await self._frame(reader)
+                        if (frame.epoch, frame.simTime) != (value.ack.epoch, value.ack.simTime):
+                            raise ValueError("Remote command frame does not match acknowledgement")
+                        if value.state and (frame.seq, frame.epoch, frame.simTime) != (
+                            value.state.seq,
+                            value.state.epoch,
+                            value.state.simTime,
+                        ):
+                            raise ValueError("Remote command frame does not match authoritative state")
+                        value = value.model_copy(update={"frame": frame})
+                        self._cache(frame)
+                elif isinstance(packet, JointResult):
+                    value = packet.state
+                elif isinstance(packet, MeshResult):
+                    _, value = await receive(reader, self.limits, allowed=(MESH,))
+                elif isinstance(packet, (Unknown, Closed)):
+                    value = None
+                else:
+                    raise ValueError("Unexpected remote control response")
+                future = self._pending.get(packet.token)
+                if future is not None and not future.done():
+                    if isinstance(packet, Unknown):
+                        future.set_exception(KeyError(packet.key))
+                    else:
+                        future.set_result(value)
+        except Exception as exc:
+            self._fail(type(exc).__name__)
+
+    async def _heartbeat(self):
+        try:
+            while True:
+                await asyncio.sleep(self.limits.heartbeat_seconds)
+                self._outbox.offer((JSON, json_bytes(Request(kind="ping", token=uuid.uuid4().hex))))
+                if self._outbox.task.done():
+                    raise ConnectionError("Remote writer stopped")
+        except Exception as exc:
+            self._fail(type(exc).__name__)
+
+    def _fail(self, reason):
+        if self._closing or self._failed:
+            return
+        self._failed = True
+        error = RuntimeError(f"Remote source unavailable ({reason})")
+        for future in self._pending.values():
+            if not future.done():
+                future.set_exception(error)
+        self._pending.clear()
+        while not self._events.empty():
+            self._events.get_nowait()
+        self._event_bytes = 0
+        self._events.put_nowait((ServerError(code="source_unavailable", message=str(error)), 0))
+        if self._latest and not self._events.full():
+            self._events.put_nowait(
+                (
+                    SessionState(
+                        sessionId=self.session_id,
+                        state="FAILED",
+                        sceneRevision=self.manifest.sceneRevision,
+                        epoch=self._latest.epoch,
+                        seq=self._latest.seq,
+                        simTime=self._latest.simTime,
+                        realtimeFactor=self.options.realtimeFactor,
+                        actualRtf=0,
+                        cause={"kind": "error", "code": "source_unavailable", "message": str(error)},
+                    ),
+                    0,
+                )
+            )
+        asyncio.create_task(self.close(), name="remote-failure-cleanup")
+
+    async def _request(self, kind, **payload):
+        if self._failed or self._closed or self._outbox is None:
+            raise RuntimeError("Remote source unavailable")
+        if len(self._pending) >= self.limits.pending_messages:
+            self._fail("pending request capacity")
+            raise RuntimeError("Remote pending request capacity exceeded")
+        token = uuid.uuid4().hex
+        future = asyncio.get_running_loop().create_future()
+        self._pending[token] = future
+        try:
+            self._outbox.offer((JSON, json_bytes(Request(kind=kind, token=token, **payload))))
+            timeout = self.limits.close_seconds * 4 if kind == "close" else self.limits.request_seconds
+            return await asyncio.wait_for(future, timeout)
+        except TimeoutError:
+            self._fail("request timeout")
+            raise
+        except (OSError, asyncio.QueueFull, ValueError) as exc:
+            self._fail(type(exc).__name__)
+            raise
+        finally:
+            self._pending.pop(token, None)
+
+    async def execute(self, command: Command) -> CommandResult:
+        validate_command_args(command)
+        result = await self._request("command", command=command)
+        if result.state:
+            self.options.realtimeFactor = result.state.realtimeFactor
+        return result
+
+    async def query_joint_state(self, joint_key):
+        return await self._request("joint", key=joint_key)
+
+    async def read_mesh(self, mesh_id):
+        return await self._request("mesh", key=mesh_id)
+
+    def latest_frame(self):
+        return self._latest
+
+    async def events(self):
+        while (entry := await self._events.get()) is not None:
+            event, size = entry
+            self._event_bytes -= size
+            yield event
+
+    def stats(self):
+        connected = self._started and not (self._failed or self._closed)
+        return {
+            **self._metrics,
+            "transport": "authenticated-tls",
+            "sampleTimeClock": "gateway-receive",
+            "remoteConnected": connected,
+            "runnerAlive": connected and self._metrics.get("runnerAlive", True),
+            "runnerPIDIsRemote": True,
+            "remoteTasksAlive": sum(not task.done() for task in self._tasks)
+            + int(self._outbox is not None and not self._outbox.task.done()),
+        }
+
+    async def close(self):
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close_owned(), name="remote-source-close")
+        await asyncio.shield(self._close_task)
+
+    async def _close_owned(self):
+        self._closing = True
+        if self._outbox and not self._failed:
+            try:
+                await self._request("close")
+                # EOF follows host cleanup and release of its one-session ownership slot.
+                await asyncio.wait_for(self._tasks[0], self.limits.close_seconds)
+            except Exception:
+                pass
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        if self._outbox:
+            await self._outbox.close()
+        await asyncio.gather(
+            *(close_stream(writer, self.limits.close_seconds) for writer in self._streams),
+            return_exceptions=True,
+        )
+        self._closed = True
+        for future in self._pending.values():
+            if not future.done():
+                future.set_exception(RuntimeError("Remote source closed"))
+        self._pending.clear()
+        if self._events.full():
+            _, size = self._events.get_nowait()
+            self._event_bytes -= size
+        self._events.put_nowait(None)
