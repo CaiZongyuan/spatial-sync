@@ -21,5 +21,6 @@
   {"name":"Lookbehind is outside the supported boundary", "schema":{"type":"string","pattern":"(?<=a)b"}, "accepted":false},
   {"name":"Backreferences are outside the supported boundary", "schema":{"type":"string","pattern":"(a)\\1"}, "accepted":false},
   {"name":"Escaped surrogate units are outside the supported boundary", "schema":{"type":"string","pattern":"\\uD83D\\uDE00"}, "accepted":false},
-  {"name":"Quantified lookahead is invalid in ECMA Unicode mode", "schema":{"type":"string","pattern":"(?=a)*"}, "accepted":false}
+  {"name":"Quantified lookahead is invalid in ECMA Unicode mode", "schema":{"type":"string","pattern":"(?=a)*"}, "accepted":false},
+  {"name":"Negative word boundary includes empty input", "schema":{"type":"string","pattern":"\\B"}, "accepted":true, "valid":[""," ","\u00e9","AB"], "invalid":["A","_"]}
 ]

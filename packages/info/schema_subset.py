@@ -49,7 +49,9 @@ def _portable_pattern(pattern):
         if char in "sS":
             return "[" + ("^" if char == "S" else "") + whitespace + "]", None, index
         if char in "bB" and not in_class:
-            return "\\" + char, None, index
+            # Python 3.13's \B excludes empty input; ECMA defines it as the
+            # logical complement of \b, including that empty-input position.
+            return (r"\b" if char == "b" else r"(?!\b)"), None, index
         if char in "nrtfv" or (char == "b" and in_class):
             value = {"n": "\n", "r": "\r", "t": "\t", "f": "\f", "v": "\v", "b": "\b"}[char]
             return re.escape(value), value, index
@@ -109,7 +111,7 @@ def _portable_pattern(pattern):
             atom, _, index = escaped(index + 1)
             translated.append(atom)
             quantified = False
-            assertion = atom in (r"\b", r"\B")
+            assertion = atom in (r"\b", r"(?!\b)")
             continue
         if char == "[":
             atom, index = character_class(index + 1)
