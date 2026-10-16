@@ -25,11 +25,13 @@ from packages.transport import FrameCodec
 from packages.transport.remote import (
     FRAME,
     JSON,
+    MESH,
     PACKET_HEADER,
     Attached,
     Authenticated,
     Hello,
     Limits,
+    MeshResult,
     Ready,
     RemoteConfig,
     Request,
@@ -318,7 +320,10 @@ async def test_actual_tcp_gateway_two_observers_reload_peer_loss_and_restart(tls
 
 async def raw_connection(server, cert):
     return await asyncio.open_connection(
-        "127.0.0.1", server.port, ssl=ssl.create_default_context(cafile=cert), server_hostname="localhost"
+        "127.0.0.1",
+        server.port,
+        ssl=ssl.create_default_context(cafile=cert),
+        server_hostname="localhost",
     )
 
 
@@ -472,7 +477,10 @@ async def test_authenticated_invalid_operations_never_reach_source_authority(tls
             await asyncio.gather(close_stream(writer, 1), close_stream(frame_writer, 1))
 
 
-async def test_unpaired_control_times_out_and_duplicate_frame_cannot_kill_valid_peer(tls_material):
+@pytest.mark.parametrize("disconnect_role", ["control", "frames"])
+async def test_unpaired_timeout_duplicate_rejection_and_either_channel_loss_cleanup(
+    tls_material, disconnect_role
+):
     cert, key, token = tls_material
     starts, closed = [], asyncio.Event()
     limits = Limits(handshake_seconds=0.15, heartbeat_seconds=0.05, read_seconds=0.5)
@@ -507,11 +515,13 @@ async def test_unpaired_control_times_out_and_duplicate_frame_cannot_kill_valid_
             )
             assert await asyncio.wait_for(rogue.read(), 1) == b""
             assert server.active_sessions == 1 and not closed.is_set()
-            await close_stream(frame_writer, 1)
+            await close_stream(writer if disconnect_role == "control" else frame_writer, 1)
             await asyncio.wait_for(closed.wait(), 1)
             await eventually(lambda: server.active_sessions == 0)
             await asyncio.wait_for(control.read(), 1)  # Drain legal entity/heartbeat packets before EOF.
             assert control.at_eof()
+            await asyncio.wait_for(frames.read(), 1)
+            assert frames.at_eof()
         finally:
             await asyncio.gather(
                 *(close_stream(stream, 1) for stream in (writer, frame_writer, rogue_writer))
@@ -734,9 +744,7 @@ async def test_stalled_tls_handshake_has_finite_connect_timeout(tls_material):
         await listener.wait_closed()
 
 
-async def test_slow_tls_control_peer_times_out_without_blocking_source_or_next_peer(
-    tls_material, record_property
-):
+async def test_large_tls_mesh_capacity_and_peer_loss_cleanup(tls_material, record_property):
     cert, key, token = tls_material
     closed = asyncio.Event()
     data = b"x" * (16 * 1024 * 1024)
@@ -749,21 +757,80 @@ async def test_slow_tls_control_peer_times_out_without_blocking_source_or_next_p
             await super().close()
             closed.set()
 
-    limits = Limits(request_seconds=0.1, heartbeat_seconds=0.05, read_seconds=0.5, close_seconds=0.2)
+    # This real TLS test checks complete data and peer loss, not a writer-deadline cause.
+    limits = Limits(request_seconds=0.1, heartbeat_seconds=0.05, read_seconds=10, close_seconds=0.2)
+
+    def blocking_peer(port):
+        context = ssl.create_default_context(cafile=cert)
+
+        def channel():
+            raw = socket.socket()
+            raw.settimeout(2)
+            raw.connect(("127.0.0.1", port))
+            return context.wrap_socket(raw, server_hostname="localhost")
+
+        def put(sock, value):
+            payload = json_bytes(value)
+            sock.sendall(PACKET_HEADER.pack(JSON, len(payload)) + payload)
+
+        def get(sock):
+            def exact(size):
+                chunks = bytearray()
+                while len(chunks) < size:
+                    chunk = sock.recv(size - len(chunks))
+                    if not chunk:
+                        raise EOFError("TLS peer closed during setup")
+                    chunks.extend(chunk)
+                return bytes(chunks)
+
+            kind, length = PACKET_HEADER.unpack(exact(5))
+            return kind, exact(length)
+
+        control = channel()
+        frames = None
+        try:
+            put(control, Hello(role="control", token=token))
+            _, payload = get(control)
+            ticket = parse_json(payload).ticket
+            frames = channel()
+            put(frames, Hello(role="frames", token=token, ticket=ticket))
+            get(frames)
+            put(control, Start(sessionId="slow-peer", sceneId="lab-demo", options=SessionOptions()))
+            get(control)
+            kind, payload = get(control)
+            assert kind == FRAME and payload[:4] == b"NSYN"
+            put(control, Request(kind="mesh", token="blocked", key="large"))
+            return control, frames, get
+        except BaseException:
+            control.close()
+            if frames:
+                frames.close()
+            raise
+
     async with RunnerServer(
         ServerConfig(
             cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic", limits=limits
         ),
         source_factory=LargeMesh,
     ) as server:
-        _, writer, _, frame_writer, _ = await raw_pair(server, cert, token, "slow-peer")
+        control, frames, get_packet = await asyncio.to_thread(blocking_peer, server.port)
         try:
-            await send(writer, JSON, json_bytes(Request(kind="mesh", token="blocked", key="large")), limits)
-            # Stop consuming control while its sole sender writes a bounded binary mesh.
+
+            def read_mesh():
+                while True:
+                    kind, payload = get_packet(control)
+                    if kind == JSON and isinstance(parse_json(payload), MeshResult):
+                        kind, payload = get_packet(control)
+                        assert kind == MESH and payload == data
+                        return len(payload)
+
+            received_bytes = await asyncio.wait_for(asyncio.to_thread(read_mesh), 3)
+            control.close()
             await asyncio.wait_for(closed.wait(), 2)
             await eventually(lambda: server.active_sessions == 0)
         finally:
-            await asyncio.gather(close_stream(writer, 0.2), close_stream(frame_writer, 0.2))
+            control.close()
+            frames.close()
         replacement = RemoteSource(
             "healthy-peer",
             RemoteConfig(port=server.port, ca_file=cert, token=token, source_kind="synthetic", limits=limits),
@@ -774,11 +841,12 @@ async def test_slow_tls_control_peer_times_out_without_blocking_source_or_next_p
         finally:
             await replacement.close()
         record_property(
-            "slow_peer",
+            "large_mesh_peer_loss",
             json.dumps(
                 {
                     "meshBytes": len(data),
-                    "sendTimeoutSeconds": 0.1,
+                    "verifiedReceivedBytes": received_bytes,
+                    "writerTimeoutCauseClaimed": False,
                     "ownedSourceClosed": True,
                     "nextPeerHealthy": True,
                 }

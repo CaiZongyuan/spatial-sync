@@ -103,6 +103,7 @@ async def run(args):
             "SPATIAL_RUNNER_PORT": str(args.runner_port),
             "SPATIAL_RUNNER_SERVER_NAME": "localhost",
             "SPATIAL_RUNNER_KIND": args.source,
+            "SPATIAL_REMOTE": "0",
             "SPATIAL_ALLOWED_ORIGINS": f"http://127.0.0.1:{args.web_port}",
             "SPATIAL_API_URL": api,
             "SPATIAL_WEB_URL": f"http://127.0.0.1:{args.web_port}",
@@ -255,6 +256,8 @@ async def run(args):
                     env=env,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=180,
                 )
                 (output.parent / "browser.log").write_text(
