@@ -18,7 +18,7 @@ export function ReplayControls({ source }: { source: ReplaySource }) {
         {[0.25, 0.5, 1, 2, 4].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
       </select></label>
       <input className="replay-seek" type="range" aria-label="Replay position"
-        min={0} max={playback.durationMs} step={1} value={playback.timeMs}
+        min={0} max={Math.ceil(playback.durationMs)} step={1} value={playback.timeMs}
         disabled={!playback.ready}
         onChange={(event) => {
           setError(undefined);

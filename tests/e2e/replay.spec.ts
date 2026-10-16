@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {} from '../../apps/web/src/components/Workbench';
+import type { ReplaySource } from '../../apps/web/src/lib/replay/replay-source';
 
 const fixture = resolve('../../tests/fixtures/recordings/v1');
 const expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8')) as {
@@ -56,4 +57,59 @@ test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log 
   await expect(page.getByRole('button', { name: 'Close session', exact: true })).toBeDisabled();
   expect(liveRequests).toEqual([]);
   await page.screenshot({ path: '../../.scratch/info-i4-replay/fixture-replay.png' });
+});
+
+test('native End applies the final reliable record at a fractional millisecond duration', async ({ page, baseURL }) => {
+  const metadata = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
+  const segment = metadata.segments[0];
+  const originalSegment = readFileSync(join(fixture, segment.file));
+  let lastSeq = 0;
+  for (let offset = 6; offset < originalSegment.length;) {
+    if (originalSegment.readUInt8(offset + 4) === 1) lastSeq = Number(originalSegment.readBigUInt64LE(offset + 29));
+    offset += 4 + originalSegment.readUInt32LE(offset);
+  }
+  const duration = Math.ceil(segment.endSampleTimeMs - segment.startSampleTimeMs) + 0.75;
+  const terminal = Buffer.from(JSON.stringify({
+    type: 'session.state', protocolVersion: 2, sessionId: metadata.sessionId,
+    sceneRevision: metadata.sceneRevision, state: 'STOPPED', epoch: 0,
+    seq: lastSeq, simTime: segment.endSimTime,
+    realtimeFactor: 1, actualRtf: 0, cause: { kind: 'lifecycle' },
+  }));
+  const header = Buffer.alloc(13);
+  header.writeUInt32LE(9 + terminal.length, 0);
+  header.writeUInt8(2, 4);
+  header.writeDoubleLE(segment.startSampleTimeMs + duration, 5);
+  const binary = Buffer.concat([originalSegment, header, terminal]);
+  segment.endSampleTimeMs = segment.startSampleTimeMs + duration;
+  segment.bytes = binary.length;
+  const actualDuration = segment.endSampleTimeMs - segment.startSampleTimeMs;
+  metadata.durationMs = actualDuration;
+  await page.route('**/fixture/fractional/**', async (route) => {
+    const relative = new URL(route.request().url()).pathname.split('/fixture/fractional/')[1];
+    if (relative === 'recording.json') await route.fulfill({ json: metadata });
+    else if (relative === segment.file) await route.fulfill({ body: binary, contentType: 'application/octet-stream' });
+    else if (!existsSync(join(fixture, relative))) await route.fulfill({ status: 404 });
+    else await route.fulfill({ path: join(fixture, relative) });
+  });
+  const src = new URL('/fixture/fractional/recording.json', baseURL).href;
+  await page.goto(`/replay/fractional?src=${encodeURIComponent(src)}`);
+  await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  await page.evaluate(async () => {
+    const moduleUrl = performance.getEntriesByType('resource').map(entry => entry.name)
+      .find(url => url.includes('/src/lib/replay/replay-source.ts'))!;
+    const { ReplaySource } = await import(/* @vite-ignore */ moduleUrl);
+    const original = ReplaySource.prototype.seek;
+    (window as unknown as { __tailReceipt?: unknown }).__tailReceipt = undefined;
+    ReplaySource.prototype.seek = async function(this: ReplaySource, position: number) {
+      await original.call(this, position);
+      (window as unknown as { __tailReceipt?: unknown }).__tailReceipt = {
+        requested: position, actual: this.getPlayback().timeMs,
+        sessionState: this.getSnapshot().sessionState,
+      };
+    };
+  });
+  await page.getByLabel('Replay position').press('End');
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __tailReceipt?: { actual: number; sessionState: string } }).__tailReceipt,
+  )).toEqual({ requested: Math.ceil(actualDuration), actual: actualDuration, sessionState: 'STOPPED' });
 });
