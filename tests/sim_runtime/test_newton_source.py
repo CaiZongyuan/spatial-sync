@@ -20,10 +20,16 @@ async def test_spawned_source_preserves_command_frames_reset_seq_and_cleanup(dev
         initial = source.latest_frame()
         assert manifest.sessionId == "source-test"
         assert source.stats()["runnerPID"] != os.getpid()
-        assert source.stats()["gatherMode"] == "subscription-union-periodic-full-control"
         bodies = [node for node in manifest.nodes if node.kind == "body"]
-        assert source.stats()["gatherBodyCount"] == len(bodies)
-        assert {row[0] for row in initial.poses} == {node.streamId for node in bodies}
+        ids = {node.streamId for node in bodies}
+        assert {row[0] for row in initial.poses} == ids
+        async with asyncio.timeout(3):
+            while source.latest_frame().seq <= initial.seq:
+                await asyncio.sleep(0.01)
+        assert {row[0] for row in source.latest_frame().poses} == ids
+        assert source.stats()["readbackBodyCount"] == len(bodies)
+        assert source.stats()["readbackBytes"] == len(bodies) * 28
+        assert "gatherMode" not in source.stats()
         assert initial.poses[0][3] == pytest.approx(1.5)
         pause = await source.execute(Command(requestId="pause", command="pause"))
         assert pause.state.state == "PAUSED"
@@ -35,6 +41,10 @@ async def test_spawned_source_preserves_command_frames_reset_seq_and_cleanup(dev
         paused_seq = source.latest_frame().seq
         await asyncio.sleep(0.08)
         assert source.latest_frame().seq == paused_seq
+        snapshot = await source.snapshot()
+        assert snapshot.type == "stream.snapshot"
+        assert snapshot.seq == pause.frame.seq
+        assert {row[0] for row in snapshot.poses} == ids
         step = await source.execute(Command(requestId="step", command="step", args={"count": 24}))
         assert step.frame.simTime == pytest.approx(pause.ack.simTime + 0.1)
         assert step.frame.seq > paused_seq

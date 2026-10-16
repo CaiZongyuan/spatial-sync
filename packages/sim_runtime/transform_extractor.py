@@ -3,7 +3,6 @@
 import queue
 import threading
 from concurrent.futures import Future
-from operator import index as integer_index
 from time import perf_counter
 
 import numpy as np
@@ -12,26 +11,14 @@ import warp as wp
 from .pose_filter import PoseFilter
 
 
-@wp.kernel
-def _gather_transforms(
-    source: wp.array(dtype=wp.transform),
-    indices: wp.array(dtype=wp.int32),
-    target: wp.array(dtype=wp.transform),
-):
-    slot = wp.tid()
-    target[slot] = source[indices[slot]]
-
-
 class TransformExtractor:
-    def __init__(self, body_count: int, *, device, body_indices=None):
+    def __init__(self, body_count: int, *, device):
         self.device = wp.get_device(device)
         self.body_count = body_count
-        self.body_indices = self._indices(body_indices)
         self.filter = PoseFilter(body_count)
         self.readback_mode = "cuda-staged-pinned-double-buffer" if self.device.is_cuda else "cpu-bulk"
         self.readback_ms = 0.0
         self.readback_latency_ms = 0.0
-        self.gather_ms = 0.0
         self.enqueue_ms = 0.0
         self.host_copy_ms = 0.0
         self.filter_ms = 0.0
@@ -51,8 +38,7 @@ class TransformExtractor:
                 slot = {
                     "staging": wp.empty(body_count, dtype=wp.transform, device=self.device),
                     "host": wp.empty(body_count, dtype=wp.transform, device="cpu", pinned=True),
-                    "gather_start": wp.Event(self.device, enable_timing=True),
-                    "ready": wp.Event(self.device, enable_timing=True),
+                    "ready": wp.Event(self.device),
                     "copy_start": wp.Event(self.device, enable_timing=True),
                     "done": wp.Event(self.device, enable_timing=True),
                 }
@@ -61,34 +47,11 @@ class TransformExtractor:
         self.thread = threading.Thread(target=self._run, name="newton-readback", daemon=True)
         self.thread.start()
 
-    def _indices(self, body_indices):
-        if body_indices is None:
-            indices = list(range(self.body_count))
-        else:
-            body_indices = list(body_indices)
-            try:
-                indices = [
-                    integer_index(value) for value in body_indices if not isinstance(value, (bool, np.bool_))
-                ]
-            except TypeError:
-                raise ValueError("Body indices must be integers") from None
-            if len(indices) != len(body_indices):
-                raise ValueError("Body indices must be integers")
-        if len(set(indices)) != len(indices) or any(
-            value < 0 or value >= self.body_count for value in indices
-        ):
-            raise ValueError("Body indices must be unique and within the model")
-        result = np.array(indices, dtype=np.int32)
-        result.flags.writeable = False
-        return result
-
-    def capture(self, body_q, *, body_indices=None, on_complete=None, block=False) -> Future | None:
+    def capture(self, body_q, *, on_complete=None, block=False) -> Future | None:
         if self._closed or self.error:
             raise RuntimeError(f"Transform extractor unavailable: {self.error or 'closed'}")
         if len(body_q) != self.body_count:
             raise ValueError("Unexpected model body transform count")
-        indices = self.body_indices if body_indices is None else self._indices(body_indices)
-        count = len(indices)
         try:
             index = self._free.get(timeout=5) if block else self._free.get_nowait()
         except queue.Empty:
@@ -99,36 +62,24 @@ class TransformExtractor:
         future = Future()
         slot = self._slots[index]
         started = perf_counter()
-        cpu_gather_ms = 0.0
+        cpu_copy_ms = 0.0
         try:
             if self.device.is_cuda:
                 # Each slot owns its staging until the copy and publication finish.
                 # The simulation stream orders this copy before the next state write.
                 with wp.ScopedStream(self.sim_stream, sync_enter=False, sync_exit=False):
-                    device_indices = wp.array(indices, dtype=wp.int32, device=self.device)
-                    wp.record_event(slot["gather_start"])
-                    if count:
-                        wp.launch(
-                            _gather_transforms,
-                            dim=count,
-                            inputs=[body_q, device_indices, slot["staging"]],
-                            device=self.device,
-                        )
+                    wp.copy(slot["staging"], body_q)
                     wp.record_event(slot["ready"])
                 with wp.ScopedStream(self.copy_stream, sync_enter=False, sync_exit=False):
                     wp.wait_event(slot["ready"])
                     wp.record_event(slot["copy_start"])
-                    if count:
-                        wp.copy(slot["host"], slot["staging"], count=count)
+                    wp.copy(slot["host"], slot["staging"])
                     wp.record_event(slot["done"])
             else:
-                device_indices = None
-                np.take(body_q.numpy(), indices, axis=0, out=slot["host"][:count])
-                cpu_gather_ms = (perf_counter() - started) * 1000
+                np.copyto(slot["host"], body_q.numpy())
+                cpu_copy_ms = (perf_counter() - started) * 1000
             enqueue_ms = (perf_counter() - started) * 1000
-            self._jobs.put(
-                (index, future, on_complete, started, enqueue_ms, cpu_gather_ms, indices, device_indices)
-            )
+            self._jobs.put((index, future, on_complete, started, enqueue_ms, cpu_copy_ms))
         except BaseException:
             self._free.put(index)
             raise
@@ -136,41 +87,35 @@ class TransformExtractor:
 
     def _run(self):
         while (job := self._jobs.get()) is not None:
-            index, future, callback, started, enqueue_ms, cpu_gather_ms, indices, device_indices = job
-            count = len(indices)
+            index, future, callback, started, enqueue_ms, cpu_copy_ms = job
             slot = self._slots[index]
             try:
                 if self.device.is_cuda:
                     wp.synchronize_event(slot["done"])
-                    self.gather_ms = wp.get_event_elapsed_time(
-                        slot["gather_start"], slot["ready"], synchronize=False
-                    )
                     copied = perf_counter()
-                    sample = slot["host"].numpy()[:count].copy()
+                    sample = slot["host"].numpy().copy()
                     self.host_copy_ms = (perf_counter() - copied) * 1000
                     self.readback_ms = wp.get_event_elapsed_time(
                         slot["copy_start"], slot["done"], synchronize=False
                     )
                 else:
                     copied = perf_counter()
-                    sample = slot["host"][:count].copy()
+                    sample = slot["host"].copy()
                     self.host_copy_ms = (perf_counter() - copied) * 1000
-                    self.gather_ms = cpu_gather_ms
-                    self.readback_ms = cpu_gather_ms
+                    self.readback_ms = cpu_copy_ms
                 self.enqueue_ms = enqueue_ms
                 self.readback_latency_ms = (perf_counter() - started) * 1000
                 filtered = perf_counter()
-                poses = self.filter.update(sample, indices)
+                poses = self.filter.update(sample)
                 self.filter_ms = (perf_counter() - filtered) * 1000
                 self.last_metrics = {
-                    "gatherMs": self.gather_ms,
                     "readbackMs": self.readback_ms,
                     "enqueueMs": self.enqueue_ms,
                     "hostCopyMs": self.host_copy_ms,
                     "filterMs": self.filter_ms,
                     "latencyMs": self.readback_latency_ms,
-                    "readbackBodies": count,
-                    "readbackBytes": count * 28,
+                    "readbackBodies": self.body_count,
+                    "readbackBytes": self.body_count * 28,
                 }
                 future.set_result(poses)
                 if callback:

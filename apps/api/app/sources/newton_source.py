@@ -26,8 +26,7 @@ class NewtonSource:
         self._codec = None
         self._latest = None
         self._samples = None
-        self._interest_lock = asyncio.Lock()
-        self._requested_interest = None
+        self._command_lock = asyncio.Lock()
         self._runner_heartbeat = RunnerHeartbeat()
         self._pending = {}
         self._events = asyncio.Queue()
@@ -143,23 +142,11 @@ class NewtonSource:
                         self._cache(result.frame)
                     self._samples.state(result.state)
                     value = result
-                elif kind in ("interest_result", "snapshot_result"):
+                elif kind == "snapshot_result":
                     value = TransformFrame.model_validate(packet["frame"])
                     if value.type != "stream.snapshot":
                         raise ValueError("A full capture must be a snapshot")
-                    if kind == "interest_result":
-                        ids = self._samples.interest(packet["streamIds"])
-                        if ids != self._requested_interest:
-                            raise ValueError("Interest acknowledgement does not match requested IDs")
-                        # A second channel may already have delivered new-target
-                        # bytes before this ack. Drop that transition slot; only
-                        # future receipts belong to the installed interest.
-                        with self._incoming_lock:
-                            self._incoming = None
-                            self._samples.install_interest(ids, value)
-                        self._latest = self._samples.latest
-                    else:
-                        self._cache(value)
+                    self._cache(value)
                 elif kind == "joint_result":
                     value = JointState.model_validate(packet["state"])
                 elif kind == "mesh_result":
@@ -227,29 +214,16 @@ class NewtonSource:
         return self._latest
 
     async def snapshot(self) -> TransformFrame:
-        if self._samples and self._samples.paused and self._samples.complete is not None:
-            return self._samples.complete.model_copy(update={"type": "stream.snapshot"})
+        if self._samples and self._samples.paused and self._latest is not None:
+            return self._latest.model_copy(update={"type": "stream.snapshot"})
         return await self._request("snapshot")
-
-    async def set_interest(self, stream_ids) -> TransformFrame:
-        ids = self._samples.interest(stream_ids)
-        async with self._interest_lock:
-            self._samples.transition = True
-            self._requested_interest = ids
-            try:
-                return await self._request("interest", streamIds=None if ids is None else sorted(ids))
-            except BaseException:
-                self._fail("Newton interest change failed")
-                asyncio.create_task(self.close(), name="newton-interest-failure-cleanup")
-                raise
 
     async def events(self):
         while (event := await self._events.get()) is not None:
             yield event
 
     async def execute(self, command: Command) -> CommandResult:
-        async with self._interest_lock:
-            self._samples.transition = True
+        async with self._command_lock:
             try:
                 result = await self._request("command", command=command.model_dump())
                 if result.state:
@@ -259,8 +233,6 @@ class NewtonSource:
                 self._fail("Newton command timed out")
                 await self.close()
                 raise
-            finally:
-                self._samples.transition = False
 
     async def query_joint_state(self, joint_key: str) -> JointState:
         return await self._request("joint", key=joint_key, timeout=0.2)

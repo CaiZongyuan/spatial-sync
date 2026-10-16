@@ -29,9 +29,9 @@ def poses(count):
     return data
 
 
-def targets(count, scope):
+def targets(count):
     # A full reversed order also catches identity/dense-row confusion.
-    return np.arange(count - 1, -1, -1 if scope == "full" else -4, dtype=np.int32)
+    return np.arange(count - 1, -1, -1, dtype=np.int32)
 
 
 def summary(samples):
@@ -46,54 +46,48 @@ def summary(samples):
     }
 
 
-def extraction(count, scope, device, mode, iterations, warmup):
+def extraction(count, device, mode, iterations, warmup):
     import warp as wp
 
     from packages.sim_runtime.pose_filter import PoseFilter
     from packages.sim_runtime.transform_extractor import TransformExtractor
 
-    data, indices = poses(count), targets(count, scope)
-    expected = data[indices].astype(np.float64)
+    data = poses(count)
+    expected = data.astype(np.float64)
     body_q = wp.array(data, dtype=wp.transform, device=device)
-    extractor = TransformExtractor(count, device=device, body_indices=indices)
-    pose_filter = PoseFilter(len(indices))
+    extractor = TransformExtractor(count, device=device)
+    pose_filter = PoseFilter(count)
     samples, max_error = [], 0.0
     try:
-        # Compile/warm the actual async kernel and pinned buffers before timing.
+        # Warm the actual copy path and pinned buffers before timing.
         for iteration in range(iterations + warmup):
             started = perf_counter()
-            if mode == "async-gather":
+            if mode == "async-bulk":
                 result = extractor.capture(body_q, block=True).result(timeout=5)
                 metrics = dict(extractor.last_metrics)
             else:
                 read = perf_counter()
                 bulk = body_q.numpy()
                 readback_ms = (perf_counter() - read) * 1000
-                gathered = perf_counter()
-                sample = np.take(bulk, indices, axis=0)
-                gather_ms = (perf_counter() - gathered) * 1000
                 filtered = perf_counter()
-                result = pose_filter.update(sample)
+                result = pose_filter.update(bulk)
                 metrics = {
                     "readbackWallMs": readback_ms,
-                    "gatherHostMs": gather_ms,
                     "filterMs": (perf_counter() - filtered) * 1000,
                 }
             metrics["endToEndMs"] = (perf_counter() - started) * 1000
             # Every timed sample has an independent source-array/order oracle.
             max_error = max(max_error, float(np.max(np.abs(result - expected))))
             if result.shape != expected.shape or max_error > 1e-6:
-                raise AssertionError("Readback did not preserve the requested model-index order")
+                raise AssertionError("Readback did not preserve the complete model-index order")
             if iteration >= warmup:
                 samples.append(metrics)
         assert extractor.dropped_captures == 0 and extractor.error is None
         return {
             "device": device,
             "mode": mode,
-            "scope": scope,
             "modelBodies": count,
-            "targetBodies": len(indices),
-            "transferredPoseBytes": (len(indices) if mode == "async-gather" else count) * 28,
+            "transferredPoseBytes": count * 28,
             "outputSha256": hashlib.sha256(result.astype(np.float32).tobytes()).hexdigest(),
             "checkedSamples": iterations,
             "maxError": max_error,
@@ -105,9 +99,9 @@ def extraction(count, scope, device, mode, iterations, warmup):
         extractor.close()
 
 
-def pipe_receiver(connection, acknowledgments, count, scope):
+def pipe_receiver(connection, acknowledgments, count):
     codec = FrameCodec("profile", "revision", 1)
-    indices = targets(count, scope)
+    indices = targets(count)
     expected = poses(count)[indices]
     expected_ids = 100 + 3 * indices
     try:
@@ -136,16 +130,16 @@ def pipe_receiver(connection, acknowledgments, count, scope):
         acknowledgments.close()
 
 
-def ipc(count, scope, iterations, warmup):
+def ipc(count, iterations, warmup):
     context = mp.get_context("spawn")
     reader, writer = context.Pipe(duplex=False)
     ack_reader, ack_writer = context.Pipe(duplex=False)
-    process = context.Process(target=pipe_receiver, args=(reader, ack_writer, count, scope))
+    process = context.Process(target=pipe_receiver, args=(reader, ack_writer, count))
     process.start()
     reader.close()
     ack_writer.close()
     codec = FrameCodec("profile", "revision", 1)
-    indices = targets(count, scope)
+    indices = targets(count)
     sample = poses(count)[indices]
     stream_ids = 100 + 3 * indices
     samples = []
@@ -192,9 +186,7 @@ def ipc(count, scope, iterations, warmup):
         process.join(timeout=10)
         assert not process.is_alive() and process.exitcode == 0
         return {
-            "scope": scope,
             "modelBodies": count,
-            "targetBodies": len(indices),
             "payloadBytes": len(payload),
             "checkedSamples": iterations,
             "childReaped": True,
@@ -230,20 +222,19 @@ def main():
     runs, pipe_runs = [], []
     for repeat in range(args.repeats):
         for count in args.counts:
-            for scope in ["full", "quarter"]:
-                for device in args.devices:
-                    for mode in ["sync-bulk-then-cpu-gather", "async-gather"]:
-                        result = extraction(count, scope, device, mode, args.iterations, args.warmup)
-                        result["repeat"] = repeat + 1
-                        runs.append(result)
-                        print(
-                            f"{repeat + 1}: {device} {count} {scope} {mode} "
-                            f"p50={result['distribution']['endToEndMs']['p50']:.3f} ms",
-                            flush=True,
-                        )
-                result = ipc(count, scope, args.iterations, args.warmup)
-                result["repeat"] = repeat + 1
-                pipe_runs.append(result)
+            for device in args.devices:
+                for mode in ["sync-bulk", "async-bulk"]:
+                    result = extraction(count, device, mode, args.iterations, args.warmup)
+                    result["repeat"] = repeat + 1
+                    runs.append(result)
+                    print(
+                        f"{repeat + 1}: {device} {count} {mode} "
+                        f"p50={result['distribution']['endToEndMs']['p50']:.3f} ms",
+                        flush=True,
+                    )
+            result = ipc(count, args.iterations, args.warmup)
+            result["repeat"] = repeat + 1
+            pipe_runs.append(result)
     owned_files = [
         "packages/sim_runtime/transform_extractor.py",
         "packages/sim_runtime/runner.py",
@@ -263,11 +254,10 @@ def main():
         },
         "versions": {name: version(name) for name in ["warp-lang", "newton", "numpy", "pydantic"]},
         "methodology": {
-            "baseline": "One real bulk body_q.numpy() before CPU gather/filter; "
-            "subset intentionally still transfers all Bodies",
-            "candidate": "Actual TransformExtractor Warp gather on sim stream, event-ordered "
+            "baseline": "One real bulk body_q.numpy() before CPU filter",
+            "candidate": "Actual TransformExtractor bulk staging on sim stream, event-ordered "
             "pinned copy stream and worker filter; every Future is awaited",
-            "timing": "CUDA gather/readback fields are device event durations. Enqueue, host copy/filter, "
+            "timing": "CUDA readback fields are device event durations. Enqueue, host copy/filter, "
             "endToEnd and Pipe fields are host wall times. Do not add overlapping clocks.",
             "scope": "Sequential observations measure latency, not solver/readback overlap speedup. "
             "No physics step workload is invented here; "
@@ -276,9 +266,8 @@ def main():
             "FrameCodec. Pipe send is blocking-call duration; receiveWaitAndCopy includes producer wait. "
             "Roundtrip includes decode, independent oracle and acknowledgement, and is an upper bound, "
             "not pure transfer latency.",
-            "limits": "Warmup excluded; every sample checked; shared workstation. Full Manifest remains "
-            "the Runner recovery target; per-observer GPU pushdown is not implemented. "
-            "Subset byte savings apply only to this explicit subset experiment.",
+            "limits": "Warmup excluded; every sample checked; shared workstation. "
+            "All captures transfer the complete model body set.",
         },
         "extraction": runs,
         "ipc": pipe_runs,

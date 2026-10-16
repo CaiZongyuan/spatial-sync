@@ -1,3 +1,4 @@
+import json
 from hashlib import sha256
 from io import BytesIO
 
@@ -10,13 +11,19 @@ import trimesh
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from packages.transport import FrameCodec
 
 pytestmark = pytest.mark.newton
 
 
 def receive(ws, kind):
     for _ in range(100):
-        message = ws.receive_json()
+        packet = ws.receive()
+        message = (
+            ws.frame_codec.decode(packet["bytes"]).model_dump(mode="json")
+            if "bytes" in packet
+            else json.loads(packet["text"])
+        )
         if message["type"] == kind:
             return message
     raise AssertionError(f"No {kind}")
@@ -48,13 +55,13 @@ def test_registered_usd_scene_serves_native_mesh_over_real_runner_ipc_and_http()
         assert cover.status_code == 200 and cover.content[:4] == b"glTF"
         assert client.get(route + "/stats").json()["readbackMode"] == "cpu-bulk"
         with client.websocket_connect(route + "/ws") as ws:
+            ws.frame_codec = FrameCodec(sid, manifest["sceneRevision"], manifest["revisionNumericId"])
             receive(ws, "server.ready")
             ws.send_json(
                 {
                     "type": "client.subscribe",
-                    "protocolVersion": 1,
+                    "protocolVersion": 2,
                     "sceneRevision": manifest["sceneRevision"],
-                    "scope": "all",
                     "rateHz": 30,
                 }
             )

@@ -1,4 +1,4 @@
-"""Partial captures cannot impersonate complete recovery samples or refresh a stopped Runner."""
+"""Complete frame authority survives independent frame/control Pipe delivery order."""
 
 import pytest
 
@@ -29,36 +29,38 @@ def frame(seq, ids=(3, 17), **updates):
     ).model_copy(update=updates)
 
 
-def test_interest_barrier_discards_old_membership_and_early_new_packets_without_stale_row_merges():
+def test_command_frame_blocks_older_periodic_packets_and_cache_never_moves_backwards():
     state = samples()
     state.control(frame(1))
-    state.transition = True  # before the interest RPC can let new targets publish
-    assert state.periodic(frame(4, (17,))) is False
-    state.install_interest(frozenset([17]), frame(3))
-    # Old target packets are discarded before checking the new membership.
+    state.control(frame(3, epoch=1))
+    # The frame Pipe may deliver old data after the reliable reset result.
     assert state.periodic(frame(2)) is False
     assert state.latest.seq == 3
-    assert state.periodic(frame(5, (17,))) is True
-    assert [row[0] for row in state.latest.poses] == [17]
-    assert state.complete.seq == 3 and all(row[1] == 3 for row in state.complete.poses)
-    with pytest.raises(ValueError, match="exact expected body set"):
-        state.periodic(frame(6))
-    with pytest.raises(ValueError, match="exact expected body set"):
-        state.control(frame(6, (17,)))
-    state.control(frame(7))  # an HTTP full capture does not expand periodic targets
-    assert state.periodic(frame(8, (17,))) is True
-    assert state.complete.seq == 7 and all(row[1] == 7 for row in state.complete.poses)
+    assert state.latest.epoch == 1
+    assert state.periodic(frame(5, epoch=1)) is True
+    state.control(frame(4, epoch=1))  # a snapshot reply can trail newer periodic data
+    assert state.latest.seq == 5
+    assert state.periodic(frame(3)) is False
+    assert all(row[1] == 5 for row in state.latest.poses)
 
 
-@pytest.mark.parametrize("ids", [[3, 3], [True], [1.5], [999]])
-def test_interest_validation_cannot_mutate_accepted_membership(ids):
+@pytest.mark.parametrize("ids", [(3,), (3, 999), ()])
+@pytest.mark.parametrize("channel", ["periodic", "control"])
+def test_every_capture_requires_the_exact_manifest_body_set(ids, channel):
     state = samples()
-    with pytest.raises(ValueError):
-        state.interest(ids)
-    assert state.expected_ids == frozenset([3, 17])
+    state.control(frame(1))
+    with pytest.raises(ValueError, match="exact expected body set"):
+        getattr(state, channel)(frame(2, ids))
+    assert state.latest.seq == 1
 
 
-def test_runner_relative_age_survives_duplicate_proxy_heartbeats_and_failure():
+@pytest.mark.parametrize("updates", [{"sessionId": "wrong"}, {"sceneRevision": "wrong"}])
+def test_capture_cannot_change_its_manifest_identity(updates):
+    with pytest.raises(ValueError, match="identity"):
+        samples().control(frame(1, **updates))
+
+
+def test_control_responses_cannot_refresh_an_unchanged_runner_heartbeat():
     clock = [50.0]
     heartbeat = RunnerHeartbeat(lambda: clock[0])
     assert heartbeat.stats(True)["runnerHeartbeatMs"] is None

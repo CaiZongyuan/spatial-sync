@@ -17,7 +17,7 @@ from packages.transport import FrameCodec, PipeWriter
 
 
 def _body_targets(manifest):
-    """Manifest identity owns the mapping; compact gather order is not a stream ID."""
+    """Map complete model snapshots to stable Manifest identities."""
     bodies = sorted((node for node in manifest.nodes if node.kind == "body"), key=lambda node: node.entityKey)
     return [node.debug["newtonBodyIndex"] for node in bodies], [node.streamId for node in bodies]
 
@@ -45,14 +45,9 @@ class _Runner:
             realtime_factor=options.realtimeFactor,
             strict_labels=options.strictLabels,
         )
-        body_indices, self.stream_ids = _body_targets(self.manifest)
-        self.body_indices = body_indices
-        self._body_by_stream = dict(zip(self.stream_ids, body_indices, strict=True))
-        self._interest = None
+        self.body_indices, self.stream_ids = _body_targets(self.manifest)
         self._last_complete = None
-        self.extractor = TransformExtractor(
-            self.sim.model.body_count, device=self.sim.model.device, body_indices=body_indices
-        )
+        self.extractor = TransformExtractor(self.sim.model.body_count, device=self.sim.model.device)
         self.codec = FrameCodec(session_id, self.manifest.sceneRevision, 1)
         self.frames = PipeWriter(transport.frames, latest_only=True, name="newton-frame-sender")
         self.control = PipeWriter(transport.control, name="newton-control-sender")
@@ -90,16 +85,13 @@ class _Runner:
             "solverTimingMode": "host-submission" if self.sim.model.device.is_cuda else "cpu-wall",
             "readback_ms": self.extractor.readback_ms,
             "readbackLatencyMs": self.extractor.readback_latency_ms,
-            "gather_ms": self.extractor.gather_ms,
-            "gatherEnqueueMs": self.extractor.enqueue_ms,
+            "readbackEnqueueMs": self.extractor.enqueue_ms,
             "hostCopyMs": self.extractor.host_copy_ms,
             "poseFilterMs": self.extractor.filter_ms,
-            "gatherBodyCount": len(self.stream_ids) if self._interest is None else len(self._interest),
             "readbackBodyCount": self.extractor.last_metrics.get("readbackBodies", 0),
             "readbackBytes": self.extractor.last_metrics.get("readbackBytes", 0),
             "modelBodyCount": self.sim.model.body_count,
             "shapeCount": int(self.sim.model.shape_count),
-            "gatherMode": "subscription-union-periodic-full-control",
             "runnerHeartbeatSeq": self._heartbeat_seq,
             "runnerHeartbeatMs": (time.monotonic() - self._heartbeat_at) * 1000,
             "publish_ms": self.publish_ms,
@@ -116,12 +108,6 @@ class _Runner:
         }
 
     def _frame(self, kind="transform.frame", *, reliable=False):
-        stream_ids = (
-            self.stream_ids
-            if reliable or self._interest is None
-            else [value for value in self.stream_ids if value in self._interest]
-        )
-        body_indices = [self._body_by_stream[value] for value in stream_ids]
         self.seq += 1
         metadata = {
             "type": kind,
@@ -136,7 +122,10 @@ class _Runner:
         def make_frame(poses):
             return TransformFrame(
                 **metadata,
-                poses=[(stream_id, *row) for stream_id, row in zip(stream_ids, poses.tolist(), strict=True)],
+                poses=[
+                    (stream_id, *poses[index].tolist())
+                    for stream_id, index in zip(self.stream_ids, self.body_indices, strict=True)
+                ],
             )
 
         def publish(poses):
@@ -147,7 +136,6 @@ class _Runner:
 
         future = self.extractor.capture(
             self.sim.state.body_q,
-            body_indices=body_indices,
             on_complete=None if reliable else publish,
             block=reliable,
         )
@@ -240,25 +228,15 @@ class _Runner:
         if kind == "close":
             self.control.offer({"kind": "closed", "token": token})
             return False
-        if kind in ("interest", "snapshot"):
-            if kind == "interest":
-                values = packet["streamIds"]
-                if values is not None and (
-                    any(type(value) is not int for value in values)
-                    or len(values) != len(set(values))
-                    or not set(values) <= self._body_by_stream.keys()
-                ):
-                    raise ValueError("Unknown or invalid interest stream IDs")
-                self._interest = None if values is None else frozenset(values)
+        if kind == "snapshot":
             frame = self._last_complete if self.sim.paused else None
             if frame is None:
                 frame = self._frame("stream.snapshot", reliable=True)
             self.control.offer(
                 {
-                    "kind": kind + "_result",
+                    "kind": "snapshot_result",
                     "token": token,
                     "frame": frame.model_copy(update={"type": "stream.snapshot"}).model_dump(),
-                    "streamIds": None if self._interest is None else sorted(self._interest),
                     "stats": self.stats(),
                 }
             )

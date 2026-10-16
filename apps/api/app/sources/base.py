@@ -4,7 +4,6 @@ from typing import Protocol
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.schema import (
     Command,
-    EntityState,
     SceneManifest,
     SceneReplaced,
     ServerError,
@@ -12,14 +11,13 @@ from packages.protocol.schema import (
     TransformFrame,
 )
 
-SourceEvent = SessionState | SceneReplaced | EntityState | ServerError
+SourceEvent = SessionState | SceneReplaced | ServerError
 
 
 class SpatialSource(Protocol):
     async def start(self, scene_id: str, options: SessionOptions) -> SceneManifest: ...
     def latest_frame(self) -> TransformFrame | None: ...
     async def snapshot(self) -> TransformFrame: ...
-    async def set_interest(self, stream_ids: frozenset[int] | None) -> TransformFrame: ...
     def events(self) -> AsyncIterator[SourceEvent]: ...
     async def execute(self, command: Command) -> CommandResult: ...
     async def query_joint_state(self, joint_key: str) -> JointState: ...

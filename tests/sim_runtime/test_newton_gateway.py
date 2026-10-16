@@ -1,3 +1,4 @@
+import json
 import os
 import signal
 
@@ -9,12 +10,18 @@ pytestmark = pytest.mark.newton
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from packages.transport import FrameCodec
 
 
 def until(ws, predicate):
     seen = []
     for _ in range(200):
-        value = ws.receive_json()
+        message = ws.receive()
+        value = (
+            ws.frame_codec.decode(message["bytes"]).model_dump(mode="json")
+            if "bytes" in message
+            else json.loads(message["text"])
+        )
         seen.append(value)
         if predicate(value):
             return seen
@@ -26,9 +33,8 @@ def subscribe(ws, revision):
     ws.send_json(
         {
             "type": "client.subscribe",
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "sceneRevision": revision,
-            "scope": "all",
             "rateHz": 30,
         }
     )
@@ -60,6 +66,8 @@ def test_two_real_newton_observers_pause_pose_reset_crash_health_and_restart():
         session = response.json()
         sid, revision = session["sessionId"], session["sceneRevision"]
         route = f"/api/v1/sessions/{sid}"
+        manifest = client.get(route + "/scene").json()
+        codec = FrameCodec(sid, revision, manifest["revisionNumericId"])
         pid = client.get(route + "/stats").json()["runnerPID"]
         assert (
             client.post(
@@ -72,6 +80,7 @@ def test_two_real_newton_observers_pause_pose_reset_crash_health_and_restart():
             client.websocket_connect(route + "/ws") as first,
             client.websocket_connect(route + "/ws") as second,
         ):
+            first.frame_codec = second.frame_codec = codec
             subscribe(first, revision)
             subscribe(second, revision)
             paused = apply(first, "pause")

@@ -24,6 +24,12 @@ async def smoke(args):
         pause = await source.execute(Command(requestId="pause", command="pause"))
         step = await source.execute(Command(requestId="step", command="step", args={"count": 24}))
         reset = await source.execute(Command(requestId="reset", command="reset"))
+        snapshot = await source.snapshot()
+        body_ids = {node.streamId for node in manifest.nodes if node.kind == "body"}
+        for frame in (initial, pause.frame, step.frame, reset.frame, snapshot):
+            assert {row[0] for row in frame.poses} == body_ids
+            assert len(frame.poses) == len(body_ids)
+        assert snapshot.seq == reset.frame.seq and snapshot.type == "stream.snapshot"
         assert pause.frame.seq < step.frame.seq < reset.frame.seq
         assert reset.frame.epoch == 1 and reset.frame.simTime == 0
         for before, after in zip(initial.poses, reset.frame.poses, strict=True):
@@ -33,6 +39,8 @@ async def smoke(args):
         assert pause.frame.seq == pause.state.seq
         assert pause.frame.simTime == pause.ack.simTime
         metrics = source.stats()
+        assert metrics["readbackBodyCount"] == metrics["modelBodyCount"] == len(body_ids)
+        assert metrics["readbackBytes"] == len(body_ids) * 28
         result = {
             "status": "passed",
             "device": args.device,
