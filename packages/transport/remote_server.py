@@ -21,6 +21,7 @@ from packages.transport.remote import (
     JointResult,
     MeshResult,
     Outbox,
+    QueryTimeout,
     Ready,
     Request,
     Result,
@@ -300,6 +301,10 @@ class _Peer:
                             )
                 except KeyError:
                     self.control.offer((JSON, json_bytes(Unknown(token=packet.token, key=packet.key))))
+                except TimeoutError:
+                    if packet.kind == "command":
+                        raise
+                    self.control.offer((JSON, json_bytes(QueryTimeout(token=packet.token))))
         finally:
             if request_task is not None:
                 request_task.cancel()

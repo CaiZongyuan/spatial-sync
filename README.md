@@ -112,7 +112,7 @@ snapshot. Periodic frames stop while paused; heartbeat continues in every state.
 Each connection has one writer, a bounded reliable queue and a latest-only frame
 slot. Overflow or a send exceeding two seconds disconnects only that observer.
 
-## Optional remote mode
+## Optional remote Gateway access
 
 Keep local defaults for development. A remote deployment requires a TLS reverse
 proxy and explicit credentials/origins before enabling `SPATIAL_REMOTE=1`:
@@ -126,6 +126,50 @@ have the authenticated reverse proxy supply that header on upgraded connections.
 Viewer credentials can observe but cannot create/close sessions or execute
 commands. Remote HTTP requests and WS commands have bounded request rates.
 Origins are checked before remote writes. Tokens must not be placed in URLs.
+
+## Remote Runner over TLS
+
+The Gateway can use a separate Runner host through two authenticated TLS channels:
+bounded typed JSON control with reliable NSYN command frames, and a latest-only
+NSYN periodic channel. The host uses the existing local NewtonSource to own and
+reap the single Newton process. The Gateway never imports Newton or decodes
+network pickle. `sampleTimeClock` in the Manifest source and `server.ready` is
+`gateway-receive`; local sources retain `runner-monotonic`.
+
+For a complete GPU-free loopback demonstration with disposable certificates,
+separate host/Gateway processes, actual controls and automatic cleanup:
+
+```powershell
+uv sync --frozen
+uv run --no-sync python tools/smoke_remote_runner.py
+```
+
+After `pnpm install --frozen-lockfile`, add `--browser` to run the two real
+Chromium JSON/binary workbench journeys on API 8008, web 5188 and Runner 8766.
+The harness checks that its ports are available, excludes credentials/private
+keys from receipts, closes sessions, stops its process trees and removes
+temporary credentials. `--source newton` uses the actual CPU engine when the
+Runner environment has `--extra simulation`; ordinary Gateway use needs no
+simulation packages.
+
+For manual operation, provide a protected `SPATIAL_RUNNER_TOKEN` of at least
+32 characters to both processes, and a server certificate/private key. Start
+the host explicitly; the default bind is loopback and its fixed source is Newton:
+
+```powershell
+uv run --no-sync python tools/run_remote_runner.py --cert C:/certs/runner.pem --key C:/certs/runner-key.pem --device cpu
+```
+
+In the Gateway environment set `SPATIAL_RUNNER_CA_FILE` to the trusted CA bundle,
+`SPATIAL_RUNNER_HOST`/`SPATIAL_RUNNER_PORT` to the host (defaults 127.0.0.1/8766),
+and `SPATIAL_RUNNER_SERVER_NAME` to the certificate identity (default localhost).
+`SPATIAL_RUNNER_KIND` selects which existing source is routed remotely (default
+newton; use synthetic only with an explicitly synthetic test host). Start the
+normal `apps.api.app.main:app` on an owned loopback port. No Runner configuration
+preserves local behavior; partial configuration fails explicitly. Certificate
+verification is mandatory. CLI size/timeout options and [P2-D evidence](docs/development/v1.2/P2-D.md)
+describe limits and deployment scope. This implementation was verified on
+loopback TLS; WAN behavior and public deployment were not measured.
 
 ## Visual assets and USD
 

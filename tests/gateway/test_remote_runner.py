@@ -20,7 +20,7 @@ from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.api.app.sources.remote_source import RemoteSource
 from apps.api.app.sources.synthetic_source import SyntheticSource
-from packages.protocol.schema import Command, SessionOptions, TransformFrame
+from packages.protocol.schema import Command, SceneManifest, SessionOptions, TransformFrame
 from packages.transport import FrameCodec
 from packages.transport.remote import (
     FRAME,
@@ -32,6 +32,7 @@ from packages.transport.remote import (
     Limits,
     Ready,
     RemoteConfig,
+    Request,
     ServerConfig,
     Start,
     close_stream,
@@ -80,7 +81,11 @@ def tls_material(tmp_path_factory):
         def __repr__(self):
             return "'<redacted disposable token>'"
 
-    return cert, key, DisposableToken(secrets.token_urlsafe(32))
+    try:
+        yield cert, key, DisposableToken(secrets.token_urlsafe(32))
+    finally:
+        key.unlink(missing_ok=True)
+        cert.unlink(missing_ok=True)
 
 
 @pytest.mark.parametrize("unicode_token", [False, True])
@@ -203,7 +208,7 @@ async def test_actual_tcp_gateway_two_observers_reload_peer_loss_and_restart(tls
                     "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 1]},
                 }
             )
-            return type(super()._manifest()).model_validate(data)
+            return SceneManifest.model_validate(data)
 
         async def read_mesh(self, key):
             if key != mesh_id:
@@ -639,6 +644,173 @@ async def test_source_start_timeout_releases_authenticated_owner(tls_material):
         await asyncio.wait_for(closed.wait(), 1)
         await eventually(lambda: server.active_sessions == 0)
         assert source.stats()["remoteTasksAlive"] == 0
+
+
+async def test_stalled_tls_handshake_has_finite_connect_timeout(tls_material):
+    cert, _, token = tls_material
+    closed = asyncio.Event()
+
+    async def stall(reader, writer):
+        try:
+            await reader.read()
+        finally:
+            await close_stream(writer, 1)
+            closed.set()
+
+    listener = await asyncio.start_server(stall, "127.0.0.1", 0)
+    source = RemoteSource(
+        "handshake-timeout",
+        RemoteConfig(
+            ca_file=cert,
+            token=token,
+            port=listener.sockets[0].getsockname()[1],
+            limits=Limits(handshake_seconds=0.1),
+        ),
+    )
+    started = time.monotonic()
+    try:
+        with pytest.raises((TimeoutError, ConnectionAbortedError)):
+            await source.start("falling-boxes", SessionOptions())
+        assert time.monotonic() - started < 1
+        await asyncio.wait_for(closed.wait(), 1)
+        assert source.stats()["remoteTasksAlive"] == 0
+    finally:
+        await source.close()
+        listener.close()
+        await listener.wait_closed()
+
+
+async def test_slow_tls_control_peer_times_out_without_blocking_source_or_next_peer(
+    tls_material, record_property
+):
+    cert, key, token = tls_material
+    closed = asyncio.Event()
+    data = b"x" * (16 * 1024 * 1024)
+
+    class LargeMesh(SyntheticSource):
+        async def read_mesh(self, mesh_id):
+            return data
+
+        async def close(self):
+            await super().close()
+            closed.set()
+
+    limits = Limits(request_seconds=0.1, heartbeat_seconds=0.05, read_seconds=0.5, close_seconds=0.2)
+    async with RunnerServer(
+        ServerConfig(
+            cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic", limits=limits
+        ),
+        source_factory=LargeMesh,
+    ) as server:
+        _, writer, _, frame_writer, _ = await raw_pair(server, cert, token, "slow-peer")
+        try:
+            await send(writer, JSON, json_bytes(Request(kind="mesh", token="blocked", key="large")), limits)
+            # Stop consuming control while its sole sender writes a bounded binary mesh.
+            await asyncio.wait_for(closed.wait(), 2)
+            await eventually(lambda: server.active_sessions == 0)
+        finally:
+            await asyncio.gather(close_stream(writer, 0.2), close_stream(frame_writer, 0.2))
+        replacement = RemoteSource(
+            "healthy-peer",
+            RemoteConfig(port=server.port, ca_file=cert, token=token, source_kind="synthetic", limits=limits),
+        )
+        try:
+            await replacement.start("lab-demo", SessionOptions())
+            assert len(replacement.latest_frame().poses) == 24
+        finally:
+            await replacement.close()
+        record_property(
+            "slow_peer",
+            json.dumps(
+                {
+                    "meshBytes": len(data),
+                    "sendTimeoutSeconds": 0.1,
+                    "ownedSourceClosed": True,
+                    "nextPeerHealthy": True,
+                }
+            ),
+        )
+
+
+async def test_remote_source_preserves_no_observer_auto_pause_policy(tls_material):
+    cert, key, token = tls_material
+    async with RunnerServer(
+        ServerConfig(cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic")
+    ) as remote:
+        config = RemoteConfig(port=remote.port, ca_file=cert, token=token, source_kind="synthetic")
+        async with public_gateway(config) as base, httpx.AsyncClient(base_url=base) as http:
+            created = await http.post(
+                "/api/v1/sessions",
+                json={"sceneId": "lab-demo", "source": "synthetic", "continueWithoutObservers": False},
+            )
+            assert created.status_code == 201 and created.json()["state"] == "PAUSED"
+            route = f"/api/v1/sessions/{created.json()['sessionId']}"
+            async with connect(
+                base.replace("http:", "ws:") + route + "/ws", origin="http://127.0.0.1:5188"
+            ) as ws:
+                ready = json.loads(await ws.recv())
+                assert ready["sessionState"] == "PAUSED"
+                await public_subscribe(ws, created.json()["sceneRevision"])
+                async with asyncio.timeout(2):
+                    while (await http.get(route)).json()["state"] != "RUNNING":
+                        await asyncio.sleep(0.01)
+            async with asyncio.timeout(2):
+                while (await http.get(route)).json()["state"] != "PAUSED":
+                    await asyncio.sleep(0.01)
+            assert (await http.delete(route)).status_code == 204
+
+
+async def test_read_only_query_timeout_keeps_authority_and_http_504_behavior(tls_material):
+    cert, key, token = tls_material
+
+    class SlowJoint(SyntheticSource):
+        async def query_joint_state(self, key):
+            await asyncio.Event().wait()
+
+    limits = Limits(request_seconds=0.08)
+    async with RunnerServer(
+        ServerConfig(
+            cert_file=cert, key_file=key, token=token, port=0, source_kind="synthetic", limits=limits
+        ),
+        source_factory=SlowJoint,
+    ) as remote:
+        config = RemoteConfig(port=remote.port, ca_file=cert, token=token, source_kind="synthetic")
+        async with public_gateway(config) as base, httpx.AsyncClient(base_url=base) as http:
+            created = await http.post("/api/v1/sessions", json={"sceneId": "lab-demo", "source": "synthetic"})
+            route = f"/api/v1/sessions/{created.json()['sessionId']}"
+            manifest = (await http.get(route + "/scene")).json()
+            response = await http.get(
+                route + "/joints/state", params={"key": manifest["joints"][0]["entityKey"]}
+            )
+            assert response.status_code == 504
+            assert (await http.get(route)).json()["state"] == "RUNNING"
+            assert remote.active_sessions == 1
+            assert (await http.get(route + "/snapshot")).status_code == 200
+            async with connect(
+                base.replace("http:", "ws:") + route + "/ws", origin="http://127.0.0.1:5188"
+            ) as ws:
+                await ws.recv()
+                baseline = await public_subscribe(ws, manifest["sceneRevision"])
+                periodic = (
+                    await read_until(
+                        ws, lambda item: item["type"] == "transform.frame" and item["seq"] > baseline["seq"]
+                    )
+                )[-1]
+                await ws.send(
+                    json.dumps(
+                        {"type": "command.request", "requestId": "after-query-timeout", "command": "pause"}
+                    )
+                )
+                trace = await read_until(
+                    ws,
+                    lambda item: (
+                        item["type"] == "session.state"
+                        and item["cause"].get("requestId") == "after-query-timeout"
+                    ),
+                )
+                assert trace[-1]["state"] == "PAUSED" and trace[-1]["seq"] > periodic["seq"]
+                assert any(item["type"] == "command.ack" and item["status"] == "applied" for item in trace)
+            await http.delete(route)
 
 
 @pytest.mark.newton

@@ -20,6 +20,7 @@ from packages.transport.remote import (
     JointResult,
     MeshResult,
     Outbox,
+    QueryTimeout,
     Ready,
     RemoteConfig,
     Request,
@@ -32,6 +33,10 @@ from packages.transport.remote import (
     receive,
     send,
 )
+
+
+class RemoteQueryTimeout(TimeoutError):
+    """A bounded read-only operation timed out without changing source ownership."""
 
 
 class RemoteSource:
@@ -132,7 +137,9 @@ class RemoteSource:
 
     async def _frame(self, reader):
         _, payload = await receive(reader, self.limits, allowed=(FRAME,))
-        received = time.monotonic() * 1000
+        return self._decode_frame(payload, time.monotonic() * 1000)
+
+    def _decode_frame(self, payload, received):
         frame = self._codec.decode(payload)
         if {row[0] for row in frame.poses} != self._ids:
             raise ValueError("Remote source frame must contain the complete Manifest body set")
@@ -152,10 +159,7 @@ class RemoteSource:
                     if not isinstance(parse_json(payload), Heartbeat):
                         raise ValueError("Invalid remote frame heartbeat")
                     continue
-                frame = self._codec.decode(payload)
-                if {row[0] for row in frame.poses} != self._ids:
-                    raise ValueError("Remote periodic frame must be complete")
-                self._cache(frame.model_copy(update={"sampleTimeMs": received}))
+                self._cache(self._decode_frame(payload, received))
         except Exception as exc:
             self._fail(type(exc).__name__)
 
@@ -195,7 +199,7 @@ class RemoteSource:
                     value = packet.state
                 elif isinstance(packet, MeshResult):
                     _, value = await receive(reader, self.limits, allowed=(MESH,))
-                elif isinstance(packet, (Unknown, Closed)):
+                elif isinstance(packet, (Unknown, Closed, QueryTimeout)):
                     value = None
                 else:
                     raise ValueError("Unexpected remote control response")
@@ -203,6 +207,8 @@ class RemoteSource:
                 if future is not None and not future.done():
                     if isinstance(packet, Unknown):
                         future.set_exception(KeyError(packet.key))
+                    elif isinstance(packet, QueryTimeout):
+                        future.set_exception(RemoteQueryTimeout("Remote query timed out"))
                     else:
                         future.set_result(value)
         except Exception as exc:
@@ -263,6 +269,8 @@ class RemoteSource:
             self._outbox.offer((JSON, json_bytes(Request(kind=kind, token=token, **payload))))
             timeout = self.limits.close_seconds * 4 if kind == "close" else self.limits.request_seconds
             return await asyncio.wait_for(future, timeout)
+        except RemoteQueryTimeout:
+            raise
         except TimeoutError:
             self._fail("request timeout")
             raise

@@ -208,6 +208,11 @@ class Closed(Model):
     token: Token
 
 
+class QueryTimeout(Model):
+    kind: Literal["query_timeout"] = "query_timeout"
+    token: Token
+
+
 class Heartbeat(Model):
     kind: Literal["heartbeat"] = "heartbeat"
     stats: dict[str, JsonValue] = Field(default_factory=dict)
@@ -236,6 +241,7 @@ PACKET = TypeAdapter(
         | MeshResult
         | Unknown
         | Closed
+        | QueryTimeout
         | Heartbeat
         | Event
         | Failed,
