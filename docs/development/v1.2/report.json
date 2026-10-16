@@ -200,6 +200,18 @@
         "GPU interests with complete recovery snapshots",
         "Actual Shape count and Runner heartbeat"
       ]
+    },
+    {
+      "id": "FINAL-R",
+      "title": "TLS interest/full-snapshot and heartbeat forwarding",
+      "status": "in-progress",
+      "blockers": [],
+      "delivered": [],
+      "pending": [
+        "Typed atomic full capture/barrier exchange",
+        "Subscription exact membership and read-only snapshot timeout recovery",
+        "Real relative Runner heartbeat age forwarding"
+      ]
     }
   ],
   "project": "Newton Spatial Sync",
@@ -286,7 +298,7 @@
     "startedAt": "2026-10-16T03:32:50.8480765Z",
     "goal": "Implement and locally integrate specification v1.2 in phase order; reserve Phase 3 interfaces and condition Phase 2 optimizations on evidence"
   },
-  "snapshotAt": "2026-10-16T13:00:48.929711Z",
+  "snapshotAt": "2026-10-16T14:16:22.263494Z",
   "checkpoint": {
     "revision": "465a152518437051e637a3213212c7f083eb8414 plus PM documentation",
     "authorization": "User requested implementation according to the v1.2 specification. Local development, isolated issue branches, validation and integration are authorized. No remote or publication is configured.",
@@ -298,9 +310,9 @@
         "ticket": "v1.2"
       },
       {
-        "role": "Gateway repair author (parked after integration)",
+        "role": "TLS interest/heartbeat repair developer",
         "owner": "/root/gateway_repair",
-        "ticket": "FINAL-G"
+        "ticket": "FINAL-R"
       },
       {
         "role": "Source/subscription GPU and diagnostics repairs",
@@ -324,8 +336,8 @@
     {
       "name": "Retained B preview8000/5173",
       "owner": "PM",
-      "purpose": "B API PID36204 exec8139 retained for unknown-owner paused Synthetic session-b469c0e4cf99. B production bundle copied to.scratch/preview-b-9a93c83, preview5173 PID41600 exec69500. Dev Vite13676 stopped; temporary5191 verification server stopped.",
-      "disposition": "retained"
+      "purpose": "B API PID36204 exec8139 retained for unknown-owner paused Synthetic session-b469c0e4cf99. B production bundle copied to.scratch/preview-b-9a93c83, preview5173 PID41600 exec69500. Dev Vite13676 stopped; temporary5191 verification server stopped. Latest post-interruption inventory:8000/5173 listeners absent; prior authority no longer observable. PM issued no stop/reset/close for this unknown session; cause of process exit not established.",
+      "disposition": "unknown"
     },
     {
       "name": "Old root API8000 and FR3",
@@ -372,14 +384,14 @@
     {
       "name": "Unknown-owner paused Synthetic session-b469c0e4cf99",
       "owner": "Unconfirmed; active C/D developers deny creating it and PM-owned E2E sessions are stopped",
-      "purpose": "Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration.",
-      "disposition": "retained"
+      "purpose": "Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration. Latest post-interruption inventory:8000/5173 listeners absent; prior authority no longer observable. PM issued no stop/reset/close for this unknown session; cause of process exit not established.",
+      "disposition": "unknown"
     },
     {
       "name": "Final candidate API8009/web5189",
       "owner": "PM",
-      "purpose": "API PID40616 exec10943; preview PID38344 exec3114 at5d6533f. Reserved for latest integrated tests; restart/rebuild after repairs. No manual session yet.",
-      "disposition": "retained"
+      "purpose": "Prior API/web listeners absent at post-interruption inventory. Root will relaunch fresh after final integration; foreign5175 remains untouched.",
+      "disposition": "cleaned"
     }
   ],
   "tests": [
@@ -408,6 +420,25 @@
         {
           "href": "P2-B-review.md",
           "label": "Independent review and cross-issue condition"
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "pose-cache-boundary",
+      "title": "Preserve the HTTP Pose read-only boundary during source pushdown",
+      "source": "../../spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md#6-http-api",
+      "quote": "Pose comes from the latest published read-only snapshot; HTTP Pose requests must not trigger GPU synchronization.",
+      "actual": "The first source repair routed pose through a new full capture and asserted pose.seq greater than the prior full sample. Independent Spec review identified the conflict before final integration.",
+      "mechanism": "A stronger freshness oracle was applied to both explicit recovery capture and ordinary Pose lookup, bypassing the existing published-cache restriction. Kernel correctness evidence could not prove that HTTP ownership boundary.",
+      "proposal": "Keep explicit snapshot/subscription recovery capture; serve Pose from a single complete published cache with original metadata and test that source capture call counts do not change. Check the concrete public-entrypoint contract before strengthening an oracle.",
+      "classification": "misapplication",
+      "confidence": "verified",
+      "evidence": [
+        {
+          "href": "FINAL-REVIEW.md",
+          "label": "Independent review and repair record"
         }
       ]
     }

@@ -19,3 +19,11 @@ The suggested 45 FPS target is unmet under SwiftShader. No hardware-renderer, WA
 ## Gateway repair integration
 
 `40e1a8efe272f0e845bb73e2604c053a3bfc4811` was merged at `465a152518437051e637a3213212c7f083eb8414`. PM independently inspected the code/tests and ran all five public repair regressions: **5 passed in 0.88 s**, with unraisable warnings treated as errors. The author's complete base gate passed **170 tests, 1 optional skip in 14.26 s**; full Ruff passed. The repair additionally stages startup through initial observer policy, guards source-backed queries after failure, and guarantees WebSocket pump cleanup under ASGI cancellation. See [the repair evidence](FINAL-gateway-repair.md). Complete-candidate independent review and final validation remain pending with the source-interest repair.
+
+## Source and TLS repair review
+
+Source delivery `b21b00c` and TLS delivery `5d7292d` implement the original four findings. The independent Spec reviewer traced the combined boundaries and found no other missing original requirement or scope creep. The Source author executed ten real CPU/CUDA checks without skips, 149 non-TLS base checks, frontend/protocol/build checks and two actual diagnostics browser paths. The TLS author executed 55 network/transport checks with two optional Newton skips. These are per-slice results, not a claim that the combined final head passed.
+
+PM found a remote paused hotloop that revalidated an unchanged complete snapshot every two milliseconds. `5d7292d` guards all observations by seq, validates a newer control snapshot once, and retains late-query barriers. The Spec reviewer inspected this incremental fix and found no new issue.
+
+One new mandatory Spec regression remains open at this checkpoint: section6:674 requires ordinary Pose HTTP to use the published read-only snapshot without GPU synchronization. The source repair routed Pose through explicit full capture; the prior stronger `pose.seq > full.seq` test was an unrequested oracle and is superseded. The narrow repair keeps explicit snapshot/subscription capture while serving Pose from one complete cache with its original seq/simTime/staleMs. Public capture-call stability and metadata regressions are assigned to the original Source author. The specification is unchanged.
