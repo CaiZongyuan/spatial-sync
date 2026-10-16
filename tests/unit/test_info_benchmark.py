@@ -2,8 +2,10 @@
 
 import hashlib
 import struct
+from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from apps.api.app.sources.synthetic_source import REGISTRY, SyntheticSource
 from packages.info.catalog import load_catalog
@@ -21,7 +23,7 @@ from tools.bench_info import (
 
 
 def test_typed_and_json_digests_match_ordered_goldens_from_actual_host_batches(tmp_path):
-    root = fixture(tmp_path, 1000, 20)
+    root = fixture(tmp_path, 1000, 20, generation=60)
     registry = {**REGISTRY, ControllerProgram.id: ControllerProgram, TelemetryProgram.id: TelemetryProgram}
     catalog = load_catalog(SyntheticSource("digest-parity")._manifest(), "lab-demo", registry, root=root)
     clock = [0.0]
@@ -75,3 +77,57 @@ def test_source_and_client_counter_checks_still_reject_invalid_values(value, doc
     change = ObservationChange(key=PREFIX + "00000000", rev=1, values={"value": value})
     with pytest.raises(AssertionError, match="nonnegative integer"):
         list(telemetry_rows([change.model_dump() if document else change]))
+
+
+class TelemetryContext:
+    def __init__(self, rate):
+        self.config = SimpleNamespace(controller=CONTROL, generationHz=rate)
+        self.enabled, self.value, self.writes = True, None, []
+
+    def read(self, key, prop):
+        return self.enabled
+
+    def get(self, prop):
+        return self.value
+
+    def set(self, *, value):
+        self.value = value
+        self.writes.append(value)
+
+
+@pytest.mark.parametrize("rate", [5, 15, 60, 120])
+def test_generation_frequency_counts_every_actual_write_at_the_configured_dt_rate(rate):
+    program, ctx = TelemetryProgram(), TelemetryContext(rate)
+    program.init(ctx)
+    for _ in range(60):
+        program.tick(ctx, 1 / 60)
+    assert ctx.value == rate
+    assert ctx.writes == list(range(rate + 1))
+
+
+def test_disabled_generation_clears_partial_time_and_cannot_accumulate_a_reenable_burst():
+    program, ctx = TelemetryProgram(), TelemetryContext(15)
+    program.init(ctx)
+    for _ in range(3):
+        program.tick(ctx, 1 / 60)
+    assert ctx.value == 0
+    ctx.enabled = False
+    for _ in range(120):
+        program.tick(ctx, 1 / 60)
+    assert ctx.writes == [0]
+    ctx.enabled = True
+    program.tick(ctx, 1 / 60)
+    assert ctx.value == 0
+    for _ in range(3):
+        program.tick(ctx, 1 / 60)
+    assert ctx.writes == [0, 1]
+
+
+@pytest.mark.parametrize("generation", [None, 60])
+def test_fixture_keeps_generation_configuration_separate_from_publication_limit(tmp_path, generation):
+    root = fixture(tmp_path, 1, 15, generation)
+    scene = yaml.safe_load((root / "scenes/lab-demo.yaml").read_text(encoding="utf-8"))
+    entity = next(item for item in scene["entities"] if item.get("key", "").startswith(PREFIX))
+    definition = yaml.safe_load((root / "types/bench-telemetry.v1.yaml").read_text(encoding="utf-8"))
+    assert entity["config"]["generationHz"] == (15 if generation is None else 60)
+    assert definition["properties"]["value"]["maxRateHz"] == 15

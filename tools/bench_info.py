@@ -5,6 +5,8 @@ The temporary fixture extends the production Synthetic scene with unplaced devic
 No benchmark HTTP endpoints or alternate gateway paths are installed.
 After the Synthetic gateway exits, the real log benchmark runs separately;
 --include-newton also measures the real CPU Newton host in its own gateway.
+--rate-hz limits publication; --generation-hz controls real per-entity writes
+and defaults to the same rate. Pass --generation-hz 60 for the earlier stress.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ sys.path.insert(0, str(ROOT))
 import httpx
 import orjson
 import yaml
-from pydantic import TypeAdapter
+from pydantic import PositiveFloat, TypeAdapter
 from websockets.asyncio.client import connect
 
 from packages.info.program import ProgramConfig
@@ -78,15 +80,23 @@ class TelemetryProgram:
 
     class Config(ProgramConfig):
         controller: str = CONTROL
+        generationHz: PositiveFloat = 60
 
     def init(self, ctx):
+        self._elapsed = 0.0
         ctx.set(value=0)
 
     def accept(self, inv, ctx):
         return None
 
     def tick(self, ctx, dt):
-        if ctx.read(ctx.config.controller, "enabled"):
+        if not ctx.read(ctx.config.controller, "enabled"):
+            self._elapsed = 0.0
+            return
+        self._elapsed += dt
+        period = 1 / ctx.config.generationHz
+        while self._elapsed + 1e-10 >= period:
+            self._elapsed -= period
             ctx.set(value=ctx.get("value") + 1)
 
 
@@ -110,7 +120,7 @@ def update_digest(digest, rows):
     return count
 
 
-def fixture(directory, count, rate):
+def fixture(directory, count, rate, generation=None):
     destination = directory / "devices"
     assert destination.resolve().is_relative_to(directory.resolve())
     shutil.copytree(ROOT / "devices", destination)
@@ -151,6 +161,7 @@ def fixture(directory, count, rate):
             "key": f"{PREFIX}{i:08d}",
             "type": TelemetryProgram.type,
             "program": TelemetryProgram.id,
+            "config": {"generationHz": rate if generation is None else generation},
             "unplaced": True,
         }
         for i in range(count)
@@ -209,14 +220,17 @@ def serve(args):
                 yield event
 
         def stats(self):
+            current_values = [read() for read in self.readers]
             return {
                 "bench": {
                     "clockMs": time.monotonic() * 1000,
                     "changes": self.changes,
                     "batches": self.batches,
                     "digest": self.digest.hexdigest(),
+                    "generatedWrites": sum(current_values),
                     "pendingValues": sum(
-                        read() != value for read, value in zip(self.readers, self.last_values, strict=True)
+                        current != value
+                        for current, value in zip(current_values, self.last_values, strict=True)
                     ),
                     "calls": self.calls(),
                     "registeredWaiters": len(WAITING),
@@ -240,6 +254,7 @@ class Reader:
         self.markers = {}
         self.frames = []
         self.latencies = []
+        self.change_samples = []
         self.ready = asyncio.Event()
         self.stopped = False
         self.error = None
@@ -299,6 +314,7 @@ class Reader:
                                 self.revisions[index], self.values[index] = rev, value
                             self.changes += update_digest(self.digest, rows)
                             self.batches += 1
+                            self.change_samples.append((message["sampleTimeMs"], len(rows)))
                             latency = received - message["sampleTimeMs"]
                             assert latency >= 0
                             self.latencies.append((message["sampleTimeMs"], latency))
@@ -505,6 +521,10 @@ async def benchmark(args, client, route, readers):
         begin_ms, end_ms = before["bench"]["clockMs"], after["bench"]["clockMs"]
         windows.append((begin_ms, end_ms))
         frames = [sum(begin_ms <= stamp <= end_ms for stamp in reader.frames) for reader in readers]
+        reader_changes = [
+            sum(count for stamp, count in reader.change_samples if begin_ms <= stamp <= end_ms)
+            for reader in readers
+        ]
         for _ in range(args.wake_samples):
             await wake()
         assert all(values for values in samples.values()), "Every HTTP operation needs actual samples"
@@ -519,6 +539,24 @@ async def benchmark(args, client, route, readers):
             "sourceTransformHz": (after["publishedFrames"] - before["publishedFrames"]) / elapsed,
             "propertyChanges": after["bench"]["changes"] - before["bench"]["changes"],
             "propertyChangesPerSecond": (after["bench"]["changes"] - before["bench"]["changes"]) / elapsed,
+            "generatedWrites": after["bench"]["generatedWrites"] - before["bench"]["generatedWrites"],
+            "generatedWritesPerSecond": (
+                after["bench"]["generatedWrites"] - before["bench"]["generatedWrites"]
+            )
+            / elapsed,
+            "readerPropertyChanges": reader_changes,
+            "readerPropertyChangesPerSecond": [count / elapsed for count in reader_changes],
+            "sustainedThroughputBudget": {
+                "requiredChangesPerSecond": 10_000,
+                "applicable": enabled,
+                "satisfied": None
+                if not enabled
+                else min(
+                    (after["bench"]["changes"] - before["bench"]["changes"]) / elapsed,
+                    *(count / elapsed for count in reader_changes),
+                )
+                >= 10_000,
+            },
             "http": {name: distribution(values) for name, values in samples.items()},
         }
 
@@ -557,12 +595,14 @@ async def benchmark(args, client, route, readers):
     assert all(reader.digest.hexdigest() == final["bench"]["digest"] for reader in readers)
     assert all(reader.batches == final["bench"]["batches"] for reader in readers)
     assert final["bench"]["calls"] == len(accepted_ids)
+    assert final["bench"]["generatedWrites"] == sum(readers[0].values.values())
     assert all(len(reader.values) == args.entities for reader in readers)
     current = (await client.get(route + "/state")).json()["entities"]
     for index in range(args.entities):
         entity = current[f"{PREFIX}{index:08d}"]
         assert entity["values"]["value"] == readers[0].values[index] == readers[1].values[index]
         assert entity["rev"] == readers[0].revisions[index] == readers[1].revisions[index]
+        assert entity["rev"] == entity["values"]["value"] + 1
         assert entity["meta"]["value"]["source"] == "virtual"
     for invocation_id in accepted_ids:
         invocation = readers[0].invocations[invocation_id]
@@ -594,6 +634,8 @@ async def benchmark(args, client, route, readers):
         "waitWakeLatency": distribution(wake_samples),
         "correctness": {
             "sourceChanges": final["bench"]["changes"],
+            "generatedWrites": final["bench"]["generatedWrites"],
+            "generatedCountersMatchRevisions": True,
             "sourceObservationBatches": final["bench"]["batches"],
             "sourceDigest": final["bench"]["digest"],
             "readerChanges": [reader.changes for reader in readers],
@@ -611,7 +653,7 @@ async def benchmark(args, client, route, readers):
 
 
 async def run(args, directory, log_path):
-    fixture_root = fixture(directory, args.entities, args.rate_hz)
+    fixture_root = fixture(directory, args.entities, args.rate_hz, args.generation_hz)
     process = None
     readers, tasks = [], []
     route = None
@@ -773,6 +815,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entities", type=int, default=1000)
     parser.add_argument("--rate-hz", type=float, default=10)
+    parser.add_argument(
+        "--generation-hz",
+        type=float,
+        help="actual writes/s; defaults to --rate-hz (60 reproduces prior stress)",
+    )
     parser.add_argument("--http-hz", type=float, default=50)
     parser.add_argument("--seconds", type=float, default=3)
     parser.add_argument("--warmup-seconds", type=float, default=1)
@@ -789,6 +836,8 @@ def main():
     parser.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--fixture-dir", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.generation_hz is None:
+        args.generation_hz = args.rate_hz
     if args.serve:
         serve(args)
         return
@@ -797,6 +846,7 @@ def main():
         for value in (
             args.entities,
             args.rate_hz,
+            args.generation_hz,
             args.http_hz,
             args.seconds,
             args.repeats,
@@ -832,6 +882,14 @@ def main():
             "wait": "registered waiter: host marker sampleTimeMs to HTTP response receipt",
             "load": "same HTTP mix and two readers for baseline/load; alternating repeat order",
             "instrumentation": "source/reader SHA256 of index/rev/value; Source.stats and waiter counters",
+            "generation": (
+                "dt-accumulated real writes; disabled time resets accumulation; "
+                "each write increments counter/revision once"
+            ),
+            "throughput": (
+                "actual generated counter increments and separately published Source/two-reader rows "
+                "per measured window; never theoretical entity*Hz"
+            ),
             "limits": "CPU contention and instrumentation included; interpret budgets separately",
             "correctnessCohort": "all post-cursor messages through drain, including warmup and controls",
             "phases": "Synthetic cleanup, optional Newton cleanup, then actual log drain/flush",
