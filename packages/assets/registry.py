@@ -46,13 +46,10 @@ class AssetRegistry:
         for asset_id, relative in (paths or {}).items():
             if asset_id_from_url("/api/v1/assets/" + asset_id) != asset_id:
                 raise ValueError("asset IDs must be canonical unescaped paths")
+            if Path(relative).is_absolute() or PureWindowsPath(relative).drive:
+                raise ValueError(f"asset registration requires a relative path: {asset_id}")
             path = (self.root / relative).resolve()
-            if (
-                Path(relative).is_absolute()
-                or PureWindowsPath(relative).drive
-                or not path.is_relative_to(self.root)
-                or path.suffix.lower() not in MEDIA_TYPES
-            ):
+            if not path.is_relative_to(self.root) or path.suffix.lower() not in MEDIA_TYPES:
                 raise ValueError(f"asset registration escapes its root or has unsupported type: {asset_id}")
             self._paths[asset_id] = path
 

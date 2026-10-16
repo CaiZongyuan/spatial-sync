@@ -1,0 +1,9 @@
+{"event":"session.lifecycle","sessionId":"session-1a3586697cb5","sceneRevision":null,"epoch":0,"seq":0,"source":"newton","state":"LOADING"}
+{"event":"session.lifecycle","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":1,"source":"newton","runnerPID":17784,"state":"RUNNING"}
+{"event":"transform.frame","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784}
+{"event":"command.ack","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784,"requestId":"real-json-pause","command":"pause","status":"applied"}
+{"event":"session.state","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784,"state":"PAUSED","cause":"command","requestId":"real-json-pause","command":"pause"}
+{"event":"source.error","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784,"code":"source_unavailable","message":"Newton frame pipe closed: "}
+{"event":"session.state","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784,"state":"FAILED","cause":"error"}
+{"event":"session.state","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784,"state":"STOPPING","cause":"lifecycle"}
+{"event":"session.state","sessionId":"session-1a3586697cb5","sceneRevision":"rev-37b10a8b33a440d296f20dcaa5d599a6","epoch":0,"seq":3,"source":"newton","runnerPID":17784,"state":"STOPPED","cause":"lifecycle"}

@@ -19,6 +19,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError
 from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
+from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
@@ -59,6 +60,7 @@ def create_app(
     source_factory=default_source_factory,
     asset_registry: AssetRegistry | None = None,
 ) -> FastAPI:
+    configure_gateway_logging()
     settings = settings or Settings()
     manager = SessionManager(settings, source_factory)
     asset_registry = asset_registry or AssetRegistry.from_file()

@@ -44,9 +44,10 @@ def test_y_up_usd_is_converted_once_and_labels_are_actual_prim_paths():
     assert pose[:3] == pytest.approx([1, -0.2, 1.5], abs=1e-6)
     assert sim.builder.up_axis == newton.Axis.Z
     assert body.visuals[0].kind == "glb"
-    assert len(body.fallbackVisuals) == 1 and body.fallbackVisuals[0].kind == "mesh"
-    assert all(visual.kind == "primitive" for visual in body.colliders)
-    native = body.fallbackVisuals[0]
+    assert len(body.fallbackVisuals) == 2
+    assert {visual.kind for visual in body.fallbackVisuals} == {"mesh", "primitive"}
+    assert len(body.colliders) == 1 and body.colliders[0].kind == "primitive"
+    native = next(visual for visual in body.fallbackVisuals if visual.kind == "mesh")
     loaded = trimesh.load(BytesIO(sim.meshes.read(native.meshId)), file_type="glb", force="scene")
     shape_pose = compose_pose({"p": pose[:3], "q": pose[3:]}, native.localPose.model_dump())
     vertices = np.concatenate([geometry.vertices for geometry in loaded.geometry.values()])
@@ -66,3 +67,25 @@ def test_y_up_usd_is_converted_once_and_labels_are_actual_prim_paths():
         for w in manifest.warnings
     )
     assert any(w.code == "asset_missing" and w.entityKey == "/World/MovingPart" for w in manifest.warnings)
+
+
+def test_y_up_bound_glb_axis_and_local_pose_match_the_usd_equipment_world_bounds():
+    from packages.assets.registry import AssetRegistry
+
+    sim = usd_scene()
+    manifest = export_manifest(sim, session_id="usd", scene_revision="rev", revision_numeric_id=1)
+    housing = next(node for node in manifest.nodes if node.entityKey == "/World/Equipment/Housing")
+    binding = housing.visuals[0]
+    assert binding.kind == "glb" and binding.assetUpAxis == "Y"
+    blob = AssetRegistry.from_file().read("equipment-cover.glb").data
+    loaded = trimesh.load(BytesIO(blob), file_type="glb", force="scene")
+    pose = compose_pose(housing.initialPose.model_dump(), binding.localPose.model_dump())
+    axis_q = [2**-0.5, 0, 0, 2**-0.5]
+    world = []
+    for geometry in loaded.geometry.values():
+        for vertex in geometry.vertices:
+            converted = rotate_vector(axis_q, vertex * binding.scale)
+            world.append(np.array(rotate_vector(pose["q"], converted)) + pose["p"])
+    np.testing.assert_allclose(
+        [np.min(world, axis=0), np.max(world, axis=0)], [[-1.1, -0.2, 0], [-0.5, 0.2, 0.6]], atol=1e-6
+    )

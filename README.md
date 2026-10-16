@@ -33,8 +33,16 @@ before a scene starts. The web app proxies `/api` to port 8000 by default.
 For Newton CPU/GPU setup and baseline smoke commands, see
 [the Newton baseline report](docs/development/v1.2/P0-A.md). Install its locked
 extras with `uv sync --frozen --group dev --extra simulation --extra usd`. Then
-select a registered Newton scene; do not run multiple API workers. The Newton
-adapter is installed by P0-E; an absent adapter returns `503 source_unavailable`.
+launch with those extras explicitly selected so `uv run` preserves them:
+
+```powershell
+uv run --frozen --extra simulation --extra usd python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000
+```
+
+Select **Newton Robot and Tubes** or **Newton USD Laboratory**. Do not run multiple
+API workers. While that preview runs, use `uv run --no-sync ...` for checks in the
+same environment; a base `uv run` without the selected extras removes them.
+The shipped scenes and Franka assets are available offline.
 
 ## Tests
 
@@ -118,3 +126,29 @@ have the authenticated reverse proxy supply that header on upgraded connections.
 Viewer credentials can observe but cannot create/close sessions or execute
 commands. Remote HTTP requests and WS commands have bounded request rates.
 Origins are checked before remote writes. Tokens must not be placed in URLs.
+
+## Visual assets and USD
+
+`usd-lab` imports the checked-in Y-up scene at
+`examples/usd-lab/lab-y-up.usda`, converts into Z-up once, then rewrites Newton
+labels from USD Prim Path maps. It includes mechanical equipment, a driven rotor
+and a falling mesh body. The deliberately unsupported Cable and missing MovingPart
+binding produce visible compatibility warnings.
+
+Trusted static files are declared in `assets/registry.yaml`; request IDs are
+looked up in this table and never interpreted as server paths. Bindings in
+`assets/bindings/{sceneId}.yaml` map entityKey to `{url,localPose,scale,assetUpAxis}`.
+URLs use `/api/v1/assets/{registeredId}`. The fixture cover GLB is original and
+reproducible with `uv run --no-sync python tools/generate_demo_assets.py --check`.
+
+A binding replaces the node's primary `visuals` group. Native Newton visuals
+remain in optional `fallbackVisuals`; the renderer chooses the first fully loaded
+group among primary visuals, native fallbacks, colliders and a placeholder.
+Each group may contain simultaneous shapes, including meshes. No binding and
+fallback group is rendered together.
+
+Newton triangle meshes are exported as content-hash GLB artifacts. Their local
+geometry is unchanged, `assetUpAxis` is Z, and shape scale remains in the Manifest.
+Mesh IDs have immutable cache headers and an ETag; registered static assets also
+support ETag revalidation. See [USD compatibility notes](examples/usd-lab/README.md)
+for the axis calibration and fallback examples.
