@@ -18,6 +18,7 @@ from apps.api.app.stream_broadcaster import ClientConnection
 from packages.protocol.internal import SessionOptions
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
+    Cause,
     Command,
     CommandAck,
     EntityState,
@@ -89,6 +90,7 @@ class Session:
         self.published_frames = 0
         self.payload_bytes = 0
         self.error: dict | None = None
+        self._auto_paused = False
 
     async def start(self):
         self.state = "LOADING"
@@ -100,8 +102,13 @@ class Session:
             self._revision_number += 1
             self.manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number})
             self.state, self.error = "RUNNING", None
+            self._auto_paused = False
             self._cache_frame(self.latest_frame())
             self._last_published_seq = self.seq
+            # Creation is exclusive; reload already holds command_lock.
+            await self._sync_observer_policy_locked()
+            if self.state == "FAILED":
+                raise RuntimeError(self.error["message"])
             self._tasks = [
                 asyncio.create_task(self._monitor(), name="session-frames"),
                 asyncio.create_task(self._events(), name="session-events"),
@@ -177,6 +184,8 @@ class Session:
             if manifest
             else {},
             "error": self.error,
+            "continueWithoutObservers": self.options.continueWithoutObservers,
+            "autoPaused": self._auto_paused,
         }
 
     async def _monitor(self):
@@ -355,8 +364,11 @@ class Session:
                         state = result.state.model_copy(update={"seq": result.state.seq + self._seq_offset})
                         self._apply_state(state)
                         self.broadcast(state)
+                    if ack.status == "applied" and command.command in ("pause", "resume"):
+                        self._auto_paused = False
                     if client.role == "operator":
                         self._remember(ack)
+                    await self._sync_observer_policy_locked()
                     return
             client.enqueue_reliable(encode(ack))
             if client.role == "operator":
@@ -444,6 +456,52 @@ class Session:
         client.enqueue_reliable(encode(snapshot), seq=snapshot.seq, force=True)
         for event in self.entity_states.values():
             client.enqueue_reliable(encode(event))
+
+    async def observer_subscribe(self, client: ClientConnection, request: Subscribe):
+        async with self.command_lock:
+            self.subscribe(client, request)
+            await self._sync_observer_policy_locked()
+
+    async def remove_client(self, client: ClientConnection):
+        async with self.command_lock:
+            self.clients.discard(client)
+            client.subscribed = False
+            await self._sync_observer_policy_locked()
+
+    async def _sync_observer_policy_locked(self):
+        if self.options.continueWithoutObservers or self.state not in ("RUNNING", "PAUSED"):
+            return
+        observing = any(client.subscribed and not client.closed.is_set() for client in self.clients)
+        if not observing and self.state == "RUNNING":
+            kind, auto_paused = "pause", True
+        elif observing and self._auto_paused and self.state == "PAUSED":
+            kind, auto_paused = "resume", False
+        else:
+            return
+        try:
+            result = await self.source.execute(
+                Command(requestId=f"observer-{uuid.uuid4().hex}", command=kind)
+            )
+            if result.ack.status != "applied" or result.state is None:
+                raise RuntimeError(f"Source rejected observer-policy {kind}")
+            if result.frame is not None:
+                frame = result.frame.model_copy(update={"seq": result.frame.seq + self._seq_offset})
+                self._cache_frame(frame)
+                self.broadcast_frame(frame, reliable=True)
+            state = result.state.model_copy(
+                update={
+                    "seq": result.state.seq + self._seq_offset,
+                    "cause": Cause(
+                        kind="lifecycle",
+                        message="No subscribers" if auto_paused else "First subscriber returned",
+                    ),
+                }
+            )
+            self._apply_state(state)
+            self._auto_paused = auto_paused
+            self.broadcast(state)
+        except Exception as exc:
+            self.fail(str(exc))
 
     def pose(self, key: str):
         frame = self.latest_frame()
@@ -538,6 +596,7 @@ class Session:
 
     async def close(self):
         async with self.command_lock:
+            self._auto_paused = False
             self.state = "STOPPING"
             if self.manifest:
                 self.broadcast(self._lifecycle_state())

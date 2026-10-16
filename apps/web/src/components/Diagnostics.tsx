@@ -63,6 +63,22 @@ export function Diagnostics({
               ['simTime', `${state.simTime.toFixed(4)} s`],
               ['Target RTF', state.realtimeFactor ?? 'Unlimited'],
               ['Actual RTF', state.actualRtf.toFixed(3)],
+              [
+                'Observer policy',
+                typeof stats.continueWithoutObservers === 'boolean'
+                  ? stats.continueWithoutObservers
+                    ? 'Keep running'
+                    : 'Pause without subscribers'
+                  : undefined,
+              ],
+              [
+                'Automatic pause',
+                typeof stats.autoPaused === 'boolean'
+                  ? stats.autoPaused
+                    ? 'Active'
+                    : 'Inactive'
+                  : undefined,
+              ],
               ['Step FPS', (stats.stepHz ?? stats.stepFps) as number],
               ['Solve', solveMs == null ? undefined : `${solveMs} ms`],
               ['Readback', readbackMs == null ? undefined : `${readbackMs} ms`],

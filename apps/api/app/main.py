@@ -14,7 +14,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import TypeAdapter, ValidationError
+from pydantic import StrictBool, TypeAdapter, ValidationError
 
 from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
@@ -38,6 +38,7 @@ class CreateSession(Model):
     sceneId: NonEmpty
     source: Literal["synthetic", "newton"] = "synthetic"
     realtimeFactor: Positive | None = 1.0
+    continueWithoutObservers: StrictBool = True
 
 
 def _role(headers, settings: Settings):
@@ -118,7 +119,12 @@ def create_app(settings: Settings | None = None, source_factory=default_source_f
     @app.post("/api/v1/sessions", status_code=201)
     async def create_session(body: CreateSession):
         session = await manager.create(
-            body.sceneId, body.source, SessionOptions(realtimeFactor=body.realtimeFactor)
+            body.sceneId,
+            body.source,
+            SessionOptions(
+                realtimeFactor=body.realtimeFactor,
+                continueWithoutObservers=body.continueWithoutObservers,
+            ),
         )
         return session.summary()
 
@@ -274,7 +280,7 @@ def create_app(settings: Settings | None = None, source_factory=default_source_f
                     )
                     continue
                 if isinstance(message, Subscribe):
-                    session.subscribe(connection, message)
+                    await session.observer_subscribe(connection, message)
                 elif isinstance(message, Command):
                     if settings.remote:
                         now = time.monotonic()
@@ -300,7 +306,7 @@ def create_app(settings: Settings | None = None, source_factory=default_source_f
             receiver.cancel()
             with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
                 await receiver
-            session.clients.discard(connection)
+            await asyncio.shield(session.remove_client(connection))
             await connection.finish()
 
     return app

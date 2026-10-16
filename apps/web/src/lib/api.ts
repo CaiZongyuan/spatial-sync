@@ -45,8 +45,17 @@ export interface SessionSummary {
 }
 
 export const getScenes = () => request<{ scenes: SceneSummary[] }>('/scenes');
-export const createSession = (sceneId: string, source: string) =>
+export const createSession = (
+  sceneId: string,
+  source: string,
+  continueWithoutObservers = true,
+) =>
   request<SessionSummary>('/sessions', {
     method: 'POST',
-    body: JSON.stringify({ sceneId, source, realtimeFactor: 1 }),
+    body: JSON.stringify({
+      sceneId,
+      source,
+      realtimeFactor: 1,
+      continueWithoutObservers,
+    }),
   });
