@@ -606,6 +606,45 @@ def test_cancel_terminal_cannot_bypass_its_final_observations(monkeypatch):
         assert state["values"]["phase"] == "idle"
 
 
+def test_remote_mutation_limit_is_shared_by_actions_cancellation_approval_and_commands():
+    headers = {"Authorization": "Bearer operator", "Origin": "http://allowed.test"}
+    settings = Settings(remote=True, operator_token="operator", allowed_origins=("http://allowed.test",))
+    with TestClient(create_app(settings), headers=headers) as client:
+        session, route = create(client)
+        with client.websocket_connect(route + "/ws", headers=headers) as ws:
+            until(ws, "server.ready")
+            ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"]})
+            until(ws, "entity.snapshot")
+            for index in range(60):
+                ws.send_json(
+                    {
+                        "type": "action.request",
+                        "requestId": f"limited-{index}",
+                        "entityKey": CENTRIFUGE,
+                        "action": "missing",
+                    }
+                )
+                assert (
+                    until(ws, "invocation.update", requestId=f"limited-{index}")["error"]["code"]
+                    == "unknown_action"
+                )
+            for message in [
+                {"type": "action.request", "entityKey": CENTRIFUGE, "action": "missing"},
+                {"type": "action.cancel", "invocationId": "missing"},
+                {"type": "action.approve", "invocationId": "missing", "decision": "approve"},
+                {"type": "command.request", "command": "pause"},
+            ]:
+                message["requestId"] = "over-limit"
+                ws.send_json(message)
+                for _ in range(100):
+                    error = receive_message(ws)
+                    if error["type"] in ("server.error", "invocation.update"):
+                        break
+                assert error["type"] == "server.error", error
+                assert error["code"] == "invalid_message" and "rate limit" in error["message"].lower()
+        assert len(client.get(route + "/invocations", params={"limit": 1000}).json()["invocations"]) == 60
+
+
 def test_session_deduplication_survives_terminal_eviction_and_event_gap_is_explicit():
     dispatched = []
 

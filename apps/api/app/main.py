@@ -325,6 +325,24 @@ def create_app(
                         )
                     )
                     continue
+                if settings.remote and isinstance(
+                    message, (Command, ActionRequest, ActionCancel, ActionApprove)
+                ):
+                    now = time.monotonic()
+                    while commands and now - commands[0] > 60:
+                        commands.popleft()
+                    if len(commands) >= 60:
+                        connection.enqueue_reliable(
+                            encode(
+                                ServerError(
+                                    code="invalid_message",
+                                    message="Mutation rate limit exceeded",
+                                    requestId=message.requestId,
+                                )
+                            )
+                        )
+                        continue
+                    commands.append(now)
                 if isinstance(message, Subscribe):
                     await session.observer_subscribe(connection, message)
                 elif isinstance(message, (ActionRequest, ActionCancel, ActionApprove)):
@@ -351,18 +369,6 @@ def create_app(
                             )
                         )
                 elif isinstance(message, Command):
-                    if settings.remote:
-                        now = time.monotonic()
-                        while commands and now - commands[0] > 60:
-                            commands.popleft()
-                        if len(commands) >= 60:
-                            connection.enqueue_reliable(
-                                encode(
-                                    ServerError(code="invalid_message", message="Command rate limit exceeded")
-                                )
-                            )
-                            continue
-                        commands.append(now)
                     await session.execute(connection, message)
 
         receiver = asyncio.create_task(receive(), name="websocket-receiver")

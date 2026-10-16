@@ -100,8 +100,8 @@ class InvocationTable:
             try:
                 await asyncio.wait_for(event.wait(), timeout)
             except TimeoutError:
-                return self.get(invocation_id), True
-            return self.get(invocation_id), False
+                return await self.lookup(invocation_id), True
+            return await self.lookup(invocation_id), False
         finally:
             self._waiters[invocation_id].discard(event)
             if not self._waiters[invocation_id]:
