@@ -5,11 +5,18 @@ from pathlib import Path
 import pytest
 
 from packages.protocol.math import (
-    compose_pose, joint_position_error, normalize_entity_key, normalize_quaternion,
-    primitive_dimensions, same_hemisphere, z_up_to_y_up,
+    compose_pose,
+    joint_position_error,
+    normalize_entity_key,
+    normalize_quaternion,
+    primitive_dimensions,
+    same_hemisphere,
+    z_up_to_y_up,
 )
 
-FIXTURE = json.loads((Path(__file__).resolve().parents[2] / "packages/protocol/fixtures/math.json").read_text())
+FIXTURE = json.loads(
+    (Path(__file__).resolve().parents[2] / "packages/protocol/fixtures/math.json").read_text()
+)
 
 
 @pytest.mark.parametrize("case", FIXTURE["primitiveCases"])
@@ -46,7 +53,17 @@ def test_label_path_is_case_sensitive():
     assert normalize_entity_key("/World/body") == "/World/body"
 
 
-@pytest.mark.parametrize("kind,expected", [("fixed", math.sqrt(5)), ("revolute", math.sqrt(5)), ("ball", math.sqrt(5)), ("prismatic", 1), ("free", None), ("d6", None)])
+@pytest.mark.parametrize(
+    "kind,expected",
+    [
+        ("fixed", math.sqrt(5)),
+        ("revolute", math.sqrt(5)),
+        ("ball", math.sqrt(5)),
+        ("prismatic", 1),
+        ("free", None),
+        ("d6", None),
+    ],
+)
 def test_joint_position_error_removes_allowed_travel_in_parent_anchor_frame(kind, expected):
     parent = {"p": [0, 0, 0], "q": [0, 0, math.sqrt(0.5), math.sqrt(0.5)]}
     child = {"p": [1, 2, 0], "q": [0, 0, 0, 1]}

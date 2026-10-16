@@ -91,6 +91,7 @@ export class SessionClient {
     seq: this.buffer.lastSeq,
     sessionState: this.state.sessionState,
     connection: this.state.connection,
+    socketReadyState: this.ws?.readyState ?? WebSocket.CLOSED,
   });
   getSubscriptionMetrics = () => ({
     subscriptionId: this.buffer.subscriptionId,
@@ -469,7 +470,12 @@ export class SessionClient {
     command: CommandRequest['command'],
     args: CommandRequest['args'] = {},
   ) {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      this.update({
+        commandResult: 'Connection unavailable. Retry after reconnect.',
+      });
+      return;
+    }
     const requestId = crypto.randomUUID();
     this.update({
       pending: [...this.state.pending, requestId],

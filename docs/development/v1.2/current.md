@@ -1,6 +1,6 @@
 # Newton Spatial Sync — current checkpoint
 
-Snapshot: 2026-10-16T09:00:58.593Z
+Snapshot: 2026-10-16T10:45:15.813Z
 Task status (PM supplied): in-progress
 
 ## Goal and scope
@@ -15,7 +15,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **revision**
 
-> 4bb62179999667fcd596d216082bff8a5d23ab02 plus PM documentation
+> 9a93c83b5cdb47607afacb752d242ad322aa1267 plus PM documentation
 
 **authorization**
 
@@ -23,7 +23,7 @@ The generator does not infer completion, authorization, or merge readiness from 
 
 **next**
 
-> Complete B and C, then D; integrate, simplify, final gates and independent Standards/Spec milestone reviews.
+> Complete C/D and independent review; validate latest integration on separate8009/5189 to preserve the unknown-owner paused B session on8000/5173.
 
 **roles**
 
@@ -34,17 +34,17 @@ The generator does not infer completion, authorization, or merge readiness from 
 >     "ticket": "v1.2"
 >   },
 >   {
->     "role": "Subscriptions developer",
+>     "role": "Subscriptions developer parked after frozen delivery",
 >     "owner": "/root/protocol",
 >     "ticket": "P2-B"
 >   },
 >   {
->     "role": "Scaling developer",
+>     "role": "Scaling/scoped renderer developer",
 >     "owner": "/root/viewer",
 >     "ticket": "P2-C"
 >   },
 >   {
->     "role": "Remote developer idle pending capacity",
+>     "role": "Remote Runner developer",
 >     "owner": "/root/newton",
 >     "ticket": "P2-D"
 >   }
@@ -69,38 +69,42 @@ The generator does not infer completion, authorization, or merge readiness from 
 - P1-C: Workbench reliability — integrated
   Pending: Final milestone independent review and affected validation
 - P2-A: Binary transform stream — integrated
-  Pending: Windows generated artifact LF checkout repair assigned to B; Final full-head validation/review
-- P2-B: Scopes, cumulative deltas and keyframes — in-progress
-  Pending: Device/entities/viewport UI consumer, keyframe baseline and membership recovery; Frozen candidate and real browser evidence
+  Pending: Final full-head validation/review; persistent generated LF checkout repair integrated with B
+- P2-B: Scopes, cumulative deltas and keyframes — integrated
+  Pending: C-owned actual mesh/instance/Site/raycast visibility must close overall subscription acceptance; Final complete-head checks and independent review
 - P2-C: GPU extraction and render scaling — in-progress
-  Pending: Measured2000static+500moving and2k/10k workloads; Instancing/selection/LOD/culling; actual Warp gather/readback benchmark; Shared memory only if real Pipe bottleneck proven
-- P2-D: Remote Runner transport — not-started
-  Pending: Resume original Newton developer after B frees an implementation slot; Typed bounded JSON plus binary frames, auth/TLS and no network pickle; Gateway receive clock, failure/cleanup, loopback and real Newton evidence
+  Pending: Instancing/selection/LOD/culling and complete scoped visibility; Actual Warp gather/readback/Pipe benchmark; shared memory only if justified; Comparable critical repeats with exclusive heavy resources
+- P2-D: Remote Runner transport — in-progress
+  Pending: Implement typed bounded control/frame channels, sampleTimeClock and receipt stamping; Real loopback/publicGateway failure/cleanup/auth/cert tests and optional NewtonCPU journey
 
 ## Recent recorded facts
 
+- 2026-10-16T10:45:15.813Z: Preserve unknown-owner paused scene; freeze existing UI build — passed; actor Unknown; revision Unknown
+- 2026-10-16T10:18:24.224Z: Scoped stream integrated; remote Runner developer resumed — passed; actor Unknown; revision 9a93c83b5cdb47607afacb752d242ad322aa1267
+- 2026-10-16T10:01:54.541Z: Scoped JSON and binary consumers verified on final local candidate — passed; actor Unknown; revision 4bca2acffef4a17412c8f1242082d8b703bb4058
 - 2026-10-16T08:46:21.187Z: Binary reviewed/integrated; scaling dispatched — passed; actor Unknown; revision 4bb62179999667fcd596d216082bff8a5d23ab02
 - 2026-10-16T08:38:43.540Z: Profile equal stream work and implement justified opt-in binary — passed; actor Unknown; revision b7cc387051405366087ab8667736f9be2f2ce682
-- 2026-10-16T08:35:46.673Z: Robot, USD assets and reliability integrated; Phase2 profiling authorized — unknown; actor Unknown; revision b76a78213d29a77e89ca21f5fcf9f1c1fe3c9a4a
-- 2026-10-16T07:09:51.599Z: Final CPU suite after warning oracle correction — unknown; actor Unknown; revision Unknown
-- 2026-10-16T07:04:11.825Z: Final CPU asset and integrated source checks — failed; actor Unknown; revision Unknown
 
 ## Resources
 
-- Root API8000 and web5173; owner PM; retained; Integrated preview API PID27012 exec13628; web PID13676 exec1257; actual Synthetic E2E closed its sessions
+- Retained B preview8000/5173; owner PM; retained; B API PID36204 exec8139 retained for unknown-owner paused Synthetic session-b469c0e4cf99. B production bundle copied to.scratch/preview-b-9a93c83, preview5173 PID41600 exec69500. Dev Vite13676 stopped; temporary5191 verification server stopped.
 - Old root API8000 and FR3; owner PM; cleaned; Owned session STOPPED and API stopped before integration
 - P1-C API8002/web5184; owner Viewer developer; retained; Sessions STOPPED; owner to reconcile reuse or cleanup for P2-C
 - OldAPI8001/web5174; owner PM/developers; cleaned; Exact owned processes stopped and listeners verified gone
 - P2-A8005/5185 and benchmark children; owner Newton developer; cleaned; Owner verified stopped and heavy reservation released
 - P2-C CPU/network/GPU execution; owner Viewer developer; unknown; Must announce bounded heavy reservation and release
 - Foreign5175; owner External process; unknown; Outside task ownership; preserved
+- B API8007/web5187; owner Protocol developer; cleaned; All E2E sessions deleted; author verified both listeners absent
+- Unknown-owner paused Synthetic session-b469c0e4cf99; owner Unconfirmed; active C/D developers deny creating it and PM-owned E2E sessions are stopped; retained; Preserve PAUSED epoch0 seq268/simTime8.895833333334; no close/reset. Final complete preview will use separate8009/5189 after integration.
 
 ## Evidence
 
+- [Bounded independent review](./P2-B-review.md)
+- [P2-B.md](./P2-B.md)
 - [Non-author issue review](./P2-A-review.md)
 - [Methods, final checks and measured limits](./P2-A.md)
-- [P1-B-first-validation.txt](./P1-B-first-validation.txt)
 - [Real engine findings](./P0-A.md)
 - [Review and repair record](./P0-C-review.md)
 - [Browser evidence](./P0-D.md)
 - [Review and evidence boundaries](./P2-A-review.md)
+- [Independent review and cross-issue condition](./P2-B-review.md)

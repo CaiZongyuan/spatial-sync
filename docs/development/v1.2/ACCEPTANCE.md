@@ -32,9 +32,9 @@ Authority: `docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md`. This plan does not repl
 | CI under five-minute target without Newton/GPU | Full contract/unit/gateway/browser gate result and measured duration | PM | Root local 115 Python / 55 Web / 6 TS / build / 2 E2E passed at integrated P2-A; no remote CI configured; final-head gate pending |
 | Performance evidence before optimization | Correct complete outputs at 100/500/2k/10k; hardware/version/scene hash and measurement scope | PM / Developers | [P2-A](P2-A.md); correct codec/network/browser comparisons; P2-C100/500/2k/10k render/readback pending |
 | P2 binary stream | JSON/binary equivalent known poses, malformed headers/count/revision, real browser decode and benchmark | Pending P0/P1 | [P2-A review](P2-A-review.md); integrated and independently checked |
-| P2 subscriptions/increments/keyframes | Device/entity/viewport scopes, baseline-aware deltas and reconnect recovery under dropped frames | Pending P0/P1 | P2-B in progress; real-source HWM counterexample independently checked |
+| P2 subscriptions/increments/keyframes | Device/entity/viewport scopes, baseline-aware deltas and reconnect recovery under dropped frames | Pending P0/P1 | [P2-B review](P2-B-review.md); stream/Inspector/camera integrated, C actual visibility/raycast acceptance pending |
 | P2 gather/instances/LOD/culling | Selection maps, extraction/render profiling and 10k stress fixture | Pending P0/P1 | P2-C dispatched on isolated4bb6217 baseline; actual fixtures/benchmarks pending |
-| P2 remote transport | Same public API with remote source; receive-clock metadata and lifecycle/failure tests | Pending P0/P1 | P2-D pending developer capacity; typed safe transport and receive-clock acceptance required |
+| P2 remote transport | Same public API with remote source; receive-clock metadata and lifecycle/failure tests | Pending P0/P1 | P2-D in progress; authenticated TLS host/RemoteSource accepted, real transport/receive-clock/failure evidence pending |
 | Phase 3 extension seam | Gateway depends only on SpatialSource; event envelope remains payload-agnostic | Review | [SpatialSource](../../../apps/api/app/sources/base.py) and payload-agnostic EntityState; final Spec review pending |
 
 ## Early risk review

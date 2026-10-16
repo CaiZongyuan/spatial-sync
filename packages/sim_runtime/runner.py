@@ -16,6 +16,12 @@ from packages.protocol.schema import (
 from packages.transport import FrameCodec, PipeWriter
 
 
+def _body_targets(manifest):
+    """Manifest identity owns the mapping; compact gather order is not a stream ID."""
+    bodies = sorted((node for node in manifest.nodes if node.kind == "body"), key=lambda node: node.entityKey)
+    return [node.debug["newtonBodyIndex"] for node in bodies], [node.streamId for node in bodies]
+
+
 class _Runner:
     def __init__(self, transport, session_id, scene_id, options):
         # Only the spawned process reaches these imports or owns a Newton State.
@@ -30,7 +36,6 @@ class _Runner:
         self.wp, self.newton = wp, newton
         self.transport, self.session_id, self.options = transport, session_id, options
         self.sim = NewtonSimulation(scene_id, device=options.device, physics_dt=options.physicsDt)
-        self.extractor = TransformExtractor(self.sim.model.body_count, device=self.sim.model.device)
         self.manifest = export_manifest(
             self.sim,
             session_id=session_id,
@@ -39,6 +44,10 @@ class _Runner:
             publish_hz=options.basePublishHz,
             realtime_factor=options.realtimeFactor,
             strict_labels=options.strictLabels,
+        )
+        body_indices, self.stream_ids = _body_targets(self.manifest)
+        self.extractor = TransformExtractor(
+            self.sim.model.body_count, device=self.sim.model.device, body_indices=body_indices
         )
         self.codec = FrameCodec(session_id, self.manifest.sceneRevision, 1)
         self.frames = PipeWriter(transport.frames, latest_only=True, name="newton-frame-sender")
@@ -75,6 +84,13 @@ class _Runner:
             "solverTimingMode": "host-submission" if self.sim.model.device.is_cuda else "cpu-wall",
             "readback_ms": self.extractor.readback_ms,
             "readbackLatencyMs": self.extractor.readback_latency_ms,
+            "gather_ms": self.extractor.gather_ms,
+            "gatherEnqueueMs": self.extractor.enqueue_ms,
+            "hostCopyMs": self.extractor.host_copy_ms,
+            "poseFilterMs": self.extractor.filter_ms,
+            "gatherBodyCount": len(self.stream_ids),
+            "modelBodyCount": self.sim.model.body_count,
+            "gatherMode": "manifest-targets-full-recovery",
             "publish_ms": self.publish_ms,
             "readbackMode": self.extractor.readback_mode,
             "stepHz": self.step_hz,
@@ -82,6 +98,7 @@ class _Runner:
             "invalidCounts": {
                 "total": self.extractor.filter.total_invalid,
                 "consecutiveByBody": self.extractor.filter.consecutive_invalid.tolist(),
+                "newtonBodyIndices": self.extractor.body_indices.tolist(),
             },
             "droppedPeriodicFrames": self.frames.slot.overwritten + self.extractor.dropped_captures,
             "droppedCatchupSeconds": self.pacer.dropped_wall_seconds,
@@ -101,7 +118,10 @@ class _Runner:
 
         def make_frame(poses):
             return TransformFrame(
-                **metadata, poses=[(index, *row) for index, row in enumerate(poses.tolist())]
+                **metadata,
+                poses=[
+                    (stream_id, *row) for stream_id, row in zip(self.stream_ids, poses.tolist(), strict=True)
+                ],
             )
 
         def publish(poses):
@@ -122,7 +142,7 @@ class _Runner:
         return None
 
     def _warn_invalid_poses(self):
-        indices = self.extractor.filter.warning_indices
+        indices = [int(self.extractor.body_indices[index]) for index in self.extractor.filter.warning_indices]
         if indices:
             self.control.offer(
                 {

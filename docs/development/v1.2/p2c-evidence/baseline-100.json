@@ -1,0 +1,2337 @@
+{
+  "schemaVersion": 1,
+  "status": "measured",
+  "claim": "Baseline evidence only; no optimization or scaling claim",
+  "recordedAt": "2026-10-16T09:49:18.780Z",
+  "sourceIdentity": {
+    "revision": "bf414b10d42169631eefb5f5700747ca31f97e5d",
+    "uncommitted": "M apps/web/src/routeTree.gen.ts",
+    "treeSha256": "85fa15b7658fca69759efdd7d6700361a493de47562bf6d6872a51af3752b013",
+    "lockSha256": "0df4624af3de35b65a677ddfe615345140e47530754f84a387b5d136aa72b080",
+    "sceneFileHashes": {
+      "apps/api/app/sources/synthetic_source.py": "160282e4d1d0363d40ba7cd51eacdf143ba479c7e821e61a0d2c97da23935a3c"
+    }
+  },
+  "configuration": {
+    "web": "http://127.0.0.1:5186",
+    "api": "http://127.0.0.1:8006",
+    "scene": "stress-100",
+    "source": "synthetic",
+    "format": "binary",
+    "render-mode": "individual",
+    "fit-scene": true,
+    "duration": "6",
+    "warmup": "2",
+    "repeats": "1",
+    "renderer": "swiftshader",
+    "output": "docs/development/v1.2/p2c-evidence/baseline-100.json"
+  },
+  "hardware": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "architecture": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "logicalProcessors": 20,
+    "memoryBytes": 34070847488,
+    "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU, 610.62, 8192"
+  },
+  "versions": {
+    "node": "v24.18.0",
+    "browser": "156.0.8078.4",
+    "webPackages": {
+      "react": "19.3.1",
+      "three": "0.186.1",
+      "vite": "8.3.4",
+      "@react-three/fiber": "9.8.2"
+    },
+    "pythonVersions": {
+      "python": "3.13.14 (main, Jun 23 2026, 15:19:27) [MSC v.1944 64 bit (AMD64)]",
+      "packages": {
+        "fastapi": "0.143.2",
+        "pydantic": "2.12.4",
+        "numpy": "2.5.4",
+        "newton": "1.7.0",
+        "warp-lang": "1.18.0"
+      }
+    }
+  },
+  "methodology": {
+    "fps": "Nearest-rank distribution of completed one-second RAF windows; incomplete final window excluded",
+    "apply": "performance.now around interpolation, pose writes and render receipts inside useFrame; GPU draw execution excluded",
+    "frameAge": "Local time since accepted network receipt; playout delay separate",
+    "source": "Distribution of polled latest stats at approximately 1 Hz; repeated latest values may occur, not a per-step/per-publish timing distribution",
+    "timing": "Startup, correctness pause/resume and warmup excluded from raw frame window",
+    "comparison": "Use identical source tree, scene assets, source configuration, viewport, camera, WebGL renderer and useful output counts; no candidate comparison is performed here",
+    "limitations": [
+      "Shared workstation; background contention is not isolated",
+      "Browser clock quantization may produce zero apply samples; zeros do not imply zero work",
+      "Source latest-stat polling cannot establish per-operation readback/publish p95"
+    ]
+  },
+  "runs": [
+    {
+      "repeat": 1,
+      "sessionId": "session-4398efa84c67",
+      "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+      "manifestSha256": "4f1ea0066bbe9787b0b7b77bbb5e12e5bb0050cf1b51afa6f5f8b6ad8af13304",
+      "stableManifestSha256": "2f56e01325c39dd68396ac7bce835793def82ef1d2ca27e0d71c04b9778fba36",
+      "source": {
+        "kind": "synthetic",
+        "solver": "DeterministicKinematics",
+        "physicsDt": 0.004166666666666667,
+        "basePublishHz": 30,
+        "realtimeFactor": 1
+      },
+      "bodyCount": 100,
+      "physicalNodeCount": 100,
+      "initialPoseCount": 100,
+      "correctness": {
+        "checkedBodyCount": 100,
+        "missing": 0,
+        "positionMaxErrorM": 5.199470519690053e-7,
+        "quaternionMaxError": 5.747965597935334e-8,
+        "sequence": 24,
+        "simTime": 0.7458333333333333,
+        "referenceRowsSha256": "68f9a545a18ce4bbcc99c1cb305e1bdf4af2c2924d2f57cdab1b12d9b93112be"
+      },
+      "camera": {
+        "position": [
+          2.8634838594815273,
+          3.4898459162120563,
+          3.434429668263941
+        ],
+        "target": [
+          -0.000013488133863925889,
+          0.3399988338351249,
+          -0.00176714887452889
+        ],
+        "fov": 44,
+        "near": 0.01,
+        "far": 100
+      },
+      "geometry": {
+        "registeredBodies": 100,
+        "registeredPhysicalNodes": 100,
+        "appliedBodies": 100,
+        "potentialVisualInstances": 100,
+        "potentialTriangles": 37896,
+        "drawCalls": 102,
+        "submittedTriangles": 37896,
+        "mode": "individual"
+      },
+      "startupMs": 19.790700000000015,
+      "warmupMs": 2000,
+      "buildMode": "production",
+      "browserEnvironment": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+        "devicePixelRatio": 1,
+        "canvasCss": {
+          "width": 904,
+          "height": 752
+        },
+        "drawingBuffer": {
+          "width": 904,
+          "height": 752
+        },
+        "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "vendor": "Google Inc. (Google)"
+      },
+      "streamStart": {
+        "timeMs": 3077.1000000089407,
+        "receivedFrames": 80,
+        "payloadBytes": 261206,
+        "skippedNonFinite": 0,
+        "discardedFrames": 0,
+        "invalidBinaryFrames": 0,
+        "frameFormat": "binary",
+        "revision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+        "epoch": 0,
+        "seq": 88,
+        "sessionState": "RUNNING",
+        "connection": "connected"
+      },
+      "streamEnd": {
+        "timeMs": 9093,
+        "receivedFrames": 261,
+        "payloadBytes": 849240,
+        "skippedNonFinite": 0,
+        "discardedFrames": 0,
+        "invalidBinaryFrames": 0,
+        "frameFormat": "binary",
+        "revision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+        "epoch": 0,
+        "seq": 269,
+        "sessionState": "RUNNING",
+        "connection": "connected"
+      },
+      "receivedFrameRateHz": 30.08693628555478,
+      "render": {
+        "sampleCount": 263,
+        "measuredDurationMs": 6010.5,
+        "renderFps": {
+          "count": 5,
+          "min": 40.561931143768184,
+          "p05": 40.561931143768184,
+          "p50": 42.85429539540021,
+          "p95": 46.85007974467741,
+          "max": 46.85007974467741,
+          "mean": 43.5238032049093
+        },
+        "frameIntervalMs": {
+          "count": 262,
+          "min": 4.200000002980232,
+          "p05": 15.399999991059303,
+          "p50": 22.299999997019768,
+          "p95": 42.8999999910593,
+          "max": 48.29999999701977,
+          "mean": 22.94083969465649
+        },
+        "transformApplyMs": {
+          "count": 263,
+          "min": 0,
+          "p05": 0,
+          "p50": 0.09999999403953552,
+          "p95": 0.20000000298023224,
+          "max": 0.29999999701976776,
+          "mean": 0.08288973439555658
+        },
+        "frameAgeSinceReceiveMs": {
+          "count": 263,
+          "min": 0.19999998807907104,
+          "p05": 2.0999999940395355,
+          "p50": 16.899999991059303,
+          "p95": 37,
+          "max": 46.8999999910593,
+          "mean": 17.503422052574702
+        },
+        "drawCalls": {
+          "count": 263,
+          "min": 102,
+          "p05": 102,
+          "p50": 102,
+          "p95": 102,
+          "max": 102,
+          "mean": 102
+        },
+        "sceneObjects": {
+          "count": 263,
+          "min": 407,
+          "p05": 407,
+          "p50": 407,
+          "p95": 407,
+          "max": 407,
+          "mean": 407
+        },
+        "zeroApplySamples": 77
+      },
+      "sourcePolledLatest": {
+        "actualRtf": {
+          "count": 6,
+          "min": 1.0000182933296433,
+          "p05": 1.0000182933296433,
+          "p50": 1.001494508114511,
+          "p95": 1.0087188528564106,
+          "max": 1.0087188528564106,
+          "mean": 1.0035176976667843
+        }
+      },
+      "rawSource": [
+        {
+          "timeMs": 4237.8579,
+          "stats": {
+            "sessionId": "session-4398efa84c67",
+            "sceneId": "stress-100",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 89,
+            "simTime": 2.8375,
+            "realtimeFactor": 1,
+            "actualRtf": 1.001494508114511,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 104,
+              "bodies": 100,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 88,
+            "encodedPayloadBytes": 259520,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 90
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 5251.8143,
+          "stats": {
+            "sessionId": "session-4398efa84c67",
+            "sceneId": "stress-100",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 120,
+            "simTime": 3.8625,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0087188528564106,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 104,
+              "bodies": 100,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 119,
+            "encodedPayloadBytes": 360084,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 122
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 6275.5049,
+          "stats": {
+            "sessionId": "session-4398efa84c67",
+            "sceneId": "stress-100",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 150,
+            "simTime": 4.870833333333334,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0018737829727962,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 104,
+              "bodies": 100,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 149,
+            "encodedPayloadBytes": 457404,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 153
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 7284.8385,
+          "stats": {
+            "sessionId": "session-4398efa84c67",
+            "sceneId": "stress-100",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 181,
+            "simTime": 5.895833333333333,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0000182933296433,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 104,
+              "bodies": 100,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 180,
+            "encodedPayloadBytes": 557968,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 185
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 8308.7485,
+          "stats": {
+            "sessionId": "session-4398efa84c67",
+            "sceneId": "stress-100",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 212,
+            "simTime": 6.9375,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0005841051894597,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 104,
+              "bodies": 100,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 211,
+            "encodedPayloadBytes": 658532,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 217
+              }
+            ]
+          }
+        },
+        {
+          "timeMs": 9338.8746,
+          "stats": {
+            "sessionId": "session-4398efa84c67",
+            "sceneId": "stress-100",
+            "source": "synthetic",
+            "state": "RUNNING",
+            "sceneRevision": "rev-56f2fc68e01041fbbc65924a2caf19d6",
+            "revisionNumericId": 1,
+            "epoch": 0,
+            "seq": 242,
+            "simTime": 7.933333333333334,
+            "realtimeFactor": 1,
+            "actualRtf": 1.0084166435378854,
+            "solver": "DeterministicKinematics",
+            "counts": {
+              "nodes": 104,
+              "bodies": 100,
+              "sites": 0,
+              "joints": 0,
+              "warnings": 0
+            },
+            "error": null,
+            "continueWithoutObservers": true,
+            "autoPaused": false,
+            "physicsDt": 0.004166666666666667,
+            "basePublishHz": 30,
+            "publishedFrames": 241,
+            "encodedPayloadBytes": 755852,
+            "readbackMode": "not_applicable",
+            "clients": [
+              {
+                "subscribed": true,
+                "grantedRateHz": 30,
+                "format": "binary",
+                "reliableQueueDepth": 0,
+                "droppedFrames": 0,
+                "sentMessages": 248
+              }
+            ]
+          }
+        }
+      ],
+      "rawFrames": [
+        {
+          "timeMs": 3078.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1.9000000059604645
+        },
+        {
+          "timeMs": 3084.2000000029802,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.4000000059604645
+        },
+        {
+          "timeMs": 3110.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 29.100000008940697
+        },
+        {
+          "timeMs": 3153.7999999970198,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.8999999910593033
+        },
+        {
+          "timeMs": 3177.2000000029802,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 26.299999997019768
+        },
+        {
+          "timeMs": 3220.2000000029802,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.299999997019768
+        },
+        {
+          "timeMs": 3241.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.599999994039536
+        },
+        {
+          "timeMs": 3262.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.200000002980232
+        },
+        {
+          "timeMs": 3284.7000000029802,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.2999999970197678
+        },
+        {
+          "timeMs": 3310.1000000089407,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.700000002980232
+        },
+        {
+          "timeMs": 3332.6000000089407,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21
+        },
+        {
+          "timeMs": 3378.2999999970198,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 3.7999999970197678
+        },
+        {
+          "timeMs": 3399.2999999970198,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.799999997019768
+        },
+        {
+          "timeMs": 3420.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.100000008940697
+        },
+        {
+          "timeMs": 3442.9000000059605,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 26.100000008940697
+        },
+        {
+          "timeMs": 3464.5,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.399999991059303
+        },
+        {
+          "timeMs": 3486.7000000029802,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.0999999940395355
+        },
+        {
+          "timeMs": 3508.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.899999991059303
+        },
+        {
+          "timeMs": 3518.1000000089407,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.100000008940697
+        },
+        {
+          "timeMs": 3534,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20
+        },
+        {
+          "timeMs": 3556.7999999970198,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.599999994039536
+        },
+        {
+          "timeMs": 3596.7000000029802,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.599999994039536
+        },
+        {
+          "timeMs": 3621.7000000029802,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 46.599999994039536
+        },
+        {
+          "timeMs": 3634.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.399999991059303
+        },
+        {
+          "timeMs": 3650.7000000029802,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.099999994039536
+        },
+        {
+          "timeMs": 3667.6000000089407,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30
+        },
+        {
+          "timeMs": 3684.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 46.8999999910593
+        },
+        {
+          "timeMs": 3701.1000000089407,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 15.300000011920929
+        },
+        {
+          "timeMs": 3717.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.0999999940395355
+        },
+        {
+          "timeMs": 3735.5,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.099999994039536
+        },
+        {
+          "timeMs": 3751.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.200000002980232
+        },
+        {
+          "timeMs": 3768.1000000089407,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.900000005960464
+        },
+        {
+          "timeMs": 3785.6000000089407,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.900000005960464
+        },
+        {
+          "timeMs": 3801.7999999970198,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.099999994039536
+        },
+        {
+          "timeMs": 3822.7000000029802,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 18.5
+        },
+        {
+          "timeMs": 3834.4000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.200000002980232
+        },
+        {
+          "timeMs": 3852.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1.2000000029802322
+        },
+        {
+          "timeMs": 3868.7000000029802,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 17.5
+        },
+        {
+          "timeMs": 3884.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 33.29999999701977
+        },
+        {
+          "timeMs": 3901.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 15.700000002980232
+        },
+        {
+          "timeMs": 3918.1000000089407,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.600000008940697
+        },
+        {
+          "timeMs": 3934.7000000029802,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.200000002980232
+        },
+        {
+          "timeMs": 3951.2999999970198,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6.0999999940395355
+        },
+        {
+          "timeMs": 3967.6000000089407,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 22.400000005960464
+        },
+        {
+          "timeMs": 3990.6000000089407,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.800000011920929
+        },
+        {
+          "timeMs": 4012.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 34.6000000089407
+        },
+        {
+          "timeMs": 4057.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.299999997019768
+        },
+        {
+          "timeMs": 4081.6000000089407,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 37
+        },
+        {
+          "timeMs": 4087.9000000059605,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.700000002980232
+        },
+        {
+          "timeMs": 4128,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 14.299999997019768
+        },
+        {
+          "timeMs": 4152.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.700000002980232
+        },
+        {
+          "timeMs": 4194.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.099999994039536
+        },
+        {
+          "timeMs": 4217.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6.600000008940697
+        },
+        {
+          "timeMs": 4233.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.100000008940697
+        },
+        {
+          "timeMs": 4264.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.900000005960464
+        },
+        {
+          "timeMs": 4288.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 46.70000000298023
+        },
+        {
+          "timeMs": 4310.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 17.400000005960464
+        },
+        {
+          "timeMs": 4353.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1
+        },
+        {
+          "timeMs": 4401.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 17.099999994039536
+        },
+        {
+          "timeMs": 4438.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.5
+        },
+        {
+          "timeMs": 4460.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.400000005960464
+        },
+        {
+          "timeMs": 4481,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 3.2999999970197678
+        },
+        {
+          "timeMs": 4521.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.100000008940697
+        },
+        {
+          "timeMs": 4534.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 25.900000005960464
+        },
+        {
+          "timeMs": 4550.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.299999997019768
+        },
+        {
+          "timeMs": 4569.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.899999991059303
+        },
+        {
+          "timeMs": 4613.600000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1
+        },
+        {
+          "timeMs": 4633.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.099999994039536
+        },
+        {
+          "timeMs": 4655.29999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.199999988079071
+        },
+        {
+          "timeMs": 4676.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 3.5
+        },
+        {
+          "timeMs": 4684.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.700000002980232
+        },
+        {
+          "timeMs": 4701.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.299999997019768
+        },
+        {
+          "timeMs": 4724,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.700000002980232
+        },
+        {
+          "timeMs": 4745.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 41.30000001192093
+        },
+        {
+          "timeMs": 4767.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.400000005960464
+        },
+        {
+          "timeMs": 4789.100000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.800000011920929
+        },
+        {
+          "timeMs": 4811.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.6000000089406967
+        },
+        {
+          "timeMs": 4834.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 25.799999997019768
+        },
+        {
+          "timeMs": 4874.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.4000000059604645
+        },
+        {
+          "timeMs": 4884,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.700000002980232
+        },
+        {
+          "timeMs": 4901.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.80000001192093
+        },
+        {
+          "timeMs": 4922.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.599999994039536
+        },
+        {
+          "timeMs": 4948.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.100000008940697
+        },
+        {
+          "timeMs": 4968.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.700000002980232
+        },
+        {
+          "timeMs": 4984.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 40.5
+        },
+        {
+          "timeMs": 5001.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.200000002980232
+        },
+        {
+          "timeMs": 5018.100000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7
+        },
+        {
+          "timeMs": 5038.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.799999997019768
+        },
+        {
+          "timeMs": 5062.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 15
+        },
+        {
+          "timeMs": 5068,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.5
+        },
+        {
+          "timeMs": 5106.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.19999998807907
+        },
+        {
+          "timeMs": 5151.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 14.099999994039536
+        },
+        {
+          "timeMs": 5173.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 36.3999999910593
+        },
+        {
+          "timeMs": 5192.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 8.800000011920929
+        },
+        {
+          "timeMs": 5217.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 8.699999988079071
+        },
+        {
+          "timeMs": 5237.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.69999998807907
+        },
+        {
+          "timeMs": 5260.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.30000001192093
+        },
+        {
+          "timeMs": 5282.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9
+        },
+        {
+          "timeMs": 5306.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 33.1000000089407
+        },
+        {
+          "timeMs": 5327.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.5
+        },
+        {
+          "timeMs": 5350.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6.200000002980232
+        },
+        {
+          "timeMs": 5372.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.600000008940697
+        },
+        {
+          "timeMs": 5397.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.5
+        },
+        {
+          "timeMs": 5415.100000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 41.30000001192093
+        },
+        {
+          "timeMs": 5457.4000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.900000005960464
+        },
+        {
+          "timeMs": 5479.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 0.7000000029802322
+        },
+        {
+          "timeMs": 5502.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.400000005960464
+        },
+        {
+          "timeMs": 5524.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.699999988079071
+        },
+        {
+          "timeMs": 5546.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.9000000059604645
+        },
+        {
+          "timeMs": 5569.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.100000008940697
+        },
+        {
+          "timeMs": 5591.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.299999997019768
+        },
+        {
+          "timeMs": 5613.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 41.29999999701977
+        },
+        {
+          "timeMs": 5621.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.399999991059303
+        },
+        {
+          "timeMs": 5639.70000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.599999994039536
+        },
+        {
+          "timeMs": 5659.79999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.699999988079071
+        },
+        {
+          "timeMs": 5682.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.899999991059303
+        },
+        {
+          "timeMs": 5704.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.69999998807907
+        },
+        {
+          "timeMs": 5725.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.400000005960464
+        },
+        {
+          "timeMs": 5748.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 42.6000000089407
+        },
+        {
+          "timeMs": 5769.600000008941,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.80000001192093
+        },
+        {
+          "timeMs": 5785,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.399999991059303
+        },
+        {
+          "timeMs": 5800.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.19999998807907
+        },
+        {
+          "timeMs": 5818.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.0999999940395355
+        },
+        {
+          "timeMs": 5841,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 29.599999994039536
+        },
+        {
+          "timeMs": 5862.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.399999991059303
+        },
+        {
+          "timeMs": 5884.70000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 42.29999999701977
+        },
+        {
+          "timeMs": 5909.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.19999998807907
+        },
+        {
+          "timeMs": 5929.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 8.200000002980232
+        },
+        {
+          "timeMs": 5950.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.799999997019768
+        },
+        {
+          "timeMs": 5974.100000008941,
+          "applyMs": 0.19999998807907104,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28
+        },
+        {
+          "timeMs": 5998.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 22.100000008940697
+        },
+        {
+          "timeMs": 6022.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6.0999999940395355
+        },
+        {
+          "timeMs": 6046.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.799999997019768
+        },
+        {
+          "timeMs": 6071.600000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 31.100000008940697
+        },
+        {
+          "timeMs": 6084.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 10.099999994039536
+        },
+        {
+          "timeMs": 6100.9000000059605,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 26.200000002980232
+        },
+        {
+          "timeMs": 6119.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.299999997019768
+        },
+        {
+          "timeMs": 6143.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.700000002980232
+        },
+        {
+          "timeMs": 6165.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.299999997019768
+        },
+        {
+          "timeMs": 6188,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.200000002980232
+        },
+        {
+          "timeMs": 6211.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 35.400000005960464
+        },
+        {
+          "timeMs": 6234.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.799999997019768
+        },
+        {
+          "timeMs": 6255.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.899999991059303
+        },
+        {
+          "timeMs": 6277.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 3.7000000029802322
+        },
+        {
+          "timeMs": 6302,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.099999994039536
+        },
+        {
+          "timeMs": 6326,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.700000002980232
+        },
+        {
+          "timeMs": 6353.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.200000002980232
+        },
+        {
+          "timeMs": 6393,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.099999994039536
+        },
+        {
+          "timeMs": 6414.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 41.8999999910593
+        },
+        {
+          "timeMs": 6437.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 17.799999997019768
+        },
+        {
+          "timeMs": 6461.100000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 8.200000002980232
+        },
+        {
+          "timeMs": 6484.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 0.699999988079071
+        },
+        {
+          "timeMs": 6506.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 22.899999991059303
+        },
+        {
+          "timeMs": 6531.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.5
+        },
+        {
+          "timeMs": 6554.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.5999999940395355
+        },
+        {
+          "timeMs": 6578.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.399999991059303
+        },
+        {
+          "timeMs": 6623.4000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.600000008940697
+        },
+        {
+          "timeMs": 6648.20000000298,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.400000005960464
+        },
+        {
+          "timeMs": 6674.20000000298,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.700000002980232
+        },
+        {
+          "timeMs": 6698,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 22.200000002980232
+        },
+        {
+          "timeMs": 6720.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 44.400000005960464
+        },
+        {
+          "timeMs": 6743.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6.799999997019768
+        },
+        {
+          "timeMs": 6768.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 31.899999991059303
+        },
+        {
+          "timeMs": 6789.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6
+        },
+        {
+          "timeMs": 6811.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.100000008940697
+        },
+        {
+          "timeMs": 6834.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.299999997019768
+        },
+        {
+          "timeMs": 6865.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21
+        },
+        {
+          "timeMs": 6885.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.300000011920929
+        },
+        {
+          "timeMs": 6901.4000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.100000008940697
+        },
+        {
+          "timeMs": 6917.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.400000005960464
+        },
+        {
+          "timeMs": 6935.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 31.700000002980232
+        },
+        {
+          "timeMs": 6951.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.5
+        },
+        {
+          "timeMs": 6967.20000000298,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 18.099999994039536
+        },
+        {
+          "timeMs": 6984,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.399999991059303
+        },
+        {
+          "timeMs": 7001.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.69999998807907
+        },
+        {
+          "timeMs": 7017.70000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.7999999970197678
+        },
+        {
+          "timeMs": 7034.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.399999991059303
+        },
+        {
+          "timeMs": 7075.5,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.899999991059303
+        },
+        {
+          "timeMs": 7097.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 18.899999991059303
+        },
+        {
+          "timeMs": 7123.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.9000000059604645
+        },
+        {
+          "timeMs": 7171.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.399999991059303
+        },
+        {
+          "timeMs": 7195.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23
+        },
+        {
+          "timeMs": 7218.4000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 0.29999999701976776
+        },
+        {
+          "timeMs": 7241.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.599999994039536
+        },
+        {
+          "timeMs": 7264.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 14.400000005960464
+        },
+        {
+          "timeMs": 7286.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.7000000029802322
+        },
+        {
+          "timeMs": 7309.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 25.599999994039536
+        },
+        {
+          "timeMs": 7331.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.399999991059303
+        },
+        {
+          "timeMs": 7357.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 14.299999997019768
+        },
+        {
+          "timeMs": 7374.20000000298,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 31
+        },
+        {
+          "timeMs": 7398.100000008941,
+          "applyMs": 0.29999999701976776,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.4000000059604645
+        },
+        {
+          "timeMs": 7422.9000000059605,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1
+        },
+        {
+          "timeMs": 7447.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.800000011920929
+        },
+        {
+          "timeMs": 7494.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 14.099999994039536
+        },
+        {
+          "timeMs": 7518.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.0999999940395355
+        },
+        {
+          "timeMs": 7534.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.399999991059303
+        },
+        {
+          "timeMs": 7565.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.400000005960464
+        },
+        {
+          "timeMs": 7588.100000008941,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.300000011920929
+        },
+        {
+          "timeMs": 7633.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.5
+        },
+        {
+          "timeMs": 7650.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.799999997019768
+        },
+        {
+          "timeMs": 7667.4000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.299999997019768
+        },
+        {
+          "timeMs": 7683.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7.799999997019768
+        },
+        {
+          "timeMs": 7700.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.799999997019768
+        },
+        {
+          "timeMs": 7717.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 41.79999999701977
+        },
+        {
+          "timeMs": 7735.100000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.5
+        },
+        {
+          "timeMs": 7750.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.799999997019768
+        },
+        {
+          "timeMs": 7768.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.299999997019768
+        },
+        {
+          "timeMs": 7784.29999999702,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 0.19999998807907104
+        },
+        {
+          "timeMs": 7808.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.19999998807907
+        },
+        {
+          "timeMs": 7831.600000008941,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.400000005960464
+        },
+        {
+          "timeMs": 7876.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.299999997019768
+        },
+        {
+          "timeMs": 7900.9000000059605,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23
+        },
+        {
+          "timeMs": 7924.9000000059605,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 15.100000008940697
+        },
+        {
+          "timeMs": 7950.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.099999994039536
+        },
+        {
+          "timeMs": 7974.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1.5999999940395355
+        },
+        {
+          "timeMs": 8000.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.299999997019768
+        },
+        {
+          "timeMs": 8023.79999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 0.3999999910593033
+        },
+        {
+          "timeMs": 8048.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 25.299999997019768
+        },
+        {
+          "timeMs": 8071.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 20.399999991059303
+        },
+        {
+          "timeMs": 8118,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 3.2999999970197678
+        },
+        {
+          "timeMs": 8134,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.299999997019768
+        },
+        {
+          "timeMs": 8167.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 26.5
+        },
+        {
+          "timeMs": 8189.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 3.7999999970197678
+        },
+        {
+          "timeMs": 8212,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 26.299999997019768
+        },
+        {
+          "timeMs": 8234.60000000894,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 21.200000002980232
+        },
+        {
+          "timeMs": 8257.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13
+        },
+        {
+          "timeMs": 8282.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4.5999999940395355
+        },
+        {
+          "timeMs": 8311.60000000894,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 33.70000000298023
+        },
+        {
+          "timeMs": 8333.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11.299999997019768
+        },
+        {
+          "timeMs": 8380.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 30.19999998807907
+        },
+        {
+          "timeMs": 8409.29999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 27.799999997019768
+        },
+        {
+          "timeMs": 8428,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.899999991059303
+        },
+        {
+          "timeMs": 8450.29999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 8.099999994039536
+        },
+        {
+          "timeMs": 8475.10000000894,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 32.900000005960464
+        },
+        {
+          "timeMs": 8497.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 14
+        },
+        {
+          "timeMs": 8520.70000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 6.5
+        },
+        {
+          "timeMs": 8547.29999999702,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 1.8999999910593033
+        },
+        {
+          "timeMs": 8571.60000000894,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 26.200000002980232
+        },
+        {
+          "timeMs": 8597.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.599999994039536
+        },
+        {
+          "timeMs": 8626.70000000298,
+          "applyMs": 0.20000000298023224,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12.200000002980232
+        },
+        {
+          "timeMs": 8644.60000000894,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 0.7000000029802322
+        },
+        {
+          "timeMs": 8669,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 25.099999994039536
+        },
+        {
+          "timeMs": 8686.10000000894,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 42.20000000298023
+        },
+        {
+          "timeMs": 8700.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 13.299999997019768
+        },
+        {
+          "timeMs": 8718.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 2.3999999910593033
+        },
+        {
+          "timeMs": 8735.10000000894,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 18.700000002980232
+        },
+        {
+          "timeMs": 8751.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 7
+        },
+        {
+          "timeMs": 8767.5,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 23.200000002980232
+        },
+        {
+          "timeMs": 8789.5,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 10.399999991059303
+        },
+        {
+          "timeMs": 8813.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 34.099999994039536
+        },
+        {
+          "timeMs": 8835.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 12
+        },
+        {
+          "timeMs": 8865.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 25.899999991059303
+        },
+        {
+          "timeMs": 8881.79999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 11
+        },
+        {
+          "timeMs": 8886,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 15.200000002980232
+        },
+        {
+          "timeMs": 8905.60000000894,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 34.80000001192093
+        },
+        {
+          "timeMs": 8930.29999999702,
+          "applyMs": 0.10000000894069672,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 16.599999994039536
+        },
+        {
+          "timeMs": 8954.40000000596,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 9.900000005960464
+        },
+        {
+          "timeMs": 8975.70000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 4
+        },
+        {
+          "timeMs": 8996.60000000894,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 24.900000005960464
+        },
+        {
+          "timeMs": 9019.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 5.5999999940395355
+        },
+        {
+          "timeMs": 9042.20000000298,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 28.599999994039536
+        },
+        {
+          "timeMs": 9065.20000000298,
+          "applyMs": 0.09999999403953552,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 19.900000005960464
+        },
+        {
+          "timeMs": 9088.90000000596,
+          "applyMs": 0,
+          "drawCalls": 102,
+          "objects": 407,
+          "frameAgeMs": 10.299999997019768
+        }
+      ]
+    }
+  ]
+}
