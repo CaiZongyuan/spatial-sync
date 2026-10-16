@@ -28,11 +28,14 @@ def compile_schema(schema: dict) -> TypeAdapter:
     exported = deepcopy(schema)
 
     def compile_node(node, path):
-        if not isinstance(node, dict) or set(node) - KEYWORDS:
+        if not isinstance(node, dict):
+            raise ValueError(f"Schema must be an object at {path}")
+        if set(node) - KEYWORDS:
             raise ValueError(f"Unsupported schema keywords at {path}: {set(node) - KEYWORDS}")
         kinds = node.get("type", [])
         kinds = [kinds] if isinstance(kinds, str) else kinds
-        if not isinstance(kinds, list) or any(kind not in TYPES for kind in kinds) or len(kinds) != len(set(kinds)):
+        if (not isinstance(kinds, list) or ("type" in node and not kinds)
+                or any(kind not in TYPES for kind in kinds) or len(kinds) != len(set(kinds))):
             raise ValueError(f"Invalid schema type at {path}")
         if "enum" in node and (not isinstance(node["enum"], list) or not node["enum"]):
             raise ValueError(f"enum must be a nonempty array at {path}")
@@ -57,7 +60,10 @@ def compile_schema(schema: dict) -> TypeAdapter:
                 else "string" if isinstance(value, str) else "array" if isinstance(value, list)
                 else "object" if isinstance(value, dict) else "invalid"
             )
-            if actual == "invalid" or (kinds and actual not in kinds and not (actual == "integer" and "number" in kinds)):
+            integral = actual == "number" and math.isfinite(value) and value.is_integer()
+            if actual == "invalid" or (kinds and actual not in kinds
+                    and not (actual == "integer" and "number" in kinds)
+                    and not (integral and "integer" in kinds)):
                 raise ValueError(f"{path}: expected {kinds}, got {actual}")
             if "enum" in node and not any(json_equal(value, choice) for choice in node["enum"]):
                 raise ValueError(f"{path}: value is outside enum")
@@ -83,7 +89,7 @@ def compile_schema(schema: dict) -> TypeAdapter:
                 if item:
                     for element in value:
                         item(element)
-            if actual == "object":
+            if actual == "object" and ("object" in kinds or "properties" in node):
                 if set(value) - properties.keys() or not set(required) <= value.keys():
                     raise ValueError(f"{path}: unknown or missing required properties")
                 for key, element in value.items():
@@ -95,7 +101,7 @@ def compile_schema(schema: dict) -> TypeAdapter:
     validator = compile_node(exported, "$")
 
     def add_defaults(node):
-        if node.get("type") == "object" or "object" in node.get("type", []):
+        if node.get("type") == "object" or "object" in node.get("type", []) or "properties" in node:
             node["additionalProperties"] = False
         for child in node.get("properties", {}).values():
             add_defaults(child)

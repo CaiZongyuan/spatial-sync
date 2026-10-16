@@ -19,3 +19,17 @@ def test_compiled_schema_validates_strict_nested_values_and_exports_standard_sch
                     dict(value, slots=["tube1"]), dict(value, rpm=15001)]:
         with pytest.raises(ValidationError):
             adapter.validate_python(invalid)
+
+
+def test_standard_schema_agrees_on_integral_numbers_and_inferred_objects():
+    integer = compile_schema({"type": "integer"})
+    assert integer.validate_python(1.0) == 1
+    with pytest.raises(ValidationError):
+        integer.validate_python(1.5)
+    inferred = compile_schema({"properties": {"name": {"type": "string"}}})
+    assert inferred.json_schema()["additionalProperties"] is False
+    with pytest.raises(ValidationError):
+        inferred.validate_python({"extra": "x"})
+    unconstrained = compile_schema({})
+    assert unconstrained.validate_python({"extra": "x"}) == {"extra": "x"}
+    assert unconstrained.json_schema() == {}
