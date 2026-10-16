@@ -49,6 +49,7 @@ ErrorCode = Literal[
     "source_unavailable",
     "internal_error",
     "unauthorized",
+    "history_unavailable",
 ]
 
 
@@ -475,6 +476,7 @@ class ServerError(Model):
     code: ErrorCode
     message: NonEmpty
     requestId: NonEmpty | None = None
+    invocationId: NonEmpty | None = None
 
 
 JsonSchema = TypeAliasType("JsonSchema", dict[str, JsonValue])

@@ -205,5 +205,12 @@
     "type": "server.error",
     "code": "revision_mismatch",
     "message": "Reload scene before subscribing"
+  },
+  {
+    "type": "server.error",
+    "code": "history_unavailable",
+    "message": "Invocation history is unavailable",
+    "requestId": "history-fixture",
+    "invocationId": "inv-fixture"
   }
 ]

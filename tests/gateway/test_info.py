@@ -816,3 +816,53 @@ def test_session_deduplication_survives_terminal_eviction_and_event_gap_is_expli
             client.get(route + "/entity", params={"key": CENTRIFUGE}).json()["state"]["values"]["lidOpen"]
             is False
         )
+
+
+def test_unavailable_history_is_a_structured_query_error_across_http_and_websocket(monkeypatch):
+    from packages.info.invocations import HistoryUnavailable, InvocationTable
+
+    with TestClient(create_app()) as client:
+        _, route = create(client)
+        original = action(client, route, "known-history", "missing").json()
+        invocation_id = original["invocationId"]
+        canonical_lookup = InvocationTable.lookup
+
+        async def unavailable(table, requested_id):
+            if requested_id == invocation_id:
+                raise HistoryUnavailable(invocation_id)
+            return await canonical_lookup(table, requested_id)
+
+        monkeypatch.setattr(InvocationTable, "lookup", unavailable)
+        responses = [
+            client.get(route + f"/invocations/{invocation_id}", params={"wait": True}),
+            action(client, route, "known-history", "closeLid", wait=True),
+            client.post(route + f"/invocations/{invocation_id}/cancel"),
+            client.post(route + f"/invocations/{invocation_id}/approve", json={"decision": "approve"}),
+        ]
+        for response in responses:
+            assert response.status_code == 503
+            assert response.json()["detail"] == {
+                "code": "history_unavailable",
+                "message": "Invocation history is unavailable",
+                "invocationId": invocation_id,
+            }
+        assert client.get(route + "/invocations/unknown").status_code == 404
+        with client.websocket_connect(route + "/ws") as ws:
+            until(ws, "server.ready")
+            for request in (
+                {
+                    "type": "action.request", "requestId": "known-history",
+                    "entityKey": CENTRIFUGE, "action": "closeLid",
+                },
+                {"type": "action.cancel", "requestId": "cancel-history", "invocationId": invocation_id},
+                {
+                    "type": "action.approve", "requestId": "approve-history",
+                    "invocationId": invocation_id, "decision": "approve",
+                },
+            ):
+                ws.send_json(request)
+                error = until(ws, "server.error", requestId=request["requestId"])
+                assert error["code"] == "history_unavailable" and error["invocationId"] == invocation_id
+        history = client.get(route + "/invocations").json()["invocations"]
+        assert len(history) == 1 and history[0]["invocationId"] == invocation_id
+        assert client.get(route + "/entity", params={"key": CENTRIFUGE}).json()["state"]["values"]["lidOpen"]

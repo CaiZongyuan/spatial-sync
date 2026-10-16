@@ -26,6 +26,7 @@ from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
+from packages.info.invocations import HistoryUnavailable
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
     PROTOCOL_VERSION,
@@ -378,6 +379,17 @@ def create_app(
                             await session.pipeline.approve(
                                 message.invocationId, message.decision, role, actor
                             )
+                    except HistoryUnavailable as exc:
+                        connection.enqueue_reliable(
+                            encode(
+                                ServerError(
+                                    code="history_unavailable",
+                                    message=str(exc),
+                                    requestId=message.requestId,
+                                    invocationId=exc.invocation_id,
+                                )
+                            )
+                        )
                     except (PermissionError, KeyError, HTTPException) as exc:
                         connection.enqueue_reliable(
                             encode(

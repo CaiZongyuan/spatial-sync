@@ -258,6 +258,12 @@ def main():
         ActionApprove(requestId="approve-fixture", invocationId="inv-fixture", decision="approve"),
         SceneReplaced(sessionId=manifest.sessionId, sceneRevision="rev-next", revisionNumericId=2),
         ServerError(code="revision_mismatch", message="Reload scene before subscribing"),
+        ServerError(
+            code="history_unavailable",
+            message="Invocation history is unavailable",
+            requestId="history-fixture",
+            invocationId="inv-fixture",
+        ),
     ]
     write(
         "fixtures/messages.json", [message.model_dump(mode="json", exclude_none=True) for message in messages]

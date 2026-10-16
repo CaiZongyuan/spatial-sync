@@ -8,7 +8,7 @@ from pydantic import StrictBool
 
 from apps.api.app.session_manager import encode
 from packages.info.conditions import OPERATORS, evaluate_conditions
-from packages.info.invocations import TERMINAL
+from packages.info.invocations import TERMINAL, HistoryUnavailable
 from packages.protocol.schema import ActionRequest, Actor, Catalog, Model, Positive
 
 
@@ -53,6 +53,19 @@ def invocation_response(value, *, waiting=False, timed_out=False, query=False):
 
 def install_info_routes(app, manager, role_for):
     prefix = "/api/v1/sessions/{session_id}"
+
+    @app.exception_handler(HistoryUnavailable)
+    async def history_unavailable(request: Request, exc: HistoryUnavailable):
+        return JSONResponse(
+            {
+                "detail": {
+                    "code": "history_unavailable",
+                    "message": str(exc),
+                    "invocationId": exc.invocation_id,
+                }
+            },
+            status_code=503,
+        )
 
     def state(session, key):
         if key not in session.catalog.entities:

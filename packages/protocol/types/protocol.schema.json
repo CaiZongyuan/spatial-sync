@@ -2220,7 +2220,8 @@
             "unknown_entity",
             "source_unavailable",
             "internal_error",
-            "unauthorized"
+            "unauthorized",
+            "history_unavailable"
           ],
           "type": "string"
         },
@@ -2229,6 +2230,18 @@
           "type": "string"
         },
         "requestId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "invocationId": {
           "anyOf": [
             {
               "minLength": 1,

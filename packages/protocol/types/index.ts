@@ -485,8 +485,10 @@ export interface ServerError {
     | 'source_unavailable'
     | 'internal_error'
     | 'unauthorized'
+    | 'history_unavailable'
   message: string
   requestId?: string | null
+  invocationId?: string | null
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
