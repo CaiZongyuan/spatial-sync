@@ -199,8 +199,15 @@ class Session:
         }
 
     async def _monitor(self):
+        # Poll faster than publication so coarse timer phases do not merge adjacent samples.
+        period = min(0.01, 1 / self.options.basePublishHz)
+        deadline = time.monotonic()
         while True:
-            await asyncio.sleep(1 / self.options.basePublishHz)
+            deadline += period
+            await asyncio.sleep(max(0, deadline - time.monotonic()))
+            now = time.monotonic()
+            # A late poll consumes the latest frame once, without a catch-up burst.
+            deadline += max(0, int((now - deadline) / period)) * period
             if self.command_lock.locked() or self.state != "RUNNING":
                 continue
             frame = self.latest_frame()

@@ -102,10 +102,13 @@ class ClientConnection:
                     break
                 now = time.monotonic()
                 if self.latest is not None and now >= next_periodic:
+                    if next_periodic == 0:
+                        next_periodic = now
                     delivery, self.latest = self.latest, None
                     if delivery.seq > self.last_sent_seq:
                         await self._send(delivery)
-                    next_periodic = time.monotonic() + 1 / self.granted_rate_hz
+                    period = 1 / self.granted_rate_hz
+                    next_periodic += (int((time.monotonic() - next_periodic) / period) + 1) * period
                     continue
                 delay = max(0, next_periodic - now) if self.latest is not None else None
                 try:
