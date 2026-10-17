@@ -261,6 +261,9 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
     await expect(native).toHaveURL(/^http:\/\/127\.0\.0\.1:\d+\//, { timeout: 30_000 });
     await expect(native.getByText('Simulation control stays in Spatial Sync.', { exact: true })).toBeVisible();
     await expect(native.locator('canvas[data-engine]')).toBeVisible();
+    await expect.poll(() => native.locator('canvas[data-engine]').evaluate(canvas =>
+      (canvas as HTMLCanvasElement).width > 0 && (canvas as HTMLCanvasElement).height > 0,
+    )).toBe(true);
     await expect.poll(async () => {
       const current = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
       return current.sessions.find(session => session.sessionId === sessionId)?.backend?.viewer.clientCount ?? 0;
@@ -303,6 +306,9 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
     await expect(currentNative).toHaveURL(new URL(ready.url).href);
     await expect(currentNative.getByText('Simulation control stays in Spatial Sync.', { exact: true })).toBeVisible();
     await expect(currentNative.locator('canvas[data-engine]')).toBeVisible();
+    await expect.poll(() => currentNative.locator('canvas[data-engine]').evaluate(canvas =>
+      (canvas as HTMLCanvasElement).width > 0 && (canvas as HTMLCanvasElement).height > 0,
+    )).toBe(true);
     await expect.poll(async () => {
       const current = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
       return current.sessions.find(session => session.sessionId === sessionId)?.backend?.viewer.clientCount ?? 0;
