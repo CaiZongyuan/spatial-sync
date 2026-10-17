@@ -90,10 +90,34 @@ origins can differ. Close your session before changing scenes. Reload changes
 sceneRevision. Quantized JSON poses allow documented rounding tolerance.
 GPU submission timing must not be reported as GPU execution time.
 
+## Platform operations and native viewer
+
+`GET /api/v1/platform` reads a background cache of managed sessions and gateway
+host resources. The GPU-free gateway tests inject a sampler; they do not prove
+actual driver telemetry. Verify real CPU/RAM/NVIDIA values separately on a host
+with `nvidia-smi`. Unknown values remain null with a reason. An initial CPU
+sample needs a second measurement before a percentage is meaningful.
+
+```powershell
+uv run --no-sync python -m pytest tests/unit/test_platform_monitor.py tests/gateway/test_platform.py tests/unit/test_native_viewer.py -q
+uv run --no-sync python -m pytest tests/sim_runtime/test_native_viewer.py -q
+$env:SPATIAL_PLATFORM_NEWTON_E2E = '1'
+pnpm --filter @spatial-sync/web exec playwright test platform.spec.ts --grep 'real native'
+```
+
+The last two checks need the frozen simulation extras and an owned API. The
+browser case opens the actual robot scene's native viewer through the platform
+button, checks its Runner identity and repeated URL, reloads the session, opens
+the replacement viewer, then stops it and checks backend counts. Ordinary CI
+explicitly skips this optional native case. Other operations browser cases
+separate contract mocks from the real Synthetic connection/pause/stop journey.
+
 ## Ownership and cleanup
 
 Use isolated ports, processes, worktrees, build directories and evidence.
-Foundation integration reserves API8009/web5189. Developer ports8011/8012/8013
+Foundation integration reserves API8009/web5189. Operations integration reserves
+API8010/web5190 while the older user session remains active and protected.
+Developer ports8011/8012/8013
 and web5191 are separate. Local evidence lives in `.scratch/lab-foundation`;
 prior process evidence is retained in Git history.
 

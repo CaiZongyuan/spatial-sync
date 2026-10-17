@@ -44,6 +44,22 @@ authoritative session and keep independent cameras. Close the session before
 changing scenes. The Inspector reports authoritative samples; the viewport may
 interpolate between published poses.
 
+## Platform overview
+
+The home page shows managed sessions, running and paused sessions, connected
+observers, and live Newton backend processes. It refreshes every two seconds.
+Stopped sessions remain in history; a paused Newton process still counts as a
+live backend. CPU, RAM, GPU utilization and GPU memory describe the gateway
+machine, including its other applications. Missing measurements display as
+unavailable. Per-process CPU uses one logical core as 100% and can exceed 100%.
+
+Use **Open Newton viewer** on a live Newton session or its workspace to open
+the native debug view in a new tab. It uses the same Runner and simulation;
+repeated opens reuse its viewer server. Camera and visualization options live
+there; simulation controls stay in the platform. The viewer is local to the
+gateway host and closes with its session. See [operations details](docs/PLATFORM_OPERATIONS.md)
+and [native viewer ownership](docs/implementation/NATIVE_VIEWER.md).
+
 ## Spatial API
 
 Paths start with `/api/v1`. Entity keys are query parameters. One active session
