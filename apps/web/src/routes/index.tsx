@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { createSession, getScenes, request, type SceneSummary } from '../lib/api';
 import type { Recording } from '../lib/replay/reader';
+import { PlatformOverview } from '../components/PlatformOverview';
 
 export const Route = createFileRoute('/')({ component: Home });
 
@@ -35,18 +36,8 @@ function Home() {
         </Link>
         <span className="version-tag">ENGINEERING WORKBENCH · V1</span>
       </header>
-      <section className="home-hero">
-        <span className="eyebrow">A LIVE WINDOW INTO YOUR PHYSICS WORLD</span>
-        <h1>
-          One scene.
-          <br />
-          <em>Every perspective.</em>
-        </h1>
-        <p>
-          Inspect bodies, track joint anchors, and control the simulation from a
-          shared spatial workbench.
-        </p>
-      </section>
+      <PlatformOverview />
+      <div className="platform-section-heading"><h2>Start or join a workspace</h2><span>Launch a new scene or connect to an existing session</span></div>
       <section className="launch-grid">
         <div className="launch-card">
           <div className="card-number">01 / START A SESSION</div>

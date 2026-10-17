@@ -15,6 +15,7 @@ import { SceneTree } from './SceneTree';
 import { Inspector } from './Inspector';
 import { ApprovalBanner, InvocationsPanel } from './InvocationsPanel';
 import { Diagnostics } from './Diagnostics';
+import { NewtonViewerButton } from './NewtonViewerButton';
 import {
   SceneViewport,
   type DebugLayers,
@@ -182,6 +183,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <Link to="/" className="subtle-link">
             Sessions ↗
           </Link>
+          {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
+            source={manifest?.source.kind ?? ''} state={state.sessionState} />}
           <button
             disabled={client.readOnly || pending || state.role !== 'operator'}
             onClick={async () => {
