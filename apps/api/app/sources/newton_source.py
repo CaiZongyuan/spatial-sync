@@ -46,6 +46,7 @@ class NewtonSource:
         self._events = asyncio.Queue()
         self._metrics = {}
         self._failed = False
+        self._failure_reason = None
         self._closing = False
         self._closed = False
         self._watch_task = None
@@ -194,6 +195,12 @@ class NewtonSource:
                     value = JointState.model_validate(packet["state"])
                 elif kind == "mesh_result":
                     value = packet["data"]
+                elif kind == "viewer_result":
+                    value = packet["viewer"]
+                elif kind == "viewer_error":
+                    if future is not None and not future.done():
+                        future.set_exception(RuntimeError(packet["message"]))
+                    return
                 elif kind == "unknown_entity":
                     if future is not None and not future.done():
                         future.set_exception(KeyError(packet["key"]))
@@ -218,6 +225,7 @@ class NewtonSource:
         if self._closing or self._failed:
             return
         self._failed = True
+        self._failure_reason = message
         error = RuntimeError(f"Newton source unavailable: {message}")
         if not self._ready.done():
             self._ready.set_exception(error)
@@ -319,13 +327,41 @@ class NewtonSource:
     async def read_mesh(self, mesh_id: str) -> bytes:
         return await self._request("mesh", key=mesh_id)
 
+    async def open_viewer(self) -> dict:
+        if self._starting:
+            raise RuntimeError("Newton source is still loading")
+        try:
+            return await self._request("open_viewer", timeout=30)
+        except TimeoutError as exc:
+            raise RuntimeError(
+                "Native viewer did not become ready; retry after checking the backend"
+            ) from exc
+
     def stats(self) -> dict:
-        alive = bool(self._process and not self._closed and self._process.is_alive())
+        process = self._process
+        pid = self._metrics.get("runnerPID")
+        try:
+            alive = bool(process and not self._closed and process.is_alive())
+            if process is not None:
+                pid = process.pid
+        except ValueError:  # A sampler may overlap Process.close().
+            alive = False
+        viewer = self._metrics.get(
+            "viewer", {"status": "not_started", "url": None, "clientCount": 0, "reason": None}
+        )
+        if self._closed or self._failed or (process is not None and not alive):
+            viewer = {
+                "status": "unavailable", "url": None, "clientCount": None,
+                "reason": self._failure_reason or "Newton backend is not running",
+            }
         return {
             **self._metrics,
             **self._runner_heartbeat.stats(alive and not self._failed),
+            "runnerPID": pid,
+            "device": self._metrics.get("device"),
             "runnerAlive": alive,
             "readerThreadsAlive": [thread.name for thread in self._threads if thread.is_alive()],
+            "viewer": viewer,
         }
 
     async def close(self):

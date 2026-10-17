@@ -1,5 +1,6 @@
 """Spawn entrypoint. Importing this module does not import the simulation engine."""
 
+import contextlib
 import os
 import time
 import uuid
@@ -81,6 +82,8 @@ class _Runner:
         from .info_host import NewtonInfoHost
 
         self.info = NewtonInfoHost(self.sim, self.manifest, options, self._info_events)
+        self.viewer = None
+        self._viewer_error = None
         if self.info.port:
             self.extractor.readback_mode = "control-snapshot-reuse"
 
@@ -88,10 +91,28 @@ class _Runner:
         for event in events:
             self.control.offer({"kind": "info_event", "event": event.model_dump(mode="json")})
 
+    def _render_viewer(self, now):
+        if self.viewer is None:
+            return
+        try:
+            self.viewer.render(now)
+        except Exception as exc:
+            self._viewer_error = f"Native viewer unavailable: {exc}"
+            viewer, self.viewer = self.viewer, None
+            with contextlib.suppress(Exception):
+                viewer.close()
+
     def stats(self):
         return {
             **self.info.stats(),
             "runnerPID": os.getpid(),
+            "device": str(self.sim.model.device),
+            "viewer": self.viewer.stats() if self.viewer else {
+                "status": "unavailable" if self._viewer_error else "not_started",
+                "url": None,
+                "clientCount": None if self._viewer_error else 0,
+                "reason": self._viewer_error,
+            },
             "solver_ms": self.sim.solver_ms,
             "solverTimingMode": "host-submission" if self.sim.model.device.is_cuda else "cpu-wall",
             "readback_ms": self.extractor.readback_ms,
@@ -277,6 +298,27 @@ class _Runner:
             self.control.offer(
                 {"kind": "invocation_result", "token": token, "update": result.model_dump(mode="json")}
             )
+        elif kind == "open_viewer":
+            try:
+                if self.viewer is not None and self.viewer.stats()["status"] != "ready":
+                    stale, self.viewer = self.viewer, None
+                    stale.close()
+                if self.viewer is None:
+                    from .viewer_adapter import NativeViewer
+
+                    self.viewer = NativeViewer(self.sim, self.session_id)
+                self._viewer_error = None
+                self.control.offer({
+                    "kind": "viewer_result", "token": token,
+                    "viewer": {"status": "ready", "url": self.viewer.url, "backendPid": os.getpid()},
+                    "stats": self.stats(),
+                })
+            except Exception as exc:
+                self._viewer_error = f"Native viewer unavailable: {exc}"
+                self.control.offer({
+                    "kind": "viewer_error", "token": token, "message": self._viewer_error,
+                    "stats": self.stats(),
+                })
         elif kind == "joint":
             key = packet["key"]
             if key not in self._joint_keys:
@@ -342,6 +384,7 @@ class _Runner:
             else:
                 count = 0
                 self.pacer.reset_clock(now)
+            self._render_viewer(now)
             if now >= next_stats:
                 self._heartbeat_seq += 1
                 self._heartbeat_at = now
@@ -356,8 +399,14 @@ class _Runner:
 
     def close(self):
         try:
-            self.extractor.close()
-            self.sim.close()
+            try:
+                if self.viewer is not None:
+                    self.viewer.close()
+            finally:
+                try:
+                    self.extractor.close()
+                finally:
+                    self.sim.close()
         finally:
             self.frames.close()
             self.control.close(drain=True)
