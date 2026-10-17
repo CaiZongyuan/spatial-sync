@@ -164,11 +164,11 @@ def test_open_requests_reuse_one_viewer_on_the_existing_runner_simulation(monkey
     runner.sim, runner.session_id, runner.viewer, runner._viewer_error = object(), "session", None, None
     packets, created = [], []
     runner.control = SimpleNamespace(offer=packets.append)
-    runner.stats = lambda: {}
+    runner.stats = lambda: {"viewer": runner._viewer_stats()}
 
     def create(simulation, session_id):
         created.append((simulation, session_id))
-        return SimpleNamespace(url="http://127.0.0.1:43210/", stats=lambda: {"status": "ready"})
+        return SimpleNamespace(stats=lambda: {"status": "ready", "url": "http://127.0.0.1:43210/"})
 
     monkeypatch.setattr(viewer_adapter, "NativeViewer", create)
     for token in ("first", "second"):
@@ -201,6 +201,40 @@ def test_viewer_render_failure_is_scoped_and_cannot_prevent_physics_teardown():
     with pytest.raises(RuntimeError, match="viewer close failed"):
         runner.close()
     assert calls[-4:] == ["extractor.close", "sim.close", "frames.close", "control.close"]
+
+
+def test_viewer_stats_failure_is_scoped_when_open_error_also_reports_runner_metrics(monkeypatch):
+    runner = _Runner.__new__(_Runner)
+    closed, packets = [], []
+
+    def broken_stats():
+        raise RuntimeError("viewer client list failed")
+
+    def broken_viewer(*_):
+        return SimpleNamespace(stats=broken_stats, close=lambda: closed.append("viewer.close"))
+
+    runner.viewer = broken_viewer()
+    runner._viewer_error, runner.session_id = None, "stats-error"
+    runner.info = SimpleNamespace(stats=lambda: {})
+    runner.sim = SimpleNamespace(model=SimpleNamespace(device=SimpleNamespace(is_cuda=False),
+                                                      body_count=40, shape_count=117),
+                                 solver_ms=0, paused=True)
+    runner.extractor = SimpleNamespace(
+        readback_ms=0, readback_latency_ms=0, enqueue_ms=0, host_copy_ms=0, filter_ms=0,
+        last_metrics={}, readback_mode="cpu-bulk", dropped_captures=0,
+        filter=SimpleNamespace(total_invalid=0, consecutive_invalid=SimpleNamespace(tolist=lambda: [])),
+    )
+    runner.frames = SimpleNamespace(slot=SimpleNamespace(overwritten=0))
+    runner.pacer = SimpleNamespace(dropped_wall_seconds=0)
+    runner._heartbeat_seq, runner._heartbeat_at = 1, 0
+    runner.publish_ms, runner.step_hz, runner.actual_rtf = 0, 0, 0
+    runner.control = SimpleNamespace(offer=packets.append)
+    monkeypatch.setattr(viewer_adapter, "NativeViewer", broken_viewer)
+    assert runner._handle({"kind": "open_viewer", "token": "open"})
+    assert packets[-1]["kind"] == "viewer_error"
+    assert "viewer client list failed" in packets[-1]["message"]
+    assert runner.viewer is None and closed == ["viewer.close", "viewer.close"]
+    assert runner.stats()["viewer"]["status"] == "unavailable"
 
 
 async def test_viewer_rpc_failure_does_not_fail_the_source_or_leave_a_ready_link():

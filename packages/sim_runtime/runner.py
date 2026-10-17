@@ -97,22 +97,34 @@ class _Runner:
         try:
             self.viewer.render(now)
         except Exception as exc:
-            self._viewer_error = f"Native viewer unavailable: {exc}"
-            viewer, self.viewer = self.viewer, None
+            self._fail_viewer(exc)
+
+    def _fail_viewer(self, error):
+        self._viewer_error = f"Native viewer unavailable: {error}"
+        viewer, self.viewer = self.viewer, None
+        if viewer is not None:
             with contextlib.suppress(Exception):
                 viewer.close()
+
+    def _viewer_stats(self):
+        if self.viewer is not None:
+            try:
+                return self.viewer.stats()
+            except Exception as exc:
+                self._fail_viewer(exc)
+        return {
+            "status": "unavailable" if self._viewer_error else "not_started",
+            "url": None,
+            "clientCount": None if self._viewer_error else 0,
+            "reason": self._viewer_error,
+        }
 
     def stats(self):
         return {
             **self.info.stats(),
             "runnerPID": os.getpid(),
             "device": str(self.sim.model.device),
-            "viewer": self.viewer.stats() if self.viewer else {
-                "status": "unavailable" if self._viewer_error else "not_started",
-                "url": None,
-                "clientCount": None if self._viewer_error else 0,
-                "reason": self._viewer_error,
-            },
+            "viewer": self._viewer_stats(),
             "solver_ms": self.sim.solver_ms,
             "solverTimingMode": "host-submission" if self.sim.model.device.is_cuda else "cpu-wall",
             "readback_ms": self.extractor.readback_ms,
@@ -300,7 +312,8 @@ class _Runner:
             )
         elif kind == "open_viewer":
             try:
-                if self.viewer is not None and self.viewer.stats()["status"] != "ready":
+                current = self._viewer_stats()
+                if self.viewer is not None and current["status"] != "ready":
                     stale, self.viewer = self.viewer, None
                     stale.close()
                 if self.viewer is None:
@@ -308,13 +321,16 @@ class _Runner:
 
                     self.viewer = NativeViewer(self.sim, self.session_id)
                 self._viewer_error = None
+                metrics = self.stats()
+                if metrics["viewer"]["status"] != "ready":
+                    raise RuntimeError(metrics["viewer"]["reason"] or "Native viewer did not become ready")
                 self.control.offer({
                     "kind": "viewer_result", "token": token,
-                    "viewer": {"status": "ready", "url": self.viewer.url, "backendPid": os.getpid()},
-                    "stats": self.stats(),
+                    "viewer": {"status": "ready", "url": metrics["viewer"]["url"], "backendPid": os.getpid()},
+                    "stats": metrics,
                 })
             except Exception as exc:
-                self._viewer_error = f"Native viewer unavailable: {exc}"
+                self._fail_viewer(exc)
                 self.control.offer({
                     "kind": "viewer_error", "token": token, "message": self._viewer_error,
                     "stats": self.stats(),
