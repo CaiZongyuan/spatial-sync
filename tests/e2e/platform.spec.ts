@@ -22,7 +22,7 @@ function sample(): PlatformSnapshot {
   };
 }
 
-test('platform contract UI preserves unknown metrics, reports stale errors and refreshes counts', async ({ page }) => {
+test('platform contract UI preserves unknown metrics, reports stale errors and refreshes counts', async ({ page }, testInfo) => {
   let value = sample();
   let fail = false;
   await page.route('**/api/v1/platform', route => fail ? route.fulfill({ status: 503, json: { detail: 'Host sampler unavailable' } }) : route.fulfill({ json: value }));
@@ -37,6 +37,7 @@ test('platform contract UI preserves unknown metrics, reports stale errors and r
   await expect(page.getByTestId('platform-session-synthetic-old').getByRole('button', { name: 'Open Newton viewer' })).toHaveCount(0);
   await expect(page.getByLabel('Scene', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Session ID', { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('platform-contract-overview.png'), fullPage: true });
   fail = true;
   await expect(page.getByRole('alert').filter({ hasText: 'Host sampler unavailable' })).toBeVisible();
   await expect(summary(page, 'Running')).toHaveText('1');
@@ -210,7 +211,7 @@ test('readonly Newton recording never offers a native viewer', async ({ page, ba
   await expect(page.getByRole('button', { name: 'Open Newton viewer' })).toHaveCount(0);
 });
 
-test('real platform counts follow a session, observer connection, pause and stop', async ({ page, context, request }) => {
+test('real platform counts follow a session, observer connection, pause and stop', async ({ page, context, request }, testInfo) => {
   const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
   expect(response.ok()).toBe(true); const { sessionId } = await response.json();
   const observer = await context.newPage();
@@ -222,6 +223,7 @@ test('real platform counts follow a session, observer connection, pause and stop
     await observer.goto(`/sessions/${sessionId}`);
     await expect(observer.getByTestId('connection-status')).toHaveText('connected');
     await expect(row).toContainText('1 connected client');
+    await page.screenshot({ path: testInfo.outputPath('platform-real-synthetic.png'), fullPage: true });
     await observer.getByRole('button', { name: 'Pause simulation' }).click();
     await expect(row).toContainText('PAUSED');
     await observer.close();
