@@ -80,6 +80,7 @@ class Session:
         self.scene_id, self.kind = scene_id, kind
         self.options, self.settings, self.factory = options, settings, factory
         self.source: SpatialSource | None = None
+        self._starting_source: SpatialSource | None = None
         self.manifest: SceneManifest | None = None
         self.state = "CREATED"
         self.epoch, self.seq, self.sim_time = 0, 0, 0.0
@@ -119,6 +120,7 @@ class Session:
         candidate = None
         try:
             candidate = self.factory(self.kind, self.session_id)
+            self._starting_source = candidate
             started = await candidate.start(self.scene_id, self.options)
             manifest, catalog = started if isinstance(started, tuple) else (started, None)
             if manifest.sessionId != self.session_id:
@@ -171,7 +173,7 @@ class Session:
             ]
             if self._heartbeat_task is None:
                 self._heartbeat_task = asyncio.create_task(self._heartbeat(), name="session-heartbeat")
-        except Exception as exc:
+        except BaseException as exc:
             with contextlib.suppress(Exception):
                 if candidate:
                     await candidate.close()
@@ -179,9 +181,33 @@ class Session:
             self.source = None
             if self.manifest is previous_manifest:
                 self._recording_revision_ready = recording_was_ready
-            if self.state != "FAILED":
+            if isinstance(exc, asyncio.CancelledError):
+                self.state = "STOPPED"
+            elif self.state != "FAILED":
                 self.fail(str(exc))
             raise
+        finally:
+            self._starting_source = None
+
+    async def open_viewer(self):
+        if self.kind != "newton":
+            raise HTTPException(400, {
+                "code": "viewer_unsupported", "message": "Native Viewer requires a Newton session"
+            })
+        async with self.command_lock:
+            if self.state not in ("RUNNING", "PAUSED") or self.source is None:
+                raise HTTPException(409, {
+                    "code": "invalid_state", "message": "Native Viewer requires a running or paused session"
+                })
+            opener = getattr(self.source, "open_viewer", None)
+            if not callable(opener):
+                raise HTTPException(503, {
+                    "code": "viewer_unavailable", "message": "This Newton adapter has no Native Viewer"
+                })
+            try:
+                return await opener()
+            except Exception as exc:
+                raise HTTPException(503, {"code": "viewer_unavailable", "message": str(exc)}) from exc
 
     async def action_pipeline(self):
         """Wait for revision capture, then select the pipeline for immediate intake.
@@ -936,6 +962,7 @@ class SessionManager:
         self.settings, self.factory = settings, factory
         self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
         self.sessions: dict[str, Session] = {}
+        self._starting_session: Session | None = None
         self._create_lock = asyncio.Lock()
 
     async def create(self, scene_id, source, options):
@@ -959,14 +986,26 @@ class SessionManager:
                         },
                     )
             session = Session(scene_id, source, options, self.settings, self.factory, self.recordings)
+            self._starting_session = session
             try:
                 await session.start()
+            except asyncio.CancelledError:
+                await session.close()
+                raise
             except HTTPException:
                 raise
             except Exception as exc:
                 raise HTTPException(503, {"code": "source_unavailable", "message": str(exc)}) from exc
+            finally:
+                self._starting_session = None
             self.sessions[session.session_id] = session
             return session
+
+    def platform_sessions(self):
+        sessions = list(self.sessions.values())
+        if self._starting_session is not None:
+            sessions.append(self._starting_session)
+        return sessions
 
     def get(self, session_id):
         if session_id not in self.sessions:

@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError
 
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
+from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
 from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
@@ -93,18 +94,26 @@ def create_app(
     settings: Settings | None = None,
     source_factory=default_source_factory,
     asset_registry: AssetRegistry | None = None,
+    platform_sampler=None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
     recordings = RecordingRepository(settings, asset_registry)
     manager = SessionManager(settings, source_factory, recordings)
+    monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
     @asynccontextmanager
     async def lifespan(app):
         await recordings.startup()
-        yield
-        await manager.close()
+        await monitor.start()
+        try:
+            yield
+        finally:
+            try:
+                await monitor.close()
+            finally:
+                await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
 
@@ -117,6 +126,7 @@ def create_app(
         )
 
     app.state.manager, app.state.settings = manager, settings
+    app.state.platform_monitor = monitor
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     request_times = defaultdict(deque)
@@ -177,6 +187,10 @@ def create_app(
     async def scenes():
         return {"scenes": SCENES}
 
+    @app.get("/api/v1/platform")
+    async def platform():
+        return JSONResponse(monitor.snapshot, headers={"Cache-Control": "no-store"})
+
     @app.post("/api/v1/sessions", status_code=201)
     async def create_session(body: CreateSession):
         session = await manager.create(
@@ -195,6 +209,14 @@ def create_app(
     @app.get("/api/v1/sessions/{session_id}")
     async def session_summary(session_id: str):
         return manager.get(session_id).summary()
+
+    @app.post("/api/v1/sessions/{session_id}/viewer")
+    async def open_viewer(session_id: str):
+        if settings.remote:
+            raise HTTPException(403, {
+                "code": "viewer_local_only", "message": "Native Viewer is available only on the gateway host"
+            })
+        return await manager.get(session_id).open_viewer()
 
     @app.post("/api/v1/sessions/{session_id}/commands")
     async def session_command(session_id: str, body: Command, request: Request):
