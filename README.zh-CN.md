@@ -36,6 +36,17 @@ uv run --frozen --extra simulation --extra usd python -m uvicorn apps.api.app.ma
 | `robot-and-tubes` | newton | Franka FR3、试管与离心机 |
 | `usd-lab` | newton | Y-up USD 导入与视觉回退 |
 
+首页顶部每两秒刷新本平台管理的 session 总数、运行数、暂停数、连接数，以及
+实际存活的 Newton 后端数量。已停止的会话保留在历史中；暂停的 Newton 进程
+仍计入存活后端。CPU、内存、GPU 使用率和显存是网关所在机器的整体用量，
+包含其他应用；无法取得的指标会显示不可用。进程 CPU 以一个逻辑核心为 100%，
+因此可能超过 100%。
+
+在 Newton 会话行或工作区点击 **Open Newton viewer**，会在新标签页打开
+同一个 Runner、同一份仿真状态的原生调试视图。重复打开复用 viewer 服务；
+相机和可视化选项在该页面使用，仿真控制仍由平台负责。原生视图只能从网关
+所在机器打开，关闭或重载会话时会随原后端释放。
+
 选中 Body 或 Site 后可暂停、单步、重置和恢复。多个浏览器共享权威会话，
 各自保持独立相机。切换场景前关闭当前会话。Inspector 展示权威采样，视口可插值。
 
