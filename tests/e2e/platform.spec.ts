@@ -52,8 +52,10 @@ test('platform contract UI preserves unknown metrics, reports stale errors and r
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('Only available on the gateway machine.');
 });
 
-test('viewer contract reserves one tab before startup, reuses ready URL and reports failures', async ({ page, context }) => {
+test('viewer contract validates a sampled ready URL, reserves its tab and reports failures', async ({ page, context }) => {
   const value = sample(); let posts = 0; let reject = false;
+  // The sampled viewer closed during a reload before the next platform refresh.
+  value.sessions[0].backend!.viewer = { status: 'ready', url: 'http://127.0.0.1:1/old-viewer', clientCount: 0, reason: null };
   let release!: () => void;
   const waiting = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/v1/platform', route => route.fulfill({ json: { ...value, sampledAtMs: Date.now() } }));
@@ -72,12 +74,12 @@ test('viewer contract reserves one tab before startup, reuses ready URL and repo
   await expect(tab).toHaveURL(/test-native-viewer$/);
   await tab.close();
   const reused = page.waitForEvent('popup'); await button.click(); const second = await reused;
-  await expect(second).toHaveURL(/test-native-viewer$/); expect(posts).toBe(1); await second.close();
-  // A new page has no local ready URL and must expose the server's startup error.
+  await expect(second).toHaveURL(/test-native-viewer$/); expect(posts).toBe(2); await second.close();
+  // A new click must still expose a current server failure despite sampled ready metadata.
   reject = true; await page.reload();
   const failed = page.waitForEvent('popup'); await button.click(); const failedTab = await failed;
   await expect(page.getByRole('alert').filter({ hasText: 'Native viewer could not start' })).toBeVisible();
-  await expect.poll(() => failedTab.isClosed()).toBe(true); expect(posts).toBe(2);
+  await expect.poll(() => failedTab.isClosed()).toBe(true); expect(posts).toBe(3);
 });
 
 test('blocked popups do not start a native viewer', async ({ page }) => {
