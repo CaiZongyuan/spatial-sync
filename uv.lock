@@ -595,7 +595,7 @@ requires-dist = [
     { name = "trimesh", specifier = ">=4.6,<5" },
     { name = "usd-core", marker = "extra == 'usd'", specifier = "==26.8" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
-    { name = "viser", marker = "extra == 'simulation'", specifier = ">=1.1.1,<2" },
+    { name = "viser", marker = "extra == 'simulation'", specifier = "==1.1.1" },
     { name = "warp-lang", marker = "extra == 'simulation'", specifier = "==1.18.0" },
 ]
 provides-extras = ["simulation", "usd"]
