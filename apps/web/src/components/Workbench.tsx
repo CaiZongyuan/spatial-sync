@@ -184,7 +184,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             Sessions ↗
           </Link>
           {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
-            source={manifest?.source.kind ?? ''} state={state.sessionState} />}
+            source={manifest?.source.kind ?? ''} state={state.sessionState} sceneRevision={manifest?.sceneRevision} />}
           <button
             disabled={client.readOnly || pending || state.role !== 'operator'}
             onClick={async () => {

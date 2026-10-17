@@ -50,8 +50,8 @@ export interface PlatformSnapshot {
 }
 
 export const getPlatform = (signal: AbortSignal) => request<PlatformSnapshot>('/platform', { signal });
-export const openNewtonViewer = (sessionId: string) => request<{ status: 'ready'; url: string; backendPid: number }>(
-  `/sessions/${encodeURIComponent(sessionId)}/viewer`, { method: 'POST' },
+export const openNewtonViewer = (sessionId: string, signal: AbortSignal) => request<{ status: 'ready'; url: string; backendPid: number }>(
+  `/sessions/${encodeURIComponent(sessionId)}/viewer`, { method: 'POST', signal },
 );
 
 export const percent = (value: number | null | undefined) =>

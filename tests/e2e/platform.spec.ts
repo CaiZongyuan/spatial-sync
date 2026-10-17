@@ -62,7 +62,7 @@ test('viewer contract validates a sampled ready URL, reserves its tab and report
   await page.route('**/api/v1/sessions/newton-live/viewer', async route => {
     posts++; await waiting;
     await route.fulfill(reject ? { status: 503, json: { detail: { message: 'Native viewer could not start. Try again.' } } } :
-      { json: { status: 'ready', url: `${new URL(page.url()).origin}/test-native-viewer`, backendPid: 12345 } });
+      { json: { status: 'ready', url: `${new URL(page.url()).origin}/test-native-viewer`, backendPid: 12346 } });
   });
   await context.route('**/test-native-viewer', route => route.fulfill({ contentType: 'text/html', body: '<p>Viewer contract destination</p>' }));
   await page.goto('/');
@@ -99,7 +99,8 @@ test('viewer contract discards a pending URL after its session stops', async ({ 
   await page.route('**/api/v1/platform', route => route.fulfill({ json: { ...value, sampledAtMs: Date.now() } }));
   await page.route('**/api/v1/sessions/newton-live/viewer', async route => {
     await pending;
-    await route.fulfill({ json: { status: 'ready', url: 'http://127.0.0.1:1/', backendPid: 12345 } });
+    try { await route.fulfill({ json: { status: 'ready', url: 'http://127.0.0.1:1/', backendPid: 12345 } }); }
+    catch (error) { if (!route.request().failure()) throw error; }
   });
   await page.goto('/');
   const opened = page.waitForEvent('popup');
@@ -109,10 +110,88 @@ test('viewer contract discards a pending URL after its session stops', async ({ 
   value.summary.runningSessions = 0; value.summary.newtonBackends = 0;
   await expect(summary(page, 'Newton backends alive')).toHaveText('0');
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('STOPPED');
-  release();
-  await expect(page.getByRole('alert').filter({ hasText: 'The session changed' })).toBeVisible();
   await expect.poll(() => tab.isClosed()).toBe(true);
+  release();
+  await expect(page.getByTestId('platform-session-newton-live')).toContainText('The session is not running.');
   await expect(page.getByTestId('platform-session-newton-live').getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
+});
+
+async function workbenchViewerContract(page: Page) {
+  const fixture = resolve('../../tests/fixtures/recordings/v1');
+  const manifest = JSON.parse(readFileSync(join(fixture, 'manifest.json'), 'utf8'));
+  const catalog = JSON.parse(readFileSync(join(fixture, 'catalog.json'), 'utf8'));
+  manifest.source.kind = 'newton';
+  const segment = readFileSync(join(fixture, 'seg-000001.bin'));
+  const firstSpatial = segment.subarray(19, 10 + segment.readUInt32LE(6));
+  let socket: import('@playwright/test').WebSocketRoute;
+  let posts = 0;
+  let release!: () => void;
+  const heldReply = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/v1/sessions/native-workbench/scene', route => route.fulfill({ json: manifest }));
+  await page.route('**/api/v1/sessions/native-workbench/catalog', route => route.fulfill({ json: { ...catalog, sceneRevision: manifest.sceneRevision } }));
+  await page.route('**/api/v1/sessions/native-workbench/stats', route => route.fulfill({ json: {} }));
+  await page.route('**/api/v1/sessions/native-workbench/viewer', async route => {
+    posts++;
+    const first = posts === 1;
+    if (first) await heldReply;
+    try { await route.fulfill({ json: { status: 'ready', url: `${new URL(page.url()).origin}/test-native-${first ? 'old' : 'current'}`, backendPid: first ? 12345 : 12346 } }); }
+    catch (error) { if (!route.request().failure()) throw error; }
+  });
+  await page.context().route('**/test-native-*', route => route.fulfill({ contentType: 'text/html', body: '<p>Viewer contract destination</p>' }));
+  await page.routeWebSocket('**/api/v1/sessions/native-workbench/ws', route => {
+    socket = route;
+    route.onMessage(message => {
+      const request = JSON.parse(String(message));
+      if (request.type !== 'client.subscribe') return;
+      route.send(JSON.stringify({ type: 'subscription.ack', requestId: request.requestId, grantedRateHz: 30 }));
+      const spatial = Buffer.from(firstSpatial);
+      spatial.writeUInt32LE(manifest.revisionNumericId, 8);
+      route.send(spatial);
+      route.send(JSON.stringify({ type: 'session.state', sessionId: 'native-workbench', sceneRevision: manifest.sceneRevision,
+        state: 'RUNNING', epoch: 0, seq: 2, simTime: 0, realtimeFactor: 1, actualRtf: 1, cause: { kind: 'lifecycle' } }));
+    });
+    route.send(JSON.stringify({ type: 'server.ready', sessionId: 'native-workbench', role: 'operator',
+      sceneRevision: manifest.sceneRevision, sessionState: 'RUNNING', epoch: 0, seq: 2, simTime: 0,
+      realtimeFactor: 1, heartbeatIntervalMs: 30000 }));
+  });
+  await page.goto('/sessions/native-workbench');
+  await expect(page.getByRole('button', { name: 'Open Newton viewer' })).toBeEnabled();
+  return {
+    release,
+    async replace() {
+      manifest.sceneRevision = 'rev-native-replacement'; manifest.revisionNumericId++;
+      socket.send(JSON.stringify({ type: 'scene.replaced', sceneRevision: manifest.sceneRevision }));
+      await expect.poll(() => page.evaluate(() => ({ revision: window.__spatialDebug?.getStreamMetrics().revision,
+        state: window.__spatialDebug?.getStreamMetrics().sessionState }))).toEqual({ revision: manifest.sceneRevision, state: 'RUNNING' });
+      await expect(page.getByRole('button', { name: 'Open Newton viewer' })).toBeEnabled();
+    },
+  };
+}
+
+test('Workbench viewer contract cancels a held reply across source replacement', async ({ page }) => {
+  const control = await workbenchViewerContract(page);
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Open Newton viewer' }).click();
+  const old = await opened;
+  await control.replace();
+  await expect.poll(() => old.isClosed()).toBe(true);
+  control.release();
+  const current = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Open Newton viewer' }).click();
+  const tab = await current;
+  await expect(tab).toHaveURL(/test-native-current$/);
+  await tab.close();
+});
+
+test('Workbench viewer contract closes its owned blank tab on unmount', async ({ page }) => {
+  const control = await workbenchViewerContract(page);
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('button', { name: 'Open Newton viewer' }).click();
+  const tab = await opened;
+  await page.getByRole('link', { name: 'Sessions' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect.poll(() => tab.isClosed()).toBe(true);
+  control.release();
 });
 
 test('readonly Newton recording never offers a native viewer', async ({ page, baseURL }) => {
