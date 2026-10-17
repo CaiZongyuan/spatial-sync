@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { createConnection } from 'node:net';
 import type { PlatformSnapshot } from '../../apps/web/src/lib/platform';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
@@ -246,12 +247,14 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
   expect(created.ok(), await created.text()).toBe(true);
   const { sessionId } = await created.json();
   const openedTabs: Page[] = [];
+  const observed: Record<string, unknown> = { scope: 'Actual Native public API and UI, no Source instrumentation', sessionId };
   try {
     await page.goto('/');
     const row = page.getByTestId(`platform-session-${sessionId}`);
     await expect(row).toContainText('RUNNING', { timeout: 120_000 });
     const before = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
     const runnerPid = before.sessions.find(session => session.sessionId === sessionId)!.backend!.pid;
+    observed.before = before;
     const popup = page.waitForEvent('popup');
     await row.getByRole('button', { name: 'Open Newton viewer' }).click();
     const native = await popup; openedTabs.push(native);
@@ -263,6 +266,7 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
       return current.sessions.find(session => session.sessionId === sessionId)?.backend?.viewer.clientCount ?? 0;
     }).toBeGreaterThanOrEqual(1);
     const after = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
+    observed.firstViewer = { url: native.url(), platform: after };
     expect(after.sessions.find(session => session.sessionId === sessionId)!.backend!.pid).toBe(runnerPid);
     expect(after.summary.newtonBackends).toBe(before.summary.newtonBackends);
     await native.screenshot({ path: testInfo.outputPath('native-newton-scene.png') });
@@ -270,14 +274,52 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
     await row.getByRole('button', { name: 'Open Newton viewer' }).click();
     const second = await repeat; openedTabs.push(second);
     await expect(second).toHaveURL(native.url());
+    const oldViewerUrl = new URL(native.url());
+    const reloaded = await request.post(`${api}/api/v1/sessions/${sessionId}/reload`);
+    expect(reloaded.ok(), await reloaded.text()).toBe(true);
+    await expect.poll(async () => {
+      const current = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
+      const session = current.sessions.find(session => session.sessionId === sessionId);
+      return session?.state === 'RUNNING' && session.backend?.alive === true && session.backend.pid != null && session.backend.pid !== runnerPid;
+    }, { timeout: 30_000 }).toBe(true);
+    const replaced = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
+    const newRunnerPid = replaced.sessions.find(session => session.sessionId === sessionId)!.backend!.pid;
+    observed.afterReload = replaced;
+    await expect.poll(() => new Promise<boolean>(resolve => {
+      const socket = createConnection({ host: oldViewerUrl.hostname, port: Number(oldViewerUrl.port) });
+      socket.setTimeout(500);
+      socket.once('connect', () => { socket.destroy(); resolve(false); });
+      socket.once('error', () => { socket.destroy(); resolve(true); });
+      socket.once('timeout', () => { socket.destroy(); resolve(false); });
+    })).toBe(true);
+    observed.oldNativePortClosed = true;
+    await native.close(); await second.close();
+    const currentPopup = page.waitForEvent('popup');
+    const currentResponse = page.waitForResponse(response => response.url().endsWith(`/sessions/${sessionId}/viewer`) && response.request().method() === 'POST');
+    await row.getByRole('button', { name: 'Open Newton viewer' }).click();
+    const currentNative = await currentPopup; openedTabs.push(currentNative);
+    const ready = await (await currentResponse).json();
+    expect(ready.backendPid).toBe(newRunnerPid);
+    await expect(currentNative).toHaveURL(new URL(ready.url).href);
+    await expect(currentNative.getByText('Simulation control stays in Spatial Sync.', { exact: true })).toBeVisible();
+    await expect(currentNative.locator('canvas')).toBeVisible();
+    await expect.poll(async () => {
+      const current = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
+      return current.sessions.find(session => session.sessionId === sessionId)?.backend?.viewer.clientCount ?? 0;
+    }).toBeGreaterThanOrEqual(1);
+    observed.replacementViewer = { ready, url: currentNative.url() };
+    await currentNative.screenshot({ path: testInfo.outputPath('native-newton-after-reload.png') });
+    await page.screenshot({ path: testInfo.outputPath('platform-real-native.png'), fullPage: true });
     expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`)).ok()).toBe(true);
     await expect(row).toContainText('STOPPED');
     await expect(row.getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
     const stopped = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
+    observed.stopped = stopped;
     expect(stopped.sessions.find(session => session.sessionId === sessionId)!.backend?.alive ?? false).toBe(false);
     expect(stopped.summary.newtonBackends).toBe(before.summary.newtonBackends - 1);
   } finally {
     for (const tab of openedTabs) if (!tab.isClosed()) await tab.close();
     await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+    await testInfo.attach('native-public-journey', { body: Buffer.from(JSON.stringify(observed, null, 2)), contentType: 'application/json' });
   }
 });
