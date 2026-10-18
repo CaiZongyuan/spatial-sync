@@ -1,0 +1,41 @@
+[project]
+name = "fr3-contact-spike"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["isaaclab[importers]", "isaaclab-tutorial"]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "ruff>=0.11"]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
+override-dependencies = [
+  "mujoco==3.12.0", "mujoco-warp==3.12.0", "newton-usd-schemas==0.5.0",
+  "gymnasium==1.3.0", "numpy==2.5.2", "scipy==1.18.0", "trimesh==5.0.0",
+  "numba==0.67.0", "open3d==0.19.0",
+]
+constraint-dependencies = ["torch==2.11.0", "torchvision==0.26.0", "torchaudio==2.11.0"]
+
+[tool.uv.sources]
+isaaclab = { git = "https://github.com/isaac-sim/IsaacLab.git", rev = "f754f2965af9d6aa4f2e18d7d6d3ddf8f8471c69", subdirectory = "tools/wheel_builder" }
+isaaclab-tutorial = { git = "https://github.com/isaac-sim/IsaacLabTutorial.git", rev = "c64024e" }
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
