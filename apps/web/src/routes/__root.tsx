@@ -1,11 +1,8 @@
-import { createRootRoute, Link, Outlet } from '@tanstack/react-router';
+import { createRootRoute, Link } from '@tanstack/react-router';
+import { PlatformShell } from '../components/PlatformShell';
 
 export const Route = createRootRoute({
-  component: () => (
-    <>
-      <Outlet />
-    </>
-  ),
+  component: PlatformShell,
   errorComponent: ({ error }) => (
     <main className="error-page">
       <span className="eyebrow">SPATIAL SYNC</span>

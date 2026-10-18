@@ -20,7 +20,7 @@ async function launch(page: Page, request: APIRequestContext, sceneId: string) {
         !['STOPPED', 'FAILED'].includes(session.state),
     ),
   ).toEqual([]);
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.getByLabel('Scene', { exact: true }).selectOption(sceneId);
   await page.getByLabel('Source', { exact: true }).selectOption('newton');
   const creating = page.waitForResponse(

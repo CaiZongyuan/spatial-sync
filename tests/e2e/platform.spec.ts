@@ -27,12 +27,14 @@ test('platform contract UI preserves unknown metrics, reports stale errors and r
   let value = sample();
   let fail = false;
   await page.route('**/api/v1/platform', route => fail ? route.fulfill({ status: 503, json: { detail: 'Host sampler unavailable' } }) : route.fulfill({ json: value }));
-  await page.goto('/');
+  await page.goto('/sessions');
   await expect(summary(page, 'Running')).toHaveText('1');
   await expect(summary(page, 'Newton backends alive')).toHaveText('1');
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Resources', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Host CPU', exact: true }).locator('strong')).toHaveText('0.0%');
   await expect(page.getByRole('article', { name: 'GPU utilization', exact: true }).locator('strong')).toHaveText('Not available');
   await expect(page.getByRole('article', { name: 'GPU memory', exact: true }).locator('strong')).toHaveText('Not available');
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Sessions', exact: true }).click();
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('240.5%');
   await expect(page.getByTestId('platform-session-newton-old').getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
   await expect(page.getByTestId('platform-session-synthetic-old').getByRole('button', { name: 'Open Newton viewer' })).toHaveCount(0);
@@ -67,7 +69,7 @@ test('viewer contract validates a sampled ready URL, reserves its tab and report
       { json: { status: 'ready', url: `${new URL(page.url()).origin}/test-native-viewer`, backendPid: 12346 } });
   });
   await context.route('**/test-native-viewer', route => route.fulfill({ contentType: 'text/html', body: '<p>Viewer contract destination</p>' }));
-  await page.goto('/');
+  await page.goto('/sessions');
   const button = page.getByTestId('platform-session-newton-live').getByRole('button', { name: 'Open Newton viewer' });
   const opened = page.waitForEvent('popup'); await button.click(); const tab = await opened;
   await expect(page.getByRole('button', { name: 'Opening viewer…' })).toBeDisabled();
@@ -89,7 +91,7 @@ test('blocked popups do not start a native viewer', async ({ page }) => {
   await page.addInitScript(() => { window.open = () => null; });
   await page.route('**/api/v1/platform', route => route.fulfill({ json: sample() }));
   await page.route('**/api/v1/sessions/*/viewer', route => { posts++; return route.fulfill({ status: 500 }); });
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.getByTestId('platform-session-newton-live').getByRole('button', { name: 'Open Newton viewer' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Allow pop-ups' })).toBeVisible(); expect(posts).toBe(0);
 });
@@ -104,7 +106,7 @@ test('viewer contract discards a pending URL after its session stops', async ({ 
     try { await route.fulfill({ json: { status: 'ready', url: 'http://127.0.0.1:1/', backendPid: 12345 } }); }
     catch (error) { if (!route.request().failure()) throw error; }
   });
-  await page.goto('/');
+  await page.goto('/sessions');
   const opened = page.waitForEvent('popup');
   await page.getByTestId('platform-session-newton-live').getByRole('button', { name: 'Open Newton viewer' }).click();
   const tab = await opened;
@@ -190,8 +192,8 @@ test('Workbench viewer contract closes its owned blank tab on unmount', async ({
   const opened = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Open Newton viewer' }).click();
   const tab = await opened;
-  await page.getByRole('link', { name: 'Sessions' }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await page.locator('.workbench-header').getByRole('link', { name: 'Sessions' }).click();
+  await expect(page).toHaveURL(/\/sessions\/?$/);
   await expect.poll(() => tab.isClosed()).toBe(true);
   control.release();
 });
@@ -217,7 +219,7 @@ test('real platform counts follow a session, observer connection, pause and stop
   expect(response.ok()).toBe(true); const { sessionId } = await response.json();
   const observer = await context.newPage();
   try {
-    await page.goto('/');
+    await page.goto('/sessions');
     const row = page.getByTestId(`platform-session-${sessionId}`);
     await expect(row).toContainText('RUNNING'); await expect(row).toContainText('0 connected clients');
     await expect(row.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', `/sessions/${sessionId}`);
@@ -249,7 +251,7 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
   const openedTabs: Page[] = [];
   const observed: Record<string, unknown> = { scope: 'Actual Native public API and UI, no Source instrumentation', sessionId };
   try {
-    await page.goto('/');
+    await page.goto('/sessions');
     const row = page.getByTestId(`platform-session-${sessionId}`);
     await expect(row).toContainText('RUNNING', { timeout: 120_000 });
     const before = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;

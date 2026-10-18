@@ -17,7 +17,7 @@ uv run --frozen python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 
 ```
 
 In another terminal run `pnpm dev`, then open http://127.0.0.1:5173.
-Choose **Synthetic Laboratory** for GPU-free use. Health and API documentation
+Open **Sessions** and choose **Synthetic Laboratory** for GPU-free use. Health and API documentation
 are `/api/v1/health` and `/docs`. The web app proxies `/api` to port 8000;
 `SPATIAL_API_URL` selects another API.
 
@@ -46,8 +46,14 @@ interpolate between published poses.
 
 ## Platform overview
 
-The home page shows managed sessions, running and paused sessions, connected
-observers, and live Newton backend processes. It refreshes every two seconds.
+The home page summarizes sessions and connected observers. **Sessions**
+(`/sessions`) lists managed sessions and provides the temporary launch/join
+form. **Resources · Compute** (`/resources/gpu`) shows host resources and
+managed Newton backends. These pages refresh every two seconds. **Recordings**
+(`/recordings`) links to read-only replay at `/replay/{id}`.
+The sidebar collapses and remembers your preference; below 900 px it becomes
+top navigation. The theme follows your system until you choose Light or Dark.
+Latin IBM Plex fonts and navigation icons ship locally.
 Stopped sessions remain in history; a paused Newton process still counts as a
 live backend. CPU, RAM, GPU utilization and GPU memory describe the gateway
 machine, including its other applications. Missing measurements display as

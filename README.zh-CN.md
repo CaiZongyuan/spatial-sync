@@ -15,7 +15,7 @@ uv run --frozen python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 
 ```
 
 另开终端执行 `pnpm dev`，打开 http://127.0.0.1:5173。
-选择 **Synthetic Laboratory** 可在没有物理引擎的环境中使用。
+打开 **Sessions（会话）**，选择 **Synthetic Laboratory** 可在没有物理引擎的环境中使用。
 健康检查 `/api/v1/health`，API 文档 `/docs`。前端默认代理 API 到 8000，
 `SPATIAL_API_URL` 可指定其他地址。
 
@@ -36,8 +36,13 @@ uv run --frozen --extra simulation --extra usd python -m uvicorn apps.api.app.ma
 | `robot-and-tubes` | newton | Franka FR3、试管与离心机 |
 | `usd-lab` | newton | Y-up USD 导入与视觉回退 |
 
-首页顶部每两秒刷新本平台管理的 session 总数、运行数、暂停数、连接数，以及
-实际存活的 Newton 后端数量。已停止的会话保留在历史中；暂停的 Newton 进程
+首页展示会话与观察者概况；**Sessions**（`/sessions`）提供托管会话列表与临时
+启动、加入入口；**Resources · Compute**（`/resources/gpu`）展示主机资源与托管
+Newton 后端。这些页面每两秒刷新。**Recordings**（`/recordings`）进入录制列表，
+回放地址保持 `/replay/{id}`，仅供读取。
+侧栏可折叠并记住偏好，900 px 及以下变为顶部导航。主题默认跟随系统，也可
+手动选择并保存深浅主题。IBM Plex 拉丁字体与导航图标均随应用本地提供。
+已停止的会话保留在历史中；暂停的 Newton 进程
 仍计入存活后端。CPU、内存、GPU 使用率和显存是网关所在机器的整体用量，
 包含其他应用；无法取得的指标会显示不可用。进程 CPU 以一个逻辑核心为 100%，
 因此可能超过 100%。
