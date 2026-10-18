@@ -387,7 +387,7 @@ A2 + T2 ─► R4 Embodiment / Controller / Robot Model
 
 ## Further Notes
 
-- **议题跟踪器尚未配置。** 本仓库没有 `docs/agents/` 配置，`to-spec` 无法把本文发布为带 `ready-for-agent` 标签的议题。请先运行 `/setup-matt-pocock-skills`（推荐 GitHub Issues 与默认标签），再用 `/to-tickets` 按里程碑把本文与技术规格拆成议题，交给 PM。
+- **议题**：本文发布为 GitHub 父议题 #2；44 张 ticket 是它的子议题 #3–#46（ticket 编号 NN 对应议题 #(NN+2)），阻塞关系用 GitHub 原生依赖表示，全部带 `ready-for-agent`。起始可领取：#3（W0 框架）、#4（命令表）、#29（T0 技术验证）。
 - **UI 原型 v4** 是视觉与交互参照，代码不进入生产。原型中的示例数据有已知不一致：policy@3 显示"训练中"，而第 3 轮作业 job-81d9 仍在排队；成本数据由生成器产生；Haiku 的缓存读取价格是猜测值。
 - **T0 不依赖平台。** 它在 Isaac Lab 工作区按 IsaacLabTutorial 的任务设计移植到 FR3，可以与 W0 / A1 并行；其结论决定 D-01（交互场景是否改回接触抓取）。
 - **单活跃会话**仍然成立：两层评估顺序占用会话，交互操作在评估期间排队；训练视图不是会话。
