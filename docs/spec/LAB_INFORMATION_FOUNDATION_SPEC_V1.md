@@ -63,7 +63,8 @@ Agent 通过 MCP 或 CLI 就能查询实验室状态、控制 Newton 中的机�
 | Lab World | 本规格 | 说明 |
 |---|---|---|
 | Entity | Entity（`entityKey`） | 身份统一为 entityKey |
-| Asset / Equipment Model | EntityType | 声明式定义，带版本 |
+| Asset | Asset（素材，形体） | 见 [素材与场景规格](LAB_ASSETS_AND_SCENES_SPEC_V1.md)；素材经绑定模板实现 EntityType |
+| Equipment Model | EntityType（行为） | 声明式定义，带版本 |
 | Equipment Instance | Entity（绑定了类型） | |
 | Capability | Action | |
 | Runtime Binding | 程序绑定（`program` 字段） | 同一类型可换程序：newton / virtual / 以后 mqtt |
