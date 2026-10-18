@@ -30,7 +30,7 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
     viewport: { width: 1440, height: 960 },
   });
   try {
-    await page.goto('/');
+    await page.goto('/sessions');
     await page
       .getByLabel('Scene', { exact: true })
       .selectOption('falling-boxes');

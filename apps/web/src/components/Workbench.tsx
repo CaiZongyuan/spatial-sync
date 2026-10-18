@@ -167,8 +167,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
   return (
     <main className="workbench">
       <header className="workbench-header">
-        <Link to="/" className="brand" title="Choose scene or session">
-          <span className="brand-mark">S</span> SPATIAL<span>SYNC</span>
+        <Link to="/sessions" className="brand" title="Choose scene or session">
+          <span className="eyebrow">SESSION WORKSPACE</span>
         </Link>
         <div className="workspace-title">
           <strong>{manifest?.sceneName ?? 'Opening session…'}</strong>
@@ -180,8 +180,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <span className="source-pill">
             {manifest?.source.kind ?? 'source'}
           </span>
-          <Link to="/" className="subtle-link">
-            Sessions ↗
+          <Link to={client.readOnly ? '/recordings' : '/sessions'} className="subtle-link">
+            {client.readOnly ? 'Recordings ↗' : 'Sessions ↗'}
           </Link>
           {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
             source={manifest?.source.kind ?? ''} state={state.sessionState} sceneRevision={manifest?.sceneRevision} />}
@@ -193,7 +193,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                   `/sessions/${encodeURIComponent(sessionId)}`,
                   { method: 'DELETE' },
                 );
-                await navigate({ to: '/' });
+                await navigate({ to: '/sessions' });
               } catch (error) {
                 setLoadError((error as Error).message);
               }
@@ -311,7 +311,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             {loadError ??
               'Reading the scene manifest and establishing the transform stream…'}
           </p>
-          <Link to="/">Back to sessions</Link>
+          <Link to="/sessions">Back to sessions</Link>
         </div>
       ) : (
         <div className="workbench-main">

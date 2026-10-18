@@ -19,6 +19,7 @@ export default defineConfig({
     viewport: { width: 1440, height: 960 },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    video: process.env.SPATIAL_E2E_VIDEO === '1' ? 'on' : 'off',
     launchOptions: {
       args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'],
     },

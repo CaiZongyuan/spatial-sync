@@ -1,5 +1,10 @@
 # Gateway platform operations
 
+In the Web app, `/sessions` contains the managed session table, observer
+counts and native viewer buttons. `/resources/gpu` contains gateway host
+measurements and managed backend processes. `/` summarizes the current
+platform. Each page keeps the same two-second platform polling behavior.
+
 `GET /api/v1/platform` returns the last background sample. It never starts a
 probe. One worker samples every two seconds per application lifespan; CPU and
 memory use psutil, and NVIDIA metrics use a one-second bounded `nvidia-smi` query.

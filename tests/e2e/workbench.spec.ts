@@ -20,7 +20,7 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/sessions');
   await page.getByLabel('Scene', { exact: true }).selectOption('lab-demo');
   await page.getByLabel('Source', { exact: true }).selectOption('synthetic');
   await page.getByRole('button', { name: 'Launch workspace' }).click();

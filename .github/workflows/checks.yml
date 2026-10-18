@@ -36,12 +36,12 @@ jobs:
             sleep 0.5
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
-          pnpm test:e2e
+          SPATIAL_E2E_VIDEO=1 pnpm test:e2e
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: check-failure-evidence
+          name: browser-acceptance-evidence
           path: |
             /tmp/spatial-api.log
-            apps/web/playwright-report
-            apps/web/test-results
+            .scratch/viewer-e2e/report
+            .scratch/viewer-e2e/results
