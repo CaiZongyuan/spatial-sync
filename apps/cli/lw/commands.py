@@ -1,0 +1,125 @@
+"""Command declarations shared by argparse and MCP registration.
+
+Bind a command to a GatewayClient method, which owns its HTTP route. Parameters,
+help and result types belong here; neither frontend needs another registration.
+Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
+"""
+
+from dataclasses import dataclass
+from inspect import Parameter
+from typing import Any
+
+
+@dataclass(frozen=True)
+class Argument:
+    name: str
+    flags: tuple[str, ...]
+    annotation: Any
+    help: str
+    default: Any = Parameter.empty
+    client_name: str | None = None
+
+    def add_to(self, parser):
+        options = {"help": self.help}
+        if self.flags[0].startswith("-"):
+            flags = self.flags
+            options["dest"] = self.name
+            if self.default is Parameter.empty:
+                options["required"] = True
+        else:
+            flags = (self.name,)
+            options["metavar"] = self.flags[0]
+            if self.default is not Parameter.empty:
+                options["nargs"] = "?"
+        if self.default is not Parameter.empty:
+            options["default"] = self.default
+        if self.annotation is bool:
+            options["action"] = "store_false" if self.default is True else "store_true"
+        else:
+            # Nullable options retain None when omitted; their supplied value is a string.
+            options["type"] = str if self.annotation == str | None else self.annotation
+        parser.add_argument(*flags, **options)
+
+
+@dataclass(frozen=True)
+class Command:
+    path: tuple[str, ...]
+    help: str
+    method: str
+    arguments: tuple[Argument, ...] = ()
+    output_type: Any = dict[str, Any]
+    mcp_name: str | None = None
+    human_only: bool = False
+    actor: bool = False
+
+    async def invoke(self, client, arguments, *, actor=None):
+        values = {
+            argument.client_name or argument.name: arguments[argument.name] for argument in self.arguments
+        }
+        if actor is not None:
+            values["actor"] = actor
+        return await getattr(client, self.method)(**values)
+
+
+COMMANDS = (
+    Command(
+        path=("ls",),
+        help="List entities, optionally filtered by Catalog type or text query.",
+        method="list_entities",
+        arguments=(
+            Argument("type", ("--type",), str | None, "Catalog type, such as centrifuge/v1", None),
+            Argument("query", ("--query", "-q"), str | None, "Text to find in entity keys or titles", None),
+        ),
+        output_type=list[dict[str, Any]],
+        mcp_name="list_entities",
+    ),
+    Command(
+        path=("show",),
+        help="Read definition, units, action schemas/conditions/risks, state and active calls before acting.",
+        method="describe_entity",
+        arguments=(Argument("key", ("key",), str, "Entity key from the Catalog"),),
+        mcp_name="describe_entity",
+    ),
+    Command(
+        path=("cancel",),
+        help="Request cancellation of an active invocation.",
+        method="cancel_invocation",
+        arguments=(Argument("invocationId", ("id",), str, "Invocation ID", client_name="invocation_id"),),
+        mcp_name="cancel_invocation",
+        actor=True,
+    ),
+    Command(
+        path=("approve",),
+        help="Approve or deny a pending invocation.",
+        method="approve_invocation",
+        arguments=(
+            Argument("invocation_id", ("id",), str, "Invocation ID"),
+            Argument("deny", ("--deny",), bool, "Deny instead of approving", False),
+        ),
+        mcp_name="approve_invocation",
+        human_only=True,
+    ),
+    Command(
+        path=("rec", "ls"),
+        help="List local recordings.",
+        method="recordings",
+        output_type=list[dict[str, Any]],
+    ),
+)
+
+
+def register_cli(commands):
+    groups = {}
+    for command in COMMANDS:
+        parent = commands
+        for index, name in enumerate(command.path[:-1], 1):
+            path = command.path[:index]
+            if path not in groups:
+                group = parent.add_parser(name, help=f"{name} commands")
+                groups[path] = group.add_subparsers(required=True)
+            parent = groups[path]
+        parser = parent.add_parser(command.path[-1], help=command.help, description=command.help)
+        parser.add_argument("--json", action="store_true", help="machine-readable JSON")
+        for argument in command.arguments:
+            argument.add_to(parser)
+        parser.set_defaults(registered_command=command)

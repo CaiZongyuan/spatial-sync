@@ -1,0 +1,262 @@
+{
+  "list_entities": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        }
+      },
+      "title": "list_entitiesArguments"
+    },
+    "output": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "list_entitiesOutput",
+      "type": "object"
+    }
+  },
+  "describe_entity": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "describe_entityArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "describe_entityDictOutput",
+      "type": "object"
+    }
+  },
+  "get_state": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Keys",
+          "type": "array"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "get_stateArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "get_stateDictOutput",
+      "type": "object"
+    }
+  },
+  "invoke_action": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "params": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Params"
+        },
+        "wait": {
+          "default": true,
+          "title": "Wait",
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "default": 120,
+          "title": "Timeoutseconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "action"
+      ],
+      "title": "invoke_actionArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "invoke_actionDictOutput",
+      "type": "object"
+    }
+  },
+  "get_invocation": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "invocationId": {
+          "title": "Invocationid",
+          "type": "string"
+        },
+        "wait": {
+          "default": false,
+          "title": "Wait",
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "default": 120,
+          "title": "Timeoutseconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "invocationId"
+      ],
+      "title": "get_invocationArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "get_invocationDictOutput",
+      "type": "object"
+    }
+  },
+  "cancel_invocation": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "invocationId": {
+          "title": "Invocationid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invocationId"
+      ],
+      "title": "cancel_invocationArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "cancel_invocationDictOutput",
+      "type": "object"
+    }
+  },
+  "wait_until": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "property": {
+          "title": "Property",
+          "type": "string"
+        },
+        "op": {
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value"
+        },
+        "timeoutSeconds": {
+          "default": 120,
+          "title": "Timeoutseconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key",
+        "property",
+        "op",
+        "value"
+      ],
+      "title": "wait_untilArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "wait_untilDictOutput",
+      "type": "object"
+    }
+  },
+  "session_control": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": [
+            "pause",
+            "resume",
+            "reset",
+            "step"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "count": {
+          "default": 1,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "session_controlArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "session_controlDictOutput",
+      "type": "object"
+    }
+  }
+}

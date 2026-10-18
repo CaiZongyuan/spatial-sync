@@ -3,6 +3,7 @@
 import json
 import os
 from collections import defaultdict
+from inspect import Parameter, Signature
 from typing import Any, Literal
 
 from mcp.server import MCPServer
@@ -10,6 +11,7 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .client import GatewayClient, GatewayError, condition_hint
+from .commands import COMMANDS
 
 
 def catalog_instructions(catalog):
@@ -68,18 +70,36 @@ async def checked(request):
         raise ToolError(json.dumps(exc.document(), ensure_ascii=False)) from exc
 
 
+def command_tool(command, client):
+    async def invoke(**arguments):
+        peer = actor(arguments.pop("ctx")) if command.actor else None
+        result = await checked(command.invoke(client, arguments, actor=peer))
+        return with_hint(result) if isinstance(result, dict) and "invocationId" in result else result
+
+    # The official SDK derives validation and wire schemas from this signature.
+    invoke.__name__ = command.mcp_name
+    parameters = [
+        Parameter(
+            argument.name,
+            Parameter.KEYWORD_ONLY,
+            annotation=argument.annotation,
+            default=argument.default,
+        )
+        for argument in command.arguments
+    ]
+    if command.actor:
+        parameters.append(Parameter("ctx", Parameter.KEYWORD_ONLY, annotation=Context))
+    invoke.__signature__ = Signature(parameters, return_annotation=command.output_type)
+    invoke.__annotations__ = {parameter.name: parameter.annotation for parameter in parameters}
+    return invoke
+
+
 async def create_server(client: GatewayClient):
     server = MCPServer("Laboratory", instructions=catalog_instructions(await client.catalog()))
 
-    @server.tool()
-    async def list_entities(type: str | None = None, query: str | None = None) -> list[dict[str, Any]]:
-        """List entities, optionally filtered by Catalog type or text query."""
-        return await checked(client.list_entities(type, query))
-
-    @server.tool()
-    async def describe_entity(key: str) -> dict[str, Any]:
-        """Read definition, units, action schemas/conditions/risks, state and active calls before acting."""
-        return await checked(client.describe_entity(key))
+    for command in COMMANDS:
+        if command.mcp_name and not command.human_only:
+            server.add_tool(command_tool(command, client), name=command.mcp_name, description=command.help)
 
     @server.tool()
     async def get_state(keys: list[str]) -> dict[str, Any]:
@@ -119,11 +139,6 @@ async def create_server(client: GatewayClient):
         return with_hint(
             await checked(client.get_invocation(invocationId, wait=wait, timeout=timeoutSeconds))
         )
-
-    @server.tool()
-    async def cancel_invocation(ctx: Context, invocationId: str) -> dict[str, Any]:
-        """Request cancellation of an active invocation."""
-        return with_hint(await checked(client.cancel_invocation(invocationId, actor=actor(ctx))))
 
     @server.tool()
     async def wait_until(

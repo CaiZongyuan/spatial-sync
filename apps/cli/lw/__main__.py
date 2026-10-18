@@ -7,6 +7,7 @@ import math
 import sys
 
 from .client import GatewayClient, GatewayError, condition_hint, exit_code
+from .commands import register_cli
 
 
 class UsageError(Exception):
@@ -54,11 +55,8 @@ def parser():
         "--json", action="store_true", help="machine-readable JSON (accepted with every command)"
     )
     commands = root.add_subparsers(dest="command", required=True)
+    register_cli(commands)
     commands.add_parser("status", help="session, scene, state and simulation time")
-    listing = commands.add_parser("ls", help="list entities")
-    listing.add_argument("--type")
-    show = commands.add_parser("show", help="definition, state and recent calls")
-    show.add_argument("key")
     get = commands.add_parser("get", help="read entity properties")
     get.add_argument("key")
     get.add_argument("property", nargs="?")
@@ -74,11 +72,6 @@ def parser():
     invocation.add_argument("id")
     invocation.add_argument("--wait", action="store_true")
     invocation.add_argument("--timeout", type=positive, default=120)
-    cancel = commands.add_parser("cancel", help="cancel an invocation")
-    cancel.add_argument("id")
-    approve = commands.add_parser("approve", help="approve or deny a pending invocation")
-    approve.add_argument("id")
-    approve.add_argument("--deny", action="store_true")
     wait = commands.add_parser("wait", help="wait for a property condition")
     for name in ("key", "property", "op", "value"):
         wait.add_argument(name)
@@ -91,8 +84,6 @@ def parser():
         control.add_parser(name)
     step = control.add_parser("step")
     step.add_argument("count", type=int, nargs="?", default=1)
-    recording = commands.add_parser("rec", help="recordings")
-    recording.add_subparsers(dest="recording", required=True).add_parser("ls")
     commands.add_parser("mcp", help="serve the eight generic MCP tools over stdio")
     return root
 
@@ -137,12 +128,10 @@ async def run(args, machine):
             async for message in client.watch(args.key):
                 output(message, machine)
             return 0
-        if command == "status":
+        if declaration := getattr(args, "registered_command", None):
+            result = await declaration.invoke(client, vars(args))
+        elif command == "status":
             result = await client.status()
-        elif command == "ls":
-            result = await client.list_entities(args.type)
-        elif command == "show":
-            result = await client.describe_entity(args.key)
         elif command == "get":
             entity = (await client.get_state([args.key]))["entities"][args.key]
             if args.property is not None and args.property not in entity["values"]:
@@ -158,10 +147,6 @@ async def run(args, machine):
             )
         elif command == "inv":
             result = await client.get_invocation(args.id, wait=args.wait, timeout=args.timeout)
-        elif command == "cancel":
-            result = await client.cancel_invocation(args.id)
-        elif command == "approve":
-            result = await client.approve_invocation(args.id, deny=args.deny)
         elif command == "wait":
             result = await client.wait_until(
                 args.key,
@@ -172,10 +157,8 @@ async def run(args, machine):
             )
         elif command == "session":
             result = await client.session_control(args.action, count=getattr(args, "count", 1))
-        else:
-            result = await client.recordings()
         output(result, machine)
-        return exit_code(result) if command in ("do", "inv", "cancel", "approve", "wait", "session") else 0
+        return exit_code(result) if declaration or command in ("do", "inv", "wait", "session") else 0
 
 
 def main(argv=None):
