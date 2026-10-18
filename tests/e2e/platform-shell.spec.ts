@@ -38,6 +38,8 @@ test('platform navigation, persistent preferences, system theme and local assets
   await expect(page).toHaveURL(/\/recordings$/);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Recordings', exact: true })).toBeVisible();
+  await page.goto('/recordings/');
+  await expect(page.getByRole('heading', { name: 'Recordings', exact: true })).toBeVisible();
   await page.evaluate(async () => {
     await document.fonts.load('400 14px "IBM Plex Sans"');
     await document.fonts.load('400 14px "IBM Plex Mono"');
