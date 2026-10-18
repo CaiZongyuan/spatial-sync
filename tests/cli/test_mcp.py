@@ -88,3 +88,24 @@ async def test_shared_gateway_client_attributes_concurrent_calls_to_each_actual_
         )
         assert first["actor"] == {"kind": "agent", "name": "alpha"}
         assert second["actor"] == {"kind": "agent", "name": "beta"}
+
+
+async def test_generated_cancellation_sends_the_actual_peer_identity_to_http(gateway):
+    actors = []
+
+    async def observe(request):
+        if request.url.path.endswith("/cancel"):
+            actors.append(request.headers["X-Actor"])
+
+    gateway.http.event_hooks["request"].append(observe)
+    server = await create_server(gateway)
+    async with (
+        Client(server, client_info=Implementation(name="alpha", version="1")) as alpha,
+        Client(server, client_info=Implementation(name="beta", version="1")) as beta,
+    ):
+        rejected = await gateway.invoke_action(CENTRIFUGE, "missing")
+        await asyncio.gather(
+            result(alpha, "cancel_invocation", invocationId=rejected["invocationId"]),
+            result(beta, "cancel_invocation", invocationId=rejected["invocationId"]),
+        )
+        assert sorted(actors) == ["agent:alpha", "agent:beta"]
