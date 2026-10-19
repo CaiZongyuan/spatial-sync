@@ -27,6 +27,10 @@ Start an owned API first. E2E defaults to API8000 and isolated web5184.
 `SPATIAL_API_URL` selects another API; `SPATIAL_WEB_URL` selects an existing web
 server. Both must serve the candidate checkout. Include custom browser origins
 in `SPATIAL_ALLOWED_ORIGINS`. CI installs base Python dependencies and Chromium.
+The approval browser journey uses `approval_gateway:app --app-dir tests/fixtures`
+with `SPATIAL_TEST_APPROVAL=1`: it declares `closeLid` high-risk in the test Catalog
+before the real Synthetic host starts. Production device definitions are unchanged.
+Set `SPATIAL_STATE_ROOT` to an owned test directory alongside recordings.
 CLI tests use the installed `lw` entrypoint, actual HTTP, official SDK clients
 and stdio; run `uv sync --frozen --group dev` before the environment serves any
 other consumer. Each test and benchmark owns its recording directory.

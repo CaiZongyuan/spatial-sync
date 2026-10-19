@@ -68,3 +68,51 @@ test('high risk invocation enters inbox, approved work can be revoked before sta
     expect(audit.decisions[0].actor).toEqual({ kind: 'user', name: 'web' });
   } finally { await request.delete(route); }
 });
+
+test('read-only observer sees operator decisions and cannot approve or revoke', async ({ browser, request, baseURL }) => {
+  test.skip(process.env.SPATIAL_TEST_APPROVAL_AUTH !== '1', 'Requires the owned remote-token fixture');
+  const operatorHeaders = { Authorization: 'Bearer issue6-test-operator' };
+  const viewerHeaders = { Authorization: 'Bearer issue6-test-viewer' };
+  const created = await request.post(`${api}/api/v1/sessions`, { headers: operatorHeaders, data: {
+    sceneId: 'lab-demo', source: 'synthetic', approval: { high: 'require' }, continueWithoutObservers: true,
+  } });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const route = `${api}/api/v1/sessions/${sessionId}`;
+  const operator = await browser.newContext({ baseURL, extraHTTPHeaders: operatorHeaders });
+  const viewer = await browser.newContext({ baseURL, extraHTTPHeaders: viewerHeaders });
+  const human = await operator.newPage();
+  const observer = await viewer.newPage();
+  try {
+    const paused = await request.post(`${route}/commands`, { headers: operatorHeaders, data: {
+      type: 'command.request', requestId: 'auth-pause', command: 'pause',
+    } });
+    expect(paused.ok()).toBe(true);
+    const invocation = await (await request.post(`${route}/actions`, { headers: operatorHeaders, data: {
+      requestId: 'auth-approval', entityKey: centrifuge, action: 'closeLid',
+    } })).json();
+    await human.goto('/approvals');
+    await observer.goto('/approvals');
+    const humanCard = human.getByRole('article').filter({ hasText: invocation.invocationId });
+    const observerCard = observer.getByRole('article').filter({ hasText: invocation.invocationId });
+    await expect(observer.getByRole('status')).toContainText('只读访问');
+    await expect(observerCard.getByRole('button', { name: '批准', exact: true })).toBeDisabled();
+    await expect(observerCard.getByRole('button', { name: '驳回', exact: true })).toBeDisabled();
+    await expect(observerCard.getByLabel('备注')).toBeDisabled();
+    await expect(observer.getByTestId('approval-pending-badge')).toHaveText('1');
+    await humanCard.getByLabel('备注').fill('操作员确认，观察者同步可见');
+    await humanCard.getByRole('button', { name: '批准', exact: true }).click();
+    await expect(observerCard).toContainText('已批准');
+    await expect(observerCard).toContainText('操作员确认，观察者同步可见');
+    await expect(observerCard.getByRole('button', { name: '撤销', exact: true })).toBeDisabled();
+    await expect(observer.getByTestId('approval-pending-badge')).toHaveCount(0);
+    await humanCard.getByRole('button', { name: '撤销', exact: true }).click();
+    await expect(observerCard).toContainText('已撤销');
+    const value = await (await request.get(`${route}/invocations/${invocation.invocationId}`, { headers: operatorHeaders })).json();
+    expect(value.status).toBe('cancelled');
+    expect(value.startedSimTime).toBeNull();
+  } finally {
+    await operator.close(); await viewer.close();
+    await request.delete(route, { headers: operatorHeaders });
+  }
+});

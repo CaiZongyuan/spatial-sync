@@ -129,7 +129,7 @@ async def run(args, machine):
                 output(message, machine)
             return 0
         if declaration := getattr(args, "registered_command", None):
-            if declaration.human_only:
+            if declaration.method == "approve_invocation":
                 if machine or not sys.stdin.isatty() or not sys.stdout.isatty():
                     raise GatewayError(
                         "approval_requires_human: use an interactive terminal without --json",

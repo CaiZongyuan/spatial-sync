@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { createContext, useEffect, useState } from 'react';
 import { request } from './api';
 
 export type ApprovalActor = { kind: 'user' | 'cli' | 'agent'; name: string };
@@ -17,14 +17,17 @@ export interface ApprovalRecord {
   canRevoke: boolean;
   invocation: { status: string; startedSimTime: number | null } | null;
 }
-export interface ApprovalInbox { approvals: ApprovalRecord[]; pendingCount: number }
+export interface ApprovalInbox { approvals: ApprovalRecord[]; pendingCount: number; role: 'operator' | 'viewer' }
+export interface ApprovalInboxState { inbox?: ApprovalInbox; error?: string }
+export const ApprovalInboxContext = createContext<ApprovalInboxState>({});
 
 const changed = 'lab:approvals-changed';
 
-export function useApprovalInbox() {
+export function useApprovalInbox(enabled = true) {
   const [inbox, setInbox] = useState<ApprovalInbox>();
   const [error, setError] = useState<string>();
   useEffect(() => {
+    if (!enabled) return;
     let disposed = false;
     let controller: AbortController | undefined;
     const refresh = async () => {
@@ -45,7 +48,7 @@ export function useApprovalInbox() {
       disposed = true; clearInterval(interval); controller?.abort();
       window.removeEventListener(changed, refresh);
     };
-  }, []);
+  }, [enabled]);
   return { inbox, error };
 }
 

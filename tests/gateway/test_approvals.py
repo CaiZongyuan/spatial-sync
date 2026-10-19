@@ -189,3 +189,21 @@ def test_conflicting_human_decisions_have_one_winner(tmp_path, monkeypatch):
         record = client.get(approval).json()
         assert len(record["decisions"]) == 1
         assert record["status"] in ("approved", "denied")
+
+
+def test_inbox_reports_actual_readonly_role_and_denies_viewer_decisions(tmp_path, monkeypatch):
+    risky_catalog(tmp_path, monkeypatch)
+    settings = Settings(remote=True, operator_token="test-operator", viewer_token="test-viewer")
+    operator = {"Authorization": "Bearer test-operator"}
+    viewer = {"Authorization": "Bearer test-viewer"}
+    with TestClient(create_app(settings), headers=operator) as client:
+        _, route = create(client, approval={"high": "require"})
+        _, approval = pending(client, route)
+        inbox = client.get("/api/v1/approvals", headers=viewer).json()
+        assert inbox["role"] == "viewer" and inbox["pendingCount"] == 1
+        assert client.get("/api/v1/approvals").json()["role"] == "operator"
+        response = client.post(approval + "/decision", headers=viewer, json={"decision": "approve"})
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "unauthorized"
+        assert client.get(approval).json()["status"] == "pending"
+        assert client.get(approval).json()["decisions"] == []

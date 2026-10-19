@@ -49,6 +49,7 @@ def install_approval_routes(app, manager, role_for):
 
     @app.get("/api/v1/approvals")
     async def approvals(
+        request: Request,
         status: str | None = None,
         subject: Subject | None = None,
         sessionId: str | None = None,
@@ -70,6 +71,7 @@ def install_approval_routes(app, manager, role_for):
                 )
             ][:limit],
             "pendingCount": sum(record.status == "pending" for record in records),
+            "role": role_for(request.headers),
         }
 
     @app.get("/api/v1/approvals/{approval_id}")
