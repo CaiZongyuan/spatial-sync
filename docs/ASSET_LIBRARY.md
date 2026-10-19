@@ -6,6 +6,7 @@ Use the installed CLI without an active session:
 lw asset ls --kind robot --json
 lw asset show robot/fr3@1 --json
 lw asset import ./my-asset --json
+lw asset validate robot/fr3@1 --json
 ```
 
 Built-in assets live under `library/assets/`; imports go to `LW_LIBRARY`
@@ -50,10 +51,26 @@ or `/api/v1/library/imports/{id}`. List assets at `/api/v1/library/assets`; deta
 at `/api/v1/library/assets/{kind}/{name}/{rev}` supplies indexed file URLs.
 Only indexed package files are served through `/api/v1/library/files`.
 
-The gateway generates `validation.json` with S1 schema results. Remaining
-structure and physics checks have **not run**. A supplied report cannot claim
+The gateway generates `validation.json` with S1–S8 structural results using a
+bounded CPU-only USD worker. It checks stage units/identity, provenance and
+license hashes, registered types and Config references, visual budgets and
+confined USD dependencies. A 500,000-triangle or 4096-pixel texture boundary is
+valid. Physics checks have **not run** and remain explicit warnings. A supplied report cannot claim
 passes: omit `validation.json` from a new package. An exact exported version,
 including its generated report, can be imported again and deduplicates.
+
+The six completeness items describe collision geometry, mass and inertia, PBR
+visuals, original license/source hashes, named joints/sites and implemented types.
+Estimated mass is a warning. An incomplete asset remains inspectable; malformed
+metadata is rejected before a revision is allocated. A structurally failed
+package is imported with its failed report.
+
+`lw asset validate kind/name@rev` (or
+`POST /api/v1/library/assets/{kind}/{name}/{rev}/validate`) appends a report under
+`SPATIAL_STATE_ROOT`, keyed by subject and published content hash. The embedded
+report and all published bytes stay unchanged. The latest matching report is
+read after a restart. CLI validation exits 3 when any check fails. The versioned
+report schema is [validation.schema.json](../packages/library/schemas/validation.schema.json).
 
 `contentHash` covers every published file, including the generated report:
 relative paths sorted lexically, each UTF-8 path plus a zero byte followed by
@@ -67,7 +84,7 @@ The original URDF mimic relationship is retained as metadata; a USD mimic drive
 has not been authored.
 
 The command table also exposes generic `library_search`, `library_describe` and
-`library_import` MCP tools. Search defaults to scenes; use `resource="assets"`,
+`library_import` and `library_validate` MCP tools. Search defaults to scenes; use `resource="assets"`,
 `kind`, `query` or `gaps` for assets. `library_import.directory` names a directory
 on the MCP client's filesystem. CLI equivalents include `lw library search`
 and `lw library describe`.

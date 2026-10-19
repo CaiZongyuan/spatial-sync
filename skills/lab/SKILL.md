@@ -41,6 +41,8 @@ logs and model context.
 
    Launch and subsequent device operations follow lab-operate. Preserve sessions
    owned by other work; do not stop one just to obtain the single active slot.
+4. Use [lab-library](../lab-library/SKILL.md) to find or import assets/scenes,
+   inspect completeness and validation, or revalidate an immutable version.
 
 The following workflows are planned, not included in this release. Check the
 shipped skill list before using a newer workflow; report unavailable capabilities
@@ -48,7 +50,6 @@ instead of inventing its commands or calling an assumed API.
 
 | Workflow | Skill when delivered |
 | --- | --- |
-| Import assets/scenes, inspect validation and gaps | lab-library |
 | Interview and submit a training plan | lab-training-plan |
 | Run approved training, evaluate and request promotion | lab-train-evaluate |
 | Build and calibrate evaluations and their reference baseline | lab-eval-build |

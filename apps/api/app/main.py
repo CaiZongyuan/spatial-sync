@@ -161,7 +161,7 @@ def create_app(
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
-    install_library_routes(app, library_assets)
+    install_library_routes(app, library_assets, lambda: manager.library)
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):

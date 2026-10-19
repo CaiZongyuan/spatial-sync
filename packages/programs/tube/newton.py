@@ -1,5 +1,7 @@
 """Tube properties are derived from staged physical poses, never action intent."""
 
+from pydantic import Field
+
 from packages.info.program import ProgramConfig
 
 from .facts import tube_location, upright
@@ -10,7 +12,7 @@ class TubeProgram:
 
     class Config(ProgramConfig):
         robots: list[str]
-        locationSites: list[str]
+        locationSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
 
     def init(self, ctx):
         self.body = ctx.physics.bind_body(ctx.key)

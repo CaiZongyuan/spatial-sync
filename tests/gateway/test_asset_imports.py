@@ -18,7 +18,7 @@ from packages.library.scenes import BUILTIN_ROOT
 def package_files():
     return {
         "asset.yaml": b"id: labware/test-tube\nkind: labware\ntitle: Test tube\nstage: asset.usda\n",
-        "asset.usda": (b'#usda 1.0\n(defaultPrim = "Asset"; upAxis = "Z"; metersPerUnit = 1)\n'
+        "asset.usda": (b'#usda 1.0\n(defaultPrim = "Asset"\n upAxis = "Z"\n metersPerUnit = 1)\n'
                        b'def Xform "Asset" {}\n'),
         "LICENSE": b"Fixture created for testing; CC0-1.0\n",
     }
@@ -93,9 +93,11 @@ def test_import_revision_dedup_restart_full_hash_and_indexed_files(tmp_path):
         assert second["assetVersion"] == "labware/test-tube@2"
         assert client.get("/api/v1/library/assets/labware/test-tube").json()["id"] == second["assetVersion"]
         assert "visual" in detail["gaps"] and "physics_validation" in detail["gaps"]
-        assert [check["id"] for check in detail["validation"]["checks"] if check["status"] == "pass"] == [
-            "S1"
-        ]
+        checks = {check["id"]: check for check in detail["validation"]["checks"]}
+        assert {f"S{i}" for i in range(1, 9)}.issubset(checks)
+        assert checks["S1"]["status"] == checks["S2"]["status"] == checks["S7"]["status"] == "pass"
+        assert checks["S4"]["status"] == "fail"  # Original license exists; provenance is deliberately absent.
+        assert not any(check["tier"] == "physics" and check["status"] == "pass" for check in checks.values())
     with TestClient(create_app()) as client:
         assert upload(client).json()["assetVersion"] == "labware/test-tube@1"
         assert client.get("/api/v1/library/imports/" + job["id"]).json() == job
@@ -351,12 +353,12 @@ def test_populated_destination_junction_added_after_startup_is_rejected_before_r
 
 
 def test_upload_limits_and_duplicate_entries_are_schema_errors(tmp_path, monkeypatch):
-    import packages.library.assets as assets
+    import packages.library.archive as archive
 
     with TestClient(create_app()) as client:
         duplicate = tarfile.TarInfo("LICENSE")
         assert upload(client, extra=duplicate).status_code == 422
-        monkeypatch.setattr(assets, "MAX_PACKAGE_BYTES", 1)
+        monkeypatch.setattr(archive, "MAX_PACKAGE_BYTES", 1)
         assert upload(client).status_code == 422
         assert not (tmp_path / "user-library/assets").exists()
 

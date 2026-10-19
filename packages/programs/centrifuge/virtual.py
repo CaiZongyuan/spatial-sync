@@ -14,7 +14,9 @@ class CentrifugeProgram:
     id, type, tick_priority = "centrifuge.virtual", "centrifuge/v1", 30
 
     class Config(ProgramConfig):
-        slotSites: list[str] = Field(min_length=4, max_length=4)
+        slotSites: list[str] = Field(
+            min_length=4, max_length=4, json_schema_extra={"spatialReference": "site"}
+        )
         tubes: list[str]
         visualRpmCap: float = Field(default=60, gt=0)
 
