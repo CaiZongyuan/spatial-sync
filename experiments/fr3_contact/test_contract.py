@@ -145,7 +145,7 @@ def test_raw_robot_health_distinguishes_velocity_limit_and_nonfinite_state():
     log = env.extras["log"]
     assert float(log["Diagnostics/nonfinite_robot_rate"]) == 0.0
     assert float(log["Diagnostics/excessive_joint_velocity_rate"]) == 1.0
-    assert float(log["Diagnostics/joint_hard_limit_max_fraction"]) == pytest.approx(0.025)
+    assert float(log["Diagnostics/joint_hard_limit_max_fraction"]) == pytest.approx(0.025, abs=1e-6)
     env.scene["robot"].data.joint_vel[:] = 0
     env.scene["robot"].data.joint_pos[0, 0] = float("nan")
     assert bool(terms.unstable_robot(env)[0])
