@@ -5,9 +5,9 @@ on:
   pull_request:
 
 jobs:
-  contract-gateway-viewer:
+  contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -20,13 +20,35 @@ jobs:
       - run: uv sync --frozen --group dev
       - run: pnpm install --frozen-lockfile
       - run: uv run --frozen python -m pytest tests/contract tests/unit tests/gateway tests/cli -q
-      - run: uv run --frozen ruff check apps/api apps/cli tests/gateway tests/cli
+      - run: uv run --frozen ruff check apps packages tools tests
       - run: pnpm protocol:check
       - run: pnpm test:protocol:ts
       - run: pnpm test:web
       - run: pnpm build
+
+  browser-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: uv sync --frozen --group dev
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
+        env:
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/2
+          SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
         run: |
           uv run --frozen python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
           SPATIAL_API_PID=$!
@@ -36,12 +58,26 @@ jobs:
             sleep 0.5
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
-          SPATIAL_E2E_VIDEO=1 pnpm test:e2e
+          SPATIAL_E2E_VIDEO=1 pnpm test:e2e --shard="$PLAYWRIGHT_SHARD"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-acceptance-evidence
+          name: browser-acceptance-evidence-${{ matrix.shard }}
           path: |
             /tmp/spatial-api.log
             .scratch/viewer-e2e/report
             .scratch/viewer-e2e/results
+
+  contract-gateway-viewer:
+    if: always()
+    needs: [contracts, browser-acceptance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require every contract and browser shard
+        env:
+          CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          BROWSER_RESULT: ${{ needs.browser-acceptance.result }}
+        run: |
+          test "$CONTRACTS_RESULT" = success
+          test "$BROWSER_RESULT" = success

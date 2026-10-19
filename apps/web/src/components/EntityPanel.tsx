@@ -267,12 +267,14 @@ export function EntityPanel({
   disabled,
   disabledReason,
   onAction,
+  compact = false,
 }: {
   store: InfoStore;
   binding: EntityBinding;
   definition: EntityType;
   disabled: boolean;
   disabledReason?: string;
+  compact?: boolean;
   onAction: (
     key: string,
     action: string,
@@ -287,7 +289,7 @@ export function EntityPanel({
       <h3>{definition.title}</h3>
       <code className="entity-key">{binding.key}</code>
       <p className="field-note">{definition.description}</p>
-      <section className="inspector-section">
+      {!compact && <section className="inspector-section">
         <div className="section-label">
           PROPERTIES <span>rev {state?.rev ?? '—'}</span>
         </div>
@@ -320,7 +322,7 @@ export function EntityPanel({
             );
           })}
         </dl>
-      </section>
+      </section>}
       <section className="inspector-section">
         <div className="section-label">
           ACTIONS <span>{Object.keys(definition.actions).length}</span>
@@ -337,7 +339,7 @@ export function EntityPanel({
           />
         ))}
       </section>
-      <section className="inspector-section">
+      {!compact && <section className="inspector-section">
         <div className="section-label">RECENT INVOCATIONS</div>
         {invocations.length ? (
           invocations.slice(0, 5).map((invocation) => (
@@ -351,7 +353,7 @@ export function EntityPanel({
         ) : (
           <p className="field-note">No invocations yet.</p>
         )}
-      </section>
+      </section>}
     </div>
   );
 }
