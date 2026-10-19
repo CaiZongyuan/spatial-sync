@@ -6,6 +6,7 @@ import './styles.css';
 import './shell.css';
 import './overview.css';
 import './scenes.css';
+import './assets.css';
 
 const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' {
