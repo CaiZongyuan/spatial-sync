@@ -148,6 +148,73 @@ test('theme changes during an asset capture retain the complete model in one can
   } finally { await page.evaluate(() => Reflect.get(window, '__assetFrames')(true)).catch(() => {}); }
 });
 
+test('asset navigation adapts above content at narrow widths with either sidebar preference', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const measurements = [];
+  for (const path of ['/assets', '/assets/robot/fr3/1']) {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto(path);
+    for (const collapsed of [false, true]) {
+      await page.setViewportSize({ width: 1600, height: 900 });
+      if ((await page.locator('.platform-shell').getAttribute('class'))?.includes('is-collapsed') !== collapsed)
+        await page.getByRole('button', { name: collapsed ? 'Collapse sidebar' : 'Expand sidebar', exact: true }).click();
+      for (const width of [400, 900, 1600]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        const layout = await page.evaluate(() => {
+          const rect = (selector: string) => {
+            const bounds = document.querySelector(selector)!.getBoundingClientRect();
+            return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, right: bounds.right, bottom: bounds.bottom };
+          };
+          const nav = document.querySelector('.platform-sidebar > nav')!;
+          return { sidebar: rect('.platform-sidebar'), nav: rect('.platform-sidebar > nav'), brand: rect('.platform-brand'),
+            topbar: rect('.page-topbar'), content: rect('.platform-page'), heading: rect('.asset-page-heading'),
+            navOverflow: getComputedStyle(nav).overflowX, pageWidth: document.documentElement.scrollWidth };
+        });
+        expect(layout.pageWidth).toBeLessThanOrEqual(width);
+        if (width <= 900) {
+          expect(layout.nav.height).toBeCloseTo(40, 0);
+          expect(layout.nav.width).toBeCloseTo(width - 32, 0);
+          expect(layout.navOverflow).toBe('auto');
+          expect(layout.brand.bottom).toBeLessThanOrEqual(layout.nav.y);
+          expect(layout.sidebar.bottom).toBeLessThanOrEqual(layout.content.y);
+          expect(layout.nav.bottom).toBeLessThanOrEqual(layout.topbar.y);
+          await expect(page.getByRole('button', { name: /sidebar$/, exact: false })).toBeHidden();
+        } else {
+          expect(layout.sidebar.width).toBe(collapsed ? 44 : 212);
+          expect(layout.sidebar.right).toBeLessThan(layout.content.x);
+          expect(layout.brand.right).toBeLessThan(layout.topbar.x);
+        }
+        expect(layout.topbar.bottom).toBeLessThanOrEqual(layout.heading.y);
+        const navigation = page.getByRole('navigation', { name: 'Main navigation' });
+        const links = [];
+        for (const link of await navigation.getByRole('link').all()) {
+          await link.scrollIntoViewIfNeeded();
+          await link.focus();
+          await expect(link).toBeFocused();
+          const reachable = await link.evaluate(element => {
+            const bounds = element.getBoundingClientRect();
+            const nav = element.parentElement!.getBoundingClientRect();
+            return { label: element.getAttribute('aria-label'), hit: element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)),
+              withinNav: bounds.x >= nav.x && bounds.right <= nav.right && bounds.y >= nav.y && bounds.bottom <= nav.bottom };
+          });
+          expect(reachable.hit).toBe(true);
+          expect(reachable.withinNav).toBe(true);
+          links.push(reachable);
+        }
+        measurements.push({ path, width, collapsed, ...layout, links });
+        await page.screenshot({ path: testInfo.outputPath(`asset-layout-${path === '/assets' ? 'library' : 'detail'}-${width}-${collapsed ? 'collapsed' : 'expanded'}.png`) });
+        await navigation.getByRole('link', { name: 'Recordings', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Recordings', exact: true })).toBeVisible();
+        await page.goBack();
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        expect(new URL(page.url()).pathname.replace(/\/$/, '')).toBe(path);
+      }
+    }
+  }
+  await writeFile(testInfo.outputPath('asset-layout-receipt.json'), JSON.stringify(measurements, null, 2));
+});
+
 test('real imported gap package exposes its provenance, license and actual referencing scene', async ({ page, request }, testInfo) => {
   const directory = testInfo.outputPath('gap-package');
   await gapPackage(directory);

@@ -1,4 +1,5 @@
 /* Asset pages follow the original instrument-console frame and library figures. */
+@media(min-width:901px){
 .platform-shell:has(.asset-page){max-width:1520px;margin:0 auto;padding:28px 16px 128px;gap:36px;grid-template-columns:212px minmax(0,1fr)}
 .platform-shell.is-collapsed:has(.asset-page){grid-template-columns:44px minmax(0,1fr)}
 .platform-shell:has(.asset-page) .platform-sidebar{top:24px;height:calc(100dvh - 48px);border:0;background:none}
@@ -11,6 +12,7 @@
 .platform-shell:has(.asset-page) .nav-icon{width:16px;height:16px}
 .platform-shell:has(.asset-page) .sidebar-footer{margin-top:24px;padding:16px 0 0;background:none}
 .platform-shell:has(.asset-page) .page-topbar{padding:0 0 16px;border-bottom:1px solid var(--line);margin-bottom:26px;min-height:39px}
+}
 .asset-page{min-width:0}
 .asset-page-heading{margin-bottom:24px}
 .asset-page-heading h1{font:400 30px/1.15 var(--serif);letter-spacing:-.01em;margin:0;overflow-wrap:anywhere}
@@ -102,5 +104,5 @@
 .asset-reference-warning{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;color:var(--warn)}
 .asset-reference-warning p{margin:0 0 6px}.asset-reference-warning ul{padding-left:16px;margin:0}.asset-reference-warning li{margin-top:8px;overflow-wrap:anywhere}.asset-reference-warning li span{display:block;color:var(--muted)}
 @media(max-width:1100px){.asset-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.asset-detail-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.platform-shell:has(.asset-page){grid-template-columns:44px minmax(0,1fr);gap:16px;padding:20px 16px 64px}.asset-filters .asset-search{margin-left:0}.asset-filters input[type=search]{max-width:180px}.asset-page-heading h1{font-size:26px}.asset-completeness li{grid-template-columns:1fr 76px}.asset-completeness small{grid-column:1/-1}}
+@media(max-width:760px){.asset-filters .asset-search{margin-left:0}.asset-filters input[type=search]{max-width:180px}.asset-page-heading h1{font-size:26px}.asset-completeness li{grid-template-columns:1fr 76px}.asset-completeness small{grid-column:1/-1}}
 @media(max-width:560px){.asset-card-grid{grid-template-columns:1fr}}
