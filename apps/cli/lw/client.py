@@ -17,6 +17,11 @@ TERMINAL = {"succeeded", "rejected", "failed", "cancelled"}
 INVOCATION_STATES = TERMINAL | {"accepted", "running", "pending_approval"}
 
 
+def plan_fields(plan_id, step_id, revision):
+    return {name: value for name, value in {"planId": plan_id, "stepId": step_id,
+                                           "planRevision": revision}.items() if value is not None}
+
+
 def condition_hint(invocation):
     error = invocation.get("error") or {}
     failed = error.get("details", {}).get("failed", [])
@@ -204,7 +209,8 @@ class GatewayClient:
     async def get_state(self, keys):
         return await self.request("GET", await self.route() + "/state", params={"keys": ",".join(keys)})
 
-    async def invoke_action(self, key, action, params=None, *, wait=True, timeout=120, actor="cli:lw"):
+    async def invoke_action(self, key, action, params=None, *, wait=True, timeout=120, actor="cli:lw",
+                            planId=None, stepId=None, planRevision=None):
         return await self.request(
             "POST",
             await self.route() + "/actions",
@@ -217,6 +223,7 @@ class GatewayClient:
                 "params": params or {},
                 "wait": wait,
                 "timeoutSeconds": timeout,
+                **plan_fields(planId, stepId, planRevision),
             },
         )
 
@@ -252,10 +259,12 @@ class GatewayClient:
             json={"decision": "deny" if deny else "approve", "note": note},
         )
 
-    async def wait_until(self, key, prop, op, value, *, timeout=120):
+    async def wait_until(self, key, prop, op, value, *, timeout=120, actor="cli:lw",
+                         planId=None, stepId=None, planRevision=None, by=None):
         return await self.request(
             "GET",
             await self.route() + "/wait",
+            actor=actor,
             timeout=timeout + 10,
             params={
                 "key": key,
@@ -263,8 +272,36 @@ class GatewayClient:
                 "op": op,
                 "value": json.dumps(value, ensure_ascii=False, allow_nan=False),
                 "timeoutSeconds": timeout,
+                **({"by": by} if by is not None else {}),
+                **plan_fields(planId, stepId, planRevision),
             },
         )
+
+    async def check_condition(self, key, prop, op, value, *, actor="cli:lw",
+                              planId=None, stepId=None, planRevision=None, by=None):
+        return await self.request("POST", await self.route() + "/check", actor=actor, json={
+            "key": key, "property": prop, "op": op, "value": value,
+            **({"by": by} if by is not None else {}),
+            **plan_fields(planId, stepId, planRevision),
+        })
+
+    async def plan_create(self, document, *, actor="cli:lw"):
+        session_id = (await self.route()).rsplit("/", 1)[-1]
+        return await self.request("POST", "/api/v1/plans", actor=actor,
+                                  json={**document, "sessionId": session_id})
+
+    async def plan_revise(self, id, document, *, actor="cli:lw"):
+        session_id = (await self.route()).rsplit("/", 1)[-1]
+        return await self.request("POST", "/api/v1/plans/" + quote(id, safe="") + "/revisions", actor=actor,
+                                  json={**document, "sessionId": session_id})
+
+    async def plan_show(self, id, revision=None):
+        return await self.request("GET", "/api/v1/plans/" + quote(id, safe=""),
+                                  params={"revision": revision} if revision is not None else {})
+
+    async def plan_list(self, status=None):
+        return (await self.request("GET", "/api/v1/plans",
+                                   params={"status": status} if status is not None else {}))["plans"]
 
     async def session_control(self, action, *, count=1, actor="cli:lw"):
         return await self.request(
@@ -311,6 +348,8 @@ def exit_code(document):
             return 3
         if document.get("timedOut"):
             return 4
+        if document.get("satisfied") is False:
+            return 2
         status = document.get("status")
         if status == "rejected" or document.get("ack", {}).get("status") == "rejected":
             return 2

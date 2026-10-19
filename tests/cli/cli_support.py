@@ -24,6 +24,11 @@ TOOLS = {
     "cancel_invocation",
     "wait_until",
     "session_control",
+    "plan_create",
+    "plan_revise",
+    "plan_show",
+    "plan_list",
+    "check_condition",
 }
 
 
