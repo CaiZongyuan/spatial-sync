@@ -101,7 +101,7 @@ def install_approval_routes(app, manager, role_for):
         pipeline = await session.action_pipeline()
         try:
             if record.subject == "plan":
-                manager.plans.decide(record, body.decision, session, actor, body.note)
+                await manager.plans.decide(record, body.decision, session, actor, body.note)
                 return document(get_record(approval_id))
             if body.decision == "revoke":
                 await pipeline.revoke_approval(record.subjectId, role, actor, body.note)

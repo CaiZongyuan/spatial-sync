@@ -126,14 +126,15 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
-        manager.approvals.startup()
-        manager.plans.startup()
-        # Resolve the operator's roots at startup, before any owned workers or recordings.
-        manager.library
-        library_assets.startup()
-        await recordings.startup()
-        await monitor.start()
         try:
+            manager.approvals.startup()
+            manager.plans.startup()
+            await manager.plans.flush()
+            # Resolve the operator's roots at startup, before any owned workers or recordings.
+            manager.library
+            library_assets.startup()
+            await recordings.startup()
+            await monitor.start()
             yield
         finally:
             try:

@@ -4,15 +4,18 @@ import json
 import os
 from collections import defaultdict
 from inspect import Parameter, Signature
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent
+from pydantic import Field
 
 from .client import GatewayClient, GatewayError, condition_hint
 from .commands import COMMANDS
+
+Threshold = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 
 
 def catalog_instructions(catalog):
@@ -174,21 +177,26 @@ async def create_server(client: GatewayClient):
         planId: str | None = None,
         stepId: int | None = None,
         planRevision: int | None = None,
+        by: Threshold | None = None,
     ) -> dict[str, Any]:
         """Wait for a Catalog property condition; a timed-out wait returns satisfied=false."""
         return await checked(client.wait_until(
             key, property, op, value, timeout=timeoutSeconds, actor=actor(ctx),
             planId=planId, stepId=stepId, planRevision=planRevision,
+            by=by,
         ))
 
     @server.tool()
     async def check_condition(
         ctx: Context, key: str, property: str, op: str, value: Any,
         planId: str | None = None, stepId: int | None = None, planRevision: int | None = None,
+        by: Threshold | None = None,
     ) -> dict[str, Any]:
         """Assert a property condition, optionally completing an operation-plan step."""
-        return await checked(client.check_condition(key, property, op, value, actor=actor(ctx),
-                                                    planId=planId, stepId=stepId, planRevision=planRevision))
+        return await checked(client.check_condition(
+            key, property, op, value, actor=actor(ctx),
+            planId=planId, stepId=stepId, planRevision=planRevision, by=by,
+        ))
 
     @server.tool()
     async def session_control(

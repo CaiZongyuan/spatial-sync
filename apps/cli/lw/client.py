@@ -260,7 +260,7 @@ class GatewayClient:
         )
 
     async def wait_until(self, key, prop, op, value, *, timeout=120, actor="cli:lw",
-                         planId=None, stepId=None, planRevision=None):
+                         planId=None, stepId=None, planRevision=None, by=None):
         return await self.request(
             "GET",
             await self.route() + "/wait",
@@ -272,14 +272,16 @@ class GatewayClient:
                 "op": op,
                 "value": json.dumps(value, ensure_ascii=False, allow_nan=False),
                 "timeoutSeconds": timeout,
+                **({"by": by} if by is not None else {}),
                 **plan_fields(planId, stepId, planRevision),
             },
         )
 
     async def check_condition(self, key, prop, op, value, *, actor="cli:lw",
-                              planId=None, stepId=None, planRevision=None):
+                              planId=None, stepId=None, planRevision=None, by=None):
         return await self.request("POST", await self.route() + "/check", actor=actor, json={
             "key": key, "property": prop, "op": op, "value": value,
+            **({"by": by} if by is not None else {}),
             **plan_fields(planId, stepId, planRevision),
         })
 

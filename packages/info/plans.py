@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 from packages.info.approvals import ApprovalConflict
 from packages.info.conditions import evaluate_conditions, validate_conditions
 from packages.info.invocations import TERMINAL
+from packages.info.plan_journal import JournalError, PlanJournal
 from packages.info.schema_subset import json_equal
 from packages.protocol.schema import Actor, EntityEvent, OperationPlan, PlanFullUpdate, PlanStepUpdate
 
@@ -36,6 +37,10 @@ class StoredPlan(BaseModel):
 
 def step_content(step):
     return step.model_dump(mode="json", exclude={"status"}, exclude_none=True)
+
+
+def condition_semantics(condition):
+    return {key: value for key, value in condition.items() if key != "message"}
 
 
 def validate_plan(document, session, *, plan_id=None, revision=1):
@@ -101,6 +106,7 @@ class PlanStore:
         self.bindings: dict[str, tuple[str, int, int]] = {}
         self.requests = {}
         self._started = False
+        self.journal = PlanJournal(path)
 
     def startup(self):
         if self._started:
@@ -141,13 +147,38 @@ class PlanStore:
         self.history.setdefault(record.plan.id, {})[record.plan.revision] = record
 
     def _save(self, record):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(record.model_dump_json() + "\n")
+        try:
+            self.journal.append(record.model_dump_json())
+        except JournalError:
+            # Keep actual observed state; all future plan grants and success barriers fail closed.
+            pass
         self._retain(record)
 
+    def require_started(self):
+        if not self._started:
+            raise PlanError("plan_unavailable", "Plan history has not finished startup", status=503)
+
+    def require_writable(self):
+        if self.journal.error:
+            raise PlanError("plan_persistence_unavailable", "Plan history could not be saved", status=503)
+
+    async def flush(self):
+        try:
+            await self.journal.flush()
+        except JournalError as exc:
+            raise PlanError(
+                "plan_persistence_unavailable", "Plan history could not be saved", status=503
+            ) from exc
+
+    async def close(self):
+        try:
+            await self.journal.close()
+        except JournalError:
+            # The sticky error remains observable; cleanup must still release the owned writer.
+            pass
+
     def get(self, plan_id, revision=None):
-        self.startup()
+        self.require_started()
         record = (
             self.history.get(plan_id, {}).get(revision) if revision is not None else self.records.get(plan_id)
         )
@@ -169,6 +200,7 @@ class PlanStore:
             "approvalMode": "human" if record.humanRequired else "auto",
             "stepResults": deepcopy(record.results),
             "changes": deepcopy(record.changes),
+            "persistence": self.journal.status,
         }
 
     @staticmethod
@@ -193,8 +225,9 @@ class PlanStore:
                 "invalid_plan_reference", "Plan belongs to another session, scene revision or epoch"
             )
 
-    def create(self, document, session, actor, *, plan_id=None):
-        self.startup()
+    async def create(self, document, session, actor, *, plan_id=None):
+        self.require_started()
+        self.require_writable()
         previous = self.get(plan_id) if plan_id else None
         if previous:
             self.require_target(previous, session)
@@ -269,6 +302,7 @@ class PlanStore:
             record.approvalId = approval.approvalId
         self._save(record)
         self._full(record, session)
+        await self.flush()
         return record
 
     def claim_request(self, session, request_id, context):
@@ -278,10 +312,11 @@ class PlanStore:
             raise PlanError("idempotency_conflict", "This request ID already belongs to another plan context")
         self.requests[key] = identity
 
-    def action(self, session, invocation, context=None):
+    async def action(self, session, invocation, context=None):
         """Return a server-owned one-use approval grant, never a client approval bit."""
         record, step = None, None
         if context:
+            self.require_writable()
             record = self.get(context["planId"])
             self.require_target(record, session)
             if context.get("planRevision", record.plan.revision) != record.plan.revision:
@@ -349,11 +384,19 @@ class PlanStore:
                     },
                 )
             )
+        if exact:
+            await self.flush()
+            current = self.get(record.plan.id, record.plan.revision)
+            self.require_target(current, session)
+            if not self.approved(current):
+                raise PlanError("plan_not_approved", "This plan revision is no longer approved")
         return bool(exact and record.humanRequired), bool(outside and high)
 
     def _step(self, record, step_id, status, session, **result):
         updated = record.model_copy(deep=True)
         step = next(item for item in updated.plan.steps if item.id == step_id)
+        if step.status == "done":
+            return
         step.status = status
         updated.results.setdefault(step_id, {}).update(result)
         self._save(updated)
@@ -392,16 +435,23 @@ class PlanStore:
             status = "done" if update.status == "succeeded" and not failed else "failed"
             self._step(record, step.id, status, session, invocationStatus=update.status, failed=failed)
 
-    def begin_condition(self, session, condition, kind, context):
+    async def begin_condition(self, session, condition, kind, context):
         if not context:
             return None
+        self.require_writable()
         record = self.get(context["planId"])
         self.require_target(record, session)
         if context.get("planRevision", record.plan.revision) != record.plan.revision:
             raise PlanError("invalid_plan_reference", "Plan revision is no longer current")
         step = next((item for item in record.plan.steps if item.id == context["stepId"]), None)
-        if step is None or not hasattr(step, kind) or not json_equal(getattr(step, kind), condition):
+        if (
+            step is None
+            or not hasattr(step, kind)
+            or not json_equal(condition_semantics(getattr(step, kind)), condition_semantics(condition))
+        ):
             raise PlanError("invalid_plan_reference", "Condition does not match this plan step")
+        if step.status == "done":
+            raise PlanError("plan_step_completed", "The completed step and its result are immutable")
         if not self.approved(record):
             raise PlanError("plan_not_approved", "This plan revision requires approval")
         if step.status == "running":
@@ -415,12 +465,25 @@ class PlanStore:
         self._save(updated)
         self._full(updated, session)
         self._step(updated, step.id, "running", session, outOfOrder=order)
+        await self.flush()
+        current = self.get(record.plan.id, record.plan.revision)
+        self.require_target(current, session)
+        if not self.approved(current):
+            raise PlanError("plan_not_approved", "This plan revision is no longer approved")
         return record.plan.id, record.plan.revision, step.id
 
-    def end_condition(self, session, binding, success, **details):
+    async def end_condition(self, session, binding, success, **details):
         if binding:
             record = self.get(binding[0], binding[1])
             self._step(record, binding[2], "done" if success else "failed", session, **details)
+            await self.flush()
+
+    def declared_condition(self, binding, kind, fallback):
+        if binding is None:
+            return fallback
+        record = self.get(binding[0], binding[1])
+        step = next(item for item in record.plan.steps if item.id == binding[2])
+        return deepcopy(getattr(step, kind))
 
     def snapshots(self, session):
         return [
@@ -447,7 +510,7 @@ class PlanStore:
             self._save(updated)
             self._full(updated, session)
 
-    def decide(self, approval, decision, session, actor, note):
+    async def decide(self, approval, decision, session, actor, note):
         record = self.get(approval.subjectId)
         self.require_target(record, session)
         if record.approvalId != approval.approvalId or record.plan.revision != approval.details["revision"]:
@@ -459,6 +522,7 @@ class PlanStore:
             (decision == "approve" and record.plan.status in ("approved", "running", "completed"))
             or (decision != "approve" and record.plan.status == "abandoned")
         ):
+            await self.flush()
             return
         if approval.status != expected:
             if approval.status not in (("approved", "denied") if decision == "revoke" else ("pending",)):
@@ -468,8 +532,11 @@ class PlanStore:
         updated.plan.status = "approved" if decision == "approve" else "abandoned"
         self._save(updated)
         self._full(updated, session)
+        await self.flush()
 
     def approved(self, record):
+        if self.journal.error:
+            return False
         if record.plan.status not in ("approved", "running"):
             return False
         if not record.humanRequired:

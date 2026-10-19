@@ -54,6 +54,27 @@ approval requirement. Historical content and results remain available with
 `lw plan show <id> --revision <n>`. Server-owned step/lifecycle states should be
 omitted from submitted YAML. Reset, reload, stop, source failure or restart
 invalidates remaining authorization; historical plans stay readable.
+Repeating an associated completed check or wait returns409 and preserves its
+original result. A condition's diagnostic `message` stays with the plan and its
+failure result; clients provide the executable condition without repeating that text.
+
+Deviation conditions use `deviatesFrom` with a numeric reference property and
+finite nonnegative `by`. Check/wait adapters accept `--by` in CLI and optional
+`by` in HTTP/MCP. Thresholds participate in exact step matching; other operators
+reject them. A deviation wait observes changes to both properties.
+
+```text
+lw check /World/Lab/Incubator temperatureC deviatesFrom setpointC --by 2 --json
+```
+
+Internal plan history uses an owned bounded FIFO writer. Device intake consumes
+the one-use grant in gateway memory, then waits for that record's write/flush/fsync
+acknowledgement before reaching the Source. Plan resource changes and associated
+check/wait responses also wait for persistence. Reliable terminal events keep the
+actual observed result while the worker saves it. HTTP plan details report
+`persistence.status` as saved/pending/failed; a storage failure refuses further
+plan grants and plan-save success responses without reporting a device-host failure.
+Shutdown stops event producers, drains accepted records and joins the writer.
 
 HTTP uses `POST /api/v1/plans`, `POST /api/v1/plans/{id}/revisions`, and
 `GET /api/v1/plans[?kind=operation&status=...]` / `/api/v1/plans/{id}`.

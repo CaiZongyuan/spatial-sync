@@ -150,7 +150,7 @@ class ActionPipeline:
             plan_grant, force_approval = False, False
             if not error or error[0] in ("precondition_failed", "busy"):
                 try:
-                    plan_grant, force_approval = self.session.plans.action(
+                    plan_grant, force_approval = await self.session.plans.action(
                         self.session, invocation, plan_context,
                     )
                 except PlanError as exc:

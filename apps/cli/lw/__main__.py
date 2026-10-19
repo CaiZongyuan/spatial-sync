@@ -39,6 +39,16 @@ def parse_value(value):
         return value
 
 
+def nonnegative(value):
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a finite nonnegative number") from exc
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError("must be a finite nonnegative number")
+    return parsed
+
+
 def parameters(values):
     result = {}
     for item in values:
@@ -83,6 +93,7 @@ def parser():
     for name in ("key", "property", "op", "value"):
         check.add_argument(name)
     for command_parser in (wait, check):
+        command_parser.add_argument("--by", type=nonnegative)
         command_parser.add_argument("--plan", dest="planId")
         command_parser.add_argument("--step", dest="stepId", type=int)
         command_parser.add_argument("--plan-revision", dest="planRevision", type=int)
@@ -198,6 +209,7 @@ async def run(args, machine):
                 parse_value(args.value),
                 **({"timeout": args.timeout} if command == "wait" else {}),
                 planId=args.planId, stepId=args.stepId, planRevision=args.planRevision,
+                by=args.by,
             )
         elif command == "session":
             result = await client.session_control(args.action, count=getattr(args, "count", 1))

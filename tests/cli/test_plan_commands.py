@@ -12,7 +12,7 @@ from cli_support import LW, ROOT, result
 from mcp import Client, Implementation, StdioServerParameters
 
 CENTRIFUGE = "/World/Lab/Centrifuge"
-CONDITION = {"entity": CENTRIFUGE, "property": "lidOpen", "equals": False}
+CONDITION = {"entity": CENTRIFUGE, "property": "lidOpen", "equals": False, "message": "盖子必须保持关闭"}
 DOCUMENT = {
     "title": "Close and verify",
     "target": "session",
@@ -152,3 +152,96 @@ def test_invalid_local_documents_fail_cleanly_before_any_http(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_installed_cli_executes_deviation_plan_and_rejects_bad_thresholds(lw, lab, tmp_path):
+    source = tmp_path / "deviation.yaml"
+    condition = {
+        "entity": CENTRIFUGE,
+        "property": "rpm",
+        "deviatesFrom": "rpm",
+        "by": 0,
+        "message": "转速应有差异",
+    }
+    source.write_text(
+        yaml.safe_dump({"title": "Deviation", "steps": [{"id": 1, "check": condition}]}), "utf-8"
+    )
+    submitted = lw("plan", "create", str(source))
+    checked = lw(
+        "check",
+        CENTRIFUGE,
+        "rpm",
+        "deviatesFrom",
+        '"rpm"',
+        "--by",
+        "0",
+        "--plan",
+        submitted["id"],
+        "--step",
+        "1",
+        code=2,
+    )
+    assert checked["failed"][0]["message"] == "转速应有差异"
+    for by in ("true", "-1", "nan", "inf"):
+        error = lw("check", CENTRIFUGE, "rpm", "deviatesFrom", '"rpm"', "--by", by, code=1)
+        assert "nonnegative" in error["error"]["message"]
+    unrelated = lw("check", CENTRIFUGE, "rpm", "equals", "0", "--by", "0", code=1)
+    assert unrelated["error"]["detail"]["code"] == "invalid_condition"
+
+
+async def test_official_sdk_executes_deviation_plan_and_rejects_bad_thresholds(lab):
+    transport = StdioServerParameters(command=str(LW), args=["mcp"], env=lab[2])
+    async with Client(transport, mode="legacy") as mcp:
+        condition = {
+            "entity": CENTRIFUGE,
+            "property": "rpm",
+            "deviatesFrom": "rpm",
+            "by": 0,
+            "message": "转速应有差异",
+        }
+        submitted = await result(
+            mcp,
+            "plan_create",
+            document={
+                "title": "SDK deviation",
+                "steps": [
+                    {"id": 1, "check": condition},
+                    {"id": 2, "wait": condition},
+                ],
+            },
+        )
+        checked = await result(
+            mcp,
+            "check_condition",
+            key=CENTRIFUGE,
+            property="rpm",
+            op="deviatesFrom",
+            value="rpm",
+            by=0,
+            planId=submitted["id"],
+            stepId=1,
+        )
+        assert checked["failed"][0]["message"] == "转速应有差异"
+        waited = await result(
+            mcp,
+            "wait_until",
+            key=CENTRIFUGE,
+            property="rpm",
+            op="deviatesFrom",
+            value="rpm",
+            by=0,
+            planId=submitted["id"],
+            stepId=2,
+            timeoutSeconds=0.02,
+        )
+        assert waited["timedOut"] and waited["failed"][0]["message"] == "转速应有差异"
+        for by in (True, -1, "nan", float("inf")):
+            refused = await mcp.call_tool(
+                "check_condition",
+                {"key": CENTRIFUGE, "property": "rpm", "op": "deviatesFrom", "value": "rpm", "by": by},
+            )
+            assert refused.is_error
+        unrelated = await mcp.call_tool(
+            "check_condition", {"key": CENTRIFUGE, "property": "rpm", "op": "equals", "value": 0, "by": 0}
+        )
+        assert unrelated.is_error

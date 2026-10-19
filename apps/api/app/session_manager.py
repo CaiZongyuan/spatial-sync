@@ -22,7 +22,7 @@ from packages.info.approvals import ApprovalStore
 from packages.info.catalog import Catalog
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
-from packages.info.plans import PlanStore
+from packages.info.plans import PlanError, PlanStore
 from packages.info.store import StateStore
 from packages.library.scenes import SceneLibrary
 from packages.protocol.internal import InformationClock, SessionOptions
@@ -1018,6 +1018,10 @@ class Session:
                 await self.recording.close()
                 self._recording_revision_ready = False
                 await asyncio.to_thread(self.recordings.retain)
+            try:
+                await self.plans.flush()
+            except PlanError:
+                self._log_event("plan.persistence_failed", level=logging.ERROR)
 
 
 I_WORLD = {"p": [0, 0, 0], "q": [0, 0, 0, 1]}
@@ -1043,6 +1047,7 @@ class SessionManager:
     async def create(self, scene_id, source, options, *, scene_version=None):
         self.approvals.startup()
         self.plans.startup()
+        await self.plans.flush()
         selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
         if not selected.metadata["stage"].startswith("python:"):
             raise HTTPException(503, {"code": "source_unavailable",
@@ -1101,5 +1106,8 @@ class SessionManager:
         return self.sessions[session_id]
 
     async def close(self):
-        for session in self.sessions.values():
-            await session.close()
+        try:
+            for session in self.sessions.values():
+                await session.close()
+        finally:
+            await self.plans.close()

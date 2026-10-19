@@ -55,18 +55,19 @@ def install_plan_routes(app, manager, role_for):
         actor = operator(request)
         payload, session = target(body)
         await session.action_pipeline()
-        return store.document(store.create(payload, session, actor))
+        return store.document(await store.create(payload, session, actor))
 
     @app.post("/api/v1/plans/{plan_id}/revisions", status_code=201)
     async def revise_plan(plan_id: str, body: dict[str, Any], request: Request):
         actor = operator(request)
         payload, session = target(body)
         await session.action_pipeline()
-        return store.document(store.create(payload, session, actor, plan_id=plan_id))
+        return store.document(await store.create(payload, session, actor, plan_id=plan_id))
 
     @app.get("/api/v1/plans")
     async def plans(kind: str | None = None, status: str | None = None):
-        store.startup()
+        store.require_started()
+        await store.flush()
         return {
             "plans": [
                 store.document(record)
@@ -78,4 +79,5 @@ def install_plan_routes(app, manager, role_for):
 
     @app.get("/api/v1/plans/{plan_id}")
     async def plan(plan_id: str, revision: int | None = None):
+        await store.flush()
         return store.document(store.get(plan_id, revision))
