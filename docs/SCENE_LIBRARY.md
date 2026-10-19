@@ -34,9 +34,12 @@ operations as `library_search`, `library_describe` and `scene_launch`, including
 when there is no active session.
 
 `GET /api/v1/scenes` preserves `sceneId`, `name`, `sources` and description and
-adds version metadata. It returns all versions. The temporary Sessions launch
-form projects one latest launchable choice per bare name. Rich discovery is
-`GET /api/v1/library/scenes?q=&launchable=`. Details use
+adds version metadata. It returns all versions. The Web app's `/scenes` page
+lists every version, supports search, source and launchability filters, and
+remembers the card/list view locally and in its URL. `/scenes/{name}/{rev}`
+launches that exact version and opens the connected session. Sessions retains
+joining by session ID. Rich discovery is
+`GET /api/v1/library/scenes?q=&launchable=&source=`. Details use
 `GET /api/v1/library/scenes/{name}/{rev}`; omit the revision path segment to read
 the latest. Details expose declared entity bindings (including unexpanded match
 selectors), device types/actions, teach locations and the existing report. They
@@ -63,6 +66,49 @@ performed and explicitly warn that full structural/physics validation was not
 run while packaging. Report tool-version mismatches are marked stale while the
 recorded launch conclusion remains in effect. The full importer/validator is
 separate work.
+
+## Static previews
+
+Scene browsing never creates or replaces a session, starts a source, or runs
+validation. An available preview is a frozen initial Manifest, Catalog, spatial
+sample, property snapshot and self-contained assets from the selected package
+and source. Initial readouts are static; actions require launching a session.
+Physical counts exclude explicit `/World/Dressing/` nodes; logical groups and
+expanded information bindings are counted separately. Missing or stale captures
+show unknown counts and a reason without changing the recorded launch conclusion.
+
+Captures live outside published packages: bundled captures in
+`assets/scene-previews/`, and operator captures under
+`SPATIAL_SCENE_PREVIEWS_ROOT` (default `~/.spatial-sync/cache/scene-previews`).
+The reader matches the exact version, complete raw package hash and source,
+then verifies every recorded producer input and indexed output file. The input
+digest rule `sha256-text-lf-v1` normalizes CRLF to LF only for source/data text
+(`.py`, `.json`, `.yaml`, `.yml`, `.lock`, `.toml`, `.urdf`, `.xml`, `.usda`).
+Binary inputs, frozen outputs and public package content hashes use raw bytes.
+Unsupported digest rules require recapture. Only indexed files are served;
+external paths and unindexed model asset references are rejected.
+
+Capture a producer explicitly, with no managed session or recording:
+
+```powershell
+uv run --no-sync python tools/capture_scene_preview.py lab-demo@1 --source synthetic --cache-root .scratch/scene-previews
+```
+
+For Newton, install the simulation and USD extras before starting any process
+that uses the environment, then run the same tool with `--source newton` and a
+Newton version such as `robot-and-tubes@1`. Captures run on CPU. A tool-only
+spawn wrapper observes the unchanged production Runner's executed project code
+and data inputs. URDF dependencies come from the actual importer/resolver; USD
+dependencies come from the composed Stage's used layers and native dependency
+resolution. Unresolved or repository-external native inputs reject the capture
+with a reason. Python file auditing alone does not cover native file reads.
+
+The output root must be outside every published scene package, and an existing
+capture directory is never overwritten. The Web list generates cached PNGs
+through one shared offscreen viewer; cards contain images. The detail route
+reuses the same renderer and owns one viewport. A related operational recording
+is never substituted for an initial scene preview; its recorded content hash is
+shown as matching, different or unknown.
 
 Published version files are immutable. Place edits in a new revision, preserve
 its validation report and restart the gateway to discover manually published

@@ -20,16 +20,15 @@ async function launch(page: Page, request: APIRequestContext, sceneId: string) {
         !['STOPPED', 'FAILED'].includes(session.state),
     ),
   ).toEqual([]);
-  await page.goto('/sessions');
-  await page.getByLabel('Scene', { exact: true }).selectOption(sceneId);
-  await page.getByLabel('Source', { exact: true }).selectOption('newton');
+  await page.goto(`/scenes/${sceneId}/1?source=newton`);
+  await page.getByLabel('启动物理源', { exact: true }).selectOption('newton');
   const creating = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/v1/sessions') &&
       response.request().method() === 'POST',
     { timeout: 180_000 },
   );
-  await page.getByRole('button', { name: 'Launch workspace' }).click();
+  await page.getByRole('button', { name: '启动会话' }).click();
   const created = await creating;
   expect(created.ok(), await created.text()).toBe(true);
   await expect(page.getByTestId('connection-status')).toHaveText('connected');

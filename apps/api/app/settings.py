@@ -28,6 +28,11 @@ class Settings:
     operator_token: str | None = None
     viewer_token: str | None = None
     remote_requests_per_minute: int = 120
+    scene_previews_root: Path = field(
+        default_factory=lambda: Path(os.getenv(
+            "SPATIAL_SCENE_PREVIEWS_ROOT", "~/.spatial-sync/cache/scene-previews"
+        )).expanduser()
+    )
 
     def __post_init__(self):
         if self.recordings_keep < 1:

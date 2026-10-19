@@ -10,7 +10,7 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(4);
+  await expect(navigation.getByRole('link')).toHaveCount(5);
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(244, 243, 239)');
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -33,7 +33,9 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.screenshot({ path: testInfo.outputPath('compute-dark.png'), fullPage: true });
   await navigation.getByRole('link', { name: 'Sessions', exact: true }).click();
   await page.reload();
-  await expect(page.getByLabel('Scene', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Session ID', { exact: true })).toBeVisible();
+  await navigation.getByRole('link', { name: 'Scenes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '场景库', exact: true })).toBeVisible();
   await navigation.getByRole('link', { name: 'Recordings', exact: true }).click();
   await expect(page).toHaveURL(/\/recordings$/);
   await page.reload();
@@ -50,7 +52,7 @@ test('platform navigation, persistent preferences, system theme and local assets
 
 test('400 px pages and live workspace stay within the page width', async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 400, height: 900 });
-  for (const path of ['/', '/resources/gpu', '/sessions', '/recordings']) {
+  for (const path of ['/', '/resources/gpu', '/sessions', '/scenes', '/scenes/lab-demo/1', '/recordings']) {
     await page.goto(path);
     await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Collapse sidebar', exact: true })).toBeHidden();
@@ -71,36 +73,28 @@ test('400 px pages and live workspace stay within the page width', async ({ page
   }
 });
 
-test('the temporary launch form selects a source supported by the first available scene', async ({ page }) => {
-  await page.route('**/api/v1/scenes', route => route.fulfill({ json: {
-    scenes: [{ sceneId: 'robot-only', name: 'Robot laboratory', sources: ['newton'] }],
+test('scene details select only a source supported by the exact version', async ({ page, request }) => {
+  const detail = await (await request.get(`${api}/api/v1/library/scenes/lab-demo/1`)).json();
+  await page.route('**/api/v1/library/scenes/robot-only/1*', route => route.fulfill({ json: {
+    ...detail, id: 'robot-only@1', sceneId: 'robot-only', sources: ['newton'],
+    preview: { status: 'unavailable', source: 'newton', reason: 'Fixture has no capture', entityCount: null, bindingCount: null },
   } }));
-  await page.goto('/sessions');
-  await expect(page.getByLabel('Scene', { exact: true })).toHaveValue('robot-only');
-  await expect(page.getByLabel('Source', { exact: true })).toHaveValue('newton');
-  await expect(page.getByRole('button', { name: 'Launch workspace' })).toBeEnabled();
+  await page.goto('/scenes/robot-only/1');
+  await expect(page.getByLabel('启动物理源', { exact: true })).toHaveValue('newton');
+  await expect(page.getByLabel('启动物理源', { exact: true }).getByRole('option')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '启动会话' })).toBeEnabled();
 });
 
-test('legacy scene choices use one latest launchable version and its sources', async ({ page, request }) => {
-  // Discovery contract fixture; launch still uses the actual Synthetic API and workspace.
-  await page.route('**/api/v1/scenes', route => route.fulfill({ json: { scenes: [
-    { sceneId: 'lab-demo', sceneVersion: 'lab-demo@1', rev: 1, name: 'Version one', sources: ['newton'], launchable: true },
-    { sceneId: 'lab-demo', sceneVersion: 'lab-demo@2', rev: 2, name: 'Version two', sources: ['synthetic'], launchable: true },
-    { sceneId: 'lab-demo', sceneVersion: 'lab-demo@3', rev: 3, name: 'Unavailable latest', sources: ['newton'], launchable: false },
-  ] } }));
-  await page.goto('/sessions');
-  const scene = page.getByLabel('Scene', { exact: true });
-  await expect(scene.getByRole('option')).toHaveCount(1);
-  await expect(scene).toHaveValue('lab-demo');
-  await expect(scene.getByRole('option')).toHaveText('Version two');
-  const source = page.getByLabel('Source', { exact: true });
-  await expect(source.getByRole('option')).toHaveCount(1);
+test('scene library launches the selected exact version and connects to its real session', async ({ page, request }) => {
+  await page.goto('/scenes');
+  await page.locator('.scene-card').filter({ hasText: 'lab-demo@1' }).click();
+  const source = page.getByLabel('启动物理源', { exact: true });
   await expect(source).toHaveValue('synthetic');
   const created = page.waitForResponse(response => response.url().endsWith('/api/v1/sessions') &&
     response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Launch workspace' }).click();
+  await page.getByRole('button', { name: '启动会话' }).click();
   const response = await created;
-  expect(response.request().postDataJSON()).toMatchObject({ sceneId: 'lab-demo', source: 'synthetic' });
+  expect(response.request().postDataJSON()).toMatchObject({ sceneVersion: 'lab-demo@1', source: 'synthetic' });
   expect(response.ok()).toBe(true);
   const { sessionId } = await response.json();
   try {

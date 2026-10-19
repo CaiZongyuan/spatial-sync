@@ -67,7 +67,7 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
     <>
     <div className="platform-section-heading"><h2>{page === 'sessions' ? 'Managed sessions' : 'Managed backends'}</h2><span>{page === 'sessions' ? 'Stopped sessions stay in history. Newton viewer is available on the gateway machine.' : 'Processes owned by this gateway. Host totals include other applications.'}</span></div>
     <div className="platform-session-list">
-      {!sessions?.length ? <p className="platform-empty">{snapshot ? page === 'sessions' ? 'No sessions yet. Create a new session below.' : 'No managed Newton backends yet.' : 'Session list has not been received.'}</p> :
+      {!sessions?.length ? <p className="platform-empty">{snapshot ? page === 'sessions' ? <>还没有会话。<Link to="/scenes">去场景库启动 →</Link></> : 'No managed Newton backends yet.' : 'Session list has not been received.'}</p> :
         <table><thead><tr><th>Scene / session</th><th>State / clients</th><th>Source / backend</th><th title="Process CPU uses 100% per logical core">Process CPU / RSS</th><th>Open</th></tr></thead>
           <tbody>{sessions.map(session => <tr key={session.sessionId} data-testid={`platform-session-${session.sessionId}`}>
             <td><strong>{session.sceneName}</strong><code>{session.sessionId}</code><small>{session.sceneVersion ?? session.sceneId}</small></td>

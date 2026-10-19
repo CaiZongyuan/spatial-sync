@@ -176,7 +176,7 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
         </div>
         <figcaption><strong>图 1</strong><span>{manifest?.sceneName ?? '活动会话'} · 点击设备</span>
           <button className="readout-switch" aria-label="读数" aria-pressed={readouts} onClick={() => void navigate({ to: '/', search: previous => ({ ...previous, readouts: readouts ? false : undefined }) })}><i />读数</button>
-          {session ? <span className="reference-tag">实时状态</span> : <Link to="/sessions" className="reference-link">新建会话 →</Link>}
+          {session ? <span className="reference-tag">实时状态</span> : <Link to="/scenes" className="reference-link">去场景库启动 →</Link>}
         </figcaption>
       </figure>
       {manifest && <DeviceDrawer {...{ client, manifest, catalog, selected }} select={choose} />}
@@ -205,7 +205,7 @@ export function Overview() {
       <header className="overview-page-heading"><h1>概览</h1><p>共享实验室 · 一个权威空间状态</p></header>
       {error && <div role="alert" className="platform-error">{error}</div>}
       <div className="overview-hero"><figure className="overview-figure"><div className="overview-stage empty-overview-stage"><span className="empty-scene-mark" aria-hidden="true">◇</span>
-        <h2>{snapshot ? '开始一次实验' : '正在连接实验室'}</h2><p>启动场景后，在这里查看设备、实时读数与动作。</p><Link className="button-link primary" to="/sessions">新建会话 →</Link></div>
+        <h2>{snapshot ? '开始一次实验' : '正在连接实验室'}</h2><p>启动场景后，在这里查看设备、实时读数与动作。</p><Link className="button-link primary" to="/scenes">去场景库启动 →</Link></div>
         <figcaption><strong>图 1</strong><span>实验室空间视图</span></figcaption></figure><aside className="overview-device-drawer"><span className="eyebrow">设备抽屉</span><h2>等待活动会话</h2><p>会话启动后，点击设备查看它的状态、动作与示教位置。</p></aside></div>
       <div className="overview-lower"><section className="reference-panel activity-panel"><header><h2>近期活动</h2></header><div className="timeline-empty">启动会话后，动作与设备事件会出现在这里。</div></section><Inspector snapshot={snapshot} /></div>
     </>}

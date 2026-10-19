@@ -258,7 +258,7 @@ function NodeVisuals({
   selected: boolean;
   colliders: boolean;
   warn: (message: string) => void;
-  ready: () => void;
+  ready: (key: string) => void;
 }) {
   const groups = useMemo<VisualGroup[]>(
     () => [
@@ -273,7 +273,7 @@ function NodeVisuals({
     [node.entityKey, warn],
   );
   const resolved = useVisuals(groups, report);
-  useEffect(() => { if (resolved) ready(); }, [resolved, ready]);
+  useEffect(() => { if (resolved) ready(node.entityKey); }, [resolved, ready, node.entityKey]);
   return (
     <>
       <group
@@ -319,7 +319,7 @@ function Body({
   register: (key: string, id: number | undefined, object: Group | null) => void;
   warn: (message: string) => void;
   client: SessionClient;
-  ready: () => void;
+  ready: (key: string) => void;
 }) {
   const ownSites = manifest.sites.filter(
     (site) => site.parentBodyKey === node.entityKey,
@@ -436,7 +436,7 @@ function SceneContents({
   inspectVisuals,
   recorder,
   renderContinuously = true,
-  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout,
+  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture,
 }: ViewportProps) {
   const invalidate = useThree((state) => state.invalidate);
   const theme = useContext(ViewerThemeContext);
@@ -462,12 +462,19 @@ function SceneContents({
   const physicalNodes = useRef(new Map<string, Group>());
   const instances = useRef<InstanceController | undefined>(undefined);
   const [boundsRevision, setBoundsRevision] = useState(0);
-  const ready = useCallback(() => setBoundsRevision(value => value + 1), []);
+  const readyNodes = useRef(new Set<string>());
+  const ready = useCallback((key?: string) => {
+    if (key) readyNodes.current.add(key);
+    setBoundsRevision(value => value + 1);
+  }, []);
   const firstPose = useRef(false);
   const firstInstance = useRef(false);
+  const captureFrames = useRef(0);
+  const captured = useRef(false);
   const renderMode =
     new URLSearchParams(location.search).get('render') ?? 'auto';
   const useInstances =
+    !capture &&
     !layers.colliders &&
     !layers.origins &&
     (renderMode === 'instanced' ||
@@ -566,7 +573,7 @@ function SceneContents({
       inspectVisuals.current = undefined;
     };
   }, [inspectVisuals]);
-  useFrame(({ gl, scene }, delta) => {
+  useFrame(({ gl, scene, camera }, delta) => {
     const start = performance.now();
     const data = client.samplePoses(start);
     for (const [key, object] of physicalNodes.current)
@@ -611,6 +618,16 @@ function SceneContents({
       scene.traverse(() => objects++);
       metrics.current.objects = objects;
       elapsed.current = { time: 0, frames: 0 };
+    }
+    if (capture && !captured.current && readyNodes.current.size === manifest.nodes.filter(node => node.kind !== 'group').length
+      && client.buffer.latestSample) {
+      // The next frame lets CameraRig fit the fully loaded, posed geometry.
+      if (++captureFrames.current < 3) invalidate();
+      else {
+        captured.current = true;
+        gl.render(scene, camera);
+        capture(gl.domElement.toDataURL('image/png'));
+      }
     }
   });
   return (
@@ -710,6 +727,7 @@ interface ViewportProps {
   highlightedKeys?: Set<string>;
   compact?: boolean;
   onLabelLayout?: (labels: PlacedLabel[]) => void;
+  capture?: (png: string) => void;
 }
 
 export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
@@ -736,11 +754,11 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
       {displayScene ? <Canvas
         flat
         shadows
-        frameloop={!visible ? 'never' : continuous ? 'always' : 'demand'}
+        frameloop={!visible && !props.capture ? 'never' : continuous ? 'always' : 'demand'}
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
-        gl={{ antialias: true }}
+        gl={{ antialias: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
         <ViewerThemeContext.Provider value={theme}><SceneContents key={props.manifest.sceneRevision} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>

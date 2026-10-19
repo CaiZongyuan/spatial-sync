@@ -51,10 +51,14 @@ device in the view, its label or the legend to inspect its type, actions and
 teaching locations. The **读数** switch controls the live label readouts; the
 activity timeline shows actual device events and invocation transitions.
 With no active session, the most recent available recording provides a read-only
-scene preview, or the page guides you to create a session.
+scene preview, or the page guides you to the scene library.
+**Scenes (场景库)** (`/scenes`) lists immutable versions with searchable card/list
+views, source and launchability filters. Open a version to inspect its static
+initial scene, entity bindings, teaching and recorded validation, then launch
+that exact version into its connected workspace.
 **Sessions (会话)**
-(`/sessions`) lists managed sessions and provides the temporary launch/join
-form. **Resources · Compute** (`/resources/gpu`) shows host resources and
+(`/sessions`) lists managed sessions and lets another observer join by ID.
+**Resources · Compute** (`/resources/gpu`) shows host resources and
 managed Newton backends. These pages refresh every two seconds. **Recordings**
 (`/recordings`) links to read-only replay at `/replay/{id}`.
 The sidebar collapses and remembers your preference; below 900 px it becomes

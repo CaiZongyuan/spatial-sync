@@ -20,10 +20,9 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/sessions');
-  await page.getByLabel('Scene', { exact: true }).selectOption('lab-demo');
-  await page.getByLabel('Source', { exact: true }).selectOption('synthetic');
-  await page.getByRole('button', { name: 'Launch workspace' }).click();
+  await page.goto('/scenes/lab-demo/1?source=synthetic');
+  await page.getByLabel('启动物理源', { exact: true }).selectOption('synthetic');
+  await page.getByRole('button', { name: '启动会话' }).click();
   await waitConnected(page);
   if ((await page.getByTestId('session-state').textContent()) === 'PAUSED') {
     await page.getByRole('button', { name: 'Resume simulation' }).click();
