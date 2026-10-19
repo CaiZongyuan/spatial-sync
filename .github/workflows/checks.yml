@@ -2,6 +2,7 @@ name: GPU-free checks
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -17,10 +18,15 @@ jobs:
         with:
           node-version: 22
       - uses: pnpm/action-setup@v4
-      - run: uv sync --frozen --group dev
+      - name: Install frozen Python dependencies from PyPI
+        run: |
+          uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/spatial-requirements.txt" > /dev/null
+          uv venv --python 3.13
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --require-hashes -r "$RUNNER_TEMP/spatial-requirements.txt"
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
-      - run: uv run --frozen python -m pytest tests/contract tests/unit tests/gateway tests/cli -q
-      - run: uv run --frozen ruff check apps packages tools tests
+      - run: uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli -q
+      - run: uv run --no-sync ruff check apps packages tools tests
       - run: pnpm protocol:check
       - run: pnpm test:protocol:ts
       - run: pnpm test:web
@@ -42,7 +48,12 @@ jobs:
         with:
           node-version: 22
       - uses: pnpm/action-setup@v4
-      - run: uv sync --frozen --group dev
+      - name: Install frozen Python dependencies from PyPI
+        run: |
+          uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/spatial-requirements.txt" > /dev/null
+          uv venv --python 3.13
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --require-hashes -r "$RUNNER_TEMP/spatial-requirements.txt"
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
@@ -52,7 +63,7 @@ jobs:
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
         run: |
-          uv run --frozen python -m uvicorn approval_gateway:app --app-dir tests/fixtures --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
+          uv run --no-sync python -m uvicorn approval_gateway:app --app-dir tests/fixtures --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
           SPATIAL_API_PID=$!
           trap 'kill "$SPATIAL_API_PID" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 60); do
