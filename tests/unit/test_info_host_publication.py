@@ -83,9 +83,9 @@ def test_idle_entities_do_no_diff_work_but_pending_final_values_flush_before_ter
     for state in host._states:
         original = state.diff.update
 
-        def observed(values, at, *, original=original, key=state.key):
+        def observed(values, at, *, force=(), original=original, key=state.key):
             calls.append(key)
-            return original(values, at)
+            return original(values, at, force=force)
 
         monkeypatch.setattr(state.diff, "update", observed)
     assert host.drain_events() == []

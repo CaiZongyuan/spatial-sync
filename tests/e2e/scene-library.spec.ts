@@ -103,7 +103,7 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   await page.waitForFunction(expected => {
     const images = [...document.querySelectorAll<HTMLImageElement>('.scene-card .scene-thumbnail img')];
     return images.length === expected && images.every(image => image.complete && image.naturalWidth > 0);
-  }, 4);
+  }, 5);
   // The shared renderer captures scenes serially; check readiness for each image.
   for (const id of ['falling-boxes@1', 'lab-demo@1', 'lab-demo@2', 'robot-and-tubes@1', 'usd-lab@1'])
     await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
