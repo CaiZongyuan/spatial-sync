@@ -114,7 +114,7 @@ def test_open_door_relaxes_temperature_and_co2_toward_ambient(tmp_path, monkeypa
         assert final[INCUBATOR]["values"]["co2Percent"] < initial[INCUBATOR]["values"]["co2Percent"] - 0.5
 
 
-def test_high_risk_device_controls_wait_for_approval_and_plan_refs_are_not_accepted():
+def test_high_risk_device_controls_wait_for_approval_and_unknown_plan_cannot_authorize():
     with TestClient(create_app(source_factory=factory)) as client:
         created = client.post(
             "/api/v1/sessions", json={"sceneVersion": "lab-demo@2", "approval": {"high": "require"}}
@@ -145,4 +145,7 @@ def test_high_risk_device_controls_wait_for_approval_and_plan_refs_are_not_accep
                 "stepId": 1,
             },
         )
-        assert unsupported.status_code == 422
+        assert unsupported.status_code == 409
+        assert unsupported.json()["error"]["code"] == "unknown_plan"
+        after = client.get(route + "/state", params={"keys": ",".join(KEYS)}).json()["entities"]
+        assert after[CABINET]["values"]["blowerOn"] == states[CABINET]["values"]["blowerOn"]

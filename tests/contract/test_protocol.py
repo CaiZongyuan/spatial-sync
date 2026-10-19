@@ -169,7 +169,7 @@ def test_subscription_v2_is_full_binary_and_info_defaults_enabled():
             Subscribe.model_validate({"sceneRevision": "r", field: value})
 
 
-def test_reserved_plan_correlation_is_not_silently_accepted_before_runtime_support():
+def test_http_plan_correlation_does_not_extend_strict_websocket_action_contract():
     with pytest.raises(ValidationError):
         ActionRequest(requestId="future", entityKey="/World", action="start", planId="plan-1", stepId=1)
 

@@ -1,5 +1,7 @@
 """Information-plane HTTP boundary, shared with WebSocket actions."""
 
+import asyncio
+from copy import deepcopy
 from functools import lru_cache
 from typing import Literal
 
@@ -10,7 +12,7 @@ from pydantic import Field, StrictBool
 from packages.info.conditions import OPERATORS, evaluate_conditions
 from packages.info.invocations import TERMINAL, HistoryUnavailable
 from packages.protocol.json import encode
-from packages.protocol.schema import ActionRequest, Actor, Catalog, Model, Positive
+from packages.protocol.schema import ActionRequest, Actor, Catalog, JsonValue, Model, NonNegative, Positive
 
 
 def actor_from_headers(headers):
@@ -23,11 +25,25 @@ def actor_from_headers(headers):
 class HttpAction(ActionRequest):
     wait: StrictBool = False
     timeoutSeconds: Positive = 120
+    planId: str | None = Field(default=None, min_length=1)
+    stepId: int | None = Field(default=None, gt=0, strict=True)
+    planRevision: int | None = Field(default=None, gt=0, strict=True)
 
 
 class Approval(Model):
     decision: Literal["approve", "deny"]
     note: str = Field(default="", max_length=4000)
+
+
+class CheckRequest(Model):
+    key: str
+    property: str
+    op: str
+    value: JsonValue = None
+    by: NonNegative | None = None
+    planId: str | None = None
+    stepId: int | None = Field(default=None, gt=0, strict=True)
+    planRevision: int | None = Field(default=None, gt=0, strict=True)
 
 
 def invocation_response(value, *, waiting=False, timed_out=False, query=False):
@@ -40,6 +56,9 @@ def invocation_response(value, *, waiting=False, timed_out=False, query=False):
         "unknown_action": 404,
         "not_permitted": 403,
         "source_unavailable": 503,
+        "plan_not_approved": 409,
+        "invalid_plan_reference": 409,
+        "plan_persistence_unavailable": 503,
     }.get(code)
     if query:
         status = 200
@@ -142,9 +161,16 @@ def install_info_routes(app, manager, role_for):
 
     @app.post(prefix + "/actions")
     async def action(session_id: str, body: HttpAction, request: Request):
+        from apps.api.app.plan_routes import plan_context
+
         session = manager.get(session_id)
         pipeline = await session.action_pipeline()
-        value = await pipeline.invoke(body, role_for(request.headers), actor_from_headers(request.headers))
+        context = plan_context(body.planId, body.stepId, body.planRevision)
+        wire_request = ActionRequest.model_validate(body.model_dump(include=set(ActionRequest.model_fields)))
+        value = await pipeline.invoke(
+            wire_request, role_for(request.headers), actor_from_headers(request.headers),
+            plan_context=context,
+        )
         timed_out = False
         if body.wait and value.status not in TERMINAL:
             value, timed_out = await pipeline.table.wait(value.invocationId, body.timeoutSeconds)
@@ -213,11 +239,16 @@ def install_info_routes(app, manager, role_for):
     @app.get(prefix + "/wait")
     async def wait_condition(
         session_id: str,
+        request: Request,
         key: str,
         property: str,
         op: str,
         value: str = "null",
         timeoutSeconds: float = Query(120, ge=0, le=3600),
+        planId: str | None = None,
+        stepId: int | None = Query(None, gt=0),
+        planRevision: int | None = Query(None, gt=0),
+        by: float | None = Query(None, ge=0, allow_inf_nan=False),
     ):
         import json
 
@@ -234,20 +265,84 @@ def install_info_routes(app, manager, role_for):
         except ValueError:
             expected = value
         condition = {"property": property, op: True if op in ("isNull", "notNull") else expected}
+        if by is not None:
+            condition["by"] = by
         try:
             # Validate the shape once, even when the current property is unknown.
             evaluate_conditions([condition], key, {})
         except (ValueError, TypeError) as exc:
             raise HTTPException(422, {"code": "invalid_condition", "message": str(exc)}) from exc
-        return await session.info.wait(
-            key,
-            property,
-            lambda known, actual: (
-                not evaluate_conditions([condition], key, {key: {property: actual}} if known else {},
-                                        session.info.metadata())
-            ),
-            timeoutSeconds,
-        )
+        from apps.api.app.plan_routes import plan_context
+
+        context = plan_context(planId, stepId, planRevision)
+        if context and role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        planned = await session.plans.begin_condition(session, {"entity": key, **condition}, "wait", context)
+        condition = session.plans.declared_condition(planned, "wait", condition)
+        try:
+            matched_value = None
+
+            def matches(_known, _actual):
+                nonlocal matched_value
+                if evaluate_conditions([condition], key, session.info.values(), session.info.metadata()):
+                    return False
+                matched_value = deepcopy(session.info.values().get(key, {}).get(property))
+                return True
+
+            watched = dict.fromkeys([
+                property, *([condition["deviatesFrom"]] if "deviatesFrom" in condition else []),
+            ])
+            waits = [
+                asyncio.create_task(session.info.wait(key, prop, matches, timeoutSeconds)) for prop in watched
+            ]
+            try:
+                done, _ = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+                result = next(iter(done)).result()
+                result["value"] = (matched_value if result["satisfied"] else
+                                   deepcopy(session.info.values().get(key, {}).get(property)))
+            finally:
+                for waiter in waits:
+                    if not waiter.done():
+                        waiter.cancel()
+                await asyncio.gather(*waits, return_exceptions=True)
+            if planned:
+                session.plans.require_target(session.plans.get(planned[0], planned[1]), session)
+                if not result["satisfied"]:
+                    result["failed"] = evaluate_conditions(
+                        [condition], key, session.info.values(), session.info.metadata(),
+                    )
+            await session.plans.end_condition(session, planned, result["satisfied"], **result)
+            return result
+        except BaseException:
+            await session.plans.end_condition(session, planned, False, reason="wait_interrupted")
+            raise
+
+    @app.post(prefix + "/check")
+    async def check(session_id: str, body: CheckRequest, request: Request):
+        from apps.api.app.plan_routes import plan_context
+        from packages.info.conditions import validate_conditions
+
+        session = manager.get(session_id)
+        binding(session, body.key)
+        condition = {"entity": body.key, "property": body.property,
+                     body.op: True if body.op in ("isNull", "notNull") else body.value}
+        if body.by is not None:
+            condition["by"] = body.by
+        try:
+            validate_conditions([condition], body.key,
+                                lambda entity, prop: session.catalog.property(entity, prop)["schema"])
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(422, {"code": "invalid_condition", "message": str(exc)}) from exc
+        context = plan_context(body.planId, body.stepId, body.planRevision)
+        if context and role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        planned = await session.plans.begin_condition(session, condition, "check", context)
+        condition = session.plans.declared_condition(planned, "check", condition)
+        failed = evaluate_conditions([condition], body.key, session.info.values(), session.info.metadata())
+        actual = session.info.values().get(body.key, {}).get(body.property)
+        result = {"satisfied": not failed, "value": actual, "failed": failed}
+        await session.plans.end_condition(session, planned, not failed, **result)
+        return result
 
     @app.get(prefix + "/events")
     async def events(

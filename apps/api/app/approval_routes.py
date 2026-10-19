@@ -26,11 +26,19 @@ def install_approval_routes(app, manager, role_for):
             else None
         )
         available = bool(session and session.state in ("RUNNING", "PAUSED") and session.source)
+        plan = manager.plans.records.get(record.subjectId) if record.subject == "plan" else None
+        plan_current = bool(
+            plan and session and session.manifest and plan.approvalId == record.approvalId
+            and (plan.sceneRevision, plan.epoch) == (session.manifest.sceneRevision, session.epoch)
+        )
+        plan_can_revoke = bool(plan_current
+                               and all(step.status == "pending" for step in plan.plan.steps))
         return {
             **record.model_dump(mode="json"),
             "canRevoke": available
             and (
-                record.status == "denied"
+                (record.status == "denied" and (record.subject != "plan" or plan_current))
+                or (record.status == "approved" and plan_can_revoke)
                 or (
                     record.status == "approved"
                     and invocation is not None
@@ -87,10 +95,14 @@ def install_approval_routes(app, manager, role_for):
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
         session = manager.sessions.get(record.sessionId)
-        if record.subject != "invocation" or not session or session.state not in ("RUNNING", "PAUSED"):
+        if (record.subject not in ("invocation", "plan") or not session
+                or session.state not in ("RUNNING", "PAUSED")):
             raise HTTPException(409, {"code": "approval_unavailable"})
         pipeline = await session.action_pipeline()
         try:
+            if record.subject == "plan":
+                await manager.plans.decide(record, body.decision, session, actor, body.note)
+                return document(get_record(approval_id))
             if body.decision == "revoke":
                 await pipeline.revoke_approval(record.subjectId, role, actor, body.note)
             else:

@@ -102,6 +102,36 @@ async def test_roll_prefix_preserves_stale_meta_and_original_scalar(tmp_path):
     }
 
 
+async def test_roll_prefix_keeps_the_actual_plan_revision_and_last_step_state(tmp_path):
+    log = new_log(tmp_path, segment_seconds=1)
+    full = {
+        "type": "plan.update", "update": "full", "sceneRevision": "rev-test", "epoch": 0,
+        "simTime": 0.1, "sampleTimeMs": 1100,
+        "plan": {"id": "plan-one", "kind": "operation", "title": "First revision", "target": "session",
+                 "revision": 1, "status": "running", "steps": [
+                     {"id": 1, "status": "running", "check": {"entity": "/tube", "property": "location",
+                                                               "equals": "rack"}},
+                 ]},
+    }
+    log.append_json(json.dumps(full), 1100)
+    log.append_json(json.dumps({
+        "type": "plan.update", "update": "step", "sceneRevision": "rev-test", "epoch": 0,
+        "simTime": 0.2, "sampleTimeMs": 1200, "planId": "plan-one", "revision": 1,
+        "stepId": 1, "status": "done",
+    }), 1200)
+    log.append_frame(frame(2100, 2), 2100)
+    future = full | {"sampleTimeMs": 2200, "simTime": 1.2,
+                     "plan": full["plan"] | {"revision": 2, "title": "Later revision"}}
+    log.append_json(json.dumps(future), 2200)
+    await log.close()
+    second = read_segment((tmp_path / "session-test/seg-000002.bin").read_bytes()).records
+    plans = [json.loads(item.payload) for item in second if item.kind == 2
+             and json.loads(item.payload).get("type") == "plan.update"]
+    assert plans[0]["plan"]["revision"] == 1 and plans[0]["plan"]["title"] == "First revision"
+    assert plans[0]["plan"]["steps"][0]["status"] == "done"
+    assert plans[-1]["plan"]["revision"] == 2
+
+
 async def test_pending_then_disk_invocation_lookup_does_not_need_recent_history(tmp_path):
     gate = threading.Event()
     entered = threading.Event()
