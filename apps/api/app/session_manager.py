@@ -978,12 +978,15 @@ class SessionManager:
     @property
     def library(self):
         if self._library is None:
-            self._library = SceneLibrary()
+            self._library = SceneLibrary(state_root=self.settings.state_root)
         return self._library
 
     async def create(self, scene_id, source, options, *, scene_version=None):
         self.approvals.startup()
         selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
+        if not selected.metadata["stage"].startswith("python:"):
+            raise HTTPException(503, {"code": "source_unavailable",
+                                      "message": "This source does not load USD scene packages"})
         source = source or selected.metadata["sources"][0]
         async with self._create_lock:
             for session in self.sessions.values():

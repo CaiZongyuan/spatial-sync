@@ -116,10 +116,32 @@ COMMANDS = (
     ),
     Command(
         path=("asset", "import"),
-        help="Pack a local asset directory and upload tar bytes; the gateway never receives a host path.",
+        help="Pack a local asset or scene directory and upload tar bytes to the gateway.",
         method="library_import",
         arguments=(Argument("directory", ("dir",), str, "Directory on this CLI/MCP client's filesystem"),),
         mcp_name="library_import",
+        actor=True,
+    ),
+    Command(
+        path=("asset", "validate"),
+        help="Recheck an exact immutable asset version and append a new validation report.",
+        method="library_validate",
+        arguments=(Argument("id", ("kind/name@rev",), str, "Exact asset version to validate"),),
+        mcp_name="library_validate",
+        actor=True,
+    ),
+    Command(
+        path=("scene", "import"),
+        help="Pack a local scene directory and upload tar bytes for immutable import and validation.",
+        method="library_import",
+        arguments=(Argument("directory", ("dir",), str, "Directory on this CLI/MCP client's filesystem"),),
+        actor=True,
+    ),
+    Command(
+        path=("scene", "validate"),
+        help="Recheck an exact immutable scene version and append a new validation report.",
+        method="library_validate",
+        arguments=(Argument("id", ("name@rev",), str, "Exact scene version to validate"),),
         actor=True,
     ),
     Command(

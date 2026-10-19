@@ -30,7 +30,7 @@ class RobotArmProgram:
     id, type, tick_priority = "robot_arm.virtual", "robot-arm/v1", 10
 
     class Config(ProgramConfig):
-        locations: dict
+        locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
         tubes: list[str]
         speedScale: float = Field(default=1.0, gt=0, le=1)
 

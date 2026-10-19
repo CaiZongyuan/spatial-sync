@@ -2,69 +2,23 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import platform
-import re
 from copy import deepcopy
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as installed_version
 from pathlib import Path
+from urllib.parse import quote
 
-import yaml
-
-from packages.sim_runtime.scenes import SCENE_CONFIGS
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-BUILTIN_ROOT = REPO_ROOT / "library"
-TYPE_ROOT = REPO_ROOT / "devices/types"
-NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-PYTHON_SOURCES = {"lab-demo": ("synthetic",), **{name: ("newton",) for name in SCENE_CONFIGS}}
-
-
-class LibraryError(Exception):
-    def __init__(self, code, message, status=404, **details):
-        super().__init__(message)
-        self.status = status
-        self.detail = {"code": code, "message": message, **details}
-
-
-def document(path):
-    value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"Expected a mapping: {path}")
-    return value
+from packages.library.archive import indexed_file, package_files
+from packages.library.common import BUILTIN_ROOT, NAME, TYPE_ROOT, LibraryError, content_hash, document
+from packages.library.common import REPO_ROOT as REPO_ROOT
+from packages.library.metadata import scene_metadata
+from packages.library.reports import ReportStore, launchable, parse_report
+from packages.library.reports import validation_status as validation_status
 
 
 def builtin_scene_path(name):
     return BUILTIN_ROOT / "scenes" / name / "1"
-
-
-def content_hash(path):
-    digest = hashlib.sha256()
-    for file in sorted(path.rglob("*"), key=lambda item: item.relative_to(path).as_posix()):
-        if file.is_symlink() or not file.resolve().is_relative_to(path.resolve()):
-            raise ValueError(f"Scene package cannot contain links outside its files: {file}")
-        if file.is_file():
-            digest.update(file.relative_to(path).as_posix().encode() + b"\0")
-            with file.open("rb") as stream:
-                digest.update(hashlib.file_digest(stream, "sha256").digest())
-    return digest.hexdigest()
-
-
-def validation_status(report):
-    if report is None:
-        return "missing"
-    for tool, expected in report.get("toolVersions", {}).items():
-        try:
-            actual = platform.python_version() if tool == "python" else installed_version(tool)
-        except PackageNotFoundError:
-            return "stale"
-        if actual != expected:
-            return "stale"
-    return "available"
 
 
 @dataclass(frozen=True)
@@ -78,6 +32,8 @@ class SceneVersion:
     locations: dict
     content_hash: str
     validation: dict | None
+    reports: ReportStore | None = None
+    files: tuple[str, ...] = ()
 
     @property
     def id(self):
@@ -87,132 +43,194 @@ class SceneVersion:
     def builder(self):
         return self.metadata["stage"].removeprefix("python:")
 
+    def url(self, relative):
+        return f"/api/v1/library/files/{self.root}/" + quote(
+            f"scenes/{self.name}/{self.rev}/{relative}", safe="/"
+        )
+
     @property
     def launchable(self):
-        return self.validation is not None and self.validation["launchable"] and not any(
-            check.get("status") == "fail" for check in self.validation.get("checks", [])
+        return launchable(self.report())
+
+    def report(self):
+        return (
+            self.reports.latest(f"scene:{self.id}", self.content_hash, self.validation)
+            if self.reports
+            else (self.validation)
         )
 
     def require_launchable(self):
-        if not self.launchable:
-            message = (
-                "Scene validation failed" if self.validation is not None else "Validation report missing"
+        report = self.report()
+        if not launchable(report):
+            message = "Scene validation failed" if report is not None else "Validation report missing"
+            raise LibraryError(
+                "scene_not_launchable", message, 409, sceneVersion=self.id, validation=deepcopy(report)
             )
-            raise LibraryError("scene_not_launchable", message, 409,
-                               sceneVersion=self.id, validation=deepcopy(self.validation))
         try:
             unchanged = content_hash(self.path) == self.content_hash
         except (OSError, ValueError) as exc:
             raise LibraryError(
-                "scene_not_launchable", "Scene package is unavailable", 409, sceneVersion=self.id,
+                "scene_not_launchable",
+                "Scene package is unavailable",
+                409,
+                sceneVersion=self.id,
             ) from exc
         if not unchanged:
             raise LibraryError(
-                "scene_not_launchable", "Scene package changed after indexing; use a new version", 409,
+                "scene_not_launchable",
+                "Scene package changed after indexing; use a new version",
+                409,
                 sceneVersion=self.id,
             )
 
     def summary(self):
+        report = self.report()
+        allowed = launchable(report)
+        gaps = [
+            check
+            for check in (report or {}).get("checks", [])
+            if check["status"] != "pass" and not check.get("notApplicable")
+        ]
+        untyped = (report or {}).get("untypedEntities", [])
         return {
-            "sceneId": self.name, "sceneVersion": self.id, "id": self.id, "rev": self.rev,
-            "name": self.metadata["title"], "title": self.metadata["title"],
-            "description": self.metadata.get("description", ""), "sources": self.metadata["sources"],
-            "launchable": self.launchable, "contentHash": self.content_hash, "root": self.root,
+            "sceneId": self.name,
+            "sceneVersion": self.id,
+            "id": self.id,
+            "rev": self.rev,
+            "name": self.metadata["title"],
+            "title": self.metadata["title"],
+            "description": self.metadata.get("description", ""),
+            "sources": self.metadata["sources"],
+            "launchable": allowed,
+            "contentHash": self.content_hash,
+            "root": self.root,
             "stage": self.metadata["stage"],
-            "launchReason": None if self.launchable else (
-                "缺少验证报告" if self.validation is None else "; ".join(
-                    check["message"] for check in self.validation["checks"] if check["status"] == "fail"
-                ) or "验证报告标记此版本不可启动"
+            "launchReason": None
+            if allowed
+            else (
+                "缺少验证报告"
+                if report is None
+                else "; ".join(check["message"] for check in report["checks"] if check["status"] == "fail")
+                or "验证报告标记此版本不可启动"
             ),
-            "validationStatus": validation_status(self.validation),
-            "entityCount": None, "deviceCount": None, "gapCount": None,
-            "countsReason": "Physical entities and full validation gaps have not been inspected",
+            "validationStatus": validation_status(report),
+            "entityCount": (report or {}).get("entityCount"),
+            "deviceCount": (report or {}).get("bindingCount"),
+            "gapCount": len(gaps) + len(untyped) if report else None,
+            "gaps": deepcopy(gaps)
+            + [
+                {"kind": "untyped_entity", "entityKey": key, "message": f"Untyped entity: {key}"}
+                for key in untyped
+            ],
+            "countsReason": (report or {}).get("inspection", "Physical entities have not been inspected"),
+            "thumbnailUrl": next(
+                (
+                    self.url(name)
+                    for name in self.files
+                    if name.startswith("previews/") and Path(name).suffix.lower() in (".png", ".jpg", ".webp")
+                ),
+                None,
+            ),
         }
 
 
 class SceneLibrary:
-    def __init__(self, builtin_root=BUILTIN_ROOT, user_root=None):
-        roots = (("builtin", Path(builtin_root)), ("user", Path(
-            user_root if user_root is not None else os.getenv("LW_LIBRARY", "~/.spatial-sync/library")
-        ).expanduser()))
-        self.versions = {}
-        for root_name, root in roots:
+    def __init__(self, builtin_root=BUILTIN_ROOT, user_root=None, state_root=None):
+        self.roots = {
+            "builtin": Path(builtin_root).resolve(),
+            "user": Path(
+                user_root if user_root is not None else os.getenv("LW_LIBRARY", "~/.spatial-sync/library")
+            )
+            .expanduser()
+            .resolve(),
+        }
+        self.reports = ReportStore(
+            state_root
+            if state_root is not None
+            else Path(os.getenv("SPATIAL_STATE_ROOT", "~/.spatial-sync/state")).expanduser()
+        )
+        self.versions, self.files = {}, {}
+        self.refresh()
+
+    def refresh(self):
+        versions, files = {}, {}
+        for root_name, root in self.roots.items():
             for metadata_file in sorted((root / "scenes").glob("*/*/scene.yaml")):
                 path = metadata_file.parent.resolve()
                 if not path.is_relative_to(root.resolve()):
                     raise ValueError(f"Scene package escapes library root: {metadata_file}")
-                data = document(metadata_file)
+                try:
+                    data, bindings, locations = scene_metadata(path)
+                except LibraryError as exc:
+                    problems = "; ".join(f"{p['path']}: {p['message']}" for p in exc.detail["problems"])
+                    raise ValueError(f"Invalid scene package: {problems}") from exc
                 name, rev = metadata_file.parent.parent.name, metadata_file.parent.name
-                if (not NAME.fullmatch(name) or not rev.isdecimal() or int(rev) < 1 or str(int(rev)) != rev
-                        or data.get("name") != name):
-                    raise ValueError(f"Invalid scene package identity: {metadata_file}")
-                if not isinstance(data.get("title"), str) or not data["title"].strip():
-                    raise ValueError(f"Scene package requires a title: {metadata_file}")
-                if not isinstance(data.get("sources"), list) or not data["sources"] or any(
-                    not isinstance(source, str) or source not in ("synthetic", "newton")
-                    for source in data["sources"]
-                ) or len(data["sources"]) != len(set(data["sources"])):
-                    raise ValueError(f"Invalid scene sources: {metadata_file}")
-                stage = data.get("stage")
-                builder = stage.removeprefix("python:") if isinstance(stage, str) else ""
-                if (not isinstance(stage, str) or not stage.startswith("python:")
-                        or builder not in PYTHON_SOURCES):
-                    raise ValueError(f"Unknown registered Python builder: {metadata_file}")
-                if any(source not in PYTHON_SOURCES[builder] for source in data["sources"]):
-                    raise ValueError(f"Python builder/source combination is not registered: {metadata_file}")
-                simulation = data.get("simulation", {})
-                if not isinstance(simulation, dict) or set(simulation) - {"solver", "warmupSteps"}:
-                    raise ValueError(f"Unsupported scene simulation settings: {metadata_file}")
-                if simulation and "newton" not in data["sources"]:
-                    raise ValueError(f"Newton simulation settings require a Newton source: {metadata_file}")
-                if "solver" in simulation and simulation["solver"] not in ("xpbd", "mujoco", "featherstone"):
-                    raise ValueError(f"Unknown scene solver: {metadata_file}")
-                if "warmupSteps" in simulation and (
-                    isinstance(simulation["warmupSteps"], bool)
-                    or not isinstance(simulation["warmupSteps"], int) or simulation["warmupSteps"] < 1
+                if (
+                    not NAME.fullmatch(name)
+                    or not rev.isdecimal()
+                    or int(rev) < 1
+                    or str(int(rev)) != rev
+                    or data.get("name") != name
                 ):
-                    raise ValueError(f"warmupSteps must be a positive integer: {metadata_file}")
-                bindings = document(path / "devices.yaml")
-                locations = document(path / "locations.yaml")
-                if bindings.get("scene") != name or not isinstance(bindings.get("entities"), list):
-                    raise ValueError(f"Invalid scene binding document: {path / 'devices.yaml'}")
-                if not isinstance(locations.get("locations"), dict):
-                    raise ValueError(f"Invalid teach locations document: {path / 'locations.yaml'}")
+                    raise ValueError(f"Invalid scene package identity: {metadata_file}")
                 report_file = path / "validation.json"
                 report = json.loads(report_file.read_text(encoding="utf-8")) if report_file.exists() else None
-                if report is not None and (
-                    not isinstance(report, dict) or report.get("schema") != "lw.validation/1"
-                    or report.get("subject") != f"scene:{name}@{int(rev)}"
-                    or not isinstance(report.get("launchable"), bool)
-                    or not isinstance(report.get("toolVersions", {}), dict)
-                    or any(not isinstance(tool, str) or not isinstance(value, str)
-                           for tool, value in report.get("toolVersions", {}).items())
-                    or not isinstance(report.get("checks"), list)
-                    or any(not isinstance(check, dict) or check.get("status") not in ("pass", "warn", "fail")
-                           for check in report["checks"])
-                ):
-                    raise ValueError(f"Invalid scene validation report: {report_file}")
+                if report is not None:
+                    try:
+                        report = parse_report(report, f"scene:{name}@{int(rev)}")
+                    except ValueError as exc:
+                        raise ValueError(f"Invalid scene validation report: {report_file}") from exc
                 version = SceneVersion(
-                    name, int(rev), path, root_name, data, bindings, locations, content_hash(path), report
+                    name,
+                    int(rev),
+                    path,
+                    root_name,
+                    data,
+                    bindings,
+                    locations,
+                    content_hash(path),
+                    report,
+                    self.reports,
+                    tuple(package_files(path)),
                 )
-                if version.id in self.versions:
+                if version.id in versions:
                     raise ValueError(f"Conflicting scene version {version.id} in built-in and user libraries")
-                self.versions[version.id] = version
+                previous = self.versions.get(version.id)
+                if previous is not None and previous.content_hash != version.content_hash:
+                    raise LibraryError(
+                        "scene_not_launchable",
+                        "Scene package changed after indexing",
+                        409,
+                        sceneVersion=version.id,
+                    )
+                versions[version.id] = version
+                for relative in version.files:
+                    files[(root_name, f"scenes/{name}/{rev}/{relative}")] = (version, relative)
+        self.versions, self.files = versions, files
+
+    def indexed_file(self, root, relative):
+        return indexed_file(self.roots, self.files, root, relative, changed="scene_not_launchable")
 
     def list(self, query=None, launchable=None):
         versions = sorted(self.versions.values(), key=lambda version: (version.name, version.rev))
-        return [deepcopy(version.summary()) for version in versions if (
-            (launchable is None or version.launchable is launchable)
-            and (not query or query.casefold() in f"{version.id} {version.metadata['title']}".casefold())
-        )]
+        return [
+            deepcopy(version.summary())
+            for version in versions
+            if (
+                (launchable is None or version.launchable is launchable)
+                and (not query or query.casefold() in f"{version.id} {version.metadata['title']}".casefold())
+            )
+        ]
 
     def resolve(self, selector, *, launch=False, source=None):
         name, separator, rev = selector.partition("@")
         if not NAME.fullmatch(name) or (separator and (not rev.isdecimal() or int(rev) < 1)):
             raise LibraryError("unknown_version", "Unknown scene version")
-        matches = [version for version in self.versions.values() if version.name == name and (
-            not separator or version.rev == int(rev)
-        )]
+        matches = [
+            version
+            for version in self.versions.values()
+            if version.name == name and (not separator or version.rev == int(rev))
+        ]
         if not matches:
             raise LibraryError("unknown_version", f"Unknown scene version: {selector}")
         if launch and not separator:
@@ -229,15 +247,28 @@ class SceneLibrary:
     def describe(self, selector):
         version = self.resolve(selector)
         bindings = version.bindings["entities"]
-        definitions = {value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml"))
-                       if (value := document(file))}
-        devices = [deepcopy(binding) | {"actions": definitions[binding["type"]]["actions"]}
-                   for binding in bindings]
-        return deepcopy(version.summary() | {
-            "metadata": version.metadata, "entities": bindings, "devices": devices,
-            "types": {binding["type"]: definitions[binding["type"]] for binding in bindings},
-            "locations": version.locations["locations"],
-            "validation": version.validation,
-            "inspection": "declarative bindings; match selectors are unexpanded",
-            "assets": [],
-        })
+        definitions = {
+            value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
+        }
+        devices = [
+            deepcopy(binding) | {"actions": definitions.get(binding.get("type"), {}).get("actions", {})}
+            for binding in bindings
+        ]
+        return deepcopy(
+            version.summary()
+            | {
+                "metadata": version.metadata,
+                "entities": bindings,
+                "devices": devices,
+                "types": {
+                    binding["type"]: definitions[binding["type"]]
+                    for binding in bindings
+                    if binding.get("type") in definitions
+                },
+                "locations": version.locations["locations"],
+                "validation": version.report(),
+                "inspection": "declarative bindings; match selectors are unexpanded",
+                "assets": (version.report() or {}).get("referencedAssets", []),
+                "files": {relative: version.url(relative) for relative in version.files},
+            }
+        )

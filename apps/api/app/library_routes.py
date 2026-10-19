@@ -6,10 +6,25 @@ import anyio
 from fastapi import Request
 from fastapi.responses import FileResponse
 
+from apps.api.app.library_validation import program_schemas
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
+from packages.library.imports import LibraryImports
+from packages.library.validation import StructuralValidator
 
 
-def install_library_routes(app, assets: AssetLibrary):
+def install_library_routes(app, assets: AssetLibrary, scenes=None):
+    if scenes is None:
+        from packages.library.scenes import SceneLibrary
+
+        scene_index = SceneLibrary(
+            builtin_root=assets.roots["builtin"],
+            user_root=assets.roots["user"],
+            state_root=assets.jobs_root.parent,
+        )
+        def scenes():
+            return scene_index
+    validator = StructuralValidator(assets.jobs_root.parent, program_schemas)
+
     @app.get("/api/v1/library/assets")
     async def list_assets(kind: str | None = None, q: str | None = None, gaps: bool = False):
         return {"assets": assets.list(kind, q, gaps)}
@@ -19,9 +34,20 @@ def install_library_routes(app, assets: AssetLibrary):
     async def describe_asset(kind: str, name: str, rev: str | None = None):
         return assets.describe(f"{kind}/{name}@{rev}" if rev is not None else f"{kind}/{name}")
 
+    @app.post("/api/v1/library/assets/{kind}/{name}/{rev}/validate")
+    async def validate_asset(kind: str, name: str, rev: str):
+        version = assets.resolve(f"{kind}/{name}@{rev}")
+        return await anyio.to_thread.run_sync(validator.revalidate, version, "asset", assets)
+
+    @app.post("/api/v1/library/scenes/{name}/{rev}/validate")
+    async def validate_scene(name: str, rev: str):
+        version = scenes().resolve(f"{name}@{rev}")
+        return await anyio.to_thread.run_sync(validator.revalidate, version, "scene", assets)
+
     @app.get("/api/v1/library/files/{root}/{relative:path}")
     async def library_file(root: str, relative: str):
-        path = await anyio.to_thread.run_sync(assets.indexed_file, root, relative)
+        collection = assets if (root, relative) in assets.files else scenes()
+        path = await anyio.to_thread.run_sync(collection.indexed_file, root, relative)
         media_type = {
             ".glb": "model/gltf-binary",
             ".png": "image/png",
@@ -56,4 +82,5 @@ def install_library_routes(app, assets: AssetLibrary):
                     raise invalid("Upload exceeds 128 MiB")
                 stream.write(chunk)
             stream.seek(0)
-            return await anyio.to_thread.run_sync(assets.import_tar, stream)
+            importer = LibraryImports(assets, scenes(), validator)
+            return await anyio.to_thread.run_sync(importer.import_tar, stream)

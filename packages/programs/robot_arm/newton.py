@@ -16,14 +16,14 @@ class RobotArmProgram:
     id, type, tick_priority = "robot_arm.newton", "robot-arm/v1", 10
 
     class Config(ProgramConfig):
-        locations: dict
-        tubes: list[str]
+        locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
+        tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
         speedScale: float = Field(default=0.5, gt=0, le=1)
         graspMode: str = Field(default="weld", pattern="^(contact|weld)$")
-        jointKeys: list[str]
-        fingerKeys: list[str]
-        handBody: str
-        tcpSite: str
+        jointKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint", "posture": True})
+        fingerKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint"})
+        handBody: str = Field(json_schema_extra={"spatialReference": "body"})
+        tcpSite: str = Field(json_schema_extra={"spatialReference": "site"})
 
     def init(self, ctx):
         port = ctx.physics

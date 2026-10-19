@@ -2,7 +2,9 @@
 
 `lab` is the platform entry point and explains workflow selection and the RSI
 loop. `lab-operate` observes the actual Catalog and state, invokes generic
-actions, corrects refusals and verifies outcomes. Both reserve approvals and
+actions, corrects refusals and verifies outcomes. `lab-library` discovers and
+imports assets/scenes, reads completeness and validation, and revalidates exact
+immutable versions. All three reserve approvals and
 Vault writes for a person, including when a user asks an agent to bypass them.
 Later workflows are explicitly marked unavailable in this release.
 
@@ -15,14 +17,14 @@ lw skills install --target "/path/to/agent skills" --json
 ```
 
 `--target` is the parent skill directory: the installer creates `lab/SKILL.md`
-and `lab-operate/SKILL.md` beneath it. Quoted paths containing spaces work.
+`lab-library/SKILL.md` and `lab-operate/SKILL.md` beneath it. Quoted paths containing spaces work.
 The default is `~/.claude/skills` (Claude Code's user skill directory); choose
 another agent's directory explicitly with `--target`.
 
 Installation is local and works without a running gateway. Repeating the command
 keeps identical files and their modification times. Different existing content, a file
 where a skill directory belongs, or a symlink/reparse point is a conflict. Known
-conflicts are checked before either skill is installed. Existing user files and
+conflicts are checked before any skill is installed. Existing user files and
 additional files inside an identical installed skill are preserved. Choose a
 different target or review a conflict yourself; the installer has no overwrite
 or force option. Publishing requires a filesystem with hardlink support; an

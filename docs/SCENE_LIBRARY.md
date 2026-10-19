@@ -7,7 +7,7 @@ error; different revisions of one scene name are valid.
 
 ```text
 library/scenes/<name>/<rev>/
-  scene.yaml       # name, title, sources, registered Python stage, simulation settings
+  scene.yaml       # name, title, sources, registered Python or USD stage, simulation settings
   devices.yaml     # device bindings; shared definitions remain in devices/types/
   locations.yaml   # teach locations for this scene version
   validation.json  # existing report, read without running validators at startup
@@ -25,6 +25,8 @@ Inspect and launch from any shell:
 lw scene ls --json
 lw scene show robot-and-tubes --json
 lw scene launch lab-demo --json
+lw scene import ./my-scene --json
+lw scene validate <name@rev> --json
 ```
 
 `show` without `@rev` selects the latest revision. `launch` without `@rev`
@@ -64,8 +66,29 @@ recorded failures or files changed after indexing prevent launch with
 physics checks. Built-in reports record the package and builder checks actually
 performed and explicitly warn that full structural/physics validation was not
 run while packaging. Report tool-version mismatches are marked stale while the
-recorded launch conclusion remains in effect. The full importer/validator is
-separate work.
+recorded launch conclusion remains in effect.
+
+Scene import shares the confined tar upload, immutable revision allocation and
+deduplication rules of [asset import](ASSET_LIBRARY.md). New packages omit
+`validation.json`; the gateway generates S1–S8 results before publication. S1
+schema failures return 422 without a revision. Other failed checks remain
+inspectable and prevent launch. S8 checks the selected robot's taught coordinate
+counts and scalar joint limits, converting revolute degrees to radians and
+retaining prismatic meters. Physics checks remain explicitly not run.
+
+USD dependencies must stay within indexed package files or pinned `library:`
+asset versions. References, payloads and sublayers are preflighted before stage
+composition; USDZ containers/package-member paths and unsupported composition
+formats are rejected. Config location documents resolve only to indexed local
+files and must select the matching robot. Imported previews and other package
+files use the indexed `/library/files` route and the package integrity check.
+
+Revalidation uses `POST /api/v1/library/scenes/{name}/{rev}/validate` or generic
+MCP `library_validate`. It appends a report outside the immutable version and
+keeps its content hash unchanged. Existing held versions also consult the latest
+report before launch/reload. USD packages can be imported and inspected; until
+the USD runtime is delivered, an otherwise launchable USD version returns
+`503 source_unavailable` before allocating a session.
 
 ## Static previews
 
