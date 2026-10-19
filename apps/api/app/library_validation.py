@@ -14,6 +14,7 @@ def program_schemas():
                 "source": source,
                 "configModule": program.__module__,
                 "configClass": program.__qualname__,
+                **({"taughtLimits": program.taught_limits} if hasattr(program, "taught_limits") else {}),
                 "fields": {
                     field: information.json_schema_extra
                     for field, information in program.Config.model_fields.items()

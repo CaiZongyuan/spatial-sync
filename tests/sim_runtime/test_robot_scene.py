@@ -13,6 +13,34 @@ from packages.sim_runtime.manifest_export import export_manifest
 from packages.sim_runtime.simulation import NewtonSimulation
 
 
+def test_pure_structure_uses_actual_builder_resource_keys_and_urdf_limits():
+    import warp as wp
+
+    from packages.protocol.math import normalize_entity_key
+    from packages.sim_runtime.robot_definition import structure
+    from packages.sim_runtime.robot_scene import build_robot_and_tubes
+    from packages.sim_runtime.sites import add_joint_anchor_sites
+
+    with wp.ScopedDevice("cpu"):
+        builder = build_robot_and_tubes()
+        add_joint_anchor_sites(builder)
+    projected = structure()
+    assert set(projected["bodies"]) == {normalize_entity_key(label) for label in builder.body_label}
+    assert set(projected["joints"]) == {normalize_entity_key(label) for label in builder.joint_label}
+    assert set(projected["sites"]) == {
+        normalize_entity_key(label)
+        for label, flags in zip(builder.shape_label, builder.shape_flags, strict=True)
+        if flags & int(newton.ShapeFlags.SITE)
+    }
+    for index, label in enumerate(builder.joint_label):
+        limits = projected["joints"][normalize_entity_key(label)]["limits"]
+        if limits is not None:
+            start = builder.joint_qd_start[index]
+            assert limits == pytest.approx(
+                [builder.joint_limit_lower[start], builder.joint_limit_upper[start]]
+            )
+
+
 def test_official_seven_dof_arm_initial_tcp_and_dynamic_tubes_are_authoritative():
     with NewtonSimulation("robot-and-tubes", device="cpu") as sim:
         assert type(sim.solver).__name__ == "SolverMuJoCo"

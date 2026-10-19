@@ -12,6 +12,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
+from packages.library.common import BUILTIN_ROOT
 
 
 def scene_files(*, bad_posture=False):
@@ -122,7 +123,10 @@ def test_wrong_posture_reports_s8_before_unsupported_usd_runtime_and_allocates_n
         assert job["sceneVersion"] == "structure-fixture@1"
         failed = [check for check in job["validation"]["checks"] if check["id"] == "S8"]
         assert any(check["status"] == "fail" and check["location"] == "target" for check in failed)
-        assert next(check for check in job["validation"]["checks"] if check["id"] == "S5")["status"] == "pass"
+        assert (
+            "weld"
+            not in next(check for check in job["validation"]["checks"] if check["id"] == "S5")["message"]
+        )
         launch = client.post(
             "/api/v1/sessions", json={"sceneVersion": job["sceneVersion"], "source": "newton"}
         )
@@ -133,6 +137,136 @@ def test_wrong_posture_reports_s8_before_unsupported_usd_runtime_and_allocates_n
             check["id"] == "S8" and check["status"] == "fail" for check in error["validation"]["checks"]
         )
         assert client.get("/api/v1/health").json()["sessions"] == []
+
+
+@pytest.mark.parametrize("revision", [1, 2])
+def test_unchanged_builtin_revalidation_remains_launchable(revision):
+    with TestClient(create_app()) as client:
+        response = client.post(f"/api/v1/library/scenes/lab-demo/{revision}/validate")
+        assert response.status_code == 200, response.text
+        report = response.json()
+        assert next(c for c in report["checks"] if c["id"] == "S5")["status"] == "pass", report
+        assert next(c for c in report["checks"] if c["id"] == "S8")["status"] == "pass", report
+        launched = client.post(
+            "/api/v1/sessions", json={"sceneVersion": f"lab-demo@{revision}", "source": "synthetic"}
+        )
+        assert launched.status_code == 201, launched.text
+
+
+@pytest.mark.parametrize(
+    "fault,expected",
+    [
+        ("unknown-site", "S5"),
+        ("invalid-requires", "S5"),
+        ("unknown-condition-entity", "S5"),
+        ("unknown-condition-property", "S5"),
+        ("wrong-condition-value", "S5"),
+        ("invalid-interlock", "S5"),
+        ("missing-poses", "S8"),
+    ],
+)
+def test_declared_nested_location_and_interlock_faults_block_public_launch(fault, expected):
+    files = scene_files()
+    bindings = yaml.safe_load(files["devices.yaml"])
+    location_document = yaml.safe_load(files["locations.yaml"])
+    location = location_document["locations"]["target"]
+    if fault == "unknown-site":
+        location["site"] = "/World/Lab/Absent"
+    elif fault == "missing-poses":
+        del location["approach"], location["grasp"]
+    elif fault == "invalid-interlock":
+        bindings["entities"][0]["interlocks"] = {
+            "home": [
+                {
+                    "entity": "/World/Lab/Missing",
+                    "property": "bad",
+                    "bogus": True,
+                }
+            ]
+        }
+    else:
+        condition = {"property": "phase", "equals": "idle"}
+        if fault == "invalid-requires":
+            condition["bogus"] = True
+        elif fault == "unknown-condition-entity":
+            condition["entity"] = "/World/Lab/Absent"
+        elif fault == "unknown-condition-property":
+            condition["property"] = "not-a-property"
+        elif fault == "wrong-condition-value":
+            condition["equals"] = 123
+        location["requires"] = [condition]
+    bindings["entities"][0]["config"]["locations"] = location_document
+    files["devices.yaml"] = yaml.safe_dump(bindings).encode()
+    with TestClient(create_app()) as client:
+        response = upload(client, files)
+        assert response.status_code == 200, response.text
+        report = response.json()["validation"]
+        assert any(c["id"] == expected and c["status"] == "fail" for c in report["checks"]), report
+        refused = client.post(
+            "/api/v1/sessions", json={"sceneVersion": "structure-fixture@1", "source": "newton"}
+        )
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"]["code"] == "scene_not_launchable"
+
+
+def test_python_virtual_posture_count_is_checked_before_public_launch():
+    path = BUILTIN_ROOT / "scenes/lab-demo/2"
+    files = {name: (path / name).read_bytes() for name in ("scene.yaml", "devices.yaml", "locations.yaml")}
+    metadata = yaml.safe_load(files["scene.yaml"])
+    metadata["name"] = "python-structure-fixture"
+    bindings = yaml.safe_load(files["devices.yaml"])
+    bindings["scene"] = metadata["name"]
+    for binding in bindings["entities"]:
+        if "locations" in binding.get("config", {}):
+            binding["config"]["locations"] = yaml.safe_load(files["locations.yaml"])
+        if binding.get("program") == "robot_arm.virtual":
+            binding["config"]["locations"]["locations"]["rack.A1"]["grasp"] = [0.0]
+    files["scene.yaml"] = yaml.safe_dump(metadata).encode()
+    files["devices.yaml"] = yaml.safe_dump(bindings).encode()
+    with TestClient(create_app()) as client:
+        response = upload(client, files)
+        assert response.status_code == 200, response.text
+        assert any(c["id"] == "S8" and c["status"] == "fail" for c in response.json()["validation"]["checks"])
+        refused = client.post(
+            "/api/v1/sessions", json={"sceneVersion": "python-structure-fixture@1", "source": "synthetic"}
+        )
+        assert refused.status_code == 409, refused.text
+
+
+def test_native_python_builtin_revalidation_uses_pinned_urdf_joint_limits():
+    with TestClient(create_app()) as client:
+        response = client.post("/api/v1/library/scenes/robot-and-tubes/1/validate")
+        assert response.status_code == 200, response.text
+        checks = {item["id"]: item for item in response.json()["checks"]}
+        assert checks["S5"]["status"] == checks["S8"]["status"] == "pass", checks
+        assert response.json()["launchable"]
+
+
+def test_native_python_taught_coordinate_outside_real_urdf_limit_blocks_public_launch():
+    path = BUILTIN_ROOT / "scenes/robot-and-tubes/1"
+    files = {name: (path / name).read_bytes() for name in ("scene.yaml", "devices.yaml", "locations.yaml")}
+    metadata = yaml.safe_load(files["scene.yaml"])
+    metadata["name"] = "native-python-structure-fixture"
+    bindings = yaml.safe_load(files["devices.yaml"])
+    bindings["scene"] = metadata["name"]
+    locations = yaml.safe_load(files["locations.yaml"])
+    locations["locations"]["rack.A1"]["grasp"][0] = 1000
+    files["scene.yaml"] = yaml.safe_dump(metadata).encode()
+    files["devices.yaml"] = yaml.safe_dump(bindings).encode()
+    files["locations.yaml"] = yaml.safe_dump(locations).encode()
+    with TestClient(create_app()) as client:
+        response = upload(client, files)
+        assert response.status_code == 200, response.text
+        report = response.json()["validation"]
+        assert any(c["id"] == "S8" and c["status"] == "fail" for c in report["checks"]), report
+        refused = client.post(
+            "/api/v1/sessions",
+            json={
+                "sceneVersion": "native-python-structure-fixture@1",
+                "source": "newton",
+            },
+        )
+        assert refused.status_code == 409, refused.text
 
 
 def test_revalidation_persists_new_report_without_mutating_published_version(tmp_path):

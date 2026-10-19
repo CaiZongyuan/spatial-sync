@@ -53,7 +53,7 @@ def test_rejected_external_arcs_never_reach_usd_stage_composition(tmp_path, monk
     )
     failure = next(check for check in report["checks"] if check["id"] == "S7")
     assert failure["status"] == "fail" and any(
-        message in failure["message"] for message in ("host paths", "escapes")
+        message in failure["message"] for message in ("host paths", "Absolute", "escapes")
     )
     assert attempts == []
     assert opened == [str(stage)]

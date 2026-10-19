@@ -1,11 +1,12 @@
 """Taught, feedback-checked FR3 motion through the indexed PhysicsPort."""
 
 import numpy as np
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from packages.info.program import ProgramConfig, Reject
 from packages.protocol.math import rotate_vector
 
+from .taught import require_postures
 from .trajectory import plan_trajectory
 
 HOME = (0.0, -0.4, 0.0, -2.0, 0.0, 1.6, 0.7)
@@ -24,6 +25,11 @@ class RobotArmProgram:
         fingerKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint"})
         handBody: str = Field(json_schema_extra={"spatialReference": "body"})
         tcpSite: str = Field(json_schema_extra={"spatialReference": "site"})
+
+        @model_validator(mode="after")
+        def taught_poses(self):
+            require_postures(self.locations, [(None, None) for _ in self.jointKeys])
+            return self
 
     def init(self, ctx):
         port = ctx.physics

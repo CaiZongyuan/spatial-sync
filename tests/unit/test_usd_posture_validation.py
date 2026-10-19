@@ -43,7 +43,7 @@ def joint_report(tmp_path, joint_type, limits, coordinates):
                     }
                 ]
             },
-            "locations": {"locations": {"target": {"grasp": coordinates}}},
+            "locations": {"locations": {"target": {"approach": coordinates, "grasp": coordinates}}},
         }
     )
 

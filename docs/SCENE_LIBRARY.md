@@ -90,6 +90,13 @@ schema failures return 422 without a revision. Other failed checks remain
 inspectable and prevent launch. S8 checks the selected robot's taught coordinate
 counts and scalar joint limits, converting revolute degrees to radians and
 retaining prismatic meters. Physics checks remain explicitly not run.
+Python builders also run S5 and S8. Their registered pure scene inputs provide
+the resource identities: Synthetic uses the same manifest construction as a
+running session, and the native FR3 uses the builder's shared labels and pinned
+URDF joint limits. The virtual arm keeps its actual coordinate count and has no
+invented physical limits. Both arm programs require `approach` and `grasp` for
+each taught location. Config documents, nested site/condition references and
+interlocks use the same semantics as runtime Catalog construction.
 
 USD dependencies must stay within indexed package files or pinned `library:`
 asset versions. References, payloads and sublayers are preflighted before stage

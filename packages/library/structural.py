@@ -17,10 +17,13 @@ import yaml
 from pxr import Ar, Sdf, Usd, UsdGeom, UsdPhysics, UsdUtils
 from pydantic import ValidationError
 
+from packages.info.binding_validation import validate_binding_semantics
 from packages.library.common import content_hash, document
 from packages.library.metadata import Locations
+from packages.library.python_stages import resources as python_resources
 from packages.library.reports import parse_report
 from packages.library.visuals import glb_budget
+from packages.programs.robot_arm.taught import posture_problems as posture_problems_for
 
 
 def check(identifier, status, message, **details):
@@ -33,7 +36,7 @@ def entity_path(path, *, asset=False):
     return path.isascii() and (path == root or path.startswith(root + "/"))
 
 
-def config_locations(value, package, entities):
+def config_locations(value, package):
     if isinstance(value, str):
         # Exact indexed lookup rejects host paths, escapes, links and path-case aliases.
         if value not in package["files"]:
@@ -45,8 +48,6 @@ def config_locations(value, package, entities):
             raise ValueError("Config location document exceeds 1 MiB")
         value = document(path)
     value = Locations.model_validate(value).model_dump(exclude_unset=True)
-    if value.get("robot") is not None and value["robot"] not in entities:
-        raise ValueError("Config location document belongs to another robot: " + value["robot"])
     return value
 
 
@@ -70,6 +71,46 @@ def checked_config(program, config, kind):
                 "Invalid program Config: "
                 + "; ".join(".".join(map(str, error["loc"])) + ": " + error["msg"] for error in errors)
             ) from exc
+
+
+def usd_resources(stage):
+    prims = list(stage.Traverse(Usd.TraverseInstanceProxies()))
+    joints = {}
+    for prim in prims:
+        if not prim.IsA(UsdPhysics.Joint):
+            continue
+        if prim.IsA(UsdPhysics.RevoluteJoint):
+            joint, factor, kind = UsdPhysics.RevoluteJoint(prim), math.pi / 180, "revolute"
+        elif prim.IsA(UsdPhysics.PrismaticJoint):
+            joint, factor, kind = UsdPhysics.PrismaticJoint(prim), 1, "prismatic"
+        else:
+            joints[str(prim.GetPath())] = {"kind": "non-scalar", "limits": None}
+            continue
+        lower, upper = joint.GetLowerLimitAttr().Get(), joint.GetUpperLimitAttr().Get()
+        valid = (
+            type(lower) in (int, float)
+            and type(upper) in (int, float)
+            and not math.isnan(lower)
+            and not math.isnan(upper)
+            and lower <= upper
+        )
+        joints[str(prim.GetPath())] = {
+            "kind": kind,
+            "limits": [lower * factor, upper * factor] if valid else None,
+            **({"limitError": "invalid or blocked joint limits"} if not valid else {}),
+        }
+    return {
+        "entities": [str(prim.GetPath()) for prim in prims],
+        "bodies": [str(prim.GetPath()) for prim in prims if prim.HasAPI(UsdPhysics.RigidBodyAPI)],
+        "sites": [
+            str(prim.GetPath())
+            for prim in prims
+            if prim.IsA(UsdGeom.Xformable)
+            and not prim.HasAPI(UsdPhysics.RigidBodyAPI)
+            and not prim.HasAPI(UsdPhysics.CollisionAPI)
+        ],
+        "joints": joints,
+    }
 
 
 class USDGraph:
@@ -176,6 +217,19 @@ def validate(payload):
     graph = USDGraph(package, payload["assets"])
     stage, parse_error = None, None
     python_stage = metadata["stage"].startswith("python:")
+    resources, python_error = None, None
+    if python_stage:
+        try:
+            resources = python_resources(metadata, package, payload.get("bindings", {}))
+            if "usdPath" in resources:
+                path = Path(resources["usdPath"])
+                scope = {
+                    "path": str(path.parent),
+                    "files": {p.name: str(p) for p in path.parent.iterdir() if p.is_file()},
+                }
+                resources = usd_resources(USDGraph(scope, []).compose(path.name))
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            python_error = "Python builder resources could not be inspected: " + str(exc)
     if not python_stage:
         try:
             stage = graph.compose(metadata["stage"])
@@ -195,6 +249,15 @@ def validate(payload):
             **({"notApplicable": True} if python_stage else {}),
         )
     prims = list(stage.Traverse(Usd.TraverseInstanceProxies())) if stage else []
+    if stage:
+        resources = usd_resources(stage)
+    resource_entities = set((resources or {}).get("entities", []))
+    resource_roles = {
+        "body": set((resources or {}).get("bodies", [])),
+        "site": set((resources or {}).get("sites", [])),
+        "joint": set((resources or {}).get("joints", {})),
+    }
+    resource_keys = resource_entities | set().union(*resource_roles.values())
     if stage:
         correct = UsdGeom.GetStageUpAxis(stage) == "Z" and UsdGeom.GetStageMetersPerUnit(stage) == 1
         checks["S2"] = check("S2", "pass" if correct else "fail", "Stage must use Z up and metersPerUnit=1")
@@ -275,21 +338,26 @@ def validate(payload):
         payload.get("bindings", {}).get("entities", []) if kind == "scene" else metadata.get("implements", [])
     )
     reference_problems, posture_groups, bound, pending_templates = [], [], set(), []
+    if python_error:
+        reference_problems.append(python_error)
+    semantic_bindings = {}
     types = payload["types"]
     for binding in bindings:
         entity = binding.get("key", "/Asset") if kind == "scene" else "/Asset"
         entities = [entity]
         if kind == "scene":
             selector = binding.get("match") or entity
-            if not isinstance(selector, str) or not entity_path(selector):
+            if not isinstance(selector, str) or not (
+                selector.isascii() and selector.startswith("/World/")
+                if python_stage
+                else entity_path(selector)
+            ):
                 reference_problems.append("Binding selector must use an ASCII /World/Lab entity path")
             if binding.get("match"):
-                entities = sorted(
-                    str(prim.GetPath()) for prim in prims if fnmatchcase(str(prim.GetPath()), selector)
-                )
-                if stage is not None and not entities:
+                entities = sorted(key for key in resource_entities if fnmatchcase(key, selector))
+                if resources is not None and not entities:
                     reference_problems.append("Binding selector matched no entities: " + selector)
-            elif stage is not None and not stage.GetPrimAtPath(entity) and not binding.get("unplaced"):
+            elif resources is not None and entity not in resource_entities and not binding.get("unplaced"):
                 reference_problems.append("Binding entity does not exist: " + str(entity))
             for key in entities:
                 if key in bound:
@@ -321,13 +389,15 @@ def validate(payload):
             for field, information in program["fields"].items():
                 if information.get("documentSchema") == "locations" and field in config:
                     try:
-                        config[field] = config_locations(config[field], package, entities)
+                        config[field] = config_locations(config[field], package)
                     except (ValueError, OSError, TypeError, yaml.YAMLError) as exc:
                         reference_problems.append(str(exc))
+                        config[field] = {"locations": {}}
             try:
                 checked_config(program, config, kind)
             except ValueError as exc:
                 reference_problems.append(str(exc))
+            posture_paths = None
             for field, information in program["fields"].items():
                 role = information.get("spatialReference")
                 if not role or field not in config:
@@ -343,47 +413,53 @@ def validate(payload):
                     if not isinstance(path, str):
                         reference_problems.append(f"{field} requires a spatial path")
                         continue
-                    matches = [
-                        str(prim.GetPath()) for prim in prims if fnmatchcase(str(prim.GetPath()), path)
-                    ]
-                    if not matches and stage is not None:
+                    matches = sorted(key for key in resource_keys if fnmatchcase(key, path))
+                    if not matches and resources is not None:
                         reference_problems.append(f"{field} references a missing {role}: {path}")
                     for target in matches:
-                        prim = stage.GetPrimAtPath(target)
-                        if role == "joint" and not prim.IsA(UsdPhysics.Joint):
-                            reference_problems.append(f"{field} does not reference a joint: {target}")
-                        elif role == "body" and not prim.HasAPI(UsdPhysics.RigidBodyAPI):
-                            reference_problems.append(f"{field} does not reference a rigid body: {target}")
-                        elif role == "site" and (
-                            not prim.IsA(UsdGeom.Xformable)
-                            or prim.HasAPI(UsdPhysics.RigidBodyAPI)
-                            or prim.HasAPI(UsdPhysics.CollisionAPI)
-                        ):
-                            reference_problems.append(
-                                f"{field} does not reference a transform site: {target}"
-                            )
+                        if target not in resource_roles[role]:
+                            reference_problems.append(f"{field} does not reference a {role}: {target}")
                         paths.append(target)
                 if information.get("posture"):
                     if len(paths) != len(set(paths)):
                         reference_problems.append(f"{field} contains duplicate joints")
-                    taught = config.get("locations", payload.get("locations", {}))
-                    if isinstance(taught, dict):
-                        if taught.get("robot") is not None and taught["robot"] not in entities:
-                            reference_problems.append(
-                                "Location document belongs to another robot: " + taught["robot"]
+                    posture_paths = paths
+            if posture_paths is not None or "taughtLimits" in program:
+                taught = config.get("locations", payload.get("locations", {}))
+                if isinstance(taught, dict):
+                    if taught.get("robot") is not None and taught["robot"] not in entities:
+                        reference_problems.append(
+                            "Location document belongs to another robot: " + taught["robot"]
+                        )
+                    else:
+                        for robot in [taught["robot"]] if taught.get("robot") else entities:
+                            posture_groups.append(
+                                (robot, posture_paths or [], taught, program.get("taughtLimits"))
                             )
-                        else:
-                            for robot in [taught["robot"]] if taught.get("robot") else entities:
-                                posture_groups.append((robot, paths, taught.get("locations", {})))
+            if kind == "scene":
+                semantic_bindings.update({key: binding | {"config": config} for key in entities})
+    if kind == "scene" and resources is not None:
+
+        def property_schema(entity, prop):
+            return types[semantic_bindings[entity]["type"]]["properties"][prop]["schema"]
+
+        for key, binding in semantic_bindings.items():
+            definition = types.get(binding.get("type"), {})
+            if "actions" not in definition:
+                continue
+            try:
+                validate_binding_semantics(key, binding, definition, property_schema, resource_roles["site"])
+            except (ValueError, KeyError, TypeError) as exc:
+                reference_problems.append(f"Invalid binding semantics on {key}: {exc}")
     checks["S5"] = check(
         "S5",
-        "fail" if reference_problems else "warn" if stage is None or pending_templates else "pass",
+        "fail" if reference_problems else "warn" if resources is None or pending_templates else "pass",
         "; ".join(dict.fromkeys(reference_problems))
         or (
             "Asset templates have not been expanded; effective Config references were not inspected"
             if pending_templates
             else "Program/type declarations checked; stage resources were not inspected"
-            if stage is None
+            if resources is None
             else "Declared types and Config spatial references exist"
         ),
     )
@@ -414,64 +490,36 @@ def validate(payload):
             **({"dressingReferenceCount": len(dressing)} if stage is not None else {}),
         )
     posture_problems = []
-    for entity, joints, locations in posture_groups if stage is not None else []:
-        for name, location in locations.items():
-            for field in ("approach", "grasp"):
-                if field not in location:
-                    continue
-                values = location[field]
-                if len(values) != len(joints):
-                    posture_problems.append(
-                        (
-                            entity,
-                            name,
-                            f"{name}.{field} has {len(values)} coordinates; expected {len(joints)}",
-                        )
-                    )
-                    continue
-                for target, value in zip(joints, values):
-                    prim = stage.GetPrimAtPath(target)
-                    if prim.IsA(UsdPhysics.RevoluteJoint):
-                        joint, factor = UsdPhysics.RevoluteJoint(prim), math.pi / 180
-                    elif prim.IsA(UsdPhysics.PrismaticJoint):
-                        joint, factor = UsdPhysics.PrismaticJoint(prim), 1
-                    else:
-                        posture_problems.append(
-                            (entity, name, f"{name}.{field}: {target} has no scalar posture coordinate")
-                        )
-                        continue
-                    lower, upper = joint.GetLowerLimitAttr().Get(), joint.GetUpperLimitAttr().Get()
-                    if (
-                        not isinstance(lower, (int, float))
-                        or not isinstance(upper, (int, float))
-                        or isinstance(lower, bool)
-                        or isinstance(upper, bool)
-                        or math.isnan(lower)
-                        or math.isnan(upper)
-                        or lower > upper
-                    ):
-                        posture_problems.append(
-                            (entity, name, f"{name}.{field}: {target} has invalid or blocked joint limits")
-                        )
-                        continue
-                    if value < lower * factor or value > upper * factor:
-                        posture_problems.append(
-                            (entity, name, f"{name}.{field}: {target} is outside its joint limits")
-                        )
+    for entity, joints, taught, override_limits in posture_groups:
+        limits = override_limits
+        if limits is None:
+            limits = []
+            for target in joints:
+                information = (resources or {}).get("joints", {}).get(target, {})
+                bounds = information.get("limits")
+                if information.get("kind") not in ("revolute", "prismatic") or bounds is None:
+                    message = information.get("limitError", "has no inspectable scalar joint limits")
+                    for name in taught.get("locations", {}):
+                        posture_problems.append((entity, name, f"{name}: {target}: {message}"))
+                    bounds = (None, None)
+                limits.append(bounds)
+        posture_problems.extend(
+            (entity, name, message) for name, message in posture_problems_for(taught, limits)
+        )
     if kind == "scene" and posture_problems:
         entity, location, _ = posture_problems[0]
         checks["S8"] = check(
             "S8", "fail", "; ".join(item[2] for item in posture_problems), entityKey=entity, location=location
         )
     else:
-        applicable = kind == "scene" and bool(posture_groups) and stage is not None
+        applicable = kind == "scene" and bool(posture_groups)
         checks["S8"] = check(
             "S8",
             "pass" if applicable else "warn",
             "Taught joint counts and limits match the declared arm joints"
             if applicable
             else "No inspectable taught joint configuration is declared",
-            notApplicable=kind == "asset",
+            notApplicable=kind == "asset" or (resources is not None and not posture_groups),
         )
     items = []
     if kind == "asset":
