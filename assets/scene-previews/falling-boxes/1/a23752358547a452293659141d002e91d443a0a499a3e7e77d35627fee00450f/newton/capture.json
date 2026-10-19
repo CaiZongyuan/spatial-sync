@@ -3,7 +3,7 @@
   "sceneVersion": "falling-boxes@1",
   "sceneContentHash": "a23752358547a452293659141d002e91d443a0a499a3e7e77d35627fee00450f",
   "source": "newton",
-  "capturedAt": "2026-10-19T09:55:04.295095+00:00",
+  "capturedAt": "2026-10-19T10:45:50.486721+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -63,7 +63,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "cae792a570919430821c667936f307f9323657c09b9d22a4ca9109df57b880f7"
+      "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
     },
     {
       "path": "packages/library/scenes.py",
@@ -185,10 +185,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "b9b11f8f1a22b0f9943eb619cddbcd53416201ed1a3ec3a3b95980753dc6483b",
-    "catalog.json": "97455978e6066be780b2784e7981f343ab8128841687f16842ec2811867861bf",
-    "state.json": "a5c00928e174a1a65e564de5be7a1ae7f8506666992b67dedb3cd824bd1957d4",
-    "snapshot.bin": "e78ad55fe74462f6a409f406a8a91536d7ba77e04b2683fa23d4022d83f2ce12"
+    "manifest.json": "fef07bef4367f1b1c1786da22414a1838d790ce9892623ed192457c182b768dd",
+    "catalog.json": "a40d66425733d837236db19e445c68c5b4c659966e2ebefb4f0e60cf93715549",
+    "state.json": "8933ae88e2ee5ae51aea4431e9ae47c240f67f24744f7e9a40184bfe1ec0a19a",
+    "snapshot.bin": "d19654e93d74f36a87eb8f1423e90b8b00006eeccf35c65bb1046e378ab95ce9"
   },
   "counts": {
     "physicalEntities": 3,

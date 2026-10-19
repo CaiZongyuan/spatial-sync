@@ -3,6 +3,23 @@ import type { SceneManifest } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
+test('a failed preview does not transfer its error to the next healthy capture', async ({ page, request }) => {
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes`)).json();
+  const failed = scenes.find((scene: { id: string }) => scene.id === 'falling-boxes@1');
+  const healthy = scenes.find((scene: { id: string }) => scene.id === 'usd-lab@1');
+  for (const document of Object.values(healthy.preview.documents))
+    expect((await request.get(`${api}${document}`)).status()).toBe(200);
+  await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: { scenes: [failed, healthy] } }));
+  await page.route(`**${failed.preview.documents.manifest}`, route => route.fulfill({ status: 503, body: 'Unavailable capture fixture' }));
+  await page.goto('/scenes');
+  const first = page.locator('.scene-card').filter({ hasText: 'falling-boxes@1' });
+  const second = page.locator('.scene-card').filter({ hasText: 'usd-lab@1' });
+  await expect(first).toContainText('预览加载失败');
+  await expect(second.getByRole('img', { name: 'usd-lab@1 的真实初始场景' })).toBeVisible();
+  await expect(second).not.toContainText('预览加载失败');
+  await expect(page.locator('canvas')).toHaveCount(0);
+});
+
 test('changing theme while the next preview loads recaptures the same scene and finishes its queue', async ({ page, request }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.addInitScript(() => {
