@@ -18,6 +18,7 @@ from . import terms
 from .env_cfg import TCP_OFFSET, FR3GeneratorEnvCfg
 from .environment import FR3ContactEnv
 from .reset import PHASES, validate_dataset
+from .validity import REASONS
 
 
 class ProbeComplete(Exception):
@@ -63,6 +64,14 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
             + json.dumps(
                 {
                     "phase": PHASES[phase],
+                    "raw_invalid_by_reason": {
+                        name: int(((env._fr3_validity.reasons & flag) != 0).sum())
+                        for name, flag in REASONS.items()
+                    },
+                    "raw_max_excess": float(env._fr3_validity.max_excess.max()),
+                    "raw_first_sample_min": int(env._fr3_validity.first_sample.min()),
+                    "raw_first_sample_max": int(env._fr3_validity.first_sample.max()),
+                    "raw_max_joint_speed": float(env._fr3_validity.max_speed.max()),
                     "tcp_mean_m": tcp_pose()[0].mean(0).tolist(),
                     "tube_mean_m": pose[:, :3].mean(0).tolist(),
                     "bilateral_contacts": int(terms.bilateral_contact(env).sum()),
