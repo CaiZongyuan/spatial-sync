@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { request } from '../lib/api';
 import { bytes } from '../lib/platform';
-import type { Recording } from '../lib/replay/reader';
+import { readRecording, recordedScene, type Recording } from '../lib/replay/reader';
 
 export const Route = createFileRoute('/recordings')({ component: Recordings });
 
@@ -13,7 +13,7 @@ function Recordings() {
   useEffect(() => {
     const controller = new AbortController();
     setError(undefined);
-    void request<Recording[]>('/recordings', { signal: controller.signal }).then(setRecordings)
+    void request<unknown[]>('/recordings', { signal: controller.signal }).then(values => setRecordings(values.map(readRecording)))
       .catch((error: Error) => { if (!controller.signal.aborted) setError(error.message); });
     return () => controller.abort();
   }, [attempt]);
@@ -28,7 +28,7 @@ function Recordings() {
           <section className="platform-session-list recording-table" aria-label="Recordings">
             <table><thead><tr><th>Scene / recording</th><th>Status</th><th>Duration</th><th>Size</th><th>Open</th></tr></thead>
               <tbody>{recordings.map(recording => <tr key={recording.sessionId}>
-                <td><strong>{recording.sceneId}</strong><code>{recording.sessionId}</code><small>{recording.sceneRevision}</small></td>
+                <td><strong title={recording.sceneContentHash ?? undefined}>{recordedScene(recording)}</strong><code>{recording.sessionId}</code><small>{recording.sceneRevision}</small></td>
                 <td><span className={`state-pill ${recording.status === 'recording' ? 'running' : recording.status === 'incomplete' ? 'paused' : ''}`}>{recording.status}</span></td>
                 <td>{recording.status === 'recording' ? 'In progress' : `${((recording.durationMs ?? 0) / 1000).toFixed(1)} s`}</td>
                 <td>{bytes(recording.segments.reduce((total, segment) => total + segment.bytes, 0))}</td>

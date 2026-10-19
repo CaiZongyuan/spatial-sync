@@ -9,6 +9,7 @@ import platform
 import sys
 import tempfile
 import time
+from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,13 @@ async def benchmark_log(directory: Path, *, frames=1024, bodies=2048):
     )
     tail = initial[HEADER.size :]
     snapshot = EntitySnapshot(sceneRevision=revision, epoch=0, sampleTimeMs=1000).model_dump_json()
+    catalog = Catalog(sceneRevision=revision).model_dump(mode="json")
+    # This generated diagnostic scene has no library package. Pin its actual
+    # manifest/catalog and initial frame, prepared outside the measured window.
+    scene_identity = sha256(json.dumps({
+        "manifest": manifest.model_dump(mode="json"), "catalog": catalog,
+        "initialFrameSha256": sha256(initial).hexdigest(), "snapshot": json.loads(snapshot),
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     lags, peak_depth = [], 0
     done = asyncio.Event()
 
@@ -59,10 +67,13 @@ async def benchmark_log(directory: Path, *, frames=1024, bodies=2048):
             deadline = now + 0.002
 
     start = time.perf_counter()
-    log = SessionLog(directory, session_id, "recording-benchmark")
+    log = SessionLog(
+        directory, session_id, "recording-benchmark", scene_version="recording-benchmark@1",
+        scene_content_hash=scene_identity, kind="session",
+    )
     log.add_revision(
         manifest.model_dump(mode="json"),
-        Catalog(sceneRevision=revision).model_dump(mode="json"),
+        catalog,
         initial,
         snapshot,
     )
@@ -101,6 +112,7 @@ async def benchmark_log(directory: Path, *, frames=1024, bodies=2048):
             else:
                 snapshot_count += 1
     assert metadata["status"] == "complete" and data_frames == frames and last_seq == frames
+    assert metadata["formatVersion"] == 2 and metadata["sceneContentHash"] == scene_identity
     ordered = sorted(lags)
     p95 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))] if ordered else 0
     return {
@@ -108,6 +120,8 @@ async def benchmark_log(directory: Path, *, frames=1024, bodies=2048):
             "writer admission through drain/flush/metadata; "
             "verified file output; buffered flush, no fsync"
         ),
+        "sceneIdentity": "generated manifest/catalog, initial frame and entity snapshot",
+        "sceneContentHash": scene_identity,
         "frames": frames,
         "bodiesPerFrame": bodies,
         "verifiedDataFrames": data_frames,

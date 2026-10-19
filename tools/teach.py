@@ -23,7 +23,7 @@ from packages.programs.robot_arm.newton import HOME
 from packages.protocol.math import compose_pose
 
 ASSET = ROOT / "assets/robots/franka_emika_panda/urdf/fr3_franka_hand.urdf"
-LOCATIONS = ROOT / "devices/scenes/robot-and-tubes.locations.yaml"
+LOCATIONS = ROOT / "library/scenes/robot-and-tubes/1/locations.yaml"
 
 
 class Teacher:

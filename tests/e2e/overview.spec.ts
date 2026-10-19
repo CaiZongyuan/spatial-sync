@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const centrifuge = '/World/Lab/Centrifuge';
@@ -40,7 +42,7 @@ test('a paused live viewport draws on changes and wakes for Step, theme and proj
 test('the real overview connects an isometric scene, readouts, device actions, activity and theme', async ({ page, request }, testInfo) => {
   const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
   expect(response.ok()).toBe(true);
-  const { sessionId } = await response.json();
+  const { sessionId, sceneVersion } = await response.json();
   let scenes = 0, sockets = 0;
   page.on('request', request => { if (request.url().endsWith(`/sessions/${sessionId}/scene`)) scenes++; });
   page.on('websocket', socket => { if (socket.url().includes(`/sessions/${sessionId}/ws`)) sockets++; });
@@ -52,6 +54,8 @@ test('the real overview connects an isometric scene, readouts, device actions, a
     const drawer = page.getByRole('complementary', { name: '设备抽屉' });
     await expect(drawer).toHaveAttribute('data-read-only', 'false');
     await expect(page.locator('.overview-page-heading')).toContainText(sessionId);
+    await expect(page.locator('.overview-page-heading')).toContainText(sceneVersion);
+    await expect(page.getByRole('complementary', { name: '检查器' })).toContainText(sceneVersion);
     const initialSceneRequests = scenes;
     const initialSockets = sockets;
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
@@ -102,6 +106,52 @@ test('the real overview connects an isometric scene, readouts, device actions, a
   } finally {
     await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' });
   }
+});
+
+for (const version of [1, 2]) test(`overview previews the v${version} recorded version with disabled actions and no live transport`, async ({ page }, testInfo) => {
+  const fixture = resolve(`../../tests/fixtures/recordings/v${version}`);
+  const metadata = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
+  const live = { ...JSON.parse(readFileSync(resolve('../../tests/fixtures/recordings/v2/recording.json'), 'utf8')),
+    sessionId: 'live-preview-candidate', kind: 'live', sceneId: null, sceneVersion: null, sceneContentHash: null };
+  const liveRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/sessions/')) liveRequests.push(request.url());
+  });
+  page.on('websocket', socket => {
+    if (new URL(socket.url()).pathname.startsWith('/api/')) liveRequests.push(socket.url());
+  });
+  await page.route('**/api/v1/recordings', route => route.fulfill({ json: [live, metadata] }));
+  await page.route(`**/recordings/${metadata.sessionId}/**`, async route => {
+    const relative = new URL(route.request().url()).pathname.split(`/recordings/${metadata.sessionId}/`)[1];
+    if (existsSync(join(fixture, relative))) await route.fulfill({ path: join(fixture, relative) });
+    else await route.fulfill({ status: 404 });
+  });
+  await page.goto('/');
+  await expect(page.locator('.overview-page-heading')).toContainText(`lab-demo@${version}`);
+  await expect(page.locator('.overview-page-heading')).toContainText('最近录制 · 只读预览');
+  await expect(page.getByRole('complementary', { name: '检查器' })).toContainText(`lab-demo@${version}`);
+  await expect(page.locator('canvas')).toBeVisible();
+  const drawer = page.getByRole('complementary', { name: '设备抽屉' });
+  await expect(drawer).toHaveAttribute('data-read-only', 'true');
+  await page.getByTestId(`legend-${centrifuge}`).click();
+  await page.getByTestId('action-closeLid').locator('summary').click();
+  await expect(drawer.getByRole('button', { name: 'Run closeLid', exact: true })).toBeDisabled();
+  expect(liveRequests).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath(`overview-recording-v${version}.png`), fullPage: true });
+});
+
+test('overview rejects malformed v2 identity before opening a replay transport', async ({ page }) => {
+  const metadata = JSON.parse(readFileSync(resolve('../../tests/fixtures/recordings/v2/recording.json'), 'utf8'));
+  metadata.sceneContentHash = null;
+  const replayRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/recordings/')) replayRequests.push(request.url());
+  });
+  await page.route('**/api/v1/recordings', route => route.fulfill({ json: [metadata] }));
+  await page.goto('/');
+  await expect(page.getByRole('alert')).toContainText('requires a scene content hash');
+  await expect(page.getByRole('heading', { name: '开始一次实验', exact: true })).toBeVisible();
+  expect(replayRequests).toEqual([]);
 });
 
 test('session projection is shareable and preserves a single real scene connection', async ({ page, request }) => {

@@ -4,11 +4,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ReplaySource } from './replay-source';
 
 const fixture = fileURLToPath(new URL('../../../../../tests/fixtures/recordings/v1/', import.meta.url));
-const golden = JSON.parse(readFileSync(fixture + '/expected.json', 'utf8')) as {
-  tubeKey: string; robotKey: string;
-  samples: { timeMs: number; seq: number; tubePose: { p: number[]; q: number[] };
-    tubeLocation: string; robotJoints: number[] }[];
-};
 let source: ReplaySource;
 
 afterEach(() => {
@@ -17,17 +12,45 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('reconstructs ten independently extracted log states and poses from the published v1 fixture', async () => {
+it('replays sequentially when an optional property index attachment is unavailable', async () => {
+  const fixture = fileURLToPath(new URL('../../../../../tests/fixtures/recordings/v2/', import.meta.url));
+  const metadata = JSON.parse(readFileSync(fixture + '/recording.json', 'utf8'));
+  metadata.segments[0].propertyIndex = 'seg-000001.index.json';
+  const requested: string[] = [];
+  vi.stubGlobal('location', { href: 'https://example.org/replay/v2' });
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    const name = new URL(url).pathname.split('/v2/')[1];
+    requested.push(name);
+    if (name.endsWith('.index.json')) return new Response(null, { status: 404 });
+    return name === 'recording.json' ? Response.json(metadata)
+      : new Response(new Uint8Array(readFileSync(fixture + '/' + name)));
+  }));
+  source = new ReplaySource('v2', 'https://example.org/files/v2/recording.json');
+  await source.start();
+  await source.seek(source.getPlayback().durationMs);
+  expect(source.getPlayback()).toMatchObject({ ready: true, sceneVersion: 'lab-demo@2' });
+  expect(requested).not.toContain('seg-000001.index.json');
+});
+
+it.each([1, 2])('reconstructs independent states and poses from the published v%i fixture', async (version) => {
+  const fixture = fileURLToPath(new URL(`../../../../../tests/fixtures/recordings/v${version}/`, import.meta.url));
+  const golden = JSON.parse(readFileSync(fixture + '/expected.json', 'utf8')) as {
+    tubeKey: string; robotKey: string;
+    samples: { timeMs: number; seq: number; tubePose: { p: number[]; q: number[] };
+      tubeLocation: string; robotJoints: number[] }[];
+  };
   const urls: string[] = [];
-  vi.stubGlobal('location', { href: 'https://example.org/replay/v1' });
+  vi.stubGlobal('location', { href: `https://example.org/replay/v${version}` });
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     urls.push(url);
-    const name = new URL(url).pathname.split('/v1/')[1];
+    const name = new URL(url).pathname.split(`/v${version}/`)[1];
     return new Response(new Uint8Array(readFileSync(fixture + '/' + name)));
   }));
-  source = new ReplaySource('v1', 'https://example.org/files/v1/recording.json');
+  source = new ReplaySource(`v${version}`, `https://example.org/files/v${version}/recording.json`);
   await source.start();
   expect(source.readOnly).toBe(true);
+  expect(source.getPlayback()).toMatchObject({ sceneVersion: `lab-demo@${version}`, kind: 'session' });
+  if (version === 1) expect(source.getPlayback().sceneContentHash).toBeNull();
   expect(source.info.getMetadata().ready).toBe(true);
   for (const sample of golden.samples) {
     await source.seek(sample.timeMs);
@@ -37,7 +60,7 @@ it('reconstructs ten independently extracted log states and poses from the publi
     expect(source.info.getEntity(golden.robotKey)?.values.jointPositions).toEqual(sample.robotJoints);
   }
   expect(source.getPlayback().playing).toBe(false);
-  expect(urls.every((url) => url.startsWith('https://example.org/files/v1/'))).toBe(true);
+  expect(urls.every((url) => url.startsWith(`https://example.org/files/v${version}/`))).toBe(true);
   expect(urls).toHaveLength(4); // One cached segment and its metadata/manifest/catalog.
   expect(() => source.action(golden.robotKey, 'home', {})).toThrow(/read-only/);
 });

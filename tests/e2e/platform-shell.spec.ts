@@ -81,3 +81,33 @@ test('the temporary launch form selects a source supported by the first availabl
   await expect(page.getByLabel('Source', { exact: true })).toHaveValue('newton');
   await expect(page.getByRole('button', { name: 'Launch workspace' })).toBeEnabled();
 });
+
+test('legacy scene choices use one latest launchable version and its sources', async ({ page, request }) => {
+  // Discovery contract fixture; launch still uses the actual Synthetic API and workspace.
+  await page.route('**/api/v1/scenes', route => route.fulfill({ json: { scenes: [
+    { sceneId: 'lab-demo', sceneVersion: 'lab-demo@1', rev: 1, name: 'Version one', sources: ['newton'], launchable: true },
+    { sceneId: 'lab-demo', sceneVersion: 'lab-demo@2', rev: 2, name: 'Version two', sources: ['synthetic'], launchable: true },
+    { sceneId: 'lab-demo', sceneVersion: 'lab-demo@3', rev: 3, name: 'Unavailable latest', sources: ['newton'], launchable: false },
+  ] } }));
+  await page.goto('/sessions');
+  const scene = page.getByLabel('Scene', { exact: true });
+  await expect(scene.getByRole('option')).toHaveCount(1);
+  await expect(scene).toHaveValue('lab-demo');
+  await expect(scene.getByRole('option')).toHaveText('Version two');
+  const source = page.getByLabel('Source', { exact: true });
+  await expect(source.getByRole('option')).toHaveCount(1);
+  await expect(source).toHaveValue('synthetic');
+  const created = page.waitForResponse(response => response.url().endsWith('/api/v1/sessions') &&
+    response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Launch workspace' }).click();
+  const response = await created;
+  expect(response.request().postDataJSON()).toMatchObject({ sceneId: 'lab-demo', source: 'synthetic' });
+  expect(response.ok()).toBe(true);
+  const { sessionId } = await response.json();
+  try {
+    await expect(page).toHaveURL(new RegExp(`/sessions/${sessionId}$`));
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+  } finally {
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});

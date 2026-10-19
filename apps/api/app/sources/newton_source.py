@@ -29,6 +29,7 @@ from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 class NewtonSource:
     def __init__(self, session_id: str):
         self.session_id = session_id
+        self.scene_package = None
         self._process = None
         self._transport = None
         self._writer = None
@@ -55,6 +56,9 @@ class NewtonSource:
         self._invocations = OrderedDict()
         self._starting = True
 
+    def configure_scene(self, scene_package):
+        self.scene_package = scene_package
+
     async def start(self, scene_id: str, options: SessionOptions) -> tuple[SceneManifest, Catalog]:
         from packages.sim_runtime.runner import run_runner
 
@@ -68,7 +72,9 @@ class NewtonSource:
         self._transport = parent
         self._process = mp.get_context("spawn").Process(
             target=run_runner,
-            args=(child, self.session_id, scene_id, options.model_dump()),
+            args=(
+                child, self.session_id, scene_id, options.model_dump(), self.scene_package
+            ),
             name=f"newton-{self.session_id}",
         )
         self._process.start()
@@ -144,7 +150,9 @@ class NewtonSource:
                 self.manifest = SceneManifest.model_validate(packet["manifest"])
                 from packages.sim_runtime.info_catalog import load_info_catalog
 
-                self.catalog = load_info_catalog(self.manifest, self.scene_id)
+                self.catalog = load_info_catalog(
+                    self.manifest, self.scene_id, scene_package=self.scene_package
+                )
                 if self.catalog.model_dump(mode="json") != packet["catalog"]:
                     raise ValueError("Runner and gateway Catalog definitions differ")
                 self._info_store = StateStore(self.manifest.sceneRevision)

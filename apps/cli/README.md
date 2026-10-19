@@ -26,9 +26,23 @@ exit codes: 0 success, 2 rejection, 3 failure/cancellation, 4 wait timeout, or 1
 usage/connection error. MCP derives input validation and structured output from
 the declared types; invocation results retain rejection hints.
 
-The migrated commands are `ls`, `show`, `cancel`, `approve` and `rec ls`. Other
+Scene discovery and launch use the same table:
+
+```text
+lw scene ls [--query TEXT] [--launchable] --json
+lw scene show <name[@rev]> --json
+lw scene launch <name[@rev]> [--source synthetic|newton] --json
+```
+
+Their generic MCP mirrors are `library_search`, `library_describe` and
+`scene_launch`. They work before any session exists. Launch chooses the latest
+launchable version when no revision is supplied, while show reads the latest
+version, including validation failures. Launch defaults to a supported package
+source and switches subsequent MCP device calls to the new active session.
+
+The migrated legacy commands are `ls`, `show`, `cancel`, `approve` and `rec ls`. Other
 existing commands retain their adapters, including CLI property extraction,
 action parameters, waits and simulation subcommands. The eight published MCP
-tool names and schemas remain unchanged. Verify changes with
+tool names and schemas remain unchanged alongside the three library tools. Verify changes with
 `uv run --no-sync python -m pytest tests/cli -q`; these tests use the installed
 `lw` executable, actual HTTP handlers and official SDK/stdio clients.

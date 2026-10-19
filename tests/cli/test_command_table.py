@@ -17,7 +17,7 @@ async def test_generated_inspections_match_http_cli_and_mcp_and_preserve_all_too
         # Public input/output schemas captured from the unmodified baseline, 63abf03.
         expected = json.loads((Path(__file__).parent / "fixtures/mcp_tools.json").read_text(encoding="utf-8"))
         schemas = {tool.name: {"input": tool.input_schema, "output": tool.output_schema} for tool in tools}
-        assert schemas == expected
+        assert {name: schemas[name] for name in expected} == expected
         assert all("approv" not in tool.name for tool in tools)
         forbidden = await mcp.call_tool("approve_invocation", {"invocation_id": "inv-do-not-approve"})
         assert forbidden.is_error and "approval_requires_human" in forbidden.content[0].text

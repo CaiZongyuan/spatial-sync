@@ -25,7 +25,7 @@ def _body_targets(manifest):
 
 
 class _Runner:
-    def __init__(self, transport, session_id, scene_id, options):
+    def __init__(self, transport, session_id, scene_id, options, scene_package=None):
         # Only the spawned process reaches these imports or owns a Newton State.
         import newton
         import warp as wp
@@ -37,7 +37,10 @@ class _Runner:
 
         self.wp, self.newton = wp, newton
         self.transport, self.session_id, self.options = transport, session_id, options
-        self.sim = NewtonSimulation(scene_id, device=options.device, physics_dt=options.physicsDt)
+        simulation = scene_package.metadata.get("simulation", {}) if scene_package else {}
+        self.sim = NewtonSimulation(
+            scene_id, device=options.device, physics_dt=options.physicsDt, solver=simulation.get("solver")
+        )
         self.manifest = export_manifest(
             self.sim,
             session_id=session_id,
@@ -47,6 +50,8 @@ class _Runner:
             realtime_factor=options.realtimeFactor,
             strict_labels=options.strictLabels,
         )
+        if scene_package:
+            self.manifest = self.manifest.model_copy(update={"sceneName": scene_package.metadata["title"]})
         self.body_indices, self.stream_ids = _body_targets(self.manifest)
         self._last_complete = None
         self.extractor = TransformExtractor(self.sim.model.body_count, device=self.sim.model.device)
@@ -71,7 +76,7 @@ class _Runner:
             newton.eval_ik(self.sim.model, self.sim.state, self._joint_q, self._joint_qd)
         # Compile the real contact/solver path while LOADING, then restore the
         # zero-step FK authority before advertising readiness or accepting commands.
-        self.sim.step(self.sim.config.warmup_steps)
+        self.sim.step(simulation.get("warmupSteps", self.sim.config.warmup_steps))
         self.sim.reset(increment_epoch=False)
         self.sim.solver_ms = 0.0
         wp.synchronize_device(self.sim.model.device)
@@ -81,7 +86,9 @@ class _Runner:
         self._heartbeat_at = time.monotonic()
         from .info_host import NewtonInfoHost
 
-        self.info = NewtonInfoHost(self.sim, self.manifest, options, self._info_events)
+        self.info = NewtonInfoHost(
+            self.sim, self.manifest, options, self._info_events, scene_package=scene_package
+        )
         self.viewer = None
         self._viewer_error = None
         if self.info.port:
@@ -428,10 +435,12 @@ class _Runner:
             self.control.close(drain=True)
 
 
-def run_runner(transport, session_id: str, scene_id: str, options: dict):
+def run_runner(transport, session_id: str, scene_id: str, options: dict, scene_package=None):
     runner = None
     try:
-        runner = _Runner(transport, session_id, scene_id, SessionOptions.model_validate(options))
+        runner = _Runner(
+            transport, session_id, scene_id, SessionOptions.model_validate(options), scene_package
+        )
         runner.run()
     except BaseException as exc:
         # One reliable sender owns the pipe once constructed.

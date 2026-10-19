@@ -21,6 +21,7 @@ from packages.info.approvals import ApprovalStore
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
+from packages.library.scenes import SceneLibrary
 from packages.protocol.internal import SessionOptions
 from packages.protocol.json import encode
 from packages.protocol.math import compose_pose
@@ -44,18 +45,6 @@ from packages.protocol.schema import (
     validate_command_args,
 )
 from packages.transport import FrameCodec
-
-SCENES = [
-    {
-        "sceneId": "lab-demo",
-        "name": "Synthetic Laboratory",
-        "sources": ["synthetic"],
-        "description": "Deterministic robot, 20 tubes, centrifuge and asset fallback; no GPU required",
-    },
-    {"sceneId": "falling-boxes", "name": "Newton Falling Boxes", "sources": ["newton"]},
-    {"sceneId": "robot-and-tubes", "name": "Newton Robot and Tubes", "sources": ["newton"]},
-    {"sceneId": "usd-lab", "name": "Newton USD Laboratory", "sources": ["newton"]},
-]
 
 
 def default_source_factory(kind: str, session_id: str) -> SpatialSource:
@@ -83,9 +72,11 @@ class Session:
         factory,
         recordings,
         approvals,
+        scene_version=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
+        self.scene_version = scene_version
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
         self.source: SpatialSource | None = None
@@ -130,7 +121,11 @@ class Session:
         try:
             candidate = self.factory(self.kind, self.session_id)
             self._starting_source = candidate
-            started = await candidate.start(self.scene_id, self.options)
+            if self.scene_version and (configure := getattr(candidate, "configure_scene", None)):
+                configure(self.scene_version)
+            started = await candidate.start(
+                self.scene_version.builder if self.scene_version else self.scene_id, self.options
+            )
             manifest, catalog = started if isinstance(started, tuple) else (started, None)
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
@@ -230,7 +225,7 @@ class Session:
 
     async def _record_revision(self):
         if self.recording is None:
-            self.recording = self.recordings.create(self.session_id, self.scene_id)
+            self.recording = self.recordings.create(self.session_id, self.scene_id, self.scene_version)
         if self.recording is None:
             return
         try:
@@ -360,6 +355,8 @@ class Session:
         return {
             "sessionId": self.session_id,
             "sceneId": self.scene_id,
+            "sceneVersion": self.scene_version.id if self.scene_version else f"{self.scene_id}@1",
+            "sceneContentHash": self.scene_version.content_hash if self.scene_version else None,
             "source": self.kind,
             "state": self.state,
             "sceneRevision": manifest.sceneRevision if manifest else None,
@@ -906,6 +903,8 @@ class Session:
 
     async def reload(self):
         async with self.command_lock:
+            if self.scene_version:
+                self.scene_version.require_launchable()
             self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
             self.pipeline.fail_active("session_reset", "Scene was reloaded")
@@ -971,23 +970,28 @@ class SessionManager:
         self.settings, self.factory = settings, factory
         self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
         self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
+        self._library = None
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
         self._create_lock = asyncio.Lock()
 
-    async def create(self, scene_id, source, options):
+    @property
+    def library(self):
+        if self._library is None:
+            self._library = SceneLibrary()
+        return self._library
+
+    async def create(self, scene_id, source, options, *, scene_version=None):
         self.approvals.startup()
-        if not any(scene["sceneId"] == scene_id and source in scene["sources"] for scene in SCENES):
-            raise HTTPException(
-                404, {"code": "unknown_scene", "message": "Scene/source combination is not registered"}
-            )
+        selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
+        source = source or selected.metadata["sources"][0]
         async with self._create_lock:
             for session in self.sessions.values():
                 if session.state == "FAILED":
                     # A failed control stream may leave its runner alive; release it before replacement.
                     await session.close()
                 if session.state not in ("STOPPED", "FAILED"):
-                    if session.scene_id == scene_id and session.kind == source:
+                    if session.scene_version.id == selected.id and session.kind == source:
                         return session
                     raise HTTPException(
                         409,
@@ -997,7 +1001,14 @@ class SessionManager:
                         },
                     )
             session = Session(
-                scene_id, source, options, self.settings, self.factory, self.recordings, self.approvals
+                selected.name,
+                source,
+                options,
+                self.settings,
+                self.factory,
+                self.recordings,
+                self.approvals,
+                scene_version=selected,
             )
             self._starting_session = session
             try:

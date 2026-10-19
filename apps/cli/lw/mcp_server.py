@@ -1,4 +1,4 @@
-"""Eight generic MCP tools backed by the same HTTP client as ``lw``."""
+"""Generic MCP tools backed by the same HTTP client as ``lw``."""
 
 import json
 import os
@@ -108,11 +108,12 @@ async def create_server(client: GatewayClient):
             )
         return await call_next(context)
 
-    server = MCPServer(
-        "Laboratory",
-        instructions=catalog_instructions(await client.catalog()),
-        middleware=[reject_human_decisions],
+    catalog = await client.catalog_if_active()
+    instructions = catalog_instructions(catalog) if catalog is not None else (
+        "Use library_search and library_describe to inspect scene versions, then scene_launch to start one. "
+        "Describe entities before acting. Approval requires a human operator."
     )
+    server = MCPServer("Laboratory", instructions=instructions, middleware=[reject_human_decisions])
 
     for command in COMMANDS:
         if command.mcp_name and not command.human_only:

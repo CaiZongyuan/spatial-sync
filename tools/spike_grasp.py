@@ -28,7 +28,7 @@ def run(trials, output):
     hand = port.bind_body("/World/Lab/RobotA/fr3/fr3_hand")
     tube = port.bind_body("/World/Lab/Tubes/Tube01")
     tcp = port.bind_site("/World/Lab/RobotA/fr3/fr3_hand/tcp")
-    locations = yaml.safe_load((ROOT / "devices/scenes/robot-and-tubes.locations.yaml").read_text())[
+    locations = yaml.safe_load((ROOT / "library/scenes/robot-and-tubes/1/locations.yaml").read_text())[
         "locations"
     ]
     velocity_limits = [2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26]

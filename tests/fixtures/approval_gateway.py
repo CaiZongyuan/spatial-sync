@@ -7,8 +7,8 @@ from packages.info.catalog import load_catalog
 __all__ = ["app"]
 
 
-def approval_catalog(manifest, scene_id, registry):
-    catalog = load_catalog(manifest, scene_id, registry)
+def approval_catalog(manifest, scene_id, registry, **options):
+    catalog = load_catalog(manifest, scene_id, registry, **options)
     catalog.types["centrifuge/v1"]["actions"]["closeLid"]["risk"] = "high"
     return catalog
 

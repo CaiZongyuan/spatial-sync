@@ -37,8 +37,10 @@ other consumer. Each test and benchmark owns its recording directory.
 
 ## Information and recording checks
 
-The browser suite includes a real format1 recording fixture with ten independent
-pose/location/joint samples. Live device actions and replay share the same stores
+The browser suite includes real format1 and format2 recording fixtures. Format1
+retains ten pose/location/joint samples; format2 pins a selected scene version
+and compares the final paused state with independent public HTTP reads. Live
+device actions and replay share the same stores
 and reducers. Replay must make no live session requests or WebSocket connection,
 and its action, approval, cancellation and lifecycle controls must be disabled.
 

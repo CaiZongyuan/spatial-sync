@@ -38,6 +38,7 @@ def gateway_url(tmp_path_factory):
             env=os.environ | {
                 "SPATIAL_RECORDINGS_ROOT": str(directory / "recordings"),
                 "SPATIAL_STATE_ROOT": str(directory / "state"),
+                "LW_LIBRARY": str(directory / "user-library"),
             },
         )
         url = f"http://127.0.0.1:{port}"

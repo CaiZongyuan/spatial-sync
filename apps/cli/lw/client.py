@@ -34,6 +34,7 @@ class GatewayClient:
         self.url = (url or os.getenv("LW_URL", "http://127.0.0.1:8000")).rstrip("/")
         self.token = token if token is not None else os.getenv("LW_TOKEN")
         self._session_id = session or os.getenv("LW_SESSION")
+        self._session_explicit = self._session_id is not None
         try:
             self.http = http or httpx.AsyncClient(base_url=self.url, timeout=30, trust_env=False)
         except httpx.InvalidURL as exc:
@@ -70,7 +71,7 @@ class GatewayClient:
         return document
 
     async def route(self):
-        if not self._session_id:
+        if not self._session_explicit:
             health = await self.request("GET", "/api/v1/health")
             active = [
                 item for item in health["sessions"] if item["state"] in ("RUNNING", "PAUSED", "LOADING")
@@ -85,6 +86,33 @@ class GatewayClient:
 
     async def catalog(self):
         return await self.request("GET", await self.route() + "/catalog")
+
+    async def catalog_if_active(self):
+        health = await self.request("GET", "/api/v1/health")
+        if any(session["state"] in ("RUNNING", "PAUSED") for session in health["sessions"]):
+            return await self.catalog()
+        return None
+
+    async def library_search(self, query=None, launchable=False):
+        params = {"q": query} if query is not None else {}
+        if launchable:
+            params["launchable"] = True
+        return (await self.request("GET", "/api/v1/library/scenes", params=params))["scenes"]
+
+    async def library_describe(self, id):
+        name, separator, rev = id.partition("@")
+        path = "/api/v1/library/scenes/" + quote(name, safe="")
+        if separator:
+            path += "/" + quote(rev, safe="")
+        return await self.request("GET", path)
+
+    async def scene_launch(self, sceneVersion, source=None, *, actor="cli:lw"):
+        body = {"sceneVersion": sceneVersion}
+        if source is not None:
+            body["source"] = source
+        result = await self.request("POST", "/api/v1/sessions", json=body, actor=actor, timeout=190)
+        self._session_id, self._session_explicit = result["sessionId"], False
+        return result
 
     async def list_entities(self, type=None, query=None):
         params = {key: value for key, value in {"type": type, "q": query}.items() if value is not None}

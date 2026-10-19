@@ -7,7 +7,7 @@ import { deviceKey } from '../lib/info/binding';
 import { SessionClient } from '../lib/stream/client';
 import { ReplaySource } from '../lib/replay/replay-source';
 import { request } from '../lib/api';
-import type { Recording } from '../lib/replay/reader';
+import { readRecording, recordedScene, type Recording } from '../lib/replay/reader';
 import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { SceneViewport, type InspectVisuals, type RenderedPose, type RenderMetrics } from './viewer/SceneViewport';
 import { EntityPanel } from './EntityPanel';
@@ -17,12 +17,15 @@ const value = (input: unknown) => typeof input === 'string' ? input : JSON.strin
 const title = (manifest: SceneManifest, catalog: Catalog, key: string) =>
   manifest.nodes.find(node => node.entityKey === key)?.name ?? catalog.types[catalog.entities[key]?.type]?.title ?? key.split('/').at(-1) ?? key;
 
-function Inspector({ snapshot, session, deviceCount }: { snapshot?: PlatformSnapshot; session?: PlatformSession; deviceCount?: number }) {
+function Inspector({ snapshot, session, recording, deviceCount }: {
+  snapshot?: PlatformSnapshot; session?: PlatformSession; recording?: Recording; deviceCount?: number;
+}) {
   const gpu = snapshot?.system.gpus[0];
   return <aside className="overview-inspector-panel panel" aria-label="检查器">
-    <section><span className="eyebrow">活动会话</span><dl className="reference-kv">
-      <div><dt>会话</dt><dd>{session ? <code>{session.sessionId}</code> : '无活动会话'}</dd></div>
-      <div><dt>场景</dt><dd>{session?.sceneName ?? '—'}</dd></div>
+    <section><span className="eyebrow">{recording ? '预览录制' : '活动会话'}</span><dl className="reference-kv">
+      <div><dt>会话</dt><dd>{session || recording ? <code>{session?.sessionId ?? recording?.sessionId}</code> : '无活动会话'}</dd></div>
+      <div><dt>场景</dt><dd>{session?.sceneName ?? recording?.sceneId ?? '—'}</dd></div>
+      <div><dt>场景版本</dt><dd><code>{session ? session.sceneVersion ?? session.sceneId : recording ? recordedScene(recording) : '—'}</code></dd></div>
       <div><dt>物理源</dt><dd>{session?.source ?? '—'}</dd></div>
       <div><dt>设备</dt><dd>{session?.backend?.device ?? (session?.source === 'synthetic' ? 'CPU · Synthetic' : '—')}</dd></div>
       <div><dt>已绑定实体</dt><dd>{deviceCount ?? '—'}</dd></div>
@@ -148,6 +151,7 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
     return result;
   }, [manifest, catalog]);
   const highlightedKeys = useMemo(() => new Set(deviceBodies.get(selected) ?? []), [deviceBodies, selected]);
+  const sceneLabel = session ? session.sceneVersion ?? session.sceneId : recordedScene(recording!);
   const annotations = manifest && catalog ? Object.values(catalog.entities)
     .filter(binding => Object.keys(catalog.types[binding.type]?.actions ?? {}).length > 0 || binding.key === selected)
     .map(binding => {
@@ -158,7 +162,7 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
       return { key: binding.key, label: title(manifest, catalog, binding.key), detail: readouts ? details : '', bodyKeys: deviceBodies.get(binding.key) ?? [] };
     }) : [];
   return <>
-    <header className="overview-page-heading"><h1>概览</h1><p><code>{session?.sceneId ?? recording?.sceneId}</code><span>·</span><code>{sessionId}</code><span>·</span>
+    <header className="overview-page-heading"><h1>概览</h1><p><code title={recording?.sceneContentHash ?? undefined}>{sceneLabel}</code><span>·</span><code>{sessionId}</code><span>·</span>
       <span className="reference-chip"><i />{client.readOnly ? '最近录制 · 只读预览' : `${state.sessionState} · ${state.simTime.toFixed(2)} s`}</span></p></header>
     {error || state.error || state.infoError ? <div role="alert" className="platform-error">{error || state.error || state.infoError}</div> : null}
     <div className="overview-hero">
@@ -177,7 +181,7 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
       </figure>
       {manifest && <DeviceDrawer {...{ client, manifest, catalog, selected }} select={choose} />}
     </div>
-    <div className="overview-lower"><Timeline {...{ client, manifest, catalog }} /><Inspector snapshot={snapshot} session={session} deviceCount={catalog ? Object.keys(catalog.entities).length : undefined} /></div>
+    <div className="overview-lower"><Timeline {...{ client, manifest, catalog }} /><Inspector snapshot={snapshot} session={session} recording={recording} deviceCount={catalog ? Object.keys(catalog.entities).length : undefined} /></div>
   </>;
 }
 
@@ -185,9 +189,18 @@ export function Overview() {
   const { snapshot, error } = usePlatform();
   const active = snapshot?.sessions.find(session => ['RUNNING', 'PAUSED'].includes(session.state));
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  useEffect(() => { void request<Recording[]>('/recordings').then(setRecordings).catch(() => {}); }, []);
-  const recent = snapshot ? recordings.find(recording => recording.segments.length > 0 && recording.status !== 'recording') : undefined;
+  const [recordingError, setRecordingError] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void request<unknown[]>('/recordings', { signal: controller.signal })
+      .then(values => setRecordings(values.map(readRecording)))
+      .catch((error: Error) => { if (!controller.signal.aborted) setRecordingError(error.message); });
+    return () => controller.abort();
+  }, []);
+  const recent = snapshot ? recordings.find(recording => recording.kind === 'session'
+    && recording.segments.length > 0 && recording.status !== 'recording') : undefined;
   return <main className="overview-page">
+    {recordingError && <div role="alert" className="platform-error">无法读取最近录制：{recordingError}</div>}
     {active || recent ? <SessionOverview key={active?.sessionId ?? recent!.sessionId} session={active} snapshot={snapshot} recording={active ? undefined : recent} /> : <>
       <header className="overview-page-heading"><h1>概览</h1><p>共享实验室 · 一个权威空间状态</p></header>
       {error && <div role="alert" className="platform-error">{error}</div>}

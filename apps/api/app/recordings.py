@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, Response
 
 from packages.assets.registry import asset_id_from_url
 from packages.info.log import SessionLog, recover_recordings
+from packages.info.recording import recording_metadata
 
 RECORDING_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}$")
 
@@ -89,8 +90,8 @@ class RecordingRepository:
             if not directory.is_dir() or directory.is_symlink() or not RECORDING_ID.fullmatch(directory.name):
                 continue
             try:
-                value = json.loads((directory / "recording.json").read_bytes())
-                if value.get("sessionId") != directory.name or value.get("formatVersion") != 1:
+                value = recording_metadata(json.loads((directory / "recording.json").read_bytes()))
+                if value.get("sessionId") != directory.name:
                     continue
                 value["url"] = f"/recordings/{directory.name}/recording.json"
                 values.append(value)
@@ -107,8 +108,11 @@ class RecordingRepository:
                 continue
             shutil.rmtree(directory)
 
-    def create(self, session_id, scene_id):
-        return SessionLog(self.root / session_id, session_id, scene_id) if self.enabled else None
+    def create(self, session_id, scene_id, scene_version):
+        return SessionLog(
+            self.root / session_id, session_id, scene_id,
+            scene_version=scene_version.id, scene_content_hash=scene_version.content_hash, kind="session",
+        ) if self.enabled else None
 
     def resolve(self, recording_id, relative):
         if not RECORDING_ID.fullmatch(recording_id) or "\\" in relative or PureWindowsPath(relative).drive:
