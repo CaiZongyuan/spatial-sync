@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import platform
+import subprocess
 import sys
 from importlib.metadata import version
 from pathlib import Path
@@ -24,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from packages.protocol.internal import SessionOptions
 from packages.sim_runtime.synthetic_lab import build_manifest
 
-SOURCE_REVISION = "186454ff61869d072d42494a7b94281ab06e9b82"
+SOURCE_REVISION = "882607f56e07464c14e839f2e39832d358c06062"
 NATIVE_MANIFEST = (
     "assets/scene-previews/robot-and-tubes/1/"
     "c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e/newton/manifest.json"
@@ -87,6 +88,17 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     output = parser.parse_args().output.resolve()
     package = ROOT / "library/scenes/lab-demo/2"
+    source_inputs = [
+        "packages/sim_runtime/synthetic_lab.py",
+        NATIVE_MANIFEST,
+        *(f"library/scenes/lab-demo/2/{name}.yaml" for name in ("scene", "devices", "locations")),
+    ]
+    for relative in source_inputs:
+        frozen = subprocess.check_output(
+            ["git", "-c", "core.longpaths=true", "show", f"{SOURCE_REVISION}:{relative}"], cwd=ROOT
+        )
+        if frozen != (ROOT / relative).read_bytes():
+            raise ValueError("Input differs from its pinned source revision: " + relative)
     scene = SimpleNamespace(
         path=package,
         metadata=yaml.safe_load((package / "scene.yaml").read_bytes()),
@@ -207,7 +219,7 @@ def main():
             destination / "source/geometry.json",
             {
                 "repository": "https://github.com/CaiZongyuan/spatial-sync",
-                "revision": SOURCE_REVISION,
+                "sourceRevision": SOURCE_REVISION,
                 "source": source_path,
                 "sourceFile": fingerprint(ROOT / source_path),
                 "entityKey": node["entityKey"],
@@ -221,7 +233,7 @@ def main():
             destination / "provenance.json",
             {
                 "repository": "https://github.com/CaiZongyuan/spatial-sync",
-                "revision": SOURCE_REVISION,
+                "sourceRevision": SOURCE_REVISION,
                 "producer": {"path": "tools/package_binding_references.py", **fingerprint(Path(__file__))},
                 "sourceFiles": {source_path: fingerprint(ROOT / source_path)}
                 | (
@@ -229,7 +241,11 @@ def main():
                     if native
                     else {
                         str(p.relative_to(ROOT).as_posix()): fingerprint(p)
-                        for p in (package / "devices.yaml", package / "locations.yaml")
+                        for p in (
+                            package / "scene.yaml",
+                            package / "devices.yaml",
+                            package / "locations.yaml",
+                        )
                     }
                 ),
                 "toolVersions": {

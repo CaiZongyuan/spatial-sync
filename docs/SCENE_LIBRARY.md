@@ -149,8 +149,14 @@ revalidation reject changed dependency bytes; fixing an immutable asset requires
 a new asset revision and a new scene revision. Older reports without a recorded
 dependency hash cannot establish what those bytes were historically. Their first
 inspection that identifies the dependency records the currently indexed bytes only.
-Later reports retain newly discovered pins alongside the original report's pins,
-including across failed revalidation while a dependency is temporarily missing.
+The reader gathers pins from the immutable package report and durable validation
+history bound to the same scene version and content hash. Sidecars must also match
+their report ID. A failed older report or a missing latest pointer cannot erase a
+previously known hash. Contradictory hashes for one exact asset ID remain an
+inspectable failure; launch and revalidation return 409. Reports for another
+scene/hash and different asset revisions cannot retarget an existing dependency.
+Legacy hashless references establish no historical digest; malformed recorded IDs
+or digests fail closed.
 
 `lab-demo@3` and `robot-and-tubes@2` preserve previous explicit versions and
 recordings. Native FR3 bindings retain the Python builder's absolute

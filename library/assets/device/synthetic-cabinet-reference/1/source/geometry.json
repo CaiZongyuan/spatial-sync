@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/CaiZongyuan/spatial-sync",
-  "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
+  "sourceRevision": "882607f56e07464c14e839f2e39832d358c06062",
   "source": "packages/sim_runtime/synthetic_lab.py",
   "sourceFile": {
-    "sha256": "42a9f9e7c2a95a8ad751f9ae161b9d4319e8b068deda23371ed85a086506249d",
-    "bytes": 11320
+    "sha256": "55248657cf19867001c55dc00780c67c797d0f97fd97d3fc0b40d2b026cb8c5d",
+    "bytes": 11024
   },
   "entityKey": "/World/Lab/BiosafetyCabinet",
   "visuals": [

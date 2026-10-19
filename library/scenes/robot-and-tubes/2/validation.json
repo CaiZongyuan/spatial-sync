@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "scene:robot-and-tubes@2",
-  "ranAt": "2026-10-19T18:48:50.659120+00:00",
+  "ranAt": "2026-10-19T19:02:56.188926+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",
@@ -73,15 +73,15 @@
   "referencedAssets": [
     {
       "id": "device/lab-centrifuge-reference@1",
-      "contentHash": "9dafcc00821ae7153fcf73a64e2524af9f92830c42d98ff3ffb3fbe79c5f018a"
+      "contentHash": "71664a732be700a4626f2deef4d54fcbcb5afa1bbc01df314fa60ce4ecc20894"
     },
     {
       "id": "labware/native-capsule-tube-reference@1",
-      "contentHash": "fecefe6b5f6522efd7caeb52afebdc857ffb35299f1b27fe89bc484cf84e8c19"
+      "contentHash": "cfcd4ce3be40d14366999439802d29c0c707e7e6180eea0921721ffdf8a9c559"
     },
     {
       "id": "labware/native-small-tube-reference@1",
-      "contentHash": "79455be1621a7c32b6e0f8f734b59f70082d8fa7823352d17458716c14497e9b"
+      "contentHash": "13b0548edc17d4436873a5de97b8eb035a6a1ab2eba775870f496de75f3a3e63"
     },
     {
       "id": "robot/fr3@1",

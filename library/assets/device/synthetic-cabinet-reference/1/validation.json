@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "asset:device/synthetic-cabinet-reference@1",
-  "ranAt": "2026-10-19T18:48:44.798167+00:00",
+  "ranAt": "2026-10-19T19:02:50.246137+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",

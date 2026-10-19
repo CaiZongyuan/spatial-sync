@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "asset:labware/synthetic-tube-reference@1",
-  "ranAt": "2026-10-19T18:48:47.946424+00:00",
+  "ranAt": "2026-10-19T19:02:53.525112+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",

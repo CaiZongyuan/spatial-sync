@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "scene:lab-demo@3",
-  "ranAt": "2026-10-19T18:48:49.801770+00:00",
+  "ranAt": "2026-10-19T19:02:55.356060+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",
@@ -73,27 +73,27 @@
   "referencedAssets": [
     {
       "id": "device/lab-centrifuge-reference@1",
-      "contentHash": "9dafcc00821ae7153fcf73a64e2524af9f92830c42d98ff3ffb3fbe79c5f018a"
+      "contentHash": "71664a732be700a4626f2deef4d54fcbcb5afa1bbc01df314fa60ce4ecc20894"
     },
     {
       "id": "device/synthetic-cabinet-reference@1",
-      "contentHash": "a6730da5a83a22dea962fdb5bbb91140898266d5cd73e9cd8a54b74c1b701d81"
+      "contentHash": "f671314a96623b9e9f95e1ea0a66e2eb73cd2a90d14e34f4ee697e293111a5c9"
     },
     {
       "id": "device/synthetic-incubator-reference@1",
-      "contentHash": "0e2cceb88fa908721d465826dbafdfc7fdc3ec7db20146a7eeaa664e3d10a5d4"
+      "contentHash": "d32e560c9f373e936a247ec7dd98e7670b21a3908472328669f69e8f58528d56"
     },
     {
       "id": "device/synthetic-sensor-reference@1",
-      "contentHash": "0dea9bb91e45adf62279af6c67c7e924c2e22d5bf6235e271e695f258c392f99"
+      "contentHash": "428c571c69efb773ee27ce5e9e2b79a2acb21ce535d2a945ca87968457d0737b"
     },
     {
       "id": "labware/synthetic-tube-reference@1",
-      "contentHash": "83588c9831eb427233333a09bf0043f58d8458d5fb38757792094135e917e9fa"
+      "contentHash": "41b709645a5f9964e937d9edb69de17adea0366bbdaa82ff108a66aa9e82e3dc"
     },
     {
       "id": "robot/synthetic-arm-reference@1",
-      "contentHash": "71516c1d978c6232140524a074156102926e27305481fb87a9020a0faab7e740"
+      "contentHash": "249b7fee183cca0b62d98004c492665e66b53ae958b28540e412599ba93cbe58"
     }
   ],
   "inspection": "CPU USD structure only; no physics engine was loaded",

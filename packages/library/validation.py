@@ -89,6 +89,12 @@ class StructuralValidator:
                 "Immutable package changed after indexing",
                 409,
             )
+        try:
+            expected_assets = pinned_assets(version, kind)
+        except (ValueError, OSError) as exc:
+            raise LibraryError(
+                "asset_changed" if kind == "asset" else "scene_not_launchable", str(exc), 409
+            ) from exc
         report = self.run(
             version.path,
             kind,
@@ -97,7 +103,7 @@ class StructuralValidator:
             assets,
             getattr(version, "bindings", None),
             getattr(version, "locations", None),
-            expected_assets=pinned_assets(version.validation, version.report()),
+            expected_assets=expected_assets,
         )
         if content_hash(version.path) != version.content_hash:
             raise LibraryError(

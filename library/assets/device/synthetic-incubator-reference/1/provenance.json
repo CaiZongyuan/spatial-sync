@@ -1,15 +1,19 @@
 {
   "repository": "https://github.com/CaiZongyuan/spatial-sync",
-  "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
+  "sourceRevision": "882607f56e07464c14e839f2e39832d358c06062",
   "producer": {
     "path": "tools/package_binding_references.py",
-    "sha256": "a3c4bfc27f9f1e9b991b2f16d0ccc7206be78cf9a605c29c0d5af669faa97978",
-    "bytes": 10276
+    "sha256": "aa75df269e929111b5562917d21d2e4a113697e16f0da03a1d35d1256989b609",
+    "bytes": 10973
   },
   "sourceFiles": {
     "packages/sim_runtime/synthetic_lab.py": {
-      "sha256": "42a9f9e7c2a95a8ad751f9ae161b9d4319e8b068deda23371ed85a086506249d",
-      "bytes": 11320
+      "sha256": "55248657cf19867001c55dc00780c67c797d0f97fd97d3fc0b40d2b026cb8c5d",
+      "bytes": 11024
+    },
+    "library/scenes/lab-demo/2/scene.yaml": {
+      "sha256": "b4fbef5569bc98ee2c66faf1c99472c2afaf003cf6b5aad5e42af4169965cd30",
+      "bytes": 229
     },
     "library/scenes/lab-demo/2/devices.yaml": {
       "sha256": "fd4db75424456867128e891bf8564c720bb557f6bbd1cabef00c268651a50225",
@@ -43,8 +47,8 @@
       "bytes": 421
     },
     "source/geometry.json": {
-      "sha256": "f735b6e81008e2b0c87d0d9021a0fc3f86fbe6ac98355056b0ddf29e5c4a41ac",
-      "bytes": 908
+      "sha256": "e18eba8926345890ad231e2411973faeb59451b6e734375e0ffd110170863096",
+      "bytes": 914
     }
   }
 }

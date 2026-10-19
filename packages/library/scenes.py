@@ -100,7 +100,7 @@ class SceneVersion:
             selected = references(self.bindings)
             if not selected:
                 return self
-            expected = pinned_assets(self.validation, self.report())
+            expected = pinned_assets(self, "scene")
             return replace(
                 self, template_assets=load_snapshots(roots, selected, expected), template_error=None
             )

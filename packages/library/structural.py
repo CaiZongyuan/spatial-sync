@@ -644,8 +644,12 @@ def validate(payload):
         "launchable": not any(item["status"] == "fail" for item in ordered),
         "untypedEntities": untyped,
         "referencedAssets": [
-            {"id": name, "contentHash": graph.expected[name]
-             if name in graph.expected else graph.assets[name]["contentHash"]}
+            {
+                "id": name,
+                "contentHash": graph.expected[name]
+                if name in graph.expected
+                else graph.assets[name]["contentHash"],
+            }
             for name in sorted(graph.referenced | graph.expected.keys())
         ],
         "inspection": "CPU USD structure only; no physics engine was loaded",
