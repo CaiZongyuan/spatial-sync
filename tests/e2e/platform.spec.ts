@@ -38,7 +38,7 @@ test('platform contract UI preserves unknown metrics, reports stale errors and r
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('240.5%');
   await expect(page.getByTestId('platform-session-newton-old').getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
   await expect(page.getByTestId('platform-session-synthetic-old').getByRole('button', { name: 'Open Newton viewer' })).toHaveCount(0);
-  await expect(page.getByLabel('Scene', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: '打开场景库' })).toBeVisible();
   await expect(page.getByLabel('Session ID', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('platform-contract-overview.png'), fullPage: true });
   fail = true;

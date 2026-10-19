@@ -1,0 +1,124 @@
+{
+  "schema": "lw.scene-preview/1",
+  "sceneVersion": "lab-demo@1",
+  "sceneContentHash": "49eb8c4f192751529b1e37b90cacfa12d4a5407f3ed055812c370cf5af8ed0c5",
+  "source": "synthetic",
+  "capturedAt": "2026-10-19T10:45:25.989368+00:00",
+  "simTime": 0.0,
+  "runtime": {
+    "python": "3.13.14",
+    "source": "SyntheticSource",
+    "device": "cpu",
+    "numpy": "2.5.4"
+  },
+  "dependencyDigest": "sha256-text-lf-v1",
+  "dependencies": [
+    {
+      "path": "apps/api/app/recordings.py",
+      "sha256": "057542b6052776de4d6079e62f248d6c0397cb5ba17b2fbf7258f121e2988c6c"
+    },
+    {
+      "path": "apps/api/app/sources/synthetic_source.py",
+      "sha256": "2573c33b0588d1dda7a7635127653ab36daca3ead65a0f55aa4e7c1771637fee"
+    },
+    {
+      "path": "assets/registry.yaml",
+      "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
+    },
+    {
+      "path": "devices/types/centrifuge.v1.yaml",
+      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+    },
+    {
+      "path": "devices/types/robot-arm.v1.yaml",
+      "sha256": "5ffd33f18471b065e9a84f2401840d563f67089c3bf3111f3f47b82a764c2903"
+    },
+    {
+      "path": "devices/types/tube.v1.yaml",
+      "sha256": "6cd2179acff472a9df10dbdb42dd0e6580f5c17d9ef2489c972dc6abaf125525"
+    },
+    {
+      "path": "packages/assets/registry.py",
+      "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
+    },
+    {
+      "path": "packages/info/catalog.py",
+      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+    },
+    {
+      "path": "packages/info/conditions.py",
+      "sha256": "89aea1f932daee6504ac8309a09f8a6f95d83bbf50ff59234f42974a71792395"
+    },
+    {
+      "path": "packages/info/diff.py",
+      "sha256": "0928b274987b2611a9e7fad8e0b6aeaa89f2c76dd001fdb8785afc177793b942"
+    },
+    {
+      "path": "packages/info/program.py",
+      "sha256": "8efad7563a43e95276d48d0fb76ace684f2809d4c94e2b111e11f8c29c456901"
+    },
+    {
+      "path": "packages/info/schema_subset.py",
+      "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
+    },
+    {
+      "path": "packages/library/previews.py",
+      "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
+    },
+    {
+      "path": "packages/library/scenes.py",
+      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+    },
+    {
+      "path": "packages/programs/centrifuge/virtual.py",
+      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+    },
+    {
+      "path": "packages/programs/robot_arm/virtual.py",
+      "sha256": "4395c799d4029c4fb7b59fa597600af5126d8c58f1b83157015cae962ad5ed3f"
+    },
+    {
+      "path": "packages/programs/tube/virtual.py",
+      "sha256": "f75c578e07af71ca6d7187d24213203410c0e0ea321900f6e166807aec1a1a0b"
+    },
+    {
+      "path": "packages/protocol/math.py",
+      "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
+    },
+    {
+      "path": "packages/protocol/schema/__init__.py",
+      "sha256": "13f113f894423b2d1301ed433e9823152410a50f4771ff81231c62ecb769d669"
+    },
+    {
+      "path": "packages/transport/__init__.py",
+      "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
+    },
+    {
+      "path": "tools/capture_scene_preview.py",
+      "sha256": "e8769fcbcb57e9cc06e81c96f1641cf66ba4c6e59e455d3c4037b3eda3a06867"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+    }
+  ],
+  "documents": {
+    "manifest": "manifest.json",
+    "catalog": "catalog.json",
+    "spatial": "snapshot.bin",
+    "state": "state.json"
+  },
+  "files": {
+    "manifest.json": "c13cc099637668bdf523a7355036117f9755456ba717b5d023d4fb03dfdaa5b3",
+    "catalog.json": "5990e711ed76979692a18e9e9ce2607b2d36eaa66c28f9af2e7a05383824f36e",
+    "state.json": "2186d912eb30e5aaa41f77de13b3f9b71c04054ca3fec8a11f29556e79445864",
+    "snapshot.bin": "349de771ba629e95fe68408d9c5b7d03542ba6ab7e33037497bbc481f1006e8c"
+  },
+  "counts": {
+    "physicalEntities": 30,
+    "bindings": 22,
+    "groups": 7
+  },
+  "bounds": null,
+  "thumbnail": {}
+}

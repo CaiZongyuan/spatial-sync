@@ -30,13 +30,10 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
     viewport: { width: 1440, height: 960 },
   });
   try {
-    await page.goto('/sessions');
-    await page
-      .getByLabel('Scene', { exact: true })
-      .selectOption('falling-boxes');
-    await page.getByLabel('Source', { exact: true }).selectOption('newton');
+    await page.goto('/scenes/falling-boxes/1?source=newton');
+    await page.getByLabel('启动物理源', { exact: true }).selectOption('newton');
     const creating = page.waitForResponse((response) => response.url().endsWith('/api/v1/sessions') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Launch workspace' }).click();
+    await page.getByRole('button', { name: '启动会话' }).click();
     const created = await creating;
     expect(created.ok(), await created.text()).toBe(true);
     await expect(page.getByTestId('connection-status')).toHaveText(

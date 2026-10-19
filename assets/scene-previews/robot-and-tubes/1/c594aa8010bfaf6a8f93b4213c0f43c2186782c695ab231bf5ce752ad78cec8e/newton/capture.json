@@ -1,0 +1,340 @@
+{
+  "schema": "lw.scene-preview/1",
+  "sceneVersion": "robot-and-tubes@1",
+  "sceneContentHash": "c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e",
+  "source": "newton",
+  "capturedAt": "2026-10-19T10:47:18.346187+00:00",
+  "simTime": 0.0,
+  "runtime": {
+    "python": "3.13.14",
+    "source": "NewtonSource",
+    "device": "cpu",
+    "numpy": "2.5.4",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "mujoco": "3.15.0",
+    "usd-core": "26.8"
+  },
+  "dependencyDigest": "sha256-text-lf-v1",
+  "dependencies": [
+    {
+      "path": "apps/api/app/recordings.py",
+      "sha256": "057542b6052776de4d6079e62f248d6c0397cb5ba17b2fbf7258f121e2988c6c"
+    },
+    {
+      "path": "apps/api/app/sources/newton_source.py",
+      "sha256": "b1bf32d20b13b7f5de5d079825147de26c2e642b4bac7d8dd753f98ceb1817c1"
+    },
+    {
+      "path": "assets/registry.yaml",
+      "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link0.stl",
+      "sha256": "dfc6d94330de8ddb005b311bfdba9f3b8e1aa7c256b71592ee7ff32cb9a9a5aa"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link1.stl",
+      "sha256": "e41a39a94108fcf56aacff603fc91ec80541f4c1af17b51a0de5617f5566e6d2"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link2.stl",
+      "sha256": "370f7605a0fae3529db169ded50f52f171024aa792d4d773bc84197301f6a039"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link3.stl",
+      "sha256": "0a8d638b9349c6c0eefc4e888636ac4838c4b27170f18a51699321118af709c1"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link4.stl",
+      "sha256": "0180ebb5772ec9840cb049750cffb29a9ddc90311752a16ea34757782ef9e48d"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link5.stl",
+      "sha256": "dd17e688c7870e722283525879643d53a74c0024d328b0e14b034b54c8b6c31a"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link6.stl",
+      "sha256": "20b768e99a0e0440b5754dcca108016434e57937cc356acd9c352ccd3cb27f77"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/collision/link7.stl",
+      "sha256": "92ac6afcf7574c034d3170d8a68e95ac9048ab9d0dd5bbd8311b86e551b9ab1c"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link0.dae",
+      "sha256": "3c52a112d1610d645934945b80ea8d9bb3d1635f345098480a33a537bd43224e"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link1.dae",
+      "sha256": "5c5846eabc714aefc82ef051a4d09c4fc1c092bca6258b1290227345dd217fcb"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link2.dae",
+      "sha256": "90a1bd38abdc53d0141719cd8e040f788db337b768a845bb6d53c5c52590498f"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link3.dae",
+      "sha256": "1c7a2a8124e39ad07096c0cce8461b0e650f6752900cfd777bf87c181e81749b"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link4.dae",
+      "sha256": "dd134cf13cdaced2b67739e4d9fe2ca011cc533936397d9f6303fc740424e2a2"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link5.dae",
+      "sha256": "cbcabd369e044eba3f1c2cab84b9ed2ebc1b2f424c6104ad9c5d7410e92fabfe"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link6.dae",
+      "sha256": "907b16fea84931f4881174234065bb647700abf105b432c3ff65360e0ad5cf8b"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_arms/fr3/visual/link7.dae",
+      "sha256": "b9d05ac502ff269b1323705de811d07a8eb9920ce711b32ee0497bf16b74989b"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_ee/franka_hand_white/collision/hand.stl",
+      "sha256": "94493e94f30fe940f2c8ca2f155c3bbe67bbff406d3edf5e261670d2f0f6e2ed"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_ee/franka_hand_white/visual/finger.dae",
+      "sha256": "12c7bc9b55ffd0d1d0e3442d3e213ecc4fbebbced15259a20195af464f871fcd"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/meshes/robot_ee/franka_hand_white/visual/hand.dae",
+      "sha256": "1b50601d3157f810176aba6db7164d6bdb4ec8b6546a8a725baba2fa2a21c58a"
+    },
+    {
+      "path": "assets/robots/franka_emika_panda/urdf/fr3_franka_hand.urdf",
+      "sha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497"
+    },
+    {
+      "path": "devices/types/centrifuge.v1.yaml",
+      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+    },
+    {
+      "path": "devices/types/robot-arm.v1.yaml",
+      "sha256": "5ffd33f18471b065e9a84f2401840d563f67089c3bf3111f3f47b82a764c2903"
+    },
+    {
+      "path": "devices/types/tube.v1.yaml",
+      "sha256": "6cd2179acff472a9df10dbdb42dd0e6580f5c17d9ef2489c972dc6abaf125525"
+    },
+    {
+      "path": "packages/assets/bindings.py",
+      "sha256": "185b964f2ec3a0baf89eaca9fdd21bb7ff999217c5cd82a51d3f1c6b0a183768"
+    },
+    {
+      "path": "packages/assets/registry.py",
+      "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
+    },
+    {
+      "path": "packages/info/catalog.py",
+      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+    },
+    {
+      "path": "packages/info/conditions.py",
+      "sha256": "89aea1f932daee6504ac8309a09f8a6f95d83bbf50ff59234f42974a71792395"
+    },
+    {
+      "path": "packages/info/diff.py",
+      "sha256": "0928b274987b2611a9e7fad8e0b6aeaa89f2c76dd001fdb8785afc177793b942"
+    },
+    {
+      "path": "packages/info/program.py",
+      "sha256": "8efad7563a43e95276d48d0fb76ace684f2809d4c94e2b111e11f8c29c456901"
+    },
+    {
+      "path": "packages/info/schema_subset.py",
+      "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
+    },
+    {
+      "path": "packages/info/store.py",
+      "sha256": "335985ff293d00a66e1fce4630382b3aaaf8c0032fca007cbb10fa8ea1e65a5e"
+    },
+    {
+      "path": "packages/library/previews.py",
+      "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
+    },
+    {
+      "path": "packages/library/scenes.py",
+      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+    },
+    {
+      "path": "packages/programs/centrifuge/newton.py",
+      "sha256": "7f29aaf3ee174920e03d301ade174f1261b0974a4776790d894cbf071b040099"
+    },
+    {
+      "path": "packages/programs/centrifuge/virtual.py",
+      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+    },
+    {
+      "path": "packages/programs/robot_arm/newton.py",
+      "sha256": "e24698f39b5d1a2a3e0921e3dc816978be87286a1fb70bdd1063f69b0608b10f"
+    },
+    {
+      "path": "packages/programs/robot_arm/trajectory.py",
+      "sha256": "3286496f51a35d6c8ccf74ea71a2315e0d84741fddc21ec960b02172ec7d3bbf"
+    },
+    {
+      "path": "packages/programs/tube/facts.py",
+      "sha256": "64915a1a42b6e4bf8b0b02026b3bcc156cffff638bd20624773456e3e02d5e79"
+    },
+    {
+      "path": "packages/programs/tube/newton.py",
+      "sha256": "0fffcbb14c9d238e9aa0f36fbf8004f8462c8afe89ccb7b61a5a175ac7a3e164"
+    },
+    {
+      "path": "packages/protocol/json.py",
+      "sha256": "a83bb80a434ab37920308a428532ed3c9322a36550fadc30d526e7f5c8257baf"
+    },
+    {
+      "path": "packages/protocol/math.py",
+      "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
+    },
+    {
+      "path": "packages/protocol/schema/__init__.py",
+      "sha256": "13f113f894423b2d1301ed433e9823152410a50f4771ff81231c62ecb769d669"
+    },
+    {
+      "path": "packages/sim_runtime/info_catalog.py",
+      "sha256": "e0253e349a8a973a60fdee282805244ea0a56f36923325e51a177fda5fb75a0e"
+    },
+    {
+      "path": "packages/sim_runtime/info_host.py",
+      "sha256": "8d2cf37ba1242dc4ca757f54f6a129dc7bd2cb40730a639af0bad3ce47b4be13"
+    },
+    {
+      "path": "packages/sim_runtime/labels.py",
+      "sha256": "f55986e885f9685d0d56b13e145d86e4b101bdb4f9138891d369a90c21616e3a"
+    },
+    {
+      "path": "packages/sim_runtime/manifest_export.py",
+      "sha256": "7919ceaa4fd923babdef4fefc10c8edd6535f6f93e505a05b7dedc6b7ab672f6"
+    },
+    {
+      "path": "packages/sim_runtime/mesh_assets.py",
+      "sha256": "f1afb5032d7e96c281d951da75d68bbfb1d9ddd98845aa20b28b9d5d7fed30a4"
+    },
+    {
+      "path": "packages/sim_runtime/pacer.py",
+      "sha256": "ca65d0768522b5df8e19bfca06363eac46c57b33eae49d3b1ea8ea298907d96d"
+    },
+    {
+      "path": "packages/sim_runtime/physics_port.py",
+      "sha256": "5d2df9a9a60ad59e96fc5f2e5276f8e1fa1a009c27c4da4f219898e053d711b6"
+    },
+    {
+      "path": "packages/sim_runtime/pose_filter.py",
+      "sha256": "b71cd4cc76aee5cbc8f00e87e27a46ac103f8f3d03da02afabde32201a3853e2"
+    },
+    {
+      "path": "packages/sim_runtime/robot_scene.py",
+      "sha256": "c31e799609c75d794d52e8bd5ac42fa6964564b2b9b11e58255f5dc4531791f9"
+    },
+    {
+      "path": "packages/sim_runtime/runner.py",
+      "sha256": "729e6206642e7fe1a043d18b27fb4f8af797c86d6680c174020ad46b593dc237"
+    },
+    {
+      "path": "packages/sim_runtime/scenes.py",
+      "sha256": "ddc9d373540a295df4c67ceee8cf58da4d32c964c123105854687928f8407de4"
+    },
+    {
+      "path": "packages/sim_runtime/simulation.py",
+      "sha256": "d16b8e3042179e3782c7e74d9dd4bd155083b8c8efd71ccfe2cb689ceea69bd7"
+    },
+    {
+      "path": "packages/sim_runtime/sites.py",
+      "sha256": "c59b8f1e9fca0385c59320e416498525f460d6c74010ccbc4728d0e788f084cd"
+    },
+    {
+      "path": "packages/sim_runtime/transform_extractor.py",
+      "sha256": "15ea3efbebf3d12f474d4ac8a2f64d111cd3842fd95a6c9b6aba2aafb20e812a"
+    },
+    {
+      "path": "packages/sim_runtime/welds.py",
+      "sha256": "8156b85a0abdeb6b865a9f2b4665edeb750447059a4bc929414be7522212ecd8"
+    },
+    {
+      "path": "packages/transport/__init__.py",
+      "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
+    },
+    {
+      "path": "packages/transport/source_state.py",
+      "sha256": "908e14b3f755c0729626f31e0c745107794cb315c3ee757c32e3d009f04efb70"
+    },
+    {
+      "path": "tools/capture_scene_preview.py",
+      "sha256": "e8769fcbcb57e9cc06e81c96f1641cf66ba4c6e59e455d3c4037b3eda3a06867"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+    }
+  ],
+  "documents": {
+    "manifest": "manifest.json",
+    "catalog": "catalog.json",
+    "spatial": "snapshot.bin",
+    "state": "state.json"
+  },
+  "files": {
+    "manifest.json": "679a5dca6e5933bcfb5849045ed717e6cc00cb89fc4a6852c81511fe4ac45a63",
+    "catalog.json": "cef1cbac8a8f37419906289916c8ab0f3a9ed9a5208402402e84f14abd8f18ab",
+    "state.json": "0408264d75537fabc7843ee6ba0aabdfdac26ea49434d883b108489e009d2a82",
+    "snapshot.bin": "5b4768d3fce01f81b6733d64650a91bd18fe81be26696e337964037d8ac9426b",
+    "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
+    "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
+    "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
+    "assets/sha256-363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c.glb": "363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c",
+    "assets/sha256-506d0b29cde7edf97e46f6fe5fc87cc15fddfa138bc135a4f95d44f737e2db70.glb": "506d0b29cde7edf97e46f6fe5fc87cc15fddfa138bc135a4f95d44f737e2db70",
+    "assets/sha256-a24b6bf4d7652c070993d104affc48f4b07ad27760d59ac74c161c6177ea0499.glb": "a24b6bf4d7652c070993d104affc48f4b07ad27760d59ac74c161c6177ea0499",
+    "assets/sha256-e25508bd685884715eed3f28d8a340cc4fd7ae9c3586cb01dab3b31a977b4bbc.glb": "e25508bd685884715eed3f28d8a340cc4fd7ae9c3586cb01dab3b31a977b4bbc",
+    "assets/sha256-4b60e349c987521a26c44388fcede9ba55cc139e403728f62ccd83b2c12e3feb.glb": "4b60e349c987521a26c44388fcede9ba55cc139e403728f62ccd83b2c12e3feb",
+    "assets/sha256-3a043e45eedfd19a113f489d8006e757ba742d02f1cda6f5d0b0d347e4977565.glb": "3a043e45eedfd19a113f489d8006e757ba742d02f1cda6f5d0b0d347e4977565",
+    "assets/sha256-835c5878c64d593d6876b379d4c4eda5a2ec124d72b590dfaec4c01148899432.glb": "835c5878c64d593d6876b379d4c4eda5a2ec124d72b590dfaec4c01148899432",
+    "assets/sha256-9fdb0b82bea5d7cfaa0ca9a160874d0e2b7c6c13ed59dd487e72f5948b8060a7.glb": "9fdb0b82bea5d7cfaa0ca9a160874d0e2b7c6c13ed59dd487e72f5948b8060a7",
+    "assets/sha256-76f2e37f76c2f213d4570a17dcb6ab356b4a3088cc958cd15261eccb4fe394ce.glb": "76f2e37f76c2f213d4570a17dcb6ab356b4a3088cc958cd15261eccb4fe394ce",
+    "assets/sha256-c0a985a662adfc1e8f00c884aed1972b6df30491829fb6d4145c94f5c37872b5.glb": "c0a985a662adfc1e8f00c884aed1972b6df30491829fb6d4145c94f5c37872b5",
+    "assets/sha256-977d3e987cdfae28498284eee92f6db667a1b3aeb5c9ac1253cb4c5f2c7e9032.glb": "977d3e987cdfae28498284eee92f6db667a1b3aeb5c9ac1253cb4c5f2c7e9032",
+    "assets/sha256-b35e189308a282addd3b470132af4b8dc945f9ccd025237cf25f75f2ed2c5c4b.glb": "b35e189308a282addd3b470132af4b8dc945f9ccd025237cf25f75f2ed2c5c4b",
+    "assets/sha256-9ccfc66d2f1cf0416074ed96cee265aae58ff5e2e1b4755e5bf1df3c247f4aa7.glb": "9ccfc66d2f1cf0416074ed96cee265aae58ff5e2e1b4755e5bf1df3c247f4aa7",
+    "assets/sha256-8147c65d6cf75970c512ee0af705c7399059df9b6507395832b7bcf089448233.glb": "8147c65d6cf75970c512ee0af705c7399059df9b6507395832b7bcf089448233",
+    "assets/sha256-e20fa53e8a144b52cb973c4dd993f9c56f88e7e1fa1763add0d5fac278d15485.glb": "e20fa53e8a144b52cb973c4dd993f9c56f88e7e1fa1763add0d5fac278d15485",
+    "assets/sha256-200643825338dfedda03a8e9358bb5c23d39da879023b9c7a42a8a5dc4ca44ab.glb": "200643825338dfedda03a8e9358bb5c23d39da879023b9c7a42a8a5dc4ca44ab",
+    "assets/sha256-9f59c23fba940ae1401c7cfb8fd0753ee83e9793cd51e7eee9d39e0d1e65ecf5.glb": "9f59c23fba940ae1401c7cfb8fd0753ee83e9793cd51e7eee9d39e0d1e65ecf5",
+    "assets/sha256-7c98dee8bcd578bd5cf944114e8d69da1ffbfa8f1b21422213c2f0104d21ef98.glb": "7c98dee8bcd578bd5cf944114e8d69da1ffbfa8f1b21422213c2f0104d21ef98",
+    "assets/sha256-0ff1d6e7bb8a81985f0fe658f9c9b7dc6ce13b2cca7cda12fdc7f12f24c7021f.glb": "0ff1d6e7bb8a81985f0fe658f9c9b7dc6ce13b2cca7cda12fdc7f12f24c7021f",
+    "assets/sha256-cc633463260c7aa8a5004650b5d868ca696c98eda896d810fe3c3238df1b2084.glb": "cc633463260c7aa8a5004650b5d868ca696c98eda896d810fe3c3238df1b2084",
+    "assets/sha256-a0d1e70c0ae4435c1232d4b3938bdb857a9e514f06ba734b3f1fbdb0313824c9.glb": "a0d1e70c0ae4435c1232d4b3938bdb857a9e514f06ba734b3f1fbdb0313824c9",
+    "assets/sha256-917853645d7dc3c10e5273b1e8cf2e6c2120f036a854e7b4b29d6c7502bb0e7c.glb": "917853645d7dc3c10e5273b1e8cf2e6c2120f036a854e7b4b29d6c7502bb0e7c",
+    "assets/sha256-a047e67fc50b85ec128a673343e8a7f94bdea7772ebc1c5f70d3a2ae53ee0d94.glb": "a047e67fc50b85ec128a673343e8a7f94bdea7772ebc1c5f70d3a2ae53ee0d94",
+    "assets/sha256-6c2a371e5e40a6b54c1319885786d3f5fdf91612d85ec135fa8dddea551aeb25.glb": "6c2a371e5e40a6b54c1319885786d3f5fdf91612d85ec135fa8dddea551aeb25",
+    "assets/sha256-97ec5c2da365dda823a810b388b9428875c960201713519dfcc843a3f97f4846.glb": "97ec5c2da365dda823a810b388b9428875c960201713519dfcc843a3f97f4846",
+    "assets/sha256-ac6c35eec94d6e1b97622b8ec8cd4b52266360cb39b7b3008551b5b8fb580087.glb": "ac6c35eec94d6e1b97622b8ec8cd4b52266360cb39b7b3008551b5b8fb580087",
+    "assets/sha256-888d6b7974ff0042d65df1cef3284d8f9bdfbf06f911f0f2629afe7f0a33b90a.glb": "888d6b7974ff0042d65df1cef3284d8f9bdfbf06f911f0f2629afe7f0a33b90a",
+    "assets/sha256-1a85b50c84a726550542e01efd53f4a1ac924977fd5a5d4110aff0a552191ee0.glb": "1a85b50c84a726550542e01efd53f4a1ac924977fd5a5d4110aff0a552191ee0",
+    "assets/sha256-69d55f5bcc1dabfa0075b6742d84431cfe8ee0b5f0fb24f4dbecd9ce110b1d4d.glb": "69d55f5bcc1dabfa0075b6742d84431cfe8ee0b5f0fb24f4dbecd9ce110b1d4d",
+    "assets/sha256-82e9dc740813cb85af4d0db0d38e6fb6c7746fdd79d49fcd67838154c0c34413.glb": "82e9dc740813cb85af4d0db0d38e6fb6c7746fdd79d49fcd67838154c0c34413",
+    "assets/sha256-acc4b9e28e8b7203f6ba719cdf80c8bae6feb6cccf57d0bc24413ed0e9f162f0.glb": "acc4b9e28e8b7203f6ba719cdf80c8bae6feb6cccf57d0bc24413ed0e9f162f0",
+    "assets/sha256-61e7a0a543bb0ee604c2260525acca9a616ecf3044374c75c55f25b35f64bc7d.glb": "61e7a0a543bb0ee604c2260525acca9a616ecf3044374c75c55f25b35f64bc7d",
+    "assets/sha256-3d70aab65a9bb12f8bb8ab7f6be344b8d2a72f49832b02751902b35cc5c4806b.glb": "3d70aab65a9bb12f8bb8ab7f6be344b8d2a72f49832b02751902b35cc5c4806b",
+    "assets/sha256-a99e83f2856dccc0b57ca3523f98526aa0a2807f41150fc546f815bc5f7dae17.glb": "a99e83f2856dccc0b57ca3523f98526aa0a2807f41150fc546f815bc5f7dae17",
+    "assets/sha256-a20814e4f556d6d0de6383c6d70c75ba01667472c337b30b682d455ed5094280.glb": "a20814e4f556d6d0de6383c6d70c75ba01667472c337b30b682d455ed5094280",
+    "assets/sha256-feec83b3a92601d94f4fe7e3ea71beee4eabed1b3fe83c4595c6e6b84e28612e.glb": "feec83b3a92601d94f4fe7e3ea71beee4eabed1b3fe83c4595c6e6b84e28612e",
+    "assets/sha256-48d9e53eb120a25a5792ecaee008100ec6a4ef524b292f970162054cf1b90f4f.glb": "48d9e53eb120a25a5792ecaee008100ec6a4ef524b292f970162054cf1b90f4f",
+    "assets/sha256-2a2d44ab60ff6ada04ddaa74cb9d88b35f9abbf8d054339d3c5fb496c46d6c36.glb": "2a2d44ab60ff6ada04ddaa74cb9d88b35f9abbf8d054339d3c5fb496c46d6c36",
+    "assets/sha256-6aa9b81cacb1a093f648512e04190236d0014079b06a32b3546fc121dee07c27.glb": "6aa9b81cacb1a093f648512e04190236d0014079b06a32b3546fc121dee07c27",
+    "assets/sha256-62de545df8d4bb8bf131bc2c8e7b21826a978cb890a71127cf873b6184107b02.glb": "62de545df8d4bb8bf131bc2c8e7b21826a978cb890a71127cf873b6184107b02",
+    "assets/sha256-f195404402b677e6f56e7daf5963667c313a0f6f9fa3201373eab45d49671a6d.glb": "f195404402b677e6f56e7daf5963667c313a0f6f9fa3201373eab45d49671a6d"
+  },
+  "counts": {
+    "physicalEntities": 72,
+    "bindings": 22,
+    "groups": 16
+  },
+  "bounds": null,
+  "thumbnail": {}
+}

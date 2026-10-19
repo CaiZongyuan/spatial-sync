@@ -20,6 +20,7 @@ const pages = [
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
   { to: '/approvals', label: 'Approvals', text: '待审批', icon: 'approvals' },
   { to: '/sessions', label: 'Sessions', text: '会话', icon: 'sessions' },
+  { to: '/scenes', label: 'Scenes', text: '场景库', icon: 'scenes' },
   { to: '/recordings', label: 'Recordings', text: '录制', icon: 'recordings' },
 ] as const;
 
@@ -28,6 +29,7 @@ function Icon({ name }: { name: string }) {
     overview: 'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z',
     resources: 'M5 6h14v12H5z M9 2v4 M15 2v4 M9 18v4 M15 18v4 M1 10h4 M1 14h4 M19 10h4 M19 14h4 M9 10h6v4H9z',
     sessions: 'M4 4h16v16H4z M4 9h16 M9 9v11',
+    scenes: 'M12 3l9 5-9 5-9-5z M3 8v9l9 5 9-5V8 M12 13v9',
     recordings: 'M4 4h16v16H4z M10 8l6 4-6 4z',
     approvals: 'M8 4h12v17H4V4h4 M8 2h8v4H8z M8 13l3 3 6-6',
     collapse: 'M14 6l-6 6 6 6',
@@ -52,7 +54,7 @@ export function PlatformShell() {
   }, [theme]);
   const current = replay ? pages.find(page => page.to === '/recordings')! :
     pages.find(page => page.to !== '/' && pathname.startsWith(page.to === '/resources/gpu' ? '/resources' : page.to)) ?? pages[0];
-  const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/');
+  const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/') || /^\/scenes\/[^/]+\/[^/]+/.test(pathname);
   return <div className={`platform-shell ${collapsed ? 'is-collapsed' : ''}`}>
     <a className="skip-link" href="#page-content">Skip to content</a>
     <aside className="platform-sidebar" aria-label="Platform navigation">
@@ -86,7 +88,7 @@ export function PlatformShell() {
       <header className="page-topbar">
         <nav aria-label="Breadcrumb"><Link to="/">spatial-sync</Link><span>›</span>
           <Link to={current.to}>{current.text}</Link>
-          {detail && <><span>/</span><span className="breadcrumb-id">{decodeURIComponent(pathname.split('/').at(-1) ?? '')}</span></>}
+          {detail && <><span>/</span><span className="breadcrumb-id">{decodeURIComponent(pathname.startsWith('/scenes/') ? pathname.split('/').slice(-2).join('@') : pathname.split('/').at(-1) ?? '')}</span></>}
           {pathname === '/resources/gpu' && <><span>/</span><span>Compute</span></>}
         </nav>
         {pendingCount !== undefined && <Link to="/approvals" className={`approval-topbar-chip ${pendingCount ? 'has-pending' : ''}`}
