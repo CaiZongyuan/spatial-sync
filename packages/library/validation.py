@@ -30,7 +30,9 @@ class StructuralValidator:
             "files": {name: str(path / name) for name in package_files(path)},
         }
 
-    def run(self, path, kind, subject, metadata, assets, bindings=None, locations=None):
+    def run(
+        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
+    ):
         payload = {
             "kind": kind,
             "subject": subject,
@@ -51,6 +53,7 @@ class StructuralValidator:
                 value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
             },
             "programs": self.programs() if self.programs else {},
+            "expectedAssets": list(expected_assets),
         }
         self.state_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=".structure-", dir=self.state_root) as temporary:
@@ -94,6 +97,8 @@ class StructuralValidator:
             assets,
             getattr(version, "bindings", None),
             getattr(version, "locations", None),
+            expected_assets=(version.validation or {}).get("referencedAssets")
+            or (version.report() or {}).get("referencedAssets", []),
         )
         if content_hash(version.path) != version.content_hash:
             raise LibraryError(

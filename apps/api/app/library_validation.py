@@ -1,5 +1,7 @@
 """Snapshot existing pure program definitions for the engine-free library validator."""
 
+from packages.library.templates import config_fields
+
 
 def program_schemas():
     # Both registries contain pure program classes; importing a host or physics port is unnecessary.
@@ -15,10 +17,6 @@ def program_schemas():
                 "configModule": program.__module__,
                 "configClass": program.__qualname__,
                 **({"taughtLimits": program.taught_limits} if hasattr(program, "taught_limits") else {}),
-                "fields": {
-                    field: information.json_schema_extra
-                    for field, information in program.Config.model_fields.items()
-                    if information.json_schema_extra
-                },
+                "fields": config_fields(program),
             }
     return result

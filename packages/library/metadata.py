@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, m
 from packages.info.declarations import AlertRules
 from packages.library.archive import invalid, package_entries, relative_path
 from packages.library.common import KINDS, NAME, LibraryError, document
+from packages.library.templates import template_id
 from packages.sim_runtime.scenes import SCENE_CONFIGS
 
 PYTHON_SOURCES = {"lab-demo": ("synthetic",), **{name: ("newton",) for name in SCENE_CONFIGS}}
@@ -137,6 +138,8 @@ class EntityBinding(Schema):
             raise ValueError("Binding requires exactly one key or match")
         if self.template is None and (not self.type or not self.program):
             raise ValueError("Binding requires type/program or an asset template")
+        if self.template is not None:
+            template_id(self.template)
         return self
 
 

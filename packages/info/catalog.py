@@ -8,6 +8,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from packages.library.scenes import builtin_scene_path
+from packages.library.templates import config_fields, instantiate, manifest_resources, resolve
 from packages.protocol.schema import Catalog as CatalogDocument
 
 from .binding_validation import compile_alert_rules, validate_binding_semantics
@@ -73,7 +74,7 @@ class Catalog(BaseModel):
         return deepcopy(adapter.validate_python(data)) if adapter else deepcopy(data)
 
 
-def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None):
+def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None, template_assets=None):
     root = Path(root)
     scene_file = (
         Path(scene_file)
@@ -87,6 +88,12 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
     scene = yaml.safe_load(scene_file.read_text(encoding="utf-8"))
     if set(scene) != {"scene", "entities"} or scene["scene"] != scene_id:
         raise ValueError("Scene binding document must name its registered scene")
+    resolved = resolve(scene, getattr(getattr(manifest, "source", None), "kind", None), template_assets or {})
+    scene = instantiate(
+        resolved,
+        manifest_resources(manifest),
+        {name: {"fields": config_fields(program)} for name, program in registry.items()},
+    )
     types = {}
     for path in sorted((root / "types").glob("*.yaml")):
         definition = yaml.safe_load(path.read_text(encoding="utf-8"))

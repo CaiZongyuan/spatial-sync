@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import quote
 
@@ -15,6 +15,7 @@ from packages.library.common import REPO_ROOT as REPO_ROOT
 from packages.library.metadata import scene_metadata
 from packages.library.reports import ReportStore, launchable, parse_report
 from packages.library.reports import validation_status as validation_status
+from packages.library.templates import TemplateError, load_snapshots, references, resolve, verify_snapshot
 
 
 def builtin_scene_path(name):
@@ -34,6 +35,8 @@ class SceneVersion:
     validation: dict | None
     reports: ReportStore | None = None
     files: tuple[str, ...] = ()
+    template_assets: dict = field(default_factory=dict)
+    template_error: str | None = None
 
     @property
     def id(self):
@@ -50,7 +53,7 @@ class SceneVersion:
 
     @property
     def launchable(self):
-        return launchable(self.report())
+        return self.template_error is None and launchable(self.report())
 
     def report(self):
         return (
@@ -66,6 +69,15 @@ class SceneVersion:
             raise LibraryError(
                 "scene_not_launchable", message, 409, sceneVersion=self.id, validation=deepcopy(report)
             )
+        try:
+            if self.template_error:
+                raise TemplateError(self.template_error)
+            for snapshot in self.template_assets.values():
+                verify_snapshot(snapshot)
+        except (TemplateError, OSError, ValueError) as exc:
+            raise LibraryError(
+                "scene_not_launchable", str(exc), 409, sceneVersion=self.id, validation=deepcopy(report)
+            ) from exc
         try:
             unchanged = content_hash(self.path) == self.content_hash
         except (OSError, ValueError) as exc:
@@ -83,15 +95,36 @@ class SceneVersion:
                 sceneVersion=self.id,
             )
 
+    def with_templates(self, roots):
+        try:
+            selected = references(self.bindings)
+            if not selected:
+                return self
+            expected = (self.validation or {}).get("referencedAssets") or (self.report() or {}).get(
+                "referencedAssets", []
+            )
+            return replace(
+                self, template_assets=load_snapshots(roots, selected, expected), template_error=None
+            )
+        except (ValueError, OSError, LibraryError) as exc:
+            return replace(self, template_assets={}, template_error=str(exc))
+
+    def declarations(self, source):
+        if self.template_error:
+            raise TemplateError(self.template_error)
+        return resolve(self.bindings, source, self.template_assets)
+
     def summary(self):
         report = self.report()
-        allowed = launchable(report)
+        allowed = self.launchable
         gaps = [
             check
             for check in (report or {}).get("checks", [])
             if check["status"] != "pass" and not check.get("notApplicable")
         ]
         untyped = (report or {}).get("untypedEntities", [])
+        if self.template_error:
+            gaps.append({"kind": "template_dependency", "message": self.template_error})
         return {
             "sceneId": self.name,
             "sceneVersion": self.id,
@@ -108,10 +141,15 @@ class SceneVersion:
             "launchReason": None
             if allowed
             else (
-                "缺少验证报告"
-                if report is None
-                else "; ".join(check["message"] for check in report["checks"] if check["status"] == "fail")
-                or "验证报告标记此版本不可启动"
+                self.template_error
+                or (
+                    "缺少验证报告"
+                    if report is None
+                    else "; ".join(
+                        check["message"] for check in report["checks"] if check["status"] == "fail"
+                    )
+                    or "验证报告标记此版本不可启动"
+                )
             ),
             "validationStatus": validation_status(report),
             "entityCount": (report or {}).get("entityCount"),
@@ -212,7 +250,10 @@ class SceneLibrary:
         return indexed_file(self.roots, self.files, root, relative, changed="scene_not_launchable")
 
     def list(self, query=None, launchable=None):
-        versions = sorted(self.versions.values(), key=lambda version: (version.name, version.rev))
+        versions = sorted(
+            (version.with_templates(self.roots) for version in self.versions.values()),
+            key=lambda version: (version.name, version.rev),
+        )
         return [
             deepcopy(version.summary())
             for version in versions
@@ -227,7 +268,7 @@ class SceneLibrary:
         if not NAME.fullmatch(name) or (separator and (not rev.isdecimal() or int(rev) < 1)):
             raise LibraryError("unknown_version", "Unknown scene version")
         matches = [
-            version
+            version.with_templates(self.roots)
             for version in self.versions.values()
             if version.name == name and (not separator or version.rev == int(rev))
         ]
@@ -247,22 +288,43 @@ class SceneLibrary:
     def describe(self, selector):
         version = self.resolve(selector)
         bindings = version.bindings["entities"]
+        report = version.report() or {}
+        effective = report.get("effectiveBindings", {})
+        templated = any(binding.get("template") for binding in bindings)
+        effective_bindings = effective.get(version.metadata["sources"][0], []) if templated else []
+        display_bindings = effective_bindings or bindings
         definitions = {
             value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
         }
         devices = [
             deepcopy(binding) | {"actions": definitions.get(binding.get("type"), {}).get("actions", {})}
-            for binding in bindings
+            for binding in display_bindings
         ]
         return deepcopy(
             version.summary()
             | {
                 "metadata": version.metadata,
                 "entities": bindings,
+                "rawBindings": version.bindings,
+                "effectiveBindings": effective,
+                "templateResolution": {
+                    "status": "not_required"
+                    if not templated
+                    else "failed"
+                    if version.template_error
+                    or any(
+                        check["id"] == "S5" and check["status"] == "fail"
+                        for check in report.get("checks", [])
+                    )
+                    else "resolved"
+                    if effective
+                    else "not_recorded",
+                    "error": version.template_error,
+                },
                 "devices": devices,
                 "types": {
                     binding["type"]: definitions[binding["type"]]
-                    for binding in bindings
+                    for binding in display_bindings
                     if binding.get("type") in definitions
                 },
                 "locations": version.locations["locations"],
