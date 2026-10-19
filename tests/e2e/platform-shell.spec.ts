@@ -10,7 +10,8 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(5);
+  await expect(navigation.getByRole('link')).toHaveCount(6);
+  await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(244, 243, 239)');
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -52,7 +53,7 @@ test('platform navigation, persistent preferences, system theme and local assets
 
 test('400 px pages and live workspace stay within the page width', async ({ page, request }, testInfo) => {
   await page.setViewportSize({ width: 400, height: 900 });
-  for (const path of ['/', '/resources/gpu', '/sessions', '/scenes', '/scenes/lab-demo/1', '/recordings']) {
+  for (const path of ['/', '/resources/gpu', '/approvals', '/sessions', '/scenes', '/scenes/lab-demo/1', '/recordings']) {
     await page.goto(path);
     await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Collapse sidebar', exact: true })).toBeHidden();

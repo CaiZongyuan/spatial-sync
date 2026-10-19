@@ -187,7 +187,38 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
 
 export function Overview() {
   const { snapshot, error } = usePlatform();
-  const active = snapshot?.sessions.find(session => ['RUNNING', 'PAUSED'].includes(session.state));
+  const candidate = snapshot?.sessions.find(session => ['RUNNING', 'PAUSED'].includes(session.state));
+  const candidateId = candidate?.sessionId;
+  const [confirmation, setConfirmation] = useState<{ sessionId: string; active: boolean; error?: string }>();
+  useEffect(() => {
+    setConfirmation(undefined);
+    if (!candidateId) return;
+    let disposed = false;
+    let pending: AbortController | undefined;
+    const refresh = async () => {
+      if (pending) return;
+      const controller = new AbortController();
+      pending = controller;
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        // Platform telemetry is cached. Only current lifecycle state may admit a live transport.
+        const health = await request<{ sessions: Pick<PlatformSession, 'sessionId' | 'state'>[] }>('/health', { signal: controller.signal });
+        if (!disposed) setConfirmation({ sessionId: candidateId, active: health.sessions.some(session => session.sessionId === candidateId && ['RUNNING', 'PAUSED'].includes(session.state)) });
+      } catch (error) {
+        if (!disposed) setConfirmation({ sessionId: candidateId, active: false,
+          error: controller.signal.aborted ? 'Session status request timed out. Retrying automatically.' : (error as Error).message });
+      } finally {
+        clearTimeout(timeout);
+        pending = undefined;
+      }
+    };
+    void refresh();
+    const interval = setInterval(() => void refresh(), 2000);
+    return () => { disposed = true; clearInterval(interval); pending?.abort(); };
+  }, [candidateId]);
+  const confirmed = confirmation?.sessionId === candidateId ? confirmation : undefined;
+  const active = confirmed?.active ? candidate : undefined;
+  const selecting = !!candidate && !confirmed;
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [recordingError, setRecordingError] = useState<string>();
   useEffect(() => {
@@ -197,15 +228,16 @@ export function Overview() {
       .catch((error: Error) => { if (!controller.signal.aborted) setRecordingError(error.message); });
     return () => controller.abort();
   }, []);
-  const recent = snapshot ? recordings.find(recording => recording.kind === 'session'
+  const recent = snapshot && !selecting ? recordings.find(recording => recording.kind === 'session'
     && recording.segments.length > 0 && recording.status !== 'recording') : undefined;
   return <main className="overview-page">
+    {confirmed?.error && <div role="alert" className="platform-error">{confirmed.error}</div>}
     {recordingError && <div role="alert" className="platform-error">无法读取最近录制：{recordingError}</div>}
     {active || recent ? <SessionOverview key={active?.sessionId ?? recent!.sessionId} session={active} snapshot={snapshot} recording={active ? undefined : recent} /> : <>
       <header className="overview-page-heading"><h1>概览</h1><p>共享实验室 · 一个权威空间状态</p></header>
       {error && <div role="alert" className="platform-error">{error}</div>}
       <div className="overview-hero"><figure className="overview-figure"><div className="overview-stage empty-overview-stage"><span className="empty-scene-mark" aria-hidden="true">◇</span>
-        <h2>{snapshot ? '开始一次实验' : '正在连接实验室'}</h2><p>启动场景后，在这里查看设备、实时读数与动作。</p><Link className="button-link primary" to="/scenes">去场景库启动 →</Link></div>
+        <h2>{snapshot && !selecting ? '开始一次实验' : '正在连接实验室'}</h2><p>启动场景后，在这里查看设备、实时读数与动作。</p><Link className="button-link primary" to="/scenes">去场景库启动 →</Link></div>
         <figcaption><strong>图 1</strong><span>实验室空间视图</span></figcaption></figure><aside className="overview-device-drawer"><span className="eyebrow">设备抽屉</span><h2>等待活动会话</h2><p>会话启动后，点击设备查看它的状态、动作与示教位置。</p></aside></div>
       <div className="overview-lower"><section className="reference-panel activity-panel"><header><h2>近期活动</h2></header><div className="timeline-empty">启动会话后，动作与设备事件会出现在这里。</div></section><Inspector snapshot={snapshot} /></div>
     </>}

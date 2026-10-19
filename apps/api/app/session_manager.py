@@ -17,6 +17,7 @@ from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
 from packages.assets.registry import AssetRegistry
+from packages.info.approvals import ApprovalStore
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
@@ -63,13 +64,21 @@ def default_source_factory(kind: str, session_id: str) -> SpatialSource:
 
 class Session:
     def __init__(
-        self, scene_id: str, kind: str, options: SessionOptions, settings: Settings, factory, recordings,
+        self,
+        scene_id: str,
+        kind: str,
+        options: SessionOptions,
+        settings: Settings,
+        factory,
+        recordings,
+        approvals,
         scene_version=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.scene_version = scene_version
         self.options, self.settings, self.factory = options, settings, factory
+        self.approvals = approvals
         self.source: SpatialSource | None = None
         self._starting_source: SpatialSource | None = None
         self.manifest: SceneManifest | None = None
@@ -960,6 +969,7 @@ class SessionManager:
     def __init__(self, settings: Settings, factory: Callable = default_source_factory, recordings=None):
         self.settings, self.factory = settings, factory
         self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
+        self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
         self._library = None
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
@@ -972,6 +982,7 @@ class SessionManager:
         return self._library
 
     async def create(self, scene_id, source, options, *, scene_version=None):
+        self.approvals.startup()
         selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
         source = source or selected.metadata["sources"][0]
         async with self._create_lock:
@@ -990,7 +1001,14 @@ class SessionManager:
                         },
                     )
             session = Session(
-                selected.name, source, options, self.settings, self.factory, self.recordings, selected
+                selected.name,
+                source,
+                options,
+                self.settings,
+                self.factory,
+                self.recordings,
+                self.approvals,
+                scene_version=selected,
             )
             self._starting_session = session
             try:

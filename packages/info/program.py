@@ -417,6 +417,15 @@ class HostCore:
         self._call(handle.entity_index, "cancel", handle, self._contexts[handle.entity_index])
         return handle.invocation.model_copy(deep=True)
 
+    def revoke_before_start(self, invocation_id):
+        """Atomically cancel queued work, without cancelling an executing program."""
+        handle = self._active.get(invocation_id)
+        if handle is None:
+            return self._recent[invocation_id].model_copy(deep=True)
+        if not handle.started:
+            handle.cancelled()
+        return handle.invocation.model_copy(deep=True)
+
     def tick(self, sim_time, dt):
         if sim_time < self.sim_time or dt <= 0:
             raise ValueError("Host time must advance monotonically with positive dt")

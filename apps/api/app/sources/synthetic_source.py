@@ -104,6 +104,13 @@ class SyntheticSource:
                 self._events.put_nowait(event)
             return result
 
+    async def revoke_before_start(self, invocation_id):
+        async with self._lock:
+            result = self.host.revoke_before_start(invocation_id)
+            for event in self.host.drain_events():
+                self._events.put_nowait(event)
+            return result
+
     def _advance(self, count):
         self._step_index += count
         due = int(self.sim_time * self.options.controlHz + 1e-9)

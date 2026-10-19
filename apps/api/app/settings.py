@@ -5,6 +5,11 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Settings:
+    state_root: Path = field(
+        default_factory=lambda: Path(
+            os.getenv("SPATIAL_STATE_ROOT", str(Path.home() / ".spatial-sync" / "state"))
+        )
+    )
     recordings_root: Path = field(
         default_factory=lambda: Path(os.getenv("SPATIAL_RECORDINGS_ROOT", "recordings"))
     )

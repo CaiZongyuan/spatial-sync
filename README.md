@@ -140,6 +140,26 @@ closing the lid. Rejections include structured reasons and condition messages.
 permissions. Agents cannot approve calls. Reuse a `requestId` to retrieve the
 same invocation without executing it twice.
 
+The **Approvals** inbox at `/approvals` shows pending requests and their decision
+history. An operator can approve or deny with a note, and revoke an approval
+while its invocation is still queued. Once execution starts, revocation is
+refused. Withdrawing a denial keeps the original invocation rejected; submit a
+new action to try again.
+
+`lw approve <invocation-or-approval-id> [--deny] [--note "reason"]` displays the
+request and requires typing `approve` or `deny` in an interactive terminal.
+Non-TTY input and `--json` return `approval_requires_human` before any HTTP
+request. MCP exposes no approval tool. The inbox API provides
+`GET /api/v1/approvals`, `GET /api/v1/approvals/{id}` and
+`POST /api/v1/approvals/{id}/decision` with `{decision, note?}`; decisions are
+`approve`, `deny` or `revoke`. The subject envelope supports `invocation`,
+`plan`, `policy`, `job` and `deletion`; current device calls use `invocation`.
+
+Approval audit records are separate from spatial recordings, in
+`~/.spatial-sync/state/approvals.jsonl`. `SPATIAL_STATE_ROOT` selects another
+state directory. Records survive gateway restart; requests whose gateway-owned
+session disappeared are closed and cannot execute from a retained approval.
+
 ## Recording and replay
 
 Sessions record automatically to `recordings/<sessionId>/`. Close the session to

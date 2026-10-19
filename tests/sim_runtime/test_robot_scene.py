@@ -141,9 +141,15 @@ async def test_robot_source_exports_prismatic_metadata_and_queries_raw_joint_coo
         assert source.latest_frame().simTime == 0
         assert (await source.query_joint_state(joint.entityKey)).positions == pytest.approx([-2.0])
         assert (await source.cancel(queued.invocationId)).status == "cancelled"
+        revocable = await invoke("/World/Lab/RobotA", "moveJoints", {"positions": moved})
+        revoked = await source.revoke_before_start(revocable.invocationId)
+        assert revoked.status == "cancelled" and revoked.startedSimTime is None
         accepted = await invoke("/World/Lab/RobotA", "moveJoints", {"positions": moved})
         assert accepted.status == "accepted"
-        step = await source.execute(Command(requestId="step", command="step", args={"count": 240}))
+        await source.execute(Command(requestId="begin", command="step", args={"count": 4}))
+        running = await source.revoke_before_start(accepted.invocationId)
+        assert running.status == "running" and running.startedSimTime is not None
+        step = await source.execute(Command(requestId="step", command="step", args={"count": 236}))
         assert step.frame.simTime == pytest.approx(1)
         assert (await source.query_joint_state(joint.entityKey)).positions == pytest.approx([-1.8], abs=0.01)
         assert (await invoke("/World/Lab/Centrifuge", "closeLid")).status == "accepted"

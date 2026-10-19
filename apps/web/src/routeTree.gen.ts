@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as RecordingsRouteImport } from './routes/recordings'
 import { Route as ScenesRouteImport } from './routes/scenes'
 import { Route as SessionsRouteImport } from './routes/sessions'
@@ -23,6 +24,11 @@ import { Route as ScenesNameRevRouteImport } from './routes/scenes.$name.$rev'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecordingsRoute = RecordingsRouteImport.update({
@@ -73,6 +79,7 @@ const ScenesNameRevRoute = ScenesNameRevRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
   '/recordings': typeof RecordingsRoute
   '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
   '/recordings': typeof RecordingsRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
@@ -96,6 +104,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
   '/recordings': typeof RecordingsRoute
   '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/approvals'
     | '/recordings'
     | '/scenes'
     | '/sessions'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/approvals'
     | '/recordings'
     | '/replay/$recordingId'
     | '/resources/gpu'
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/approvals'
     | '/recordings'
     | '/scenes'
     | '/sessions'
@@ -145,6 +157,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApprovalsRoute: typeof ApprovalsRoute
   RecordingsRoute: typeof RecordingsRoute
   ScenesRoute: typeof ScenesRouteWithChildren
   SessionsRoute: typeof SessionsRouteWithChildren
@@ -159,6 +172,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recordings': {
@@ -256,6 +276,7 @@ const SessionsRouteWithChildren = SessionsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApprovalsRoute: ApprovalsRoute,
   RecordingsRoute: RecordingsRoute,
   ScenesRoute: ScenesRouteWithChildren,
   SessionsRoute: SessionsRouteWithChildren,
