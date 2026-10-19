@@ -3,6 +3,10 @@
 from packages.protocol.math import normalize_entity_key
 
 
+def anchor_label(joint_label):
+    return f"{joint_label}/anchor"
+
+
 def add_joint_anchor_sites(builder) -> dict[int, int]:
     import newton
 
@@ -14,7 +18,7 @@ def add_joint_anchor_sites(builder) -> dict[int, int]:
     for index, joint_type in enumerate(builder.joint_type):
         if joint_type == newton.JointType.FREE:
             continue
-        label = f"{builder.joint_label[index]}/anchor"
+        label = anchor_label(builder.joint_label[index])
         matches = existing.get(normalize_entity_key(label), [])
         if matches:
             if len(matches) != 1:

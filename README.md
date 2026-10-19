@@ -198,6 +198,9 @@ uv run --no-sync lw scene ls --json
 uv run --no-sync lw asset ls --kind robot --json
 uv run --no-sync lw asset show robot/fr3@1 --json
 uv run --no-sync lw asset import <asset-directory> --json
+uv run --no-sync lw asset validate robot/fr3@1 --json
+uv run --no-sync lw scene import <scene-directory> --json
+uv run --no-sync lw scene validate <scene-version> --json
 uv run --no-sync lw scene show robot-and-tubes --json
 uv run --no-sync lw scene launch lab-demo
 uv run --no-sync lw status
@@ -215,10 +218,11 @@ Parameter values use JSON, falling back to strings. Use `lw --help` for all
 commands and `--json` for machine output. Exit codes are0 success,1 usage or
 connection error,2 rejection,3 failure/cancellation and4 wait timeout.
 
-Asset imports upload an uncompressed tar from the CLI client's directory. The
+Asset and scene imports upload an uncompressed tar from the CLI client's directory. The
 gateway checks metadata, allocates immutable revisions and deduplicates identical
-content. Reports currently cover schema only; remaining structure and physics
-checks stay explicit gaps. See [asset packages](docs/ASSET_LIBRARY.md).
+content. CPU-only structural checks record S1–S8 results; physics checks remain
+explicitly not run. Revalidation appends a report without changing published
+version bytes or their hash. See [asset packages](docs/ASSET_LIBRARY.md).
 
 `lw mcp` serves generic tools over stdio through the pinned official MCP
 SDK. Library discovery and launch work before any session exists; the original

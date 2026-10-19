@@ -12,6 +12,7 @@ TOOLS = {
     "library_search",
     "library_describe",
     "library_import",
+    "library_validate",
     "scene_launch",
     "alerts_list",
     "alert_ack",

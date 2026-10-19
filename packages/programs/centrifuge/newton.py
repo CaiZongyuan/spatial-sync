@@ -13,10 +13,12 @@ class CentrifugeProgram:
     id, type, tick_priority = "centrifuge.newton", "centrifuge/v1", 30
 
     class Config(ProgramConfig):
-        slotSites: list[str] = Field(min_length=4, max_length=4)
-        tubes: list[str]
-        spindleJoint: str
-        lidJoint: str
+        slotSites: list[str] = Field(
+            min_length=4, max_length=4, json_schema_extra={"spatialReference": "site"}
+        )
+        tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
+        spindleJoint: str = Field(json_schema_extra={"spatialReference": "joint"})
+        lidJoint: str = Field(json_schema_extra={"spatialReference": "joint"})
         visualRpmCap: float = Field(default=60, gt=0)
 
     def init(self, ctx):

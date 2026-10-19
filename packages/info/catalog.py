@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from packages.library.scenes import builtin_scene_path
 from packages.protocol.schema import Catalog as CatalogDocument
 
+from .binding_validation import validate_binding_semantics
 from .conditions import validate_conditions
 from .declarations import EntityBindingDeclaration, EntityTypeDeclaration
 from .schema_subset import compile_schema
@@ -203,31 +204,14 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
                 [rule["when"]], key, lambda entity, prop: catalog.property(entity, prop)["schema"]
             )
             catalog._alerts[key, name] = (rule, compiled)
-        actions = catalog.types[binding["type"]]["actions"]
-        if set(binding["interlocks"]) - actions.keys():
-            raise ValueError(f"Interlock references unknown action on {key}")
-        for name, action in actions.items():
-            catalog._conditions[key, name] = validate_conditions(
-                action["preconditions"] + binding["interlocks"].get(name, []),
-                key,
-                lambda entity, prop: catalog.property(entity, prop)["schema"],
-            )
-
-        def validate_config(value):
-            if isinstance(value, dict):
-                if "requires" in value:
-                    validate_conditions(
-                        value["requires"], key, lambda entity, prop: catalog.property(entity, prop)["schema"]
-                    )
-                if "site" in value and value["site"] not in sites:
-                    raise ValueError(f"Config references an unknown Site: {value['site']}")
-                for child in value.values():
-                    validate_config(child)
-            elif isinstance(value, list):
-                for child in value:
-                    validate_config(child)
-
-        validate_config(binding["config"])
+        compiled = validate_binding_semantics(
+            key,
+            binding,
+            catalog.types[binding["type"]],
+            lambda entity, prop: catalog.property(entity, prop)["schema"],
+            sites,
+        )
+        catalog._conditions.update({(key, name): value for name, value in compiled.items()})
     # Publish exactly the schemas used by compiled validators, including nested
     # object defaults. Compilation above still reads only the authoring subset.
     for type_id, definition in catalog.types.items():
