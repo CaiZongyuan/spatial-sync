@@ -20,7 +20,7 @@ from packages.library.archive import invalid as invalid
 from packages.library.common import BUILTIN_ROOT, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.metadata import AssetMetadata as AssetMetadata
 from packages.library.metadata import asset_metadata as metadata
-from packages.library.reports import ReportStore, parse_report, validation_status
+from packages.library.reports import HASH, SUBJECT, ReportStore, parse_report, validation_status
 
 
 def gaps(data, path):
@@ -239,7 +239,12 @@ class AssetLibrary:
                     references = report.get("referencedAssets")
                     if isinstance(references, list):
                         for reference in references:
-                            if not isinstance(reference, dict):
+                            if (
+                                not isinstance(reference, dict)
+                                or not SUBJECT.fullmatch(f"asset:{reference.get('id')}")
+                                or not isinstance(reference.get("contentHash"), str)
+                                or not HASH.fullmatch(reference["contentHash"])
+                            ):
                                 reasons.append("Recorded asset references are malformed")
                             elif reference.get("id") == version.id:
                                 if reference.get("contentHash") == version.content_hash:

@@ -106,6 +106,21 @@ def test_reverse_references_use_real_usd_reports_and_templates_without_read_side
         assert report["referencedAssets"] == [{"id": first, "contentHash": one["contentHash"]}]
         assert all(scene["contentHash"] for scene in one["referencingScenes"])
         indexed = client.app.state.manager.library.resolve("actual-usd-reference@1")
+        malformed_references = [
+            {}, {"id": first}, {"contentHash": one["contentHash"]},
+            {"id": None, "contentHash": one["contentHash"]},
+            {"id": first, "contentHash": 7},
+            {"id": "labware/invalid name@1", "contentHash": one["contentHash"]},
+            {"id": first, "contentHash": "invalid-hash"},
+        ]
+        for malformed_reference in malformed_references:
+            indexed.reports.save(report | {
+                "referencedAssets": [*report["referencedAssets"], malformed_reference],
+            }, indexed.content_hash)
+            malformed = client.get("/api/v1/library/assets/labware/reference-fixture/1").json()
+            assert "actual-usd-reference@1" in {scene["id"] for scene in malformed["referencingScenes"]}
+            assert any(scene["id"] == "actual-usd-reference@1" and "malformed" in scene["reason"]
+                       for scene in malformed["referenceInspection"]["uninspectedScenes"])
         indexed.reports.save(report | {"referencedAssets": [{"id": first, "contentHash": "0" * 64}]},
                              indexed.content_hash)
         mismatched = client.get("/api/v1/library/assets/labware/reference-fixture/1").json()
