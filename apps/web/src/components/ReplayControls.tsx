@@ -9,6 +9,9 @@ export function ReplayControls({ source }: { source: ReplaySource }) {
   return (
     <div className="control-bar replay-controls">
       <span className="source-pill">Read-only replay · {playback.status ?? 'loading'}</span>
+      {playback.kind && <span className="source-pill" title={playback.sceneContentHash ?? undefined}>
+        {playback.kind === 'live' ? 'Live' : playback.sceneVersion ?? 'Unknown scene'}
+      </span>}
       <button className="primary" disabled={!playback.ready || playback.seeking}
         onClick={() => playback.playing ? source.pause() : source.play()}>
         {playback.playing ? 'Pause replay' : 'Play replay'}

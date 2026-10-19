@@ -2,6 +2,8 @@ import type { ServerMessage } from '../protocol';
 
 export interface RecordingSegment {
   file: string;
+  /** Optional telemetry sidecar; ordinary replay scans the segment sequentially. */
+  propertyIndex?: string;
   sceneRevision?: string;
   startSampleTimeMs: number;
   endSampleTimeMs: number;
@@ -10,10 +12,13 @@ export interface RecordingSegment {
   bytes: number;
 }
 export interface Recording {
-  formatVersion: 1;
+  formatVersion: 1 | 2;
   protocolVersion: 2;
   sessionId: string;
-  sceneId: string;
+  sceneId: string | null;
+  sceneVersion: string | null;
+  sceneContentHash: string | null;
+  kind: 'session' | 'live';
   sceneRevision: string;
   createdAt: string;
   status: 'recording' | 'complete' | 'incomplete';
@@ -21,6 +26,41 @@ export interface Recording {
   segments: RecordingSegment[];
   revisions?: Record<string, { manifest: string; catalog: string; revisionNumericId: number }>;
 }
+
+/** Normalize metadata only. The LWLG segment codec remains binary version 1. */
+export function readRecording(value: unknown): Recording {
+  if (!value || typeof value !== 'object') throw new Error('Unsupported recording metadata');
+  const raw = value as Record<string, unknown>;
+  if (![1, 2].includes(raw.formatVersion as number) || raw.protocolVersion !== 2)
+    throw new Error('Unsupported recording format/protocol version');
+  if (!Array.isArray(raw.segments)) throw new Error('Invalid recording segments');
+  if (raw.formatVersion === 1) {
+    return { ...raw, kind: 'session', sceneVersion: typeof raw.sceneId === 'string' && raw.sceneId
+      ? `${raw.sceneId}@1` : null, sceneContentHash: null } as Recording;
+  }
+  if (!['kind', 'sceneVersion', 'sceneContentHash'].every(key => Object.hasOwn(raw, key)))
+    throw new Error('Recording v2 requires kind, sceneVersion and sceneContentHash');
+  if (raw.kind === 'session') {
+    if (typeof raw.sceneVersion !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$/.test(raw.sceneVersion))
+      throw new Error('Session recording v2 requires an exact scene version');
+    if (raw.sceneId !== raw.sceneVersion.split('@')[0]) throw new Error('Recording sceneId and sceneVersion disagree');
+    if (typeof raw.sceneContentHash !== 'string' || !/^[a-f\d]{64}$/i.test(raw.sceneContentHash))
+      throw new Error('Session recording v2 requires a scene content hash');
+  } else if (raw.kind === 'live') {
+    if (raw.sceneVersion !== null || raw.sceneContentHash !== null)
+      throw new Error('Live recording scene version and content hash must be null');
+  } else throw new Error('Unknown recording kind');
+  for (const segment of raw.segments) {
+    if (!segment || typeof segment !== 'object' || Array.isArray(segment)) throw new Error('Invalid recording segment');
+    if (segment.propertyIndex != null && (typeof segment.propertyIndex !== 'string'
+      || !/^seg-[0-9]{6}\.index\.json$/.test(segment.propertyIndex)))
+      throw new Error('Invalid recording property index reference');
+  }
+  return { ...raw } as unknown as Recording;
+}
+
+export const recordedScene = (recording: Pick<Recording, 'kind' | 'sceneVersion'>) =>
+  recording.kind === 'live' ? 'Live' : recording.sceneVersion ?? 'Unknown scene';
 export interface LogRecord {
   kind: 1 | 2 | 3;
   tMs: number;

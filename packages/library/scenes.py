@@ -223,6 +223,5 @@ class SceneLibrary:
             "locations": version.locations["locations"],
             "validation": version.validation,
             "inspection": "declarative bindings; match selectors are unexpanded",
-            "assets": [], "recordings": None,
-            "recordingsReason": "Scene-version attribution is unavailable in recording format 1",
+            "assets": [],
         })

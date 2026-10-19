@@ -1,7 +1,7 @@
 import type { Catalog, SceneManifest } from '../protocol';
 import { SessionClient } from '../stream/client';
 import { validateManifest } from '../validate-manifest';
-import { readSegment, recordingUrl, type LogRecord, type Recording } from './reader';
+import { readRecording, readSegment, recordingUrl, type LogRecord, type Recording } from './reader';
 
 interface PlaybackState {
   ready: boolean;
@@ -12,6 +12,9 @@ interface PlaybackState {
   durationMs: number;
   rate: number;
   status?: Recording['status'];
+  sceneVersion?: string | null;
+  sceneContentHash?: string | null;
+  kind?: Recording['kind'];
   droppedFrames: number;
 }
 
@@ -57,14 +60,14 @@ export class ReplaySource extends SessionClient {
     const version = ++this.seekVersion;
     clearTimeout(this.timer);
     this.updatePlayback({ ready: false, playing: false, seeking: false, seekTargetMs: undefined });
-    const recording = await this.fetchJson<Recording>(this.documentUrl);
+    const raw = await this.fetchJson<unknown>(this.documentUrl);
     if (version !== this.seekVersion) return;
-    if (recording.formatVersion !== 1 || recording.protocolVersion !== 2)
-      throw new Error('Unsupported recording format/protocol version');
+    const recording = readRecording(raw);
     if (!recording.segments.length) throw new Error('This recording has no playable samples');
     this.recording = recording;
     const durationMs = Math.max(0, recording.segments.at(-1)!.endSampleTimeMs - recording.segments[0].startSampleTimeMs);
-    this.updatePlayback({ durationMs, status: recording.status });
+    this.updatePlayback({ durationMs, status: recording.status, sceneVersion: recording.sceneVersion,
+      sceneContentHash: recording.sceneContentHash, kind: recording.kind });
     await this.seek(0);
     if (this.abort.signal.aborted) return;
     this.update({ connection: 'connected', role: 'viewer' });

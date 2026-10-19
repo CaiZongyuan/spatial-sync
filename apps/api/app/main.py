@@ -208,7 +208,10 @@ def create_app(
     @app.get("/api/v1/library/scenes/{name}")
     @app.get("/api/v1/library/scenes/{name}/{rev}")
     async def library_scene(name: str, rev: str | None = None):
-        return manager.library.describe(f"{name}@{rev}" if rev is not None else name)
+        detail = manager.library.describe(f"{name}@{rev}" if rev is not None else name)
+        related = await asyncio.to_thread(recordings.list)
+        detail["recordings"] = [item for item in related if item.get("sceneVersion") == detail["id"]]
+        return detail
 
     @app.get("/api/v1/platform")
     async def platform():

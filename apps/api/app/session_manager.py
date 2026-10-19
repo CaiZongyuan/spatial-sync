@@ -216,7 +216,7 @@ class Session:
 
     async def _record_revision(self):
         if self.recording is None:
-            self.recording = self.recordings.create(self.session_id, self.scene_id)
+            self.recording = self.recordings.create(self.session_id, self.scene_id, self.scene_version)
         if self.recording is None:
             return
         try:

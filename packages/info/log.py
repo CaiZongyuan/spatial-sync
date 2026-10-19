@@ -1,4 +1,4 @@
-"""Portable v1 session logs. Only the writer thread touches recording files."""
+"""Portable recording metadata v2 with unchanged LWLG v1 segment bytes."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from packages.info.invocations import TERMINAL
+from packages.info.recording import recording_metadata
 from packages.info.store import StateStore
 from packages.protocol.schema import EntityObservations, EntitySnapshot, Invocation
 from packages.transport import HEADER as FRAME_HEADER
@@ -115,7 +116,8 @@ def recover_recordings(root: Path):
         metadata_file = directory / "recording.json"
         try:
             metadata = json.loads(metadata_file.read_bytes())
-            if metadata.get("formatVersion") != 1 or metadata.get("status") != "recording":
+            recording_metadata(metadata)
+            if metadata.get("status") != "recording":
                 continue
             metadata["status"] = "incomplete"
             metadata["segments"] = []
@@ -232,6 +234,9 @@ class SessionLog:
         session_id,
         scene_id,
         *,
+        scene_version,
+        scene_content_hash,
+        kind,
         queue_size=4096,
         segment_seconds=60,
         segment_bytes=16 * 1024 * 1024,
@@ -239,16 +244,20 @@ class SessionLog:
     ):
         self.directory = Path(directory)
         self.metadata = {
-            "formatVersion": 1,
+            "formatVersion": 2,
             "protocolVersion": 2,
             "sessionId": session_id,
             "sceneId": scene_id,
+            "sceneVersion": scene_version,
+            "sceneContentHash": scene_content_hash,
+            "kind": kind,
             "createdAt": datetime.now(UTC).isoformat(),
             "status": "recording",
             "segments": [],
             "revisions": {},
             "durationMs": 0,
         }
+        self.metadata = recording_metadata(self.metadata)
         self.queue_size, self.segment_seconds, self.segment_bytes = queue_size, segment_seconds, segment_bytes
         self._open_segment = open_segment or (lambda path: path.open("wb"))
         self._condition = threading.Condition()
