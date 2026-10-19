@@ -11,6 +11,7 @@ import os
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
 
@@ -22,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
+from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
@@ -31,6 +33,7 @@ from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
+from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
@@ -108,11 +111,13 @@ def create_app(
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
     recordings = RecordingRepository(settings, asset_registry)
+    previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
     @asynccontextmanager
     async def lifespan(app):
+        manager.approvals.startup()
         # Resolve the operator's roots at startup, before any owned workers or recordings.
         manager.library
         await recordings.startup()
@@ -142,6 +147,7 @@ def create_app(
     app.state.manager, app.state.settings = manager, settings
     app.state.platform_monitor = monitor
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
+    install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     request_times = defaultdict(deque)
 
@@ -202,16 +208,47 @@ def create_app(
         return {"scenes": manager.library.list()}
 
     @app.get("/api/v1/library/scenes")
-    async def library_scenes(q: str | None = None, launchable: bool | None = None):
-        return {"scenes": manager.library.list(q, launchable)}
+    async def library_scenes(
+        q: str | None = None, launchable: bool | None = None,
+        source: Literal["synthetic", "newton"] | None = None,
+    ):
+        values = manager.library.list(q, launchable)
+        result = []
+        for value in values:
+            if source is not None and source not in value["sources"]:
+                continue
+            version = manager.library.resolve(value["id"])
+            preview = await asyncio.to_thread(previews.describe, version, source or value["sources"][0])
+            result.append(value | {"preview": preview, "entityCount": preview["entityCount"],
+                                   "deviceCount": preview["bindingCount"], "countsReason": preview["reason"]})
+        return {"scenes": result}
 
     @app.get("/api/v1/library/scenes/{name}")
     @app.get("/api/v1/library/scenes/{name}/{rev}")
-    async def library_scene(name: str, rev: str | None = None):
+    async def library_scene(
+        name: str, rev: str | None = None, source: Literal["synthetic", "newton"] | None = None,
+    ):
         detail = manager.library.describe(f"{name}@{rev}" if rev is not None else name)
+        version = manager.library.resolve(detail["id"])
+        preview = await asyncio.to_thread(previews.describe, version, source or detail["sources"][0])
+        detail.update(
+            preview=preview, entityCount=preview["entityCount"], deviceCount=preview["bindingCount"],
+            countsReason=preview["reason"],
+        )
         related = await asyncio.to_thread(recordings.list)
         detail["recordings"] = [item for item in related if item.get("sceneVersion") == detail["id"]]
         return detail
+
+    @app.get("/api/v1/library/scenes/{name}/{rev}/preview/{source}/{relative:path}")
+    async def library_preview_file(name: str, rev: str, source: str, relative: str):
+        version = manager.library.resolve(f"{name}@{rev}")
+        try:
+            payload = await asyncio.to_thread(previews.read, version, source, relative)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(404, {"code": "preview_unavailable", "message": str(exc)}) from exc
+        media = {".json": "application/json", ".bin": "application/octet-stream", ".glb": "model/gltf-binary",
+                 ".gltf": "model/gltf+json", ".png": "image/png", ".svg": "image/svg+xml"}
+        return Response(payload, media_type=media.get(Path(relative).suffix, "application/octet-stream"))
 
     @app.get("/api/v1/platform")
     async def platform():

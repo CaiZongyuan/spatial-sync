@@ -55,10 +55,14 @@ device in the view, its label or the legend to inspect its type, actions and
 teaching locations. The **读数** switch controls the live label readouts; the
 activity timeline shows actual device events and invocation transitions.
 With no active session, the most recent available recording provides a read-only
-scene preview, or the page guides you to create a session.
+scene preview, or the page guides you to the scene library.
+**Scenes (场景库)** (`/scenes`) lists immutable versions with searchable card/list
+views, source and launchability filters. Open a version to inspect its static
+initial scene, entity bindings, teaching and recorded validation, then launch
+that exact version into its connected workspace.
 **Sessions (会话)**
-(`/sessions`) lists managed sessions and provides the temporary launch/join
-form. **Resources · Compute** (`/resources/gpu`) shows host resources and
+(`/sessions`) lists managed sessions and lets another observer join by ID.
+**Resources · Compute** (`/resources/gpu`) shows host resources and
 managed Newton backends. These pages refresh every two seconds. **Recordings**
 (`/recordings`) links to read-only replay at `/replay/{id}`.
 The sidebar collapses and remembers your preference; below 900 px it becomes
@@ -139,6 +143,26 @@ closing the lid. Rejections include structured reasons and condition messages.
 `X-Actor: cli:lw` or `agent:<client name>` records attribution; it grants no
 permissions. Agents cannot approve calls. Reuse a `requestId` to retrieve the
 same invocation without executing it twice.
+
+The **Approvals** inbox at `/approvals` shows pending requests and their decision
+history. An operator can approve or deny with a note, and revoke an approval
+while its invocation is still queued. Once execution starts, revocation is
+refused. Withdrawing a denial keeps the original invocation rejected; submit a
+new action to try again.
+
+`lw approve <invocation-or-approval-id> [--deny] [--note "reason"]` displays the
+request and requires typing `approve` or `deny` in an interactive terminal.
+Non-TTY input and `--json` return `approval_requires_human` before any HTTP
+request. MCP exposes no approval tool. The inbox API provides
+`GET /api/v1/approvals`, `GET /api/v1/approvals/{id}` and
+`POST /api/v1/approvals/{id}/decision` with `{decision, note?}`; decisions are
+`approve`, `deny` or `revoke`. The subject envelope supports `invocation`,
+`plan`, `policy`, `job` and `deletion`; current device calls use `invocation`.
+
+Approval audit records are separate from spatial recordings, in
+`~/.spatial-sync/state/approvals.jsonl`. `SPATIAL_STATE_ROOT` selects another
+state directory. Records survive gateway restart; requests whose gateway-owned
+session disappeared are closed and cannot execute from a retained approval.
 
 ## Recording and replay
 

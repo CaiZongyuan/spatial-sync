@@ -10,21 +10,35 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as RecordingsRouteImport } from './routes/recordings'
+import { Route as ScenesRouteImport } from './routes/scenes'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as ReplayRecordingIdRouteImport } from './routes/replay.$recordingId'
 import { Route as ResourcesGpuRouteImport } from './routes/resources.gpu'
+import { Route as ScenesIndexRouteImport } from './routes/scenes.index'
 import { Route as SessionsIndexRouteImport } from './routes/sessions.index'
 import { Route as SessionsSessionIdRouteImport } from './routes/sessions.$sessionId'
+import { Route as ScenesNameRevRouteImport } from './routes/scenes.$name.$rev'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecordingsRoute = RecordingsRouteImport.update({
   id: '/recordings',
   path: '/recordings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScenesRoute = ScenesRouteImport.update({
+  id: '/scenes',
+  path: '/scenes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SessionsRoute = SessionsRouteImport.update({
@@ -42,6 +56,11 @@ const ResourcesGpuRoute = ResourcesGpuRouteImport.update({
   path: '/resources/gpu',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScenesIndexRoute = ScenesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ScenesRoute,
+} as any)
 const SessionsIndexRoute = SessionsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -52,66 +71,95 @@ const SessionsSessionIdRoute = SessionsSessionIdRouteImport.update({
   path: '/$sessionId',
   getParentRoute: () => SessionsRoute,
 } as any)
+const ScenesNameRevRoute = ScenesNameRevRouteImport.update({
+  id: '/$name/$rev',
+  path: '/$name/$rev',
+  getParentRoute: () => ScenesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
   '/recordings': typeof RecordingsRoute
+  '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
+  '/scenes/$name/$rev': typeof ScenesNameRevRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
   '/recordings': typeof RecordingsRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/scenes': typeof ScenesIndexRoute
   '/sessions': typeof SessionsIndexRoute
+  '/scenes/$name/$rev': typeof ScenesNameRevRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/approvals': typeof ApprovalsRoute
   '/recordings': typeof RecordingsRoute
+  '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
+  '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
+  '/scenes/$name/$rev': typeof ScenesNameRevRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/approvals'
     | '/recordings'
+    | '/scenes'
     | '/sessions'
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/sessions/$sessionId'
+    | '/scenes/'
     | '/sessions/'
+    | '/scenes/$name/$rev'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/approvals'
     | '/recordings'
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/sessions/$sessionId'
+    | '/scenes'
     | '/sessions'
+    | '/scenes/$name/$rev'
   id:
     | '__root__'
     | '/'
+    | '/approvals'
     | '/recordings'
+    | '/scenes'
     | '/sessions'
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/sessions/$sessionId'
+    | '/scenes/'
     | '/sessions/'
+    | '/scenes/$name/$rev'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApprovalsRoute: typeof ApprovalsRoute
   RecordingsRoute: typeof RecordingsRoute
+  ScenesRoute: typeof ScenesRouteWithChildren
   SessionsRoute: typeof SessionsRouteWithChildren
   ReplayRecordingIdRoute: typeof ReplayRecordingIdRoute
   ResourcesGpuRoute: typeof ResourcesGpuRoute
@@ -126,11 +174,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recordings': {
       id: '/recordings'
       path: '/recordings'
       fullPath: '/recordings'
       preLoaderRoute: typeof RecordingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scenes': {
+      id: '/scenes'
+      path: '/scenes'
+      fullPath: '/scenes'
+      preLoaderRoute: typeof ScenesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sessions': {
@@ -154,6 +216,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResourcesGpuRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scenes/': {
+      id: '/scenes/'
+      path: '/'
+      fullPath: '/scenes/'
+      preLoaderRoute: typeof ScenesIndexRouteImport
+      parentRoute: typeof ScenesRoute
+    }
     '/sessions/': {
       id: '/sessions/'
       path: '/'
@@ -168,8 +237,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SessionsSessionIdRouteImport
       parentRoute: typeof SessionsRoute
     }
+    '/scenes/$name/$rev': {
+      id: '/scenes/$name/$rev'
+      path: '/$name/$rev'
+      fullPath: '/scenes/$name/$rev'
+      preLoaderRoute: typeof ScenesNameRevRouteImport
+      parentRoute: typeof ScenesRoute
+    }
   }
 }
+
+interface ScenesRouteChildren {
+  ScenesIndexRoute: typeof ScenesIndexRoute
+  ScenesNameRevRoute: typeof ScenesNameRevRoute
+}
+
+const ScenesRouteChildren: ScenesRouteChildren = {
+  ScenesIndexRoute: ScenesIndexRoute,
+  ScenesNameRevRoute: ScenesNameRevRoute,
+}
+
+const ScenesRouteWithChildren =
+  ScenesRoute._addFileChildren(ScenesRouteChildren)
 
 interface SessionsRouteChildren {
   SessionsSessionIdRoute: typeof SessionsSessionIdRoute
@@ -187,7 +276,9 @@ const SessionsRouteWithChildren = SessionsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApprovalsRoute: ApprovalsRoute,
   RecordingsRoute: RecordingsRoute,
+  ScenesRoute: ScenesRouteWithChildren,
   SessionsRoute: SessionsRouteWithChildren,
   ReplayRecordingIdRoute: ReplayRecordingIdRoute,
   ResourcesGpuRoute: ResourcesGpuRoute,

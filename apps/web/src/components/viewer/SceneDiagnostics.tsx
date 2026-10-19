@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
+import type { InspectVisuals } from './SceneViewport';
 import {
   Box3,
   InstancedMesh,
@@ -29,6 +30,7 @@ declare global {
       setCamera: (state: CameraState) => void;
       camera: () => CameraState;
       drawnEntities: () => string[];
+      inspectVisuals: InspectVisuals;
       projectEntity: (
         key: string,
       ) => { x: number; y: number; instanceId?: number } | undefined;
@@ -52,6 +54,7 @@ export function SceneDiagnostics({
   counts,
   mode,
   extraBounds,
+  inspectVisuals,
 }: {
   mode: string;
   counts: () => {
@@ -60,6 +63,7 @@ export function SceneDiagnostics({
     appliedBodies: number;
   };
   extraBounds?: () => Box3 | undefined;
+  inspectVisuals: InspectVisuals;
 }) {
   const state = useThree();
   useEffect(() => {
@@ -109,6 +113,7 @@ export function SceneDiagnostics({
       return meshes;
     };
     window.__spatialRenderDebug = {
+      inspectVisuals,
       camera: readCamera,
       appearance: () => ({
         background: state.scene.background && 'getHexString' in state.scene.background ? (state.scene.background as { getHexString: () => string }).getHexString() : '',
@@ -229,6 +234,6 @@ export function SceneDiagnostics({
     return () => {
       delete window.__spatialRenderDebug;
     };
-  }, [state, counts, mode, extraBounds]);
+  }, [state, counts, mode, extraBounds, inspectVisuals]);
   return null;
 }

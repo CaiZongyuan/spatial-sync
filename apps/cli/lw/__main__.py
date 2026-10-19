@@ -144,6 +144,22 @@ async def run(args, machine):
                 output(message, machine)
             return 0
         if declaration := getattr(args, "registered_command", None):
+            if declaration.method == "approve_invocation":
+                if machine or not sys.stdin.isatty() or not sys.stdout.isatty():
+                    raise GatewayError(
+                        "approval_requires_human: use an interactive terminal without --json",
+                        status_code=403,
+                        detail={"code": "approval_requires_human"},
+                    )
+                preview = await client.describe_approval(args.invocation_id)
+                print(json.dumps(preview, ensure_ascii=False, indent=2), flush=True)
+                decision = "deny" if args.deny else "approve"
+                try:
+                    confirmation = input(f'Type "{decision}" to confirm this decision: ')
+                except EOFError:
+                    confirmation = ""
+                if confirmation.strip() != decision:
+                    raise GatewayError("Approval cancelled; no decision was sent")
             result = await declaration.invoke(client, vars(args))
         elif command == "status":
             result = await client.status()

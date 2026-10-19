@@ -118,6 +118,12 @@ class SceneVersion:
             "name": self.metadata["title"], "title": self.metadata["title"],
             "description": self.metadata.get("description", ""), "sources": self.metadata["sources"],
             "launchable": self.launchable, "contentHash": self.content_hash, "root": self.root,
+            "stage": self.metadata["stage"],
+            "launchReason": None if self.launchable else (
+                "缺少验证报告" if self.validation is None else "; ".join(
+                    check["message"] for check in self.validation["checks"] if check["status"] == "fail"
+                ) or "验证报告标记此版本不可启动"
+            ),
             "validationStatus": validation_status(self.validation),
             "entityCount": None, "deviceCount": None, "gapCount": None,
             "countsReason": "Physical entities and full validation gaps have not been inspected",

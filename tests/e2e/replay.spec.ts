@@ -90,6 +90,8 @@ for (const version of [1, 2]) test(`plays the v${version} Synthetic fixture with
   await page.goto(`/replay/v${version}?src=${encodeURIComponent(src)}`);
   await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
   await expect(page.getByText('Read-only replay · complete')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Recordings', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('approval-pending-badge')).toHaveCount(0);
   await expect(page.getByText(`lab-demo@${version}`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Play replay' }).click();
   await expect(page.getByRole('button', { name: 'Pause replay' })).toBeEnabled();

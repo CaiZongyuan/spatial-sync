@@ -135,11 +135,12 @@ COMMANDS = (
     ),
     Command(
         path=("approve",),
-        help="Approve or deny a pending invocation.",
+        help="Approve or deny a pending request with human confirmation in an interactive terminal.",
         method="approve_invocation",
         arguments=(
             Argument("invocation_id", ("id",), str, "Invocation ID"),
             Argument("deny", ("--deny",), bool, "Deny instead of approving", False),
+            Argument("note", ("--note",), str, "Audit note for this decision", ""),
         ),
         mcp_name="approve_invocation",
         human_only=True,
