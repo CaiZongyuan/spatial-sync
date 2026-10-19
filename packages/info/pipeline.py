@@ -19,7 +19,7 @@ class ActionPipeline:
         self._inflight = {}
         self._reserved = {}
         self._approval_timers = {}
-        self._approval_locks = {}
+        self._control_locks = {}
         self._cleanup_tasks = set()
         self.approval_timeout = approval_timeout
 
@@ -206,7 +206,7 @@ class ActionPipeline:
     async def approve(self, invocation_id, decision, role, actor, note=""):
         if role != "operator" or actor.kind == "agent":
             raise PermissionError("Only a human operator can approve actions")
-        async with self._approval_locks.setdefault(invocation_id, asyncio.Lock()):
+        async with self._control_locks.setdefault(invocation_id, asyncio.Lock()):
             return await self._approve(invocation_id, decision, actor, note)
 
     async def _approve(self, invocation_id, decision, actor, note):
@@ -235,7 +235,7 @@ class ActionPipeline:
     async def revoke_approval(self, invocation_id, role, actor, note=""):
         if role != "operator" or actor.kind == "agent":
             raise PermissionError("Only a human operator can revoke approvals")
-        async with self._approval_locks.setdefault(invocation_id, asyncio.Lock()):
+        async with self._control_locks.setdefault(invocation_id, asyncio.Lock()):
             approval = self.session.approvals.for_invocation(invocation_id)
             if approval is None:
                 raise KeyError(invocation_id)
@@ -264,22 +264,26 @@ class ActionPipeline:
     async def cancel(self, invocation_id, role):
         if role != "operator":
             raise PermissionError("Operator permission is required")
-        invocation = await self.table.lookup(invocation_id)
-        if invocation is None:
-            raise KeyError(invocation_id)
-        if invocation.status in TERMINAL:
-            return invocation
-        if invocation.status == "pending_approval":
-            return self._reject(invocation, "approval_denied", "Pending action cancelled")
-        try:
-            update = await asyncio.wait_for(self.session.source.cancel(invocation_id), 0.5)
-        except Exception:
-            return self._reject(invocation, "source_unavailable", "Device host unavailable", status="failed")
-        # A cancellation reply coordinates control. The reliable event stream owns
-        # terminal publication after any final property observations.
-        if update.status not in TERMINAL:
-            self.update(update)
-        return self.table.get(invocation_id)
+        # Approval can still be awaiting Host admission while the table says pending.
+        async with self._control_locks.setdefault(invocation_id, asyncio.Lock()):
+            invocation = await self.table.lookup(invocation_id)
+            if invocation is None:
+                raise KeyError(invocation_id)
+            if invocation.status in TERMINAL:
+                return invocation
+            if invocation.status == "pending_approval":
+                return self._reject(invocation, "approval_denied", "Pending action cancelled")
+            try:
+                update = await asyncio.wait_for(self.session.source.cancel(invocation_id), 0.5)
+            except Exception:
+                return self._reject(
+                    invocation, "source_unavailable", "Device host unavailable", status="failed"
+                )
+            # A cancellation reply coordinates control. The reliable event stream owns
+            # terminal publication after any final property observations.
+            if update.status not in TERMINAL:
+                self.update(update)
+            return self.table.get(invocation_id)
 
     def fail_active(self, code, message):
         pending = {**self.table.active, **self._reserved}

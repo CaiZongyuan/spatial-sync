@@ -1,10 +1,15 @@
 .approvals-page { min-width: 0; color: var(--ink); }
 .approvals-page-heading h1 { font: 400 30px/1.15 var(--serif); margin: 0; }
 .approvals-page-heading p { color: var(--muted); margin: 8px 0 0; font-size: 13px; }
-.approval-stage-strip { display: flex; gap: 16px; align-items: center; color: var(--muted); margin: 28px 0; font-size: 12px; }
-.approval-stage-strip > span:first-child { padding: 5px 9px; border: 1px solid var(--line); border-radius: 4px; }
-.approval-stage-strip strong { color: var(--accent); font-weight: 500; }
-.approval-stage-strip i { width: 24px; height: 1px; background: var(--line-2); }
+.approval-stage-strip { display: grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); margin: 24px 0 20px; scrollbar-width: thin; }
+.approval-stage { position: relative; display: grid; gap: 6px; align-content: start; padding: 15px 18px 17px; text-align: left; border: 0; border-right: 1px solid var(--line); border-radius: 0; min-width: 0; background: transparent; color: var(--muted); font: inherit; }
+.approval-stage:last-child { border-right: 0; }
+.approval-stage:disabled { opacity: 1; cursor: default; }
+.approval-stage-label { color: var(--faint); font-size: 11px; }
+.approval-stage-value { font: 400 30px/1 var(--serif); letter-spacing: -.02em; color: var(--ink); }
+.approval-stage-state { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.35; }
+.approval-stage-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--ghost); flex: none; }
+.approval-stage-arrow { position: absolute; right: -11px; top: 50%; margin-top: -11px; z-index: 1; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line-2); display: grid; place-items: center; color: var(--faint); font-size: 16px; }
 .approval-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 20px; }
 .approval-inboxes { display: grid; gap: 24px; min-width: 0; }
 .approval-panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); min-width: 0; overflow: hidden; }
@@ -64,4 +69,3 @@
 .approval-error { color: var(--bad); font-size: 13px; overflow-wrap: anywhere; }
 .approval-permission { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
 @media (max-width: 1000px) { .approval-layout { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .approval-stage-strip { gap: 10px; } }

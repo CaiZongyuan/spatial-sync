@@ -64,8 +64,15 @@ export function ApprovalsPage() {
   return <main className="approvals-page" data-testid="approvals-page">
     <header className="approvals-page-heading"><h1>待审批</h1>
       <p>提交请求，由人决定 · 批准后调用才会进入执行队列</p></header>
-    <nav className="approval-stage-strip" aria-label="具身层阶段"><span>具身层</span><span>请求</span><i />
-      <strong aria-current="step">人工审批</strong><i /><span>执行</span></nav>
+    <div className="approval-stage-strip" role="group" aria-label="具身层阶段">
+      {['素材', '场景', '计划', '作业', '评估', '策略'].map((label, index) => <button className="approval-stage"
+        key={label} disabled aria-label={`${label}阶段概览暂不可用`}>
+        <span className="approval-stage-label">0{index + 1} · {label}</span>
+        <strong className="approval-stage-value">—</strong>
+        <span className="approval-stage-state"><i aria-hidden="true" />阶段概览暂不可用</span>
+        {index < 5 && <span className="approval-stage-arrow" aria-hidden="true">›</span>}
+      </button>)}
+    </div>
     {error && <p role="alert" className="approval-error">审批数据暂时不可用：{error}。正在自动重试。</p>}
     {inbox?.role === 'viewer' && <p className="approval-permission" role="status">只读访问 · 需要操作员权限才能处理审批。</p>}
     {!inbox && !error ? <p role="status">正在读取审批…</p> : inbox && <div className="approval-layout">

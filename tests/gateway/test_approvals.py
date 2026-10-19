@@ -3,12 +3,15 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 from test_info import CENTRIFUGE, action, create, risky_catalog
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.api.app.sources.synthetic_source import SyntheticSource
+from packages.protocol.schema import InvocationUpdate
 
 
 def command(client, route, name):
@@ -207,3 +210,102 @@ def test_inbox_reports_actual_readonly_role_and_denies_viewer_decisions(tmp_path
         assert response.json()["detail"]["code"] == "unauthorized"
         assert client.get(approval).json()["status"] == "pending"
         assert client.get(approval).json()["decisions"] == []
+
+
+@pytest.mark.parametrize("cancel_at", ["before", "admission", "running", "completed"])
+async def test_ordinary_cancel_linearizes_with_real_approval_admission(tmp_path, monkeypatch, cancel_at):
+    risky_catalog(tmp_path, monkeypatch)
+    entered, release, started = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    admissions, cancellations = [], []
+
+    class AdmissionSource(SyntheticSource):
+        async def invoke(self, request):
+            entered.set()
+            await release.wait()
+            admissions.append(request.invocationId)
+            return await super().invoke(request)
+
+        async def cancel(self, invocation_id):
+            cancellations.append(invocation_id)
+            return await super().cancel(invocation_id)
+
+        async def events(self):
+            async for event in super().events():
+                if isinstance(event, InvocationUpdate) and event.status == "running":
+                    started.set()
+                yield event
+
+    app = create_app(source_factory=lambda kind, sid: AdmissionSource(sid))
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            response = await client.post("/api/v1/sessions", json={
+                "sceneId": "lab-demo", "source": "synthetic", "approval": {"high": "require"},
+                "continueWithoutObservers": True,
+            })
+            assert response.status_code == 201, response.text
+            route = "/api/v1/sessions/" + response.json()["sessionId"]
+
+            async def control(name, **args):
+                response = await client.post(route + "/commands", json={
+                    "type": "command.request", "requestId": name + str(args), "command": name, "args": args,
+                })
+                assert response.status_code == 200, response.text
+
+            await control("pause")
+            invocation = (await client.post(route + "/actions", json={
+                "requestId": "cancel-" + cancel_at, "entityKey": CENTRIFUGE, "action": "closeLid",
+            })).json()
+            assert invocation["status"] == "pending_approval"
+            invocation_id = invocation["invocationId"]
+            invocation_route = route + "/invocations/" + invocation_id
+            record = (await client.get("/api/v1/approvals")).json()["approvals"][0]
+            decision_route = "/api/v1/approvals/" + record["approvalId"] + "/decision"
+            try:
+                if cancel_at == "before":
+                    assert (await client.post(invocation_route + "/cancel")).json()["status"] == "rejected"
+                    decided = await client.post(decision_route, json={"decision": "approve"})
+                    assert decided.status_code == 409
+                else:
+                    approving = asyncio.create_task(client.post(decision_route, json={"decision": "approve"}))
+                    await asyncio.wait_for(entered.wait(), 1)
+                    if cancel_at == "admission":
+                        cancelling = asyncio.create_task(client.post(invocation_route + "/cancel"))
+                        # Let the real HTTP cancel reach the held Source admission before releasing it.
+                        await asyncio.wait({cancelling}, timeout=0.02)
+                    release.set()
+                    approved = await approving
+                    assert approved.status_code == 200, approved.text
+                    if cancel_at == "admission":
+                        await cancelling
+                    elif cancel_at == "running":
+                        await control("step", count=4)
+                        await asyncio.wait_for(started.wait(), 1)
+                        await client.post(invocation_route + "/cancel")
+
+                # Advance the actual Host far enough for an uncancelled closeLid to change the device.
+                await control("step", count=300)
+                closed = (await client.get(route + "/wait", params={
+                    "key": CENTRIFUGE, "property": "lidOpen", "op": "equals", "value": "false",
+                    "timeoutSeconds": 0.05,
+                })).json()
+                final = (await client.get(
+                    invocation_route, params={"wait": True, "timeoutSeconds": 1}
+                )).json()
+                final.pop("timedOut")
+                state = (await client.get(route + "/state", params={"keys": CENTRIFUGE})).json()
+                assert closed["satisfied"] is (cancel_at == "completed"), (final, state)
+                assert state["entities"][CENTRIFUGE]["values"]["lidOpen"] is (cancel_at != "completed"), (
+                    final, state,
+                )
+                expected = {"before": "rejected", "admission": "cancelled", "running": "cancelled",
+                            "completed": "succeeded"}[cancel_at]
+                assert final["status"] == expected, final
+                assert (final["startedSimTime"] is None) is (cancel_at in ("before", "admission"))
+                assert admissions == ([] if cancel_at == "before" else [invocation_id])
+                assert cancellations == ([invocation_id] if cancel_at in ("admission", "running") else [])
+                if cancel_at == "completed":
+                    assert (await client.post(invocation_route + "/cancel")).json() == final
+                assert (await client.get(invocation_route)).json() == final
+            finally:
+                release.set()
+                await client.delete(route)

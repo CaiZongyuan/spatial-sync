@@ -7,7 +7,11 @@ test('approval inbox renders real empty state and shares its navigation badge', 
   await page.goto('/approvals');
   await expect(page.getByRole('heading', { name: '待审批', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '待审批收件箱' })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: '具身层阶段' })).toBeVisible();
+  const stages = page.getByRole('group', { name: '具身层阶段' });
+  await expect(stages.locator('.approval-stage-label')).toHaveText(['01 · 素材', '02 · 场景', '03 · 计划', '04 · 作业', '05 · 评估', '06 · 策略']);
+  await expect(stages.getByRole('button')).toHaveCount(6);
+  for (const button of await stages.getByRole('button').all()) await expect(button).toBeDisabled();
+  await expect(stages.locator('[aria-current]')).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
