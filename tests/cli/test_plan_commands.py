@@ -1,9 +1,14 @@
 """Installed CLI and official MCP clients operate plans through actual Synthetic HTTP."""
 
+import json
+import os
+import subprocess
+import threading
 from copy import deepcopy
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import yaml
-from cli_support import LW, result
+from cli_support import LW, ROOT, result
 from mcp import Client, Implementation, StdioServerParameters
 
 CENTRIFUGE = "/World/Lab/Centrifuge"
@@ -50,6 +55,8 @@ async def test_official_stdio_mcp_structured_plans_and_optional_step_references(
         submitted = await result(mcp, "plan_create", document=DOCUMENT)
         assert submitted["status"] == "approved"
         assert submitted["requestedBy"] == {"kind": "agent", "name": "plan-agent"}
+        rejected = await mcp.call_tool("plan_create", {"document": "never-read-a-client-path.yaml"})
+        assert rejected.is_error
         plan_id = submitted["id"]
         closed = await result(
             mcp, "invoke_action", key=CENTRIFUGE, action="closeLid", planId=plan_id, stepId=1
@@ -91,3 +98,57 @@ async def test_official_stdio_mcp_structured_plans_and_optional_step_references(
         )
         assert revised["revision"] == 2 and revised["steps"][0]["status"] == "done"
         assert plan_id in [item["id"] for item in await result(mcp, "plan_list")]
+
+
+def test_invalid_local_documents_fail_cleanly_before_any_http(tmp_path):
+    calls = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append(("GET", self.path))
+            self.send_error(500)
+
+        def do_POST(self):
+            calls.append(("POST", self.path))
+            self.send_error(500)
+
+        def log_message(self, *args):
+            pass
+
+    invalid = tmp_path / "invalid.yaml"
+    invalid.write_text("sensitive-should-not-print: [\n", encoding="utf-8")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    env = os.environ | {
+        "LW_URL": f"http://127.0.0.1:{server.server_port}",
+        "LW_SESSION": "session-never-contact",
+        "LW_TOKEN": "",
+    }
+    try:
+        for source, message in (
+            (tmp_path / "missing.yaml", "Cannot read plan document"),
+            (invalid, "Plan document is not valid YAML"),
+        ):
+            for flags in ([], ["--json"]):
+                invoked = subprocess.run(
+                    [str(LW), "plan", "create", str(source), *flags],
+                    cwd=ROOT,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    timeout=10,
+                )
+                assert invoked.returncode == 1
+                if flags:
+                    assert json.loads(invoked.stdout)["error"]["message"] == message
+                else:
+                    assert message in invoked.stderr
+                assert "Traceback" not in invoked.stderr
+                assert "sensitive-should-not-print" not in invoked.stdout + invoked.stderr
+        assert calls == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

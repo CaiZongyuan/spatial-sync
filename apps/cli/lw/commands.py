@@ -6,7 +6,6 @@ types belong here; neither frontend needs another registration.
 Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
 """
 
-import argparse
 from dataclasses import dataclass
 from inspect import Parameter
 from pathlib import Path
@@ -21,8 +20,10 @@ def yaml_document(path):
         if not isinstance(value, dict):
             raise ValueError("Plan must be a mapping")
         return value
-    except (OSError, ValueError, yaml.YAMLError) as exc:
-        raise argparse.ArgumentTypeError(f"Cannot read plan document: {exc}") from exc
+    except OSError as exc:
+        raise ValueError("Cannot read plan document") from exc
+    except yaml.YAMLError as exc:
+        raise ValueError("Plan document is not valid YAML") from exc
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,7 @@ class Argument:
         else:
             # Omitted nullable options stay None; supplied values use their concrete type.
             kinds = get_args(self.annotation)
-            options["type"] = yaml_document if get_origin(self.annotation) is dict else (
+            options["type"] = str if get_origin(self.annotation) is dict else (
                 next(kind for kind in kinds if kind is not type(None))
                 if type(None) in kinds else self.annotation
             )
@@ -75,6 +76,11 @@ class Command:
         values = {
             argument.client_name or argument.name: arguments[argument.name] for argument in self.arguments
         }
+        # CLI grammar accepts a path without I/O; MCP supplies the structured object directly.
+        for argument in self.arguments:
+            name = argument.client_name or argument.name
+            if get_origin(argument.annotation) is dict and isinstance(values[name], str):
+                values[name] = yaml_document(values[name])
         if actor is not None:
             values["actor"] = actor
         return await getattr(client, self.method)(**values)

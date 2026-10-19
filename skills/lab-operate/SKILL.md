@@ -60,6 +60,9 @@ Keep credential values out of messages, logs and model context.
        do: {entity: <entity-key>, action: <action>, params: {<parameter>: <value>}}
        expect: {entity: <entity-key>, property: <property>, equals: <expected-value>}
      - id: 2
+       wait: {entity: <entity-key>, property: <property>, equals: <expected-value>}
+       timeoutSeconds: 60
+     - id: 3
        check: {entity: <entity-key>, property: <property>, equals: <expected-value>}
    ```
 
@@ -75,7 +78,7 @@ Keep credential values out of messages, logs and model context.
    the terminal result before starting dependent work:
 
    ```text
-   lw do <entity-key> <action> <parameter=value> --plan <plan-id> --step <step-id> --wait --timeout 120 --json
+   lw do <entity-key> <action> <parameter=value> --plan <plan-id> --step 1 --wait --timeout 120 --json
    lw inv <invocation-id> --wait --timeout 60 --json
    ```
 
@@ -88,15 +91,16 @@ Keep credential values out of messages, logs and model context.
 
    ```text
    lw get <entity-key> <property> --json
-   lw wait <entity-key> <property> equals <expected-value> --plan <plan-id> --step <step-id> --timeout 60 --json
-   lw check <entity-key> <property> equals <expected-value> --plan <plan-id> --step <step-id> --json
+   lw wait <entity-key> <property> equals <expected-value> --plan <plan-id> --step 2 --timeout 60 --json
+   lw check <entity-key> <property> equals <expected-value> --plan <plan-id> --step 3 --json
    lw plan show <plan-id> --json
    ```
 
    Finish with the actual terminal status and observed value, or the precise
    remaining blocker. A command acknowledgment is not evidence of a device result.
    A successful invocation can still fail its step's `expect`. Read the step
-   result before continuing. When the intended work changes, submit
+   result using the actual submitted IDs; `1/2/3` above refer to the template.
+   Continue after verifying it. When the intended work changes, submit
    `lw plan revise <plan-id> <plan.yaml> --json`; preserve completed step IDs and
    content, then inspect the new revision and its approval state. Use a new
    request for a new action; an earlier request ID keeps its original association.
