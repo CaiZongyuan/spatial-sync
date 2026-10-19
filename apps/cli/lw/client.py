@@ -127,11 +127,21 @@ class GatewayClient:
             actor=actor,
         )
 
-    async def approve_invocation(self, invocation_id, *, deny=False):
+    async def describe_approval(self, invocation_id):
+        if invocation_id.startswith("approval-"):
+            return await self.request("GET", "/api/v1/approvals/" + quote(invocation_id, safe=""))
+        return await self.get_invocation(invocation_id)
+
+    async def approve_invocation(self, invocation_id, *, deny=False, note=""):
+        path = (
+            "/api/v1/approvals/" + quote(invocation_id, safe="") + "/decision"
+            if invocation_id.startswith("approval-")
+            else await self.route() + "/invocations/" + quote(invocation_id, safe="") + "/approve"
+        )
         return await self.request(
             "POST",
-            await self.route() + "/invocations/" + quote(invocation_id, safe="") + "/approve",
-            json={"decision": "deny" if deny else "approve"},
+            path,
+            json={"decision": "deny" if deny else "approve", "note": note},
         )
 
     async def wait_until(self, key, prop, op, value, *, timeout=120):

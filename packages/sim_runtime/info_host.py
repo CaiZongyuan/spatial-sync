@@ -46,6 +46,11 @@ class NewtonInfoHost:
         self.flush()
         return result
 
+    def revoke_before_start(self, invocation_id):
+        result = self.host.revoke_before_start(invocation_id)
+        self.flush()
+        return result
+
     def reset(self):
         self.timings.clear()
         self.tick_ms = 0.0

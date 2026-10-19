@@ -17,6 +17,7 @@ from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
 from packages.assets.registry import AssetRegistry
+from packages.info.approvals import ApprovalStore
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
@@ -74,11 +75,19 @@ def default_source_factory(kind: str, session_id: str) -> SpatialSource:
 
 class Session:
     def __init__(
-        self, scene_id: str, kind: str, options: SessionOptions, settings: Settings, factory, recordings
+        self,
+        scene_id: str,
+        kind: str,
+        options: SessionOptions,
+        settings: Settings,
+        factory,
+        recordings,
+        approvals,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.options, self.settings, self.factory = options, settings, factory
+        self.approvals = approvals
         self.source: SpatialSource | None = None
         self._starting_source: SpatialSource | None = None
         self.manifest: SceneManifest | None = None
@@ -961,11 +970,13 @@ class SessionManager:
     def __init__(self, settings: Settings, factory: Callable = default_source_factory, recordings=None):
         self.settings, self.factory = settings, factory
         self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
+        self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
         self._create_lock = asyncio.Lock()
 
     async def create(self, scene_id, source, options):
+        self.approvals.startup()
         if not any(scene["sceneId"] == scene_id and source in scene["sources"] for scene in SCENES):
             raise HTTPException(
                 404, {"code": "unknown_scene", "message": "Scene/source combination is not registered"}
@@ -985,7 +996,9 @@ class SessionManager:
                             "message": "Close the active session before starting another scene",
                         },
                     )
-            session = Session(scene_id, source, options, self.settings, self.factory, self.recordings)
+            session = Session(
+                scene_id, source, options, self.settings, self.factory, self.recordings, self.approvals
+            )
             self._starting_session = session
             try:
                 await session.start()

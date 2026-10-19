@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError
 
+from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
@@ -105,6 +106,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
+        manager.approvals.startup()
         await recordings.startup()
         await monitor.start()
         try:
@@ -128,6 +130,7 @@ def create_app(
     app.state.manager, app.state.settings = manager, settings
     app.state.platform_monitor = monitor
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
+    install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     request_times = defaultdict(deque)
 

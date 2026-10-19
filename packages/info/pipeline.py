@@ -6,6 +6,7 @@ import uuid
 
 from pydantic import ValidationError
 
+from packages.info.approvals import ApprovalConflict
 from packages.info.conditions import evaluate_conditions
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.protocol.schema import Invocation, InvocationError, InvocationUpdate, InvokeRequest
@@ -18,7 +19,7 @@ class ActionPipeline:
         self._inflight = {}
         self._reserved = {}
         self._approval_timers = {}
-        self._approving = {}
+        self._approval_locks = {}
         self._cleanup_tasks = set()
         self.approval_timeout = approval_timeout
 
@@ -43,7 +44,19 @@ class ActionPipeline:
             return False
         if not self.table.apply(update):
             return False
+        approval = self.session.approvals.for_invocation(update.invocationId)
+        if update.status == "pending_approval" and approval is None:
+            self.session.approvals.submit(
+                subject="invocation",
+                subject_id=update.invocationId,
+                session_id=self.session.session_id,
+                requester=update.actor,
+                title=update.action,
+                details={"entityKey": update.entityKey, "params": update.params},
+            )
         if update.status in TERMINAL:
+            if approval and approval.status == "pending":
+                self.session.approvals.set_status(approval.approvalId, "unavailable")
             timer = self._approval_timers.pop(update.invocationId, None)
             if timer:
                 timer.cancel()
@@ -186,13 +199,17 @@ class ActionPipeline:
     def _approval_expired(self, invocation_id):
         invocation = self.table.get(invocation_id)
         if invocation and invocation.status == "pending_approval":
+            approval = self.session.approvals.for_invocation(invocation_id)
+            self.session.approvals.set_status(approval.approvalId, "expired")
             self._reject(invocation, "approval_denied", "Approval timed out")
 
-    async def approve(self, invocation_id, decision, role, actor):
+    async def approve(self, invocation_id, decision, role, actor, note=""):
         if role != "operator" or actor.kind == "agent":
             raise PermissionError("Only a human operator can approve actions")
-        if invocation_id in self._approving:
-            return await asyncio.shield(self._approving[invocation_id])
+        async with self._approval_locks.setdefault(invocation_id, asyncio.Lock()):
+            return await self._approve(invocation_id, decision, actor, note)
+
+    async def _approve(self, invocation_id, decision, actor, note):
         invocation = await self.table.lookup(invocation_id)
         if invocation is None:
             raise KeyError(invocation_id)
@@ -201,24 +218,48 @@ class ActionPipeline:
         timer = self._approval_timers.pop(invocation_id, None)
         if timer:
             timer.cancel()
+        approval = self.session.approvals.for_invocation(invocation_id)
+        self.session.approvals.decide(approval.approvalId, decision, actor, note)
         if decision == "deny":
             return self._reject(invocation, "approval_denied", "Approval denied")
         error = self._check(invocation)
         if error:
             code, message, details = error
             return self._reject(invocation, code, message, details=details)
-        future = asyncio.get_running_loop().create_future()
-        self._approving[invocation_id] = future
         self._reserved[invocation_id] = invocation
         try:
-            result = await self._dispatch(invocation)
-            future.set_result(result)
-            return result
+            return await self._dispatch(invocation)
         finally:
-            if not future.done():
-                future.cancel()
-            self._approving.pop(invocation_id, None)
             self._reserved.pop(invocation_id, None)
+
+    async def revoke_approval(self, invocation_id, role, actor, note=""):
+        if role != "operator" or actor.kind == "agent":
+            raise PermissionError("Only a human operator can revoke approvals")
+        async with self._approval_locks.setdefault(invocation_id, asyncio.Lock()):
+            approval = self.session.approvals.for_invocation(invocation_id)
+            if approval is None:
+                raise KeyError(invocation_id)
+            if approval.status == "revoked":
+                return
+            if approval.status == "denied":
+                # Withdrawal records the decision, never resurrects a terminal invocation.
+                self.session.approvals.decide(approval.approvalId, "revoke", actor, note)
+                return
+            if approval.status != "approved":
+                raise ApprovalConflict("Only a processed approval can be revoked")
+            invocation = await self.table.lookup(invocation_id)
+            if not invocation or invocation.status != "accepted" or invocation.startedSimTime is not None:
+                raise ApprovalConflict("Execution has already begun or the invocation has ended")
+            try:
+                update = await asyncio.wait_for(self.session.source.revoke_before_start(invocation_id), 0.5)
+            except Exception as exc:
+                raise ApprovalConflict("The host could not confirm revocation before execution") from exc
+            if update.status != "cancelled" or update.startedSimTime is not None:
+                self.update(update)
+                raise ApprovalConflict("Execution has already begun or the invocation has ended")
+            # Host cancellation is authoritative and atomic with its execution tick.
+            self.update(update)
+            self.session.approvals.decide(approval.approvalId, "revoke", actor, note)
 
     async def cancel(self, invocation_id, role):
         if role != "operator":

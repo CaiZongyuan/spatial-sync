@@ -76,6 +76,22 @@ async def test_catalog_instructions_handle_a_large_catalog_without_losing_workfl
     assert "Describe an entity" in instructions and "error.details" in instructions
 
 
+async def test_direct_mcp_approval_attempt_is_rejected_without_any_http_request(gateway):
+    requests = []
+
+    async def observed(request):
+        requests.append((request.method, request.url.path))
+
+    gateway.http.event_hooks["request"].append(observed)
+    server = await create_server(gateway)
+    async with Client(server) as mcp:
+        before = list(requests)
+        forbidden = await mcp.call_tool("approve_invocation", {"invocation_id": "inv-do-not-approve"})
+        assert forbidden.is_error and "approval_requires_human" in forbidden.content[0].text
+        assert requests == before
+        assert all("approv" not in tool.name for tool in (await mcp.list_tools()).tools)
+
+
 async def test_shared_gateway_client_attributes_concurrent_calls_to_each_actual_mcp_peer(gateway):
     server = await create_server(gateway)
     async with (

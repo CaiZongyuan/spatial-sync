@@ -1,0 +1,82 @@
+import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
+import { decideApproval, useApprovalInbox, type ApprovalDecision, type ApprovalRecord } from '../lib/approvals';
+import '../approvals.css';
+
+const statusText: Record<ApprovalRecord['status'], string> = {
+  pending: '待审批', approved: '已批准', denied: '已驳回', revoked: '已撤销', expired: '已超时', unavailable: '已关闭',
+};
+const subjectText: Record<ApprovalRecord['subject'], string> = {
+  invocation: '高风险调用', plan: '计划', policy: '策略提升', job: '作业', deletion: '删除版本',
+};
+const decisionText: Record<ApprovalDecision, string> = { approve: '批准', deny: '驳回', revoke: '撤销' };
+const actor = (value: ApprovalRecord['requestedBy']) => `${value.kind}:${value.name}`;
+const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false });
+
+function ApprovalCard({ record }: { record: ApprovalRecord }) {
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const processed = record.status !== 'pending';
+  const last = record.decisions.at(-1);
+  async function decide(decision: ApprovalDecision) {
+    setBusy(true); setError(undefined);
+    try { await decideApproval(record.approvalId, decision, note); setNote(''); }
+    catch (failure) { setError((failure as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <article className="approval-card" data-testid={`approval-${record.approvalId}`} aria-label={`${subjectText[record.subject]}：${record.title}`}>
+    <div className="approval-card-heading"><span className="eyebrow">{subjectText[record.subject]}</span>
+      <span className={`approval-status is-${record.status}`}><i />{statusText[record.status]}</span></div>
+    <h3>{record.title}</h3>
+    {record.details.entityKey && <p className="approval-entity"><code>{record.details.entityKey}</code></p>}
+    <dl className="approval-facts"><div><dt>提交者</dt><dd>{actor(record.requestedBy)}</dd></div>
+      <div><dt>提交时间</dt><dd>{time(record.createdAtMs)}</dd></div>
+      <div><dt>审批对象</dt><dd><code>{record.subjectId}</code></dd></div>
+      {record.sessionId && <div><dt>会话</dt><dd><Link to="/sessions/$sessionId" params={{ sessionId: record.sessionId }}>{record.sessionId}</Link></dd></div>}
+    </dl>
+    {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
+    {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}
+    {(!processed || record.canRevoke) && <label className="approval-note">备注
+      <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)}
+        placeholder={processed ? '撤销的理由（可选）' : '批准或驳回的理由（可选）'} disabled={busy} />
+    </label>}
+    <div className="approval-actions">
+      {!processed ? <><button disabled={busy} onClick={() => void decide('deny')}>驳回</button>
+        <button className="primary" disabled={busy} onClick={() => void decide('approve')}>批准</button></> :
+        record.canRevoke ? <button disabled={busy} onClick={() => void decide('revoke')}>撤销</button> :
+          <span className="approval-execution">{record.invocation?.startedSimTime != null ? '执行已开始' : record.status === 'revoked' ? '决定已撤销' : '审批已结束'}</span>}
+    </div>
+    {error && <p className="approval-error" role="alert">{error}</p>}
+  </article>;
+}
+
+export function ApprovalsPage() {
+  const { inbox, error } = useApprovalInbox();
+  const pending = inbox?.approvals.filter(record => record.status === 'pending') ?? [];
+  const processed = inbox?.approvals.filter(record => record.status !== 'pending') ?? [];
+  const events = inbox?.approvals.flatMap(record => [
+    { id: `${record.approvalId}-request`, at: record.createdAtMs, who: actor(record.requestedBy), text: `提交 ${record.title}` },
+    ...record.decisions.map((decision, index) => ({ id: `${record.approvalId}-${index}`, at: decision.atMs,
+      who: actor(decision.actor), text: `${decisionText[decision.decision]} ${record.title}`, note: decision.note })),
+  ]).sort((a, b) => b.at - a.at).slice(0, 30) ?? [];
+  return <main className="approvals-page" data-testid="approvals-page">
+    <header className="approvals-page-heading"><span className="eyebrow">HUMAN DECISIONS</span><h1>待审批</h1>
+      <p>提交请求，由人决定 · 批准后调用才会进入执行队列</p></header>
+    <nav className="approval-stage-strip" aria-label="具身层阶段"><span>具身层</span><span>请求</span><i />
+      <strong aria-current="step">人工审批</strong><i /><span>执行</span></nav>
+    {error && <p role="alert" className="approval-error">审批数据暂时不可用：{error}。正在自动重试。</p>}
+    {!inbox && !error ? <p role="status">正在读取审批…</p> : inbox && <div className="approval-layout">
+      <div className="approval-inboxes"><section className="approval-panel" aria-label="待审批收件箱"><header><h2>收件箱</h2><span className="approval-count">{inbox.pendingCount}</span></header>
+        {pending.length ? pending.map(record => <ApprovalCard key={record.approvalId} record={record} />) :
+          <div className="approval-empty"><span aria-hidden="true">✓</span><h3>没有待处理的审批</h3><p>需要人工决定的请求会出现在这里。</p></div>}
+      </section>
+      {processed.length > 0 && <section className="approval-panel" aria-label="已处理审批"><header><h2>已处理</h2><small>执行前可以撤销</small></header>
+        {processed.map(record => <ApprovalCard key={record.approvalId} record={record} />)}
+      </section>}</div>
+      <aside className="approval-panel approval-timeline" aria-label="活动时间线"><header><h2>活动时间线</h2></header>
+        {events.length ? <ol>{events.map(event => <li key={event.id}><time dateTime={new Date(event.at).toISOString()}>{time(event.at)}</time><b>{event.who}</b><p>{event.text}</p>{'note' in event && event.note && <small>{event.note}</small>}</li>)}</ol> : <p className="approval-empty-timeline">还没有审批活动。</p>}
+      </aside>
+    </div>}
+  </main>;
+}

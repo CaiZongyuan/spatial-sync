@@ -19,6 +19,8 @@ async def test_generated_inspections_match_http_cli_and_mcp_and_preserve_all_too
         schemas = {tool.name: {"input": tool.input_schema, "output": tool.output_schema} for tool in tools}
         assert schemas == expected
         assert all("approv" not in tool.name for tool in tools)
+        forbidden = await mcp.call_tool("approve_invocation", {"invocation_id": "inv-do-not-approve"})
+        assert forbidden.is_error and "approval_requires_human" in forbidden.content[0].text
         for flags, arguments in (
             ((), {}),
             (("--type", "centrifuge/v1"), {"type": "centrifuge/v1"}),
@@ -60,12 +62,17 @@ def test_generated_commands_document_parameters_and_accept_global_or_local_json(
         assert invocation.returncode == 0 and isinstance(json.loads(invocation.stdout), list)
 
 
-def test_generated_human_only_approval_retains_terminal_exit_codes(lw, lab):
+def test_generated_human_only_approval_rejects_json_even_for_terminal_invocations(lw, lab):
     assert lw("show", "missing", code=1)["error"]["statusCode"] == 404
     rejected = lw("do", CENTRIFUGE, "start", "rpm=500", "durationSeconds=1", code=2)
-    assert lw("approve", rejected["invocationId"], code=2)["status"] == "rejected"
+    assert (
+        lw("approve", rejected["invocationId"], code=1)["error"]["detail"]["code"]
+        == "approval_requires_human"
+    )
     lw("session", "pause")
     pending = lw("do", CENTRIFUGE, "closeLid", "--no-wait")
     lab[0].post(lab[1] + "/invocations/" + pending["invocationId"] + "/cancel").raise_for_status()
     lw("inv", pending["invocationId"], "--wait", code=3)
-    assert lw("approve", pending["invocationId"], code=3)["status"] == "cancelled"
+    assert (
+        lw("approve", pending["invocationId"], code=1)["error"]["detail"]["code"] == "approval_requires_human"
+    )

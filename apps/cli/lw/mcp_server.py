@@ -9,6 +9,7 @@ from typing import Any, Literal
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, TextContent
 
 from .client import GatewayClient, GatewayError, condition_hint
 from .commands import COMMANDS
@@ -95,7 +96,23 @@ def command_tool(command, client):
 
 
 async def create_server(client: GatewayClient):
-    server = MCPServer("Laboratory", instructions=catalog_instructions(await client.catalog()))
+    human_only = {command.mcp_name for command in COMMANDS if command.human_only}
+
+    async def reject_human_decisions(context, call_next):
+        if context.method == "tools/call" and (context.params or {}).get("name") in human_only:
+            return CallToolResult(
+                content=[
+                    TextContent(type="text", text=json.dumps({"error": {"code": "approval_requires_human"}}))
+                ],
+                is_error=True,
+            )
+        return await call_next(context)
+
+    server = MCPServer(
+        "Laboratory",
+        instructions=catalog_instructions(await client.catalog()),
+        middleware=[reject_human_decisions],
+    )
 
     for command in COMMANDS:
         if command.mcp_name and not command.human_only:
