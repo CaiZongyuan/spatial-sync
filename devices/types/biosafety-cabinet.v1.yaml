@@ -1,5 +1,17 @@
 type: biosafety-cabinet/v1
 title: Biosafety cabinet
+alerts:
+  lowInflow:
+    when: {property: inflowMs, lt: 0.4}
+    forSeconds: 30
+    severity: critical
+    message: 生物安全柜进风速度低于 0.4 m/s
+    hint: 检查风机和前窗
+  unsafeUv:
+    when: {all: [{property: uvOn, equals: true}, {property: sashHeightCm, gt: 0}]}
+    forSeconds: 0
+    severity: critical
+    message: 前窗打开时紫外灯处于开启状态
 description: Seeded virtual airflow with blower and UV controls.
 properties:
   inflowMs: {schema: {type: number, minimum: 0, maximum: 2}, unit: m/s, deadband: 0.002, maxRateHz: 5, staleAfterSeconds: 3}

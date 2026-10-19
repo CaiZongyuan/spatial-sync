@@ -6,6 +6,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
+from packages.info.declarations import AlertRules
 from packages.library.archive import invalid, package_entries, relative_path
 from packages.library.common import KINDS, NAME, LibraryError, document
 from packages.sim_runtime.scenes import SCENE_CONFIGS
@@ -128,6 +129,7 @@ class EntityBinding(Schema):
     config: dict[str, JsonValue] = Field(default_factory=dict)
     interlocks: dict[str, list[dict[str, JsonValue]]] = Field(default_factory=dict)
     unplaced: bool = False
+    alerts: AlertRules = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def selectors(self):
