@@ -16,6 +16,7 @@ from fr3_contact import terms
 from fr3_contact.physics_validity import NativeEpisodeObserver
 from fr3_contact.test_contract import scene_env
 from fr3_contact.validity import RANGE, TUBE_LOST, episode_validity
+from fr3_contact.verify_resets import replay_preload
 
 
 def raw_cpu_worlds():
@@ -183,3 +184,37 @@ def actual_ppo_recorded_reward(failure_wins_timeout):
 def test_actual_pinned_wrapper_and_ppo_reproduce_then_prevent_failure_timeout_bootstrap():
     assert actual_ppo_recorded_reward(False) == pytest.approx(9.9)
     assert actual_ppo_recorded_reward(True) == 0.0
+
+
+def test_loaded_row_replay_rejects_done_even_when_autoreset_restores_perfect_final_pose():
+    class ReplayEnv:
+        scene = {
+            "robot": SimpleNamespace(data=SimpleNamespace(joint_pos=SimpleNamespace(torch=torch.zeros(2, 9))))
+        }
+        final_pose = torch.zeros(2, 3)
+        step_count = 0
+
+        def step(self, action):
+            self.step_count += 1
+            done = torch.tensor([self.step_count == 1, False])
+            # The failed source row has already autoreset to a perfect pose and clean live state.
+            self._fr3_terminal_validity = {
+                "reasons": torch.tensor([RANGE if self.step_count == 1 else 0, 0]),
+                "max_excess": torch.tensor([0.012 if self.step_count == 1 else 0, 0]),
+            }
+            return None, None, done, torch.zeros(2, dtype=torch.bool), {}
+
+    env = ReplayEnv()
+    traces = replay_preload(env, torch.zeros(2, 9), torch.tensor([0, 128]))
+    assert env.step_count == 10
+    assert env.final_pose.equal(torch.zeros(2, 3))
+    assert traces[0]["uninterrupted"] is False
+    assert traces[0]["first_terminal_step"] == 1
+    assert traces[0]["first_terminal_invalid"]["reasons"] == RANGE
+    assert traces[0]["first_terminal_invalid"]["max_excess"] == pytest.approx(0.012)
+    assert traces[1] == {
+        "source_row": 128,
+        "uninterrupted": True,
+        "first_terminal_step": None,
+        "first_terminal_invalid": None,
+    }

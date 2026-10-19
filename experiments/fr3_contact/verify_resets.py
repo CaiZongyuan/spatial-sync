@@ -11,12 +11,43 @@ import torch
 from isaaclab.app import add_launcher_args, launch_simulation
 
 from . import terms
-from .env_cfg import FR3TubeEnvCfg
-from .environment import FR3ContactEnv
 from .reset import PHASES
 
 
+def replay_preload(env, target, rows, steps=10):
+    """A loaded source row stops being evidence at its first done, even after a perfect reset."""
+    traces = [
+        {
+            "source_row": int(row),
+            "uninterrupted": True,
+            "first_terminal_step": None,
+            "first_terminal_invalid": None,
+        }
+        for row in rows
+    ]
+    robot = env.scene["robot"]
+    for step in range(1, steps + 1):
+        measured = robot.data.joint_pos.torch
+        action = torch.cat(
+            ((target[:, :7] - measured[:, :7]) / 0.033, (target[:, 7:8] - measured[:, 7:8]) / 0.003), dim=-1
+        ).clamp(-1, 1)
+        _, _, terminated, truncated, _ = env.step(action)
+        for index in (terminated | truncated).nonzero().flatten().tolist():
+            trace = traces[index]
+            if trace["uninterrupted"]:
+                trace["uninterrupted"] = False
+                trace["first_terminal_step"] = step
+                trace["first_terminal_invalid"] = {
+                    name: value[index].detach().cpu().tolist()
+                    for name, value in env._fr3_terminal_validity.items()
+                }
+    return traces
+
+
 def main():
+    from .env_cfg import FR3TubeEnvCfg
+    from .environment import FR3ContactEnv
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
@@ -55,16 +86,7 @@ def main():
                 target = reset_term.states["joint_target"][rows]
                 robot = env.scene["robot"]
                 expected_pose = reset_term.states["tube_pose"][rows]
-                for _ in range(10):
-                    measured = robot.data.joint_pos.torch
-                    action = torch.cat(
-                        (
-                            (target[:, :7] - measured[:, :7]) / 0.033,
-                            (target[:, 7:8] - measured[:, 7:8]) / 0.003,
-                        ),
-                        dim=-1,
-                    ).clamp(-1, 1)
-                    env.step(action)
+                traces = replay_preload(env, target, rows)
                 tube_position = env.scene["vial"].data.root_pos_w.torch - env.scene.env_origins
                 drift = torch.linalg.vector_norm(tube_position - expected_pose[:, :3], dim=-1)
                 contact = terms.bilateral_contact(env)
@@ -73,7 +95,9 @@ def main():
                 finite &= torch.isfinite(tube_position).all(dim=-1)
                 for phase, name in enumerate(PHASES):
                     held_phase = 2 <= phase <= 6
-                    valid = bool(finite[phase]) and float(drift[phase]) < 0.01
+                    valid = (
+                        traces[phase]["uninterrupted"] and bool(finite[phase]) and float(drift[phase]) < 0.01
+                    )
                     if held_phase:
                         valid &= bool(contact[phase])
                     if phase == 7:
@@ -84,6 +108,7 @@ def main():
                         {
                             "phase": name,
                             "source_row": int(rows[phase]),
+                            **traces[phase],
                             "valid": valid,
                             "tube_position_m": tube_position[phase].tolist(),
                             "pose_drift_m": float(drift[phase]),
