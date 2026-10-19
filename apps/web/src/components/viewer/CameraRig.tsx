@@ -4,25 +4,25 @@ import { Box3, OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 
 export type CameraPreset = 'perspective' | 'isometric';
 
-export function CameraRig({ preset, bounds }: { preset: CameraPreset; bounds: () => Box3 }) {
+export function CameraRig({ preset, bounds, revision }: { preset: CameraPreset; bounds: () => Box3; revision: number }) {
   const { set, size, invalidate } = useThree();
   const camera = useMemo(() => preset === 'isometric'
     ? new OrthographicCamera(-1, 1, 1, -1, .01, 1000)
     : new PerspectiveCamera(44, 1, .01, 1000), [preset]);
-  const framed = useRef('');
-  const elapsed = useRef(0);
+  const pending = useRef(true);
   useEffect(() => {
-    set({ camera }); framed.current = ''; elapsed.current = 0; invalidate();
-  }, [camera, set, size.width, size.height, invalidate]);
-  useFrame((state, delta) => {
-    // Frame initial and arriving assets; do not chase live motion after the load settles.
-    elapsed.current += delta;
+    set({ camera });
+  }, [camera, set]);
+  useEffect(() => {
+    pending.current = true;
+    invalidate();
+  }, [camera, revision, size.width, size.height, invalidate]);
+  useFrame(state => {
+    if (!pending.current) return;
+    pending.current = false;
     const box = bounds();
     if (box.isEmpty()) return;
     const dimensions = box.getSize(new Vector3());
-    const signature = dimensions.toArray().map(value => value.toFixed(1)).join(':');
-    if (framed.current === signature || (framed.current && elapsed.current > 5)) return;
-    framed.current = signature;
     const center = box.getCenter(new Vector3());
     const radius = Math.max(.5, dimensions.length() / 2);
     const aspect = Math.max(.1, size.width / size.height);

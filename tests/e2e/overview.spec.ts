@@ -3,6 +3,40 @@ import { expect, test } from '@playwright/test';
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const centrifuge = '/World/Lab/Centrifuge';
 
+test('a paused live viewport draws on changes and wakes for Step, theme and projection', async ({ page, request }, testInfo) => {
+  const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
+  const { sessionId } = await response.json();
+  try {
+    await page.goto(`/sessions/${sessionId}`);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1)).toBeGreaterThanOrEqual(0);
+    await expect(page.locator('canvas')).toBeVisible();
+    await page.getByRole('button', { name: 'Pause simulation', exact: true }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    const receipt = await page.evaluate(async () => {
+      const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await frame(); await frame();
+      window.__spatialDebug!.startProfile();
+      const start = performance.now();
+      await new Promise(resolve => setTimeout(resolve, 600));
+      return { elapsedMs: performance.now() - start, samples: window.__spatialDebug!.stopProfile().samples };
+    });
+    expect(receipt.samples.length / (receipt.elapsedMs / 1000)).toBeLessThan(12);
+    const before = await page.evaluate(() => window.__spatialDebug!.getSample()!.seq);
+    await page.getByRole('button', { name: 'Step simulation', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__spatialDebug!.getSample()!.seq)).toBeGreaterThan(before);
+    await expect.poll(() => page.evaluate(() => {
+      const key = '/World/Lab/Robot/Link1';
+      return JSON.stringify(window.__spatialDebug!.getRenderedPose(key)) === JSON.stringify(window.__spatialDebug!.getAuthoritativePose(key));
+    })).toBe(true);
+    await page.getByLabel('Color theme').selectOption('light');
+    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.appearance().background)).toBe('f4f3ef');
+    await page.getByRole('button', { name: 'Isometric camera', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.camera().projection)).toBe('OrthographicCamera');
+    await testInfo.attach('paused-render-receipt', { body: Buffer.from(JSON.stringify(receipt)), contentType: 'application/json' });
+  } finally { await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' }); }
+});
+
 test('the real overview connects an isometric scene, readouts, device actions, activity and theme', async ({ page, request }, testInfo) => {
   const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
   expect(response.ok()).toBe(true);

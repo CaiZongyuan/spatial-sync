@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
 import {
   InstancedPrimitives,
@@ -252,11 +252,13 @@ function NodeVisuals({
   selected,
   colliders,
   warn,
+  ready,
 }: {
   node: PhysicalNode;
   selected: boolean;
   colliders: boolean;
   warn: (message: string) => void;
+  ready: () => void;
 }) {
   const groups = useMemo<VisualGroup[]>(
     () => [
@@ -271,6 +273,7 @@ function NodeVisuals({
     [node.entityKey, warn],
   );
   const resolved = useVisuals(groups, report);
+  useEffect(() => { if (resolved) ready(); }, [resolved, ready]);
   return (
     <>
       <group
@@ -305,6 +308,7 @@ function Body({
   register,
   warn,
   client,
+  ready,
 }: {
   node: PhysicalNode;
   manifest: SceneManifest;
@@ -315,6 +319,7 @@ function Body({
   register: (key: string, id: number | undefined, object: Group | null) => void;
   warn: (message: string) => void;
   client: SessionClient;
+  ready: () => void;
 }) {
   const ownSites = manifest.sites.filter(
     (site) => site.parentBodyKey === node.entityKey,
@@ -353,6 +358,7 @@ function Body({
         selected={isSelected || hovered}
         colliders={layers.colliders}
         warn={warn}
+        ready={ready}
       />
       {layers.origins && <axesHelper args={[0.18]} raycast={skipPicking} />}
       {ownSites.map((site) => (
@@ -436,7 +442,7 @@ function SceneContents({
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
   useEffect(() => {
-    if (!client.readOnly || renderContinuously) return;
+    if (renderContinuously) return;
     // Replay reducers mutate pose buffers without changing the manifest identity.
     // Also draw after view changes and after subscribing, in case a seek just committed.
     invalidate();
@@ -448,6 +454,10 @@ function SceneContents({
   const bodies = useRef(new Map<number, Group>());
   const physicalNodes = useRef(new Map<string, Group>());
   const instances = useRef<InstanceController | undefined>(undefined);
+  const [boundsRevision, setBoundsRevision] = useState(0);
+  const ready = useCallback(() => setBoundsRevision(value => value + 1), []);
+  const firstPose = useRef(false);
+  const firstInstance = useRef(false);
   const renderMode =
     new URLSearchParams(location.search).get('render') ?? 'auto';
   const useInstances =
@@ -501,7 +511,7 @@ function SceneContents({
     return bounds;
   }, []);
   const elapsed = useRef({ time: 0, frames: 0 });
-  const register = (
+  const register = useCallback((
     key: string,
     id: number | undefined,
     object: Group | null,
@@ -512,7 +522,7 @@ function SceneContents({
       if (object) bodies.current.set(id, object);
       else bodies.current.delete(id);
     }
-  };
+  }, []);
   useEffect(() => {
     inspectVisuals.current = (key) => {
       const instance = instances.current?.inspect(key);
@@ -575,6 +585,8 @@ function SceneContents({
       object.quaternion.toArray(receipt.q);
     }
     instances.current?.apply(data);
+    if (!firstPose.current && client.buffer.latestSample) { firstPose.current = true; ready(); }
+    if (!firstInstance.current && instances.current) { firstInstance.current = true; ready(); }
     metrics.current.applyMs = performance.now() - start;
     recorder.record(
       start,
@@ -601,7 +613,7 @@ function SceneContents({
         mode={useInstances ? 'instanced' : 'individual'}
         extraBounds={extraBounds}
       />
-      <CameraRig preset={cameraPreset} bounds={frameBounds} />
+      <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} />
       <color attach="background" args={[theme.ground]} />
       {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
       <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
@@ -642,6 +654,7 @@ function SceneContents({
                 register,
                 warn,
                 client,
+                ready,
               }}
               selected={highlightedKeys?.has(node.entityKey) ? node.entityKey : selectedEntity}
             />
@@ -693,10 +706,16 @@ interface ViewportProps {
 }
 
 export function SceneViewport(props: ViewportProps) {
+  const view = useSyncExternalStore(props.client.subscribe, props.client.getSnapshot);
+  const hasPose = useSyncExternalStore(props.client.subscribe, () => Boolean(props.client.buffer.latestSample));
   const theme = useViewerTheme();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
   const element = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(true);
+  const receivedState = useRef(false);
+  if (hasPose) receivedState.current = true;
+  const displayScene = props.client.readOnly || receivedState.current;
+  const continuous = props.renderContinuously !== false && (props.client.readOnly || (view.connection === 'connected' && view.sessionState === 'RUNNING'));
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
     if (element.current) observer.observe(element.current);
@@ -704,18 +723,18 @@ export function SceneViewport(props: ViewportProps) {
   }, []);
   return (
     <div ref={element} className="viewport" data-testid="scene-viewport">
-      <Canvas
+      {displayScene ? <Canvas
         flat
         shadows
-        frameloop={!visible ? 'never' : props.client.readOnly && props.renderContinuously === false ? 'demand' : 'always'}
+        frameloop={!visible ? 'never' : continuous ? 'always' : 'demand'}
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
         gl={{ antialias: true }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={props.manifest.sceneRevision} {...props} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
-      </Canvas>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={props.manifest.sceneRevision} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+      </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">
         <span className="live-dot" /> {props.client.readOnly ? 'RECORDED SPATIAL VIEW' : 'LIVE SPATIAL VIEW'}{' '}
