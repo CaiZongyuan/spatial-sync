@@ -22,7 +22,8 @@ def install_library_routes(app, assets: AssetLibrary, scenes):
     @app.get("/api/v1/library/assets/{kind}/{name}")
     @app.get("/api/v1/library/assets/{kind}/{name}/{rev}")
     async def describe_asset(kind: str, name: str, rev: str | None = None):
-        return assets.describe(f"{kind}/{name}@{rev}" if rev is not None else f"{kind}/{name}")
+        selector = f"{kind}/{name}@{rev}" if rev is not None else f"{kind}/{name}"
+        return await anyio.to_thread.run_sync(assets.describe, selector, scenes())
 
     @app.post("/api/v1/library/assets/{kind}/{name}/{rev}/validate")
     async def validate_asset(kind: str, name: str, rev: str):

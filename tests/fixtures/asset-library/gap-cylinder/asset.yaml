@@ -1,0 +1,6 @@
+id: labware/ui-cylinder
+kind: labware
+title: UI Cylinder
+description: Hand-authored browser test package with deliberately missing collision, mass, visual and type declarations.
+stage: asset.usda
+dimensionsM: [0.03, 0.03, 0.1]

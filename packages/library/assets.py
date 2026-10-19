@@ -20,7 +20,7 @@ from packages.library.archive import invalid as invalid
 from packages.library.common import BUILTIN_ROOT, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.metadata import AssetMetadata as AssetMetadata
 from packages.library.metadata import asset_metadata as metadata
-from packages.library.reports import ReportStore, parse_report, validation_status
+from packages.library.reports import HASH, SUBJECT, ReportStore, parse_report, validation_status
 
 
 def gaps(data, path):
@@ -116,6 +116,10 @@ class AssetVersion:
             "kind": self.metadata["kind"],
             "title": self.metadata["title"],
             "description": self.metadata.get("description", ""),
+            "dimensionsM": deepcopy(self.metadata.get("dimensionsM")),
+            "implementedTypes": list(
+                dict.fromkeys(item["type"] for item in self.metadata.get("implements", []))
+            ),
             "root": self.root,
             "contentHash": self.content_hash,
             "gaps": missing,
@@ -218,8 +222,57 @@ class AssetLibrary:
             raise LibraryError("unknown_version", "Unknown asset version")
         return max(matches, key=lambda version: version.rev)
 
-    def describe(self, selector):
+    def describe(self, selector, scenes=None):
         version = self.resolve(selector)
+        self.indexed_file(version.root, f"assets/{version.bare_id}/{version.rev}/asset.yaml")
+        referencing, uninspected = [], []
+        if scenes is not None:
+            for scene in sorted(scenes.versions.values(), key=lambda item: (item.name, item.rev)):
+                reasons = []
+                known = False
+                try:
+                    scenes.indexed_file(scene.root, f"scenes/{scene.name}/{scene.rev}/scene.yaml")
+                    known = any(
+                        binding.get("template") == version.id for binding in scene.bindings["entities"]
+                    )
+                    report = scene.report() or {}
+                    references = report.get("referencedAssets")
+                    if isinstance(references, list):
+                        for reference in references:
+                            if (
+                                not isinstance(reference, dict)
+                                or not SUBJECT.fullmatch(f"asset:{reference.get('id')}")
+                                or not isinstance(reference.get("contentHash"), str)
+                                or not HASH.fullmatch(reference["contentHash"])
+                            ):
+                                reasons.append("Recorded asset references are malformed")
+                            elif reference.get("id") == version.id:
+                                if reference.get("contentHash") == version.content_hash:
+                                    known = True
+                                else:
+                                    reasons.append("Recorded asset reference hash differs from this version")
+                    elif references is not None:
+                        reasons.append("Recorded asset references are malformed")
+                    # Registered Python stages have no library USD dependencies; their
+                    # explicit template declarations above are still real references.
+                    if not scene.metadata["stage"].startswith("python:"):
+                        dependency_check = next(
+                            (check for check in report.get("checks", []) if check["id"] == "S7"), None
+                        )
+                        if not isinstance(references, list) or not dependency_check:
+                            reasons.append("USD asset dependencies have not been recorded")
+                        elif dependency_check["status"] != "pass":
+                            reasons.append(dependency_check["message"])
+                except (OSError, ValueError, LibraryError) as exc:
+                    reasons.append(str(exc))
+                if known:
+                    referencing.append({
+                        "id": scene.id, "sceneId": scene.name, "rev": scene.rev,
+                        "title": scene.metadata["title"], "root": scene.root,
+                        "contentHash": scene.content_hash,
+                    })
+                if reasons:
+                    uninspected.append({"id": scene.id, "reason": "; ".join(dict.fromkeys(reasons))})
         provenance_file = version.path / "provenance.json"
         provenance = None
         if provenance_file.is_file():
@@ -237,7 +290,12 @@ class AssetLibrary:
                 "validation": version.report(),
                 "validationCoverage": "Read the recorded checks; physics checks have not run",
                 "provenance": provenance,
-                "referencingScenes": [],
+                "referencingScenes": referencing,
+                "referenceInspection": {
+                    "complete": scenes is not None and not uninspected,
+                    "uninspectedScenes": uninspected,
+                    "reason": None if scenes is not None else "Scene index is unavailable",
+                },
                 "types": {
                     binding["type"]: definitions.get(binding["type"])
                     for binding in version.metadata.get("implements", [])

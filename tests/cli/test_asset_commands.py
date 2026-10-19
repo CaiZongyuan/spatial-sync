@@ -41,6 +41,10 @@ async def test_asset_cli_mcp_upload_filters_description_and_export_dedup(gateway
     inspected = cli("asset", "show", first["assetVersion"])
     assert "start" in inspected["types"]["centrifuge/v1"]["actions"]
     assert inspected["validation"]["launchable"] is False
+    assert inspected["referenceInspection"] == {
+        "complete": True, "reason": None, "uninspectedScenes": [],
+    }
+    assert inspected["referencingScenes"] == []
     assert cli("asset", "ls", "--kind", "device", "--gaps", "-q", "centrifuge") == [
         {
             key: value
@@ -52,6 +56,7 @@ async def test_asset_cli_mcp_upload_filters_description_and_export_dedup(gateway
                 "validationCoverage",
                 "provenance",
                 "referencingScenes",
+                "referenceInspection",
                 "types",
                 "files",
             )
