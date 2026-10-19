@@ -10,6 +10,7 @@ import struct
 import threading
 import time
 from collections import OrderedDict, deque
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -155,6 +156,7 @@ class _Projection:
         self.frame = None
         self.invocations = OrderedDict()
         self.state = None
+        self.plans = {}
 
     @property
     def coherent(self):
@@ -169,8 +171,11 @@ class _Projection:
         value = message if message is not None else json.loads(record.payload)
         kind = value.get("type")
         if kind == "entity.snapshot":
+            previous_epoch = self.store.epoch
             if not self.store.apply(EntitySnapshot.model_validate(value)):
                 return
+            if previous_epoch != self.store.epoch:
+                self.plans.clear()
             self.invocations.clear()
             for invocation in value["invocations"]:
                 self._invocation(invocation)
@@ -180,6 +185,15 @@ class _Projection:
             self._invocation(value)
         elif kind == "session.state":
             self.state = record
+        elif kind == "plan.update":
+            if value["update"] == "full":
+                self.plans[value["plan"]["id"]] = deepcopy(value)
+            else:
+                full = self.plans.get(value["planId"])
+                if full and full["plan"]["revision"] == value["revision"]:
+                    for step in full["plan"]["steps"]:
+                        if step["id"] == value["stepId"]:
+                            step["status"] = value["status"]
 
     def _invocation(self, value):
         self.invocations[value["invocationId"]] = {
@@ -213,6 +227,9 @@ class _Projection:
         records = [spatial, Record(2, clock, _json_bytes(info.model_dump(mode="json")))]
         if self.state:
             records.append(Record(2, clock, self.state.payload))
+        for full in self.plans.values():
+            snapshot = full | {"sampleTimeMs": clock, "simTime": info.simTime, "epoch": self.store.epoch}
+            records.append(Record(2, clock, _json_bytes(snapshot)))
         return records
 
 

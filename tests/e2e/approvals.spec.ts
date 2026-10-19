@@ -120,3 +120,41 @@ test('read-only observer sees operator decisions and cannot approve or revoke', 
     await request.delete(route, { headers: operatorHeaders });
   }
 });
+
+test('a plan approval shows its exact revision and authorizes the declared action once', async ({ page, request }) => {
+  test.skip(process.env.SPATIAL_TEST_APPROVAL !== '1', 'Requires the temporary high risk definition fixture');
+  const response = await request.post(`${api}/api/v1/sessions`, { data: {
+    sceneId: 'lab-demo', source: 'synthetic', realtimeFactor: 10, continueWithoutObservers: true,
+  } });
+  expect(response.ok()).toBe(true);
+  const session = await response.json();
+  const route = `${api}/api/v1/sessions/${session.sessionId}`;
+  try {
+    const created = await request.post(`${api}/api/v1/plans`, { data: {
+      sessionId: session.sessionId, title: '核对离心机盖子', target: 'session', steps: [{ id: 1,
+        do: { entity: centrifuge, action: 'closeLid' },
+        expect: { entity: centrifuge, property: 'lidOpen', equals: false },
+      }],
+    } });
+    expect(created.ok()).toBe(true);
+    const plan = await created.json();
+    expect(plan.status).toBe('submitted');
+    await page.goto('/approvals');
+    const card = page.getByRole('article').filter({ hasText: plan.id });
+    await expect(card.getByText('计划修订 1 · 步骤与预期结果', { exact: true })).toBeVisible();
+    await expect(card.locator('pre')).toContainText(centrifuge);
+    await expect(card.locator('pre')).toContainText('closeLid');
+    await card.getByLabel('备注').fill('已核对本修订的设备、参数与预期结果');
+    await card.getByRole('button', { name: '批准', exact: true }).click();
+    await expect(card).toContainText('已批准');
+    const executed = await request.post(`${route}/actions`, { data: {
+      requestId: 'approved-plan-ui', entityKey: centrifuge, action: 'closeLid',
+      planId: plan.id, stepId: 1, wait: true,
+    } });
+    expect((await executed.json()).status).toBe('succeeded');
+    const observed = await (await request.get(`${api}/api/v1/plans/${plan.id}`)).json();
+    expect(observed.status).toBe('completed');
+    expect(observed.steps[0].status).toBe('done');
+    await expect(card.getByRole('button', { name: '撤销', exact: true })).toHaveCount(0);
+  } finally { await request.delete(route); }
+});

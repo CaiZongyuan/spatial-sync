@@ -37,9 +37,11 @@ Plan updates use `update: "full"` with an `OperationPlan`, or `update: "step"`
 with `planId`, positive integer `revision`/`stepId`, and the step status.
 Steps contain exactly one `do`, `wait`, or `check`; only `do` may include
 `expect`. Direct condition atoms remain valid; no extra `all` wrapper is
-required. The approved optional action `planId`/`stepId` correlation is reserved
-for the operation-plan feature. Current HTTP/WS action parsers reject these
-unsupported fields instead of silently dropping them.
+required. Operation-plan correlation (`planId`/`stepId`, optionally
+`planRevision`) is an HTTP adapter contract. It stays inside the gateway and is
+not added to strict ActionRequest, InvokeRequest or Invocation wire documents.
+WebSocket actions still reject these fields. Associations/deviation audit uses
+existing EntityEvent data; step state uses the declared plan.update messages.
 
 `schema/__init__.py` is the authoritative Pydantic v2 contract. `types/index.ts`,
 `types/protocol.schema.json` and `fixtures/*.json` are generated; edit the Python
