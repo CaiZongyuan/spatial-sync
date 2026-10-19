@@ -329,7 +329,7 @@ def test_removed_subscription_options_are_rejected_at_the_websocket_boundary(leg
     with TestClient(create_app()) as client:
         session = setup_session(client)
         assert client.get("/api/v1/health").json()["protocolVersion"] == 2
-        assert len(client.get("/api/v1/scenes").json()["scenes"]) == 4
+        assert len(client.get("/api/v1/scenes").json()["scenes"]) == 5
         with client.websocket_connect(f"/api/v1/sessions/{session['sessionId']}/ws") as ws:
             next_type(ws, "server.ready")
             ws.send_json({"type": "client.subscribe", "sceneRevision": session["sceneRevision"], **legacy})

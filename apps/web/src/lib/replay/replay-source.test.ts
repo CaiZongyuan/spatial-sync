@@ -72,8 +72,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-async function delayedReplay() {
+async function delayedReplay(freshness = false) {
   const recording = JSON.parse(readFileSync(fixture + '/recording.json', 'utf8'));
+  if (freshness) Object.assign(recording, { formatVersion: 2, protocolMinorVersion: 1,
+    sceneVersion: 'lab-demo@1', sceneContentHash: 'a'.repeat(64), kind: 'session' });
   const original = readFileSync(fixture + '/' + recording.segments[0].file);
   const frameLength = original.readUInt32LE(6);
   const snapshotOffset = 10 + frameLength;
@@ -95,12 +97,20 @@ async function delayedReplay() {
     const spatial = Buffer.from(frame);
     spatial.writeBigUInt64LE(frame.readBigUInt64LE(16) + BigInt(index * 100), 16);
     spatial.writeDoubleLE(frame.readDoubleLE(32) + offset, 32);
-    const info = { ...snapshot, sampleTimeMs: snapshot.sampleTimeMs + offset };
+    const info = structuredClone({ ...snapshot, sampleTimeMs: snapshot.sampleTimeMs + offset });
+    const tube = info.entities.find((entity: { key: string }) => entity.key === '/World/Lab/Tubes/Tube01');
+    if (freshness && index === 1) tube.meta.location.stale = true;
     const state = { type: 'session.state', sessionId: recording.sessionId, sceneRevision: recording.sceneRevision,
       state: 'PAUSED', epoch: 0, seq: Number(spatial.readBigUInt64LE(16)), simTime: spatial.readDoubleLE(24),
       realtimeFactor: 1, actualRtf: 0, cause: { kind: 'lifecycle' } };
     const binary = Buffer.concat([original.subarray(0, 6), record(1, origin + offset, spatial),
       record(2, info.sampleTimeMs, Buffer.from(JSON.stringify(info))),
+      ...(freshness && index === 0 ? [record(2, origin + 500, Buffer.from(JSON.stringify({
+        type: 'entity.observations', sceneRevision: recording.sceneRevision, epoch: 0,
+        simTime: 0.5, sampleTimeMs: origin + 500, source: 'virtual',
+        changes: [{ key: tube.key, rev: tube.rev + 1, values: { location: tube.values.location },
+          meta: { location: { ...tube.meta.location, stale: true } } }],
+      })))] : []),
       record(2, origin + offset + 1000, Buffer.from(JSON.stringify(state)))]);
     const file = `part-${index}.bin`;
     files.set(file, binary);
@@ -122,6 +132,25 @@ async function delayedReplay() {
     response(name: string) { return new Response(new Uint8Array(files.get(name)!)); },
   };
 }
+
+it('preserves 2.1 freshness on observations, segment-prefix seek, rewind and fresh recovery', async () => {
+  await delayedReplay(true);
+  const entity = () => source.info.getEntity('/World/Lab/Tubes/Tube01')!;
+  const scalar = entity().values.location;
+  expect(entity().meta.location.stale).not.toBe(true);
+  await source.seek(500);
+  expect(entity().values.location).toBe(scalar);
+  expect(entity().meta.location.stale).toBe(true);
+  await source.seek(2001);
+  expect(entity().meta.location.stale).toBe(true);
+  await source.seek(4001);
+  expect(entity().meta.location.stale).not.toBe(true);
+  await source.seek(0);
+  expect(entity().meta.location.stale).not.toBe(true);
+  await source.seek(2001);
+  expect(entity().values.location).toBe(scalar);
+  expect(entity().meta.location.stale).toBe(true);
+});
 
 it('keeps a synchronous pending target while time and poses remain at the applied sample', async () => {
   const fixture = await delayedReplay();

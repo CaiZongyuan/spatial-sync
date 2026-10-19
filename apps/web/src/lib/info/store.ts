@@ -153,21 +153,19 @@ export class InfoStore {
         const meta = { ...previous?.meta };
         const values = { ...previous?.values };
         let accepted = false;
-        for (const [property, value] of Object.entries(change.values)) {
+        for (const property of new Set([...Object.keys(change.values), ...Object.keys(change.meta ?? {})])) {
+          const observed = change.meta?.[property] ?? {
+            simTime: message.simTime, sampleTimeMs: message.sampleTimeMs, source: message.source,
+          };
           // Rate-limited properties can flush later without changing entity rev.
           if (
-            change.rev === previous?.rev &&
             meta[property] &&
-            message.sampleTimeMs < meta[property].sampleTimeMs
+            observed.sampleTimeMs < meta[property].sampleTimeMs
           )
             continue;
           accepted = true;
-          values[property] = value;
-          meta[property] = {
-            simTime: message.simTime,
-            sampleTimeMs: message.sampleTimeMs,
-            source: message.source,
-          };
+          if (Object.hasOwn(change.values, property)) values[property] = change.values[property];
+          meta[property] = { ...observed };
         }
         if (!accepted) continue;
         this.entities.set(change.key, {

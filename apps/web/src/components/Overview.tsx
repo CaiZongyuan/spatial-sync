@@ -153,13 +153,16 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
   const highlightedKeys = useMemo(() => new Set(deviceBodies.get(selected) ?? []), [deviceBodies, selected]);
   const sceneLabel = session ? session.sceneVersion ?? session.sceneId : recordedScene(recording!);
   const annotations = manifest && catalog ? Object.values(catalog.entities)
-    .filter(binding => Object.keys(catalog.types[binding.type]?.actions ?? {}).length > 0 || binding.key === selected)
+    .filter(binding => Object.keys(catalog.types[binding.type]?.actions ?? {}).length > 0 || binding.key === selected
+      || Object.values(catalog.types[binding.type]?.properties ?? {}).some(property => property.staleAfterSeconds !== undefined))
     .map(binding => {
       const definition = catalog.types[binding.type];
-      const values = client.info.getEntity(binding.key)?.values ?? {};
+      const entity = client.info.getEntity(binding.key);
+      const values = entity?.values ?? {};
       const details = Object.entries(values).filter(([, v]) => typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string').slice(0, 3)
-        .map(([name, v]) => `${name} ${value(v)}${definition?.properties[name]?.unit ? ` ${definition.properties[name].unit}` : ''}`).join(' · ');
-      return { key: binding.key, label: title(manifest, catalog, binding.key), detail: readouts ? details : '', bodyKeys: deviceBodies.get(binding.key) ?? [] };
+        .map(([name, v]) => `${name} ${value(v)}${definition?.properties[name]?.unit ? ` ${definition.properties[name].unit}` : ''}${entity?.meta[name]?.stale ? ' 过期' : ''}`).join(' · ');
+      return { key: binding.key, label: title(manifest, catalog, binding.key), detail: readouts ? details : '',
+        stale: Object.values(entity?.meta ?? {}).some(meta => meta.stale), bodyKeys: deviceBodies.get(binding.key) ?? [] };
     }) : [];
   return <>
     <header className="overview-page-heading"><h1>概览</h1><p><code title={recording?.sceneContentHash ?? undefined}>{sceneLabel}</code><span>·</span><code>{sessionId}</code><span>·</span>

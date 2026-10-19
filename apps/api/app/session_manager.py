@@ -225,7 +225,9 @@ class Session:
 
     async def _record_revision(self):
         if self.recording is None:
-            self.recording = self.recordings.create(self.session_id, self.scene_id, self.scene_version)
+            self.recording = self.recordings.create(
+                self.session_id, self.scene_id, self.scene_version, seed=self.options.seed
+            )
         if self.recording is None:
             return
         try:
@@ -379,6 +381,7 @@ class Session:
             else {},
             "error": self.error,
             "continueWithoutObservers": self.options.continueWithoutObservers,
+            "seed": self.options.seed,
             "autoPaused": self._auto_paused,
         }
 

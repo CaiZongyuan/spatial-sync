@@ -1,0 +1,156 @@
+{
+  "schema": "lw.scene-preview/1",
+  "sceneVersion": "lab-demo@2",
+  "sceneContentHash": "d29d122e8068a592c58925f1d21c355496f9b4dc6761c92897e22538c9128f39",
+  "source": "synthetic",
+  "capturedAt": "2026-10-19T13:35:20.876169+00:00",
+  "simTime": 0.0,
+  "runtime": {
+    "python": "3.13.14",
+    "source": "SyntheticSource",
+    "device": "cpu",
+    "numpy": "2.5.4"
+  },
+  "dependencyDigest": "sha256-text-lf-v1",
+  "dependencies": [
+    {
+      "path": "apps/api/app/recordings.py",
+      "sha256": "13d4406101abebea6d4b84fd140c7ad504fbdb22e7a08804d94073a5f4bbab1d"
+    },
+    {
+      "path": "apps/api/app/sources/synthetic_source.py",
+      "sha256": "b3dc9c6275fc91fe2e8e2ecd90fbaffd00ed6ef1bcf23ab22d8d2e7e8cf08bff"
+    },
+    {
+      "path": "assets/registry.yaml",
+      "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
+    },
+    {
+      "path": "devices/types/biosafety-cabinet.v1.yaml",
+      "sha256": "94986fa05f4df6cecf7ed350df9627ed68d7aab46ee7cb01f890ee2ac3b095bf"
+    },
+    {
+      "path": "devices/types/centrifuge.v1.yaml",
+      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+    },
+    {
+      "path": "devices/types/env-sensor.v1.yaml",
+      "sha256": "ca9c842d298827d75e51abd2a0ed2f7cfe651a52ce74b673cb068258f1800a2c"
+    },
+    {
+      "path": "devices/types/incubator.v1.yaml",
+      "sha256": "1cf3865735568334fbf5b0f5f021319c62ba177e67bbc4efbea598596a90209e"
+    },
+    {
+      "path": "devices/types/robot-arm.v1.yaml",
+      "sha256": "5ffd33f18471b065e9a84f2401840d563f67089c3bf3111f3f47b82a764c2903"
+    },
+    {
+      "path": "devices/types/tube.v1.yaml",
+      "sha256": "6cd2179acff472a9df10dbdb42dd0e6580f5c17d9ef2489c972dc6abaf125525"
+    },
+    {
+      "path": "packages/assets/registry.py",
+      "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
+    },
+    {
+      "path": "packages/info/catalog.py",
+      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+    },
+    {
+      "path": "packages/info/conditions.py",
+      "sha256": "4ab5f0b4954b80d54af6abcabf4df359515a054c00b8fac836a16164d1c20709"
+    },
+    {
+      "path": "packages/info/diff.py",
+      "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
+    },
+    {
+      "path": "packages/info/program.py",
+      "sha256": "67574ad7ab1b97ec14a94a27a6c293f1813b7da05ba888ee2a1187e87b07fc15"
+    },
+    {
+      "path": "packages/info/schema_subset.py",
+      "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
+    },
+    {
+      "path": "packages/library/previews.py",
+      "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
+    },
+    {
+      "path": "packages/library/scenes.py",
+      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+    },
+    {
+      "path": "packages/programs/biosafety_cabinet/virtual.py",
+      "sha256": "153e540a52a9a94b1ad8212f9a33413865278b0fcd3d78e9696a06a077a42d09"
+    },
+    {
+      "path": "packages/programs/centrifuge/virtual.py",
+      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+    },
+    {
+      "path": "packages/programs/env_sensor/virtual.py",
+      "sha256": "6387461eb20951967455f56975b638f8559707162a76ab1726950e910e382257"
+    },
+    {
+      "path": "packages/programs/incubator/virtual.py",
+      "sha256": "d49d5c0b7de6c1bd4fce82df31b1dcc7b810e993d82ed7871c9811cf91caf7b6"
+    },
+    {
+      "path": "packages/programs/robot_arm/virtual.py",
+      "sha256": "4395c799d4029c4fb7b59fa597600af5126d8c58f1b83157015cae962ad5ed3f"
+    },
+    {
+      "path": "packages/programs/signals.py",
+      "sha256": "f0f3d6235f3ab927b7d55cfa856a80bd9962faf044ee4a19182b666befe5b9cf"
+    },
+    {
+      "path": "packages/programs/tube/virtual.py",
+      "sha256": "f75c578e07af71ca6d7187d24213203410c0e0ea321900f6e166807aec1a1a0b"
+    },
+    {
+      "path": "packages/protocol/math.py",
+      "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
+    },
+    {
+      "path": "packages/protocol/schema/__init__.py",
+      "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
+    },
+    {
+      "path": "packages/sim_runtime/synthetic_lab.py",
+      "sha256": "7e128b95f6d66052d421763986a004297ee3e01c67675c346f7bf2a437a43134"
+    },
+    {
+      "path": "packages/transport/__init__.py",
+      "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
+    },
+    {
+      "path": "tools/capture_scene_preview.py",
+      "sha256": "e8769fcbcb57e9cc06e81c96f1641cf66ba4c6e59e455d3c4037b3eda3a06867"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+    }
+  ],
+  "documents": {
+    "manifest": "manifest.json",
+    "catalog": "catalog.json",
+    "spatial": "snapshot.bin",
+    "state": "state.json"
+  },
+  "files": {
+    "manifest.json": "16266958b5520d7d46555dcae65a7ccb9f3d14c9977bb7cb97a6af981233c45d",
+    "catalog.json": "e14723ab6681f9c7116e31b2c7fade066e2d733081451955357008ca8df1788e",
+    "state.json": "5c3a261133673fd625a89965d797fd28345a4d4da130cc707ac2b57fa6b8369e",
+    "snapshot.bin": "11aae1fba01c368cd4f6a4822133313ce6de43e334965a302ae34f6258883be3"
+  },
+  "counts": {
+    "physicalEntities": 33,
+    "bindings": 25,
+    "groups": 7
+  },
+  "bounds": null,
+  "thumbnail": {}
+}

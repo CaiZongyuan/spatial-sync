@@ -1,4 +1,4 @@
-import type { Condition, JsonValue } from '../protocol';
+import type { Condition, JsonValue, ObservationMeta } from '../protocol';
 
 const operators = [
   'equals',
@@ -11,11 +11,13 @@ const operators = [
   'gte',
   'isNull',
   'notNull',
+  'stale',
 ] as const;
 export type ConditionFailure = {
   condition: Condition;
   actual: JsonValue | 'unknown';
   message: string;
+  reason?: 'stale_reading';
 };
 
 function equal(a: JsonValue, b: JsonValue): boolean {
@@ -46,19 +48,22 @@ export function evaluateConditions(
   conditions: Condition[],
   entityKey: string,
   read: (key: string) => Record<string, JsonValue> | undefined,
+  readMeta?: (key: string) => Record<string, ObservationMeta> | undefined,
 ): ConditionFailure[] {
   return conditions.flatMap((condition) => {
     const property = String(condition.property);
-    const values = read(
-      typeof condition.entity === 'string' ? condition.entity : entityKey,
-    );
+    const target = typeof condition.entity === 'string' ? condition.entity : entityKey;
+    const values = read(target);
+    const expired = readMeta?.(target)?.[property]?.stale === true;
     const known = values !== undefined && Object.hasOwn(values, property);
     const actual = known ? values[property] : undefined;
     const op = operators.find((operator) => Object.hasOwn(condition, operator));
     const expected = op ? condition[op] : undefined;
     let passed = false;
     if (known && op) {
-      if (op === 'equals' || op === 'notEquals') {
+      if (op === 'stale') passed = expired === expected;
+      else if (expired) passed = false;
+      else if (op === 'equals' || op === 'notEquals') {
         const same = equal(actual!, expected!);
         passed = op === 'equals' ? same : !same;
       } else if ((op === 'in' || op === 'notIn') && Array.isArray(expected)) {
@@ -78,11 +83,12 @@ export function evaluateConditions(
       : [
           {
             condition,
-            actual: known ? actual! : 'unknown',
+            actual: known && !(expired && op !== 'stale') ? actual! : 'unknown',
             message:
-              typeof condition.message === 'string'
+              expired && op !== 'stale' ? '读数已过期' : typeof condition.message === 'string'
                 ? condition.message
                 : `Condition on ${property} is not satisfied`,
+            ...(expired && op !== 'stale' ? { reason: 'stale_reading' as const } : {}),
           },
         ];
   });

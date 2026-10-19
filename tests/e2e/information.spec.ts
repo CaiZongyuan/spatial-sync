@@ -4,6 +4,36 @@ import type {} from '../../apps/web/src/components/Workbench';
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const centrifuge = '/World/Lab/Centrifuge';
 
+test('lab-demo version 2 shows seeded lab device readings and keeps high risk controls behind approval', async ({ page, request }, info) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneVersion: 'lab-demo@2', seed: 42, approval: { high: 'require' } },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  try {
+    await page.goto(`/sessions/${sessionId}`);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await page.getByTestId('entity-/World/Lab/Incubator').click();
+    const temperature = page.getByTestId('property-temperatureC').locator('output');
+    await expect(temperature).not.toHaveText('Unknown');
+    const first = await temperature.innerText();
+    await expect(temperature).not.toHaveText(first);
+    const setpoint = await action(page, 'setSetpoint');
+    await setpoint.getByLabel('setSetpoint temperatureC', { exact: true }).fill('38');
+    await setpoint.getByRole('button', { name: 'Run setSetpoint', exact: true }).click();
+    await expect(invocation(page, 'setSetpoint').locator('.invocation-status')).toHaveText('pending_approval');
+    await expect(page.getByTestId('property-setpointC').locator('output')).toHaveText('37');
+    await page.getByTestId('entity-/World/Lab/BiosafetyCabinet').click();
+    await expect(page.getByTestId('property-inflowMs').locator('output')).not.toHaveText('Unknown');
+    await expect(page.getByTestId('action-setUv')).toContainText('Approval may be required');
+    await page.getByTestId('entity-/World/Lab/EnvironmentSensor').click();
+    await expect(page.getByTestId('property-humidityPercent').locator('output')).not.toHaveText('Unknown');
+    await expect.poll(() => page.evaluate(() => ['/World/Lab/Incubator', '/World/Lab/BiosafetyCabinet',
+      '/World/Lab/EnvironmentSensor'].every(key => window.__spatialRenderDebug?.drawnEntities().includes(key)))).toBe(true);
+    await page.screenshot({ path: info.outputPath('virtual-lab-devices.png') });
+  } finally { await request.delete(`${api}/api/v1/sessions/${sessionId}`); }
+});
+
 async function device(page: Page, sessionId: string) {
   await page.goto(`/sessions/${sessionId}`);
   await expect(page.getByTestId('connection-status')).toHaveText('connected');

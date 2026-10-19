@@ -160,6 +160,81 @@
     "sampleTimeMs": 1000.0
   },
   {
+    "type": "entity.alert",
+    "sceneRevision": "rev-fixture",
+    "epoch": 0,
+    "simTime": 60.0,
+    "sampleTimeMs": 61000.0,
+    "entityKey": "/World",
+    "alertId": "alert-fixture",
+    "rule": "temperatureDeviation",
+    "severity": "critical",
+    "state": "raised",
+    "message": "Temperature differs from setpoint",
+    "value": 39,
+    "since": 0.0
+  },
+  {
+    "type": "plan.update",
+    "update": "full",
+    "sceneRevision": "rev-fixture",
+    "epoch": 0,
+    "simTime": 0.0,
+    "sampleTimeMs": 1000.0,
+    "plan": {
+      "id": "plan-fixture",
+      "kind": "operation",
+      "title": "Fixture operation",
+      "target": "session",
+      "revision": 1,
+      "status": "draft",
+      "steps": [
+        {
+          "id": 1,
+          "status": "pending",
+          "do": {
+            "entity": "/World",
+            "action": "start",
+            "params": {}
+          },
+          "expect": {
+            "property": "phase",
+            "equals": "running"
+          }
+        },
+        {
+          "id": 2,
+          "status": "pending",
+          "wait": {
+            "property": "phase",
+            "equals": "idle"
+          },
+          "timeoutSeconds": 120.0
+        },
+        {
+          "id": 3,
+          "status": "pending",
+          "check": {
+            "property": "phase",
+            "equals": "idle"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "plan.update",
+    "update": "step",
+    "sceneRevision": "rev-fixture",
+    "epoch": 0,
+    "simTime": 1.0,
+    "sampleTimeMs": 2000.0,
+    "planId": "plan-fixture",
+    "revision": 1,
+    "stepId": 1,
+    "status": "done"
+  },
+  {
     "invocationId": "inv-fixture",
     "requestId": "action-fixture",
     "entityKey": "/World",

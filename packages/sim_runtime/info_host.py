@@ -16,7 +16,8 @@ class NewtonInfoHost:
         self.sim, self.emit = simulation, emit
         self.port = PhysicsPort(simulation, manifest) if simulation.scene_id == "robot-and-tubes" else None
         self.catalog = load_info_catalog(manifest, simulation.scene_id, scene_package=scene_package)
-        self.host = HostCore(self.catalog, REGISTRY, physics=self.port, source="sim", fact_hz=options.factHz)
+        self.host = HostCore(self.catalog, REGISTRY, physics=self.port, source="sim", fact_hz=options.factHz,
+                             seed=options.seed)
         self.timings = deque(maxlen=6000)
         self.tick_ms = 0.0
         simulation.install_program_loop(options.controlHz, self.tick, self.reset)

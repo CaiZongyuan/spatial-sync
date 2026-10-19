@@ -8,7 +8,7 @@ Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
 
 from dataclasses import dataclass
 from inspect import Parameter
-from typing import Any
+from typing import Any, get_args
 
 
 @dataclass(frozen=True)
@@ -37,8 +37,12 @@ class Argument:
         if self.annotation is bool:
             options["action"] = "store_false" if self.default is True else "store_true"
         else:
-            # Nullable options retain None when omitted; their supplied value is a string.
-            options["type"] = str if self.annotation == str | None else self.annotation
+            # Omitted nullable options stay None; supplied values use their concrete type.
+            kinds = get_args(self.annotation)
+            options["type"] = (
+                next(kind for kind in kinds if kind is not type(None))
+                if type(None) in kinds else self.annotation
+            )
         parser.add_argument(*flags, **options)
 
 
@@ -169,6 +173,7 @@ COMMANDS = (
             Argument(
                 "source", ("--source",), str | None, "synthetic or newton; package default if omitted", None
             ),
+            Argument("seed", ("--seed",), int | None, "Seed for a new session; gateway default is 42", None),
         ),
         mcp_name="scene_launch",
         actor=True,

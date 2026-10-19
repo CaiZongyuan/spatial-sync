@@ -269,7 +269,7 @@ A2 + T2 ─► R4 Embodiment / Controller / Robot Model
 | 契约 | 变更 | 兼容方式 |
 |---|---|---|
 | 录制格式 | v1 → v2：`sceneVersion`、`sceneContentHash`、`kind: session \| live`、可选段属性索引 | 读取器同时支持 v1 与 v2；两份夹具都在 E2E 中回放 |
-| 协议 | 2.0 → 2.1：新增 `entity.alert`、`plan.update`；属性值可带 `stale` | 只新增消息，客户端忽略未知类型；2.0 录制照常回放 |
+| 协议 | 语义 schema 2.0 → 2.1：新增 `entity.alert`、`plan.update` 与属性 meta.stale；wire major 仍为整数 2，仅 metadata/health 标记 minor 1 | 原始属性值不包装；旧普通读取器忽略新消息/字段，保留空间与标量回放/seek；新读取器保留 freshness，2.0 录制照常回放 |
 | 动作调用请求 | 新增可选 `planId`、`stepId` | 可选字段，旧调用不变 |
 | entityKey 命名空间 | `/Real/…` 保留给实况 | 仿真实体继续使用 `/World/…` |
 | 审批 | 新增审批对象类型 | 现有调用审批不变 |

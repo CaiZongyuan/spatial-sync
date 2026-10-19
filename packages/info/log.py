@@ -17,7 +17,7 @@ from pathlib import Path
 from packages.info.invocations import TERMINAL
 from packages.info.recording import recording_metadata
 from packages.info.store import StateStore
-from packages.protocol.schema import EntityObservations, EntitySnapshot, Invocation
+from packages.protocol.schema import PROTOCOL_MINOR_VERSION, EntityObservations, EntitySnapshot, Invocation
 from packages.transport import HEADER as FRAME_HEADER
 
 FILE_HEADER = b"LWLG\x01\x00"
@@ -237,6 +237,7 @@ class SessionLog:
         scene_version,
         scene_content_hash,
         kind,
+        seed=None,
         queue_size=4096,
         segment_seconds=60,
         segment_bytes=16 * 1024 * 1024,
@@ -246,6 +247,7 @@ class SessionLog:
         self.metadata = {
             "formatVersion": 2,
             "protocolVersion": 2,
+            "protocolMinorVersion": PROTOCOL_MINOR_VERSION,
             "sessionId": session_id,
             "sceneId": scene_id,
             "sceneVersion": scene_version,
@@ -257,6 +259,8 @@ class SessionLog:
             "revisions": {},
             "durationMs": 0,
         }
+        if seed is not None:
+            self.metadata["seed"] = seed
         self.metadata = recording_metadata(self.metadata)
         self.queue_size, self.segment_seconds, self.segment_bytes = queue_size, segment_seconds, segment_bytes
         self._open_segment = open_segment or (lambda path: path.open("wb"))

@@ -1,5 +1,7 @@
 """Single-writer device programs, authoritative intake and ordered host events."""
 
+import hashlib
+import random
 import time
 from collections import OrderedDict
 from copy import deepcopy
@@ -51,6 +53,7 @@ class _EntitySlot:
         self.names = tuple(definitions)
         self.indices = {name: index for index, name in enumerate(self.names)}
         self.validators = tuple(validators[name] for name in self.names)
+        self.stale_after = tuple(definitions[name].get("staleAfterSeconds") for name in self.names)
         self.diff = PropertyDiff(
             {index: definitions[name] for index, name in enumerate(self.names)}, clock=clock
         )
@@ -60,6 +63,7 @@ class _EntitySlot:
         self.rev = 0
         self.values = [UNKNOWN] * len(self.names)
         self.meta = [None] * len(self.names)
+        self.freshness_dirty = set()
         self.dirty = {}
         self.diff.reset()
 
@@ -101,6 +105,12 @@ class Ctx:
         self._host, self._index, self.config = host, index, config
         self._properties = host._states[index].indices
         self._readers = {}
+        self._random_seed = int.from_bytes(hashlib.sha256(f"{host.seed}:{self.key}".encode()).digest(), "big")
+        self.rng = random.Random(self._random_seed)
+
+    @property
+    def seed(self):
+        return self._host.seed
 
     @property
     def key(self):
@@ -143,7 +153,7 @@ class Ctx:
         self._host._emit(self._index, event, data)
 
     def check(self, conditions):
-        return evaluate_conditions(conditions, self.key, self._host._values_view)
+        return evaluate_conditions(conditions, self.key, self._host._values_view, self._host.metadata())
 
 
 class InvocationHandle:
@@ -215,7 +225,9 @@ class HostCore:
         physics=None,
         fact_hz=10,
         publication_clock=None,
+        seed=42,
     ):
+        self.seed = seed
         self.catalog, self.epoch, self.source, self.physics = catalog, epoch, source, physics
         self.sim_time, self.tick_index, self.fact_due = 0.0, 0, True
         self.fact_hz, self._next_fact = fact_hz, 0.0
@@ -240,6 +252,9 @@ class HostCore:
             self._contexts.append(Ctx(self, self._entity_indices[key], catalog.program_config(key)))
             self._errors.append(0)
         self._values_view = _ValuesView(self)
+        self._freshness_states = [state for state in self._states if any(
+            timeout is not None for timeout in state.stale_after
+        )]
         self._order = sorted(
             range(len(self._programs)),
             key=lambda index: (getattr(self._programs[index], "tick_priority", 100), self._states[index].key),
@@ -250,6 +265,14 @@ class HostCore:
 
     def values(self):
         return {state.key: state.export_values() for state in self._states}
+
+    def metadata(self):
+        return {
+            state.key: {
+                name: meta for name, meta in zip(state.names, state.meta, strict=True) if meta is not None
+            }
+            for state in self._freshness_states
+        }
 
     def active_invocations(self, entity_key):
         """Read one device's active work without exporting all entity state."""
@@ -273,13 +296,21 @@ class HostCore:
         current = self._states[key]
         parsed = {prop: current.validators[prop](value) for prop, value in values.items()}
         changed = {
-            prop: value
-            for prop, value in parsed.items()
+            prop: value for prop, value in parsed.items()
             if current.values[prop] is UNKNOWN or not json_equal(current.values[prop], value)
         }
-        if not changed:
+        fresh = [prop for prop in parsed if current.stale_after[prop] is not None]
+        if not changed and not fresh:
             return
         meta = {"simTime": self.sim_time, "sampleTimeMs": time.monotonic() * 1000, "source": self.source}
+        for prop in fresh:
+            if current.meta[prop] and current.meta[prop].get("stale", False):
+                current.freshness_dirty.add(prop)
+                current.rev += 1
+                self._needs_publication = True
+            current.meta[prop] = meta
+        if not changed:
+            return
         current.rev += len(changed)
         self._needs_publication = True
         for prop, value in changed.items():
@@ -384,13 +415,14 @@ class HostCore:
                     )
             if error is None:
                 failed = evaluate_conditions(
-                    self.catalog.conditions(key, request.action), key, self._values_view
+                    self.catalog.conditions(key, request.action), key, self._values_view, self.metadata()
                 )
                 if failed:
+                    stale = any(failure.get("reason") == "stale_reading" for failure in failed)
                     error = Reject(
                         code="precondition_failed",
-                        message="Action preconditions are not satisfied",
-                        details={"failed": failed},
+                        message="读数已过期" if stale else "Action preconditions are not satisfied",
+                        details={"failed": failed} | ({"reason": "stale_reading"} if stale else {}),
                     )
             if error is None:
                 error = self._call(index, "accept", request, self._contexts[index])
@@ -446,6 +478,15 @@ class HostCore:
                     handle._update(status="running", startedSimTime=sim_time)
                     self._call(key, "start", handle, self._contexts[key])
             self._call(key, "tick", self._contexts[key], dt)
+        for state in self._freshness_states:
+            for prop, timeout in enumerate(state.stale_after):
+                written = state.meta[prop]["simTime"] if state.meta[prop] is not None else None
+                if (timeout is not None and written is not None and sim_time - written >= timeout
+                        and not state.meta[prop].get("stale", False)):
+                    state.meta[prop] = state.meta[prop] | {"stale": True}
+                    state.freshness_dirty.add(prop)
+                    state.rev += 1
+                    self._needs_publication = True
         for handle in list(self._active.values()):
             action = self.catalog.action(handle.invocation.entityKey, handle.action)
             if (
@@ -471,18 +512,26 @@ class HostCore:
             pending = False
             for key in self._order:
                 state = self._states[key]
-                if not state.dirty and not state.diff.pending:
+                if not state.dirty and not state.diff.pending and not state.freshness_dirty:
                     continue
-                outgoing = state.diff.update(state.dirty, now)
+                outgoing = state.diff.update(
+                    state.dirty | {prop: state.values[prop] for prop in state.freshness_dirty}, now,
+                    force=state.freshness_dirty,
+                )
                 if outgoing:
                     changes.append(
                         {
                             "key": state.key,
                             "rev": state.rev,
                             "values": {state.names[prop]: value for prop, value in outgoing.items()},
+                            "meta": {
+                                state.names[prop]: state.meta[prop] for prop in outgoing
+                                if state.stale_after[prop] is not None
+                            },
                         }
                     )
                 state.dirty.clear()
+                state.freshness_dirty.clear()
                 pending = pending or bool(state.diff.pending)
             self._needs_publication = pending
         result = []
@@ -531,6 +580,7 @@ class HostCore:
                 now,
             )
             state.dirty.clear()
+            state.freshness_dirty.clear()
 
     def drain_events(self):
         """Publish eligible intake outcomes without advancing a paused host."""
@@ -550,6 +600,7 @@ class HostCore:
         for key in self._order:
             self._errors[key] = 0
             self._states[key].reset()
+            self._contexts[key].rng.seed(self._contexts[key]._random_seed)
             method = "reset" if hasattr(self._programs[key], "reset") else "init"
             self._call(key, method, self._contexts[key])
         self._prime_diff()

@@ -16,6 +16,7 @@ def test_published_recording_identity_and_binary_snapshots(version):
     directory = FIXTURES / f"v{version}"
     metadata = recording_metadata(json.loads((directory / "recording.json").read_bytes()))
     assert metadata["formatVersion"] == version and metadata["protocolVersion"] == 2
+    assert "seed" not in metadata
     assert metadata["kind"] == "session" and metadata["sceneVersion"] == f"lab-demo@{version}"
     assert metadata["sceneContentHash"] is None if version == 1 else len(metadata["sceneContentHash"]) == 64
     assert 10000 <= metadata["durationMs"] < 11000
@@ -26,3 +27,16 @@ def test_published_recording_identity_and_binary_snapshots(version):
         assert not decoded.truncated and decoded.valid_bytes == len(payload)
         assert decoded.records[0].kind == 1
         assert json.loads(decoded.records[1].payload)["type"] == "entity.snapshot"
+
+
+@pytest.mark.parametrize("seed", [True, -1, 1.5, 2**53])
+def test_recording_seed_has_the_same_json_safe_integer_range_as_session_input(seed):
+    from pydantic import ValidationError
+
+    from packages.protocol.schema import SessionOptions
+
+    with pytest.raises(ValidationError):
+        SessionOptions(seed=seed)
+    metadata = json.loads((FIXTURES / "v2/recording.json").read_bytes()) | {"seed": seed}
+    with pytest.raises(ValueError, match="seed"):
+        recording_metadata(metadata)

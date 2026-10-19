@@ -25,14 +25,14 @@ def package_digest(directory):
 
 def test_new_recording_pins_actual_selected_scene_version_and_keeps_binary_v1(tmp_path, monkeypatch):
     user_root = tmp_path / "library"
-    package = user_version(user_root, 2)
+    package = user_version(user_root, 3)
     expected_hash = package_digest(package)
     assert expected_hash != package_digest(ROOT / "library/scenes/lab-demo/1")
     original_locations = ROOT / "library/scenes/lab-demo/1/locations.yaml"
     assert (package / "locations.yaml").read_bytes() != original_locations.read_bytes()
     monkeypatch.setenv("LW_LIBRARY", str(user_root))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
-        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@2"})
+        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"})
         assert created.status_code == 201, created.text
         summary = created.json()
         route = "/api/v1/sessions/" + summary["sessionId"]
@@ -45,23 +45,23 @@ def test_new_recording_pins_actual_selected_scene_version_and_keeps_binary_v1(tm
         directory = "/recordings/" + summary["sessionId"]
         metadata = client.get(directory + "/recording.json").json()
         assert metadata["formatVersion"] == 2
-        assert metadata["sceneId"] == "lab-demo" and metadata["sceneVersion"] == "lab-demo@2"
+        assert metadata["sceneId"] == "lab-demo" and metadata["sceneVersion"] == "lab-demo@3"
         assert metadata["sceneContentHash"] == summary["sceneContentHash"] == expected_hash
         assert metadata["kind"] == "session"
         listed = client.get("/api/v1/recordings").json()[0]
-        assert listed["sceneVersion"] == "lab-demo@2"
+        assert listed["sceneVersion"] == "lab-demo@3"
         assert listed["sceneContentHash"] == metadata["sceneContentHash"]
         segment = client.get(directory + "/" + metadata["segments"][0]["file"]).content
         assert segment[:6] == b"LWLG\x01\x00"
         assert not read_segment(segment).truncated
         assert "propertyIndex" not in metadata["segments"][0]
-        related = client.get("/api/v1/library/scenes/lab-demo/2").json()["recordings"]
+        related = client.get("/api/v1/library/scenes/lab-demo/3").json()["recordings"]
         assert [item["sessionId"] for item in related] == [summary["sessionId"]]
         assert client.get("/api/v1/library/scenes/lab-demo/1").json()["recordings"] == []
     # Attribution remains exact after reconstructing the gateway and library.
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
         listed = client.get("/api/v1/recordings").json()[0]
-        assert listed["sceneVersion"] == "lab-demo@2" and listed["sceneContentHash"] == expected_hash
+        assert listed["sceneVersion"] == "lab-demo@3" and listed["sceneContentHash"] == expected_hash
 
 
 def metadata_v2():
@@ -73,11 +73,11 @@ def metadata_v2():
 
 
 def test_rejected_package_reload_cannot_add_a_revision_under_the_recorded_hash(tmp_path, monkeypatch):
-    package = user_version(tmp_path / "library", 2)
+    package = user_version(tmp_path / "library", 3)
     pinned_hash = package_digest(package)
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
-        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@2"}).json()
+        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"}).json()
         route = "/api/v1/sessions/" + created["sessionId"]
         unchanged = client.post(route + "/reload")
         assert unchanged.status_code == 200, unchanged.text
@@ -93,7 +93,7 @@ def test_rejected_package_reload_cannot_add_a_revision_under_the_recorded_hash(t
         client.delete(route).raise_for_status()
         directory = "/recordings/" + created["sessionId"] + "/"
         metadata = client.get(directory + "recording.json").json()
-        assert metadata["formatVersion"] == 2 and metadata["sceneVersion"] == "lab-demo@2"
+        assert metadata["formatVersion"] == 2 and metadata["sceneVersion"] == "lab-demo@3"
         assert metadata["sceneContentHash"] == pinned_hash
         assert len(metadata["revisions"]) == 2
         for revision in metadata["revisions"].values():

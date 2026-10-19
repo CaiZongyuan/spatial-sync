@@ -30,7 +30,7 @@ test('all Python-produced events validate against generated TS-side schemas', ()
     assert.ok(check(message), ajv.errorsText(check.errors))
     observed.add(message.type)
   }
-  assert.equal(observed.size, 18)
+  assert.equal(observed.size, 20)
   // These assignments prove the exported consumer-facing types are usable.
   const frame = messages.find(message => message.type === 'stream.snapshot')
   assert.ok(server(frame))
@@ -40,6 +40,23 @@ test('all Python-produced events validate against generated TS-side schemas', ()
   const pose: Pose = { p: snapshot.poses[0].slice(1, 4) as Pose['p'], q: [0, 0, 0, 1] }
   assert.equal(command.args.count, 1)
   assert.equal(pose.p[0], 1)
+})
+
+test('operation message grammar enforces exclusive steps and positive correlation identifiers', () => {
+  const full = messages.find(message => message.type === 'plan.update' && message.update === 'full')
+  for (const step of [
+    { id: 1, status: 'pending' },
+    { id: 1, status: 'pending', do: { entity: '/World', action: 'start', params: {} }, check: { property: 'phase', equals: 'idle' } },
+    { id: 1, status: 'pending', wait: { property: 'phase', equals: 'idle' }, expect: { property: 'phase', equals: 'idle' } },
+  ]) {
+    const value = JSON.parse(JSON.stringify(full))
+    value.plan.steps = [step]
+    assert.equal(server(value), false)
+  }
+  const delta = JSON.parse(JSON.stringify(messages.find(message => message.type === 'plan.update' && message.update === 'step')))
+  assert.equal(server({ ...delta, revision: 0 }), false)
+  assert.equal(server({ ...delta, stepId: 0 }), false)
+  assert.equal(client({ type: 'action.request', requestId: 'future', entityKey: '/World', action: 'start', planId: 'p', stepId: 1 }), false)
 })
 
 test('low-frequency validator rejects broken graph and geometric semantics', () => {

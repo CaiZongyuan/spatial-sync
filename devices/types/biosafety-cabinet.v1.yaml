@@ -1,0 +1,19 @@
+type: biosafety-cabinet/v1
+title: Biosafety cabinet
+description: Seeded virtual airflow with blower and UV controls.
+properties:
+  inflowMs: {schema: {type: number, minimum: 0, maximum: 2}, unit: m/s, deadband: 0.002, maxRateHz: 5, staleAfterSeconds: 3}
+  sashHeightCm: {schema: {type: number, minimum: 0, maximum: 60}, unit: cm, staleAfterSeconds: 3}
+  uvOn: {schema: {type: boolean}, staleAfterSeconds: 3}
+  blowerOn: {schema: {type: boolean}, staleAfterSeconds: 3}
+actions:
+  setBlower:
+    description: Switch the blower.
+    params: {'on': {type: boolean}}
+    required: ['on']
+  setUv:
+    description: Switch UV using a fresh sash reading.
+    params: {'on': {type: boolean}}
+    required: ['on']
+    preconditions: [{property: sashHeightCm, notNull: true}]
+    risk: high
