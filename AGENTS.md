@@ -12,10 +12,11 @@ Intent lives in three documents:
 
 The user maintains this section; update it when a milestone lands or direction changes.
 
-- Delivered: information spec I0–I4 (simplification, information model, CLI/MCP, Newton host, recording and replay), plus the platform overview and native Newton viewer.
+- Delivered: information spec I0–I4, the native Newton viewer, and RSI W0/A1: platform shell and approvals, immutable scene versions with read-only previews and exact-version launch, recording v2 compatibility, and product skills.
 - Open: I5, Claude Code completing the I3 journey on `robot-and-tubes` through MCP, recorded.
-- Next: the RSI platform. Start from `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md` (user stories, delivery order, contract changes, test seams, error codes); `docs/spec/LAB_WEB_UI_SPEC_V1.md` holds the design system, frame (W0) and page contracts. Tickets are GitHub sub-issues #3–#46 of PRD issue #2, with native blocking edges.
-- Specified, not started: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A1–A3: library, scene packages, validation, `fr3-lab` import), `docs/spec/LAB_TRAINING_SPEC_V1.md` (T0–T3: FR3 contact-grasp spike, jobs and Training View, evaluation, policies and the Lab Notebook, agent-written programs and demonstrations), `docs/spec/LAB_LIVE_OPERATIONS_SPEC_V1.md` (L1–L3: sensors, alerts, history and inbox; operation plans with path preview; Live Lab over MQTT) and `docs/spec/LAB_RSI_SPEC_V1.md` (R1–R4: evaluation center and cost center, headless Agent runner and Harness RSI, Embodiment/Controller/Robot Model resources). T0 can start alongside A1; L1 and L2 follow A1. The UI prototype at `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only; production code follows the Web UI spec.
+- Active: the platform-external T0 FR3 contact-grasp experiment; training and the fixed 1,024-episode policy audit remain incomplete.
+- Next: A2 asset packages and validation, then A3 `fr3-lab` import; L1 and L2 can follow A1. Use `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md` for user stories, delivery order, contract changes, test seams and error codes; `docs/spec/LAB_WEB_UI_SPEC_V1.md` holds the design system and page contracts. Tickets are GitHub sub-issues #3–#46 of PRD issue #2, with native blocking edges.
+- Follow-on specifications: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A2–A3), `docs/spec/LAB_TRAINING_SPEC_V1.md` (T1–T3: jobs, Training View, evaluation, policies, the Lab Notebook, programs and demonstrations), `docs/spec/LAB_LIVE_OPERATIONS_SPEC_V1.md` (L1–L3: sensors, alerts, history, inbox, operation plans and Live Lab over MQTT), and `docs/spec/LAB_RSI_SPEC_V1.md` (R1–R4: evaluation and cost centers, Agent runner, Harness RSI and robot resources). T1 follows A3 and T0. The UI prototype at `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only; production code follows the Web UI spec.
 - Vocabulary lives in `GLOSSARY.md`; architecture decisions in `docs/adr/`.
 
 Scope comes from a spec milestone or an explicit user request. When a task reaches beyond both, confirm with the user before building; a proposed direction gets a spec first.
@@ -38,6 +39,7 @@ These are hard to reverse. Change them deliberately, with the user.
 - Evidence lives in the PR description and CI. Repository docs describe current behavior for users and agents; process receipts, review logs and benchmark output go to `.scratch/`.
 - Add an abstraction when its second consumer exists.
 - The CI gate stays GPU-free and under 5 minutes. Newton smoke tests and benchmarks run manually.
+- Bind process cleanup to this task's current process handle, or verify its PID, command and creation time against the current ownership receipt before stopping it.
 
 ## Repository workflow
 
