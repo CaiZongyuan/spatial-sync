@@ -17,7 +17,7 @@ import yaml
 from pxr import Ar, Sdf, Usd, UsdGeom, UsdPhysics, UsdUtils
 from pydantic import ValidationError
 
-from packages.info.binding_validation import validate_binding_semantics
+from packages.info.binding_validation import compile_alert_rules, validate_binding_semantics
 from packages.library.common import content_hash, document
 from packages.library.metadata import Locations
 from packages.library.python_stages import resources as python_resources
@@ -438,17 +438,21 @@ def validate(payload):
                             )
             if kind == "scene":
                 semantic_bindings.update({key: binding | {"config": config} for key in entities})
-    if kind == "scene" and resources is not None:
+    if kind == "scene":
 
         def property_schema(entity, prop):
             return types[semantic_bindings[entity]["type"]]["properties"][prop]["schema"]
 
         for key, binding in semantic_bindings.items():
             definition = types.get(binding.get("type"), {})
-            if "actions" not in definition:
+            if not definition:
                 continue
             try:
-                validate_binding_semantics(key, binding, definition, property_schema, resource_roles["site"])
+                if resources is not None:
+                    validate_binding_semantics(
+                        key, binding, definition, property_schema, resource_roles["site"]
+                    )
+                compile_alert_rules(key, binding, definition, property_schema)
             except (ValueError, KeyError, TypeError) as exc:
                 reference_problems.append(f"Invalid binding semantics on {key}: {exc}")
     checks["S5"] = check(

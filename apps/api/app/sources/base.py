@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from packages.info.catalog import Catalog
-from packages.protocol.internal import CommandResult, JointState, SessionOptions
+from packages.protocol.internal import CommandResult, InformationClock, JointState, SessionOptions
 from packages.protocol.schema import (
     Command,
     EntityEvent,
@@ -25,6 +25,7 @@ SourceEvent = (
     | EntityObservations
     | EntityEvent
     | InvocationUpdate
+    | InformationClock
 )
 
 

@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 from packages.info.catalog import Catalog
 from packages.info.store import StateStore
-from packages.protocol.internal import CommandResult, JointState, SessionOptions
+from packages.protocol.internal import CommandResult, InformationClock, JointState, SessionOptions
 from packages.protocol.schema import (
     Command,
     EntityEvent,
@@ -155,6 +155,8 @@ class NewtonSource:
                 )
                 if self.catalog.model_dump(mode="json") != packet["catalog"]:
                     raise ValueError("Runner and gateway Catalog definitions differ")
+                if self.catalog.alert_rules() != packet.get("alertRules", {}):
+                    raise ValueError("Runner and gateway alert rules differ")
                 self._info_store = StateStore(self.manifest.sceneRevision)
                 self._cache_info(EntitySnapshot.model_validate(packet["entitySnapshot"]))
                 self._samples = SourceFrames(self.manifest)
@@ -172,6 +174,7 @@ class NewtonSource:
                     "entity.event": EntityEvent,
                     "invocation.update": InvocationUpdate,
                     "server.error": ServerError,
+                    "information.clock": InformationClock,
                 }
                 event = definition[packet["event"]["type"]].model_validate(packet["event"])
                 self._cache_info(event)

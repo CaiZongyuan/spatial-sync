@@ -242,6 +242,29 @@ COMMANDS = (
         mcp_name="describe_entity",
     ),
     Command(
+        path=("alerts",),
+        help="List active and recent alert episodes; --active excludes cleared and closed contexts.",
+        method="alerts_list",
+        arguments=(
+            Argument("active", ("--active",), bool, "Only current active episodes", False),
+            Argument("state", ("--state",), str | None, "raised, acknowledged or cleared", None),
+            Argument("severity", ("--severity",), str | None, "info, warning or critical", None),
+        ),
+        output_type=list[dict[str, Any]],
+        mcp_name="alerts_list",
+    ),
+    Command(
+        path=("alerts", "ack"),
+        help="Acknowledge an active alert with an optional note; agents may acknowledge.",
+        method="alert_ack",
+        arguments=(
+            Argument("alertId", ("id",), str, "Alert episode ID"),
+            Argument("note", ("--note",), str, "Audit note retained with the first acknowledgement", ""),
+        ),
+        mcp_name="alert_ack",
+        actor=True,
+    ),
+    Command(
         path=("cancel",),
         help="Request cancellation of an active invocation.",
         method="cancel_invocation",
@@ -272,15 +295,23 @@ COMMANDS = (
 
 def register_cli(commands):
     groups = {}
+    parsers = {}
+    command_paths = {command.path for command in COMMANDS}
     for command in COMMANDS:
         parent = commands
         for index, name in enumerate(command.path[:-1], 1):
             path = command.path[:index]
             if path not in groups:
-                group = parent.add_parser(name, help=f"{name} commands")
-                groups[path] = group.add_subparsers(required=True)
+                group = parsers.get(path)
+                if group is None:
+                    group = parent.add_parser(name, help=f"{name} commands")
+                    parsers[path] = group
+                groups[path] = group.add_subparsers(required=path not in command_paths)
             parent = groups[path]
-        parser = parent.add_parser(command.path[-1], help=command.help, description=command.help)
+        parser = parsers.get(command.path)
+        if parser is None:
+            parser = parent.add_parser(command.path[-1], help=command.help, description=command.help)
+            parsers[command.path] = parser
         parser.add_argument("--json", action="store_true", help="machine-readable JSON")
         for argument in command.arguments:
             argument.add_to(parser)

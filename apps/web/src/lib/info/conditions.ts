@@ -12,6 +12,7 @@ const operators = [
   'isNull',
   'notNull',
   'stale',
+  'deviatesFrom',
 ] as const;
 export type ConditionFailure = {
   condition: Condition;
@@ -51,18 +52,29 @@ export function evaluateConditions(
   readMeta?: (key: string) => Record<string, ObservationMeta> | undefined,
 ): ConditionFailure[] {
   return conditions.flatMap((condition) => {
+    if (Array.isArray(condition.all))
+      return evaluateConditions(condition.all as Condition[], entityKey, read, readMeta);
     const property = String(condition.property);
     const target = typeof condition.entity === 'string' ? condition.entity : entityKey;
     const values = read(target);
-    const expired = readMeta?.(target)?.[property]?.stale === true;
+    const op = operators.find((operator) => Object.hasOwn(condition, operator));
+    const reference = op === 'deviatesFrom' ? String(condition.deviatesFrom) : undefined;
+    const referenceValue = reference ? values?.[reference] : undefined;
+    const expired = readMeta?.(target)?.[property]?.stale === true ||
+      (reference !== undefined && readMeta?.(target)?.[reference]?.stale === true);
     const known = values !== undefined && Object.hasOwn(values, property);
     const actual = known ? values[property] : undefined;
-    const op = operators.find((operator) => Object.hasOwn(condition, operator));
     const expected = op ? condition[op] : undefined;
     let passed = false;
     if (known && op) {
       if (op === 'stale') passed = expired === expected;
       else if (expired) passed = false;
+      else if (op === 'deviatesFrom') {
+        passed = typeof actual === 'number' && Number.isFinite(actual) &&
+          typeof referenceValue === 'number' && Number.isFinite(referenceValue) &&
+          typeof condition.by === 'number' && Number.isFinite(condition.by) && condition.by >= 0 &&
+          Math.abs(actual - referenceValue) > condition.by;
+      }
       else if (op === 'equals' || op === 'notEquals') {
         const same = equal(actual!, expected!);
         passed = op === 'equals' ? same : !same;
@@ -83,7 +95,9 @@ export function evaluateConditions(
       : [
           {
             condition,
-            actual: known && !(expired && op !== 'stale') ? actual! : 'unknown',
+            actual: known && !(expired && op !== 'stale') &&
+              !(op === 'deviatesFrom' && (typeof actual !== 'number' || typeof referenceValue !== 'number'))
+                ? actual! : 'unknown',
             message:
               expired && op !== 'stale' ? '读数已过期' : typeof condition.message === 'string'
                 ? condition.message
