@@ -11,6 +11,7 @@ from .validity import episode_validity
 
 PHASES = ("home", "pregrasp", "grasp", "lift", "reorient", "transport", "insert", "release")
 HOME = (0.0, -0.4, 0.0, -2.0, 0.0, 1.6, 0.7)
+OPEN_POSITION = 0.0375
 
 
 def validate_dataset(artifact: dict) -> dict[str, torch.Tensor]:

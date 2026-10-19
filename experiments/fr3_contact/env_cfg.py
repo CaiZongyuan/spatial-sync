@@ -53,7 +53,7 @@ class FR3SceneCfg(InteractiveSceneCfg):
             activate_contact_sensors=True,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            joint_pos={**dict(zip(ARM_JOINTS, HOME, strict=True)), "fr3_finger_joint.*": 0.039}
+            joint_pos={**dict(zip(ARM_JOINTS, HOME, strict=True)), "fr3_finger_joint.*": reset.OPEN_POSITION}
         ),
         actuators={
             "arm": ImplicitActuatorCfg(

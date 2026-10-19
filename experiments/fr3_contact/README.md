@@ -50,7 +50,7 @@ terminates and resets at its first manager boundary. It cannot progress toward
 contact success, receive positive rewards on that transition, or bootstrap as a
 timeout. Earlier valid rewards are retained. Finite failed exploration episodes
 are expected; this behavior does not claim that compliant joint stops were repaired.
-Initial/open commands use39mm within the original40mm finger range. Newly generated
+Initial/open commands use37.5mm within the original40mm finger range. Newly generated
 reset data admits only connected raw-valid trajectories; previous datasets require
 regeneration, with all128 home identities and the fixed audit denominator retained.
 Capture actual iteration times, whole-board NVIDIA memory samples, and total

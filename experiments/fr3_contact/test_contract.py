@@ -10,7 +10,7 @@ from isaaclab_rl import rsl_rl
 
 from fr3_contact import _enable_gradient_checks, evaluation, terms
 from fr3_contact.progress import ContactGraspProgress
-from fr3_contact.reset import HOME, validate_audit_starts, validate_dataset
+from fr3_contact.reset import HOME, OPEN_POSITION, validate_audit_starts, validate_dataset
 
 
 def scene_env(tube_z=0.035, contact=0.0):
@@ -256,6 +256,18 @@ def test_audit_open_home_admission_never_extends_original_finger_range():
     states["joint_position"][0, 7] = 0.04000031
     with pytest.raises(ValueError, match="open fingers"):
         validate_audit_starts(states, names)
+
+
+def test_new_open_start_is_original_legal_interval_midpoint_with_unmodified_geometry():
+    start = OPEN_POSITION
+    gap = start * 2 - 0.00004
+    assert start == pytest.approx((0.035 + 0.040) / 2)
+    assert 0.035 < OPEN_POSITION < 0.0396 < 0.040
+    assert gap == pytest.approx(0.07496)
+    assert gap > 0.016 + 0.012
+    states, names = audit_home_states()
+    states["joint_position"][:, -2:] = OPEN_POSITION
+    validate_audit_starts(states, names)
 
 
 @pytest.mark.parametrize("invalid_first", [False, True])

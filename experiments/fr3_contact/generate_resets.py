@@ -17,8 +17,7 @@ from isaaclab.utils.math import quat_apply
 from . import terms
 from .env_cfg import TCP_OFFSET, FR3GeneratorEnvCfg
 from .environment import FR3ContactEnv
-from .motion import quintic_fraction
-from .reset import PHASES, validate_dataset
+from .reset import OPEN_POSITION, PHASES, validate_dataset
 from .validity import REASONS
 
 
@@ -47,9 +46,9 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
     def move(target_position, jaw, steps, target_quaternion=closed_quat):
         start_pos, start_quat = (value.clone() for value in tcp_pose())
         jaw_target = robot.data.joint_pos.torch[:, -2:-1].clone()
-        desired_jaw = 0.039 if jaw > 0 else 0.0
+        desired_jaw = OPEN_POSITION if jaw > 0 else 0.0
         for step in range(steps):
-            fraction = quintic_fraction(min(1.0, (step + 1) / max(1, steps - 15)))
+            fraction = min(1.0, (step + 1) / max(1, steps - 15))
             position = torch.lerp(start_pos, target_position, fraction)
             quaternion = torch.lerp(start_quat, target_quaternion, fraction)
             quaternion = quaternion / torch.linalg.vector_norm(quaternion, dim=-1, keepdim=True)
