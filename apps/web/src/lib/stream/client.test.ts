@@ -174,6 +174,20 @@ describe('WebSocket lifecycle and authoritative control', () => {
     expect(client.buffer.readLatest('/World/Arm')!.p).toEqual([1, 2, 3]);
   });
 
+  it('wakes pose consumers on accepted frames without replacing the React metadata snapshot', async () => {
+    const metadata = client.getSnapshot();
+    const listener = vi.fn();
+    const unsubscribe = client.subscribe(listener);
+    Socket.instances[0].emit({ ...snapshot, type: 'transform.frame', seq: snapshot.seq + 1,
+      simTime: snapshot.simTime + .1, sampleTimeMs: snapshot.sampleTimeMs + 100,
+      poses: [[7, 4, 5, 6, 0, 0, 0, 1]] });
+    await flush();
+    expect(listener).toHaveBeenCalled();
+    expect(client.getSnapshot()).toBe(metadata);
+    expect(client.buffer.readLatest('/World/Arm')?.p).toEqual([4, 5, 6]);
+    unsubscribe();
+  });
+
   it('receives binary frames, skips malformed input and preserves binary frame before JSON state', async () => {
     client.stop();
     client = new SessionClient(fixture.sessionId);

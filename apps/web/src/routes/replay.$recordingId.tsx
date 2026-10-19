@@ -5,8 +5,10 @@ import { ReplayControls } from '../components/ReplayControls';
 import { ReplaySource } from '../lib/replay/replay-source';
 
 export const Route = createFileRoute('/replay/$recordingId')({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { src?: string; camera?: 'isometric'; render?: string } => ({
     src: typeof search.src === 'string' ? search.src : undefined,
+    camera: search.camera === 'isometric' ? 'isometric' as const : undefined,
+    render: typeof search.render === 'string' ? search.render : undefined,
   }),
   component: Replay,
 });

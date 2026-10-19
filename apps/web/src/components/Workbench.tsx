@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import type { ReactNode } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { SessionClient } from '../lib/stream/client';
 import { request } from '../lib/api';
 import { FrameRecorder } from '../lib/performance/frame-recorder';
@@ -54,6 +54,11 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
   const [loadError, setLoadError] = useState<string>();
   const [operationPending, setOperationPending] = useState(false);
   const [selected, setSelected] = useState('');
+  const search = useSearch({ strict: false });
+  const cameraPreset = search.camera ?? 'perspective';
+  const setCameraPreset = (camera: 'perspective' | 'isometric') => void navigate({
+    to: '.', search: previous => ({ ...previous, camera: camera === 'isometric' ? camera : undefined }),
+  });
   const [tab, setTab] = useState<'scene' | 'diagnostics'>('scene');
   const [layers, setLayers] = useState<DebugLayers>({
     colliders: false,
@@ -350,6 +355,10 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                 </button>
               </div>
               <div className="layer-toggles">
+                <div className="camera-segment" role="group" aria-label="Camera projection">
+                  <button aria-label="Perspective camera" aria-pressed={cameraPreset === 'perspective'} onClick={() => setCameraPreset('perspective')}>透视</button>
+                  <button aria-label="Isometric camera" aria-pressed={cameraPreset === 'isometric'} onClick={() => setCameraPreset('isometric')}>等距</button>
+                </div>
                 {(['grid', 'sites', 'origins', 'colliders'] as const).map(
                   (layer) => (
                     <label key={layer}>
@@ -386,6 +395,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                   inspectVisuals,
                   recorder,
                   renderContinuously,
+                  cameraPreset,
                 }}
               />
               {tab === 'diagnostics' && (

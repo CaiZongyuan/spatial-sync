@@ -135,6 +135,7 @@ test('binary browsers share authoritative controls, recovery and replacement', a
     await expect
       .poll(async () => (await sample(observer))?.seq ?? 0)
       .toBeGreaterThan(snapshot.seq);
+    await expect.poll(async () => (await sample(page))?.simTime ?? 0).toBeGreaterThan(snapshot.simTime);
     const stepped = await sample(page);
     expect(stepped!.simTime).toBeGreaterThan(snapshot.simTime);
     await page.getByRole('button', { name: 'Reset simulation' }).click();
