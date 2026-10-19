@@ -170,3 +170,64 @@ def test_only_source_input_text_normalizes_line_endings(tmp_path):
     assert previews.file_hash(source) != source_file
     assert previews.input_hash(binary) != binary_input
     assert previews.input_hash(binary) == previews.file_hash(binary)
+
+
+async def test_malformed_capture_metadata_keeps_public_library_readable(tmp_path, monkeypatch):
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    version = SceneLibrary(user_root=tmp_path / "library").resolve("lab-demo@1", launch=True)
+    captured = await capture(version, "synthetic", tmp_path / "previews")
+    index = next((tmp_path / "previews").rglob("capture.json"))
+    settings = Settings(state_root=tmp_path / "state", recordings_root=tmp_path / "recordings",
+                        scene_previews_root=tmp_path / "previews")
+    mutations = [
+        ("capturedAt", None, True), ("simTime", None, True), ("runtime", None, True),
+        ("capturedAt", "not-a-date", False), ("capturedAt", "2026-10-19T00:00:00", False),
+        ("simTime", -1, False), ("simTime", float("nan"), False), ("simTime", True, False),
+        ("simTime", 1, False),
+        ("runtime", None, False), ("runtime", {}, False), ("runtime", {"source": []}, False),
+        ("documents", None, False), ("thumbnail", None, False),
+        ("bounds", {"min": [0], "max": [1], "scope": "model"}, False),
+        ("bounds", {"min": [1, 0, 0], "max": [0, 1, 1], "scope": "model"}, False),
+    ]
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        assert client.get("/api/v1/library/scenes/lab-demo/1").json()["preview"]["status"] == "available"
+        for field, replacement, missing in mutations:
+            value = {**captured}
+            if missing:
+                value.pop(field)
+            else:
+                value[field] = replacement
+            index.write_text(json.dumps(value), encoding="utf-8")
+            detail = client.get("/api/v1/library/scenes/lab-demo/1")
+            assert detail.status_code == 200, (field, replacement, detail.text)
+            unavailable = detail.json()
+            assert unavailable["preview"]["status"] == "unavailable", (field, replacement)
+            assert unavailable["preview"]["reason"] and unavailable["launchable"] is True
+            assert unavailable["entityCount"] is None and unavailable["deviceCount"] is None
+            listing = client.get("/api/v1/library/scenes?q=lab-demo")
+            assert listing.status_code == 200
+            assert listing.json()["scenes"][0]["preview"]["status"] == "unavailable"
+        assert client.get("/api/v1/health").json()["sessionCount"] == 0
+        assert not (tmp_path / "recordings").exists()
+
+
+async def test_malformed_operator_metadata_can_use_a_valid_bundled_capture(tmp_path, monkeypatch):
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    version = SceneLibrary(user_root=tmp_path / "library").resolve("lab-demo@1", launch=True)
+    captured = await capture(version, "synthetic", tmp_path / "previews")
+    shutil.copytree(tmp_path / "previews", tmp_path / "bundled")
+    monkeypatch.setattr(main, "PreviewRepository", partial(
+        previews.PreviewRepository, bundled_root=tmp_path / "bundled"
+    ))
+    index = next((tmp_path / "previews").rglob("capture.json"))
+    del captured["runtime"]
+    index.write_text(json.dumps(captured), encoding="utf-8")
+    settings = Settings(state_root=tmp_path / "state", recordings_root=tmp_path / "recordings",
+                        scene_previews_root=tmp_path / "previews")
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        detail = client.get("/api/v1/library/scenes/lab-demo/1")
+        assert detail.status_code == 200
+        assert detail.json()["preview"]["status"] == "available"
+        snapshot = client.get(detail.json()["preview"]["documents"]["spatial"])
+        assert snapshot.status_code == 200 and snapshot.content.startswith(b"NSYN")
+        assert client.get("/api/v1/health").json()["sessionCount"] == 0

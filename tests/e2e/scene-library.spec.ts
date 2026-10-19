@@ -3,6 +3,52 @@ import type { SceneManifest } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
+test('changing theme while the next preview loads recaptures the same scene and finishes its queue', async ({ page, request }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.addInitScript(() => {
+    const seen = new WeakSet<HTMLCanvasElement>();
+    let created = 0;
+    Object.defineProperty(window, '__previewCanvasCount', { get: () => created });
+    new MutationObserver(() => document.querySelectorAll('canvas').forEach(canvas => {
+      if (!seen.has(canvas)) { seen.add(canvas); created++; }
+    })).observe(document, { childList: true, subtree: true });
+  });
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes`)).json();
+  const first = scenes.find((scene: { id: string }) => scene.id === 'falling-boxes@1');
+  const second = scenes.find((scene: { id: string }) => scene.id === 'usd-lab@1');
+  await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: {
+    scenes: new URL(route.request().url()).searchParams.get('q') ? [first] : [first, second],
+  } }));
+  let releaseSecond!: () => void;
+  const delayed = new Promise<void>(resolve => { releaseSecond = resolve; });
+  await page.route(`**${second.preview.documents.manifest}`, async route => {
+    const response = await route.fetch();
+    await delayed;
+    // Changing theme intentionally cancels this old job's held request.
+    await route.fulfill({ response }).catch(() => {});
+  });
+  const secondStarted = page.waitForRequest(request => new URL(request.url()).pathname === second.preview.documents.manifest);
+  try {
+    await page.goto('/scenes');
+    const firstImage = page.getByRole('img', { name: 'falling-boxes@1 的真实初始场景' });
+    await expect(firstImage).toBeVisible();
+    const light = await firstImage.getAttribute('src');
+    await secondStarted;
+    await page.getByLabel('Color theme').selectOption('dark');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    releaseSecond();
+    await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(2);
+    const dark = await firstImage.getAttribute('src');
+    expect(dark).not.toBe(light);
+    await expect(page.locator('canvas')).toHaveCount(0);
+    expect(await page.evaluate(() => Reflect.get(window, '__previewCanvasCount'))).toBe(1);
+    // A fresh single-scene rendering must agree with the rethemed queue result.
+    await page.goto('/scenes?q=falling-boxes');
+    await expect(firstImage).toBeVisible();
+    expect(await firstImage.getAttribute('src')).toBe(dark);
+  } finally { releaseSecond(); }
+});
+
 test('a library larger than the shared thumbnail cache keeps every completed image', async ({ page, request }) => {
   // Reuse a real small frozen frame; only library identities/revisions are fixtures.
   const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?source=newton`)).json();

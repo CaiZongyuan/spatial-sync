@@ -1,9 +1,20 @@
 """Read-only, exact-version scene captures. Importing this module starts no source."""
 
 import hashlib
-import json
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Annotated
+
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from packages.library.scenes import REPO_ROOT, content_hash
 from packages.protocol.schema import Catalog, EntitySnapshot, SceneManifest
@@ -15,6 +26,42 @@ CODE_ROOTS = (
     "packages/", "apps/api/app/sources/", "apps/api/app/recordings.py", "tools/capture_scene_preview.py",
 )
 DATA_ROOTS = ("assets/", "devices/types/", "examples/usd-lab/")
+
+_NonemptyString = Annotated[str, Field(min_length=1)]
+_Vector = Annotated[list[FiniteFloat], Field(min_length=3, max_length=3)]
+
+
+class _Bounds(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    min: _Vector
+    max: _Vector
+    scope: _NonemptyString
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if any(lower > upper for lower, upper in zip(self.min, self.max, strict=True)):
+            raise ValueError("bounds min must not exceed max")
+        return self
+
+
+class _CaptureMetadata(BaseModel):
+    """Validate every field exposed by describe before a cache can be selected."""
+
+    model_config = ConfigDict(strict=True, extra="allow")
+    capturedAt: AwareDatetime
+    simTime: Annotated[float, Field(ge=0, allow_inf_nan=False)]
+    runtime: dict[str, _NonemptyString]
+    documents: dict[str, _NonemptyString]
+    counts: dict[str, Annotated[int, Field(ge=0)]]
+    thumbnail: dict[str, _NonemptyString] = Field(default_factory=dict)
+    bounds: _Bounds | None = None
+
+    @field_validator("runtime")
+    @classmethod
+    def runtime_identity(cls, value):
+        if not {"python", "source", "device"}.issubset(value):
+            raise ValueError("runtime requires python, source and device")
+        return value
 
 
 def file_hash(path):
@@ -71,7 +118,12 @@ class PreviewRepository:
             if not index.is_file():
                 continue
             try:
-                value = json.loads(index.read_bytes())
+                try:
+                    value = _CaptureMetadata.model_validate_json(index.read_bytes()).model_dump(mode="json")
+                except ValidationError as exc:
+                    fields = ", ".join(sorted({".".join(map(str, item["loc"])) or "capture"
+                                               for item in exc.errors(include_input=False)}))
+                    raise ValueError("预览元数据无效：" + fields) from exc
                 if (value["schema"], value["sceneVersion"], value["sceneContentHash"], value["source"]) != (
                     SCHEMA, version.id, version.content_hash, source
                 ):
@@ -89,8 +141,11 @@ class PreviewRepository:
                     if file_hash(relative_file(directory, name)) != digest:
                         raise ValueError("预览文件校验失败")
                 for document in ("manifest", "catalog", "spatial", "state"):
-                    if value["documents"][document] not in files:
+                    if document not in value["documents"]:
                         raise ValueError("预览缺少必要的快照文件")
+                references = (*value["documents"].values(), *value["thumbnail"].values())
+                if any(name not in files for name in references):
+                    raise ValueError("预览文档或缩略图未列入文件索引")
                 documents = value["documents"]
                 manifest = SceneManifest.model_validate_json((directory / documents["manifest"]).read_bytes())
                 for node in manifest.nodes:
@@ -114,6 +169,8 @@ class PreviewRepository:
                         or state.sceneRevision != manifest.sceneRevision or state.epoch != frame.epoch
                         or {row[0] for row in frame.poses} != bodies):
                     raise ValueError("预览快照身份或空间实体集合不一致")
+                if value["simTime"] != frame.simTime:
+                    raise ValueError("预览时间与实际空间快照不一致")
                 counts = {
                     "physicalEntities": sum(node.kind in ("body", "static")
                                             and not node.entityKey.startswith("/World/Dressing/")

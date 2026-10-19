@@ -730,6 +730,7 @@ interface ViewportProps {
   compact?: boolean;
   onLabelLayout?: (labels: PlacedLabel[]) => void;
   capture?: (png: string) => void;
+  captureKey?: string;
 }
 
 export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
@@ -763,7 +764,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         gl={{ antialias: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={props.manifest.sceneRevision} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">

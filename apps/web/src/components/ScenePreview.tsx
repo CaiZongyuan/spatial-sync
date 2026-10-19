@@ -20,8 +20,8 @@ export function useScenePreview(preview: ScenePreview) {
   return { client, state, catalog: metadata.catalog, error };
 }
 
-export function FrozenViewport({ client, manifest, capture, readouts = false }: {
-  client: ScenePreviewSource; manifest: SceneManifest; capture?: (png: string) => void; readouts?: boolean;
+export function FrozenViewport({ client, manifest, capture, captureKey, readouts = false }: {
+  client: ScenePreviewSource; manifest: SceneManifest; capture?: (png: string) => void; captureKey?: string; readouts?: boolean;
 }) {
   const [selected, select] = useState('');
   const metrics = useRef<RenderMetrics>({ fps: 0, drawCalls: 0, objects: 0, applyMs: 0 });
@@ -42,6 +42,6 @@ export function FrozenViewport({ client, manifest, capture, readouts = false }: 
         .map(([name, value]) => `${name} ${String(value)}${catalog.types[binding.type]?.properties[name]?.unit ? ` ${catalog.types[binding.type].properties[name].unit}` : ''}`).join(' · ') : '',
       bodyKeys: manifest.nodes.filter(node => node.kind !== 'group' && deviceKey(manifest, catalog, node.entityKey) === binding.key).map(node => node.entityKey),
     })) : undefined;
-  return <SceneViewport {...{ client, manifest, selected, select, hidden, warn, metrics, rendered, inspectVisuals, recorder, capture, annotations }}
+  return <SceneViewport {...{ client, manifest, selected, select, hidden, warn, metrics, rendered, inspectVisuals, recorder, capture, captureKey, annotations }}
     layers={{ colliders: false, sites: false, origins: false, grid: true }} cameraPreset="isometric" compact renderContinuously={false} />;
 }

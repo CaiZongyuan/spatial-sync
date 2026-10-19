@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { SceneVersion } from '../lib/library';
 import type { SceneManifest } from '../lib/protocol';
 import type { ScenePreviewSource } from '../lib/scene/preview-source';
@@ -7,13 +7,13 @@ import { FrozenViewport, useScenePreview } from './ScenePreview';
 
 // One bounded in-memory cache and one queue renderer for the list route.
 const images = new Map<string, string>();
-function ThumbnailRenderer({ scene, done }: { scene: SceneVersion; done: (png?: string) => void }) {
+function ThumbnailRenderer({ scene, captureKey, done }: { scene: SceneVersion; captureKey: string; done: (png?: string) => void }) {
   const { client, state, error } = useScenePreview(scene.preview);
-  const [display, setDisplay] = useState<{ client: ScenePreviewSource; manifest: SceneManifest; capture: (png?: string) => void }>();
+  const [display, setDisplay] = useState<{ client: ScenePreviewSource; manifest: SceneManifest; captureKey: string; capture: (png?: string) => void }>();
   useEffect(() => {
     if (state.connection === 'connected' && state.manifest)
-      setDisplay({ client, manifest: state.manifest, capture: done });
-  }, [client, state.connection, state.manifest, done]);
+      setDisplay({ client, manifest: state.manifest, captureKey, capture: done });
+  }, [client, state.connection, state.manifest, captureKey, done]);
   useEffect(() => { if (error) done(); }, [error, done]);
   // Keep one Canvas while the next source loads; replace only its scene contents.
   return <div className="scene-thumbnail-renderer" aria-hidden="true">{display &&
@@ -39,8 +39,13 @@ export function SceneThumbnails({ scenes, children }: { scenes: SceneVersion[]; 
   }, [available, keyFor]);
   const next = available.find(scene => !images.has(keyFor(scene)) && !results.has(keyFor(scene)));
   const key = next && keyFor(next);
+  const activeKey = useRef(key);
+  useLayoutEffect(() => {
+    activeKey.current = key;
+    return () => { activeKey.current = undefined; };
+  }, [key]);
   const done = useCallback((png?: string) => {
-    if (!key) return;
+    if (!key || activeKey.current !== key) return;
     if (png) {
       if (images.size >= 32) images.delete(images.keys().next().value!);
       images.set(key, png);
@@ -51,5 +56,5 @@ export function SceneThumbnails({ scenes, children }: { scenes: SceneVersion[]; 
     const image = results.get(keyFor(scene)) ?? images.get(keyFor(scene));
     return image ? <img src={image} alt={`${scene.id} 的真实初始场景`} /> : <span className="scene-thumbnail-unavailable" title={scene.preview.reason ?? undefined}>
       <span aria-hidden="true">◇</span>{scene.preview.status === 'available' ? results.has(keyFor(scene)) ? '预览加载失败' : '生成预览…' : '暂无静态预览'}</span>;
-  })}{next && <ThumbnailRenderer scene={next} done={done} />}</>;
+  })}{next && key && <ThumbnailRenderer scene={next} captureKey={key} done={done} />}</>;
 }
