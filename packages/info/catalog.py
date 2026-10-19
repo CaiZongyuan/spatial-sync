@@ -26,6 +26,7 @@ class Catalog(BaseModel):
     _conditions: dict = PrivateAttr(default_factory=dict)
     _configs: dict = PrivateAttr(default_factory=dict)
     _events: dict = PrivateAttr(default_factory=dict)
+    _alerts: dict = PrivateAttr(default_factory=dict)
 
     def action(self, entity_key, action):
         return self.types[self.entities[entity_key]["type"]]["actions"][action]
@@ -46,6 +47,9 @@ class Catalog(BaseModel):
 
     def program_config(self, entity_key):
         return self._configs[entity_key]
+
+    def alerts(self):
+        return self._alerts
 
     def property_validators(self, entity_key):
         type_id = self.entities[entity_key]["type"]
@@ -124,6 +128,12 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
     for type_id, definition in catalog.types.items():
         for prop, value in definition["properties"].items():
             catalog._properties[type_id, prop] = compile_schema(value["schema"])
+        for rule in definition.get("alerts", {}).values():
+            validate_conditions(
+                [rule["when"]], "type-self",
+                lambda _, prop, definition=definition: definition["properties"][prop]["schema"],
+                allow_cross_entity=False,
+            )
         for action, value in definition["actions"].items():
             schemas = {
                 name: {k: v for k, v in schema.items() if k != "unit"}
@@ -147,6 +157,12 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
                 compile_schema(event["schema"]) if event.get("schema") is not None else None
             )
     for key, binding in catalog.entities.items():
+        rules = catalog.types[binding["type"]].get("alerts", {}) | binding.get("alerts", {})
+        for name, rule in rules.items():
+            compiled = validate_conditions(
+                [rule["when"]], key, lambda entity, prop: catalog.property(entity, prop)["schema"]
+            )
+            catalog._alerts[key, name] = (rule, compiled)
         actions = catalog.types[binding["type"]]["actions"]
         if set(binding["interlocks"]) - actions.keys():
             raise ValueError(f"Interlock references unknown action on {key}")

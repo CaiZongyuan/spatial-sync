@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 from packages.info.catalog import Catalog
 from packages.info.store import StateStore
-from packages.protocol.internal import CommandResult, JointState, SessionOptions
+from packages.protocol.internal import CommandResult, InformationClock, JointState, SessionOptions
 from packages.protocol.schema import (
     Command,
     EntityEvent,
@@ -172,6 +172,7 @@ class NewtonSource:
                     "entity.event": EntityEvent,
                     "invocation.update": InvocationUpdate,
                     "server.error": ServerError,
+                    "information.clock": InformationClock,
                 }
                 event = definition[packet["event"]["type"]].model_validate(packet["event"])
                 self._cache_info(event)

@@ -902,6 +902,9 @@ export interface EntityType {
   events: {
     [k: string]: EventDefinition
   }
+  alerts?: {
+    [k: string]: AlertRule
+  }
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -948,6 +951,17 @@ export interface EventDefinition {
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "AlertRule".
+ */
+export interface AlertRule {
+  when: Condition
+  forSeconds: number
+  severity: 'info' | 'warning' | 'critical'
+  message: string
+  hint?: string | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
  * via the `definition` "EntityBinding".
  */
 export interface EntityBinding {
@@ -961,6 +975,9 @@ export interface EntityBinding {
     [k: string]: Condition[]
   }
   unplaced: boolean
+  alerts?: {
+    [k: string]: AlertRule
+  }
 }
 
 export type CommandRequest = Command

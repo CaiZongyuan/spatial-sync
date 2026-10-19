@@ -9,6 +9,7 @@ from typing import ClassVar, Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from packages.protocol.internal import InformationClock
 from packages.protocol.schema import (
     EntityEvent,
     EntityObservations,
@@ -501,7 +502,13 @@ class HostCore:
                     endedSimTime=self.sim_time,
                     error=Reject(code="timeout", message="Action exceeded its simulation-time deadline"),
                 )
-        return self._drain()
+        result = self._drain()
+        if self.catalog.alerts():
+            result.append(InformationClock(
+                sceneRevision=self.catalog.sceneRevision, epoch=self.epoch,
+                simTime=self.sim_time, sampleTimeMs=time.monotonic() * 1000,
+            ))
+        return result
 
     def _drain(self):
         now = self._publication_clock()
