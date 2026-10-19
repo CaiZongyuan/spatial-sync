@@ -165,6 +165,45 @@ def test_editing_an_indexed_version_cannot_silently_change_its_launch_content(tm
         assert client.get("/api/v1/recordings").json() == []
 
 
+@pytest.mark.parametrize("change", ["location", "missing-validation"])
+def test_reload_rejects_changed_package_before_disturbing_current_session(tmp_path, monkeypatch, change):
+    package = user_version(tmp_path / "library", 2)
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
+        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@2"}).json()
+        route = "/api/v1/sessions/" + created["sessionId"]
+        unchanged = client.post(route + "/reload")
+        assert unchanged.status_code == 200, unchanged.text
+        current = unchanged.json()
+        assert current["sceneRevision"] != created["sceneRevision"]
+        assert current["sceneContentHash"] == created["sceneContentHash"]
+        if change == "location":
+            file = package / "locations.yaml"
+            locations = yaml.safe_load(file.read_text(encoding="utf-8"))
+            locations["locations"]["rack.A1"]["p"] = [0.91, -0.31, 0.83]
+            file.write_text(yaml.safe_dump(locations), encoding="utf-8")
+        else:
+            (package / "validation.json").unlink()
+        rejected = client.post(route + "/reload")
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["detail"]["code"] == "scene_not_launchable"
+        preserved = client.get(route).json()
+        assert preserved["state"] == "RUNNING" and preserved["sceneRevision"] == current["sceneRevision"]
+        assert preserved["sceneContentHash"] == created["sceneContentHash"]
+        manifest = client.get(route + "/scene").json()
+        assert next(site for site in manifest["sites"] if site["entityKey"] == "/World/Lab/Rack/A1")[
+            "localPose"
+        ]["p"] == [0.61, -0.31, 0.83]
+        action = client.post(route + "/actions", json={
+            "requestId": "after-rejected-reload", "entityKey": "/World/Lab/Centrifuge",
+            "action": "closeLid", "wait": True,
+        })
+        assert action.status_code == 200 and action.json()["status"] == "succeeded", action.text
+        client.delete(route).raise_for_status()
+        recording = client.get("/recordings/" + created["sessionId"] + "/recording.json").json()
+        assert len(recording["revisions"]) == 2
+
+
 def test_revision_order_is_numeric_and_read_latest_may_be_unlaunchable(tmp_path, monkeypatch):
     user_version(tmp_path, 2)
     user_version(tmp_path, 10)

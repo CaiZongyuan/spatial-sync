@@ -894,6 +894,8 @@ class Session:
 
     async def reload(self):
         async with self.command_lock:
+            if self.scene_version:
+                self.scene_version.require_launchable()
             self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
             self.pipeline.fail_active("session_reset", "Scene was reloaded")

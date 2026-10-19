@@ -93,6 +93,25 @@ class SceneVersion:
             check.get("status") == "fail" for check in self.validation.get("checks", [])
         )
 
+    def require_launchable(self):
+        if not self.launchable:
+            message = (
+                "Scene validation failed" if self.validation is not None else "Validation report missing"
+            )
+            raise LibraryError("scene_not_launchable", message, 409,
+                               sceneVersion=self.id, validation=deepcopy(self.validation))
+        try:
+            unchanged = content_hash(self.path) == self.content_hash
+        except (OSError, ValueError) as exc:
+            raise LibraryError(
+                "scene_not_launchable", "Scene package is unavailable", 409, sceneVersion=self.id,
+            ) from exc
+        if not unchanged:
+            raise LibraryError(
+                "scene_not_launchable", "Scene package changed after indexing; use a new version", 409,
+                sceneVersion=self.id,
+            )
+
     def summary(self):
         return {
             "sceneId": self.name, "sceneVersion": self.id, "id": self.id, "rev": self.rev,
@@ -195,17 +214,8 @@ class SceneLibrary:
         if not matches:
             raise LibraryError("scene_not_launchable", "No launchable scene version", 409)
         version = max(matches, key=lambda item: item.rev)
-        if launch and not version.launchable:
-            message = (
-                "Scene validation failed" if version.validation is not None else "Validation report missing"
-            )
-            raise LibraryError("scene_not_launchable", message, 409,
-                               sceneVersion=version.id, validation=deepcopy(version.validation))
-        if launch and content_hash(version.path) != version.content_hash:
-            raise LibraryError(
-                "scene_not_launchable", "Scene package changed after indexing; use a new version", 409,
-                sceneVersion=version.id,
-            )
+        if launch:
+            version.require_launchable()
         if source is not None and source not in version.metadata["sources"]:
             raise LibraryError("unknown_scene", "Scene/source combination is not registered")
         return version
