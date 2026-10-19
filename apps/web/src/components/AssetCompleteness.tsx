@@ -1,4 +1,11 @@
-import { completenessLabels, statusLabels, type AssetVersion } from '../lib/asset-library';
+import { completenessLabels, gapLabel, statusLabels, type AssetVersion } from '../lib/asset-library';
+
+export function AssetGapChips({ asset, first = false }: { asset: AssetVersion; first?: boolean }) {
+  return <span className="asset-gap-chips">{(first ? asset.gaps.slice(0, 1) : asset.gaps).map(gap => {
+    const status = asset.completeness.items.find(item => item.id === gap)?.status ?? 'warning';
+    return <span key={gap} className={`asset-chip is-${status}`}><i />{gapLabel(gap)}</span>;
+  })}</span>;
+}
 
 export function CompletenessDots({ asset }: { asset: AssetVersion }) {
   const description = asset.completeness.items.map(item => `${completenessLabels[item.id] ?? item.id}：${statusLabels[item.status]}`).join('，');

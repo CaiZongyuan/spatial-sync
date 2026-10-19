@@ -23,8 +23,17 @@ export interface AssetVersion {
   validationStatus: string; thumbnailUrl: string | null; visualUrl: string | null;
 }
 export interface AssetDetail extends AssetVersion {
-  metadata: { id: string; dimensionsM?: number[]; implements?: { type: string; programs: Record<string, string>; config: Record<string, unknown> }[] };
+  metadata: { id: string; dimensionsM?: number[]; implements?: { type: string; programs?: Record<string, string>; config?: Record<string, unknown> }[] };
   validationCoverage: string; provenance: Record<string, unknown> | null; files: Record<string, string>;
+  types: Record<string, AssetEntityType | null>;
+  referencingScenes: { id: string; sceneId: string; rev: number; title: string; root: string; contentHash: string }[];
+  referenceInspection: { complete: boolean; reason: string | null; uninspectedScenes: { id: string; reason: string }[] };
+}
+export interface AssetEntityType {
+  title?: string; description?: string;
+  properties: Record<string, { schema: Record<string, unknown>; unit?: string; description?: string }>;
+  actions: Record<string, { params?: Record<string, Record<string, unknown>>; required?: string[];
+    preconditions?: Record<string, unknown>[]; description?: string; risk?: string }>;
 }
 export type AssetFilters = { q?: string; kind?: AssetKind; gaps?: boolean };
 export function getAssetLibrary(filters: AssetFilters, signal?: AbortSignal) {

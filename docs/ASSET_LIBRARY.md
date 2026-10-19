@@ -65,6 +65,30 @@ Estimated mass is a warning. An incomplete asset remains inspectable; malformed
 metadata is rejected before a revision is allocated. A structurally failed
 package is imported with its failed report.
 
+In the Web app, open `/assets` for cards or a list. Kind, gap-only, search and
+view selections are shareable query parameters, for example
+`/assets?kind=robot&gaps=true&q=Franka&view=list`. Thumbnails share one queued
+renderer and a bounded cache. A package preview image takes precedence over
+its GLB; unavailable previews show an explicit fallback.
+
+Open `/assets/{kind}/{name}/{rev}` to inspect that immutable version. The page
+shows the package's static visual, the six completeness items, binding templates,
+dimensions, original provenance/license files and implemented entity types,
+including their properties, actions and preconditions. This page does not start
+a session or execute device actions. Missing visuals and failed loads remain
+visible, with retry for load failures.
+
+The HTTP detail response's `referencingScenes` contains indexed scene versions
+whose parsed bindings name this exact asset template or whose recorded USD
+dependency report names its exact ID and content hash. Reading detail does not
+run validation. `referenceInspection.complete` is false when a scene package
+changed, its USD dependencies are unrecorded or inspection failed;
+`uninspectedScenes` supplies the affected versions and reasons. Confirmed
+references are still returned when other dependencies could not be inspected.
+An empty reference list establishes no references only when inspection is
+complete. Without a scene index, the response explicitly reports inspection
+as unavailable.
+
 `lw asset validate kind/name@rev` (or
 `POST /api/v1/library/assets/{kind}/{name}/{rev}/validate`) appends a report under
 `SPATIAL_STATE_ROOT`, keyed by subject and published content hash. The embedded

@@ -1,14 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { assetKinds, assetParams, dimensionsLabel, gapLabel, getAssetLibrary, type AssetKind, type AssetVersion } from '../lib/asset-library';
+import { assetKinds, assetParams, dimensionsLabel, getAssetLibrary, type AssetKind, type AssetVersion } from '../lib/asset-library';
 import { AssetThumbnails } from '../components/AssetThumbnails';
-import { CompletenessDots } from '../components/AssetCompleteness';
+import { AssetGapChips, CompletenessDots } from '../components/AssetCompleteness';
 
 type Search = { view?: 'card' | 'list'; kind?: AssetKind; gaps?: boolean; q?: string };
 export const Route = createFileRoute('/assets/')({
   validateSearch: (value: Record<string, unknown>): Search => ({
     view: value.view === 'card' || value.view === 'list' ? value.view : undefined,
-    kind: typeof value.kind === 'string' && value.kind in assetKinds ? value.kind as AssetKind : undefined,
+    kind: typeof value.kind === 'string' && Object.hasOwn(assetKinds, value.kind) ? value.kind as AssetKind : undefined,
     gaps: value.gaps === true || value.gaps === 'true' ? true : undefined,
     q: typeof value.q === 'string' && value.q ? value.q : undefined,
   }), component: AssetLibrary,
@@ -21,7 +21,7 @@ function AssetLibrary() {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setError(undefined);
+    setAssets(undefined); setError(undefined);
     void getAssetLibrary(search, controller.signal).then(value => { if (!controller.signal.aborted) setAssets(value.assets); })
       .catch((error: Error) => { if (!controller.signal.aborted) setError(error.message); });
     return () => controller.abort();
@@ -40,10 +40,10 @@ function AssetLibrary() {
     {error ? <div className="asset-empty" role="alert">{error}<button onClick={() => setAttempt(attempt + 1)}>重试</button></div> : !assets ? <div className="asset-empty" role="status">正在读取素材库…</div> : !assets.length ? <div className="asset-empty"><h2>没有匹配的素材</h2><p>调整种类、缺口或搜索条件。</p><button onClick={() => void navigate({ search: { view: search.view }, replace: true })}>清除筛选</button></div> :
       <AssetThumbnails assets={assets}>{thumbnail => search.view !== 'list' ? <div className="asset-card-grid">{assets.map((asset, index) => <Link className="asset-card" key={asset.id} to="/assets/$kind/$name/$rev" params={assetParams(asset)}>
         <div className="asset-card-figure">{thumbnail(asset)}</div><div className="asset-figure-caption"><b>图 {index + 1}</b><code>{asset.id}</code></div><h2>{asset.title}</h2>
-        <div className="asset-card-meta"><CompletenessDots asset={asset} />{asset.gaps[0] && <span className="asset-chip is-warning"><i />{gapLabel(asset.gaps[0])}</span>}</div>
+        <div className="asset-card-meta"><CompletenessDots asset={asset} /><AssetGapChips asset={asset} first /></div>
       </Link>)}</div> : <section className="asset-panel"><header><h2>素材 · {assets.length}</h2></header><div className="asset-table-wrap"><table className="asset-list-table"><thead><tr><th>预览</th><th>素材</th><th>种类</th><th>尺寸</th><th>实现类型</th><th>完整度</th><th>缺口</th></tr></thead><tbody>{assets.map(asset => <tr key={asset.id}>
         <td><Link className="asset-miniature" to="/assets/$kind/$name/$rev" params={assetParams(asset)} aria-label={`打开 ${asset.id}`}>{thumbnail(asset)}</Link></td>
-        <td><Link to="/assets/$kind/$name/$rev" params={assetParams(asset)}><code>{asset.id}</code><small>{asset.title}</small></Link></td><td>{assetKinds[asset.kind]}</td><td>{dimensionsLabel(asset.dimensionsM)}</td><td>{asset.implementedTypes.join(' · ') || '无'}</td><td><CompletenessDots asset={asset} /></td><td>{asset.gaps.map(gap => <span key={gap} className="asset-gap-label">{gapLabel(gap)}</span>)}</td>
+        <td><Link to="/assets/$kind/$name/$rev" params={assetParams(asset)}><code>{asset.id}</code><small>{asset.title}</small></Link></td><td>{assetKinds[asset.kind]}</td><td>{dimensionsLabel(asset.dimensionsM)}</td><td>{asset.implementedTypes.join(' · ') || '无'}</td><td><CompletenessDots asset={asset} /></td><td><AssetGapChips asset={asset} /></td>
       </tr>)}</tbody></table></div></section>}</AssetThumbnails>}
   </main>;
 }
