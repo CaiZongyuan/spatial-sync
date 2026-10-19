@@ -55,10 +55,10 @@ first episode once, and prints `FR3_EVAL_RESULT`. `success_rate` and
 grasp successes out of 1,024. Training from later curriculum phases cannot
 satisfy the home-only audit.
 
-The launcher uses the tutorial's default stochastic policy playback. Isaac
-Lab's `--deterministic` also selects Warp deterministic execution, which is a
-different runtime mode and is not enabled by this launcher. Record the actual
-mode alongside every audit result.
+RSL-RL 5.4.1 playback calls the policy with deterministic mean actions by default.
+The launcher leaves Isaac Lab's additional `--deterministic` seed/framework mode
+unset; that setting is separate from action selection. Record the actual action
+selection and simulation mode alongside every audit result.
 
 ## Physical success and reset history
 
