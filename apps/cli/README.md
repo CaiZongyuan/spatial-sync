@@ -1,7 +1,8 @@
 # CLI and MCP commands
 
-`lw` uses `argparse`; `lw mcp` uses the pinned official Python MCP SDK. Both call
-the HTTP API through `lw.client.GatewayClient`.
+`lw` uses `argparse`; `lw mcp` uses the pinned official Python MCP SDK. Device
+operations call the HTTP API through `lw.client.GatewayClient`. Product skill
+listing/installation are local file operations dispatched before creating that client.
 
 Add a shared command to `COMMANDS` in `lw/commands.py`. Declare its CLI path,
 help, arguments, GatewayClient method and output type once. Set `mcp_name` to
@@ -19,6 +20,11 @@ client identity, and CLI retains `cli:lw`. Set `human_only=True` for approvals
 and other human operations; this always excludes the command from MCP even if
 `mcp_name` is present. This flag controls exposure, while the HTTP API still owns
 authorization.
+
+`skills ls` and `skills install [--target DIR]` are declared in the same table,
+handled locally, and have no MCP tool registration. Their help and JSON output
+work without a gateway. See [product platform skills](../../skills/README.md)
+for the default directory, repeat installation and conflict behavior.
 
 Every generated command accepts `--json` before or after the command, uses the
 existing human renderer otherwise, and returns the information specification's

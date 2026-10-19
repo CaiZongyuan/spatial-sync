@@ -10,6 +10,10 @@ defines information-plane development and acceptance.
 
 Requires Python 3.13, uv, Node.js 22+ and pnpm.
 
+The [product platform skills](skills/README.md) teach agents how to inspect and
+operate the lab through the actual Catalog and CLI. List them with `lw skills ls`;
+install them into an explicit agent directory with `lw skills install --target DIR`.
+
 ```powershell
 uv sync --frozen --group dev
 pnpm install --frozen-lockfile

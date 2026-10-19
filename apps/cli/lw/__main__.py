@@ -125,6 +125,13 @@ def output(document, machine):
 
 
 async def run(args, machine):
+    declaration = getattr(args, "registered_command", None)
+    if declaration and declaration.method in ("skills_list", "skills_install"):
+        from .skills import install_skills, list_skills
+
+        result = list_skills() if declaration.method == "skills_list" else install_skills(args.target)
+        output(result, machine)
+        return 0
     async with GatewayClient() as client:
         command = args.command
         if command == "mcp":
