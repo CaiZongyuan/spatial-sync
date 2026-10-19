@@ -243,7 +243,8 @@ def install_info_routes(app, manager, role_for):
             key,
             property,
             lambda known, actual: (
-                not evaluate_conditions([condition], key, {key: {property: actual}} if known else {})
+                not evaluate_conditions([condition], key, {key: {property: actual}} if known else {},
+                                        session.info.metadata())
             ),
             timeoutSeconds,
         )

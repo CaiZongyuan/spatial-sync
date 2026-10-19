@@ -5,6 +5,12 @@ const metadata = () => ({ formatVersion: 2, protocolVersion: 2, kind: 'session',
   sceneVersion: 'lab-demo@2', sceneContentHash: 'a'.repeat(64), segments: [] });
 
 describe('recording metadata compatibility', () => {
+  it('retains the actual optional session seed without inferring one for older files', () => {
+    expect(readRecording(metadata())).not.toHaveProperty('seed');
+    expect(readRecording({ ...metadata(), protocolMinorVersion: 1, seed: 43 })).toMatchObject({ seed: 43 });
+    for (const seed of [true, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])
+      expect(() => readRecording({ ...metadata(), seed })).toThrow(/seed/);
+  });
   it('derives the v1 version without changing its document and preserves v2 exact identity', () => {
     const legacy = { formatVersion: 1, protocolVersion: 2, sceneId: 'lab-demo', segments: [] };
     expect(readRecording(legacy)).toMatchObject({ kind: 'session', sceneVersion: 'lab-demo@1', sceneContentHash: null });

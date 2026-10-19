@@ -84,6 +84,24 @@ async def test_roll_snapshot_uses_written_fifo_position_not_producer_future(tmp_
     assert json.loads(second[-1].payload)["entities"][0]["values"]["location"] == "slot"
 
 
+async def test_roll_prefix_preserves_stale_meta_and_original_scalar(tmp_path):
+    log = new_log(tmp_path, segment_seconds=1)
+    log.append_json(json.dumps({
+        "type": "entity.observations", "sceneRevision": "rev-test", "epoch": 0,
+        "simTime": 0.5, "sampleTimeMs": 1500, "source": "virtual",
+        "changes": [{"key": "/tube", "rev": 2, "values": {"location": "rack"}, "meta": {
+            "location": {"simTime": 0, "sampleTimeMs": 1000, "source": "virtual", "stale": True}}}],
+    }), 1500)
+    log.append_frame(frame(2100, 2), 2100)
+    await log.close()
+    second = read_segment((tmp_path / "session-test/seg-000002.bin").read_bytes()).records
+    entity = json.loads(second[1].payload)["entities"][0]
+    assert entity["values"]["location"] == "rack"
+    assert entity["meta"]["location"] == {
+        "simTime": 0, "sampleTimeMs": 1000, "source": "virtual", "stale": True,
+    }
+
+
 async def test_pending_then_disk_invocation_lookup_does_not_need_recent_history(tmp_path):
     gate = threading.Event()
     entered = threading.Event()

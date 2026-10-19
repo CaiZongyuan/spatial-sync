@@ -2,6 +2,8 @@
 
 import re
 
+from packages.protocol.schema import MAX_SESSION_SEED
+
 SCENE_VERSION = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*")
 CONTENT_HASH = re.compile(r"[a-fA-F0-9]{64}")
 PROPERTY_INDEX = re.compile(r"seg-[0-9]{6}\.index\.json")
@@ -12,6 +14,11 @@ def recording_metadata(value):
     if not isinstance(value, dict) or type(value.get("formatVersion")) is not int:
         raise ValueError("Unsupported recording metadata")
     version = value["formatVersion"]
+    minor = value.get("protocolMinorVersion", 0)
+    if type(minor) is not int or minor < 0:
+        raise ValueError("Invalid protocol minor version")
+    if "seed" in value and (type(value["seed"]) is not int or not 0 <= value["seed"] <= MAX_SESSION_SEED):
+        raise ValueError("Invalid session seed")
     if version == 1:
         # Historical crash metadata can lack a scene name; preserve it as unknown.
         scene = value.get("sceneId")

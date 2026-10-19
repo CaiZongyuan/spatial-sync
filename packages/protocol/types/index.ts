@@ -49,7 +49,19 @@ export type ServerMessage =
   | EntitySnapshot
   | EntityObservations
   | EntityEvent
+  | EntityAlert
+  | PlanUpdate
   | InvocationUpdate
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "PlanUpdate".
+ */
+export type PlanUpdate = PlanFullUpdate | PlanStepUpdate
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "OperationStep".
+ */
+export type OperationStep = OperationDoStep | OperationWaitStep | OperationCheckStep
 
 export interface ProtocolContract {
   manifest: SceneManifest
@@ -525,6 +537,7 @@ export interface ObservationMeta {
   simTime: number
   sampleTimeMs: number
   source: 'sim' | 'virtual' | 'device'
+  stale?: boolean
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -599,6 +612,9 @@ export interface ObservationChange {
   values: {
     [k: string]: JsonValue
   }
+  meta?: {
+    [k: string]: ObservationMeta
+  }
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -615,6 +631,124 @@ export interface EntityEvent {
   }
   simTime: number
   sampleTimeMs: number
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "EntityAlert".
+ */
+export interface EntityAlert {
+  type: 'entity.alert'
+  sceneRevision: string
+  epoch: number
+  simTime: number
+  sampleTimeMs: number
+  entityKey: string
+  alertId: string
+  rule: string
+  severity: 'info' | 'warning' | 'critical'
+  state: 'raised' | 'acknowledged' | 'cleared'
+  message: string
+  hint?: string | null
+  value?:
+    | boolean
+    | number
+    | string
+    | JsonValue[]
+    | {
+        [k: string]: JsonValue
+      }
+    | null
+  since: number
+  actor?: Actor | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "PlanFullUpdate".
+ */
+export interface PlanFullUpdate {
+  type: 'plan.update'
+  update: 'full'
+  sceneRevision: string
+  epoch: number
+  simTime: number
+  sampleTimeMs: number
+  plan: OperationPlan
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "OperationPlan".
+ */
+export interface OperationPlan {
+  id: string
+  kind: 'operation'
+  title: string
+  target: 'session' | 'live'
+  revision: number
+  status: 'draft' | 'submitted' | 'approved' | 'running' | 'completed' | 'abandoned'
+  steps: OperationStep[]
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "OperationDoStep".
+ */
+export interface OperationDoStep {
+  id: number
+  status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+  do: PlanAction
+  expect?: Condition | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "PlanAction".
+ */
+export interface PlanAction {
+  entity: string
+  action: string
+  params: {
+    [k: string]: JsonValue
+  }
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "Condition".
+ */
+export interface Condition {
+  [k: string]: JsonValue
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "OperationWaitStep".
+ */
+export interface OperationWaitStep {
+  id: number
+  status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+  wait: Condition
+  timeoutSeconds?: number | null
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "OperationCheckStep".
+ */
+export interface OperationCheckStep {
+  id: number
+  status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+  check: Condition
+}
+/**
+ * This interface was referenced by `ProtocolContract`'s JSON-Schema
+ * via the `definition` "PlanStepUpdate".
+ */
+export interface PlanStepUpdate {
+  type: 'plan.update'
+  update: 'step'
+  sceneRevision: string
+  epoch: number
+  simTime: number
+  sampleTimeMs: number
+  planId: string
+  revision: number
+  stepId: number
+  status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -669,6 +803,7 @@ export interface Snapshot {
  * via the `definition` "SessionOptions".
  */
 export interface SessionOptions {
+  seed: number
   realtimeFactor: number | null
   physicsDt: number
   basePublishHz: number
@@ -778,6 +913,7 @@ export interface PropertyDefinition {
   unit?: string | null
   deadband?: number | null
   maxRateHz?: number | null
+  staleAfterSeconds?: number | null
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema
@@ -801,13 +937,6 @@ export interface ActionDefinition {
   timeoutSeconds: number
   concurrent: boolean
   risk: 'normal' | 'high'
-}
-/**
- * This interface was referenced by `ProtocolContract`'s JSON-Schema
- * via the `definition` "Condition".
- */
-export interface Condition {
-  [k: string]: JsonValue
 }
 /**
  * This interface was referenced by `ProtocolContract`'s JSON-Schema

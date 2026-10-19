@@ -37,6 +37,7 @@ from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
+    PROTOCOL_MINOR_VERSION,
     PROTOCOL_VERSION,
     ActionApprove,
     ActionCancel,
@@ -49,6 +50,7 @@ from packages.protocol.schema import (
     Positive,
     Ready,
     ServerError,
+    SessionSeed,
     Subscribe,
 )
 
@@ -66,6 +68,7 @@ def _validation_diagnostics(value):
 
 
 class CreateSession(Model):
+    seed: SessionSeed = 42
     sceneId: NonEmpty | None = None
     sceneVersion: NonEmpty | None = None
     source: Literal["synthetic", "newton"] | None = None
@@ -196,6 +199,7 @@ def create_app(
         return {
             "status": "ok",
             "protocolVersion": PROTOCOL_VERSION,
+            "protocolMinorVersion": PROTOCOL_MINOR_VERSION,
             "sessionCount": len(manager.sessions),
             "sessions": [
                 {"sessionId": s.session_id, "state": s.state, "source": s.kind}
@@ -260,6 +264,7 @@ def create_app(
             body.sceneId,
             body.source if body.source is not None else ("synthetic" if body.sceneId else None),
             SessionOptions(
+                seed=body.seed,
                 realtimeFactor=body.realtimeFactor,
                 continueWithoutObservers=body.continueWithoutObservers,
                 approval=body.approval,

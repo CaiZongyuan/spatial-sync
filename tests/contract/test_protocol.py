@@ -8,9 +8,12 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from packages.protocol.schema import (
+    ActionRequest,
     ClientMessage,
     Command,
     CommandAck,
+    OperationPlan,
+    PlanUpdate,
     Pose,
     SceneManifest,
     ServerMessage,
@@ -164,6 +167,34 @@ def test_subscription_v2_is_full_binary_and_info_defaults_enabled():
     ]:
         with pytest.raises(ValidationError):
             Subscribe.model_validate({"sceneRevision": "r", field: value})
+
+
+def test_reserved_plan_correlation_is_not_silently_accepted_before_runtime_support():
+    with pytest.raises(ValidationError):
+        ActionRequest(requestId="future", entityKey="/World", action="start", planId="plan-1", stepId=1)
+
+
+@pytest.mark.parametrize("step", [
+    {"id": 1},
+    {"id": 1, "do": {"entity": "/World", "action": "start"},
+     "check": {"property": "phase", "equals": "idle"}},
+    {"id": 1, "wait": {"property": "phase", "equals": "idle"},
+     "expect": {"property": "phase", "equals": "idle"}},
+    {"id": 0, "check": {"property": "phase", "equals": "idle"}},
+])
+def test_operation_plan_step_forms_are_exclusive_and_expect_belongs_to_do(step):
+    with pytest.raises(ValidationError):
+        OperationPlan(id="plan-1", title="Operation", target="session", revision=1, steps=[step])
+
+
+def test_plan_step_delta_requires_a_positive_revision_and_step_id():
+    payload = {"type": "plan.update", "update": "step", "sceneRevision": "r", "epoch": 0,
+               "simTime": 1, "sampleTimeMs": 1000, "planId": "plan-1", "revision": 1,
+               "stepId": 1, "status": "done"}
+    assert TypeAdapter(PlanUpdate).validate_python(payload).status == "done"
+    for field in ("revision", "stepId"):
+        with pytest.raises(ValidationError):
+            TypeAdapter(PlanUpdate).validate_python(payload | {field: 0})
 
 
 def test_quaternion_not_silently_normalized_at_boundary():

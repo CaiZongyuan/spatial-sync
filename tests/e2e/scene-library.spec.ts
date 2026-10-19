@@ -101,9 +101,9 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
   await expect(laboratory).toContainText('30 实体 · 22 绑定');
   // The shared renderer captures scenes serially; check readiness for each image.
-  for (const id of ['falling-boxes@1', 'lab-demo@1', 'robot-and-tubes@1', 'usd-lab@1'])
+  for (const id of ['falling-boxes@1', 'lab-demo@1', 'lab-demo@2', 'robot-and-tubes@1', 'usd-lab@1'])
     await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
-  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(4);
+  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(5);
   await expect(page.locator('canvas')).toHaveCount(0);
   await page.getByRole('button', { name: '☷ 列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
@@ -113,7 +113,7 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   await page.getByLabel('物理源筛选').selectOption('newton');
   await expect(page.locator('.scene-library-table')).not.toContainText('lab-demo@1');
   await page.getByLabel('物理源筛选').selectOption('synthetic');
-  await expect(page.locator('.scene-library-table tbody tr')).toHaveCount(1);
+  await expect(page.locator('.scene-library-table tbody tr')).toHaveCount(2);
   await page.getByLabel('搜索场景').fill('not-present');
   await expect(page.getByRole('heading', { name: '没有匹配的场景' })).toBeVisible();
   await page.getByRole('button', { name: '清除筛选' }).click();

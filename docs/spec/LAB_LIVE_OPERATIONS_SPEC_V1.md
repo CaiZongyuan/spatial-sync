@@ -53,7 +53,7 @@
 | `GET /events?after=` 与 `lw watch` | 保留；`lw inbox` 是面向 agent 的筛选视图 |
 | D-05 审批策略 | 扩展到 Plan：仿真操作计划自动批准，含 `/Real` 或高风险动作的计划需要审批 |
 | 录制格式 v2（素材规格 §8.3） | v2 同时定义 `kind`、属性索引附件，以及新消息的写入 |
-| 协议 v2 | 升为 2.1，只新增消息类型；读取 2.0 录制不受影响 |
+| 协议 v2 | 语义 schema 升为 2.1，wire major 保持整数 2；元数据/health 标记 minor 1，新增消息及属性元数据；2.0 录制不受影响 |
 
 ## 3. 物联网设备类型
 
@@ -141,6 +141,7 @@ raised ──► acknowledged ──► cleared
 - 条件持续成立达到 `forSeconds` 时 `raised`；条件不再成立时 `cleared`。
 - 人或 agent 都可以确认（acknowledge），确认时记录操作者与备注。确认不是人工关口。
 - 每次状态变化发出一条 `entity.alert` 消息：`{entityKey, alertId, rule, severity, state, message, hint, value, since, actor?}`。
+- 可靠消息复用 `sceneRevision / epoch / simTime / sampleTimeMs` 信封；`since` 是条件首次成立的非负仿真秒数。`actor` 复用现有 Actor。确认备注属于告警 API 的实现契约，不另外发明 actor 形状。
 
 ## 6. 遥测历史
 
@@ -194,6 +195,7 @@ steps:
 - 步骤类型：`do`（动作调用）、`wait`（等待条件）、`check`（断言属性）。`do` 可带 `expect`。
 - 步骤状态：`pending → running → done | failed | skipped`。
 - 计划状态：`draft → submitted → approved → running → completed | abandoned`；需要审批的计划在 `submitted` 等待人工。
+- `plan.update` 复用可靠消息信封，以 `update` 判别：`full` 携带 `plan: OperationPlan`；`step` 携带 `planId / revision / stepId / status`。revision 与步骤 id 为正整数。步骤保留示例中的直接条件原子，不要求额外的 `all` 包装。消息语法可先发布，计划执行追踪/API 按 L2 落地；动作的可选 planId/stepId 在关联功能实现前仍由现有请求边界拒绝。
 
 ### 8.2 执行与关联
 
@@ -228,9 +230,12 @@ steps:
 | `entity.alert` | server → client | 是 | §5.2 |
 | `plan.update` | server → client | 是 | 计划全量（修订变化时）或步骤增量 |
 
-- 只新增消息类型，不改已有消息。客户端忽略未知类型（v1.2 已有约定）。
+- wire `protocolVersion` 表示主版本，Manifest、ready、subscribe、pose 与 frame 继续为整数 `2`；语义 schema 升为 2.1（schema ID `/protocol/v2.1/schema.json`）。仅录制元数据与 health 增加可选 `protocolMinorVersion: 1`；缺省表示 2.0，不向旧 Manifest 增加字段。
+- 新增消息类型及可忽略的属性元数据；客户端忽略未知类型（v1.2 已有约定）。
 - 2.1 的读取器能播放 2.0 录制；2.0 的读取器播放 2.1 录制时跳过新消息。
-- `entity.observations` 的属性值可带 `stale: true`。
+- 原始属性 `values` 保持声明的标量/数组/对象形状。`entity.snapshot` 的 `meta[property]` 可带 `stale: true`；`entity.observations.changes[]` 可带按属性的 `meta`，承载相同的 freshness。缺省为 fresh，过期转换保留最后真实采样时间；新读取器在段首快照与 seek 后保留 freshness。
+- 旧普通录制读取器维持空间与原始属性回放/seek，可忽略新字段和消息，无需理解过期、告警或计划。旧 Pydantic 严格生产者模型不接受未来字段，它们不是普通文件读取路径。录制 metadata format 2、LWLG codec 1、NSYN codec 1 不变，已发布 format 1/2 夹具不重写。
+- 新会话录制可保存实际使用的可选 `seed`（0 至 9,007,199,254,740,991 的整数）；未知/历史 seed 保持缺省，不推断为 42。seed 只在录制元数据/会话选项中，不进入旧 Manifest/SourceInfo。
 
 ## 10. HTTP API 与 CLI
 

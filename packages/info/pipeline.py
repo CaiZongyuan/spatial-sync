@@ -113,9 +113,12 @@ class ActionPipeline:
             self.catalog.conditions(invocation.entityKey, invocation.action),
             invocation.entityKey,
             self.store.values(),
+            self.store.metadata(),
         )
         if failed:
-            return "precondition_failed", "Action conditions are not satisfied", {"failed": failed}
+            stale = any(failure.get("reason") == "stale_reading" for failure in failed)
+            return ("precondition_failed", "读数已过期" if stale else "Action conditions are not satisfied",
+                    {"failed": failed} | ({"reason": "stale_reading"} if stale else {}))
         return None
 
     async def invoke(self, request, role, actor):

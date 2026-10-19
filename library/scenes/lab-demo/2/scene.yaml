@@ -1,0 +1,5 @@
+name: lab-demo
+title: Synthetic Laboratory
+sources: [synthetic]
+stage: python:lab-demo
+description: Seeded virtual incubator, biosafety cabinet and environment sensor alongside the robot, 20 tubes and centrifuge; no GPU required

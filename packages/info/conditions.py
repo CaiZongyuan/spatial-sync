@@ -5,7 +5,7 @@ from operator import ge, gt, le, lt
 
 from .schema_subset import compile_schema, json_equal
 
-OPERATORS = {"equals", "notEquals", "in", "notIn", "lt", "lte", "gt", "gte", "isNull", "notNull"}
+OPERATORS = {"equals", "notEquals", "in", "notIn", "lt", "lte", "gt", "gte", "isNull", "notNull", "stale"}
 UNKNOWN = object()
 
 
@@ -25,9 +25,15 @@ def _test(condition):
         raise ValueError("Membership operators require an array")
     if op in ("lt", "lte", "gt", "gte") and type(expected) not in (int, float):
         raise ValueError("Ordered operators require a number")
+    if op == "stale" and type(expected) is not bool:
+        raise ValueError("Stale operator requires a boolean")
 
-    def compare(value):
+    def compare(value, expired=False):
         if value is UNKNOWN:
+            return False
+        if op == "stale":
+            return expired is expected
+        if expired:
             return False
         if op == "equals":
             return json_equal(value, expected)
@@ -64,26 +70,31 @@ def validate_conditions(conditions, entity_key, property_schema, *, allow_cross_
             kinds = [kinds] if isinstance(kinds, str) else kinds
             if not set(kinds) & {"number", "integer"}:
                 raise ValueError("Ordered condition requires a numeric property")
-        elif op not in ("isNull", "notNull"):
+        elif op not in ("isNull", "notNull", "stale"):
             adapter = compile_schema(schema)
             for expected in condition[op] if op in ("in", "notIn") else [condition[op]]:
                 adapter.validate_python(expected)
     return compiled
 
 
-def evaluate_conditions(conditions, entity_key, values):
+def evaluate_conditions(conditions, entity_key, values, metadata=None):
     compiled = conditions if isinstance(conditions, CompiledConditions) else CompiledConditions(conditions)
     failed = []
     for condition, compare in zip(compiled, compiled.tests, strict=True):
-        actual = values.get(condition.get("entity", entity_key), {}).get(condition["property"], UNKNOWN)
-        if not compare(actual):
-            failed.append(
-                {
-                    "condition": dict(condition),
-                    "actual": "unknown" if actual is UNKNOWN else deepcopy(actual),
-                    "message": condition.get(
-                        "message", f"Condition on {condition['property']} is not satisfied"
-                    ),
-                }
-            )
+        target, prop = condition.get("entity", entity_key), condition["property"]
+        actual = values.get(target, {}).get(prop, UNKNOWN)
+        meta = (metadata or {}).get(target, {}).get(prop)
+        expired = meta.get("stale", False) if isinstance(meta, dict) else getattr(meta, "stale", False)
+        if not compare(actual, expired):
+            stale_reading = expired and "stale" not in condition
+            failure = {
+                "condition": dict(condition),
+                "actual": "unknown" if actual is UNKNOWN or stale_reading else deepcopy(actual),
+                "message": "读数已过期" if stale_reading else condition.get(
+                    "message", f"Condition on {condition['property']} is not satisfied"
+                ),
+            }
+            if stale_reading:
+                failure["reason"] = "stale_reading"
+            failed.append(failure)
     return failed

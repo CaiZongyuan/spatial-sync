@@ -691,6 +691,110 @@
       ],
       "type": "object"
     },
+    "EntityAlert": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "entity.alert",
+          "default": "entity.alert",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "entityKey": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "alertId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rule": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "raised",
+            "acknowledged",
+            "cleared"
+          ],
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "since": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "actor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Actor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "type",
+        "sceneRevision",
+        "epoch",
+        "simTime",
+        "sampleTimeMs",
+        "entityKey",
+        "alertId",
+        "rule",
+        "severity",
+        "state",
+        "message",
+        "since"
+      ],
+      "type": "object"
+    },
     "EntityBinding": {
       "additionalProperties": false,
       "properties": {
@@ -1691,6 +1795,12 @@
             "$ref": "#/$defs/JsonValue"
           },
           "type": "object"
+        },
+        "meta": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ObservationMeta"
+          },
+          "type": "object"
         }
       },
       "required": [
@@ -1718,6 +1828,10 @@
             "device"
           ],
           "type": "string"
+        },
+        "stale": {
+          "default": false,
+          "type": "boolean"
         }
       },
       "required": [
@@ -1726,6 +1840,340 @@
         "source"
       ],
       "type": "object"
+    },
+    "OperationCheckStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "check": {
+          "$ref": "#/$defs/Condition"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "check"
+      ],
+      "type": "object"
+    },
+    "OperationDoStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "do": {
+          "$ref": "#/$defs/PlanAction"
+        },
+        "expect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "do"
+      ],
+      "type": "object"
+    },
+    "OperationPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "const": "operation",
+          "default": "operation",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "session",
+            "live"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "default": "draft",
+          "enum": [
+            "draft",
+            "submitted",
+            "approved",
+            "running",
+            "completed",
+            "abandoned"
+          ],
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/OperationStep"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "target",
+        "revision",
+        "status",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "OperationStep": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperationDoStep"
+        },
+        {
+          "$ref": "#/$defs/OperationWaitStep"
+        },
+        {
+          "$ref": "#/$defs/OperationCheckStep"
+        }
+      ]
+    },
+    "OperationWaitStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "wait": {
+          "$ref": "#/$defs/Condition"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "wait"
+      ],
+      "type": "object"
+    },
+    "PlanAction": {
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "pattern": "^/[^/?#]+(?:/[^/?#]+)*$",
+          "type": "string"
+        },
+        "action": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "entity",
+        "action",
+        "params"
+      ],
+      "type": "object"
+    },
+    "PlanFullUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "plan.update",
+          "default": "plan.update",
+          "type": "string"
+        },
+        "update": {
+          "const": "full",
+          "default": "full",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "plan": {
+          "$ref": "#/$defs/OperationPlan"
+        }
+      },
+      "required": [
+        "type",
+        "update",
+        "sceneRevision",
+        "epoch",
+        "simTime",
+        "sampleTimeMs",
+        "plan"
+      ],
+      "type": "object"
+    },
+    "PlanStepUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "plan.update",
+          "default": "plan.update",
+          "type": "string"
+        },
+        "update": {
+          "const": "step",
+          "default": "step",
+          "type": "string"
+        },
+        "sceneRevision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "simTime": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "sampleTimeMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "planId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "stepId": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "skipped"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "update",
+        "sceneRevision",
+        "epoch",
+        "simTime",
+        "sampleTimeMs",
+        "planId",
+        "revision",
+        "stepId",
+        "status"
+      ],
+      "type": "object"
+    },
+    "PlanUpdate": {
+      "discriminator": {
+        "mapping": {
+          "full": "#/$defs/PlanFullUpdate",
+          "step": "#/$defs/PlanStepUpdate"
+        },
+        "propertyName": "update"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PlanFullUpdate"
+        },
+        {
+          "$ref": "#/$defs/PlanStepUpdate"
+        }
+      ]
     },
     "Plane": {
       "additionalProperties": false,
@@ -1896,6 +2344,18 @@
           "default": null
         },
         "maxRateHz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "staleAfterSeconds": {
           "anyOf": [
             {
               "exclusiveMinimum": 0,
@@ -2265,10 +2725,12 @@
       "discriminator": {
         "mapping": {
           "command.ack": "#/$defs/CommandAck",
+          "entity.alert": "#/$defs/EntityAlert",
           "entity.event": "#/$defs/EntityEvent",
           "entity.observations": "#/$defs/EntityObservations",
           "entity.snapshot": "#/$defs/EntitySnapshot",
           "invocation.update": "#/$defs/InvocationUpdate",
+          "plan.update": "#/$defs/PlanUpdate",
           "scene.replaced": "#/$defs/SceneReplaced",
           "server.error": "#/$defs/ServerError",
           "server.heartbeat": "#/$defs/Heartbeat",
@@ -2315,6 +2777,12 @@
           "$ref": "#/$defs/EntityEvent"
         },
         {
+          "$ref": "#/$defs/EntityAlert"
+        },
+        {
+          "$ref": "#/$defs/PlanUpdate"
+        },
+        {
           "$ref": "#/$defs/InvocationUpdate"
         }
       ]
@@ -2322,6 +2790,12 @@
     "SessionOptions": {
       "additionalProperties": false,
       "properties": {
+        "seed": {
+          "default": 42,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "realtimeFactor": {
           "anyOf": [
             {
@@ -2377,6 +2851,7 @@
         }
       },
       "required": [
+        "seed",
         "realtimeFactor",
         "physicsDt",
         "basePublishHz",
@@ -3066,5 +3541,5 @@
   "type": "object",
   "title": "ProtocolContract",
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://spatial-sync.local/protocol/v2/schema.json"
+  "$id": "https://spatial-sync.local/protocol/v2.1/schema.json"
 }

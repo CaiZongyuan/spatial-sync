@@ -11,7 +11,10 @@ from collections.abc import AsyncIterator
 
 from packages.info.catalog import load_catalog
 from packages.info.program import HostCore
+from packages.programs.biosafety_cabinet.virtual import BiosafetyCabinetProgram
 from packages.programs.centrifuge.virtual import CentrifugeProgram
+from packages.programs.env_sensor.virtual import EnvSensorProgram
+from packages.programs.incubator.virtual import IncubatorProgram
 from packages.programs.robot_arm.virtual import BASE_HEIGHT, RobotArmProgram, kinematics
 from packages.programs.tube.virtual import TubeProgram
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
@@ -30,7 +33,10 @@ BASE = "/World/Lab"
 LINK1, LINK2 = BASE + "/Robot/Link1", BASE + "/Robot/Link2"
 JOINT1, JOINT2 = BASE + "/Robot/Joint1", BASE + "/Robot/Joint2"
 ROBOT, CENTRIFUGE = BASE + "/RobotA", BASE + "/Centrifuge"
-REGISTRY = {program.id: program for program in (RobotArmProgram, TubeProgram, CentrifugeProgram)}
+REGISTRY = {program.id: program for program in (
+    RobotArmProgram, TubeProgram, CentrifugeProgram,
+    IncubatorProgram, BiosafetyCabinetProgram, EnvSensorProgram,
+)}
 
 
 def _primitive(geometry, p=(0, 0, 0)):
@@ -71,7 +77,8 @@ class SyntheticSource:
             **({"scene_file": self.scene_package.path / "devices.yaml"} if self.scene_package else {}),
         )
         self.host = HostCore(
-            self.catalog, REGISTRY, fact_hz=options.factHz, publication_clock=self._publication_clock
+            self.catalog, REGISTRY, fact_hz=options.factHz, publication_clock=self._publication_clock,
+            seed=options.seed,
         )
         self._centrifuge_phase = self.host.reader(CENTRIFUGE, "phase")
         self._centrifuge_rpm = self.host.reader(CENTRIFUGE, "rpm")
@@ -366,6 +373,10 @@ class SyntheticSource:
         import yaml
 
         from packages.library.scenes import builtin_scene_path
+        from packages.sim_runtime.synthetic_lab import device_nodes
+
+        if self.scene_package:
+            nodes.extend(device_nodes(self.scene_package.bindings["entities"]))
 
         locations = yaml.safe_load(
             ((self.scene_package.path if self.scene_package else builtin_scene_path("lab-demo"))

@@ -14,6 +14,8 @@ export interface RecordingSegment {
 export interface Recording {
   formatVersion: 1 | 2;
   protocolVersion: 2;
+  protocolMinorVersion?: number;
+  seed?: number;
   sessionId: string;
   sceneId: string | null;
   sceneVersion: string | null;
@@ -34,6 +36,10 @@ export function readRecording(value: unknown): Recording {
   if (![1, 2].includes(raw.formatVersion as number) || raw.protocolVersion !== 2)
     throw new Error('Unsupported recording format/protocol version');
   if (!Array.isArray(raw.segments)) throw new Error('Invalid recording segments');
+  if (raw.protocolMinorVersion !== undefined && (!Number.isInteger(raw.protocolMinorVersion)
+      || (raw.protocolMinorVersion as number) < 0)) throw new Error('Invalid protocol minor version');
+  if (raw.seed !== undefined && (!Number.isSafeInteger(raw.seed) || (raw.seed as number) < 0))
+    throw new Error('Invalid session seed');
   if (raw.formatVersion === 1) {
     return { ...raw, kind: 'session', sceneVersion: typeof raw.sceneId === 'string' && raw.sceneId
       ? `${raw.sceneId}@1` : null, sceneContentHash: null } as Recording;

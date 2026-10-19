@@ -21,7 +21,9 @@ from pydantic import (
 )
 
 PROTOCOL_VERSION = 2
+PROTOCOL_MINOR_VERSION = 1
 MAX_MANUAL_STEPS = 1000
+MAX_SESSION_SEED = 9007199254740991
 Finite = Annotated[float, Field(strict=True, allow_inf_nan=False)]
 JsonValue = TypeAliasType(
     "JsonValue", "None | StrictBool | StrictInt | StrictStr | Finite | list[JsonValue] | dict[str, JsonValue]"
@@ -30,6 +32,8 @@ Positive = Annotated[Finite, Field(gt=0)]
 NonNegative = Annotated[Finite, Field(ge=0)]
 UInt32 = Annotated[int, Field(strict=True, ge=0, le=4294967295)]
 Counter = Annotated[int, Field(strict=True, ge=0)]
+PositiveCounter = Annotated[int, Field(strict=True, gt=0)]
+SessionSeed = Annotated[int, Field(strict=True, ge=0, le=MAX_SESSION_SEED)]
 NonEmpty = Annotated[str, Field(strict=True, min_length=1)]
 EntityKey = Annotated[str, Field(strict=True, pattern=r"^/[^/?#]+(?:/[^/?#]+)*$")]
 Vec3 = tuple[Finite, Finite, Finite]
@@ -489,6 +493,7 @@ class PropertyDefinition(Model):
     unit: StrictStr | None = None
     deadband: NonNegative | None = None
     maxRateHz: Positive | None = None
+    staleAfterSeconds: Positive | None = None
 
 
 class ActionDefinition(Model):
@@ -577,6 +582,7 @@ class ObservationMeta(Model):
     simTime: NonNegative
     sampleTimeMs: NonNegative
     source: Literal["sim", "virtual", "device"]
+    stale: StrictBool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class EntityValues(Model):
@@ -600,6 +606,7 @@ class ObservationChange(Model):
     key: EntityKey
     rev: Counter
     values: dict[str, JsonValue]
+    meta: dict[str, ObservationMeta] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class EntityObservations(Model):
@@ -621,6 +628,94 @@ class EntityEvent(Model):
     data: dict[str, JsonValue] = Field(default_factory=dict)
     simTime: NonNegative
     sampleTimeMs: NonNegative
+
+
+class EntityAlert(Model):
+    type: Literal["entity.alert"] = "entity.alert"
+    sceneRevision: NonEmpty
+    epoch: UInt32
+    simTime: NonNegative
+    sampleTimeMs: NonNegative
+    entityKey: EntityKey
+    alertId: NonEmpty
+    rule: NonEmpty
+    severity: Literal["info", "warning", "critical"]
+    state: Literal["raised", "acknowledged", "cleared"]
+    message: NonEmpty
+    hint: StrictStr | None = None
+    value: JsonValue = None
+    since: NonNegative
+    actor: Actor | None = None
+
+
+PlanStepStatus = Literal["pending", "running", "done", "failed", "skipped"]
+PlanStatus = Literal["draft", "submitted", "approved", "running", "completed", "abandoned"]
+
+
+class PlanAction(Model):
+    entity: EntityKey
+    action: NonEmpty
+    params: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class OperationStepBase(Model):
+    id: PositiveCounter
+    status: PlanStepStatus = "pending"
+
+
+class OperationDoStep(OperationStepBase):
+    do: PlanAction
+    expect: Condition | None = None
+
+
+class OperationWaitStep(OperationStepBase):
+    wait: Condition
+    timeoutSeconds: Positive | None = None
+
+
+class OperationCheckStep(OperationStepBase):
+    check: Condition
+
+
+OperationStep = TypeAliasType("OperationStep", OperationDoStep | OperationWaitStep | OperationCheckStep)
+
+
+class OperationPlan(Model):
+    id: NonEmpty
+    kind: Literal["operation"] = "operation"
+    title: NonEmpty
+    target: Literal["session", "live"]
+    revision: PositiveCounter
+    status: PlanStatus = "draft"
+    steps: list[OperationStep]
+
+
+class PlanFullUpdate(Model):
+    type: Literal["plan.update"] = "plan.update"
+    update: Literal["full"] = "full"
+    sceneRevision: NonEmpty
+    epoch: UInt32
+    simTime: NonNegative
+    sampleTimeMs: NonNegative
+    plan: OperationPlan
+
+
+class PlanStepUpdate(Model):
+    type: Literal["plan.update"] = "plan.update"
+    update: Literal["step"] = "step"
+    sceneRevision: NonEmpty
+    epoch: UInt32
+    simTime: NonNegative
+    sampleTimeMs: NonNegative
+    planId: NonEmpty
+    revision: PositiveCounter
+    stepId: PositiveCounter
+    status: PlanStepStatus
+
+
+PlanUpdate = TypeAliasType(
+    "PlanUpdate", Annotated[PlanFullUpdate | PlanStepUpdate, Field(discriminator="update")]
+)
 
 
 class ActionRequest(Model):
@@ -649,6 +744,7 @@ class ApprovalPolicy(Model):
 
 
 class SessionOptions(Model):
+    seed: SessionSeed = 42
     realtimeFactor: Positive | None = 1.0
     physicsDt: Positive = 1 / 240
     basePublishHz: Positive = 30
@@ -694,6 +790,8 @@ ServerMessage = TypeAliasType(
         | EntitySnapshot
         | EntityObservations
         | EntityEvent
+        | EntityAlert
+        | PlanUpdate
         | InvocationUpdate,
         Field(discriminator="type"),
     ],

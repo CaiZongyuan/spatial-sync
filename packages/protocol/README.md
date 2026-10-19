@@ -1,4 +1,45 @@
-# Spatial protocol v2
+# Spatial protocol 2.1
+
+`protocolVersion` is the integer **wire major**: Manifest, ready, subscribe,
+JSON poses and frames continue to carry `2`. The semantic contract is 2.1,
+identified by the generated schema ID `/protocol/v2.1/schema.json`. Recording
+metadata and `/api/v1/health` additionally carry `protocolMinorVersion: 1`.
+An absent minor marker means 2.0. The marker is not added to Manifest or frame
+envelopes, so frozen 2.0 Manifest validators remain usable.
+Session recordings may also include optional JSON-safe integer `seed` (0 through
+9,007,199,254,740,991), the
+actual session seed accepted by the host. Old recordings with no known seed
+keep it absent; readers never infer a default or rewrite historical metadata.
+
+Format 1 and 2 recording files remain readable without rewriting their bytes.
+The metadata format remains 2, the LWLG segment codec remains 1, and the NSYN
+spatial codec remains 1. Ordinary frozen Python file readers scan the original
+records without validating every information message; the frozen browser reader
+continues spatial/scalar playback and seeking while ignoring new messages or
+fields. Its UI need not understand freshness. Strict 2.0 producer models are
+closed schemas and do not validate new fields; they are not the ordinary file
+reader path. New readers preserve freshness through snapshots and segment seeks.
+
+Property definitions may declare positive `staleAfterSeconds`. Raw property
+`values` remain scalars/arrays/objects of their declared type. Per-property
+`ObservationMeta.stale` is optional (absent means fresh); observations may carry
+an additive `changes[].meta` map. A stale transition preserves the last actual
+sample timestamps and emits once; any subsequent write, including an equal
+value, refreshes it. Simulation freshness advances with simulation time and
+freezes when paused. Metadata transitions bypass value deadbands/rate limits.
+
+The 2.1 grammar also declares reliable `entity.alert` and `plan.update` for the
+alert and operation-plan features. These are contract declarations; their
+engines, storage and APIs are separate features. Alerts reuse `Actor`; `since`
+is the nonnegative simulation time at which the condition first became true.
+Acknowledgement notes belong to the alert API when it is implemented.
+Plan updates use `update: "full"` with an `OperationPlan`, or `update: "step"`
+with `planId`, positive integer `revision`/`stepId`, and the step status.
+Steps contain exactly one `do`, `wait`, or `check`; only `do` may include
+`expect`. Direct condition atoms remain valid; no extra `all` wrapper is
+required. The approved optional action `planId`/`stepId` correlation is reserved
+for the operation-plan feature. Current HTTP/WS action parsers reject these
+unsupported fields instead of silently dropping them.
 
 `schema/__init__.py` is the authoritative Pydantic v2 contract. `types/index.ts`,
 `types/protocol.schema.json` and `fixtures/*.json` are generated; edit the Python
@@ -45,7 +86,7 @@ equivalent draft7 `items` tuple representation for Ajv and TypeScript tooling.
 The discriminator mappings and all constraints remain derived from Pydantic.
 
 `fixtures/manifest.json` contains all primitive and asset variants;
-`fixtures/messages.json` covers all eighteen message types;
+`fixtures/messages.json` covers all twenty message types;
 `fixtures/math.json` contains independently specified §4.3 dimensions, Z-up
 mapping, quaternion hemisphere and Body × SiteLocal expected values. Viewer
 geometry/interpolation tests should consume this same math fixture. Pure Python

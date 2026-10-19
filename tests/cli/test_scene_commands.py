@@ -26,7 +26,7 @@ async def test_scene_cli_and_mcp_bootstrap_inspection_launch_and_replacement(gat
         assert http.get("/api/v1/health").json()["sessions"] == []
         scenes = cli("ls")
         assert {scene["sceneVersion"] for scene in scenes} == {
-            "lab-demo@1", "falling-boxes@1", "robot-and-tubes@1", "usd-lab@1",
+            "lab-demo@1", "lab-demo@2", "falling-boxes@1", "robot-and-tubes@1", "usd-lab@1",
         }
         robot = cli("show", "robot-and-tubes")
         assert robot["sceneVersion"] == "robot-and-tubes@1"
@@ -43,8 +43,8 @@ async def test_scene_cli_and_mcp_bootstrap_inspection_launch_and_replacement(gat
                 assert await result(mcp, "library_describe", id="robot-and-tubes") == robot
                 launched = await result(mcp, "scene_launch", sceneVersion="lab-demo")
                 owned.append(launched["sessionId"])
-                assert launched["sceneId"] == "lab-demo" and launched["sceneVersion"] == "lab-demo@1"
-                assert cli("launch", "lab-demo@1")["sessionId"] == launched["sessionId"]
+                assert launched["sceneId"] == "lab-demo" and launched["sceneVersion"] == "lab-demo@2"
+                assert cli("launch", "lab-demo@2")["sessionId"] == launched["sessionId"]
                 closed = await result(mcp, "invoke_action", key="/World/Lab/Centrifuge", action="closeLid")
                 assert closed["status"] == "succeeded" and closed["actor"]["name"] == "library-agent"
                 http.delete("/api/v1/sessions/" + launched["sessionId"]).raise_for_status()

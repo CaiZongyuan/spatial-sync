@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Box3, Vector3 } from 'three';
 import { placeLabels, type PlacedLabel } from '../../lib/scene/label-layout';
 
-export interface DeviceAnnotation { key: string; label: string; detail: string; bodyKeys: string[] }
+export interface DeviceAnnotation { key: string; label: string; detail: string; bodyKeys: string[]; stale?: boolean }
 
 export function DeviceAnnotations({ annotations, layout, boundsForKeys }: {
   annotations: DeviceAnnotation[]; layout: (labels: PlacedLabel[]) => void; boundsForKeys: (keys: string[]) => Box3;
@@ -46,7 +46,7 @@ export function DeviceAnnotationLayer({ labels, annotations, selected, select }:
       {labels.map(label => {
         const annotation = annotations.find(annotation => annotation.key === label.key);
         if (!annotation) return null;
-        return <button key={label.key} className={`device-annotation ${selected === label.key ? 'is-selected' : ''}`}
+        return <button key={label.key} className={`device-annotation ${selected === label.key ? 'is-selected' : ''} ${annotation.stale ? 'is-stale' : ''}`}
           data-testid={`device-label-${label.key}`} aria-pressed={selected === label.key}
           aria-label={annotation.label} onClick={() => select(label.key)}
           style={{ left: label.x, top: label.y, width: label.width, height: label.height }}>

@@ -1,0 +1,16 @@
+type: incubator/v1
+title: Incubator
+description: Seeded virtual temperature, CO2 and humidity; opening the door relaxes toward ambient air.
+properties:
+  temperatureC: {schema: {type: number, minimum: 0, maximum: 80}, unit: °C, deadband: 0.02, maxRateHz: 5, staleAfterSeconds: 3}
+  co2Percent: {schema: {type: number, minimum: 0, maximum: 20}, unit: '%', deadband: 0.002, maxRateHz: 5, staleAfterSeconds: 3}
+  humidityPercent: {schema: {type: number, minimum: 0, maximum: 100}, unit: '%', deadband: 0.03, maxRateHz: 5, staleAfterSeconds: 3}
+  doorOpen: {schema: {type: boolean}, staleAfterSeconds: 3}
+  setpointC: {schema: {type: number, minimum: 20, maximum: 60}, unit: °C, staleAfterSeconds: 3}
+actions:
+  setSetpoint:
+    description: Set the temperature target using a fresh temperature reading.
+    params: {temperatureC: {type: number, minimum: 20, maximum: 60, unit: °C}}
+    required: [temperatureC]
+    preconditions: [{property: temperatureC, notNull: true}]
+    risk: high

@@ -24,5 +24,12 @@
   {"name":"unknown ordered false", "entityKey":"/a", "values":{}, "conditions":[{"property":"rpm","gte":0}], "expected":false},
   {"name":"cross entity", "entityKey":"/a", "values":{"/a":{"phase":"running"},"/b":{"phase":"idle"}}, "conditions":[{"entity":"/b","property":"phase","equals":"idle"}], "expected":true},
   {"name":"all of", "entityKey":"/a", "values":{"/a":{"lidOpen":false,"phase":"running"}}, "conditions":[{"property":"lidOpen","equals":false},{"property":"phase","equals":"idle","message":"Wait until idle"}], "expected":false},
-  {"name":"empty all of", "entityKey":"/a", "values":{}, "conditions":[], "expected":true}
+  {"name":"empty all of", "entityKey":"/a", "values":{}, "conditions":[], "expected":true},
+  {"name":"stale reading is unknown for comparison", "entityKey":"/a", "values":{"/a":{"temperatureC":37}}, "meta":{"/a":{"temperatureC":{"simTime":1,"sampleTimeMs":1000,"source":"virtual","stale":true}}}, "conditions":[{"property":"temperatureC","equals":37}], "expected":false,"expectedReason":"stale_reading"},
+  {"name":"stale reading cannot satisfy not equals", "entityKey":"/a", "values":{"/a":{"temperatureC":37}}, "meta":{"/a":{"temperatureC":{"simTime":1,"sampleTimeMs":1000,"source":"virtual","stale":true}}}, "conditions":[{"property":"temperatureC","notEquals":0}], "expected":false,"expectedReason":"stale_reading"},
+  {"name":"stale operator recognizes expiry", "entityKey":"/a", "values":{"/a":{"temperatureC":37}}, "meta":{"/a":{"temperatureC":{"simTime":1,"sampleTimeMs":1000,"source":"virtual","stale":true}}}, "conditions":[{"property":"temperatureC","stale":true}], "expected":true},
+  {"name":"missing freshness metadata is fresh", "entityKey":"/a", "values":{"/a":{"temperatureC":37}}, "conditions":[{"property":"temperatureC","stale":false}], "expected":true},
+  {"name":"unknown is not stale", "entityKey":"/a", "values":{}, "conditions":[{"property":"temperatureC","stale":true}], "expected":false},
+  {"name":"unknown is not known fresh", "entityKey":"/a", "values":{}, "conditions":[{"property":"temperatureC","stale":false}], "expected":false},
+  {"name":"cross entity stale reading", "entityKey":"/a", "values":{"/b":{"doorOpen":false}}, "meta":{"/b":{"doorOpen":{"simTime":1,"sampleTimeMs":1000,"source":"virtual","stale":true}}}, "conditions":[{"entity":"/b","property":"doorOpen","equals":false}], "expected":false,"expectedReason":"stale_reading"}
 ]

@@ -11,6 +11,8 @@ CENTRIFUGE = "/World/Lab/Centrifuge"
 
 
 async def test_generated_inspections_match_http_cli_and_mcp_and_preserve_all_tool_schemas(lw, lab):
+    # Compare each client against one frozen state; IoT readings normally advance.
+    lw("session", "pause")
     transport = StdioServerParameters(command=str(LW), args=["mcp"], env=lab[2])
     async with Client(transport, mode="legacy") as mcp:
         tools = (await mcp.list_tools()).tools
