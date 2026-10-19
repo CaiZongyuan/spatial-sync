@@ -11,6 +11,7 @@ export interface NewtonViewer {
 export interface PlatformSession {
   sessionId: string;
   sceneId: string;
+  sceneVersion?: string;
   sceneName: string;
   source: 'synthetic' | 'newton';
   state: SessionState['state'];

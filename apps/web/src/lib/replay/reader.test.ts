@@ -1,5 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { readSegment, recordingUrl } from './reader';
+import { readRecording, readSegment, recordedScene, recordingUrl } from './reader';
+
+const metadata = () => ({ formatVersion: 2, protocolVersion: 2, kind: 'session', sceneId: 'lab-demo',
+  sceneVersion: 'lab-demo@2', sceneContentHash: 'a'.repeat(64), segments: [] });
+
+describe('recording metadata compatibility', () => {
+  it('derives the v1 version without changing its document and preserves v2 exact identity', () => {
+    const legacy = { formatVersion: 1, protocolVersion: 2, sceneId: 'lab-demo', segments: [] };
+    expect(readRecording(legacy)).toMatchObject({ kind: 'session', sceneVersion: 'lab-demo@1', sceneContentHash: null });
+    expect(legacy).not.toHaveProperty('sceneVersion');
+    expect(recordedScene(readRecording(metadata()))).toBe('lab-demo@2');
+  });
+
+  it.each([
+    { sceneVersion: null }, { sceneVersion: 'lab-demo' }, { sceneVersion: 'lab-demo@0' },
+    { sceneVersion: 'other@2' }, { sceneContentHash: null }, { sceneContentHash: 'bad' },
+    { kind: 'unknown' }, { formatVersion: true }, { segments: [null] }, { segments: {} },
+  ])('rejects malformed v2 metadata %j', patch => {
+    expect(() => readRecording({ ...metadata(), ...patch })).toThrow();
+  });
+
+  it.each(['sceneVersion', 'sceneContentHash', 'kind'])('does not infer missing v2 %s', field => {
+    const value: Record<string, unknown> = metadata();
+    delete value[field];
+    expect(() => readRecording(value)).toThrow();
+  });
+
+  it('keeps live identity null and accepts optional segment index hints', () => {
+    const value = { ...metadata(), kind: 'live', sceneVersion: null, sceneContentHash: null,
+      segments: [{ file: 'seg-000001.bin', propertyIndex: 'seg-000001.index.json' }] };
+    expect(readRecording(value)).toMatchObject({ kind: 'live', sceneVersion: null, sceneContentHash: null });
+    expect(recordedScene(readRecording(value))).toBe('Live');
+    expect(() => readRecording({ ...value, sceneVersion: 'live@1' })).toThrow();
+    expect(() => readRecording({ ...value, sceneContentHash: 'a'.repeat(64) })).toThrow();
+    value.segments[0].propertyIndex = '../private.json';
+    expect(() => readRecording(value)).toThrow(/index/);
+  });
+});
 
 function segment(records: { kind: number; time: number; value: string }[]) {
   const payloads = records.map((record) => new TextEncoder().encode(record.value));

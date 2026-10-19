@@ -70,7 +70,7 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
       {!sessions?.length ? <p className="platform-empty">{snapshot ? page === 'sessions' ? 'No sessions yet. Create a new session below.' : 'No managed Newton backends yet.' : 'Session list has not been received.'}</p> :
         <table><thead><tr><th>Scene / session</th><th>State / clients</th><th>Source / backend</th><th title="Process CPU uses 100% per logical core">Process CPU / RSS</th><th>Open</th></tr></thead>
           <tbody>{sessions.map(session => <tr key={session.sessionId} data-testid={`platform-session-${session.sessionId}`}>
-            <td><strong>{session.sceneName}</strong><code>{session.sessionId}</code><small>{session.sceneId}</small></td>
+            <td><strong>{session.sceneName}</strong><code>{session.sessionId}</code><small>{session.sceneVersion ?? session.sceneId}</small></td>
             <td><span className={`state-pill ${session.state.toLowerCase()}`}>{session.state}</span><span>{session.connectedClients} connected {session.connectedClients === 1 ? 'client' : 'clients'}</span>
               <small>{session.simTime == null ? unknown : `${session.simTime.toFixed(2)} s`} · RTF {session.actualRtf == null ? unknown : session.actualRtf.toFixed(2)}</small></td>
             <td><strong className="platform-source">{session.source}</strong>

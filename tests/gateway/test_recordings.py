@@ -34,7 +34,7 @@ def test_default_recording_survives_session_close_with_portable_asset_paths(tmp_
         listing = client.get("/api/v1/recordings").json()
         assert len(listing) == 1 and listing[0]["status"] == "complete"
         metadata = client.get(f"/recordings/{sid}/recording.json").json()
-        assert metadata["formatVersion"] == 1 and metadata["segments"]
+        assert metadata["formatVersion"] == 2 and metadata["segments"]
         manifest = client.get(f"/recordings/{sid}/manifest.json").json()
         assert "/api/v1/" not in json.dumps(manifest)
         records = read_segment(client.get(f"/recordings/{sid}/seg-000001.bin").content).records
