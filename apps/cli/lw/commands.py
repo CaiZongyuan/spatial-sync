@@ -1,7 +1,8 @@
 """Command declarations shared by argparse and MCP registration.
 
-Bind a command to a GatewayClient method, which owns its HTTP route. Parameters,
-help and result types belong here; neither frontend needs another registration.
+Platform commands bind to GatewayClient methods, which own HTTP routes. Local
+skill commands dispatch before creating that client. Parameters, help and result
+types belong here; neither frontend needs another registration.
 Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
 """
 
@@ -62,6 +63,19 @@ class Command:
 
 
 COMMANDS = (
+    Command(
+        path=("skills", "ls"),
+        help="List product skills bundled with this platform version; does not contact the gateway.",
+        method="skills_list",
+        output_type=list[dict[str, Any]],
+    ),
+    Command(
+        path=("skills", "install"),
+        help="Install product skills locally, keeping identical files and refusing conflicts.",
+        method="skills_install",
+        arguments=(Argument("target", ("--target",), str | None,
+                            "Agent skill directory (default: ~/.claude/skills)", None),),
+    ),
     Command(
         path=("scene", "ls"),
         help="Search scene versions in the built-in and user libraries.",

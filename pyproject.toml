@@ -28,6 +28,10 @@ where = ["apps/cli"]
 include = ["lw*"]
 namespaces = false
 
+[tool.setuptools.data-files]
+"share/spatial-sync/skills/lab" = ["skills/lab/SKILL.md"]
+"share/spatial-sync/skills/lab-operate" = ["skills/lab-operate/SKILL.md"]
+
 [project.optional-dependencies]
 simulation = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "viser==1.1.1", "pycollada==0.9.3", "scipy>=1.15,<2"]
 usd = ["usd-core==26.8", "newton-usd-schemas>=0.5,<1"]

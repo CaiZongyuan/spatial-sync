@@ -27,6 +27,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli -q
       - run: uv run --no-sync ruff check apps packages tools tests
+      - run: uv run --no-sync python tools/check_platform_skills.py
       - run: pnpm protocol:check
       - run: pnpm test:protocol:ts
       - run: pnpm test:web
