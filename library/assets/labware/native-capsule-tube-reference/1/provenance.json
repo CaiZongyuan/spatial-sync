@@ -1,0 +1,42 @@
+{
+  "repository": "https://github.com/CaiZongyuan/spatial-sync",
+  "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
+  "producer": {
+    "path": "tools/package_binding_references.py",
+    "sha256": "4e93337d7eefc5a3edd88599eb97899c3c27525a28b65993baeb943f47689223",
+    "bytes": 10212
+  },
+  "sourceFiles": {
+    "assets/scene-previews/robot-and-tubes/1/c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e/newton/manifest.json": {
+      "sha256": "72a66bb8ae9c5e8b6c06af5767fb0cf9b67d004bbadea9a5b5950e1eaa83150f",
+      "bytes": 91189
+    }
+  },
+  "toolVersions": {
+    "python": "3.13.14",
+    "usd-core": "26.8",
+    "pyyaml": "6.0.3",
+    "pydantic": "2.12.4"
+  },
+  "license": "Not established; repository presence does not grant redistribution permission",
+  "limitations": [
+    "Primitive reference, not a complete physical device",
+    "GLB not generated",
+    "No collision, mass or inertia supplied",
+    "Physics validation not run"
+  ],
+  "files": {
+    "asset.usda": {
+      "sha256": "497150f75ab303b91a65fa3f526814ef649e48159bab78d2798914dddc85284a",
+      "bytes": 449
+    },
+    "asset.yaml": {
+      "sha256": "c690bce26da1d35778ec29576de33db55fcdb26ec8425445ed71ff3b66289a65",
+      "bytes": 405
+    },
+    "source/geometry.json": {
+      "sha256": "2b500d20da24128ce80258e6eeda81b71efbf97fdbb8e713c5881c4a4c635c6d",
+      "bytes": 1022
+    }
+  }
+}

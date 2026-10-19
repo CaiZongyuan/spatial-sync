@@ -83,6 +83,31 @@ hashes. Its report does not establish physics validity or a runnable USD scene.
 The original URDF mimic relationship is retained as metadata; a USD mimic drive
 has not been authored.
 
+Eight small binding-reference assets accompany `lab-demo@3` and
+`robot-and-tubes@2`: a Synthetic arm hand proxy, centrifuge housing and rotor-site
+proxy, Synthetic tube/incubator/cabinet/sensor proxies, and two native tube shape
+variants. Their `asset.usda` files contain actual primitive dimensions and
+visual-local poses extracted from the pure Synthetic builder or a retained CPU
+Manifest. Each `source/geometry.json` identifies the exact source path, Git
+revision, raw file hash and extracted values; `provenance.json` hashes the local
+files and records the producer and tools. Native tube variants retain the
+30 mm cylinder/box and capsule geometries separately.
+
+These packages supply binding declarations and partial geometry. World placement,
+complete articulation, collision, mass/inertia, GLB and redistribution license
+are absent. Their reports retain S4 failure for the missing license and explicit
+completeness gaps, with physics not run. A scene's existing Python builder remains
+the spatial authority; resolving its binding template does not certify the asset
+as a complete physical model. The centrifuge's reference geometry/sites derive
+from Synthetic; its native program requires scene-owned joint/resource overrides.
+
+`tools/package_binding_references.py --output <empty-directory>` reproduces the
+primitive extraction without starting Newton. It refuses to overwrite an existing
+reference version. Structural reports are generated separately through the same
+CPU-only validator used by imports. Published package bytes, including reports,
+remain immutable. Template selection and scene Config overrides are documented
+in [Scene versions](SCENE_LIBRARY.md#binding-templates).
+
 The command table also exposes generic `library_search`, `library_describe` and
 `library_import` and `library_validate` MCP tools. Search defaults to scenes; use `resource="assets"`,
 `kind`, `query` or `gaps` for assets. `library_import.directory` names a directory

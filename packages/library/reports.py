@@ -74,6 +74,13 @@ def launchable(report):
     )
 
 
+def pinned_assets(embedded, latest):
+    """Keep published pins authoritative while retaining dependencies first inspected later."""
+    pinned = {item["id"]: item for item in (latest or {}).get("referencedAssets", [])}
+    pinned.update({item["id"]: item for item in (embedded or {}).get("referencedAssets", [])})
+    return [pinned[name] for name in sorted(pinned)]
+
+
 def validation_status(report):
     if report is None:
         return "missing"

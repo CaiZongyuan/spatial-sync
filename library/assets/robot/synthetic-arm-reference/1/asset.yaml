@@ -1,0 +1,12 @@
+id: robot/synthetic-arm-reference
+kind: robot
+title: Synthetic arm hand proxy
+description: Binding reference with extracted primitive visuals only. World placement,
+  articulation, collision, mass, GLB and license are not supplied. Registered Python
+  scenes retain their existing spatial builders.
+stage: asset.usda
+implements:
+- type: robot-arm/v1
+  programs:
+    synthetic: robot_arm.virtual
+  config: {}

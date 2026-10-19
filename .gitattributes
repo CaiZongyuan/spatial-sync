@@ -1,6 +1,7 @@
 # Preserve the exact upstream bytes recorded in the offline robot provenance ledger.
 assets/robots/franka_emika_panda/** -text
 tools/package_fr3_asset.py text eol=lf
+tools/package_binding_references.py text eol=lf
 *.glb -text
 packages/protocol/types/index.ts text eol=lf
 packages/protocol/types/protocol.schema.json text eol=lf

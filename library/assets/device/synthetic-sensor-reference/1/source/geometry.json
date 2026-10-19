@@ -1,0 +1,38 @@
+{
+  "repository": "https://github.com/CaiZongyuan/spatial-sync",
+  "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
+  "source": "packages/sim_runtime/synthetic_lab.py",
+  "sourceFile": {
+    "sha256": "42a9f9e7c2a95a8ad751f9ae161b9d4319e8b068deda23371ed85a086506249d",
+    "bytes": 11320
+  },
+  "entityKey": "/World/Lab/EnvironmentSensor",
+  "visuals": [
+    {
+      "kind": "primitive",
+      "geometry": {
+        "type": "box",
+        "halfExtents": [
+          0.08,
+          0.04,
+          0.1
+        ]
+      },
+      "localPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "sites": {},
+  "normalization": "Copy visual-local poses into /Asset; omit source node/world pose. Sites retain their original rotor-local poses; the rotor body/articulation is not supplied."
+}

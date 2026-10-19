@@ -13,7 +13,7 @@ from packages.library.archive import indexed_file, package_files
 from packages.library.common import BUILTIN_ROOT, NAME, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.common import REPO_ROOT as REPO_ROOT
 from packages.library.metadata import scene_metadata
-from packages.library.reports import ReportStore, launchable, parse_report
+from packages.library.reports import ReportStore, launchable, parse_report, pinned_assets
 from packages.library.reports import validation_status as validation_status
 from packages.library.templates import TemplateError, load_snapshots, references, resolve, verify_snapshot
 
@@ -100,9 +100,7 @@ class SceneVersion:
             selected = references(self.bindings)
             if not selected:
                 return self
-            expected = (self.validation or {}).get("referencedAssets") or (self.report() or {}).get(
-                "referencedAssets", []
-            )
+            expected = pinned_assets(self.validation, self.report())
             return replace(
                 self, template_assets=load_snapshots(roots, selected, expected), template_error=None
             )
@@ -293,6 +291,14 @@ class SceneLibrary:
         templated = any(binding.get("template") for binding in bindings)
         effective_bindings = effective.get(version.metadata["sources"][0], []) if templated else []
         display_bindings = effective_bindings or bindings
+        if not templated:
+            template_status = "not_required"
+        elif version.template_error or any(
+            check["id"] == "S5" and check["status"] == "fail" for check in report.get("checks", [])
+        ):
+            template_status = "failed"
+        else:
+            template_status = "resolved" if effective else "not_recorded"
         definitions = {
             value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
         }
@@ -308,17 +314,7 @@ class SceneLibrary:
                 "rawBindings": version.bindings,
                 "effectiveBindings": effective,
                 "templateResolution": {
-                    "status": "not_required"
-                    if not templated
-                    else "failed"
-                    if version.template_error
-                    or any(
-                        check["id"] == "S5" and check["status"] == "fail"
-                        for check in report.get("checks", [])
-                    )
-                    else "resolved"
-                    if effective
-                    else "not_recorded",
+                    "status": template_status,
                     "error": version.template_error,
                 },
                 "devices": devices,
@@ -329,7 +325,7 @@ class SceneLibrary:
                 },
                 "locations": version.locations["locations"],
                 "validation": version.report(),
-                "inspection": "declarative bindings; match selectors are unexpanded",
+                "inspection": "Authored bindings retained; effective bindings from recorded validation",
                 "assets": (version.report() or {}).get("referencedAssets", []),
                 "files": {relative: version.url(relative) for relative in version.files},
             }

@@ -29,25 +29,25 @@ def test_explicit_builtin_version_preserves_the_legacy_scene_identity(tmp_path, 
         assert client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).status_code == 409
         client.delete("/api/v1/sessions/" + created.json()["sessionId"])
         latest = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
-        assert latest["sceneVersion"] == "lab-demo@2"
+        assert latest["sceneVersion"] == "lab-demo@3"
 
 
 def test_latest_read_and_latest_launchable_use_actual_selected_package(tmp_path, monkeypatch):
     user_root = tmp_path / "library"
-    user_version(user_root, 3)
-    user_version(user_root, 4, launchable=False)
+    user_version(user_root, 4)
+    user_version(user_root, 5, launchable=False)
     monkeypatch.setenv("LW_LIBRARY", str(user_root))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
         listed = client.get("/api/v1/library/scenes", params={"q": "lab-demo"}).json()["scenes"]
         assert [scene["sceneVersion"] for scene in listed] == [
-            "lab-demo@1", "lab-demo@2", "lab-demo@3", "lab-demo@4",
+            "lab-demo@1", "lab-demo@2", "lab-demo@3", "lab-demo@4", "lab-demo@5",
         ]
-        assert max(listed, key=lambda scene: scene["rev"])["sceneVersion"] == "lab-demo@4"
+        assert max(listed, key=lambda scene: scene["rev"])["sceneVersion"] == "lab-demo@5"
         assert [scene["sceneVersion"] for scene in client.get(
             "/api/v1/library/scenes", params={"q": "lab-demo", "launchable": True}
-        ).json()["scenes"]] == ["lab-demo@1", "lab-demo@2", "lab-demo@3"]
+        ).json()["scenes"]] == ["lab-demo@1", "lab-demo@2", "lab-demo@3", "lab-demo@4"]
         summary = client.post("/api/v1/sessions", json={"sceneId": "lab-demo", "realtimeFactor": 30}).json()
-        assert summary["sceneId"] == "lab-demo" and summary["sceneVersion"] == "lab-demo@3"
+        assert summary["sceneId"] == "lab-demo" and summary["sceneVersion"] == "lab-demo@4"
         route = "/api/v1/sessions/" + summary["sessionId"]
         manifest = client.get(route + "/scene").json()
         assert next(site for site in manifest["sites"] if site["entityKey"] == "/World/Lab/Rack/A1")[
@@ -63,13 +63,13 @@ def test_latest_read_and_latest_launchable_use_actual_selected_package(tmp_path,
         assert action["status"] == "succeeded", action
         state = client.get(route + "/state", params={"keys": ROBOT}).json()
         assert state["entities"][ROBOT]["values"]["jointPositions"] == taught["approach"]
-        assert client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"}).json()["sessionId"] == (
+        assert client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@4"}).json()["sessionId"] == (
             summary["sessionId"]
         )
         conflict = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@1"})
         assert conflict.status_code == 409 and conflict.json()["detail"]["code"] == "session_exists"
         wrong_source = client.post(
-            "/api/v1/sessions", json={"sceneVersion": "lab-demo@3", "source": "newton"}
+            "/api/v1/sessions", json={"sceneVersion": "lab-demo@4", "source": "newton"}
         )
         assert wrong_source.status_code == 404
         client.delete(route)
@@ -80,13 +80,13 @@ def test_latest_read_and_latest_launchable_use_actual_selected_package(tmp_path,
 
 @pytest.mark.parametrize("body, status, code", [
     ({"sceneVersion": "lab-demo@999"}, 404, "unknown_version"),
-    ({"sceneVersion": "lab-demo@4"}, 409, "scene_not_launchable"),
+    ({"sceneVersion": "lab-demo@5"}, 409, "scene_not_launchable"),
     ({}, 422, None),
-    ({"sceneId": "lab-demo", "sceneVersion": "lab-demo@3"}, 422, None),
+    ({"sceneId": "lab-demo", "sceneVersion": "lab-demo@4"}, 422, None),
 ])
 def test_invalid_choices_allocate_no_sessions_or_recordings(tmp_path, monkeypatch, body, status, code):
     user_root = tmp_path / "library"
-    user_version(user_root, 4, launchable=False)
+    user_version(user_root, 5, launchable=False)
     monkeypatch.setenv("LW_LIBRARY", str(user_root))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
         rejected = client.post("/api/v1/sessions", json=body)
@@ -115,7 +115,7 @@ def test_duplicate_builtin_user_id_fails_before_gateway_startup(tmp_path, monkey
     {"sources": ["newton"]},
 ])
 def test_invalid_package_builder_or_sources_fail_before_gateway_startup(tmp_path, monkeypatch, change):
-    package = user_version(tmp_path, 3)
+    package = user_version(tmp_path, 4)
     metadata_file = package / "scene.yaml"
     metadata = yaml.safe_load(metadata_file.read_text(encoding="utf-8"))
     metadata_file.write_text(yaml.safe_dump(metadata | change), encoding="utf-8")
@@ -126,28 +126,28 @@ def test_invalid_package_builder_or_sources_fail_before_gateway_startup(tmp_path
 
 
 def test_missing_validation_stays_missing_and_cannot_launch(tmp_path, monkeypatch):
-    package = user_version(tmp_path, 5)
+    package = user_version(tmp_path, 6)
     (package / "validation.json").unlink()
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
-        detail = client.get("/api/v1/library/scenes/lab-demo/5").json()
+        detail = client.get("/api/v1/library/scenes/lab-demo/6").json()
         assert detail["validation"] is None and detail["validationStatus"] == "missing"
         assert detail["launchable"] is False
-        rejected = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@5"})
+        rejected = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@6"})
         assert rejected.status_code == 409 and rejected.json()["detail"]["code"] == "scene_not_launchable"
         assert client.get("/api/v1/health").json()["sessions"] == []
         assert not (package / "validation.json").exists()
 
 
 def test_editing_an_indexed_version_cannot_silently_change_its_launch_content(tmp_path, monkeypatch):
-    package = user_version(tmp_path, 3)
+    package = user_version(tmp_path, 4)
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
         locations = package / "locations.yaml"
         locations.write_text(
             locations.read_text(encoding="utf-8") + "\n# in-place change\n", encoding="utf-8"
         )
-        rejected = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"})
+        rejected = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@4"})
         assert rejected.status_code == 409 and rejected.json()["detail"]["code"] == "scene_not_launchable"
         assert client.get("/api/v1/health").json()["sessions"] == []
         assert client.get("/api/v1/recordings").json() == []
@@ -155,10 +155,10 @@ def test_editing_an_indexed_version_cannot_silently_change_its_launch_content(tm
 
 @pytest.mark.parametrize("change", ["location", "missing-validation"])
 def test_reload_rejects_changed_package_before_disturbing_current_session(tmp_path, monkeypatch, change):
-    package = user_version(tmp_path / "library", 3)
+    package = user_version(tmp_path / "library", 4)
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
-        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"}).json()
+        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@4"}).json()
         route = "/api/v1/sessions/" + created["sessionId"]
         unchanged = client.post(route + "/reload")
         assert unchanged.status_code == 200, unchanged.text
@@ -193,20 +193,20 @@ def test_reload_rejects_changed_package_before_disturbing_current_session(tmp_pa
 
 
 def test_revision_order_is_numeric_and_read_latest_may_be_unlaunchable(tmp_path, monkeypatch):
-    user_version(tmp_path, 3)
+    user_version(tmp_path, 4)
     user_version(tmp_path, 10)
     user_version(tmp_path, 11, launchable=False)
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
         assert client.get("/api/v1/library/scenes/lab-demo").json()["sceneVersion"] == "lab-demo@11"
         listed = client.get("/api/v1/library/scenes", params={"q": "lab-demo"}).json()["scenes"]
-        assert [version["rev"] for version in listed] == [1, 2, 3, 10, 11]
+        assert [version["rev"] for version in listed] == [1, 2, 3, 4, 10, 11]
         launched = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
         assert launched["sceneVersion"] == "lab-demo@10"
 
 
 def test_stale_tool_versions_keep_the_recorded_conclusion_without_rewriting_report(tmp_path, monkeypatch):
-    package = user_version(tmp_path, 3)
+    package = user_version(tmp_path, 4)
     report_file = package / "validation.json"
     report = json.loads(report_file.read_text(encoding="utf-8"))
     report["toolVersions"] = {"python": "0.0.0"}
@@ -214,16 +214,16 @@ def test_stale_tool_versions_keep_the_recorded_conclusion_without_rewriting_repo
     before = report_file.read_bytes()
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path))
     with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
-        detail = client.get("/api/v1/library/scenes/lab-demo/3").json()
+        detail = client.get("/api/v1/library/scenes/lab-demo/4").json()
         assert detail["validationStatus"] == "stale" and detail["launchable"] is True
-        launched = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"})
+        launched = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@4"})
         assert launched.status_code == 201
         assert report_file.read_bytes() == before
 
 
 @pytest.mark.parametrize("versions", [[], {"python": 313}])
 def test_malformed_existing_report_fails_at_startup_not_during_discovery(tmp_path, monkeypatch, versions):
-    package = user_version(tmp_path, 3)
+    package = user_version(tmp_path, 4)
     report_file = package / "validation.json"
     report = json.loads(report_file.read_text(encoding="utf-8"))
     report_file.write_text(json.dumps(report | {"toolVersions": versions}), encoding="utf-8")

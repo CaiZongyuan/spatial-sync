@@ -1,0 +1,103 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "asset:device/lab-centrifuge-reference@1",
+  "ranAt": "2026-10-19T18:43:12.374191+00:00",
+  "toolVersions": {
+    "usd-core": "26.8",
+    "pydantic": "2.12.4",
+    "pyyaml": "6.0.3"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Package metadata and declared files match their schemas"
+    },
+    {
+      "id": "S2",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Stage must use Z up and metersPerUnit=1"
+    },
+    {
+      "id": "S3",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Asset root and default prim must be /Asset"
+    },
+    {
+      "id": "S4",
+      "tier": "structural",
+      "status": "fail",
+      "message": "Original license file is missing"
+    },
+    {
+      "id": "S5",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Declared types and Config spatial references exist"
+    },
+    {
+      "id": "S6",
+      "tier": "structural",
+      "status": "warn",
+      "message": "PBR visual is missing"
+    },
+    {
+      "id": "S7",
+      "tier": "structural",
+      "status": "pass",
+      "message": "USD dependencies resolve only to package-local or indexed library files"
+    },
+    {
+      "id": "S8",
+      "tier": "structural",
+      "status": "warn",
+      "message": "No inspectable taught joint configuration is declared",
+      "notApplicable": true
+    },
+    {
+      "id": "P1-P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Physics checks not run; no physics pass is claimed"
+    }
+  ],
+  "launchable": false,
+  "untypedEntities": [],
+  "referencedAssets": [],
+  "inspection": "CPU USD structure only; no physics engine was loaded",
+  "completeness": [
+    {
+      "id": "collision",
+      "status": "missing",
+      "message": "Authored collision geometry"
+    },
+    {
+      "id": "massInertia",
+      "status": "missing",
+      "message": "Authored mass and inertia"
+    },
+    {
+      "id": "visual",
+      "status": "missing",
+      "message": "PBR visual and visual budget"
+    },
+    {
+      "id": "license",
+      "status": "missing",
+      "message": "Original license and source hashes"
+    },
+    {
+      "id": "jointSites",
+      "status": "not_applicable",
+      "message": "Named joints and sites"
+    },
+    {
+      "id": "types",
+      "status": "present",
+      "message": "Implemented entity types"
+    }
+  ]
+}

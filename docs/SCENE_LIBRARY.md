@@ -13,15 +13,17 @@ library/scenes/<name>/<rev>/
   validation.json  # existing report, read without running validators at startup
 ```
 
-Built-in versions are `lab-demo@1`, `lab-demo@2`, `falling-boxes@1`, `robot-and-tubes@1` and
+Built-in versions are `lab-demo@1`, `lab-demo@2`, `lab-demo@3`, `falling-boxes@1`,
+`robot-and-tubes@1`, `robot-and-tubes@2` and
 `usd-lab@1`. Their `python:<builder-id>` stages use the existing execution
 allowlist. Filesystem paths and arbitrary Python modules are not API selectors.
 Newton solver and warmup settings come from the selected package; Newton itself
 is imported only in its owned Runner.
 
 `lab-demo@2` adds a virtual incubator, biosafety cabinet and environment sensor.
-Version 1 retains its original bindings and layout. Bare `lab-demo` launches
-version 2 as the latest launchable version. Synthetic device signals use the
+Version 1 retains its original bindings and layout. Version 3 keeps version 2's
+behavior with pinned asset binding templates. Bare `lab-demo` launches version 3
+as the latest launchable version. Synthetic device signals use the
 session's optional nonnegative `seed` (HTTP, `lw scene launch --seed`, or MCP
 `scene_launch(seed=...)`; gateway default 42), with
 independent per-entity random streams; reset restarts them. Programs use
@@ -104,8 +106,59 @@ composition; USDZ containers/package-member paths and unsupported composition
 formats are rejected. Config location documents resolve only to indexed local
 files and must select the matching robot. Imported previews and other package
 files use the indexed `/library/files` route and the package integrity check.
-Template expansion and merged Dressing GLB export are later capabilities;
-reports warn when those effective bindings or the final GLB count were not inspected.
+Merged Dressing GLB export remains a later capability; reports warn when the
+final GLB count was not inspected.
+
+## Binding templates
+
+An entity can select an exact asset version instead of repeating its type and
+program. The asset's `implements` entry must uniquely match the selected source
+and optional explicit `type`; its `programs[source]` selects the program.
+Redundant scene `program` values must agree. Missing source implementations,
+unknown versions and ambiguous entries are S5 failures that remain inspectable
+and prevent launch. A malformed or unversioned template ID returns 422 before
+publication.
+
+```yaml
+scene: lab-demo
+entities:
+- key: /World/Lab/Centrifuge
+  template: device/lab-centrifuge-reference@1
+  config:
+    tubes: [/World/Lab/Tubes/Tube01, /World/Lab/Tubes/Tube02]
+```
+
+The loader copies template defaults, rebases only program Config fields declared
+as spatial references from `/Asset` to each matched entity, then applies scene
+Config overrides. An override replaces the complete top-level value, including
+arrays and dictionaries. Relative spatial defaults cannot escape the asset root;
+explicit scene resource overrides use the scene's actual absolute paths. Other
+strings, cross-device interlocks, alerts and document names keep their existing
+meaning. Config documents such as `locations.yaml` belong to the scene and require
+a scene override when a template declares that field. Globs expand against actual
+scene resources; zero matches and duplicate entity bindings fail.
+
+Details retain authored declarations in `entities` and `rawBindings`. Recorded,
+normalized results are in `effectiveBindings` by source; `templateResolution`
+reports whether they resolved. Runtime Catalogs expose the effective bindings
+and keep private alert rules private. Describing a scene does not start a source.
+
+Reports pin every known template dependency's exact ID and raw package hash,
+including when S5 fails during source or implementation selection. Launch and
+revalidation reject changed dependency bytes; fixing an immutable asset requires
+a new asset revision and a new scene revision. Older reports without a recorded
+dependency hash cannot establish what those bytes were historically. Their first
+inspection that identifies the dependency records the currently indexed bytes only.
+Later reports retain newly discovered pins alongside the original report's pins,
+including across failed revalidation while a dependency is temporarily missing.
+
+`lab-demo@3` and `robot-and-tubes@2` preserve previous explicit versions and
+recordings. Native FR3 bindings retain the Python builder's absolute
+`/World/Lab/RobotA/fr3/...` overrides over `robot/fr3@1`'s origin-relative defaults.
+Native tube shape variants use separate reference assets. The new reference
+assets contain extracted primitive visuals and explicit completeness gaps; they
+do not replace the scenes' existing Python spatial builders or claim a physics
+pass. See [Asset packages](ASSET_LIBRARY.md).
 
 Revalidation uses `POST /api/v1/library/scenes/{name}/{rev}/validate` or generic
 MCP `library_validate`. It appends a report outside the immutable version and

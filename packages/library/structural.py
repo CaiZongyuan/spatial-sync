@@ -23,7 +23,7 @@ from packages.library.common import content_hash, document
 from packages.library.metadata import Locations
 from packages.library.python_stages import resources as python_resources
 from packages.library.reports import parse_report
-from packages.library.templates import TemplateError, instantiate
+from packages.library.templates import TemplateError, instantiate, references
 from packages.library.templates import resolve as resolve_templates
 from packages.library.visuals import glb_budget
 from packages.programs.robot_arm.taught import posture_problems as posture_problems_for
@@ -236,11 +236,12 @@ def validate(payload):
     declarations = authored
     if kind == "scene":
         try:
+            # A failed implements/source selection must not discard already known package bytes.
+            graph.referenced.update(name for name in references(authored) if name in graph.assets)
             resolved = resolve_templates(
                 authored, scene_source, graph.assets, payload.get("expectedAssets", [])
             )
             declarations = resolved.bootstrap()
-            graph.referenced.update(asset["id"] for asset in resolved.assets)
         except (TemplateError, OSError, ValueError) as exc:
             template_error = str(exc)
             declarations = authored | {
@@ -643,8 +644,9 @@ def validate(payload):
         "launchable": not any(item["status"] == "fail" for item in ordered),
         "untypedEntities": untyped,
         "referencedAssets": [
-            {"id": name, "contentHash": graph.assets[name]["contentHash"]}
-            for name in sorted(graph.referenced)
+            {"id": name, "contentHash": graph.expected[name]
+             if name in graph.expected else graph.assets[name]["contentHash"]}
+            for name in sorted(graph.referenced | graph.expected.keys())
         ],
         "inspection": "CPU USD structure only; no physics engine was loaded",
     }

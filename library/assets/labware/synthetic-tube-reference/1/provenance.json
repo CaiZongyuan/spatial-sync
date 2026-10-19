@@ -1,0 +1,50 @@
+{
+  "repository": "https://github.com/CaiZongyuan/spatial-sync",
+  "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
+  "producer": {
+    "path": "tools/package_binding_references.py",
+    "sha256": "4e93337d7eefc5a3edd88599eb97899c3c27525a28b65993baeb943f47689223",
+    "bytes": 10212
+  },
+  "sourceFiles": {
+    "packages/sim_runtime/synthetic_lab.py": {
+      "sha256": "42a9f9e7c2a95a8ad751f9ae161b9d4319e8b068deda23371ed85a086506249d",
+      "bytes": 11320
+    },
+    "library/scenes/lab-demo/2/devices.yaml": {
+      "sha256": "fd4db75424456867128e891bf8564c720bb557f6bbd1cabef00c268651a50225",
+      "bytes": 2632
+    },
+    "library/scenes/lab-demo/2/locations.yaml": {
+      "sha256": "4887d634615cf2a8bbc95ee0afa32a0f0ddf287c276ac0252a8a3f3d54ea5b1e",
+      "bytes": 5143
+    }
+  },
+  "toolVersions": {
+    "python": "3.13.14",
+    "usd-core": "26.8",
+    "pyyaml": "6.0.3",
+    "pydantic": "2.12.4"
+  },
+  "license": "Not established; repository presence does not grant redistribution permission",
+  "limitations": [
+    "Primitive reference, not a complete physical device",
+    "GLB not generated",
+    "No collision, mass or inertia supplied",
+    "Physics validation not run"
+  ],
+  "files": {
+    "asset.usda": {
+      "sha256": "02b67013a8390f9bc7bf81eb6c39063f41af0eee515fddc0ff45c4ce8f1ec07d",
+      "bytes": 406
+    },
+    "asset.yaml": {
+      "sha256": "576db17643afbc7ef609deda37929feb2fffb9a1676d0adfe600599ed200d365",
+      "bytes": 405
+    },
+    "source/geometry.json": {
+      "sha256": "dd036d7f7ea8d42ca37bed01b283a45c554d202f1927136e58482ca808a6eda2",
+      "bytes": 890
+    }
+  }
+}

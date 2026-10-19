@@ -89,7 +89,6 @@ class Declaration:
 class ResolvedBindings:
     scene: str
     declarations: tuple[Declaration, ...]
-    assets: tuple[dict, ...]
 
     def bootstrap(self):
         return {
@@ -103,7 +102,7 @@ class ResolvedBindings:
 
 
 def resolve(document, source, assets, expected=()):
-    declarations, used = [], {}
+    declarations, verified = [], set()
     pinned = {value["id"]: value["contentHash"] for value in expected}
     for authored in document["entities"]:
         binding = deepcopy(authored)
@@ -117,9 +116,9 @@ def resolve(document, source, assets, expected=()):
             raise TemplateError("Unknown asset template: " + identifier)
         if identifier in pinned and asset["contentHash"] != pinned[identifier]:
             raise TemplateError("Referenced immutable asset changed: " + identifier)
-        if identifier not in used:
+        if identifier not in verified:
             verify_snapshot(asset)
-            used[identifier] = {"id": identifier, "contentHash": asset["contentHash"]}
+            verified.add(identifier)
         candidates = [
             item
             for item in asset["metadata"].get("implements", [])
@@ -137,7 +136,7 @@ def resolve(document, source, assets, expected=()):
             raise TemplateError("Scene program conflicts with the template's selected source program")
         binding.update(type=implementation["type"], program=program)
         declarations.append(Declaration(binding, deepcopy(implementation.get("config", {}))))
-    return ResolvedBindings(document["scene"], tuple(declarations), tuple(used[key] for key in sorted(used)))
+    return ResolvedBindings(document["scene"], tuple(declarations))
 
 
 def config_fields(program):
@@ -186,6 +185,8 @@ def instantiate(resolved, resources, programs):
     bindings, bound = [], set()
     for declaration in resolved.declarations:
         authored = declaration.binding
+        if ("key" in authored) == ("match" in authored):
+            raise TemplateError("Binding requires exactly one key or match")
         keys = (
             sorted(key for key in nodes if fnmatchcase(key, authored["match"]))
             if "match" in authored

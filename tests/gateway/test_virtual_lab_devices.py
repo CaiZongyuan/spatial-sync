@@ -94,7 +94,7 @@ def test_seeded_device_readings_replay_reset_and_version_identity(tmp_path):
 
 
 def test_open_door_relaxes_temperature_and_co2_toward_ambient(tmp_path, monkeypatch):
-    package = tmp_path / "library/scenes/lab-demo/3"
+    package = tmp_path / "library/scenes/lab-demo/4"
     shutil.copytree(Path(__file__).resolve().parents[2] / "library/scenes/lab-demo/2", package)
     bindings_file = package / "devices.yaml"
     bindings = yaml.safe_load(bindings_file.read_text(encoding="utf-8"))
@@ -105,11 +105,11 @@ def test_open_door_relaxes_temperature_and_co2_toward_ambient(tmp_path, monkeypa
     }
     bindings_file.write_text(yaml.safe_dump(bindings), encoding="utf-8")
     report_file = package / "validation.json"
-    report = json.loads(report_file.read_bytes()) | {"subject": "scene:lab-demo@3"}
+    report = json.loads(report_file.read_bytes()) | {"subject": "scene:lab-demo@4"}
     report_file.write_text(json.dumps(report), encoding="utf-8")
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
     with TestClient(create_app(source_factory=factory)) as client:
-        _, initial, final = sample(client, version="lab-demo@3")
+        _, initial, final = sample(client, version="lab-demo@4")
         assert final[INCUBATOR]["values"]["temperatureC"] < initial[INCUBATOR]["values"]["temperatureC"] - 1
         assert final[INCUBATOR]["values"]["co2Percent"] < initial[INCUBATOR]["values"]["co2Percent"] - 0.5
 

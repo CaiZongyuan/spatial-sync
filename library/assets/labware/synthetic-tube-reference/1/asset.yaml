@@ -1,0 +1,12 @@
+id: labware/synthetic-tube-reference
+kind: labware
+title: Synthetic 80 mm tube proxy
+description: Binding reference with extracted primitive visuals only. World placement,
+  articulation, collision, mass, GLB and license are not supplied. Registered Python
+  scenes retain their existing spatial builders.
+stage: asset.usda
+implements:
+- type: tube/v1
+  programs:
+    synthetic: tube.virtual
+  config: {}

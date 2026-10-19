@@ -11,7 +11,7 @@ from pathlib import Path
 
 from packages.library.archive import package_files
 from packages.library.common import REPO_ROOT, TYPE_ROOT, LibraryError, content_hash, document
-from packages.library.reports import parse_report
+from packages.library.reports import parse_report, pinned_assets
 
 
 class StructuralValidator:
@@ -97,8 +97,7 @@ class StructuralValidator:
             assets,
             getattr(version, "bindings", None),
             getattr(version, "locations", None),
-            expected_assets=(version.validation or {}).get("referencedAssets")
-            or (version.report() or {}).get("referencedAssets", []),
+            expected_assets=pinned_assets(version.validation, version.report()),
         )
         if content_hash(version.path) != version.content_hash:
             raise LibraryError(

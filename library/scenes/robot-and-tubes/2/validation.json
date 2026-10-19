@@ -1,0 +1,1051 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "scene:robot-and-tubes@2",
+  "ranAt": "2026-10-19T18:43:18.907625+00:00",
+  "toolVersions": {
+    "usd-core": "26.8",
+    "pydantic": "2.12.4",
+    "pyyaml": "6.0.3"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Package metadata and declared files match their schemas"
+    },
+    {
+      "id": "S2",
+      "tier": "structural",
+      "status": "warn",
+      "message": "USD composition was skipped or is unavailable",
+      "notApplicable": true
+    },
+    {
+      "id": "S3",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Entity namespace check does not apply to this stage",
+      "notApplicable": true
+    },
+    {
+      "id": "S4",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Asset provenance check applies to asset versions",
+      "notApplicable": true
+    },
+    {
+      "id": "S5",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Declared types and Config spatial references exist"
+    },
+    {
+      "id": "S6",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Dressing visual budget was not inspected because the USD stage is unavailable"
+    },
+    {
+      "id": "S7",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Python stages have no USD references",
+      "notApplicable": true
+    },
+    {
+      "id": "S8",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Taught joint counts and limits match the declared arm joints",
+      "notApplicable": false
+    },
+    {
+      "id": "P1-P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Physics checks not run; no physics pass is claimed"
+    }
+  ],
+  "launchable": true,
+  "untypedEntities": [],
+  "referencedAssets": [
+    {
+      "id": "device/lab-centrifuge-reference@1",
+      "contentHash": "53a25db1fa6534c43c58b3c4ebd565bc7d9308691691b0863ebb0ff759cc6aa7"
+    },
+    {
+      "id": "labware/native-capsule-tube-reference@1",
+      "contentHash": "82d7ed095acbb546ed7fc3e4d6da616db0ff2460fde12904e0802a3a3345b569"
+    },
+    {
+      "id": "labware/native-small-tube-reference@1",
+      "contentHash": "a83b85b987f24165d1917fd42ad0d6a4199e2ed7f6fe18c0deda05dd6b3fb29c"
+    },
+    {
+      "id": "robot/fr3@1",
+      "contentHash": "ba789cc9c8748251495b2a788f6e5365adc9bac23abaea9567fd90e07fc0c0f9"
+    }
+  ],
+  "inspection": "CPU USD structure only; no physics engine was loaded",
+  "effectiveBindings": {
+    "newton": [
+      {
+        "key": "/World/Lab/RobotA",
+        "type": "robot-arm/v1",
+        "program": "robot_arm.newton",
+        "config": {
+          "locations": {
+            "locations": {
+              "rack.A1": {
+                "site": "/World/Lab/Rack/A1",
+                "zone": "rack",
+                "approach": [
+                  -0.47775170962244684,
+                  -0.27908894707594123,
+                  -0.1735112793609462,
+                  -2.618629508523574,
+                  -0.06640021774536049,
+                  2.342418783020372,
+                  0.1870582290748707
+                ],
+                "grasp": [
+                  -0.4063707118659972,
+                  0.13093117955625094,
+                  -0.22389103885674178,
+                  -2.678913215723999,
+                  0.08798266269820695,
+                  2.8054072471311313,
+                  0.07390944668144227
+                ]
+              },
+              "rack.A2": {
+                "site": "/World/Lab/Rack/A2",
+                "zone": "rack",
+                "approach": [
+                  -0.43103908925463963,
+                  -0.14239624564005993,
+                  -0.14486845182971414,
+                  -2.478548423825428,
+                  -0.02844824032180609,
+                  2.337421809282532,
+                  0.23067429699895992
+                ],
+                "grasp": [
+                  -0.40083829313930314,
+                  0.2194658149985129,
+                  -0.16030702508562458,
+                  -2.5334400112672135,
+                  0.09089523505893272,
+                  2.7487188334632777,
+                  0.1440307131019029
+                ]
+              },
+              "rack.A3": {
+                "site": "/World/Lab/Rack/A3",
+                "zone": "rack",
+                "approach": [
+                  -0.3934676204372281,
+                  -0.009102368917980379,
+                  -0.12315211594944009,
+                  -2.3237534194490315,
+                  -0.0015195737906719615,
+                  2.314719410539405,
+                  0.26981250225638626
+                ],
+                "grasp": [
+                  -0.38774568978205476,
+                  0.31220272216337114,
+                  -0.11938541258301873,
+                  -2.3752137833378337,
+                  0.08289631235656873,
+                  2.6839725006475796,
+                  0.2095873636502092
+                ]
+              },
+              "rack.A4": {
+                "site": "/World/Lab/Rack/A4",
+                "zone": "rack",
+                "approach": [
+                  -0.3661778348170584,
+                  0.12371490156022559,
+                  -0.10326074580692118,
+                  -2.1529118829718326,
+                  0.016703360576617504,
+                  2.275905592322312,
+                  0.30591694632329425
+                ],
+                "grasp": [
+                  -0.3713678742182507,
+                  0.410875578924195,
+                  -0.09185461558753386,
+                  -2.2025265734056894,
+                  0.07242513256888097,
+                  2.6107121010514223,
+                  0.2672982137065548
+                ]
+              },
+              "rack.B1": {
+                "site": "/World/Lab/Rack/B1",
+                "zone": "rack",
+                "approach": [
+                  -0.2586467325749822,
+                  -0.4759482075475042,
+                  -0.12461173942930892,
+                  -2.7933678581563304,
+                  -0.0777834694247324,
+                  2.3190725823224523,
+                  0.46884840100548475
+                ],
+                "grasp": [
+                  -0.18935751819260319,
+                  0.006924641885893516,
+                  -0.18466219819445118,
+                  -2.864502515467175,
+                  0.004761882374190808,
+                  2.871306507139349,
+                  0.40679377261319655
+                ]
+              },
+              "rack.B2": {
+                "site": "/World/Lab/Rack/B2",
+                "zone": "rack",
+                "approach": [
+                  -0.18691353841753783,
+                  -0.30187329795392415,
+                  -0.14176183547472335,
+                  -2.6418889907517524,
+                  -0.058613881354872,
+                  2.342006520624631,
+                  0.5039313299923806
+                ],
+                "grasp": [
+                  -0.19283404510066787,
+                  0.11296769220563295,
+                  -0.1235738287686922,
+                  -2.703654793330709,
+                  0.04338584268046243,
+                  2.8154826645421713,
+                  0.4286681703598498
+                ]
+              },
+              "rack.B3": {
+                "site": "/World/Lab/Rack/B3",
+                "zone": "rack",
+                "approach": [
+                  -0.2080964383611493,
+                  -0.14207172900512124,
+                  -0.07918371709755921,
+                  -2.4793871868258197,
+                  -0.01555508596601222,
+                  2.3376942354742565,
+                  0.5097067220650564
+                ],
+                "grasp": [
+                  -0.19179474085555925,
+                  0.21669602264821344,
+                  -0.08745618978765948,
+                  -2.534787757695472,
+                  0.04925473559512009,
+                  2.7502534500234384,
+                  0.4626461176925779
+                ]
+              },
+              "rack.B4": {
+                "site": "/World/Lab/Rack/B4",
+                "zone": "rack",
+                "approach": [
+                  -0.18805032496712948,
+                  0.006693444078406038,
+                  -0.06881095985480298,
+                  -2.3042341221987463,
+                  0.0006232685509885075,
+                  2.3109116307335724,
+                  0.5281180995216911
+                ],
+                "grasp": [
+                  -0.18587750010445858,
+                  0.3220008068186175,
+                  -0.06585581395033298,
+                  -2.355816147639334,
+                  0.04647254802389534,
+                  2.676733322483128,
+                  0.4954934214868681
+                ]
+              },
+              "centrifuge.slot1": {
+                "site": "/World/Lab/Centrifuge/Rotor/Slot1",
+                "zone": "centrifuge",
+                "approach": [
+                  0.2838537424836745,
+                  0.31929228500970136,
+                  0.03922406939577575,
+                  -1.7919878157597544,
+                  -0.014353400624091605,
+                  2.111005412270968,
+                  1.1138779327319244
+                ],
+                "grasp": [
+                  0.28687255128041744,
+                  0.5364975742122372,
+                  0.03442750299416062,
+                  -1.8784004023987864,
+                  -0.02647019162189084,
+                  2.414463612532301,
+                  1.1216418965416732
+                ],
+                "requires": [
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "lidOpen",
+                    "equals": true
+                  },
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "phase",
+                    "equals": "idle"
+                  }
+                ]
+              },
+              "centrifuge.slot2": {
+                "site": "/World/Lab/Centrifuge/Rotor/Slot2",
+                "zone": "centrifuge",
+                "approach": [
+                  0.35242613702459274,
+                  0.24338599308883835,
+                  0.06415619562865174,
+                  -1.9025194212382295,
+                  -0.018406729332437543,
+                  2.1453468914612595,
+                  1.2100986862979684
+                ],
+                "grasp": [
+                  0.3570288417360687,
+                  0.4735798090900617,
+                  0.05691901851561127,
+                  -1.9874492419397125,
+                  -0.04119048722846157,
+                  2.459956380345192,
+                  1.22508632491731
+                ],
+                "requires": [
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "lidOpen",
+                    "equals": true
+                  },
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "phase",
+                    "equals": "idle"
+                  }
+                ]
+              },
+              "centrifuge.slot3": {
+                "site": "/World/Lab/Centrifuge/Rotor/Slot3",
+                "zone": "centrifuge",
+                "approach": [
+                  0.29531522980980324,
+                  0.07666950436074318,
+                  0.07620181844269108,
+                  -2.129381927235133,
+                  -0.007242991897505547,
+                  2.205817281710133,
+                  1.16098876873164
+                ],
+                "grasp": [
+                  0.297117308090115,
+                  0.3385388816736782,
+                  0.07158651922751673,
+                  -2.2146752482340273,
+                  -0.04273406709416868,
+                  2.5519895285940994,
+                  1.185577110595351
+                ],
+                "requires": [
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "lidOpen",
+                    "equals": true
+                  },
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "phase",
+                    "equals": "idle"
+                  }
+                ]
+              },
+              "centrifuge.slot4": {
+                "site": "/World/Lab/Centrifuge/Rotor/Slot4",
+                "zone": "centrifuge",
+                "approach": [
+                  0.22754729471808496,
+                  0.15693737773744845,
+                  0.04403826799690976,
+                  -2.0225677730868563,
+                  -0.008386255151850944,
+                  2.1793389850802267,
+                  1.06123747399495
+                ],
+                "grasp": [
+                  0.22991147633736966,
+                  0.4025822716804046,
+                  0.03999934945515039,
+                  -2.1072288862021247,
+                  -0.026515251259749108,
+                  2.509355195958927,
+                  1.0735059435631173
+                ],
+                "requires": [
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "lidOpen",
+                    "equals": true
+                  },
+                  {
+                    "entity": "/World/Lab/Centrifuge",
+                    "property": "phase",
+                    "equals": "idle"
+                  }
+                ]
+              }
+            }
+          },
+          "tubes": [
+            "/World/Lab/Tubes/Tube01",
+            "/World/Lab/Tubes/Tube02",
+            "/World/Lab/Tubes/Tube03",
+            "/World/Lab/Tubes/Tube04",
+            "/World/Lab/Tubes/Tube05",
+            "/World/Lab/Tubes/Tube06",
+            "/World/Lab/Tubes/Tube07",
+            "/World/Lab/Tubes/Tube08",
+            "/World/Lab/Tubes/Tube09",
+            "/World/Lab/Tubes/Tube10",
+            "/World/Lab/Tubes/Tube11",
+            "/World/Lab/Tubes/Tube12",
+            "/World/Lab/Tubes/Tube13",
+            "/World/Lab/Tubes/Tube14",
+            "/World/Lab/Tubes/Tube15",
+            "/World/Lab/Tubes/Tube16",
+            "/World/Lab/Tubes/Tube17",
+            "/World/Lab/Tubes/Tube18",
+            "/World/Lab/Tubes/Tube19",
+            "/World/Lab/Tubes/Tube20"
+          ],
+          "speedScale": 0.5,
+          "graspMode": "weld",
+          "jointKeys": [
+            "/World/Lab/RobotA/fr3/fr3_joint1",
+            "/World/Lab/RobotA/fr3/fr3_joint2",
+            "/World/Lab/RobotA/fr3/fr3_joint3",
+            "/World/Lab/RobotA/fr3/fr3_joint4",
+            "/World/Lab/RobotA/fr3/fr3_joint5",
+            "/World/Lab/RobotA/fr3/fr3_joint6",
+            "/World/Lab/RobotA/fr3/fr3_joint7"
+          ],
+          "fingerKeys": [
+            "/World/Lab/RobotA/fr3/fr3_finger_joint1",
+            "/World/Lab/RobotA/fr3/fr3_finger_joint2"
+          ],
+          "handBody": "/World/Lab/RobotA/fr3/fr3_hand",
+          "tcpSite": "/World/Lab/RobotA/fr3/fr3_hand/tcp"
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Centrifuge",
+        "type": "centrifuge/v1",
+        "program": "centrifuge.newton",
+        "config": {
+          "slotSites": [
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ],
+          "tubes": [
+            "/World/Lab/Tubes/Tube01",
+            "/World/Lab/Tubes/Tube02",
+            "/World/Lab/Tubes/Tube03",
+            "/World/Lab/Tubes/Tube04",
+            "/World/Lab/Tubes/Tube05",
+            "/World/Lab/Tubes/Tube06",
+            "/World/Lab/Tubes/Tube07",
+            "/World/Lab/Tubes/Tube08",
+            "/World/Lab/Tubes/Tube09",
+            "/World/Lab/Tubes/Tube10",
+            "/World/Lab/Tubes/Tube11",
+            "/World/Lab/Tubes/Tube12",
+            "/World/Lab/Tubes/Tube13",
+            "/World/Lab/Tubes/Tube14",
+            "/World/Lab/Tubes/Tube15",
+            "/World/Lab/Tubes/Tube16",
+            "/World/Lab/Tubes/Tube17",
+            "/World/Lab/Tubes/Tube18",
+            "/World/Lab/Tubes/Tube19",
+            "/World/Lab/Tubes/Tube20"
+          ],
+          "spindleJoint": "/World/Lab/Centrifuge/Spindle",
+          "lidJoint": "/World/Lab/Centrifuge/LidHinge",
+          "visualRpmCap": 60.0
+        },
+        "interlocks": {
+          "closeLid": [
+            {
+              "entity": "/World/Lab/RobotA",
+              "property": "zone",
+              "notEquals": "centrifuge",
+              "message": "Move the arm out of the centrifuge zone first"
+            }
+          ]
+        },
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube01",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube02",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube03",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube04",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube05",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube06",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube07",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube08",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube09",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube10",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube11",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube12",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube13",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube14",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube15",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube16",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube17",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube18",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube19",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Tubes/Tube20",
+        "type": "tube/v1",
+        "program": "tube.newton",
+        "config": {
+          "robots": [
+            "/World/Lab/RobotA"
+          ],
+          "locationSites": [
+            "/World/Lab/Rack/A1",
+            "/World/Lab/Rack/A2",
+            "/World/Lab/Rack/A3",
+            "/World/Lab/Rack/A4",
+            "/World/Lab/Rack/B1",
+            "/World/Lab/Rack/B2",
+            "/World/Lab/Rack/B3",
+            "/World/Lab/Rack/B4",
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ]
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      }
+    ]
+  }
+}

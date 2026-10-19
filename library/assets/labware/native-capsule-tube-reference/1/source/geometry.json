@@ -1,0 +1,35 @@
+{
+  "repository": "https://github.com/CaiZongyuan/spatial-sync",
+  "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
+  "source": "assets/scene-previews/robot-and-tubes/1/c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e/newton/manifest.json",
+  "sourceFile": {
+    "sha256": "72a66bb8ae9c5e8b6c06af5767fb0cf9b67d004bbadea9a5b5950e1eaa83150f",
+    "bytes": 91189
+  },
+  "entityKey": "/World/Lab/Tubes/Tube05",
+  "visuals": [
+    {
+      "kind": "primitive",
+      "geometry": {
+        "type": "capsule",
+        "radius": 0.01600000075995922,
+        "halfHeight": 0.054999999701976776
+      },
+      "localPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.07100000232458115
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "sites": {},
+  "normalization": "Copy visual-local poses into /Asset; omit source node/world pose. Sites retain their original rotor-local poses; the rotor body/articulation is not supplied."
+}

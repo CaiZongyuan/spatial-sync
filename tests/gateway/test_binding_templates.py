@@ -270,3 +270,113 @@ def test_published_dependency_hash_cannot_silently_retarget_after_restart_or_rev
         )
         assert launch.status_code == 409
         assert client.get("/api/v1/health").json()["sessions"] == []
+
+
+@pytest.mark.parametrize("fault", ["source", "ambiguous"])
+def test_failed_template_selection_still_pins_known_asset_bytes(fault):
+    files = reference_files()
+    metadata = yaml.safe_load(files["asset.yaml"])
+    if fault == "source":
+        metadata["implements"][0]["programs"].pop("synthetic")
+    else:
+        metadata["implements"].append(copy.deepcopy(metadata["implements"][0]))
+    files["asset.yaml"] = yaml.safe_dump(metadata).encode()
+    with TestClient(create_app()) as client:
+        asset = upload(client, files).json()
+        imported = upload(client, scene_files()[0])
+        assert imported.status_code == 200, imported.text
+        report = imported.json()["validation"]
+        assert next(c for c in report["checks"] if c["id"] == "S5")["status"] == "fail"
+        pinned = [{"id": asset["assetVersion"], "contentHash": asset["contentHash"]}]
+        assert report["referencedAssets"] == pinned
+        path = client.app.state.library_assets.resolve(asset["assetVersion"]).path / "asset.yaml"
+    # Repairing the declaration in place is still a different immutable package.
+    path.write_bytes(reference_files()["asset.yaml"])
+    with TestClient(create_app()) as client:
+        checked = client.post("/api/v1/library/scenes/template-slice/1/validate")
+        assert checked.status_code == 200, checked.text
+        report = checked.json()
+        assert not report["launchable"]
+        assert report["referencedAssets"] == pinned
+        assert any("immutable asset changed" in c["message"] for c in report["checks"])
+        launch = client.post(
+            "/api/v1/sessions", json={"sceneVersion": "template-slice@1", "source": "synthetic"}
+        )
+        assert launch.status_code == 409
+        assert client.get("/api/v1/health").json()["sessions"] == []
+
+
+def test_malformed_template_is_rejected_before_a_scene_revision_is_published():
+    files, declarations = scene_files()
+    next(b for b in declarations["entities"] if b.get("template"))["template"] = "device/missing"
+    files["devices.yaml"] = yaml.safe_dump(declarations).encode()
+    with TestClient(create_app()) as client:
+        imported = upload(client, files)
+        assert imported.status_code == 422, imported.text
+        assert imported.json()["detail"]["code"] == "import_invalid"
+        assert client.get("/api/v1/library/scenes/template-slice/1").status_code == 404
+
+
+def test_a_previously_unknown_dependency_can_only_pin_the_first_bytes_it_actually_inspects():
+    with TestClient(create_app()) as client:
+        imported = upload(client, scene_files()[0])
+        assert imported.status_code == 200, imported.text
+        assert not imported.json()["validation"]["launchable"]
+        assert imported.json()["validation"]["referencedAssets"] == []
+        asset = upload(client, reference_files()).json()
+        checked = client.post("/api/v1/library/scenes/template-slice/1/validate")
+        assert checked.status_code == 200 and checked.json()["launchable"], checked.text
+        assert checked.json()["referencedAssets"] == [
+            {"id": asset["assetVersion"], "contentHash": asset["contentHash"]}
+        ]
+        launched = client.post(
+            "/api/v1/sessions", json={"sceneVersion": "template-slice@1", "source": "synthetic"}
+        )
+        assert launched.status_code == 201, launched.text
+
+
+@pytest.mark.parametrize("missing_first", [False, True])
+def test_a_later_discovered_dependency_stays_pinned_alongside_the_original_known_dependency(
+    tmp_path, missing_first
+):
+    files, declarations = scene_files()
+    incubator = next(b for b in declarations["entities"] if b.get("type") == "incubator/v1")
+    incubator.pop("type")
+    incubator.pop("program")
+    incubator["template"] = "device/later-reference@1"
+    files["devices.yaml"] = yaml.safe_dump(declarations).encode()
+    later_files = reference_files()
+    metadata = yaml.safe_load(later_files["asset.yaml"])
+    metadata["id"] = "device/later-reference"
+    metadata["implements"] = [{"type": "incubator/v1", "programs": {"synthetic": "incubator.virtual"}}]
+    later_files["asset.yaml"] = yaml.safe_dump(metadata).encode()
+    with TestClient(create_app()) as client:
+        original = upload(client, reference_files()).json()
+        imported = upload(client, files)
+        assert imported.status_code == 200, imported.text
+        assert imported.json()["validation"]["referencedAssets"] == [
+            {"id": original["assetVersion"], "contentHash": original["contentHash"]}
+        ]
+        later = upload(client, later_files).json()
+        checked = client.post("/api/v1/library/scenes/template-slice/1/validate")
+        assert checked.status_code == 200 and checked.json()["launchable"], checked.text
+        pinned = checked.json()["referencedAssets"]
+        assert {item["id"] for item in pinned} == {original["assetVersion"], later["assetVersion"]}
+        path = client.app.state.library_assets.resolve(later["assetVersion"]).path / "asset.usda"
+    if missing_first:
+        offline = tmp_path / "offline-asset"
+        path.parent.rename(offline)
+        with TestClient(create_app()) as client:
+            checked = client.post("/api/v1/library/scenes/template-slice/1/validate")
+            assert checked.status_code == 200 and not checked.json()["launchable"]
+            assert checked.json()["referencedAssets"] == pinned
+        offline.rename(path.parent)
+    path.write_bytes(path.read_bytes() + b"\n")
+    with TestClient(create_app()) as client:
+        launch = client.post(
+            "/api/v1/sessions", json={"sceneVersion": "template-slice@1", "source": "synthetic"}
+        )
+        assert launch.status_code == 409, launch.text
+        checked = client.post("/api/v1/library/scenes/template-slice/1/validate")
+        assert checked.status_code == 200 and not checked.json()["launchable"]
+        assert checked.json()["referencedAssets"] == pinned

@@ -100,49 +100,32 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
         if definition["type"] in types:
             raise ValueError(f"Duplicate entity type: {definition['type']}")
         types[definition["type"]] = definition
-    nodes = {node.entityKey for node in manifest.nodes}
     sites = {site.entityKey for site in manifest.sites}
     entities = {}
     configs = {}
-    for template in scene["entities"]:
-        if ("key" in template) == ("match" in template):
-            raise ValueError("Binding requires exactly one key or match")
-        keys = (
-            sorted(key for key in nodes if fnmatchcase(key, template["match"]))
-            if "match" in template
-            else [template["key"]]
-        )
-        if not keys:
-            raise ValueError(f"Binding glob matched no entities: {template['match']}")
-        for key in keys:
-            if key in entities:
-                raise ValueError(f"Duplicate binding: {key}")
-            binding = deepcopy(template)
-            binding.pop("match", None)
-            binding["key"] = key
-            if key not in nodes and not binding.get("unplaced", False):
-                raise ValueError(f"Binding entity does not exist in Manifest: {key}")
-            cls = registry.get(binding["program"])
-            if cls is None or cls.type != binding["type"]:
-                raise ValueError(f"Unknown program or program/type mismatch: {binding['program']}")
-            config = binding.get("config", {})
-            for name, value in list(config.items()):
-                if isinstance(value, str) and value.endswith(".yaml"):
-                    target = (scene_file.parent / value).resolve()
-                    if not target.is_relative_to(scene_file.parent.resolve()):
-                        raise ValueError("Config documents must stay in the scene directory")
-                    config[name] = yaml.safe_load(target.read_text(encoding="utf-8"))
-                elif isinstance(value, list) and all(isinstance(item, str) for item in value):
-                    expanded = []
-                    for item in value:
-                        expanded.extend(
-                            sorted(s for s in sites if fnmatchcase(s, item)) if "*" in item else [item]
-                        )
-                    config[name] = expanded
-            parsed = cls.Config.model_validate(config)
-            configs[key] = parsed
-            binding["config"] = parsed.model_dump(mode="json")
-            entities[key] = binding
+    for binding in scene["entities"]:
+        key = binding["key"]
+        cls = registry.get(binding["program"])
+        if cls is None or cls.type != binding["type"]:
+            raise ValueError(f"Unknown program or program/type mismatch: {binding['program']}")
+        config = binding.get("config", {})
+        for name, value in list(config.items()):
+            if isinstance(value, str) and value.endswith(".yaml"):
+                target = (scene_file.parent / value).resolve()
+                if not target.is_relative_to(scene_file.parent.resolve()):
+                    raise ValueError("Config documents must stay in the scene directory")
+                config[name] = yaml.safe_load(target.read_text(encoding="utf-8"))
+            elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+                expanded = []
+                for item in value:
+                    expanded.extend(
+                        sorted(s for s in sites if fnmatchcase(s, item)) if "*" in item else [item]
+                    )
+                config[name] = expanded
+        parsed = cls.Config.model_validate(config)
+        configs[key] = parsed
+        binding["config"] = parsed.model_dump(mode="json")
+        entities[key] = binding
     type_declarations = {key: EntityTypeDeclaration.model_validate(value) for key, value in types.items()}
     binding_declarations = {
         key: EntityBindingDeclaration.model_validate(value) for key, value in entities.items()
