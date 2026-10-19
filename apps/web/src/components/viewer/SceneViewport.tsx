@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
 import {
   InstancedPrimitives,
@@ -443,10 +443,17 @@ function SceneContents({
   useEffect(() => { invalidate(); }, [theme, invalidate]);
   useEffect(() => {
     if (renderContinuously) return;
-    // Replay reducers mutate pose buffers without changing the manifest identity.
-    // Also draw after view changes and after subscribing, in case a seek just committed.
+    // Spatial samples mutate without changing the manifest. UI rate/heartbeat
+    // updates leave the sample unchanged and do not need another 3D frame.
+    let sample = client.buffer.latestSample;
     invalidate();
-    return client.subscribe(invalidate);
+    return client.subscribe(() => {
+      const next = client.buffer.latestSample;
+      if (next?.epoch === sample?.epoch && next?.seq === sample?.seq
+        && next?.sampleTimeMs === sample?.sampleTimeMs) return;
+      sample = next;
+      invalidate();
+    });
   }, [client, renderContinuously, manifest, selected, layers, hidden, invalidate]);
   const selectedEntity =
     manifest.joints.find((joint) => joint.entityKey === selected)
@@ -705,8 +712,11 @@ interface ViewportProps {
   onLabelLayout?: (labels: PlacedLabel[]) => void;
 }
 
-export function SceneViewport(props: ViewportProps) {
-  const view = useSyncExternalStore(props.client.subscribe, props.client.getSnapshot);
+export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
+  const running = useSyncExternalStore(props.client.subscribe, () => {
+    const view = props.client.getSnapshot();
+    return view.connection === 'connected' && view.sessionState === 'RUNNING';
+  });
   const hasPose = useSyncExternalStore(props.client.subscribe, () => Boolean(props.client.buffer.latestSample));
   const theme = useViewerTheme();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
@@ -715,7 +725,7 @@ export function SceneViewport(props: ViewportProps) {
   const receivedState = useRef(false);
   if (hasPose) receivedState.current = true;
   const displayScene = props.client.readOnly || receivedState.current;
-  const continuous = props.renderContinuously !== false && (props.client.readOnly || (view.connection === 'connected' && view.sessionState === 'RUNNING'));
+  const continuous = props.renderContinuously !== false && (props.client.readOnly || running);
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
     if (element.current) observer.observe(element.current);
@@ -746,4 +756,4 @@ export function SceneViewport(props: ViewportProps) {
       </div></>}
     </div>
   );
-}
+});
