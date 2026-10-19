@@ -21,6 +21,7 @@
   --grain-o: .16;
   --m-floor: #2a2926; --m-wall: #363531; --m-body: #9a978f; --m-steel: #8c8b85; --m-glass: #aabdcc; --m-edge: #c9c5bb;
   --m-sky: #eef0ff; --m-sun: #fff4e4; --m-hemi: .95; --m-key: 1.05; --m-ao: .66;
+  --m-grid: #46443f; --m-edge-o: .32;
   font-family: var(--sans); font-size: var(--fs-ui); line-height: 1.6;
   color: var(--ink); background: var(--ground); font-synthesis: none;
 }
@@ -37,6 +38,7 @@
     --grain-o: .22;
     --m-floor: #dedbd3; --m-wall: #e3e0d9; --m-body: #f2f1ec; --m-steel: #cfcec8; --m-glass: #a9c6d8; --m-edge: #6e6b63;
     --m-sky: #f4f6ff; --m-sun: #fff6ea; --m-hemi: .58; --m-key: .64; --m-ao: .42;
+    --m-grid: #bab6ab; --m-edge-o: .62;
   }
 }
 :root[data-theme='light'] {
@@ -50,6 +52,7 @@
   --grain-o: .22;
   --m-floor: #dedbd3; --m-wall: #e3e0d9; --m-body: #f2f1ec; --m-steel: #cfcec8; --m-glass: #a9c6d8; --m-edge: #6e6b63;
   --m-sky: #f4f6ff; --m-sun: #fff6ea; --m-hemi: .58; --m-key: .64; --m-ao: .42;
+  --m-grid: #bab6ab; --m-edge-o: .62;
 }
 
 body::after {

@@ -36,7 +36,12 @@ uv run --frozen --extra simulation --extra usd python -m uvicorn apps.api.app.ma
 | `robot-and-tubes` | newton | Franka FR3、试管与离心机 |
 | `usd-lab` | newton | Y-up USD 导入与视觉回退 |
 
-首页展示会话与观察者概况；**Sessions**（`/sessions`）提供托管会话列表与临时
+首页用等距空间视口展示活动会话；点击设备、浮标或图例，打开实体类型、动作与
+示教位置抽屉。**读数**开关控制浮标读数；近期活动展示真实设备事件和动作调用。
+没有活动会话时，显示最近可用录制的只读场景预览，或引导新建会话。
+会话工作台可切换透视与等距相机；`?camera=isometric` 可分享等距视角。
+深浅主题会更新视口材质和光照，无需重新启动物理源或加载场景。
+**Sessions（会话）**（`/sessions`）提供托管会话列表与临时
 启动、加入入口；**Resources · Compute**（`/resources/gpu`）展示主机资源与托管
 Newton 后端。这些页面每两秒刷新。**Recordings**（`/recordings`）进入录制列表，
 回放地址保持 `/replay/{id}`，仅供读取。

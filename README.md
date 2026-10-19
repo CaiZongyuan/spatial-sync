@@ -46,7 +46,13 @@ interpolate between published poses.
 
 ## Platform overview
 
-The home page summarizes sessions and connected observers. **Sessions**
+The home page shows the active session in an isometric spatial view. Select a
+device in the view, its label or the legend to inspect its type, actions and
+teaching locations. The **读数** switch controls the live label readouts; the
+activity timeline shows actual device events and invocation transitions.
+With no active session, the most recent available recording provides a read-only
+scene preview, or the page guides you to create a session.
+**Sessions (会话)**
 (`/sessions`) lists managed sessions and provides the temporary launch/join
 form. **Resources · Compute** (`/resources/gpu`) shows host resources and
 managed Newton backends. These pages refresh every two seconds. **Recordings**
@@ -54,6 +60,9 @@ managed Newton backends. These pages refresh every two seconds. **Recordings**
 The sidebar collapses and remembers your preference; below 900 px it becomes
 top navigation. The theme follows your system until you choose Light or Dark.
 Latin IBM Plex fonts and navigation icons ship locally.
+Session workspaces can switch between perspective and isometric cameras;
+`?camera=isometric` shares that view. Light/dark themes update viewport materials
+and lighting without restarting the source or reloading its scene.
 Stopped sessions remain in history; a paused Newton process still counts as a
 live backend. CPU, RAM, GPU utilization and GPU memory describe the gateway
 machine, including its other applications. Missing measurements display as

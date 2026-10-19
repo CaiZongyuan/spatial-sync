@@ -278,6 +278,8 @@ export class SessionClient {
             ) {
               this.receivedFrames++;
               this.rates.push(performance.now());
+              // Pose buffers stay outside React; paused views still need a draw after an authoritative sample.
+              this.listeners.forEach(listener => listener());
             }
             return;
           }
