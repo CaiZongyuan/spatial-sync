@@ -140,6 +140,99 @@ for (const version of [1, 2]) test(`overview previews the v${version} recorded v
   await page.screenshot({ path: testInfo.outputPath(`overview-recording-v${version}.png`), fullPage: true });
 });
 
+test('overview does not admit a stopped session from the platform cache into a recording preview', async ({ page, request }) => {
+  const fixture = resolve('../../tests/fixtures/recordings/v1');
+  const metadata = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
+  let sessionId: string | undefined;
+  let stopped: Promise<void> | undefined;
+  const prepareStoppedSession = async () => {
+    const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
+    expect(created.ok()).toBe(true);
+    sessionId = (await created.json()).sessionId;
+    await expect.poll(async () => {
+      const platform = await (await request.get(`${api}/api/v1/platform`)).json();
+      return platform.sessions.find((session: { sessionId: string }) => session.sessionId === sessionId)?.state;
+    }, { intervals: [25] }).toBe('RUNNING');
+    expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`)).ok()).toBe(true);
+    const health = await (await request.get(`${api}/api/v1/health`)).json();
+    expect(health.sessions.find((session: { sessionId: string }) => session.sessionId === sessionId)?.state).toBe('STOPPED');
+    expect((await (await request.get(`${api}/api/v1/sessions/${sessionId}`)).json()).state).toBe('STOPPED');
+  };
+  // Load the browser first, then create/cache/stop at its first platform read.
+  // Every platform response still comes from the real API and its background cache.
+  await page.route('**/api/v1/platform', async route => {
+    stopped ??= prepareStoppedSession();
+    await stopped;
+    await route.continue();
+  });
+  const platformStates: string[] = [];
+  page.on('response', async response => {
+    if (new URL(response.url()).pathname === '/api/v1/platform' && response.ok()) {
+      const platform = await response.json().catch(() => undefined);
+      const state = platform?.sessions.find((session: { sessionId: string }) => session.sessionId === sessionId)?.state;
+      if (state) platformStates.push(state);
+    }
+  });
+  const liveRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/sessions/')) liveRequests.push(request.url());
+  });
+  page.on('websocket', socket => {
+    if (new URL(socket.url()).pathname.startsWith('/api/')) liveRequests.push(socket.url());
+  });
+  await page.route('**/api/v1/recordings', route => route.fulfill({ json: [metadata] }));
+  await page.route(`**/recordings/${metadata.sessionId}/**`, async route => {
+    const relative = new URL(route.request().url()).pathname.split(`/recordings/${metadata.sessionId}/`)[1];
+    if (existsSync(join(fixture, relative))) await route.fulfill({ path: join(fixture, relative) });
+    else await route.fulfill({ status: 404 });
+  });
+  try {
+    await page.goto('/');
+    await expect(page.locator('.overview-page-heading')).toContainText('最近录制 · 只读预览');
+    const drawer = page.getByRole('complementary', { name: '设备抽屉' });
+    await expect(drawer).toHaveAttribute('data-read-only', 'true');
+    await page.getByTestId(`legend-${centrifuge}`).click();
+    await page.getByTestId('action-closeLid').locator('summary').click();
+    await expect(drawer.getByRole('button', { name: 'Run closeLid', exact: true })).toBeDisabled();
+    expect(platformStates).toContain('RUNNING');
+    expect(liveRequests).toEqual([]);
+  } finally {
+    if (sessionId) await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});
+
+test('overview waits for authoritative session status and recovers after a failed confirmation', async ({ page, request }) => {
+  const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  let allowConfirmation = false;
+  await page.route('**/api/v1/health', route => allowConfirmation ? route.continue() : route.fulfill({
+    status: 503, json: { detail: 'Session status temporarily unavailable' },
+  }));
+  const liveRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/sessions/')) liveRequests.push(request.url());
+  });
+  page.on('websocket', socket => {
+    if (new URL(socket.url()).pathname.startsWith('/api/')) liveRequests.push(socket.url());
+  });
+  try {
+    await page.goto('/');
+    await expect(page.getByRole('alert')).toContainText('Session status temporarily unavailable');
+    expect(liveRequests).toEqual([]);
+    allowConfirmation = true;
+    const drawer = page.getByRole('complementary', { name: '设备抽屉' });
+    await expect(drawer).toHaveAttribute('data-read-only', 'false');
+    await expect(drawer).toHaveAttribute('data-connection', 'connected');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await page.getByTestId(`legend-${centrifuge}`).click();
+    await page.getByTestId('action-closeLid').locator('summary').click();
+    await expect(drawer.getByRole('button', { name: 'Run closeLid', exact: true })).toBeEnabled();
+  } finally {
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});
+
 test('overview rejects malformed v2 identity before opening a replay transport', async ({ page }) => {
   const metadata = JSON.parse(readFileSync(resolve('../../tests/fixtures/recordings/v2/recording.json'), 'utf8'));
   metadata.sceneContentHash = null;
