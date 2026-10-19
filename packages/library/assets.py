@@ -130,10 +130,17 @@ def metadata(path):
         ) from exc
     except (OSError, ValueError, yaml.YAMLError) as exc:
         raise invalid("asset.yaml must be a valid metadata mapping", path="asset.yaml") from exc
+    files = set(package_files(path))
+    if "asset.yaml" not in files:
+        raise invalid("Package metadata must be named exactly asset.yaml", path="asset.yaml")
+    if any(filename.casefold() == "validation.json" and filename != "validation.json" for filename in files):
+        raise invalid("validation.json is reserved for gateway-generated reports", path="validation.json")
     for field in ("stage", "visual"):
         filename = getattr(value, field)
-        if filename is not None and not (path / filename).is_file():
-            raise invalid("Referenced file is missing", path=field)
+        if filename is not None and filename not in files:
+            raise invalid(
+                "Referenced file is missing or its path case does not match the package", path=field
+            )
     return data
 
 

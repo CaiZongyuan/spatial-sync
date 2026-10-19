@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from packages.library.assets import AssetLibrary
+from packages.library.scenes import BUILTIN_ROOT
 
 
 def package_files():
@@ -122,6 +123,79 @@ def test_schema_errors_have_problems_without_allocating_versions(metadata, tmp_p
         assert rejected.json()["detail"]["problems"]
         assert not (tmp_path / "user-library" / "assets").exists()
         assert upload(client).json()["assetVersion"] == "labware/test-tube@1"
+
+
+@pytest.mark.parametrize("field,declared,actual", [
+    ("stage", "Asset.usda", "asset.usda"),
+    ("visual", "Preview.glb", "preview.glb"),
+    ("stage", "Models/asset.usda", "models/asset.usda"),
+])
+def test_references_require_exact_package_paths_before_revision_allocation(tmp_path, field, declared, actual):
+    files = package_files()
+    if field == "stage":
+        files[actual] = files.pop("asset.usda")
+        metadata = files["asset.yaml"].replace(b"stage: asset.usda\n", f"stage: {declared}\n".encode())
+    else:
+        files[actual] = (BUILTIN_ROOT / "assets/robot/fr3/1/visual.glb").read_bytes()
+        metadata = files["asset.yaml"] + f"visual: {declared}\n".encode()
+    files["asset.yaml"] = metadata
+    with TestClient(create_app()) as client:
+        rejected = upload(client, files)
+        assert rejected.status_code == 422, rejected.text
+        error = rejected.json()["detail"]
+        assert error["code"] == "import_invalid" and error["problems"][0]["path"] == field
+        assert not (tmp_path / "user-library/assets").exists()
+        assert client.get("/api/v1/library/imports").json()["imports"] == []
+        files["asset.yaml"] = metadata.replace(f"{field}: {declared}".encode(), f"{field}: {actual}".encode())
+        accepted = upload(client, files)
+        assert accepted.status_code == 200 and accepted.json()["assetVersion"] == "labware/test-tube@1"
+        detail = client.get("/api/v1/library/assets/labware/test-tube/1").json()
+        assert detail["metadata"][field] == actual
+        assert client.get(detail["files"][actual]).status_code == 200
+        if field == "visual":
+            assert detail["visualUrl"] == detail["files"][actual]
+            assert client.get(detail["visualUrl"]).status_code == 200
+
+
+def test_metadata_filename_requires_exact_package_entry_before_revision_allocation(tmp_path):
+    files = package_files()
+    files["ASSET.YAML"] = files.pop("asset.yaml")
+    with TestClient(create_app()) as client:
+        rejected = upload(client, files)
+        assert rejected.status_code == 422, rejected.text
+        assert rejected.json()["detail"]["problems"][0]["path"] == "asset.yaml"
+        assert not (tmp_path / "user-library/assets").exists()
+        assert upload(client).json()["assetVersion"] == "labware/test-tube@1"
+
+
+@pytest.mark.parametrize("filename", ["Validation.json", "VALIDATION.JSON"])
+def test_reserved_report_case_aliases_are_rejected_before_revision_allocation(tmp_path, filename):
+    with TestClient(create_app()) as client:
+        rejected = upload(client, package_files() | {filename: b'{"launchable":true}'})
+        assert rejected.status_code == 422, rejected.text
+        error = rejected.json()["detail"]
+        assert error["code"] == "import_invalid" and error["problems"][0]["path"] == "validation.json"
+        assert not (tmp_path / "user-library/assets").exists()
+        assert client.get("/api/v1/library/imports").json()["imports"] == []
+        assert upload(client).json()["assetVersion"] == "labware/test-tube@1"
+
+
+def test_exact_mixed_case_references_preserve_uploaded_bytes_and_indexed_urls():
+    files = package_files()
+    files["Models/Asset.usda"] = files.pop("asset.usda")
+    files["Visuals/Preview.glb"] = (BUILTIN_ROOT / "assets/robot/fr3/1/visual.glb").read_bytes()
+    files["asset.yaml"] = files["asset.yaml"].replace(b"stage: asset.usda", b"stage: Models/Asset.usda")
+    files["asset.yaml"] += b"visual: Visuals/Preview.glb\n"
+    with TestClient(create_app()) as client:
+        accepted = upload(client, files)
+        assert accepted.status_code == 200, accepted.text
+        detail = client.get("/api/v1/library/assets/labware/test-tube/1").json()
+        assert detail["metadata"]["stage"] == "Models/Asset.usda"
+        assert detail["visualUrl"] == detail["files"]["Visuals/Preview.glb"]
+        for filename, value in files.items():
+            response = client.get(detail["files"][filename])
+            assert response.status_code == 200 and response.content == value
+        assert upload(client, files).json()["deduplicated"]
 
 
 @pytest.mark.parametrize(
