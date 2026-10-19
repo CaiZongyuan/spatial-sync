@@ -2,11 +2,13 @@
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from lw.__main__ import UsageError, parser
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -71,6 +73,38 @@ def test_checker_accepts_real_help_without_executing_commands_or_requiring_opera
     skill = tmp_path / "help-example"
     skill.mkdir()
     (skill / "SKILL.md").write_text(f"`{command}`\n", encoding="utf-8")
+    result = check(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("command", ["lw session step -- --help", "lw do -- --help"])
+def test_literal_help_after_end_of_options_keeps_actual_types_and_required_operands(tmp_path, command):
+    with pytest.raises(UsageError):
+        parser().parse_args(shlex.split(command)[1:])
+    skill = tmp_path / "literal-help"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(f"```text\n{command}\n```\n", encoding="utf-8")
+    result = check(tmp_path)
+    assert result.returncode == 1
+    assert "literal-help/SKILL.md:2:" in result.stderr
+
+
+@pytest.mark.parametrize("command", [
+    'lw skills install --target="--help"',
+    'lw do /Thing action "message=--help"',
+    'lw do /Thing action "message=quoted --help -- text"',
+    "lw do -- --help action",
+    "lw approve --note=-- --help",
+    "lw skills install --target=-- --help",
+])
+def test_checker_retains_literal_values_and_real_help_in_the_actual_parser(tmp_path, command):
+    try:
+        parser().parse_args(shlex.split(command)[1:])
+    except SystemExit as error:
+        assert error.code == 0
+    skill = tmp_path / "literal-values"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(f"```text\n{command}\n```\n", encoding="utf-8")
     result = check(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
 

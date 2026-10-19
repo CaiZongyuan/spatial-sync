@@ -38,8 +38,13 @@ def check_command(command):
     if not tokens or tokens[0] != "lw":
         raise ValueError("Expected an lw command")
     arguments = [token for token in tokens[1:] if token != "--json"]
-    help_requested = any(token in ("--help", "-h") for token in arguments)
-    path_tokens = [token for token in arguments if token not in ("--help", "-h")]
+    option_end = arguments.index("--") if "--" in arguments else len(arguments)
+    help_positions = {
+        index for index, token in enumerate(arguments[:option_end]) if token in ("--help", "-h")
+    }
+    help_requested = bool(help_positions)
+    arguments = [token for index, token in enumerate(arguments) if index not in help_positions]
+    path_tokens = arguments.copy()
     root = parser()
     current = root
     selected = [root]
@@ -58,7 +63,6 @@ def check_command(command):
         selected.append(current)
     if help_requested:
         # Help may omit operands, but cannot bypass validation of supplied arguments.
-        arguments = [token for token in arguments if token not in ("--help", "-h")]
         for command_parser in selected:
             for action in command_parser._actions:
                 action.required = False
