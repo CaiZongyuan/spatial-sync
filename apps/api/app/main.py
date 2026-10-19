@@ -25,6 +25,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
+from apps.api.app.library_routes import install_library_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
@@ -33,6 +34,7 @@ from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
+from packages.library.assets import AssetLibrary
 from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
 from packages.protocol.internal import SessionOptions
@@ -116,6 +118,7 @@ def create_app(
     recordings = RecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
+    library_assets = AssetLibrary(settings.state_root)
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
     @asynccontextmanager
@@ -123,6 +126,7 @@ def create_app(
         manager.approvals.startup()
         # Resolve the operator's roots at startup, before any owned workers or recordings.
         manager.library
+        library_assets.startup()
         await recordings.startup()
         await monitor.start()
         try:
@@ -149,9 +153,11 @@ def create_app(
 
     app.state.manager, app.state.settings = manager, settings
     app.state.platform_monitor = monitor
+    app.state.library_assets = library_assets
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
+    install_library_routes(app, library_assets)
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):

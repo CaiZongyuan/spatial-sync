@@ -1,0 +1,162 @@
+{
+  "repository": "https://github.com/newton-physics/newton-assets",
+  "revision": "f8fb7abcbeba2318814a74f3eeb02780ad7925d6",
+  "upstreamDescriptionRevision": "d9841cf (as recorded by the retained upstream README)",
+  "license": "Apache-2.0; original per-asset LICENSE retained",
+  "sourceEntrypoint": "franka_emika_panda/urdf/fr3_franka_hand.urdf",
+  "sourceFiles": {
+    "franka_emika_panda/LICENSE": {
+      "sha256": "4b25434e6ec2012e28a484f1d7924a0fd1a8bf232c2be2d50d584d299d04d6d6",
+      "bytes": 12926
+    },
+    "franka_emika_panda/README.md": {
+      "sha256": "3d68f328ece69a5c91272f2663bc0ca33e8f82507de902d660f8d6c064ffa443",
+      "bytes": 670
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link0.stl": {
+      "sha256": "dfc6d94330de8ddb005b311bfdba9f3b8e1aa7c256b71592ee7ff32cb9a9a5aa",
+      "bytes": 10084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link1.stl": {
+      "sha256": "e41a39a94108fcf56aacff603fc91ec80541f4c1af17b51a0de5617f5566e6d2",
+      "bytes": 15084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link2.stl": {
+      "sha256": "370f7605a0fae3529db169ded50f52f171024aa792d4d773bc84197301f6a039",
+      "bytes": 15084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link3.stl": {
+      "sha256": "0a8d638b9349c6c0eefc4e888636ac4838c4b27170f18a51699321118af709c1",
+      "bytes": 15084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link4.stl": {
+      "sha256": "0180ebb5772ec9840cb049750cffb29a9ddc90311752a16ea34757782ef9e48d",
+      "bytes": 15084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link5.stl": {
+      "sha256": "dd17e688c7870e722283525879643d53a74c0024d328b0e14b034b54c8b6c31a",
+      "bytes": 15084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link6.stl": {
+      "sha256": "20b768e99a0e0440b5754dcca108016434e57937cc356acd9c352ccd3cb27f77",
+      "bytes": 10084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/collision/link7.stl": {
+      "sha256": "92ac6afcf7574c034d3170d8a68e95ac9048ab9d0dd5bbd8311b86e551b9ab1c",
+      "bytes": 10084
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link0.dae": {
+      "sha256": "3c52a112d1610d645934945b80ea8d9bb3d1635f345098480a33a537bd43224e",
+      "bytes": 7079719
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link1.dae": {
+      "sha256": "5c5846eabc714aefc82ef051a4d09c4fc1c092bca6258b1290227345dd217fcb",
+      "bytes": 906843
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link2.dae": {
+      "sha256": "90a1bd38abdc53d0141719cd8e040f788db337b768a845bb6d53c5c52590498f",
+      "bytes": 921715
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link3.dae": {
+      "sha256": "1c7a2a8124e39ad07096c0cce8461b0e650f6752900cfd777bf87c181e81749b",
+      "bytes": 2475274
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link4.dae": {
+      "sha256": "dd134cf13cdaced2b67739e4d9fe2ca011cc533936397d9f6303fc740424e2a2",
+      "bytes": 2533228
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link5.dae": {
+      "sha256": "cbcabd369e044eba3f1c2cab84b9ed2ebc1b2f424c6104ad9c5d7410e92fabfe",
+      "bytes": 3259292
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link6.dae": {
+      "sha256": "907b16fea84931f4881174234065bb647700abf105b432c3ff65360e0ad5cf8b",
+      "bytes": 5252660
+    },
+    "franka_emika_panda/meshes/robot_arms/fr3/visual/link7.dae": {
+      "sha256": "b9d05ac502ff269b1323705de811d07a8eb9920ce711b32ee0497bf16b74989b",
+      "bytes": 4243523
+    },
+    "franka_emika_panda/meshes/robot_ee/franka_hand_white/collision/hand.stl": {
+      "sha256": "94493e94f30fe940f2c8ca2f155c3bbe67bbff406d3edf5e261670d2f0f6e2ed",
+      "bytes": 10084
+    },
+    "franka_emika_panda/meshes/robot_ee/franka_hand_white/visual/finger.dae": {
+      "sha256": "12c7bc9b55ffd0d1d0e3442d3e213ecc4fbebbced15259a20195af464f871fcd",
+      "bytes": 52371
+    },
+    "franka_emika_panda/meshes/robot_ee/franka_hand_white/visual/hand.dae": {
+      "sha256": "1b50601d3157f810176aba6db7164d6bdb4ec8b6546a8a725baba2fa2a21c58a",
+      "bytes": 550371
+    },
+    "franka_emika_panda/urdf/fr3_franka_hand.urdf": {
+      "sha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497",
+      "bytes": 15803
+    }
+  },
+  "files": {
+    "asset.usdc": {
+      "sha256": "1dec1593feec4c70ab8a1897800ad650a149909a627970e7dd15c4a1c345b521",
+      "bytes": 5105274
+    },
+    "asset.yaml": {
+      "sha256": "82b60077a0978b28b432f4ca4b5b903055b55ce86f2f49f1c6cd02246e9c5693",
+      "bytes": 827
+    },
+    "LICENSE": {
+      "sha256": "4b25434e6ec2012e28a484f1d7924a0fd1a8bf232c2be2d50d584d299d04d6d6",
+      "bytes": 12926
+    },
+    "source/fr3_franka_hand.urdf": {
+      "sha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497",
+      "bytes": 15803
+    },
+    "source/PROVENANCE.json": {
+      "sha256": "126c12fdd03094d54e24c38b223d6ab45bcebfce594e7351196e6dd5cfc7d9ce",
+      "bytes": 4354
+    },
+    "UPSTREAM_README.md": {
+      "sha256": "3d68f328ece69a5c91272f2663bc0ca33e8f82507de902d660f8d6c064ffa443",
+      "bytes": 670
+    },
+    "visual.glb": {
+      "sha256": "a496dfac0c18f740c919326aefcd224871e291c342793a92d9c41c363b45d70f",
+      "bytes": 5113864
+    }
+  },
+  "producer": {
+    "path": "tools/package_fr3_asset.py",
+    "sha256": "ee0b60ca0a3b76adb1014275a4723e1216d3c3c41febf15fcbeaaede4cbb6c45",
+    "bytes": 15172
+  },
+  "toolVersions": {
+    "python": "3.13.14",
+    "trimesh": "4.12.2",
+    "numpy": "2.5.4",
+    "pycollada": "0.9.3",
+    "usd-core": "26.8",
+    "pyyaml": "6.0.3",
+    "pydantic": "2.12.4"
+  },
+  "conversion": {
+    "device": "cpu",
+    "poseRadOrM": {
+      "fr3_joint1": 0,
+      "fr3_joint2": -0.4,
+      "fr3_joint3": 0,
+      "fr3_joint4": -2,
+      "fr3_joint5": 0,
+      "fr3_joint6": 1.6,
+      "fr3_joint7": 0.7,
+      "fr3_finger_joint1": 0.04,
+      "fr3_finger_joint2": 0.04
+    },
+    "visualTriangles": 240624,
+    "rigidBodies": 11,
+    "physicsValidation": "not run",
+    "limitations": [
+      "URDF mimic retained as metadata; no USD mimic drive is authored",
+      "Drives and runtime program integration require later validation"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "asset:robot/fr3@1",
+  "ranAt": "2026-10-19T12:53:18.942007+00:00",
+  "launchable": false,
+  "toolVersions": {
+    "pydantic": "2.12.4"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structure",
+      "status": "pass",
+      "message": "asset.yaml matches the asset package schema"
+    },
+    {
+      "id": "coverage",
+      "tier": "structure",
+      "status": "warn",
+      "message": "Remaining structure and physics checks have not run"
+    },
+    {
+      "id": "massSource",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Masses and inertias copied from pinned URDF; not independently measured"
+    }
+  ]
+}

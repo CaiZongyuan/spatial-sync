@@ -1,0 +1,36 @@
+id: robot/fr3
+kind: robot
+title: Franka Research 3 with Franka Hand
+description: 'Pinned platform FR3: seven arm joints and two fingers. CPU file conversion;
+  structure and physics validation are pending. URDF mimic is retained as metadata.'
+stage: asset.usdc
+visual: visual.glb
+dimensionsM:
+- 0.6252494798568164
+- 0.2593215081364564
+- 0.8093560416772749
+physics:
+  massKg: 18.604001026199995
+  massSource: estimated
+  collision: authored
+implements:
+- type: robot-arm/v1
+  programs:
+    newton: robot_arm.newton
+  config:
+    jointKeys:
+    - fr3_joint1
+    - fr3_joint2
+    - fr3_joint3
+    - fr3_joint4
+    - fr3_joint5
+    - fr3_joint6
+    - fr3_joint7
+    fingerKeys:
+    - fr3_finger_joint1
+    - fr3_finger_joint2
+    handBody: fr3_hand
+    tcpSite: fr3_hand/tcp
+    speedScale: 0.5
+    graspMode: weld
+dressing: false
