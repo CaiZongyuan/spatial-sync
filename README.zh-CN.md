@@ -85,9 +85,12 @@ agent 不能审批调用。
 1,000 条终态，较早结果从同一会话日志读取；历史不可用时返回带原调用 ID 的
 `503 history_unavailable`，保持请求去重。
 
-浏览器启动一个工作区后，可以使用已安装的 `lw`：
+可以从浏览器启动工作区，也可以直接用已安装的 `lw` 发现并启动场景：
 
 ```powershell
+uv run --no-sync lw scene ls --json
+uv run --no-sync lw scene show robot-and-tubes --json
+uv run --no-sync lw scene launch lab-demo
 uv run --no-sync lw status
 uv run --no-sync lw ls --type centrifuge/v1
 uv run --no-sync lw show /World/Lab/Centrifuge
@@ -102,10 +105,13 @@ uv run --no-sync lw rec ls --json
 `--json`；完整命令见 `lw --help`。退出码：0 成功，1 用法或连接错误，2 被拒绝，
 3 失败或取消，4 等待超时。
 
-`lw mcp` 通过锁定版本的官方 SDK 提供八个通用 stdio 工具。将
+`lw mcp` 通过锁定版本的官方 SDK 提供十一个通用 stdio 工具；原有八个工具的
+名称与参数保持不变。场景发现与启动不需要预先存在活跃会话。将
 [英文配置示例](README.md#cli-and-mcp) 中的路径替换为仓库绝对路径，即可连接
-Claude Code。连接前先启动工作区；Agent 可读定义、查询、执行、取消、等待和
+Claude Code。Agent 可读定义、查询、执行、取消、等待和
 控制会话，不能审批。调用记录包含实际 MCP 客户端名称；拒绝会返回条件提示。
+
+库根、场景包与版本解析规则见[场景版本指南](docs/SCENE_LIBRARY.md)。
 
 测试、端口隔离及清理步骤见 [验证指南](docs/VERIFICATION.md)。基础检查不依赖
 Newton 或 GPU；实际物理另以 CPU/CUDA 检查验证。本地结果不代表外部 CI。

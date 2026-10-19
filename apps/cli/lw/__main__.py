@@ -84,7 +84,7 @@ def parser():
         control.add_parser(name)
     step = control.add_parser("step")
     step.add_argument("count", type=int, nargs="?", default=1)
-    commands.add_parser("mcp", help="serve the eight generic MCP tools over stdio")
+    commands.add_parser("mcp", help="serve generic MCP tools over stdio")
     return root
 
 
@@ -100,13 +100,21 @@ def human(document):
             return f"{document['invocationId']} {document['status']} {document['action']}{suffix}"
         if "sessionId" in document and "state" in document:
             return (
-                f"{document['sessionId']} {document.get('sceneId', '')} "
+                f"{document['sessionId']} {document.get('sceneVersion', document.get('sceneId', ''))} "
                 f"{document['state']} simTime={document['simTime']:g}s"
             )
         if "ack" in document:
             return f"{document['ack']['status']}\n{human(document['state'])}"
     if isinstance(document, list) and all(isinstance(item, dict) and "key" in item for item in document):
         return "\n".join(f"{item['key']}  {item['type']}" for item in document)
+    if isinstance(document, list) and all(
+        isinstance(item, dict) and "sceneVersion" in item for item in document
+    ):
+        return "\n".join(
+            f"{item['sceneVersion']}  {item['title']}  "
+            f"{','.join(item['sources'])}  {'launchable' if item['launchable'] else 'unavailable'}"
+            for item in document
+        )
     return document if isinstance(document, str) else json.dumps(document, ensure_ascii=False, indent=2)
 
 

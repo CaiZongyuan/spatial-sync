@@ -63,6 +63,37 @@ class Command:
 
 COMMANDS = (
     Command(
+        path=("scene", "ls"),
+        help="Search scene versions in the built-in and user libraries.",
+        method="library_search",
+        arguments=(
+            Argument("query", ("--query", "-q"), str | None, "Text to find in scene names or titles", None),
+            Argument("launchable", ("--launchable",), bool, "Only list launchable versions", False),
+        ),
+        output_type=list[dict[str, Any]],
+        mcp_name="library_search",
+    ),
+    Command(
+        path=("scene", "show"),
+        help="Describe a scene version's entities, devices, actions, teach locations and validation.",
+        method="library_describe",
+        arguments=(Argument("id", ("name[@rev]",), str, "Scene name or name@rev; reads latest if omitted"),),
+        mcp_name="library_describe",
+    ),
+    Command(
+        path=("scene", "launch"),
+        help="Launch an exact scene version, or the latest launchable version of a name.",
+        method="scene_launch",
+        arguments=(
+            Argument("sceneVersion", ("name[@rev]",), str, "Scene name or exact name@rev"),
+            Argument(
+                "source", ("--source",), str | None, "synthetic or newton; package default if omitted", None
+            ),
+        ),
+        mcp_name="scene_launch",
+        actor=True,
+    ),
+    Command(
         path=("ls",),
         help="List entities, optionally filtered by Catalog type or text query.",
         method="list_entities",

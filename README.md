@@ -148,9 +148,13 @@ read from the session log. An unavailable archived result returns503
 
 ## CLI and MCP
 
-Launch one workspace in the browser, then use the installed `lw` entrypoint:
+Discover and launch from the installed `lw` entrypoint, or open a workspace in
+the browser:
 
 ```powershell
+uv run --no-sync lw scene ls --json
+uv run --no-sync lw scene show robot-and-tubes --json
+uv run --no-sync lw scene launch lab-demo
 uv run --no-sync lw status
 uv run --no-sync lw ls --type centrifuge/v1
 uv run --no-sync lw show /World/Lab/Centrifuge
@@ -166,8 +170,11 @@ Parameter values use JSON, falling back to strings. Use `lw --help` for all
 commands and `--json` for machine output. Exit codes are0 success,1 usage or
 connection error,2 rejection,3 failure/cancellation and4 wait timeout.
 
-`lw mcp` serves eight generic tools over stdio through the pinned official MCP
-SDK. For a Claude Code MCP configuration, replace the repository path below:
+`lw mcp` serves eleven generic tools over stdio through the pinned official MCP
+SDK. Library discovery and launch work before any session exists; the original
+eight device/session tool schemas are unchanged. See [scene versions](docs/SCENE_LIBRARY.md)
+for package roots, latest versus latest-launchable selection and compatibility.
+For a Claude Code MCP configuration, replace the repository path below:
 
 ```json
 {
@@ -181,7 +188,7 @@ SDK. For a Claude Code MCP configuration, replace the repository path below:
 }
 ```
 
-Start a workspace before connecting. Tools cover discovery, definitions, state,
+MCP can discover and launch a workspace. Tools cover discovery, definitions, state,
 actions, invocation reads/cancellation, property waits and session control.
 Approval remains a human operation in Web or CLI. The agent receives Catalog
 instructions and condition hints, and its client name is recorded as its actor.

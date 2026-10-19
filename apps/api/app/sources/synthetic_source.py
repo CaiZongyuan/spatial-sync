@@ -40,6 +40,7 @@ def _primitive(geometry, p=(0, 0, 0)):
 class SyntheticSource:
     def __init__(self, session_id: str, *, publication_clock=None):
         self.session_id = session_id
+        self.scene_package = None
         self.options = SessionOptions()
         self._task: asyncio.Task | None = None
         self._events = asyncio.Queue()
@@ -57,12 +58,18 @@ class SyntheticSource:
         self._rotor_angle = 0.0
         self._publication_clock = publication_clock
 
+    def configure_scene(self, scene_package):
+        self.scene_package = scene_package
+
     async def start(self, scene_id: str, options: SessionOptions):
         if scene_id != "lab-demo":
             raise ValueError("unknown synthetic scene")
         self.options = options.model_copy()
         self.manifest = self._manifest()
-        self.catalog = load_catalog(self.manifest, scene_id, REGISTRY)
+        self.catalog = load_catalog(
+            self.manifest, self.scene_package.name if self.scene_package else scene_id, REGISTRY,
+            **({"scene_file": self.scene_package.path / "devices.yaml"} if self.scene_package else {}),
+        )
         self.host = HostCore(
             self.catalog, REGISTRY, fact_hz=options.factHz, publication_clock=self._publication_clock
         )
@@ -351,10 +358,11 @@ class SyntheticSource:
         )
         import yaml
 
-        from packages.info.catalog import DEVICE_ROOT
+        from packages.library.scenes import builtin_scene_path
 
         locations = yaml.safe_load(
-            (DEVICE_ROOT / "scenes/lab-demo.locations.yaml").read_text(encoding="utf-8")
+            ((self.scene_package.path if self.scene_package else builtin_scene_path("lab-demo"))
+             / "locations.yaml").read_text(encoding="utf-8")
         )["locations"]
         sites = []
         for name, location in locations.items():
@@ -383,7 +391,9 @@ class SyntheticSource:
                 "sceneRevision": "rev-" + uuid.uuid4().hex[:12],
                 "revisionNumericId": 1,
                 "epoch": 0,
-                "sceneName": "Synthetic Laboratory",
+                "sceneName": (
+                    self.scene_package.metadata["title"] if self.scene_package else "Synthetic Laboratory"
+                ),
                 "source": {
                     "kind": "synthetic",
                     "solver": "DeterministicKinematics",

@@ -29,6 +29,7 @@ from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 class NewtonSource:
     def __init__(self, session_id: str):
         self.session_id = session_id
+        self.scene_package = None
         self._process = None
         self._transport = None
         self._writer = None
@@ -55,6 +56,9 @@ class NewtonSource:
         self._invocations = OrderedDict()
         self._starting = True
 
+    def configure_scene(self, scene_package):
+        self.scene_package = scene_package
+
     async def start(self, scene_id: str, options: SessionOptions) -> tuple[SceneManifest, Catalog]:
         from packages.sim_runtime.runner import run_runner
 
@@ -68,7 +72,9 @@ class NewtonSource:
         self._transport = parent
         self._process = mp.get_context("spawn").Process(
             target=run_runner,
-            args=(child, self.session_id, scene_id, options.model_dump()),
+            args=(
+                child, self.session_id, scene_id, options.model_dump(), self.scene_package
+            ),
             name=f"newton-{self.session_id}",
         )
         self._process.start()

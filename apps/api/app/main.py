@@ -20,17 +20,18 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import StrictBool, TypeAdapter, ValidationError
+from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
-from apps.api.app.session_manager import SCENES, SessionManager, default_source_factory, encode
+from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
+from packages.library.scenes import LibraryError
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
     PROTOCOL_VERSION,
@@ -62,13 +63,20 @@ def _validation_diagnostics(value):
 
 
 class CreateSession(Model):
-    sceneId: NonEmpty
-    source: Literal["synthetic", "newton"] = "synthetic"
+    sceneId: NonEmpty | None = None
+    sceneVersion: NonEmpty | None = None
+    source: Literal["synthetic", "newton"] | None = None
     realtimeFactor: Positive | None = 1.0
     continueWithoutObservers: StrictBool = True
     approval: ApprovalPolicy = ApprovalPolicy()
     controlHz: Positive = 60
     factHz: Positive = 10
+
+    @model_validator(mode="after")
+    def scene_selector(self):
+        if (self.sceneId is None) == (self.sceneVersion is None):
+            raise ValueError("Provide exactly one of sceneId or sceneVersion")
+        return self
 
 
 def _role(headers, settings: Settings):
@@ -105,6 +113,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
+        # Resolve the operator's roots at startup, before any owned workers or recordings.
+        manager.library
         await recordings.startup()
         await monitor.start()
         try:
@@ -116,6 +126,10 @@ def create_app(
                 await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
+
+    @app.exception_handler(LibraryError)
+    async def library_error(request, error):
+        return JSONResponse({"detail": error.detail}, status_code=error.status)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
@@ -185,7 +199,16 @@ def create_app(
 
     @app.get("/api/v1/scenes")
     async def scenes():
-        return {"scenes": SCENES}
+        return {"scenes": manager.library.list()}
+
+    @app.get("/api/v1/library/scenes")
+    async def library_scenes(q: str | None = None, launchable: bool | None = None):
+        return {"scenes": manager.library.list(q, launchable)}
+
+    @app.get("/api/v1/library/scenes/{name}")
+    @app.get("/api/v1/library/scenes/{name}/{rev}")
+    async def library_scene(name: str, rev: str | None = None):
+        return manager.library.describe(f"{name}@{rev}" if rev is not None else name)
 
     @app.get("/api/v1/platform")
     async def platform():
@@ -195,7 +218,7 @@ def create_app(
     async def create_session(body: CreateSession):
         session = await manager.create(
             body.sceneId,
-            body.source,
+            body.source if body.source is not None else ("synthetic" if body.sceneId else None),
             SessionOptions(
                 realtimeFactor=body.realtimeFactor,
                 continueWithoutObservers=body.continueWithoutObservers,
@@ -203,6 +226,7 @@ def create_app(
                 controlHz=body.controlHz,
                 factHz=body.factHz,
             ),
+            scene_version=body.sceneVersion,
         )
         return session.summary()
 

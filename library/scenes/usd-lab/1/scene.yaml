@@ -1,0 +1,4 @@
+name: usd-lab
+title: Newton USD Laboratory
+sources: [newton]
+stage: python:usd-lab

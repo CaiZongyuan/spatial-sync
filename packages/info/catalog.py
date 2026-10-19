@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from packages.library.scenes import builtin_scene_path
 from packages.protocol.schema import Catalog as CatalogDocument
 
 from .conditions import validate_conditions
@@ -59,9 +60,12 @@ class Catalog(BaseModel):
         return deepcopy(adapter.validate_python(data)) if adapter else deepcopy(data)
 
 
-def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT):
+def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None):
     root = Path(root)
-    scene_file = root / "scenes" / f"{scene_id}.yaml"
+    scene_file = Path(scene_file) if scene_file else (
+        builtin_scene_path(scene_id) / "devices.yaml" if root == DEVICE_ROOT
+        else root / "scenes" / f"{scene_id}.yaml"
+    )
     scene = yaml.safe_load(scene_file.read_text(encoding="utf-8"))
     if set(scene) != {"scene", "entities"} or scene["scene"] != scene_id:
         raise ValueError("Scene binding document must name its registered scene")

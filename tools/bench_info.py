@@ -124,6 +124,11 @@ def fixture(directory, count, rate, generation=None):
     destination = directory / "devices"
     assert destination.resolve().is_relative_to(directory.resolve())
     shutil.copytree(ROOT / "devices", destination)
+    scene_directory = destination / "scenes"
+    scene_directory.mkdir(exist_ok=True)
+    package = ROOT / "library/scenes/lab-demo/1"
+    shutil.copyfile(package / "devices.yaml", scene_directory / "lab-demo.yaml")
+    shutil.copyfile(package / "locations.yaml", scene_directory / "locations.yaml")
     controller = {
         "type": ControllerProgram.type,
         "title": "Benchmark controller",
@@ -194,7 +199,7 @@ def serve(args):
         ControllerProgram.id: ControllerProgram,
         TelemetryProgram.id: TelemetryProgram,
     }
-    synthetic_source.load_catalog = lambda manifest, scene, registry: load_catalog(
+    synthetic_source.load_catalog = lambda manifest, scene, registry, **options: load_catalog(
         manifest, scene, registry, root=args.fixture_dir
     )
 
