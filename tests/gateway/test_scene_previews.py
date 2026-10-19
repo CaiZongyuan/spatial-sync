@@ -2,11 +2,13 @@
 
 import json
 import shutil
+from functools import partial
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.api.app import main
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.library import previews
@@ -14,6 +16,14 @@ from packages.library.scenes import SceneLibrary
 from tools.capture_scene_preview import capture
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def isolated_bundled_previews(tmp_path, monkeypatch):
+    # A stale operator-cache counterexample must not fall back to a shipped capture.
+    monkeypatch.setattr(main, "PreviewRepository", partial(
+        previews.PreviewRepository, bundled_root=tmp_path / "empty-bundled-cache"
+    ))
 
 
 async def test_real_preview_preserves_existing_session_and_serves_only_verified_files(tmp_path, monkeypatch):

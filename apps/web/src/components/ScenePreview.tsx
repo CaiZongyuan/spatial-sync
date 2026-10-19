@@ -28,7 +28,8 @@ export function FrozenViewport({ client, manifest, capture, readouts = false }: 
   const rendered = useRef(new Map<string, RenderedPose>());
   const inspectVisuals = useRef<InspectVisuals | undefined>(undefined);
   const recorder = useMemo(() => new FrameRecorder(), []);
-  const hidden = useMemo(() => new Set<string>(), []);
+  const hidden = useMemo(() => new Set(manifest.nodes.filter(node => node.kind !== 'group'
+    && !node.visuals.length && !node.fallbackVisuals?.length && !node.colliders.length).map(node => node.entityKey)), [manifest]);
   const warn = useCallback(() => {}, []);
   const catalog = client.info.getMetadata().catalog;
   const annotations = !capture && catalog ? Object.values(catalog.entities)

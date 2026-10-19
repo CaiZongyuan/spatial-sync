@@ -505,6 +505,7 @@ function SceneContents({
     [rendered],
   );
   const extraBounds = useCallback(() => instances.current?.bounds(), []);
+  const inspectGeometry = useCallback((key: string) => inspectVisuals.current?.(key), [inspectVisuals]);
   const frameBounds = useCallback(() => {
     const box = new Box3();
     for (const object of physicalNodes.current.values()) {
@@ -636,6 +637,7 @@ function SceneContents({
         counts={registrationCounts}
         mode={useInstances ? 'instanced' : 'individual'}
         extraBounds={extraBounds}
+        inspectVisuals={inspectGeometry}
       />
       <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} />
       <color attach="background" args={[theme.ground]} />

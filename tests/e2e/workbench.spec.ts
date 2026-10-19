@@ -252,9 +252,8 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   await page
     .getByRole('button', { name: 'Close session', exact: true })
     .click();
-  await expect(
-    page.getByRole('heading', { name: 'Open your workspace' }),
-  ).toBeVisible();
+  await expect(page.getByRole('link', { name: '打开场景库' })).toBeVisible();
+  await expect(page.getByLabel('Session ID', { exact: true })).toBeVisible();
   expect(
     (await (await request.get(`${api}/api/v1/sessions/${sessionId}`)).json())
       .state,

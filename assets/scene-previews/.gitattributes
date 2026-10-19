@@ -1,0 +1,3 @@
+# Derived snapshots retain the raw bytes indexed in capture.json.
+** -text
+capture.json whitespace=cr-at-eol

@@ -1,0 +1,223 @@
+{
+  "schema": "lw.scene-preview/1",
+  "sceneVersion": "usd-lab@1",
+  "sceneContentHash": "59f978a14f59333f831bb6f08fb32af4285720ad844bfbf9839de02691186334",
+  "source": "newton",
+  "capturedAt": "2026-10-19T09:57:43.676777+00:00",
+  "simTime": 0.0,
+  "runtime": {
+    "python": "3.13.14",
+    "source": "NewtonSource",
+    "device": "cpu",
+    "numpy": "2.5.4",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "mujoco": "3.15.0",
+    "usd-core": "26.8"
+  },
+  "dependencyDigest": "sha256-text-lf-v1",
+  "dependencies": [
+    {
+      "path": "apps/api/app/recordings.py",
+      "sha256": "057542b6052776de4d6079e62f248d6c0397cb5ba17b2fbf7258f121e2988c6c"
+    },
+    {
+      "path": "apps/api/app/sources/newton_source.py",
+      "sha256": "b1bf32d20b13b7f5de5d079825147de26c2e642b4bac7d8dd753f98ceb1817c1"
+    },
+    {
+      "path": "assets/bindings/usd-lab.yaml",
+      "sha256": "3613724d3a17f039b039b549995cf8fbee01694df7ef54cb8f8f898da5e29984"
+    },
+    {
+      "path": "assets/registry.yaml",
+      "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
+    },
+    {
+      "path": "assets/visuals/equipment-cover.glb",
+      "sha256": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83"
+    },
+    {
+      "path": "examples/usd-lab/lab-y-up.usda",
+      "sha256": "603b577904d278b6d0e71d800c97fe247c1131031d53abe0b918df5381170703"
+    },
+    {
+      "path": "packages/assets/bindings.py",
+      "sha256": "185b964f2ec3a0baf89eaca9fdd21bb7ff999217c5cd82a51d3f1c6b0a183768"
+    },
+    {
+      "path": "packages/assets/registry.py",
+      "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
+    },
+    {
+      "path": "packages/info/catalog.py",
+      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+    },
+    {
+      "path": "packages/info/conditions.py",
+      "sha256": "89aea1f932daee6504ac8309a09f8a6f95d83bbf50ff59234f42974a71792395"
+    },
+    {
+      "path": "packages/info/diff.py",
+      "sha256": "0928b274987b2611a9e7fad8e0b6aeaa89f2c76dd001fdb8785afc177793b942"
+    },
+    {
+      "path": "packages/info/program.py",
+      "sha256": "8efad7563a43e95276d48d0fb76ace684f2809d4c94e2b111e11f8c29c456901"
+    },
+    {
+      "path": "packages/info/schema_subset.py",
+      "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
+    },
+    {
+      "path": "packages/info/store.py",
+      "sha256": "335985ff293d00a66e1fce4630382b3aaaf8c0032fca007cbb10fa8ea1e65a5e"
+    },
+    {
+      "path": "packages/library/previews.py",
+      "sha256": "cae792a570919430821c667936f307f9323657c09b9d22a4ca9109df57b880f7"
+    },
+    {
+      "path": "packages/library/scenes.py",
+      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+    },
+    {
+      "path": "packages/programs/centrifuge/newton.py",
+      "sha256": "7f29aaf3ee174920e03d301ade174f1261b0974a4776790d894cbf071b040099"
+    },
+    {
+      "path": "packages/programs/centrifuge/virtual.py",
+      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+    },
+    {
+      "path": "packages/programs/robot_arm/newton.py",
+      "sha256": "e24698f39b5d1a2a3e0921e3dc816978be87286a1fb70bdd1063f69b0608b10f"
+    },
+    {
+      "path": "packages/programs/robot_arm/trajectory.py",
+      "sha256": "3286496f51a35d6c8ccf74ea71a2315e0d84741fddc21ec960b02172ec7d3bbf"
+    },
+    {
+      "path": "packages/programs/tube/facts.py",
+      "sha256": "64915a1a42b6e4bf8b0b02026b3bcc156cffff638bd20624773456e3e02d5e79"
+    },
+    {
+      "path": "packages/programs/tube/newton.py",
+      "sha256": "0fffcbb14c9d238e9aa0f36fbf8004f8462c8afe89ccb7b61a5a175ac7a3e164"
+    },
+    {
+      "path": "packages/protocol/json.py",
+      "sha256": "a83bb80a434ab37920308a428532ed3c9322a36550fadc30d526e7f5c8257baf"
+    },
+    {
+      "path": "packages/protocol/math.py",
+      "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
+    },
+    {
+      "path": "packages/protocol/schema/__init__.py",
+      "sha256": "13f113f894423b2d1301ed433e9823152410a50f4771ff81231c62ecb769d669"
+    },
+    {
+      "path": "packages/sim_runtime/info_catalog.py",
+      "sha256": "e0253e349a8a973a60fdee282805244ea0a56f36923325e51a177fda5fb75a0e"
+    },
+    {
+      "path": "packages/sim_runtime/info_host.py",
+      "sha256": "8d2cf37ba1242dc4ca757f54f6a129dc7bd2cb40730a639af0bad3ce47b4be13"
+    },
+    {
+      "path": "packages/sim_runtime/labels.py",
+      "sha256": "f55986e885f9685d0d56b13e145d86e4b101bdb4f9138891d369a90c21616e3a"
+    },
+    {
+      "path": "packages/sim_runtime/loaders.py",
+      "sha256": "d4dbc65b83b036c5153965d18cfc31cffda52126b704a070041c5bb2a0111190"
+    },
+    {
+      "path": "packages/sim_runtime/manifest_export.py",
+      "sha256": "7919ceaa4fd923babdef4fefc10c8edd6535f6f93e505a05b7dedc6b7ab672f6"
+    },
+    {
+      "path": "packages/sim_runtime/mesh_assets.py",
+      "sha256": "f1afb5032d7e96c281d951da75d68bbfb1d9ddd98845aa20b28b9d5d7fed30a4"
+    },
+    {
+      "path": "packages/sim_runtime/pacer.py",
+      "sha256": "ca65d0768522b5df8e19bfca06363eac46c57b33eae49d3b1ea8ea298907d96d"
+    },
+    {
+      "path": "packages/sim_runtime/physics_port.py",
+      "sha256": "5d2df9a9a60ad59e96fc5f2e5276f8e1fa1a009c27c4da4f219898e053d711b6"
+    },
+    {
+      "path": "packages/sim_runtime/pose_filter.py",
+      "sha256": "b71cd4cc76aee5cbc8f00e87e27a46ac103f8f3d03da02afabde32201a3853e2"
+    },
+    {
+      "path": "packages/sim_runtime/runner.py",
+      "sha256": "729e6206642e7fe1a043d18b27fb4f8af797c86d6680c174020ad46b593dc237"
+    },
+    {
+      "path": "packages/sim_runtime/scenes.py",
+      "sha256": "ddc9d373540a295df4c67ceee8cf58da4d32c964c123105854687928f8407de4"
+    },
+    {
+      "path": "packages/sim_runtime/simulation.py",
+      "sha256": "d16b8e3042179e3782c7e74d9dd4bd155083b8c8efd71ccfe2cb689ceea69bd7"
+    },
+    {
+      "path": "packages/sim_runtime/sites.py",
+      "sha256": "c59b8f1e9fca0385c59320e416498525f460d6c74010ccbc4728d0e788f084cd"
+    },
+    {
+      "path": "packages/sim_runtime/transform_extractor.py",
+      "sha256": "15ea3efbebf3d12f474d4ac8a2f64d111cd3842fd95a6c9b6aba2aafb20e812a"
+    },
+    {
+      "path": "packages/sim_runtime/usd_scene.py",
+      "sha256": "b1d843c6037eb90d40ae248408b8e12024e56f265fc567719d903f7bf1c1b3e3"
+    },
+    {
+      "path": "packages/sim_runtime/welds.py",
+      "sha256": "8156b85a0abdeb6b865a9f2b4665edeb750447059a4bc929414be7522212ecd8"
+    },
+    {
+      "path": "packages/transport/__init__.py",
+      "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
+    },
+    {
+      "path": "packages/transport/source_state.py",
+      "sha256": "908e14b3f755c0729626f31e0c745107794cb315c3ee757c32e3d009f04efb70"
+    },
+    {
+      "path": "tools/capture_scene_preview.py",
+      "sha256": "e8769fcbcb57e9cc06e81c96f1641cf66ba4c6e59e455d3c4037b3eda3a06867"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+    }
+  ],
+  "documents": {
+    "manifest": "manifest.json",
+    "catalog": "catalog.json",
+    "spatial": "snapshot.bin",
+    "state": "state.json"
+  },
+  "files": {
+    "manifest.json": "c9bffd7077a32dd8e09b8c5892c00104da8e9ba93f4968740c0c7daed77a4836",
+    "catalog.json": "7d5f506e5cbe2624ec98a67edb14846427bd43e320d19fc2dd3a93c3e94b2a9e",
+    "state.json": "4e8cc4319bca2791ddf5b1f43a248a789f50bdec481c16272c3e8943c73be668",
+    "snapshot.bin": "10f56cba35c1a15e7451f1892d1d0a7a9b6a065ee458dd736e194b2b3b605b48",
+    "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
+    "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
+    "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
+  },
+  "counts": {
+    "physicalEntities": 4,
+    "bindings": 0,
+    "groups": 2
+  },
+  "bounds": null,
+  "thumbnail": {}
+}

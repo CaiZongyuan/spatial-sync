@@ -1,6 +1,32 @@
 import { expect, test } from '@playwright/test';
+import type { SceneManifest } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
+
+test('a library larger than the shared thumbnail cache keeps every completed image', async ({ page, request }) => {
+  // Reuse a real small frozen frame; only library identities/revisions are fixtures.
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?source=newton`)).json();
+  const scene = scenes.find((value: { id: string }) => value.id === 'falling-boxes@1');
+  const documents = Object.fromEntries(await Promise.all(Object.entries(scene.preview.documents).map(async ([kind, url]) => {
+    const response = await request.get(`${api}${url}`);
+    return [kind, kind === 'spatial' ? await response.body() : await response.json()];
+  })));
+  await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: { scenes: Array.from({ length: 35 }, (_, index) => ({
+    ...scene, id: `thumbnail-fixture@${index + 1}`, sceneId: 'thumbnail-fixture', rev: index + 1,
+    preview: { ...scene.preview, documents: Object.fromEntries(Object.keys(documents).map(kind => [kind, `/api/v1/thumbnail-fixture/${index}/${kind}`])) },
+  })) } }));
+  await page.route('**/api/v1/thumbnail-fixture/**', route => {
+    const [index, kind] = new URL(route.request().url()).pathname.split('/').slice(-2);
+    return kind === 'spatial' ? route.fulfill({ body: documents.spatial, contentType: 'application/octet-stream' })
+      : route.fulfill({ json: { ...documents[kind], sceneRevision: `thumbnail-fixture-${index}` } });
+  });
+  await page.goto('/scenes');
+  await page.waitForFunction(() => document.querySelectorAll('.scene-card .scene-thumbnail img').length === 35);
+  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(35);
+  await expect(page.getByRole('img', { name: 'thumbnail-fixture@1 的真实初始场景' })).toBeVisible();
+  await expect(page.getByText('预览加载失败', { exact: true })).toHaveCount(0);
+  await expect(page.locator('canvas')).toHaveCount(0);
+});
 
 test('real scene capture, shared thumbnails, filters, URL preferences and exact launch', async ({ page, request }, testInfo) => {
   const errors: string[] = [], liveRequests: string[] = [], sockets: string[] = [];
@@ -12,6 +38,7 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
   await expect(laboratory).toContainText('30 实体 · 22 绑定');
   await expect(laboratory.getByRole('img', { name: 'lab-demo@1 的真实初始场景' })).toBeVisible();
+  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(4);
   await expect(page.locator('canvas')).toHaveCount(0);
   await page.getByRole('button', { name: '☷ 列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
@@ -55,6 +82,40 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
     await expect(page.locator('canvas')).toHaveCount(1);
   } finally { await request.delete(`${api}/api/v1/sessions/${sessionId}`); }
   expect(errors).toEqual([]);
+});
+
+test('bundled FR3 preview loads its real GLBs and initial frame without a live session', async ({ page, request }, testInfo) => {
+  const live: string[] = [], failures: string[] = [];
+  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/v1/sessions')) live.push(request.url()); });
+  page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) live.push(socket.url()); });
+  page.on('pageerror', error => failures.push(error.message));
+  const detail = await (await request.get(`${api}/api/v1/library/scenes/robot-and-tubes/1`)).json();
+  expect(detail.preview.status).toBe('available');
+  const manifest = await (await request.get(`${api}${detail.preview.documents.manifest}`)).json() as SceneManifest;
+  const bodies = manifest.nodes.filter(node => node.kind === 'body');
+  const meshes = manifest.nodes.flatMap(node => node.kind !== 'group' && node.visuals.some(visual => visual.kind !== 'primitive')
+    ? [{ key: node.entityKey, count: node.visuals.length }] : []);
+  const visible = manifest.nodes.filter(node => node.kind !== 'group'
+    && (node.visuals.length || node.fallbackVisuals?.length || node.colliders.length));
+  expect(meshes.length).toBeGreaterThan(10);
+  await page.goto('/scenes/robot-and-tubes/1');
+  await expect(page.locator('.scene-detail-stack').first()).toContainText('72 实体 · 22 绑定');
+  await expect(page.locator('canvas')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(expected => expected.every(node => {
+    const visual = window.__spatialRenderDebug?.inspectVisuals(node.key);
+    return visual?.source === 'visuals' && visual.visualCount === node.count
+      && visual.meshCount >= node.count && visual.normalsComplete;
+  }), meshes)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.frameStats().appliedBodies)).toBe(bodies.length);
+  await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.drawnEntities().length)).toBe(visible.length);
+  const drawn = await page.evaluate(() => window.__spatialRenderDebug!.drawnEntities());
+  expect(drawn).not.toContain('/World/Lab/RobotA/fr3/base');
+  await expect(page.locator('.scene-entity-table')).toContainText('无渲染几何');
+  await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.frameStats().potentialTriangles ?? 0)).toBeGreaterThan(20_000);
+  await expect(page.locator('.scene-capture-note')).toContainText('仿真时间 0.000 s');
+  await expect(page.getByRole('button', { name: /^Run / })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('bundled-fr3-real-static.png'), fullPage: true });
+  expect(live).toEqual([]); expect(failures).toEqual([]);
 });
 
 test('unlaunchable and missing previews show real reasons and unknown counts', async ({ page, request }) => {

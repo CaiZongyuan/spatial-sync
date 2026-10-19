@@ -38,7 +38,7 @@ function Detail({ scene }: { scene: SceneDetail }) {
   const navigate = useNavigate();
   const manifest = state.manifest;
   const source = scene.preview.source;
-  const physical = manifest?.nodes.filter(node => node.kind !== 'group' && !node.entityKey.startsWith('/World/Dressing/'));
+  const physical = manifest?.nodes.filter(node => node.kind !== 'group').filter(node => !node.entityKey.startsWith('/World/Dressing/'));
   const dressing = manifest?.nodes.filter(node => node.entityKey.startsWith('/World/Dressing/'));
   const groups = manifest?.nodes.filter(node => node.kind === 'group');
   const locations = Object.entries(scene.locations);
@@ -54,7 +54,7 @@ function Detail({ scene }: { scene: SceneDetail }) {
       <section className="reference-panel"><header><h2>实体</h2><span className="scene-note">{scene.entityCount ?? '—'} 实体 · {scene.deviceCount ?? '—'} 绑定</span></header>
         {physical && catalog ? <><div className="scene-table-wrap scene-entity-table"><table><thead><tr><th>实体</th><th>类型 / 绑定</th><th>空间节点</th></tr></thead><tbody>{physical.map(node => {
           const owner = deviceKey(manifest!, catalog, node.entityKey);
-          return <tr key={node.entityKey}><td><code>{node.entityKey}</code></td><td>{owner ? <><code>{catalog.entities[owner].type}</code>{owner !== node.entityKey && <small title={owner}>绑定到 {owner.split('/').at(-1)}</small>}</> : <span className="scene-note">未绑定</span>}</td><td>{node.kind === 'body' ? '动态' : '静态'}</td></tr>;
+          return <tr key={node.entityKey}><td><code>{node.entityKey}</code></td><td>{owner ? <><code>{catalog.entities[owner].type}</code>{owner !== node.entityKey && <small title={owner}>绑定到 {owner.split('/').at(-1)}</small>}</> : <span className="scene-note">未绑定</span>}</td><td>{node.kind === 'body' ? '动态' : '静态'}{!node.visuals.length && !node.fallbackVisuals?.length && !node.colliders.length && <small>无渲染几何</small>}</td></tr>;
         })}</tbody></table></div><details className="scene-groups"><summary>逻辑分组 · {groups?.length ?? 0}（不计入物理实体）</summary>{groups?.map(node => <code key={node.entityKey}>{node.entityKey}</code>)}</details></> : <div className="scene-panel-body"><p className="scene-note">{scene.countsReason}。以下为声明式绑定，匹配选择器尚未展开。</p><div className="scene-table-wrap"><table><thead><tr><th>实体 / 选择器</th><th>实体类型</th></tr></thead><tbody>{scene.entities.map((binding, index) => <tr key={index}><td><code>{binding.key ?? binding.match}</code></td><td><code>{binding.type}</code></td></tr>)}</tbody></table></div></div>}
       </section>
       <section className="reference-panel"><header><h2>示教位置 · 布景</h2><span className="scene-note">{locations.length} 个位置</span></header><div className="scene-panel-body">
