@@ -150,7 +150,9 @@ class NewtonSource:
                 self.manifest = SceneManifest.model_validate(packet["manifest"])
                 from packages.sim_runtime.info_catalog import load_info_catalog
 
-                self.catalog = load_info_catalog(self.manifest, self.scene_id)
+                self.catalog = load_info_catalog(
+                    self.manifest, self.scene_id, scene_package=self.scene_package
+                )
                 if self.catalog.model_dump(mode="json") != packet["catalog"]:
                     raise ValueError("Runner and gateway Catalog definitions differ")
                 self._info_store = StateStore(self.manifest.sceneRevision)
