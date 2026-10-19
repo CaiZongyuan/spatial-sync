@@ -1,5 +1,17 @@
 type: incubator/v1
 title: Incubator
+alerts:
+  tempDeviation:
+    when: {all: [{property: temperatureC, deviatesFrom: setpointC, by: 1.0}]}
+    forSeconds: 60
+    severity: critical
+    message: 温度偏离设定值超过 1 °C
+    hint: 检查门是否关闭
+  doorOpen:
+    when: {property: doorOpen, equals: true}
+    forSeconds: 120
+    severity: warning
+    message: 培养箱门打开超过 120 s
 description: Seeded virtual temperature, CO2 and humidity; opening the door relaxes toward ambient air.
 properties:
   temperatureC: {schema: {type: number, minimum: 0, maximum: 80}, unit: °C, deadband: 0.02, maxRateHz: 5, staleAfterSeconds: 3}

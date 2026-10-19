@@ -3,7 +3,7 @@
   "sceneVersion": "lab-demo@2",
   "sceneContentHash": "d29d122e8068a592c58925f1d21c355496f9b4dc6761c92897e22538c9128f39",
   "source": "synthetic",
-  "capturedAt": "2026-10-19T16:06:20.386580+00:00",
+  "capturedAt": "2026-10-19T16:32:21.793201+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -27,7 +27,7 @@
     },
     {
       "path": "devices/types/biosafety-cabinet.v1.yaml",
-      "sha256": "94986fa05f4df6cecf7ed350df9627ed68d7aab46ee7cb01f890ee2ac3b095bf"
+      "sha256": "6662cfe473845cc0bc911956c24204a6332d44a9be3a0c81c6d3c561a2ced995"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -35,11 +35,11 @@
     },
     {
       "path": "devices/types/env-sensor.v1.yaml",
-      "sha256": "ca9c842d298827d75e51abd2a0ed2f7cfe651a52ce74b673cb068258f1800a2c"
+      "sha256": "95ac04b69c84f27b4fd0d079d0a91607422188b9a8898c77499d9785c9aba4b4"
     },
     {
       "path": "devices/types/incubator.v1.yaml",
-      "sha256": "1cf3865735568334fbf5b0f5f021319c62ba177e67bbc4efbea598596a90209e"
+      "sha256": "f1665f610193c4d85d6e76213db68cc138e1f846851b72ac3c4d34de69bff41a"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -55,15 +55,19 @@
     },
     {
       "path": "packages/info/binding_validation.py",
-      "sha256": "86e7b711a8ab8d584d5e30aec7398ad71c6b600c8f131bcddcac342109cbf8d5"
+      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "ee7c74540779e0cb6a264d61bc86cf3607f0e34422ef22397709f5667fb76033"
+      "sha256": "107aa7bab2f0e09da150af0eeec1b56faf415fcda1411b3922b9c2761f7ac60f"
     },
     {
       "path": "packages/info/conditions.py",
-      "sha256": "4ab5f0b4954b80d54af6abcabf4df359515a054c00b8fac836a16164d1c20709"
+      "sha256": "15024a91f38dda4a563dca1f5f56fce9c14571a9adbf1b0e5b54519f936afa31"
+    },
+    {
+      "path": "packages/info/declarations.py",
+      "sha256": "c6ed9509200157374509b73a9c90e51797673827dae69cb89c8eb52eb31d07d6"
     },
     {
       "path": "packages/info/diff.py",
@@ -71,7 +75,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "67574ad7ab1b97ec14a94a27a6c293f1813b7da05ba888ee2a1187e87b07fc15"
+      "sha256": "b5210b7c9bbeeff4017eb69daa8c8c2f1232321cde35bdada4667c648e1cc398"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -126,6 +130,10 @@
       "sha256": "de0ae5c7ae12c6a36c2cff776a4bf6e399a00a5820d33055ce373d266b6ca248"
     },
     {
+      "path": "packages/protocol/internal.py",
+      "sha256": "f19e453b1041c2d1abe4e95de3e7d9ee08dee9e7ddf925918376f188f3dde0d5"
+    },
+    {
       "path": "packages/protocol/math.py",
       "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
     },
@@ -157,10 +165,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "9702825fcd4aa6ab66a15183a8d7292a53a96c080dad929d2a1c58ef639ac773",
-    "catalog.json": "643953e2e1c3328d9c93d97ec0dde70908ae1ae4ed0f2c3a2daf5bff6fd62183",
-    "state.json": "7bcc28a0632f584648d615fa358837ff267bd09183b5f00b289ce6c9a06bb318",
-    "snapshot.bin": "ad21e15c7655e205e135d7c67505ad52c001ae8d2af01f14d91c0f600be4c521"
+    "manifest.json": "e51ab0313050a64aa7731799e4c13fb2f26efc1948e5305b4d60828d20c5e822",
+    "catalog.json": "b43289706fe9b18cf5e03c15576589d3a63d8719126fa5d5e514c4b827a67575",
+    "state.json": "6b27aeca8f2e031787037226525aad6d4617933d56fd37bafc32bd5246022cd2",
+    "snapshot.bin": "68941b0a91c8f3f58c070004ff140b9afe3a0c1fb63141fc585f39d225dbdf30"
   },
   "counts": {
     "physicalEntities": 33,

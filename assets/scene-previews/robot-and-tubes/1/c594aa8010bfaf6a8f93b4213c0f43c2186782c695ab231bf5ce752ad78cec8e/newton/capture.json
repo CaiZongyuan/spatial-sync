@@ -3,7 +3,7 @@
   "sceneVersion": "robot-and-tubes@1",
   "sceneContentHash": "c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e",
   "source": "newton",
-  "capturedAt": "2026-10-19T15:54:18.412168+00:00",
+  "capturedAt": "2026-10-19T16:35:58.131892+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -23,7 +23,7 @@
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
-      "sha256": "b1bf32d20b13b7f5de5d079825147de26c2e642b4bac7d8dd753f98ceb1817c1"
+      "sha256": "77384316d8ad3b23dbe2f591fd7a25d194c78ba7aaa30ce0f2c7e9cb9bafcc75"
     },
     {
       "path": "assets/registry.yaml",
@@ -111,7 +111,7 @@
     },
     {
       "path": "devices/types/biosafety-cabinet.v1.yaml",
-      "sha256": "94986fa05f4df6cecf7ed350df9627ed68d7aab46ee7cb01f890ee2ac3b095bf"
+      "sha256": "6662cfe473845cc0bc911956c24204a6332d44a9be3a0c81c6d3c561a2ced995"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -119,11 +119,11 @@
     },
     {
       "path": "devices/types/env-sensor.v1.yaml",
-      "sha256": "ca9c842d298827d75e51abd2a0ed2f7cfe651a52ce74b673cb068258f1800a2c"
+      "sha256": "95ac04b69c84f27b4fd0d079d0a91607422188b9a8898c77499d9785c9aba4b4"
     },
     {
       "path": "devices/types/incubator.v1.yaml",
-      "sha256": "1cf3865735568334fbf5b0f5f021319c62ba177e67bbc4efbea598596a90209e"
+      "sha256": "f1665f610193c4d85d6e76213db68cc138e1f846851b72ac3c4d34de69bff41a"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -143,15 +143,15 @@
     },
     {
       "path": "packages/info/binding_validation.py",
-      "sha256": "86e7b711a8ab8d584d5e30aec7398ad71c6b600c8f131bcddcac342109cbf8d5"
+      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "ee7c74540779e0cb6a264d61bc86cf3607f0e34422ef22397709f5667fb76033"
+      "sha256": "107aa7bab2f0e09da150af0eeec1b56faf415fcda1411b3922b9c2761f7ac60f"
     },
     {
       "path": "packages/info/conditions.py",
-      "sha256": "4ab5f0b4954b80d54af6abcabf4df359515a054c00b8fac836a16164d1c20709"
+      "sha256": "15024a91f38dda4a563dca1f5f56fce9c14571a9adbf1b0e5b54519f936afa31"
     },
     {
       "path": "packages/info/diff.py",
@@ -159,7 +159,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "67574ad7ab1b97ec14a94a27a6c293f1813b7da05ba888ee2a1187e87b07fc15"
+      "sha256": "b5210b7c9bbeeff4017eb69daa8c8c2f1232321cde35bdada4667c648e1cc398"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -212,6 +212,10 @@
     {
       "path": "packages/programs/tube/newton.py",
       "sha256": "b459557c9ebf471a4dc8f3b59e046dd06de21858ff15834ce2c1075e6a2906ca"
+    },
+    {
+      "path": "packages/protocol/internal.py",
+      "sha256": "f19e453b1041c2d1abe4e95de3e7d9ee08dee9e7ddf925918376f188f3dde0d5"
     },
     {
       "path": "packages/protocol/json.py",
@@ -267,7 +271,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "729e6206642e7fe1a043d18b27fb4f8af797c86d6680c174020ad46b593dc237"
+      "sha256": "7038e150dcb4c766e4e0c43fe8bd4f72c53c33cdc56c5feac3e9c0d96a28fc68"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -313,10 +317,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "ab9ad4d4486510d886dfbf2463d6f43696ebfc08f04c98fea281764b1ad023ec",
-    "catalog.json": "e39b0886c34b41067c0c9521525fa3a5a81eded872c1d5c3dcdc2bff7d47ad9d",
-    "state.json": "e5fdab494c58fc8a7d0792d3ea16e26c0cf00e2d8b7bc5f10cc9e938760a1fad",
-    "snapshot.bin": "c1057268a5fa18c5ddda9dc66cf002fe32a3dddb7c5b000a0d6397fe514090ff",
+    "manifest.json": "72a66bb8ae9c5e8b6c06af5767fb0cf9b67d004bbadea9a5b5950e1eaa83150f",
+    "catalog.json": "e0fce0a962a9e5d420803b2cc3203a9854028bf9958a3f1dc3fe27e0b5a0c946",
+    "state.json": "de6174aed7e2241e0b8c1ced3f1b3d1f0ab9b6679a312dc50470d9096af94ece",
+    "snapshot.bin": "ce7bdc17ae74f6703e696826ce89e06ff3a40f6caf0b3cee383abf1da40916a5",
     "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

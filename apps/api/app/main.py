@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
+from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
@@ -156,6 +157,7 @@ def create_app(
     app.state.library_assets = library_assets
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
+    install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_library_routes(app, library_assets, lambda: manager.library)
     request_times = defaultdict(deque)

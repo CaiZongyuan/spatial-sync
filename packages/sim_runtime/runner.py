@@ -379,6 +379,7 @@ class _Runner:
                 "manifest": self.manifest.model_dump(),
                 "snapshot": snapshot.model_dump(),
                 "catalog": self.info.catalog.model_dump(mode="json"),
+                "alertRules": self.info.catalog.alert_rules(),
                 "entitySnapshot": self.info.snapshot().model_dump(mode="json"),
                 "stats": self.stats(),
             }

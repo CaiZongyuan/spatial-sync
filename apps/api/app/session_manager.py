@@ -17,16 +17,17 @@ from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import log_event
 from packages.assets.registry import AssetRegistry
+from packages.info.alerts import AlertEngine
 from packages.info.approvals import ApprovalStore
+from packages.info.catalog import Catalog
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.store import StateStore
 from packages.library.scenes import SceneLibrary
-from packages.protocol.internal import SessionOptions
+from packages.protocol.internal import InformationClock, SessionOptions
 from packages.protocol.json import encode
 from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
-    Catalog,
     Cause,
     Command,
     CommandAck,
@@ -105,14 +106,17 @@ class Session:
         self.catalog = None
         self.info = None
         self.pipeline = None
+        self.alerts = None
         self.recordings = recordings
         self.recording = None
         self._recording_revision_ready = False
+        self._alerts_ready = False
 
     async def start(self):
         previous_manifest = self.manifest
         recording_was_ready = self._recording_revision_ready
         self._recording_revision_ready = False
+        self._alerts_ready = False
         self.state = "LOADING"
         self._log_event("session.lifecycle", state=self.state)
         if self.manifest:
@@ -141,6 +145,10 @@ class Session:
             self._revision_number += 1
             self.manifest = manifest
             self.catalog = catalog or Catalog(sceneRevision=manifest.sceneRevision)
+            if self.alerts is None:
+                self.alerts = AlertEngine(self.catalog)
+            else:
+                self.alerts.configure(self.catalog)
             if self.info is None:
                 self.info = StateStore(manifest.sceneRevision)
             else:
@@ -167,9 +175,16 @@ class Session:
             if policy_change:
                 self._apply_observer_policy_change(*policy_change, publish=False)
             self._last_published_seq = self.seq
-            if callable(getattr(candidate, "entity_snapshot", None)):
-                self.apply_info(candidate.entity_snapshot())
+            initial_info = (
+                candidate.entity_snapshot()
+                if callable(getattr(candidate, "entity_snapshot", None)) else None
+            )
+            if initial_info is not None:
+                self.apply_info(initial_info)
             await self._record_revision()
+            self._alerts_ready = True
+            if initial_info is not None:
+                self._advance_alerts(initial_info)
             self._log_event("session.lifecycle", state=self.state)
             self._tasks = [
                 asyncio.create_task(self._monitor(), name="session-frames"),
@@ -410,7 +425,9 @@ class Session:
     async def _events(self):
         try:
             async for event in self.source.events():
-                if isinstance(event, (EntitySnapshot, EntityObservations, EntityEvent, InvocationUpdate)):
+                if isinstance(event, (
+                    EntitySnapshot, EntityObservations, EntityEvent, InvocationUpdate, InformationClock,
+                )):
                     async with self.command_lock:
                         self.apply_info(event)
                     continue
@@ -452,6 +469,9 @@ class Session:
         self._cache_frame(self.latest_frame())
         self.error = {"code": "source_unavailable", "message": message}
         self.state, self.actual_rtf = "FAILED", 0
+        self._alerts_ready = False
+        if self.alerts:
+            self.alerts.close_context("source_unavailable")
         if self.pipeline:
             self.pipeline.fail_active("source_unavailable", message)
         for client in self.clients:
@@ -513,6 +533,11 @@ class Session:
     def apply_info(self, message):
         if message.sceneRevision != self.manifest.sceneRevision:
             return
+        if isinstance(message, InformationClock):
+            if message.epoch == self.info.epoch:
+                self._advance_alerts(message)
+            return
+        clock = message
         if isinstance(message, InvocationUpdate):
             self.pipeline.update(message)
             return
@@ -536,6 +561,19 @@ class Session:
         elif message.epoch != self.info.epoch:
             return
         self.broadcast_info(message)
+        if isinstance(clock, (EntitySnapshot, EntityObservations)):
+            self._advance_alerts(clock)
+
+    def _advance_alerts(self, clock):
+        if (
+            not self.alerts or not self.alerts.rules or not self._alerts_ready
+            or self.state not in ("RUNNING", "PAUSED")
+        ):
+            return
+        for alert in self.alerts.advance(
+            clock.epoch, clock.simTime, clock.sampleTimeMs, self.info.values(), self.info.metadata()
+        ):
+            self.broadcast_info(alert)
 
     def broadcast(self, message):
         if isinstance(message, SessionState):
@@ -584,6 +622,8 @@ class Session:
         ).encode(frame)
 
     def _apply_state(self, state: SessionState):
+        if state.state in ("FAILED", "STOPPED") and self.alerts:
+            self.alerts.close_context("source_unavailable" if state.state == "FAILED" else "session_stopped")
         if state.state in ("FAILED", "STOPPED") and self.pipeline:
             self.pipeline.fail_active("source_unavailable", state.cause.message or "Device host unavailable")
         self._seq_high_water = max(self._seq_high_water, state.seq)
@@ -910,6 +950,8 @@ class Session:
                 self.scene_version.require_launchable()
             self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
+            if self.alerts:
+                self.alerts.close_context("scene_reloaded")
             self.pipeline.fail_active("session_reset", "Scene was reloaded")
             self.broadcast(self._lifecycle_state())
             try:
@@ -942,6 +984,9 @@ class Session:
     async def close(self):
         async with self.command_lock:
             self._auto_paused = False
+            self._alerts_ready = False
+            if self.alerts:
+                self.alerts.close_context("session_stopped")
             if self.pipeline:
                 self.pipeline.fail_active("source_unavailable", "Session was stopped")
                 self.pipeline.close()
