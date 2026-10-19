@@ -180,6 +180,34 @@ def test_reserved_report_case_aliases_are_rejected_before_revision_allocation(tm
         assert upload(client).json()["assetVersion"] == "labware/test-tube@1"
 
 
+@pytest.mark.parametrize("dirname", ["validation.json", "Validation.json", "VALIDATION.JSON"])
+@pytest.mark.parametrize("populated", [False, True], ids=["empty", "with-child-file"])
+def test_reserved_report_directories_never_publish_or_bypass_dedup_and_restart(tmp_path, dirname, populated):
+    files, extra = package_files(), None
+    if populated:
+        files[f"{dirname}/nested/source.json"] = b"{}"
+    else:
+        extra = tarfile.TarInfo(dirname + "/")
+        extra.type = tarfile.DIRTYPE
+    with TestClient(create_app()) as client:
+        rejected = upload(client, files, extra=extra)
+        assert rejected.status_code == 422, rejected.text
+        error = rejected.json()["detail"]
+        assert error["code"] == "import_invalid" and error["problems"][0]["path"] == "validation.json"
+        assert not (tmp_path / "user-library/assets").exists()
+        assert client.get("/api/v1/library/imports").json()["imports"] == []
+        assert upload(client).json()["assetVersion"] == "labware/test-tube@1"
+        # Empty directories do not change the file tree hash; invalid names must fail before dedup too.
+        rejected_again = upload(client, files, extra=extra)
+        assert rejected_again.status_code == 422, rejected_again.text
+        assert len(client.get("/api/v1/library/imports").json()["imports"]) == 1
+    with TestClient(create_app()) as client:
+        versions = client.get("/api/v1/library/assets", params={"q": "test-tube"}).json()["assets"]
+        assert [version["id"] for version in versions] == ["labware/test-tube@1"]
+        same = upload(client).json()
+        assert same["assetVersion"] == "labware/test-tube@1" and same["deduplicated"]
+
+
 def test_exact_mixed_case_references_preserve_uploaded_bytes_and_indexed_urls():
     files = package_files()
     files["Models/Asset.usda"] = files.pop("asset.usda")

@@ -133,8 +133,11 @@ def metadata(path):
     files = set(package_files(path))
     if "asset.yaml" not in files:
         raise invalid("Package metadata must be named exactly asset.yaml", path="asset.yaml")
-    if any(filename.casefold() == "validation.json" and filename != "validation.json" for filename in files):
-        raise invalid("validation.json is reserved for gateway-generated reports", path="validation.json")
+    for entry in path.iterdir():
+        if entry.name.casefold() == "validation.json" and (
+            entry.name != "validation.json" or not entry.is_file()
+        ):
+            raise invalid("validation.json is reserved for gateway-generated reports", path="validation.json")
     for field in ("stage", "visual"):
         filename = getattr(value, field)
         if filename is not None and filename not in files:
