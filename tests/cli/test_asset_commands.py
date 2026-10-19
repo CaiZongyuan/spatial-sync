@@ -78,6 +78,13 @@ async def test_asset_cli_mcp_upload_filters_description_and_export_dedup(gateway
             mcp, "library_search", resource="assets", kind="device", query="centrifuge", gaps=True
         ) == cli("asset", "ls", "--kind", "device", "-q", "centrifuge", "--gaps")
         assert await result(mcp, "library_search") == cli("scene", "ls")
+        checked = cli("asset", "validate", first["assetVersion"], code=3)
+        assert (
+            checked["schema"] == "lw.validation/1" and checked["subject"] == "asset:" + first["assetVersion"]
+        )
+        rechecked = await result(mcp, "library_validate", id=first["assetVersion"])
+        assert rechecked["contentHash"] == checked["contentHash"] == first["contentHash"]
+        assert rechecked["reportId"] != checked["reportId"]
         same = await result(mcp, "library_import", directory=str(package))
         assert same["assetVersion"] == first["assetVersion"] and same["deduplicated"]
         (package / "NOTICE").write_text("Second content version", encoding="utf-8")
@@ -101,3 +108,61 @@ def test_asset_import_missing_local_directory_is_a_structured_cli_error(gateway_
     )
     assert invocation.returncode == 1
     assert "client" in json.loads(invocation.stdout)["error"]["message"]
+
+
+async def test_scene_cli_and_generic_mcp_import_and_revalidation_share_exact_immutable_versions(
+    gateway_url, tmp_path
+):
+    environment = {key: value for key, value in os.environ.items() if key != "LW_SESSION"}
+    environment |= {"LW_URL": gateway_url, "PYTHONIOENCODING": "utf-8"}
+    package = tmp_path / "client-scene"
+    package.mkdir()
+    (package / "scene.yaml").write_text(
+        "name: command-structure-fixture\ntitle: Command structure fixture\n"
+        "sources: [newton]\nstage: stage.usda\n",
+        encoding="utf-8",
+    )
+    (package / "stage.usda").write_text(
+        '#usda 1.0\n(metersPerUnit = 1\n upAxis = "Z")\ndef Xform "World" {\n def Xform "Lab" {}\n}\n',
+        encoding="utf-8",
+    )
+    (package / "devices.yaml").write_text(
+        "scene: command-structure-fixture\nentities: []\n", encoding="utf-8"
+    )
+    (package / "locations.yaml").write_text("locations: {}\n", encoding="utf-8")
+
+    def cli(*arguments, code=0):
+        invocation = subprocess.run(
+            [str(LW), *arguments, "--json"],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
+        )
+        assert invocation.returncode == code, (invocation.stdout, invocation.stderr)
+        return json.loads(invocation.stdout)
+
+    first = cli("scene", "import", str(package))
+    assert first["sceneVersion"] == "command-structure-fixture@1"
+    checked = cli("scene", "validate", first["sceneVersion"])
+    assert checked["contentHash"] == first["contentHash"] and checked["launchable"]
+    async with Client(
+        StdioServerParameters(command=str(LW), args=["mcp"], env=environment), mode="legacy"
+    ) as mcp:
+        repeated = await result(mcp, "library_import", directory=str(package))
+        assert repeated["deduplicated"] and repeated["sceneVersion"] == first["sceneVersion"]
+        rechecked = await result(mcp, "library_validate", id=first["sceneVersion"])
+        assert rechecked["contentHash"] == checked["contentHash"]
+        assert rechecked["reportId"] != checked["reportId"]
+        assert rechecked["checks"] == checked["checks"]
+    stage = package / "stage.usda"
+    stage.write_text(
+        stage.read_text(encoding="utf-8").replace('upAxis = "Z"', 'upAxis = "Y"'), encoding="utf-8"
+    )
+    second = cli("scene", "import", str(package))
+    assert second["sceneVersion"] == "command-structure-fixture@2"
+    failure = cli("scene", "validate", second["sceneVersion"], code=3)
+    assert any(check["id"] == "S2" and check["status"] == "fail" for check in failure["checks"])
+    assert cli("scene", "show", first["sceneVersion"])["contentHash"] == first["contentHash"]

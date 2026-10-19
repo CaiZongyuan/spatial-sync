@@ -2,12 +2,15 @@
 
 import math
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from packages.info.program import ProgramConfig, Reject
 from packages.protocol.math import compose_pose
 
+from .taught import require_postures
+
 HOME = [0.0, 0.3, -0.6, 0.0, 0.0, 0.0, 0.0]
+TAUGHT_LIMITS = tuple((None, None) for _ in HOME)
 BASE_HEIGHT = 0.9
 
 
@@ -28,11 +31,17 @@ def kinematics(joints):
 
 class RobotArmProgram:
     id, type, tick_priority = "robot_arm.virtual", "robot-arm/v1", 10
+    taught_limits = TAUGHT_LIMITS
 
     class Config(ProgramConfig):
-        locations: dict
+        locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
         tubes: list[str]
         speedScale: float = Field(default=1.0, gt=0, le=1)
+
+        @model_validator(mode="after")
+        def taught_poses(self):
+            require_postures(self.locations, TAUGHT_LIMITS)
+            return self
 
     def init(self, ctx):
         self.handle, self.plan, self.segment, self.cancel_requested = None, [], None, False

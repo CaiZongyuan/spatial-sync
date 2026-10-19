@@ -1,5 +1,7 @@
 """A tube writes its own location by observing the arm's declared state."""
 
+from pydantic import Field
+
 from packages.info.program import ProgramConfig
 
 
@@ -9,7 +11,7 @@ class TubeProgram:
     class Config(ProgramConfig):
         robots: list[str]
         initialLocations: dict[str, str]
-        locations: dict
+        locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
 
     def init(self, ctx):
         self.holder = None

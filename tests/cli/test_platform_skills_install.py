@@ -26,7 +26,9 @@ def invoke(directory, *arguments, code=0):
 def link_directory(link, target):
     if os.name == "nt":
         linked = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, timeout=10,
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            timeout=10,
         )
         assert linked.returncode == 0, linked.stdout + linked.stderr
     else:
@@ -35,13 +37,17 @@ def link_directory(link, target):
 
 def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_path(tmp_path):
     catalog = invoke(tmp_path, "skills", "ls")
-    assert [item["name"] for item in catalog] == ["lab", "lab-operate"]
+    assert [item["name"] for item in catalog] == ["lab", "lab-library", "lab-operate"]
     target = tmp_path / "Agent skills with spaces"
     target.mkdir()
     other = target / "unrelated-user-skill.md"
     other.write_bytes(b"keep exact user content")
     first = invoke(tmp_path, "skills", "install", "--target", str(target))
-    assert first == {"target": str(target), "installed": ["lab", "lab-operate"], "unchanged": []}
+    assert first == {
+        "target": str(target),
+        "installed": ["lab", "lab-library", "lab-operate"],
+        "unchanged": [],
+    }
     timestamps = {}
     for item in catalog:
         installed = target / item["name"] / "SKILL.md"
@@ -52,7 +58,11 @@ def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_pat
     extra = target / "lab" / "personal-notes.txt"
     extra.write_bytes(b"user notes inside an installed skill")
     repeated = invoke(tmp_path, "skills", "install", "--target", str(target))
-    assert repeated == {"target": str(target), "installed": [], "unchanged": ["lab", "lab-operate"]}
+    assert repeated == {
+        "target": str(target),
+        "installed": [],
+        "unchanged": ["lab", "lab-library", "lab-operate"],
+    }
     assert all((target / name / "SKILL.md").stat().st_mtime_ns == stamp for name, stamp in timestamps.items())
     assert other.read_bytes() == b"keep exact user content"
     assert extra.read_bytes() == b"user notes inside an installed skill"
@@ -113,15 +123,19 @@ def test_linked_destination_components_never_write_through_to_the_real_directory
     if location == "ancestor-existing":
         nested.mkdir(parents=True)
         (nested / "personal.txt").write_bytes(b"keep nested user content")
-    before = sorted((str(path.relative_to(real)), path.read_bytes() if path.is_file() else None)
-                    for path in real.rglob("*"))
+    before = sorted(
+        (str(path.relative_to(real)), path.read_bytes() if path.is_file() else None)
+        for path in real.rglob("*")
+    )
     linked = tmp_path / "linked parent"
     link_directory(linked, real)
     try:
         target = linked if location == "target" else linked / "nested" / "skills"
         invoke(tmp_path, "skills", "install", "--target", str(target), code=1)
-        after = sorted((str(path.relative_to(real)), path.read_bytes() if path.is_file() else None)
-                       for path in real.rglob("*"))
+        after = sorted(
+            (str(path.relative_to(real)), path.read_bytes() if path.is_file() else None)
+            for path in real.rglob("*")
+        )
         assert after == before
     finally:
         if os.name == "nt":

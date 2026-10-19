@@ -119,6 +119,10 @@ class GatewayClient:
         return (await self.request("GET", "/api/v1/library/" + resource, params=params))[resource]
 
     async def library_describe(self, id):
+        return await self.request("GET", self._library_path(id))
+
+    @staticmethod
+    def _library_path(id):
         name, separator, rev = id.partition("@")
         if "/" in name:
             path = "/api/v1/library/assets/" + "/".join(quote(part, safe="") for part in name.split("/"))
@@ -126,7 +130,12 @@ class GatewayClient:
             path = "/api/v1/library/scenes/" + quote(name, safe="")
         if separator:
             path += "/" + quote(rev, safe="")
-        return await self.request("GET", path)
+        return path
+
+    async def library_validate(self, id, *, actor="cli:lw"):
+        if "@" not in id:
+            raise ValueError("Validation requires an exact asset or scene version with @rev")
+        return await self.request("POST", self._library_path(id) + "/validate", actor=actor)
 
     async def library_import(self, directory, *, actor="cli:lw"):
         # The gateway independently validates paths, schema and upload/expansion limits.
@@ -138,11 +147,11 @@ class GatewayClient:
                 with tarfile.open(fileobj=output, mode="w", dereference=True) as archive:
                     for path in sorted(root.rglob("*")):
                         if path.is_symlink() or path.is_junction() or not path.resolve().is_relative_to(root):
-                            raise ValueError("Asset directory cannot contain filesystem links")
+                            raise ValueError("Library directory cannot contain filesystem links")
                         if path.is_file():
                             archive.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
                         elif not path.is_dir():
-                            raise ValueError("Asset directory can only contain regular files")
+                            raise ValueError("Library directory can only contain regular files")
                 output.seek(0)
 
                 # httpx's async transport requires an async iterator for streamed bodies.
@@ -158,7 +167,7 @@ class GatewayClient:
                     actor=actor,
                 )
         except OSError as exc:
-            raise ValueError("Asset directory could not be read") from exc
+            raise ValueError("Library directory could not be read") from exc
 
     async def scene_launch(self, sceneVersion, source=None, seed=None, *, actor="cli:lw"):
         body = {"sceneVersion": sceneVersion}
@@ -281,6 +290,10 @@ class GatewayClient:
 
 def exit_code(document):
     if isinstance(document, dict):
+        if document.get("schema") == "lw.validation/1" and any(
+            check["status"] == "fail" for check in document["checks"]
+        ):
+            return 3
         if document.get("timedOut"):
             return 4
         status = document.get("status")

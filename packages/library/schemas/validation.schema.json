@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Check": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "tier": {
+          "enum": [
+            "structural",
+            "structure",
+            "physics"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "entityKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entitykey"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "notApplicable": {
+          "default": false,
+          "title": "Notapplicable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "tier",
+        "status",
+        "message"
+      ],
+      "title": "Check",
+      "type": "object"
+    },
+    "CompletenessItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "collision",
+            "massInertia",
+            "visual",
+            "license",
+            "jointSites",
+            "types"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "present",
+            "warning",
+            "missing",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "message"
+      ],
+      "title": "CompletenessItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "lw.validation/1 includes its original partial and timestamp-free reports.",
+  "properties": {
+    "schema": {
+      "const": "lw.validation/1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "subject": {
+      "minLength": 1,
+      "pattern": "^(?:scene:[a-z0-9]+(?:-[a-z0-9]+)*|asset:(?:robot|device|labware|environment)/[a-z0-9]+(?:-[a-z0-9]+)*)@[1-9][0-9]*$",
+      "title": "Subject",
+      "type": "string"
+    },
+    "ranAt": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ranat"
+    },
+    "toolVersions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Toolversions",
+      "type": "object"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "launchable": {
+      "title": "Launchable",
+      "type": "boolean"
+    },
+    "importContentHash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Importcontenthash"
+    },
+    "contentHash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contenthash"
+    },
+    "reportId": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{32}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reportid"
+    },
+    "completeness": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/CompletenessItem"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completeness"
+    },
+    "untypedEntities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Untypedentities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "subject",
+    "checks",
+    "launchable"
+  ],
+  "title": "ValidationReport",
+  "type": "object"
+}

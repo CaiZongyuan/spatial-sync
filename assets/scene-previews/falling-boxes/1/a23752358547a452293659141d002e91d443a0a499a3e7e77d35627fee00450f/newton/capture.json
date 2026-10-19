@@ -3,7 +3,7 @@
   "sceneVersion": "falling-boxes@1",
   "sceneContentHash": "a23752358547a452293659141d002e91d443a0a499a3e7e77d35627fee00450f",
   "source": "newton",
-  "capturedAt": "2026-10-19T13:37:28.240252+00:00",
+  "capturedAt": "2026-10-19T15:53:01.300238+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -38,8 +38,12 @@
       "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
     },
     {
+      "path": "packages/info/binding_validation.py",
+      "sha256": "86e7b711a8ab8d584d5e30aec7398ad71c6b600c8f131bcddcac342109cbf8d5"
+    },
+    {
       "path": "packages/info/catalog.py",
-      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+      "sha256": "ee7c74540779e0cb6a264d61bc86cf3607f0e34422ef22397709f5667fb76033"
     },
     {
       "path": "packages/info/conditions.py",
@@ -62,24 +66,36 @@
       "sha256": "e7c9f0117bd69666afa8dd31f2d524c07ad9ac249ec615134a7235fe7896a7bf"
     },
     {
+      "path": "packages/library/common.py",
+      "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
+    },
+    {
       "path": "packages/library/previews.py",
       "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
     },
     {
+      "path": "packages/library/reports.py",
+      "sha256": "dbded9fdf8e7f1c3eacbbc2da01827e0b04f9255aace612f5709f7946c9fcd8d"
+    },
+    {
       "path": "packages/library/scenes.py",
-      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+      "sha256": "70d47498b91750c7c62fbc66a6cd313388d466b34ce365676a39ef6d82062bce"
     },
     {
       "path": "packages/programs/centrifuge/newton.py",
-      "sha256": "7f29aaf3ee174920e03d301ade174f1261b0974a4776790d894cbf071b040099"
+      "sha256": "c5ef3c5a4605f90b7207abf169475ca5d97a16005102b726687533089920d753"
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "e24698f39b5d1a2a3e0921e3dc816978be87286a1fb70bdd1063f69b0608b10f"
+      "sha256": "9233947ffea45ddf7efe8255bf2c7cf64d3462970bd22451695cc12a50bb38e8"
+    },
+    {
+      "path": "packages/programs/robot_arm/taught.py",
+      "sha256": "b98ae93e03c041353f47e387264eafd35434cbb1bf5a288e9638226f4533c5eb"
     },
     {
       "path": "packages/programs/robot_arm/trajectory.py",
@@ -91,7 +107,7 @@
     },
     {
       "path": "packages/programs/tube/newton.py",
-      "sha256": "0fffcbb14c9d238e9aa0f36fbf8004f8462c8afe89ccb7b61a5a175ac7a3e164"
+      "sha256": "b459557c9ebf471a4dc8f3b59e046dd06de21858ff15834ce2c1075e6a2906ca"
     },
     {
       "path": "packages/protocol/json.py",
@@ -143,7 +159,7 @@
     },
     {
       "path": "packages/sim_runtime/scenes.py",
-      "sha256": "ddc9d373540a295df4c67ceee8cf58da4d32c964c123105854687928f8407de4"
+      "sha256": "40c24e712fa9a1a660107d2ed43eac9efb81949feb57f884b5ac5e1b311b73fa"
     },
     {
       "path": "packages/sim_runtime/simulation.py",
@@ -151,7 +167,7 @@
     },
     {
       "path": "packages/sim_runtime/sites.py",
-      "sha256": "c59b8f1e9fca0385c59320e416498525f460d6c74010ccbc4728d0e788f084cd"
+      "sha256": "80278752f333b60c791fcef05624f27fdfbcb19c2aaf0382d9d5d8b06665e3ae"
     },
     {
       "path": "packages/sim_runtime/transform_extractor.py",
@@ -175,7 +191,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
     }
   ],
   "documents": {
@@ -185,10 +201,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "5417c650fb2e54a8ab6397f667af1413265298812a5d692523d98d9921b4a5e1",
-    "catalog.json": "bf059f4fea25ea46710adf00d08f06cbc55a190f234cf4cc35c912bc3d11aaa0",
-    "state.json": "182d9a30ef0677ead20f85bf9da58aa9bb5d1ed4a1e0232a9553f1e383e68019",
-    "snapshot.bin": "0c5a8c93f618bdd81788b792fcf6bb14d2af0951b5cbb81c8587976fe27e6f5e"
+    "manifest.json": "f687a49ae3406d11657299d9e2ee047d35596286260311ca054450a93efd7323",
+    "catalog.json": "17e81433f27b4fb8a4fafb80f342b95517e9b3b69b63f519330c6b82e5bd841a",
+    "state.json": "d218b9014398d8bb0d6a56bb39053c0a2a4ab6d07000b047ae1f30b83a6ec5fb",
+    "snapshot.bin": "d5a23d358864f14df45384ec690ce38c7cdc23b307a4ecdaecf8fa41e6a492b9"
   },
   "counts": {
     "physicalEntities": 3,
