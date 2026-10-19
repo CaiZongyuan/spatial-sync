@@ -43,6 +43,10 @@ tube during the trajectory.
 Train uses 2,048 environments, seed 42, and 800 iterations. RSL-RL writes
 TensorBoard events and checkpoints every 50 iterations under the evidence
 directory. Resume with `-Stage Train -Checkpoint '<absolute checkpoint path>'`.
+Training rejects nonfinite gradient norms before optimizer updates. Diagnostic
+metrics distinguish raw nonfinite robot/tube state, excessive joint velocity,
+and excursions outside the authored hard joint limits; these metrics do not
+change the reward or termination conditions.
 Capture actual iteration times, whole-board NVIDIA memory samples, and total
 wall time for the training report; the experiment makes no premeasured FR3
 performance claim. Run one owned GPU job at a time.

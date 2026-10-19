@@ -44,7 +44,7 @@ $taskArguments = switch ($Stage) {
         if (!(Test-Path -LiteralPath $env:FR3_CONTACT_RESETS)) { throw 'Generate valid FR3 resets first' }
         $taskCommand = @('isaaclab', 'train', '--rl_library', 'rsl_rl', '--task', 'Lab-FR3-Pick-Tube-v0',
           '--num_envs', '2048', '--max_iterations', '800', '--seed', '42', '--run_name', 'fr3_contact',
-          '--external_callback', 'fr3_contact.register', 'presets=newton_mjwarp')
+          '--external_callback', 'fr3_contact.register_training', 'presets=newton_mjwarp')
         if ($Checkpoint) { $taskCommand += @('--checkpoint', $Checkpoint) }
         $taskCommand
     }

@@ -294,6 +294,7 @@ def vial_lost(env: ManagerBasedRLEnv) -> torch.Tensor:
     finite = torch.isfinite(vial_pos).all(dim=-1) & torch.isfinite(_tensor(vial.data.root_quat_w)).all(dim=-1)
     finite &= torch.isfinite(_tensor(vial.data.root_lin_vel_w)).all(dim=-1)
     finite &= torch.isfinite(_tensor(vial.data.root_ang_vel_w)).all(dim=-1)
+    env.extras.setdefault("log", {})["Diagnostics/nonfinite_tube_rate"] = (~finite).float().mean()
     dropped = _history(env).lifted & (pos[:, 2] < 0.004)
     return (~finite) | dropped | (pos[:, 2] < -0.01) | (pos[:, 0].abs() > 0.62) | (pos[:, 1].abs() > 0.50)
 
@@ -304,7 +305,16 @@ def unstable_robot(env: ManagerBasedRLEnv) -> torch.Tensor:
     joint_pos = _tensor(robot.data.joint_pos)
     joint_vel = _tensor(robot.data.joint_vel)
     finite = torch.isfinite(joint_pos).all(dim=-1) & torch.isfinite(joint_vel).all(dim=-1)
-    return (~finite) | (joint_vel.abs().amax(dim=1) > 12.0)
+    excessive_velocity = joint_vel.abs().amax(dim=1) > 12.0
+    limits = _tensor(robot.data.joint_pos_limits)
+    excess = torch.maximum(limits[..., 0] - joint_pos, joint_pos - limits[..., 1]).clamp_min(0)
+    fraction = torch.nan_to_num(excess / (limits[..., 1] - limits[..., 0]).clamp_min(1e-6))
+    log = env.extras.setdefault("log", {})
+    log["Diagnostics/nonfinite_robot_rate"] = (~finite).float().mean()
+    log["Diagnostics/excessive_joint_velocity_rate"] = excessive_velocity.float().mean()
+    log["Diagnostics/joint_hard_limit_excursion_rate"] = (fraction.amax(dim=1) > 0).float().mean()
+    log["Diagnostics/joint_hard_limit_max_fraction"] = fraction.max()
+    return (~finite) | excessive_velocity
 
 
 # Rewards
