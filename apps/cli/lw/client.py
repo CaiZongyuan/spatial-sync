@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import tarfile
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
+from pathlib import Path
 from urllib.parse import quote
 
 import httpx
@@ -49,7 +52,7 @@ class GatewayClient:
             await self.http.aclose()
 
     async def request(self, method, path, *, actor="cli:lw", timeout=30, **kwargs):
-        headers = {"X-Actor": actor}
+        headers = kwargs.pop("headers", {}) | {"X-Actor": actor}
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
         try:
@@ -93,18 +96,69 @@ class GatewayClient:
             return await self.catalog()
         return None
 
-    async def library_search(self, query=None, launchable=False):
+    async def scene_search(self, query=None, launchable=False):
+        return await self.library_search(query=query, launchable=launchable)
+
+    async def asset_search(self, query=None, kind=None, gaps=False):
+        return await self.library_search(query=query, kind=kind, gaps=gaps, resource="assets")
+
+    async def library_search(self, query=None, launchable=False, resource="scenes", kind=None, gaps=False):
+        if kind is not None or gaps:
+            resource = "assets"
+        if resource not in ("scenes", "assets"):
+            raise ValueError("resource must be scenes or assets")
+        if resource == "assets" and launchable:
+            raise ValueError("launchable is only supported for scenes")
         params = {"q": query} if query is not None else {}
         if launchable:
             params["launchable"] = True
-        return (await self.request("GET", "/api/v1/library/scenes", params=params))["scenes"]
+        if kind is not None:
+            params["kind"] = kind
+        if gaps:
+            params["gaps"] = True
+        return (await self.request("GET", "/api/v1/library/" + resource, params=params))[resource]
 
     async def library_describe(self, id):
         name, separator, rev = id.partition("@")
-        path = "/api/v1/library/scenes/" + quote(name, safe="")
+        if "/" in name:
+            path = "/api/v1/library/assets/" + "/".join(quote(part, safe="") for part in name.split("/"))
+        else:
+            path = "/api/v1/library/scenes/" + quote(name, safe="")
         if separator:
             path += "/" + quote(rev, safe="")
         return await self.request("GET", path)
+
+    async def library_import(self, directory, *, actor="cli:lw"):
+        # The gateway independently validates paths, schema and upload/expansion limits.
+        try:
+            root = Path(directory).expanduser().resolve()
+            if not root.is_dir():
+                raise ValueError("Import directory does not exist on the client's filesystem")
+            with tempfile.TemporaryFile() as output:
+                with tarfile.open(fileobj=output, mode="w", dereference=True) as archive:
+                    for path in sorted(root.rglob("*")):
+                        if path.is_symlink() or path.is_junction() or not path.resolve().is_relative_to(root):
+                            raise ValueError("Asset directory cannot contain filesystem links")
+                        if path.is_file():
+                            archive.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
+                        elif not path.is_dir():
+                            raise ValueError("Asset directory can only contain regular files")
+                output.seek(0)
+
+                # httpx's async transport requires an async iterator for streamed bodies.
+                async def chunks():
+                    while chunk := output.read(1024 * 1024):
+                        yield chunk
+
+                return await self.request(
+                    "POST",
+                    "/api/v1/library/imports",
+                    content=chunks(),
+                    headers={"Content-Type": "application/x-tar"},
+                    actor=actor,
+                )
+        except OSError as exc:
+            raise ValueError("Asset directory could not be read") from exc
 
     async def scene_launch(self, sceneVersion, source=None, *, actor="cli:lw"):
         body = {"sceneVersion": sceneVersion}

@@ -110,7 +110,8 @@ async def create_server(client: GatewayClient):
 
     catalog = await client.catalog_if_active()
     instructions = catalog_instructions(catalog) if catalog is not None else (
-        "Use library_search and library_describe to inspect scene versions, then scene_launch to start one. "
+        "Use library_search and library_describe to inspect assets and scenes; library_import uploads a "
+        "directory from this MCP client's filesystem. Use scene_launch to start an inspected scene. "
         "Describe entities before acting. Approval requires a human operator."
     )
     server = MCPServer("Laboratory", instructions=instructions, middleware=[reject_human_decisions])
