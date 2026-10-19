@@ -43,10 +43,16 @@ tube during the trajectory.
 Train uses 2,048 environments, seed 42, and 800 iterations. RSL-RL writes
 TensorBoard events and checkpoints every 50 iterations under the evidence
 directory. Resume with `-Stage Train -Checkpoint '<absolute checkpoint path>'`.
-Training rejects nonfinite gradient norms before optimizer updates. Diagnostic
-metrics distinguish raw nonfinite robot/tube state, excessive joint velocity,
-and excursions outside the authored hard joint limits; these metrics do not
-change the reward or termination conditions.
+Training rejects nonfinite gradient norms before optimizer updates. Raw initial
+state and every real solver output latch per-episode range, velocity, lost-tube
+and nonfinite reasons before observations are cleaned. A finite invalid episode
+terminates and resets at its first manager boundary. It cannot progress toward
+contact success, receive positive rewards on that transition, or bootstrap as a
+timeout. Earlier valid rewards are retained. Finite failed exploration episodes
+are expected; this behavior does not claim that compliant joint stops were repaired.
+Initial/open commands use39mm within the original40mm finger range. Newly generated
+reset data admits only connected raw-valid trajectories; previous datasets require
+regeneration, with all128 home identities and the fixed audit denominator retained.
 Capture actual iteration times, whole-board NVIDIA memory samples, and total
 wall time for the training report; the experiment makes no premeasured FR3
 performance claim. Run one owned GPU job at a time.
@@ -96,7 +102,7 @@ require a physical replay check before a new reset dataset is used for training.
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path ./experiments).Path
-uv run --no-sync --project ./experiments/fr3_contact pytest -q ./experiments/fr3_contact/test_contract.py
+uv run --no-sync --project ./experiments/fr3_contact pytest -q ./experiments/fr3_contact/test_contract.py ./experiments/fr3_contact/test_validity.py
 uv run --no-sync --project ./experiments/fr3_contact ruff check ./experiments/fr3_contact
 ```
 

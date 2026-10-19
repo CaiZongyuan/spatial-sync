@@ -251,7 +251,15 @@ def test_audit_rejects_a_small_probe_dataset():
         validate_audit_starts(states, names)
 
 
-def test_exact_audit_does_not_count_repeated_fast_environment(monkeypatch, capsys):
+def test_audit_open_home_admission_never_extends_original_finger_range():
+    states, names = audit_home_states()
+    states["joint_position"][0, 7] = 0.04000031
+    with pytest.raises(ValueError, match="open fingers"):
+        validate_audit_starts(states, names)
+
+
+@pytest.mark.parametrize("invalid_first", [False, True])
+def test_exact_audit_does_not_count_repeated_fast_environment(monkeypatch, capsys, invalid_first):
     class Wrapper:
         num_envs = 1024
 
@@ -260,6 +268,11 @@ def test_exact_audit_does_not_count_repeated_fast_environment(monkeypatch, capsy
             self.iteration = 0
             success = torch.zeros(1024, dtype=torch.bool)
             success[0] = True
+            self._fr3_terminal_success = success
+            self._fr3_terminal_validity = {"reasons": torch.zeros(1024, dtype=torch.int32),
+                                           "max_excess": torch.zeros(1024)}
+            if invalid_first:
+                self._fr3_terminal_validity["reasons"][0] = 1
             self.termination_manager = SimpleNamespace(
                 get_term=lambda name: success if name == "success" else ~success
             )
@@ -272,6 +285,8 @@ def test_exact_audit_does_not_count_repeated_fast_environment(monkeypatch, capsy
 
         def step(self, actions):
             self.iteration += 1
+            if self.iteration > 1:
+                self._fr3_terminal_validity["reasons"].zero_()  # New episode after the fast first done.
             done = torch.zeros(1024, dtype=torch.bool)
             done[0] = True
             if self.iteration == 3:
@@ -289,7 +304,8 @@ def test_exact_audit_does_not_count_repeated_fast_environment(monkeypatch, capsy
     assert stopped.value.code == 0
     result = json.loads(capsys.readouterr().out.split("FR3_EVAL_RESULT=")[1])
     assert result["episodes"] == 1024
-    assert result["successes"] == 1
-    assert result["success_rate"] == 1 / 1024
+    assert result["successes"] == (0 if invalid_first else 1)
+    assert result["invalid_episodes"] == int(invalid_first)
+    assert result["success_rate"] == (0 if invalid_first else 1 / 1024)
     assert result["raw_placement_rate"] == 1.0
     assert result["passed_contact_grasp_threshold"] is False

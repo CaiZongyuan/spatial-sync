@@ -12,11 +12,11 @@ os.environ.setdefault("PXR_WORK_THREAD_LIMIT", "1")
 
 import torch
 from isaaclab.app import add_launcher_args, launch_simulation
-from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.utils.math import quat_apply
 
 from . import terms
 from .env_cfg import TCP_OFFSET, FR3GeneratorEnvCfg
+from .environment import FR3ContactEnv
 from .reset import PHASES, validate_dataset
 
 
@@ -45,7 +45,7 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
     def move(target_position, jaw, steps, target_quaternion=closed_quat):
         start_pos, start_quat = (value.clone() for value in tcp_pose())
         jaw_target = robot.data.joint_pos.torch[:, -2:-1].clone()
-        desired_jaw = 0.04 if jaw > 0 else 0.0
+        desired_jaw = 0.039 if jaw > 0 else 0.0
         for step in range(steps):
             fraction = min(1.0, (step + 1) / max(1, steps - 15))
             position = torch.lerp(start_pos, target_position, fraction)
@@ -107,6 +107,7 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
             lifted = terms.bilateral_contact(env) & (
                 terms.vial_lowest_height_in_rack(env) > terms.RACK_CLEARANCE_HEIGHT
             )
+            env._fr3_validity.lifted.copy_(lifted)
             captured.append(capture(3))
             # Axially symmetric upright tubes need no roll; hold the proved grasp before transport.
             move(lifted_target, -1.0, 25)
@@ -131,7 +132,7 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
                 stable_steps = torch.where(resting, stable_steps + 1, torch.zeros_like(stable_steps))
             seated = stable_steps >= 10
             captured.append(capture(7))
-            valid = grasped & lifted & transported & inserted & seated
+            valid = grasped & lifted & transported & inserted & seated & ~env._fr3_validity.invalid
             available = valid.nonzero().flatten()[: quota - accepted]
             count = len(available)
             for state in captured:
@@ -166,6 +167,7 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
                         "object_state_writes_after_reset": False,
                         "physics": "newton_mjwarp",
                         "canonical_starts": accepted,
+                        "episode_validity": "raw-episode-v1",
                         "batch_diagnostics": diagnostics,
                     },
                 }
@@ -190,7 +192,7 @@ def main():
     started = time.perf_counter()
     with launch_simulation(cfg, args) as physics_cfg:
         cfg.sim.physics = physics_cfg
-        env = ManagerBasedRLEnv(cfg)
+        env = FR3ContactEnv(cfg)
         try:
             artifact, diagnostics = generate(env, args.poses_per_phase, args.max_batches, args.probe_until)
         except ProbeComplete as completed:

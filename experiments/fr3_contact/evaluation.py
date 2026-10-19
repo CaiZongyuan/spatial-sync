@@ -14,6 +14,8 @@ import sys
 
 import torch
 
+from .validity import REASONS
+
 EVALUATION_EPISODES = 1024
 """Size of the acceptance audit: the 128 canonical home-pose starts, each played eight times."""
 
@@ -56,9 +58,12 @@ def _install_episode_counter(target: int) -> list[str]:
     sums = {"peak_rack_force": 0.0, "time_to_success": 0.0}
     max_rack_force = 0.0
     counted: torch.Tensor | None = None
+    invalid_counts = dict.fromkeys(REASONS, 0)
+    invalid_episodes = 0
+    max_excess = 0.0
 
     def counted_step(self, actions):
-        nonlocal counted, max_rack_force
+        nonlocal counted, max_rack_force, invalid_episodes, max_excess
         if self.num_envs != target:
             raise RuntimeError(f"The audit requires one episode per environment: use --num_envs {target}.")
         result = original_step(self, actions)
@@ -73,7 +78,9 @@ def _install_episode_counter(target: int) -> list[str]:
         counted[done_ids] = True
 
         env = self.unwrapped
-        success = env.termination_manager.get_term("success")[done_ids]
+        terminal = env._fr3_terminal_validity
+        reasons = terminal["reasons"][done_ids]
+        success = env._fr3_terminal_success[done_ids] & (reasons == 0)
         progress = env._fr3_terminal_progress[done_ids]
         if not bool(env._fr3_terminal_started_from_home[done_ids].all()):
             raise RuntimeError("Audit episodes must start from home without seeded grasp/lift history")
@@ -81,6 +88,10 @@ def _install_episode_counter(target: int) -> list[str]:
         peak_force = env._fr3_terminal_max_rack_force[done_ids]
         counts["episodes"] += int(done_ids.numel())
         counts["successes"] += int(success.sum())
+        invalid_episodes += int((reasons != 0).sum())
+        for name, flag in REASONS.items():
+            invalid_counts[name] += int(((reasons & flag) != 0).sum())
+        max_excess = max(max_excess, float(terminal["max_excess"][done_ids].max()))
         counts["raw_placements"] += int(env._fr3_terminal_raw_placement[done_ids].sum())
         counts["grasped"] += int(progress[:, 0].sum())
         counts["lifted"] += int(progress[:, 1].sum())
@@ -98,6 +109,9 @@ def _install_episode_counter(target: int) -> list[str]:
             summary = {
                 "episodes": episodes,
                 "successes": successes,
+                "invalid_episodes": invalid_episodes,
+                "invalid_by_reason": invalid_counts,
+                "raw_max_joint_excess_m_or_rad": max_excess,
                 "success_rate": successes / episodes,
                 "contact_grasp_successes": successes,
                 "contact_grasp_success_rate": successes / episodes,

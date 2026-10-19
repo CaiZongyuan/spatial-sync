@@ -7,6 +7,8 @@ from pathlib import Path
 import torch
 from isaaclab.managers import EventTermCfg, ManagerTermBase
 
+from .validity import episode_validity
+
 PHASES = ("home", "pregrasp", "grasp", "lift", "reorient", "transport", "insert", "release")
 HOME = (0.0, -0.4, 0.0, -2.0, 0.0, 1.6, 0.7)
 
@@ -37,6 +39,8 @@ def validate_dataset(artifact: dict) -> dict[str, torch.Tensor]:
         raise ValueError(
             "Reset rows require a connected physical trajectory, not independently teleported grasps"
         )
+    if artifact.get("validation", {}).get("episode_validity") != "raw-episode-v1":
+        raise ValueError("Reset data must come from raw-valid connected physical trajectories")
     return states
 
 
@@ -50,7 +54,7 @@ def validate_audit_starts(states: dict[str, torch.Tensor], joint_names: list[str
     finger_ids = [joint_names.index(f"fr3_finger_joint{i}") for i in (1, 2)]
     if not torch.all((joints[:, arm_ids] - joints.new_tensor(HOME)).abs() < 0.02):
         raise ValueError("Audit starts must use the FR3 home arm pose")
-    if not torch.all((joints[:, finger_ids] >= 0.035) & (joints[:, finger_ids] <= 0.041)):
+    if not torch.all((joints[:, finger_ids] >= 0.035) & (joints[:, finger_ids] <= 0.04)):
         raise ValueError("Audit starts must have open fingers")
     pose = states["tube_pose"][home]
     if not torch.all((pose[:, :2] - pose.new_tensor((0.45, -0.15))).abs() <= 0.007):
@@ -70,6 +74,7 @@ def clear_progress(env, env_ids) -> None:
     env._fr3_reset_phase[env_ids] = 0
     env._fr3_reset_grasped[env_ids] = False
     env._fr3_reset_lifted[env_ids] = False
+    episode_validity(env).reset(env_ids)
 
 
 class ResetFromDataset(ManagerTermBase):
@@ -85,6 +90,10 @@ class ResetFromDataset(ManagerTermBase):
             validate_audit_starts(states, artifact["joint_names"])
         if artifact["joint_names"] != env.scene["robot"].joint_names:
             raise ValueError("Reset joint order differs from the converted FR3 articulation")
+        limits = env.scene["robot"].data.joint_pos_limits.torch[0].cpu()
+        positions = states["joint_position"]
+        if not torch.all((positions >= limits[:, 0]) & (positions <= limits[:, 1])):
+            raise ValueError("Reset states violate the original model joint ranges")
         self.states = {key: value.to(env.device) for key, value in states.items()}
         self._cursor = 0
 

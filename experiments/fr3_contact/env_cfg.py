@@ -53,7 +53,7 @@ class FR3SceneCfg(InteractiveSceneCfg):
             activate_contact_sensors=True,
         ),
         init_state=ArticulationCfg.InitialStateCfg(
-            joint_pos={**dict(zip(ARM_JOINTS, HOME, strict=True)), "fr3_finger_joint.*": 0.04}
+            joint_pos={**dict(zip(ARM_JOINTS, HOME, strict=True)), "fr3_finger_joint.*": 0.039}
         ),
         actuators={
             "arm": ImplicitActuatorCfg(
@@ -204,10 +204,11 @@ class RewardsCfg:
 
 @configclass
 class TerminationsCfg:
+    invalid_episode = DoneTerm(func=terms.EpisodeFailureTerm)
     success = DoneTerm(func=terms.PlacementHistoryTerm)
     vial_lost = DoneTerm(func=terms.vial_lost)
     unstable_robot = DoneTerm(func=terms.unstable_robot)
-    time_out = DoneTerm(func=base_mdp.time_out, time_out=True)
+    time_out = DoneTerm(func=terms.time_out, time_out=True)
 
 
 @configclass

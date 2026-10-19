@@ -42,8 +42,10 @@ class ContactGraspProgress:
             buffer[ids] = 0
         self.time_to_success[ids] = -1
 
-    def update(self, holding, cleared, inserted, seated, step) -> torch.Tensor:
+    def update(self, holding, cleared, inserted, seated, step, valid=None) -> torch.Tensor:
         """Latch each stage only after its predecessor was observed on an earlier step."""
+        valid = torch.ones_like(holding) if valid is None else valid
+        holding, cleared, inserted = holding & valid, cleared & valid, inserted & valid
         had_grasp = self.grasped.clone()
         had_lift = self.lifted.clone()
         had_insert = self.inserted.clone()
@@ -52,10 +54,10 @@ class ContactGraspProgress:
         self.lifted |= had_grasp & holding & cleared
         self.inserted |= had_lift & inserted
         completed_path = had_grasp & had_lift & had_insert
-        self.stable_count.copy_(torch.where(completed_path & seated, self.stable_count + 1, 0))
+        self.stable_count.copy_(torch.where(completed_path & seated & valid, self.stable_count + 1, 0))
         self.placement_count.copy_(torch.where(seated, self.placement_count + 1, 0))
         self.placement_success |= self.placement_count >= self.stable_steps
         newly_successful = ~self.success & (self.stable_count >= self.stable_steps)
         self.time_to_success.copy_(torch.where(newly_successful, step, self.time_to_success))
-        self.success |= newly_successful
+        self.success.copy_((self.success | newly_successful) & valid)
         return self.success.clone()

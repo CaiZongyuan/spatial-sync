@@ -23,6 +23,7 @@ from isaaclab_tutorial.tasks.place_vial.mdp.geometry import (
 )
 
 from .progress import ContactGraspProgress
+from .validity import NONFINITE, TUBE_LOST, episode_validity, failure_dominates_timeout
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -245,7 +246,9 @@ class PlacementHistoryTerm(ManagerTermBase):
         rack_force = _contact_magnitude(env, "vial_rack_contact")
         self._max_rack_force.copy_(torch.maximum(self._max_rack_force, rack_force))
         self.progress.unsafe_rack_contact |= hard_rack_impact(rack_force)
-        success = self.progress.update(holding, cleared, inserted, seated, env.episode_length_buf)
+        success = self.progress.update(
+            holding, cleared, inserted, seated, env.episode_length_buf, ~episode_validity(env).invalid
+        )
 
         log = env.extras.setdefault("log", {})
         log["Metrics/grasp_rate"] = self.progress.grasped.float().mean()
@@ -282,6 +285,7 @@ class PlacementHistoryTerm(ManagerTermBase):
         env._fr3_terminal_time_to_success_s = self.progress.time_to_success.clone().float() * env.step_dt
         env._fr3_terminal_raw_placement = self.progress.placement_success.clone()
         env._fr3_terminal_started_from_home = self._started_from_home.clone()
+        env._fr3_terminal_success = success.clone()
         return success
 
 
@@ -315,6 +319,39 @@ def unstable_robot(env: ManagerBasedRLEnv) -> torch.Tensor:
     log["Diagnostics/joint_hard_limit_excursion_rate"] = (fraction.amax(dim=1) > 0).float().mean()
     log["Diagnostics/joint_hard_limit_max_fraction"] = fraction.max()
     return (~finite) | excessive_velocity
+
+
+class EpisodeFailureTerm(ManagerTermBase):
+    """Consume raw substep failures before success; snapshot before selected autoresets."""
+
+    def reset(self, env_ids=None):
+        episode_validity(self._env).reset(env_ids)
+
+    def __call__(self, env):
+        validity = episode_validity(env)
+        robot = env.scene["robot"]
+        validity.observe_joints(_tensor(robot.data.joint_pos), _tensor(robot.data.joint_vel),
+                                _tensor(robot.data.joint_pos_limits))
+        lost = vial_lost(env)
+        tube = env.scene["vial"].data
+        finite = torch.stack([torch.isfinite(_tensor(getattr(tube, name))).all(-1) for name in
+                              ("root_pos_w", "root_quat_w", "root_lin_vel_w", "root_ang_vel_w")]).all(0)
+        validity.mark(lost.int() * TUBE_LOST | (~finite).int() * NONFINITE)
+        unstable_robot(env)  # Retain the existing raw diagnostic names and severity.
+        env._fr3_terminal_validity = validity.snapshot()
+        env.extras.setdefault("log", {})["Failure/episode_invalid_rate"] = validity.invalid.float().mean()
+        return validity.invalid.clone()
+
+
+def time_out(env):
+    """A physical failure is terminated, never a timeout bootstrap transition."""
+    from isaaclab.envs.mdp import time_out as ordinary_time_out
+
+    return failure_dominates_timeout(env, ordinary_time_out(env))
+
+
+def _valid_reward(env, reward):
+    return torch.where(episode_validity(env).invalid, reward.clamp_max(0), reward)
 
 
 # Rewards
@@ -365,7 +402,7 @@ class ApproachProgressReward(ManagerTermBase):
         active = self._has_previous & ~_history(env).grasped
         self._previous_distance.copy_(distance)
         self._has_previous.fill_(True)
-        return torch.where(active, progress, torch.zeros_like(progress))
+        return _valid_reward(env, torch.where(active, progress, torch.zeros_like(progress)))
 
 
 def held_goal_reward(env: ManagerBasedRLEnv, goal_std: float = 0.10) -> torch.Tensor:
@@ -374,7 +411,7 @@ def held_goal_reward(env: ManagerBasedRLEnv, goal_std: float = 0.10) -> torch.Te
     goal = torch.exp(-held_object_goal_error(env) / goal_std)
     held = history.grasped & ~history.inserted & bilateral_contact(env)
     held &= vial_height(env) > VIAL_REST_HEIGHT + GRASP_PROOF_LIFT
-    return _finite(torch.where(held, goal, torch.zeros_like(goal)))
+    return _valid_reward(env, _finite(torch.where(held, goal, torch.zeros_like(goal))))
 
 
 class PhysicalMilestoneReward(ManagerTermBase):
@@ -403,12 +440,12 @@ class PhysicalMilestoneReward(ManagerTermBase):
         reward = torch.where(self._initialized, reward, torch.zeros_like(reward))
         self._previous.copy_(current)
         self._initialized.fill_(True)
-        return _finite(reward)
+        return _valid_reward(env, _finite(reward))
 
 
 def success_bonus(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Return the one-step confirmed success signal."""
-    return _history(env).success.float()
+    return _valid_reward(env, _history(env).success.float())
 
 
 def action_rate_l2(env: ManagerBasedRLEnv) -> torch.Tensor:

@@ -9,10 +9,10 @@ from pathlib import Path
 
 import torch
 from isaaclab.app import add_launcher_args, launch_simulation
-from isaaclab.envs import ManagerBasedRLEnv
 
 from . import terms
 from .env_cfg import FR3TubeEnvCfg
+from .environment import FR3ContactEnv
 from .reset import PHASES
 
 
@@ -30,7 +30,7 @@ def main():
     records = []
     with launch_simulation(cfg, args) as physics_cfg:
         cfg.sim.physics = physics_cfg
-        env = ManagerBasedRLEnv(cfg)
+        env = FR3ContactEnv(cfg)
         try:
             with torch.inference_mode():
                 env.reset()

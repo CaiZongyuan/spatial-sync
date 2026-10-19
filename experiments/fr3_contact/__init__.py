@@ -11,7 +11,7 @@ def register() -> list[str]:
     if "Lab-FR3-Pick-Tube-v0" not in gym.registry:
         gym.register(
             id="Lab-FR3-Pick-Tube-v0",
-            entry_point="isaaclab.envs:ManagerBasedRLEnv",
+            entry_point="fr3_contact.environment:FR3ContactEnv",
             disable_env_checker=True,
             kwargs={
                 "env_cfg_entry_point": "fr3_contact.env_cfg:FR3TubeEnvCfg",
