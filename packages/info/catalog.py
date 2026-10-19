@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from packages.library.scenes import builtin_scene_path
 from packages.protocol.schema import Catalog as CatalogDocument
 
-from .binding_validation import validate_binding_semantics
+from .binding_validation import compile_alert_rules, validate_binding_semantics
 from .conditions import validate_conditions
 from .declarations import EntityBindingDeclaration, EntityTypeDeclaration
 from .schema_subset import compile_schema
@@ -140,18 +140,6 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
     binding_declarations = {
         key: EntityBindingDeclaration.model_validate(value) for key, value in entities.items()
     }
-    type_rules = {
-        key: {
-            name: rule.model_dump(mode="json", exclude_none=True) for name, rule in declaration.alerts.items()
-        }
-        for key, declaration in type_declarations.items()
-    }
-    binding_rules = {
-        key: {
-            name: rule.model_dump(mode="json", exclude_none=True) for name, rule in declaration.alerts.items()
-        }
-        for key, declaration in binding_declarations.items()
-    }
     document = CatalogDocument(
         sceneRevision=manifest.sceneRevision,
         types={
@@ -168,13 +156,12 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
     for type_id, definition in catalog.types.items():
         for prop, value in definition["properties"].items():
             catalog._properties[type_id, prop] = compile_schema(value["schema"])
-        for rule in type_rules[type_id].values():
-            validate_conditions(
-                [rule["when"]],
-                "type-self",
-                lambda _, prop, definition=definition: definition["properties"][prop]["schema"],
-                allow_cross_entity=False,
-            )
+        compile_alert_rules(
+            "type-self",
+            {},
+            type_declarations[type_id].model_dump(mode="json", exclude_none=True),
+            lambda _, prop, definition=definition: definition["properties"][prop]["schema"],
+        )
         for action, value in definition["actions"].items():
             schemas = {
                 name: {k: v for k, v in schema.items() if k != "unit"}
@@ -198,12 +185,13 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
                 compile_schema(event["schema"]) if event.get("schema") is not None else None
             )
     for key, binding in catalog.entities.items():
-        rules = type_rules[binding["type"]] | binding_rules[key]
-        for name, rule in rules.items():
-            compiled = validate_conditions(
-                [rule["when"]], key, lambda entity, prop: catalog.property(entity, prop)["schema"]
-            )
-            catalog._alerts[key, name] = (rule, compiled)
+        rules = compile_alert_rules(
+            key,
+            binding_declarations[key].model_dump(mode="json", exclude_none=True),
+            type_declarations[binding["type"]].model_dump(mode="json", exclude_none=True),
+            lambda entity, prop: catalog.property(entity, prop)["schema"],
+        )
+        catalog._alerts.update({(key, name): value for name, value in rules.items()})
         compiled = validate_binding_semantics(
             key,
             binding,

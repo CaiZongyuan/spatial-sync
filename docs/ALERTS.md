@@ -38,7 +38,7 @@ Bindings replace the complete type rule with the same ID and supplement it
 with new IDs. A replacement supplies its own condition, severity and message.
 `forSeconds` defaults to zero and must be finite and nonnegative. Severity is
 `info`, `warning` or `critical`; `hint` is optional. Rule references and property
-types are checked when the Catalog loads.
+types are checked by scene structural validation and when the Catalog loads.
 
 Rules remain in authoring metadata and the gateway's internal compiled state.
 The public session Catalog, entity definitions and recorded Catalog keep their
