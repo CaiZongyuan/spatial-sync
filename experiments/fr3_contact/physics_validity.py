@@ -86,6 +86,7 @@ class NativeEpisodeObserver:
             for i, (world, label) in enumerate(zip(model.body_world.numpy(), model.body_label, strict=True))
         }
         qs, vs = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
+        parents = model.joint_parent.numpy()
         low, high = model.joint_limit_lower.numpy(), model.joint_limit_upper.numpy()
         selected = [[joints[(world, name)] for name in names] for world in range(model.world_count)]
         q_ids = [[int(qs[joint]) for joint in row] for row in selected]
@@ -97,8 +98,8 @@ class NativeEpisodeObserver:
             wp.array([[float(high[i]) for i in row] for row in v_ids], dtype=wp.float32, device=self.device),
             wp.array(
                 [
-                    [bodies[(world, "fr3_link0")], bodies[(world, "Vial")]]
-                    for world in range(model.world_count)
+                    [int(parents[row[0]]), bodies[(world, "Vial")]]
+                    for world, row in enumerate(selected)
                 ],
                 dtype=wp.int32,
                 device=self.device,

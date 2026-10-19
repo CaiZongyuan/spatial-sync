@@ -32,6 +32,7 @@ def raw_cpu_worlds():
         joint_qd_start=wp.array(
             [world * 12 + i + 1 for world in range(3) for i in range(9)], dtype=wp.int32, device="cpu"
         ),
+        joint_parent=wp.array(np.repeat([0, 2, 4], 9), dtype=wp.int32, device="cpu"),
         joint_limit_lower=wp.zeros(36, device="cpu"),
         joint_limit_upper=wp.array(np.full(36, 0.04, dtype=np.float32), device="cpu"),
         body_world=wp.array([0, 0, 1, 1, 2, 2], dtype=wp.int32, device="cpu"),
