@@ -8,8 +8,9 @@ import yaml
 
 from packages.info.alerts import AlertEngine, AlertUnavailable
 from packages.info.catalog import load_catalog
+from packages.info.declarations import EntityBindingDeclaration
 from packages.info.program import ProgramConfig
-from packages.protocol.schema import Actor, SceneManifest
+from packages.protocol.schema import Actor, Catalog, EntityBinding, SceneManifest
 
 KEY = "/World/Test/Reading"
 
@@ -156,3 +157,24 @@ def test_deviation_requires_two_declared_numeric_properties(declared_catalog):
         declared_catalog(kind="boolean")
     with pytest.raises(KeyError):
         declared_catalog(reference="missing")
+
+
+def test_authoring_declarations_keep_rules_private_from_the_published_catalog(declared_catalog):
+    catalog = declared_catalog()
+    snapshot = catalog.alert_rules()
+    assert snapshot[KEY]["deviation"]["forSeconds"] == 2
+    snapshot[KEY]["deviation"]["forSeconds"] = 99
+    assert catalog.alert_rules()[KEY]["deviation"]["forSeconds"] == 2
+    public = Catalog.model_validate(catalog.model_dump(mode="json"))
+    assert all("alerts" not in definition.model_dump() for definition in public.types.values())
+    assert all("alerts" not in binding.model_dump() for binding in public.entities.values())
+    authoring = {
+        "key": KEY,
+        "type": "reading/v1",
+        "program": "reading.virtual",
+        "alerts": {"deviation": catalog.alert_rules()[KEY]["deviation"]},
+    }
+    parsed = EntityBindingDeclaration.model_validate(authoring)
+    assert parsed.model_dump()["alerts"]["deviation"]["forSeconds"] == 2
+    with pytest.raises(ValueError, match="extra_forbidden"):
+        EntityBinding.model_validate(authoring)

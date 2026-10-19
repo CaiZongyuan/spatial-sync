@@ -218,6 +218,11 @@ def test_reset_reload_and_stop_close_context_without_false_cleared_events(alert_
 def test_sustained_deviation_acknowledgement_and_recovery_are_reliable_and_recorded(alert_catalog):
     with TestClient(create_app()) as client:
         sid, route = paused_session(client)
+        wire_catalog = client.get(route + "/catalog").json()
+        assert all("alerts" not in definition for definition in wire_catalog["types"].values())
+        assert all("alerts" not in binding for binding in wire_catalog["entities"].values())
+        entity = client.get(route + "/entity", params={"key": KEY}).json()
+        assert "alerts" not in entity["definition"] and "alerts" not in entity["binding"]
 
         def next_alert(ws, state):
             for _ in range(100):
@@ -269,6 +274,7 @@ def test_sustained_deviation_acknowledgement_and_recovery_are_reliable_and_recor
             assert listed(client, sid)[0]["state"] == "cleared"
         client.delete(route).raise_for_status()
         metadata = client.get(f"/recordings/{sid}/recording.json").json()
+        assert client.get(f"/recordings/{sid}/catalog.json").json() == wire_catalog
         messages = [
             json.loads(record.payload)
             for segment in metadata["segments"]

@@ -155,6 +155,8 @@ class NewtonSource:
                 )
                 if self.catalog.model_dump(mode="json") != packet["catalog"]:
                     raise ValueError("Runner and gateway Catalog definitions differ")
+                if self.catalog.alert_rules() != packet.get("alertRules", {}):
+                    raise ValueError("Runner and gateway alert rules differ")
                 self._info_store = StateStore(self.manifest.sceneRevision)
                 self._cache_info(EntitySnapshot.model_validate(packet["entitySnapshot"]))
                 self._samples = SourceFrames(self.manifest)

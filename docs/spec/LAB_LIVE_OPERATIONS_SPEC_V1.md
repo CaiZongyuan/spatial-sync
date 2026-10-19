@@ -131,6 +131,8 @@ alerts:
 
 条件语言新增两个比较运算符：`deviatesFrom`（与另一属性的差值）和 `stale`（属性已过期）。仍然是结构化 all-of，不支持表达式（D-07）。
 
+告警声明属于作者配置与内部编译态；公开会话 Catalog、entity definition/binding 和录制 Catalog 继续使用已发布的 2.1 字段形状，不新增 `alerts` 字段。素材/场景库检查仍可返回原作者声明。Runner 与网关各自解析同一场景包，并以内部 JSON 规则快照核对一致性；不在进程间传递编译后的闭包。
+
 ### 5.2 生命周期
 
 ```text

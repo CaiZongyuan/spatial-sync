@@ -512,14 +512,6 @@ class EventDefinition(Model):
     description: StrictStr = ""
 
 
-class AlertRule(Model):
-    when: Condition
-    forSeconds: NonNegative = 0
-    severity: Literal["info", "warning", "critical"]
-    message: NonEmpty
-    hint: StrictStr | None = None
-
-
 class EntityType(Model):
     type: NonEmpty
     title: NonEmpty
@@ -527,7 +519,6 @@ class EntityType(Model):
     properties: dict[str, PropertyDefinition] = Field(default_factory=dict)
     actions: dict[str, ActionDefinition] = Field(default_factory=dict)
     events: dict[str, EventDefinition] = Field(default_factory=dict)
-    alerts: dict[NonEmpty, AlertRule] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class EntityBinding(Model):
@@ -537,7 +528,6 @@ class EntityBinding(Model):
     config: dict[str, JsonValue] = Field(default_factory=dict)
     interlocks: dict[str, list[Condition]] = Field(default_factory=dict)
     unplaced: StrictBool = False
-    alerts: dict[NonEmpty, AlertRule] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class Catalog(Model):

@@ -176,49 +176,6 @@
       ],
       "type": "object"
     },
-    "AlertRule": {
-      "additionalProperties": false,
-      "properties": {
-        "when": {
-          "$ref": "#/$defs/Condition"
-        },
-        "forSeconds": {
-          "default": 0,
-          "minimum": 0,
-          "type": "number"
-        },
-        "severity": {
-          "enum": [
-            "info",
-            "warning",
-            "critical"
-          ],
-          "type": "string"
-        },
-        "message": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "hint": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "required": [
-        "when",
-        "forSeconds",
-        "severity",
-        "message"
-      ],
-      "type": "object"
-    },
     "ApprovalPolicy": {
       "additionalProperties": false,
       "properties": {
@@ -871,15 +828,6 @@
         "unplaced": {
           "default": false,
           "type": "boolean"
-        },
-        "alerts": {
-          "additionalProperties": {
-            "$ref": "#/$defs/AlertRule"
-          },
-          "propertyNames": {
-            "minLength": 1
-          },
-          "type": "object"
         }
       },
       "required": [
@@ -1076,15 +1024,6 @@
         "events": {
           "additionalProperties": {
             "$ref": "#/$defs/EventDefinition"
-          },
-          "type": "object"
-        },
-        "alerts": {
-          "additionalProperties": {
-            "$ref": "#/$defs/AlertRule"
-          },
-          "propertyNames": {
-            "minLength": 1
           },
           "type": "object"
         }

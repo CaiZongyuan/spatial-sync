@@ -22,7 +22,7 @@ operators and agents; it grants no authority to perform other actions.
 
 ## Rules and conditions
 
-EntityType definitions and scene bindings accept an `alerts` mapping:
+EntityType authoring definitions and scene bindings accept an `alerts` mapping:
 
 ```yaml
 alerts:
@@ -39,6 +39,10 @@ with new IDs. A replacement supplies its own condition, severity and message.
 `forSeconds` defaults to zero and must be finite and nonnegative. Severity is
 `info`, `warning` or `critical`; `hint` is optional. Rule references and property
 types are checked when the Catalog loads.
+
+Rules remain in authoring metadata and the gateway's internal compiled state.
+The public session Catalog, entity definitions and recorded Catalog keep their
+published2.1 fields. Library inspection retains the original authoring rules.
 
 `when` accepts a condition atom or structured `all`. The existing comparisons
 remain available. `deviatesFrom` compares two numeric properties of the target

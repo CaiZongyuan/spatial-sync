@@ -11,6 +11,7 @@ from packages.library.scenes import builtin_scene_path
 from packages.protocol.schema import Catalog as CatalogDocument
 
 from .conditions import validate_conditions
+from .declarations import EntityBindingDeclaration, EntityTypeDeclaration
 from .schema_subset import compile_schema
 
 DEVICE_ROOT = Path(__file__).resolve().parents[2] / "devices"
@@ -51,6 +52,13 @@ class Catalog(BaseModel):
     def alerts(self):
         return self._alerts
 
+    def alert_rules(self):
+        """Plain JSON authoring snapshot for internal Runner/gateway agreement."""
+        result = {}
+        for (key, name), (rule, _) in self._alerts.items():
+            result.setdefault(key, {})[name] = deepcopy(rule)
+        return result
+
     def property_validators(self, entity_key):
         type_id = self.entities[entity_key]["type"]
         return {
@@ -66,9 +74,14 @@ class Catalog(BaseModel):
 
 def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None):
     root = Path(root)
-    scene_file = Path(scene_file) if scene_file else (
-        builtin_scene_path(scene_id) / "devices.yaml" if root == DEVICE_ROOT
-        else root / "scenes" / f"{scene_id}.yaml"
+    scene_file = (
+        Path(scene_file)
+        if scene_file
+        else (
+            builtin_scene_path(scene_id) / "devices.yaml"
+            if root == DEVICE_ROOT
+            else root / "scenes" / f"{scene_id}.yaml"
+        )
     )
     scene = yaml.safe_load(scene_file.read_text(encoding="utf-8"))
     if set(scene) != {"scene", "entities"} or scene["scene"] != scene_id:
@@ -122,15 +135,42 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
             configs[key] = parsed
             binding["config"] = parsed.model_dump(mode="json")
             entities[key] = binding
-    document = CatalogDocument(sceneRevision=manifest.sceneRevision, types=types, entities=entities)
+    type_declarations = {key: EntityTypeDeclaration.model_validate(value) for key, value in types.items()}
+    binding_declarations = {
+        key: EntityBindingDeclaration.model_validate(value) for key, value in entities.items()
+    }
+    type_rules = {
+        key: {
+            name: rule.model_dump(mode="json", exclude_none=True) for name, rule in declaration.alerts.items()
+        }
+        for key, declaration in type_declarations.items()
+    }
+    binding_rules = {
+        key: {
+            name: rule.model_dump(mode="json", exclude_none=True) for name, rule in declaration.alerts.items()
+        }
+        for key, declaration in binding_declarations.items()
+    }
+    document = CatalogDocument(
+        sceneRevision=manifest.sceneRevision,
+        types={
+            key: value.model_dump(mode="json", exclude={"alerts"}, exclude_none=True)
+            for key, value in type_declarations.items()
+        },
+        entities={
+            key: value.model_dump(mode="json", exclude={"alerts"}, exclude_none=True)
+            for key, value in binding_declarations.items()
+        },
+    )
     catalog = Catalog.model_validate(document.model_dump(mode="json", by_alias=True, exclude_none=True))
     catalog._configs = configs
     for type_id, definition in catalog.types.items():
         for prop, value in definition["properties"].items():
             catalog._properties[type_id, prop] = compile_schema(value["schema"])
-        for rule in definition.get("alerts", {}).values():
+        for rule in type_rules[type_id].values():
             validate_conditions(
-                [rule["when"]], "type-self",
+                [rule["when"]],
+                "type-self",
                 lambda _, prop, definition=definition: definition["properties"][prop]["schema"],
                 allow_cross_entity=False,
             )
@@ -157,7 +197,7 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
                 compile_schema(event["schema"]) if event.get("schema") is not None else None
             )
     for key, binding in catalog.entities.items():
-        rules = catalog.types[binding["type"]].get("alerts", {}) | binding.get("alerts", {})
+        rules = type_rules[binding["type"]] | binding_rules[key]
         for name, rule in rules.items():
             compiled = validate_conditions(
                 [rule["when"]], key, lambda entity, prop: catalog.property(entity, prop)["schema"]
