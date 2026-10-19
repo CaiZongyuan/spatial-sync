@@ -11,6 +11,7 @@ LW = Path(sys.executable).parent / ("lw.exe" if os.name == "nt" else "lw")
 TOOLS = {
     "library_search",
     "library_describe",
+    "library_import",
     "scene_launch",
     "list_entities",
     "describe_entity",
