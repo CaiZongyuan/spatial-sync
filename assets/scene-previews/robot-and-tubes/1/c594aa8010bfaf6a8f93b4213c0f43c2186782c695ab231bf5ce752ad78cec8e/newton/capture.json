@@ -3,7 +3,7 @@
   "sceneVersion": "robot-and-tubes@1",
   "sceneContentHash": "c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e",
   "source": "newton",
-  "capturedAt": "2026-10-19T13:38:54.973087+00:00",
+  "capturedAt": "2026-10-19T15:09:26.916531+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -166,24 +166,32 @@
       "sha256": "e7c9f0117bd69666afa8dd31f2d524c07ad9ac249ec615134a7235fe7896a7bf"
     },
     {
+      "path": "packages/library/common.py",
+      "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
+    },
+    {
       "path": "packages/library/previews.py",
       "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
     },
     {
+      "path": "packages/library/reports.py",
+      "sha256": "dbded9fdf8e7f1c3eacbbc2da01827e0b04f9255aace612f5709f7946c9fcd8d"
+    },
+    {
       "path": "packages/library/scenes.py",
-      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+      "sha256": "70d47498b91750c7c62fbc66a6cd313388d466b34ce365676a39ef6d82062bce"
     },
     {
       "path": "packages/programs/centrifuge/newton.py",
-      "sha256": "7f29aaf3ee174920e03d301ade174f1261b0974a4776790d894cbf071b040099"
+      "sha256": "c5ef3c5a4605f90b7207abf169475ca5d97a16005102b726687533089920d753"
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "e24698f39b5d1a2a3e0921e3dc816978be87286a1fb70bdd1063f69b0608b10f"
+      "sha256": "55018273defbe007b08a9e04af2fc18790d2e8de26ce8f918cf36e4d086791fd"
     },
     {
       "path": "packages/programs/robot_arm/trajectory.py",
@@ -195,7 +203,7 @@
     },
     {
       "path": "packages/programs/tube/newton.py",
-      "sha256": "0fffcbb14c9d238e9aa0f36fbf8004f8462c8afe89ccb7b61a5a175ac7a3e164"
+      "sha256": "b459557c9ebf471a4dc8f3b59e046dd06de21858ff15834ce2c1075e6a2906ca"
     },
     {
       "path": "packages/protocol/json.py",
@@ -283,7 +291,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
     }
   ],
   "documents": {
@@ -293,10 +301,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "8e0efd739feeadb642f2dccef639b1a382e3624a20efc006d4e23347912a916d",
-    "catalog.json": "ad47fc824437b097cb1d5cda0913c1dbefdb13833184c594def649b8cbc30eee",
-    "state.json": "6945791d1b6b6fab5c5cd5ab1212f5a307c14c1c8ec4160a6d148f16ad7f8f11",
-    "snapshot.bin": "0e133a029779494ac883d38acba8b397f0937b958beb9fe0e18b238e6e1d7e6c",
+    "manifest.json": "88d5304fb60ced2d79181dcd53889711d75a4af4ca4ef9cc6b9a7d9035144a8a",
+    "catalog.json": "a2e21ce49a1a5312a06cad93b60c57cdb7ad29be75c057ae45d937d0ac7703ec",
+    "state.json": "01edf4dc3759ea9835c38978a7c10fa1deba25c361da3153b5b77fdb3f3c994b",
+    "snapshot.bin": "d6b0259c4f2b4765d23bf01ee4e72ca0ed66a678d6ba34322cf66a7fbefecf86",
     "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

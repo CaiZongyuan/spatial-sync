@@ -3,7 +3,7 @@
   "sceneVersion": "lab-demo@1",
   "sceneContentHash": "49eb8c4f192751529b1e37b90cacfa12d4a5407f3ed055812c370cf5af8ed0c5",
   "source": "synthetic",
-  "capturedAt": "2026-10-19T13:35:18.907491+00:00",
+  "capturedAt": "2026-10-19T15:07:24.864938+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -74,12 +74,20 @@
       "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
     },
     {
+      "path": "packages/library/common.py",
+      "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
+    },
+    {
       "path": "packages/library/previews.py",
       "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
     },
     {
+      "path": "packages/library/reports.py",
+      "sha256": "dbded9fdf8e7f1c3eacbbc2da01827e0b04f9255aace612f5709f7946c9fcd8d"
+    },
+    {
       "path": "packages/library/scenes.py",
-      "sha256": "e133b80c174b6a1350bf8a52616c7ba2950619f39895f62be826b6be7b66c753"
+      "sha256": "70d47498b91750c7c62fbc66a6cd313388d466b34ce365676a39ef6d82062bce"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -87,7 +95,7 @@
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "d3a92363b39414072926cd6602156ad18b9535216961e9871c46274f7f298062"
+      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
     },
     {
       "path": "packages/programs/env_sensor/virtual.py",
@@ -99,7 +107,7 @@
     },
     {
       "path": "packages/programs/robot_arm/virtual.py",
-      "sha256": "4395c799d4029c4fb7b59fa597600af5126d8c58f1b83157015cae962ad5ed3f"
+      "sha256": "3c1e6f5f6f051c0c447ebf11351ed8bf0cb3167094e78b409f6a7693a5e72315"
     },
     {
       "path": "packages/programs/signals.py",
@@ -131,7 +139,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "eee04ab5ea7d186385809733cc8374f47656fd18babc758b366e40e175ce287f"
+      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
     }
   ],
   "documents": {
@@ -141,10 +149,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "c625d889fffe8d8cead83eae693f013471f860ef3c0c9a5051756de91a842c50",
-    "catalog.json": "1dbf48962a41f642870d27ee121fa075b7deff0072114b7d7cabc988fde7a0fb",
-    "state.json": "630327b599aa49f1747ab8891268b80631256acda40e262d88dfa65dcee5fbfc",
-    "snapshot.bin": "b0eca3cac95112818b4b1d8f784fda595cc921ace82d35864b284f482103fcc2"
+    "manifest.json": "87c292399e6477996d9e6e0bb2c297053b4764a893f72a6771cbce9e45086902",
+    "catalog.json": "62bca4e7de16c189944fbd4b7a2c0a50a6d5de5d0f429de3c57a3bea9eb9bc53",
+    "state.json": "335e5335a134ffde476104be51693a0026f3a2e436584dc1a226f6a0d8f9388b",
+    "snapshot.bin": "ee295ed5951bdd6df0d239fa4131881403fa789e4fca790962d527ceb1006fc9"
   },
   "counts": {
     "physicalEntities": 30,
