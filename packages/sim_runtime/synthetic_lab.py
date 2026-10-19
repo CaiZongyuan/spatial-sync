@@ -186,11 +186,18 @@ def build_manifest(session_id, options, scene_package=None):
             (scene_package.path if scene_package else builtin_scene_path("lab-demo")) / "locations.yaml"
         ).read_text(encoding="utf-8")
     )["locations"]
+    slot_positions = {
+        f"centrifuge.slot{index + 1}": point
+        for index, point in enumerate(((0.1, 0, 0.1), (0, 0.1, 0.1), (-0.1, 0, 0.1), (0, -0.1, 0.1)))
+    }
     sites = []
     for name, location in locations.items():
         if name.startswith("centrifuge"):
-            index = int(name[-1]) - 1
-            local = ((0.1, 0, 0.1), (0, 0.1, 0.1), (-0.1, 0, 0.1), (0, -0.1, 0.1))[index]
+            if name not in slot_positions:
+                raise ValueError(
+                    f"Unsupported Synthetic centrifuge slot: {name}; expected centrifuge.slot1–4"
+                )
+            local = slot_positions[name]
             sites.append(
                 {
                     "entityKey": location["site"],

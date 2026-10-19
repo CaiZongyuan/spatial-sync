@@ -242,6 +242,34 @@ def test_native_python_builtin_revalidation_uses_pinned_urdf_joint_limits():
         assert response.json()["launchable"]
 
 
+def test_unsupported_synthetic_slot_is_an_inspectable_s5_failure():
+    path = BUILTIN_ROOT / "scenes/lab-demo/2"
+    files = {name: (path / name).read_bytes() for name in ("scene.yaml", "devices.yaml", "locations.yaml")}
+    metadata = yaml.safe_load(files["scene.yaml"])
+    metadata["name"] = "unsupported-slot-fixture"
+    bindings = yaml.safe_load(files["devices.yaml"])
+    bindings["scene"] = metadata["name"]
+    locations = yaml.safe_load(files["locations.yaml"])
+    locations["locations"]["centrifuge.slot5"] = dict(locations["locations"]["centrifuge.slot1"])
+    locations["locations"]["centrifuge.slot5"]["site"] = "/World/Lab/Centrifuge/Rotor/Slot5"
+    files["scene.yaml"] = yaml.safe_dump(metadata).encode()
+    files["devices.yaml"] = yaml.safe_dump(bindings).encode()
+    files["locations.yaml"] = yaml.safe_dump(locations).encode()
+    with TestClient(create_app()) as client:
+        response = upload(client, files)
+        assert response.status_code == 200, response.text
+        version = response.json()["sceneVersion"]
+        detail = client.get("/api/v1/library/scenes/unsupported-slot-fixture/1")
+        assert detail.status_code == 200, detail.text
+        report = detail.json()["validation"]
+        assert any(
+            c["id"] == "S5" and c["status"] == "fail" and "slot5" in c["message"] for c in report["checks"]
+        ), report
+        refused = client.post("/api/v1/sessions", json={"sceneVersion": version, "source": "synthetic"})
+        assert refused.status_code == 409 and refused.json()["detail"]["code"] == "scene_not_launchable"
+        assert client.get("/api/v1/health").json()["sessions"] == []
+
+
 def test_native_python_taught_coordinate_outside_real_urdf_limit_blocks_public_launch():
     path = BUILTIN_ROOT / "scenes/robot-and-tubes/1"
     files = {name: (path / name).read_bytes() for name in ("scene.yaml", "devices.yaml", "locations.yaml")}
