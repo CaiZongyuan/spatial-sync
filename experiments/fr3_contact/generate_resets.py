@@ -17,6 +17,7 @@ from isaaclab.utils.math import quat_apply
 from . import terms
 from .env_cfg import TCP_OFFSET, FR3GeneratorEnvCfg
 from .environment import FR3ContactEnv
+from .motion import quintic_fraction
 from .reset import PHASES, validate_dataset
 from .validity import REASONS
 
@@ -48,7 +49,7 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
         jaw_target = robot.data.joint_pos.torch[:, -2:-1].clone()
         desired_jaw = 0.039 if jaw > 0 else 0.0
         for step in range(steps):
-            fraction = min(1.0, (step + 1) / max(1, steps - 15))
+            fraction = quintic_fraction(min(1.0, (step + 1) / max(1, steps - 15)))
             position = torch.lerp(start_pos, target_position, fraction)
             quaternion = torch.lerp(start_quat, target_quaternion, fraction)
             quaternion = quaternion / torch.linalg.vector_norm(quaternion, dim=-1, keepdim=True)
@@ -57,13 +58,14 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
             env.step(command)
 
     def capture(phase):
+        phase_name = PHASES[phase] if isinstance(phase, int) else phase
         pose = torch.cat((tube.data.root_pos_w.torch, tube.data.root_quat_w.torch), dim=-1).clone()
         pose[:, :3] -= env.scene.env_origins
         print(
             "FR3_PHASE="
             + json.dumps(
                 {
-                    "phase": PHASES[phase],
+                    "phase": phase_name,
                     "raw_invalid_by_reason": {
                         name: int(((env._fr3_validity.reasons & flag) != 0).sum())
                         for name, flag in REASONS.items()
@@ -83,8 +85,8 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
             ),
             flush=True,
         )
-        if PHASES[phase] == probe_until:
-            raise ProbeComplete(PHASES[phase])
+        if phase_name == probe_until:
+            raise ProbeComplete(phase_name)
         return {
             "joint_position": robot.data.joint_pos.torch.clone(),
             "joint_target": robot.data.joint_pos_target.torch.clone(),
@@ -102,6 +104,8 @@ def generate(env, quota: int, max_batches: int, probe_until: str | None = None) 
             approach = initial_tube.clone()
             approach[:, 2] += 0.10
             move(approach, 1.0, 100)
+            if probe_until == "approach":
+                capture("approach")
             move(initial_tube, 1.0, 90)
             captured.append(capture(1))
             move(initial_tube, -1.0, 60)
@@ -191,7 +195,7 @@ def main():
     parser.add_argument("--num_envs", type=int, default=128)
     parser.add_argument("--poses_per_phase", type=int, default=128)
     parser.add_argument("--max_batches", type=int, default=4)
-    parser.add_argument("--probe_until", choices=PHASES)
+    parser.add_argument("--probe_until", choices=(*PHASES, "approach"))
     add_launcher_args(parser)
     args = parser.parse_args()
     cfg = FR3GeneratorEnvCfg()
