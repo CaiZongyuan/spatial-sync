@@ -1315,6 +1315,17 @@ pre {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.device-properties .stale-reading output {
+  color: var(--muted);
+}
+.reading-status {
+  color: var(--muted);
+  font-size: var(--fs-cap);
+  margin-left: 8px;
+}
+.device-annotation.is-stale span {
+  color: var(--muted);
+}
 .device-properties small {
   display: block;
   font-size: var(--fs-cap);

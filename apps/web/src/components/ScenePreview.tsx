@@ -35,7 +35,8 @@ export function FrozenViewport({ client, manifest, capture, captureKey, readouts
   const warn = useCallback(() => {}, []);
   const catalog = client.info.getMetadata().catalog;
   const annotations = !capture && catalog ? Object.values(catalog.entities)
-    .filter(binding => Object.keys(catalog.types[binding.type]?.actions ?? {}).length > 0)
+    .filter(binding => Object.keys(catalog.types[binding.type]?.actions ?? {}).length > 0
+      || Object.values(catalog.types[binding.type]?.properties ?? {}).some(property => property.staleAfterSeconds !== undefined))
     .map(binding => ({
       key: binding.key,
       label: manifest.nodes.find(node => node.entityKey === binding.key)?.name ?? binding.key.split('/').at(-1) ?? binding.key,

@@ -108,10 +108,11 @@ class RecordingRepository:
                 continue
             shutil.rmtree(directory)
 
-    def create(self, session_id, scene_id, scene_version):
+    def create(self, session_id, scene_id, scene_version, *, seed=None):
         return SessionLog(
             self.root / session_id, session_id, scene_id,
-            scene_version=scene_version.id, scene_content_hash=scene_version.content_hash, kind="session",
+            scene_version=scene_version.id, scene_content_hash=scene_version.content_hash,
+            kind="session", seed=seed,
         ) if self.enabled else None
 
     def resolve(self, recording_id, relative):

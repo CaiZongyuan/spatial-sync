@@ -16,11 +16,14 @@ from packages.protocol.schema import (  # noqa: E402
     ActionRequest,
     Command,
     CommandAck,
+    EntityAlert,
     EntityEvent,
     EntityObservations,
     EntitySnapshot,
     Heartbeat,
     InvocationUpdate,
+    PlanFullUpdate,
+    PlanStepUpdate,
     ProtocolContract,
     Ready,
     SceneManifest,
@@ -169,7 +172,7 @@ def main():
     schema = draft7(ProtocolContract.model_json_schema(mode="serialization"))
     schema["title"] = "ProtocolContract"
     schema["$schema"] = "http://json-schema.org/draft-07/schema#"
-    schema["$id"] = "https://spatial-sync.local/protocol/v2/schema.json"
+    schema["$id"] = "https://spatial-sync.local/protocol/v2.1/schema.json"
     write("types/protocol.schema.json", schema)
     manifest = manifest_sample()
     write("fixtures/manifest.json", manifest.model_dump(mode="json", exclude_none=True))
@@ -242,6 +245,21 @@ def main():
             simTime=0,
             sampleTimeMs=1000,
         ),
+        EntityAlert(sceneRevision=manifest.sceneRevision, epoch=0, simTime=60, sampleTimeMs=61000,
+                    entityKey="/World", alertId="alert-fixture", rule="temperatureDeviation",
+                    severity="critical", state="raised", message="Temperature differs from setpoint",
+                    value=39, since=0),
+        PlanFullUpdate(sceneRevision=manifest.sceneRevision, epoch=0, simTime=0, sampleTimeMs=1000,
+                       plan={"id": "plan-fixture", "title": "Fixture operation", "target": "session",
+                             "revision": 1, "steps": [
+                                 {"id": 1, "do": {"entity": "/World", "action": "start"},
+                                  "expect": {"property": "phase", "equals": "running"}},
+                                 {"id": 2, "wait": {"property": "phase", "equals": "idle"},
+                                  "timeoutSeconds": 120},
+                                 {"id": 3, "check": {"property": "phase", "equals": "idle"}},
+                             ]}),
+        PlanStepUpdate(sceneRevision=manifest.sceneRevision, epoch=0, simTime=1, sampleTimeMs=2000,
+                       planId="plan-fixture", revision=1, stepId=1, status="done"),
         InvocationUpdate(
             sceneRevision=manifest.sceneRevision,
             invocationId="inv-fixture",

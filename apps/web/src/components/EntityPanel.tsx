@@ -33,6 +33,7 @@ function ConditionStatus({
   const state = useEntity(store, target);
   const failure = evaluateConditions([condition], entityKey, (key) =>
     key === target ? state?.values : undefined,
+    (key) => key === target ? state?.meta : undefined,
   )[0];
   return (
     <li className={failure ? 'condition unmet' : 'condition met'}>
@@ -48,7 +49,7 @@ function ConditionStatus({
               )
               .map(([op, value]) => `${op} ${display(value)}`)
               .join(' ')}`}
-        {failure && <small>Current: {display(failure.actual)}</small>}
+        {failure && <small>{failure.reason === 'stale_reading' ? '读数已过期' : `Current: ${display(failure.actual)}`}</small>}
       </span>
     </li>
   );
@@ -297,7 +298,7 @@ export function EntityPanel({
           {Object.entries(definition.properties).map(([name, property]) => {
             const meta = state?.meta[name];
             return (
-              <div key={name} data-testid={`property-${name}`}>
+              <div key={name} data-testid={`property-${name}`} className={meta?.stale ? 'stale-reading' : undefined}>
                 <dt title={property.description}>{name}</dt>
                 <dd>
                   <output>
@@ -305,6 +306,7 @@ export function EntityPanel({
                       ? display(state.values[name])
                       : 'Unknown'}
                   </output>
+                  {meta?.stale && <span className="reading-status">过期</span>}
                   {property.unit && (
                     <span className="unit">{property.unit}</span>
                   )}

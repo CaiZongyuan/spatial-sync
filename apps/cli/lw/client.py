@@ -160,10 +160,12 @@ class GatewayClient:
         except OSError as exc:
             raise ValueError("Asset directory could not be read") from exc
 
-    async def scene_launch(self, sceneVersion, source=None, *, actor="cli:lw"):
+    async def scene_launch(self, sceneVersion, source=None, seed=None, *, actor="cli:lw"):
         body = {"sceneVersion": sceneVersion}
         if source is not None:
             body["source"] = source
+        if seed is not None:
+            body["seed"] = seed
         result = await self.request("POST", "/api/v1/sessions", json=body, actor=actor, timeout=190)
         self._session_id, self._session_explicit = result["sessionId"], False
         return result

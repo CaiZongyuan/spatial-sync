@@ -3,7 +3,7 @@
   "sceneVersion": "robot-and-tubes@1",
   "sceneContentHash": "c594aa8010bfaf6a8f93b4213c0f43c2186782c695ab231bf5ce752ad78cec8e",
   "source": "newton",
-  "capturedAt": "2026-10-19T10:47:18.346187+00:00",
+  "capturedAt": "2026-10-19T13:38:54.973087+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -19,7 +19,7 @@
   "dependencies": [
     {
       "path": "apps/api/app/recordings.py",
-      "sha256": "057542b6052776de4d6079e62f248d6c0397cb5ba17b2fbf7258f121e2988c6c"
+      "sha256": "13d4406101abebea6d4b84fd140c7ad504fbdb22e7a08804d94073a5f4bbab1d"
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
@@ -110,8 +110,20 @@
       "sha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497"
     },
     {
+      "path": "devices/types/biosafety-cabinet.v1.yaml",
+      "sha256": "94986fa05f4df6cecf7ed350df9627ed68d7aab46ee7cb01f890ee2ac3b095bf"
+    },
+    {
       "path": "devices/types/centrifuge.v1.yaml",
       "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+    },
+    {
+      "path": "devices/types/env-sensor.v1.yaml",
+      "sha256": "ca9c842d298827d75e51abd2a0ed2f7cfe651a52ce74b673cb068258f1800a2c"
+    },
+    {
+      "path": "devices/types/incubator.v1.yaml",
+      "sha256": "1cf3865735568334fbf5b0f5f021319c62ba177e67bbc4efbea598596a90209e"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -135,15 +147,15 @@
     },
     {
       "path": "packages/info/conditions.py",
-      "sha256": "89aea1f932daee6504ac8309a09f8a6f95d83bbf50ff59234f42974a71792395"
+      "sha256": "4ab5f0b4954b80d54af6abcabf4df359515a054c00b8fac836a16164d1c20709"
     },
     {
       "path": "packages/info/diff.py",
-      "sha256": "0928b274987b2611a9e7fad8e0b6aeaa89f2c76dd001fdb8785afc177793b942"
+      "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "8efad7563a43e95276d48d0fb76ace684f2809d4c94e2b111e11f8c29c456901"
+      "sha256": "67574ad7ab1b97ec14a94a27a6c293f1813b7da05ba888ee2a1187e87b07fc15"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -151,7 +163,7 @@
     },
     {
       "path": "packages/info/store.py",
-      "sha256": "335985ff293d00a66e1fce4630382b3aaaf8c0032fca007cbb10fa8ea1e65a5e"
+      "sha256": "e7c9f0117bd69666afa8dd31f2d524c07ad9ac249ec615134a7235fe7896a7bf"
     },
     {
       "path": "packages/library/previews.py",
@@ -195,7 +207,7 @@
     },
     {
       "path": "packages/protocol/schema/__init__.py",
-      "sha256": "13f113f894423b2d1301ed433e9823152410a50f4771ff81231c62ecb769d669"
+      "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
@@ -203,7 +215,7 @@
     },
     {
       "path": "packages/sim_runtime/info_host.py",
-      "sha256": "8d2cf37ba1242dc4ca757f54f6a129dc7bd2cb40730a639af0bad3ce47b4be13"
+      "sha256": "ec2b7ca0ead6c281fa4009d04df4d097ef2e118f402d300b2d093877d43ce0b9"
     },
     {
       "path": "packages/sim_runtime/labels.py",
@@ -281,10 +293,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "679a5dca6e5933bcfb5849045ed717e6cc00cb89fc4a6852c81511fe4ac45a63",
-    "catalog.json": "cef1cbac8a8f37419906289916c8ab0f3a9ed9a5208402402e84f14abd8f18ab",
-    "state.json": "0408264d75537fabc7843ee6ba0aabdfdac26ea49434d883b108489e009d2a82",
-    "snapshot.bin": "5b4768d3fce01f81b6733d64650a91bd18fe81be26696e337964037d8ac9426b",
+    "manifest.json": "8e0efd739feeadb642f2dccef639b1a382e3624a20efc006d4e23347912a916d",
+    "catalog.json": "ad47fc824437b097cb1d5cda0913c1dbefdb13833184c594def649b8cbc30eee",
+    "state.json": "6945791d1b6b6fab5c5cd5ab1212f5a307c14c1c8ec4160a6d148f16ad7f8f11",
+    "snapshot.bin": "0e133a029779494ac883d38acba8b397f0937b958beb9fe0e18b238e6e1d7e6c",
     "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

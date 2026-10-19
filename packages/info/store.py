@@ -57,13 +57,21 @@ class StateStore:
             if previous and change.rev < previous.rev:
                 continue
             meta = dict(previous.meta) if previous else {}
+            accepted = {
+                prop for prop in change.values.keys() | change.meta.keys()
+                if prop not in meta or (
+                    change.meta.get(prop) or observed_at
+                ).sampleTimeMs >= meta[prop].sampleTimeMs
+            }
             values = {
                 prop: deepcopy(value) if isinstance(value, (dict, list)) else value
                 for prop, value in change.values.items()
-                if prop not in meta or message.sampleTimeMs >= meta[prop].sampleTimeMs
+                if prop in accepted
             }
-            for prop in values:
-                meta[prop] = observed_at
+            for prop in accepted:
+                meta[prop] = (
+                    _StoredMeta(**change.meta[prop].model_dump()) if prop in change.meta else observed_at
+                )
                 for waiter in self._waiters.get((change.key, prop), ()):
                     waiter.set()
             update = {
@@ -93,7 +101,7 @@ class StateStore:
                     "rev": value.rev,
                     "values": value.values,
                     "meta": {
-                        prop: {"simTime": at.simTime, "sampleTimeMs": at.sampleTimeMs, "source": at.source}
+                        prop: at.model_dump(mode="json")
                         for prop, at in value.meta.items()
                     },
                 }
@@ -102,6 +110,9 @@ class StateStore:
 
     def values(self):
         return {key: entity.values for key, entity in self.entities.items()}
+
+    def metadata(self):
+        return {key: entity.meta for key, entity in self.entities.items()}
 
     async def wait(self, key, prop, predicate, timeout):
         event = asyncio.Event()

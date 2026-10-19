@@ -36,7 +36,7 @@ class PropertyDiff:
         self.at = {}
         self.pending = {}
 
-    def update(self, values, publication_time=None):
+    def update(self, values, publication_time=None, *, force=()):
         now = self.clock() if publication_time is None else publication_time
         if not values and not self.pending:
             return {}
@@ -45,11 +45,13 @@ class PropertyDiff:
         outgoing = {}
         for prop, value in list(self.pending.items()):
             definition = self.definitions[prop]
-            if prop in self.sent and not changed(self.sent[prop], value, definition.get("deadband")):
+            if prop not in force and prop in self.sent and not changed(
+                self.sent[prop], value, definition.get("deadband")
+            ):
                 del self.pending[prop]
                 continue
             rate = definition.get("maxRateHz")
-            if rate and prop in self.at and now - self.at[prop] + 1e-10 < 1 / rate:
+            if prop not in force and rate and prop in self.at and now - self.at[prop] + 1e-10 < 1 / rate:
                 continue
             outgoing[prop] = _copy_value(value)
             self.sent[prop], self.at[prop] = _copy_value(value), now

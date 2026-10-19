@@ -13,11 +13,26 @@ library/scenes/<name>/<rev>/
   validation.json  # existing report, read without running validators at startup
 ```
 
-Built-in versions are `lab-demo@1`, `falling-boxes@1`, `robot-and-tubes@1` and
+Built-in versions are `lab-demo@1`, `lab-demo@2`, `falling-boxes@1`, `robot-and-tubes@1` and
 `usd-lab@1`. Their `python:<builder-id>` stages use the existing execution
 allowlist. Filesystem paths and arbitrary Python modules are not API selectors.
 Newton solver and warmup settings come from the selected package; Newton itself
 is imported only in its owned Runner.
+
+`lab-demo@2` adds a virtual incubator, biosafety cabinet and environment sensor.
+Version 1 retains its original bindings and layout. Bare `lab-demo` launches
+version 2 as the latest launchable version. Synthetic device signals use the
+session's optional nonnegative `seed` (HTTP, `lw scene launch --seed`, or MCP
+`scene_launch(seed=...)`; gateway default 42), with
+independent per-entity random streams; reset restarts them. Programs use
+simulation time, first-order lag and bounded noise. An incubator configured with
+an open door relaxes toward ambient temperature/CO2. `setSetpoint` and `setUv`
+are high-risk actions and follow the session's existing approval policy.
+Omitting seed preserves the original launch request and lets the gateway choose
+its default. Close an active session before launching a new run with another
+seed; same-version/source launch still reuses the active session.
+New reader property metadata marks stale readings; the original scalar value
+remains available. A fresh write clears expiry even when its value is equal.
 
 Inspect and launch from any shell:
 
