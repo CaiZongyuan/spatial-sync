@@ -37,6 +37,7 @@ def gateway_url(tmp_path_factory):
             stderr=log,
             env=os.environ | {
                 "SPATIAL_RECORDINGS_ROOT": str(directory / "recordings"),
+                "SPATIAL_STATE_ROOT": str(directory / "state"),
                 "LW_LIBRARY": str(directory / "user-library"),
             },
         )

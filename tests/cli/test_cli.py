@@ -37,8 +37,10 @@ def test_cli_inspection_actions_queries_controls_and_recordings(lw, lab):
     closed = lw("do", CENTRIFUGE, "closeLid", "--wait")
     assert closed["status"] == "succeeded"
     assert lw("inv", closed["invocationId"], "--wait")["invocationId"] == closed["invocationId"]
-    assert lw("approve", closed["invocationId"])["status"] == "succeeded"
-    assert lw("approve", closed["invocationId"], "--deny")["status"] == "succeeded"
+    assert (
+        lw("approve", closed["invocationId"], code=1)["error"]["detail"]["code"] == "approval_requires_human"
+    )
+    assert lw("approve", closed["invocationId"], "--deny", code=1)["error"]["statusCode"] == 403
     assert lw("wait", CENTRIFUGE, "lidOpen", "equals", "false")["satisfied"] is True
     assert lw("session", "pause")["state"]["state"] == "PAUSED"
     stepped = lw("session", "step", "12")

@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import StrictBool
+from pydantic import Field, StrictBool
 
 from packages.info.conditions import OPERATORS, evaluate_conditions
 from packages.info.invocations import TERMINAL, HistoryUnavailable
@@ -27,6 +27,7 @@ class HttpAction(ActionRequest):
 
 class Approval(Model):
     decision: Literal["approve", "deny"]
+    note: str = Field(default="", max_length=4000)
 
 
 def invocation_response(value, *, waiting=False, timed_out=False, query=False):
@@ -180,11 +181,11 @@ def install_info_routes(app, manager, role_for):
             value, timed_out = await table.wait(invocation_id, timeoutSeconds)
         return invocation_response(value, waiting=wait, timed_out=timed_out, query=True)
 
-    async def control(session_id, invocation_id, role, actor=None, decision=None):
+    async def control(session_id, invocation_id, role, actor=None, decision=None, note=""):
         pipeline = await manager.get(session_id).action_pipeline()
         try:
             value = await (
-                pipeline.approve(invocation_id, decision, role, actor)
+                pipeline.approve(invocation_id, decision, role, actor, note)
                 if decision
                 else pipeline.cancel(invocation_id, role)
             )
@@ -206,6 +207,7 @@ def install_info_routes(app, manager, role_for):
             role_for(request.headers),
             actor_from_headers(request.headers),
             body.decision,
+            body.note,
         )
 
     @app.get(prefix + "/wait")

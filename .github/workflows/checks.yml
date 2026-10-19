@@ -49,8 +49,10 @@ jobs:
         env:
           PLAYWRIGHT_SHARD: ${{ matrix.shard }}/2
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
+          SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
+          SPATIAL_TEST_APPROVAL: '1'
         run: |
-          uv run --frozen python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
+          uv run --frozen python -m uvicorn approval_gateway:app --app-dir tests/fixtures --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
           SPATIAL_API_PID=$!
           trap 'kill "$SPATIAL_API_PID" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 60); do

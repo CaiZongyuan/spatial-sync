@@ -308,11 +308,11 @@ class _Runner:
                     "stats": self.stats(),
                 }
             )
-        elif kind in ("invoke", "cancel"):
+        elif kind in ("invoke", "cancel", "revoke_before_start"):
             result = (
                 self.info.invoke(InvokeRequest.model_validate(packet["request"]))
                 if kind == "invoke"
-                else self.info.cancel(packet["invocationId"])
+                else getattr(self.info, kind)(packet["invocationId"])
             )
             self.control.offer(
                 {"kind": "invocation_result", "token": token, "update": result.model_dump(mode="json")}
