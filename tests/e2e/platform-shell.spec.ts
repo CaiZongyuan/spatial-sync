@@ -22,7 +22,7 @@ test('platform navigation, persistent preferences, system theme and local assets
   await expect(page.locator('.platform-sidebar')).toHaveCSS('width', '44px');
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(244, 243, 239)');
   await navigation.getByRole('link', { name: 'Sessions', exact: true }).focus();
-  await expect(page.getByRole('tooltip', { name: 'Sessions', exact: true })).toBeVisible();
+  await expect(page.getByRole('tooltip', { name: '会话', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
   await navigation.getByRole('link', { name: 'Resources', exact: true }).click();
   await expect(page).toHaveURL(/\/resources\/gpu$/);

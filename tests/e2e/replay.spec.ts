@@ -11,6 +11,62 @@ const expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8')
     tubeLocation: string; robotJoints: number[] }[];
 };
 
+test('a delayed visual reframes the paused camera after the former five second cutoff', async ({ page, baseURL }) => {
+  const manifest = JSON.parse(readFileSync(join(fixture, 'manifest.json'), 'utf8'));
+  const delayed = manifest.nodes.find((node: { entityKey: string }) => node.entityKey === '/World/Lab/FallbackBox');
+  delayed.colliders[0].geometry.halfExtents = [5, 5, 5];
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/fixture/late-fit/**', async route => {
+    const relative = new URL(route.request().url()).pathname.split('/fixture/late-fit/')[1];
+    if (relative === 'manifest.json') await route.fulfill({ json: manifest });
+    else if (relative.startsWith('assets/missing-')) { await held; await route.fulfill({ status: 404 }); }
+    else if (existsSync(join(fixture, relative))) await route.fulfill({ path: join(fixture, relative) });
+    else await route.fulfill({ status: 404 });
+  });
+  try {
+    const src = new URL('/fixture/late-fit/recording.json', baseURL).href;
+    await page.goto(`/replay/late-fit?src=${encodeURIComponent(src)}`);
+    await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.drawnEntities().length ?? 0)).toBeGreaterThan(20);
+    const before = await page.evaluate(() => window.__spatialRenderDebug!.camera().position);
+    // Regression boundary: the visual becomes available after the old 5s camera deadline.
+    await new Promise(resolve => setTimeout(resolve, 5500));
+    release();
+    await expect.poll(() => page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('colliders');
+    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.camera().position)).not.toEqual(before);
+    await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  } finally { release(); }
+});
+
+test('an HTTP recording with a legal seq zero first snapshot creates and draws its canvas', async ({ page, baseURL }) => {
+  const segment = Buffer.from(readFileSync(join(fixture, 'seg-000001.bin')));
+  let changed = false;
+  for (let offset = 6; offset + 13 <= segment.length; offset += 4 + segment.readUInt32LE(offset)) {
+    if (segment[offset + 4] !== 1) continue;
+    segment.writeBigUInt64LE(0n, offset + 13 + 16);
+    changed = true; break;
+  }
+  expect(changed).toBe(true);
+  let sockets = 0;
+  page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) sockets++; });
+  await page.route('**/fixture/zero-http/**', async route => {
+    const relative = new URL(route.request().url()).pathname.split('/fixture/zero-http/')[1];
+    if (relative === 'seg-000001.bin') await route.fulfill({ body: segment, contentType: 'application/octet-stream' });
+    else if (existsSync(join(fixture, relative))) await route.fulfill({ path: join(fixture, relative) });
+    else await route.fulfill({ status: 404 });
+  });
+  const src = new URL('/fixture/zero-http/recording.json', baseURL).href;
+  await page.goto(`/replay/zero-http?src=${encodeURIComponent(src)}`);
+  await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq)).toBe(0);
+  await expect(page.locator('canvas')).toBeVisible();
+  await expect.poll(() => page.evaluate(key => window.__spatialDebug?.getRenderedPose(key), expected.tubeKey)).toEqual(
+    await page.evaluate(key => window.__spatialDebug?.getAuthoritativePose(key), expected.tubeKey),
+  );
+  expect(sockets).toBe(0);
+});
+
 test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log comparisons', async ({ page, baseURL }) => {
   const liveRequests: string[] = [];
   page.on('request', (request) => { if (new URL(request.url()).pathname.startsWith('/api/')) liveRequests.push(request.url()); });

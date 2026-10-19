@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useContext, useEffect, useMemo } from 'react';
 import {
   Box3,
   Color,
@@ -13,6 +13,7 @@ import {
 import type { SceneManifest, Primitive, Pose } from '../../lib/protocol';
 import type { SessionClient } from '../../lib/stream/client';
 import { createPrimitiveGeometry } from '../../lib/geometry/primitives';
+import { ViewerThemeContext } from '../../lib/scene/viewer-theme';
 import type { RenderedPose, VisualGeometryInfo } from './SceneViewport';
 
 export type PhysicalNode = Exclude<
@@ -69,6 +70,7 @@ export function InstancedPrimitives({
   nodes,
   client,
   selected,
+  highlightedKeys,
   hidden,
   rendered,
   controller,
@@ -77,11 +79,13 @@ export function InstancedPrimitives({
   nodes: PhysicalNode[];
   client: SessionClient;
   selected?: string;
+  highlightedKeys?: Set<string>;
   hidden: Set<string>;
   rendered: React.RefObject<Map<string, RenderedPose>>;
   controller: React.RefObject<InstanceController | undefined>;
   select: (key: string) => void;
 }) {
+  const theme = useContext(ViewerThemeContext);
   const batches = useMemo(() => {
     const groups = new Map<string, Batch>();
     const createBatch = (visual: Primitive): Batch => {
@@ -135,8 +139,8 @@ export function InstancedPrimitives({
     () =>
       new MeshStandardMaterial({
         color: '#ffffff',
-        roughness: 0.45,
-        metalness: 0.24,
+        roughness: 0.7,
+        metalness: 0.12,
         side: DoubleSide,
       }),
     [],
@@ -157,8 +161,8 @@ export function InstancedPrimitives({
       world = new Matrix4();
     const allBounds = new Box3(),
       visualBounds = new Box3();
-    const base = new Color('#8dabb5'),
-      highlight = new Color('#ffbf69');
+    const base = new Color(theme.body),
+      highlight = new Color(theme.accent);
     const slots = new Map<string, Entry[]>();
     const appliedAt = new Map<string, number>();
     let frame = 0;
@@ -206,7 +210,7 @@ export function InstancedPrimitives({
             const slot = batch.packed.length;
             entry.slot = slot;
             mesh.setMatrixAt(slot, value);
-            mesh.setColorAt(slot, selected === key ? highlight : base);
+            mesh.setColorAt(slot, selected === key || highlightedKeys?.has(key) ? highlight : base);
             batch.packed.push(entry);
             if (entry.node.kind === 'body' && appliedAt.get(key) !== frame) {
               // Read the Float32 matrix that will actually be submitted, then
@@ -260,7 +264,7 @@ export function InstancedPrimitives({
     return () => {
       controller.current = undefined;
     };
-  }, [batches, client, hidden, selected, rendered, controller, nodes]);
+  }, [batches, client, hidden, selected, rendered, controller, nodes, theme, highlightedKeys]);
   return (
     <>
       {batches.map((batch, index) => (

@@ -7,6 +7,7 @@ import {
   Matrix4,
   Object3D,
   PerspectiveCamera,
+  OrthographicCamera,
   Raycaster,
   Sphere,
   Vector2,
@@ -17,6 +18,7 @@ export interface CameraState {
   position: number[];
   target: number[];
   fov: number;
+  projection?: string;
   near: number;
   far: number;
 }
@@ -41,6 +43,7 @@ declare global {
         submittedTriangles: number;
         mode: string;
       };
+      appearance: () => { background: string; materialColors: string[] };
     };
   }
 }
@@ -60,7 +63,7 @@ export function SceneDiagnostics({
 }) {
   const state = useThree();
   useEffect(() => {
-    const camera = state.camera as PerspectiveCamera;
+    const camera = state.camera as PerspectiveCamera | OrthographicCamera;
     const controls = () =>
       state.get().controls as unknown as {
         target?: Vector3;
@@ -69,13 +72,14 @@ export function SceneDiagnostics({
     const readCamera = (): CameraState => ({
       position: camera.position.toArray(),
       target: controls()?.target?.toArray() ?? [0, 0, 0],
-      fov: camera.fov,
+      fov: camera instanceof PerspectiveCamera ? camera.fov : 44,
+      projection: camera.type,
       near: camera.near,
       far: camera.far,
     });
     const setCamera = (value: CameraState) => {
       camera.position.fromArray(value.position);
-      camera.fov = value.fov;
+      if (camera instanceof PerspectiveCamera) camera.fov = value.fov;
       camera.near = value.near;
       camera.far = value.far;
       controls()?.target?.fromArray(value.target);
@@ -106,6 +110,11 @@ export function SceneDiagnostics({
     };
     window.__spatialRenderDebug = {
       camera: readCamera,
+      appearance: () => ({
+        background: state.scene.background && 'getHexString' in state.scene.background ? (state.scene.background as { getHexString: () => string }).getHexString() : '',
+        materialColors: visibleMeshes().flatMap(mesh => (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+          .flatMap(material => 'color' in material && material.color && typeof material.color === 'object' && 'getHexString' in material.color ? [(material.color as { getHexString: () => string }).getHexString()] : [])),
+      }),
       setCamera,
       drawnEntities: () => {
         const keys = new Set<string>();
@@ -167,9 +176,16 @@ export function SceneDiagnostics({
         const potential = extraBounds?.();
         if (potential) bounds.union(potential);
         const sphere = bounds.getBoundingSphere(new Sphere());
+        const fov = camera instanceof PerspectiveCamera ? camera.fov : 44;
+        if (camera instanceof OrthographicCamera) {
+          const aspect = state.size.width / state.size.height;
+          const half = Math.max(.5, sphere.radius * 1.1);
+          camera.left = -half * aspect; camera.right = half * aspect;
+          camera.top = half; camera.bottom = -half;
+        }
         const distance = Math.max(
           1,
-          (sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.2,
+          (sphere.radius / Math.sin((fov * Math.PI) / 360)) * 1.2,
         );
         const position = sphere.center
           .clone()
@@ -177,7 +193,7 @@ export function SceneDiagnostics({
         setCamera({
           position: position.toArray(),
           target: sphere.center.toArray(),
-          fov: camera.fov,
+          fov,
           near: 0.01,
           far: Math.max(100, distance * 5),
         });

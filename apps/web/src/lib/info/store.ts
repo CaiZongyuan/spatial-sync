@@ -14,6 +14,7 @@ export type InfoMessage =
   | EntityEvent
   | InvocationUpdate;
 type Listener = () => void;
+export interface ActivityEntry { id: string; entityKey: string; label: string; simTime: number; actor: 'system' | 'agent' | 'human' }
 const emptyInvocations: Invocation[] = [];
 export const terminal = (invocation: Invocation) =>
   ['succeeded', 'failed', 'cancelled', 'rejected'].includes(invocation.status);
@@ -30,6 +31,8 @@ export class InfoStore {
   private metadataListeners = new Set<Listener>();
   private treeListeners = new Set<Listener>();
   private metadata: { catalog?: Catalog; ready: boolean } = { ready: false };
+  private activity: ActivityEntry[] = [];
+  private activityListeners = new Set<Listener>();
   private tree: Record<string, string> = {};
   private treeTimer?: ReturnType<typeof setTimeout>;
 
@@ -63,6 +66,16 @@ export class InfoStore {
     };
   };
   getMetadata = () => this.metadata;
+  getActivity = () => this.activity;
+  subscribeActivity = (listener: Listener) => {
+    this.activityListeners.add(listener);
+    return () => { this.activityListeners.delete(listener); };
+  };
+  private addActivity(entry: ActivityEntry) {
+    if (this.activity.some(item => item.id === entry.id)) return;
+    this.activity = [entry, ...this.activity].slice(0, 40);
+    this.activityListeners.forEach(listener => listener());
+  }
   getTree = () => this.tree;
   getEntity = (key: string) => this.entities.get(key);
   getInvocations = (key = '') =>
@@ -71,6 +84,8 @@ export class InfoStore {
   configure(revision: string, epoch: number) {
     this.revision = revision;
     this.epoch = epoch;
+    this.activity = [];
+    this.activityListeners.forEach(listener => listener());
     const keys = [...this.entities.keys()];
     this.entities.clear();
     this.invocations.clear();
@@ -97,6 +112,10 @@ export class InfoStore {
     if (message.sceneRevision !== this.revision || message.epoch < this.epoch)
       return;
     if (message.type === 'entity.snapshot') {
+      if (message.epoch !== this.epoch) {
+        this.activity = [];
+        this.activityListeners.forEach(listener => listener());
+      }
       this.epoch = message.epoch;
       const keys = new Set([
         ...this.entities.keys(),
@@ -119,6 +138,12 @@ export class InfoStore {
     }
     if (message.epoch !== this.epoch || !this.metadata.ready) return;
     if (message.type === 'invocation.update') {
+      const previous = this.invocations.get(message.invocationId);
+      if (previous?.status !== message.status) this.addActivity({
+        id: `${message.epoch}:${message.invocationId}:${message.status}`, entityKey: message.entityKey,
+        label: `${message.action} · ${message.status}`, simTime: message.endedSimTime ?? message.startedSimTime ?? message.createdSimTime,
+        actor: message.actor.kind === 'agent' ? 'agent' : message.actor.kind === 'user' || message.actor.kind === 'cli' ? 'human' : 'system',
+      });
       this.invocations.set(message.invocationId, message);
       this.publishInvocations();
     } else if (message.type === 'entity.observations') {
@@ -153,7 +178,10 @@ export class InfoStore {
         });
         this.changed(change.key);
       }
-    }
+    } else if (message.type === 'entity.event') this.addActivity({
+      id: `${message.epoch}:${message.entityKey}:${message.event}:${message.sampleTimeMs}`,
+      entityKey: message.entityKey, label: message.event, simTime: message.simTime, actor: 'system',
+    });
     // Events describe history; current property authority comes from observations.
   }
 
