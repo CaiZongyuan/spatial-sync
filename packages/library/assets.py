@@ -116,6 +116,10 @@ class AssetVersion:
             "kind": self.metadata["kind"],
             "title": self.metadata["title"],
             "description": self.metadata.get("description", ""),
+            "dimensionsM": deepcopy(self.metadata.get("dimensionsM")),
+            "implementedTypes": list(
+                dict.fromkeys(item["type"] for item in self.metadata.get("implements", []))
+            ),
             "root": self.root,
             "contentHash": self.content_hash,
             "gaps": missing,
