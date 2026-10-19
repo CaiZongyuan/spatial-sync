@@ -91,8 +91,14 @@ def install_skills(target=None):
     )
     bundles = _bundles()
     try:
-        if (destination.exists() or destination.is_symlink()) and not _regular(destination, directory=True):
-            raise SkillError("The target must be a regular directory, not a file or link")
+        # Inspect from the root before reading descendants or creating missing directories.
+        for component in (*reversed(destination.parents), destination):
+            try:
+                regular = _regular(component, directory=True)
+            except FileNotFoundError:
+                continue
+            if not regular:
+                raise SkillError("The target path must contain only regular directories, not files or links")
         # Detect every known conflict before creating either skill directory.
         existing = {
             metadata["name"]: _existing(destination / metadata["name"], content)

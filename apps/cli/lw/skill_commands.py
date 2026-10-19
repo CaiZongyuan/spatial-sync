@@ -40,7 +40,9 @@ def check_command(command):
     arguments = [token for token in tokens[1:] if token != "--json"]
     help_requested = any(token in ("--help", "-h") for token in arguments)
     path_tokens = [token for token in arguments if token not in ("--help", "-h")]
-    current = parser()
+    root = parser()
+    current = root
+    selected = [root]
     # Check subcommands before argparse's help action can short-circuit validation.
     while subcommands := next(
         (action for action in current._actions if isinstance(action, argparse._SubParsersAction)), None
@@ -53,9 +55,18 @@ def check_command(command):
         if name not in subcommands.choices:
             raise ValueError(f"Unknown command or subcommand: {name}")
         current = subcommands.choices[name]
+        selected.append(current)
+    if help_requested:
+        # Help may omit operands, but cannot bypass validation of supplied arguments.
+        arguments = [token for token in arguments if token not in ("--help", "-h")]
+        for command_parser in selected:
+            for action in command_parser._actions:
+                action.required = False
+                if not action.option_strings and action.nargs is None:
+                    action.nargs = "?"
     try:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            parser().parse_args(arguments)
+            root.parse_args(arguments)
     except UsageError as error:
         raise ValueError(str(error)) from None
     except SystemExit as error:

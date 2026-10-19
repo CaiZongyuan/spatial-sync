@@ -23,6 +23,16 @@ def invoke(directory, *arguments, code=0):
     return json.loads(process.stdout)
 
 
+def link_directory(link, target):
+    if os.name == "nt":
+        linked = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, timeout=10,
+        )
+        assert linked.returncode == 0, linked.stdout + linked.stderr
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
 def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_path(tmp_path):
     catalog = invoke(tmp_path, "skills", "ls")
     assert [item["name"] for item in catalog] == ["lab", "lab-operate"]
@@ -88,15 +98,33 @@ def test_linked_skill_directory_is_not_followed(tmp_path):
     (outside / "SKILL.md").write_bytes(b"keep linked user file")
     target = tmp_path / "skills"
     target.mkdir()
-    if os.name == "nt":
-        linked = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(target / "lab"), str(outside)],
-            capture_output=True,
-            timeout=10,
-        )
-        assert linked.returncode == 0, linked.stdout + linked.stderr
-    else:
-        (target / "lab").symlink_to(outside, target_is_directory=True)
+    link_directory(target / "lab", outside)
     invoke(tmp_path, "skills", "install", "--target", str(target), code=1)
     assert (outside / "SKILL.md").read_bytes() == b"keep linked user file"
     assert not (target / "lab-operate").exists()
+
+
+@pytest.mark.parametrize("location", ["target", "ancestor-absent", "ancestor-existing"])
+def test_linked_destination_components_never_write_through_to_the_real_directory(tmp_path, location):
+    real = tmp_path / "real user directory"
+    real.mkdir()
+    (real / "sentinel.txt").write_bytes(b"keep user content")
+    nested = real / "nested" / "skills"
+    if location == "ancestor-existing":
+        nested.mkdir(parents=True)
+        (nested / "personal.txt").write_bytes(b"keep nested user content")
+    before = sorted((str(path.relative_to(real)), path.read_bytes() if path.is_file() else None)
+                    for path in real.rglob("*"))
+    linked = tmp_path / "linked parent"
+    link_directory(linked, real)
+    try:
+        target = linked if location == "target" else linked / "nested" / "skills"
+        invoke(tmp_path, "skills", "install", "--target", str(target), code=1)
+        after = sorted((str(path.relative_to(real)), path.read_bytes() if path.is_file() else None)
+                       for path in real.rglob("*"))
+        assert after == before
+    finally:
+        if os.name == "nt":
+            os.rmdir(linked)  # Remove only this owned junction, never its destination.
+        else:
+            linked.unlink()
