@@ -110,11 +110,13 @@ class Session:
         self.recordings = recordings
         self.recording = None
         self._recording_revision_ready = False
+        self._alerts_ready = False
 
     async def start(self):
         previous_manifest = self.manifest
         recording_was_ready = self._recording_revision_ready
         self._recording_revision_ready = False
+        self._alerts_ready = False
         self.state = "LOADING"
         self._log_event("session.lifecycle", state=self.state)
         if self.manifest:
@@ -173,11 +175,16 @@ class Session:
             if policy_change:
                 self._apply_observer_policy_change(*policy_change, publish=False)
             self._last_published_seq = self.seq
-            if callable(getattr(candidate, "entity_snapshot", None)):
-                self.apply_info(candidate.entity_snapshot())
+            initial_info = (
+                candidate.entity_snapshot()
+                if callable(getattr(candidate, "entity_snapshot", None)) else None
+            )
+            if initial_info is not None:
+                self.apply_info(initial_info)
             await self._record_revision()
-            if callable(getattr(candidate, "entity_snapshot", None)):
-                self._advance_alerts(candidate.entity_snapshot())
+            self._alerts_ready = True
+            if initial_info is not None:
+                self._advance_alerts(initial_info)
             self._log_event("session.lifecycle", state=self.state)
             self._tasks = [
                 asyncio.create_task(self._monitor(), name="session-frames"),
@@ -462,6 +469,7 @@ class Session:
         self._cache_frame(self.latest_frame())
         self.error = {"code": "source_unavailable", "message": message}
         self.state, self.actual_rtf = "FAILED", 0
+        self._alerts_ready = False
         if self.alerts:
             self.alerts.close_context("source_unavailable")
         if self.pipeline:
@@ -558,7 +566,7 @@ class Session:
 
     def _advance_alerts(self, clock):
         if (
-            not self.alerts or not self.alerts.rules or not self._recording_revision_ready
+            not self.alerts or not self.alerts.rules or not self._alerts_ready
             or self.state not in ("RUNNING", "PAUSED")
         ):
             return
@@ -976,6 +984,7 @@ class Session:
     async def close(self):
         async with self.command_lock:
             self._auto_paused = False
+            self._alerts_ready = False
             if self.alerts:
                 self.alerts.close_context("session_stopped")
             if self.pipeline:

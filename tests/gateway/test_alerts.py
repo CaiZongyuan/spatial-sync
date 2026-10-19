@@ -14,12 +14,13 @@ from fastapi.testclient import TestClient
 from ws_messages import receive_message
 
 from apps.api.app.main import create_app
+from apps.api.app.settings import Settings
 from apps.api.app.sources import synthetic_source
 from packages.info.catalog import load_catalog
 from packages.info.log import read_segment
 from packages.info.program import ProgramConfig
 from packages.protocol.internal import InformationClock
-from packages.protocol.schema import EntityObservations
+from packages.protocol.schema import EntityObservations, Mesh
 
 KEY = "/World/Test/Thermostat"
 
@@ -29,9 +30,10 @@ class Thermostat:
 
     class Config(ProgramConfig):
         recoverDuringTick: bool = False
+        initialTemperatureC: float = 37
 
     def init(self, ctx):
-        ctx.set(temperatureC=37, setpointC=37)
+        ctx.set(temperatureC=ctx.config.initialTemperatureC, setpointC=37)
 
     def tick(self, ctx, dt):
         if ctx.config.recoverDuringTick:
@@ -176,8 +178,9 @@ def test_same_tick_transient_is_aggregated_before_any_zero_duration_alert(alert_
         client.delete(route)
 
 
-def test_reset_reload_and_stop_close_context_without_false_cleared_events(alert_catalog):
-    with TestClient(create_app()) as client:
+@pytest.mark.parametrize("recording_enabled", [True, False])
+def test_reset_reload_and_stop_close_context_without_false_cleared_events(alert_catalog, recording_enabled):
+    with TestClient(create_app(Settings(recordings_enabled=recording_enabled))) as client:
         sid, route = paused_session(client)
         inject_reading(client, route, 39)
         control(client, route, "step", count=72)
@@ -215,8 +218,11 @@ def test_reset_reload_and_stop_close_context_without_false_cleared_events(alert_
         )
 
 
-def test_sustained_deviation_acknowledgement_and_recovery_are_reliable_and_recorded(alert_catalog):
-    with TestClient(create_app()) as client:
+@pytest.mark.parametrize("recording_enabled", [True, False])
+def test_sustained_deviation_acknowledgement_and_recovery_are_reliable(
+    alert_catalog, recording_enabled
+):
+    with TestClient(create_app(Settings(recordings_enabled=recording_enabled))) as client:
         sid, route = paused_session(client)
         wire_catalog = client.get(route + "/catalog").json()
         assert all("alerts" not in definition for definition in wire_catalog["types"].values())
@@ -245,6 +251,8 @@ def test_sustained_deviation_acknowledgement_and_recovery_are_reliable_and_recor
             time.sleep(0.28)  # Paused wall time cannot satisfy a simulation duration.
             assert listed(client, sid, active=True) == []
             control(client, route, "step", count=1)  # At .30: .25 seconds of sustained deviation.
+            [episode] = await_alerts(client, sid, 1, active=True)
+            assert episode["state"] == "raised"
             raised = next_alert(ws, "raised")
             assert raised["since"] == pytest.approx(0.05)
             assert raised["simTime"] == pytest.approx(0.30)
@@ -273,6 +281,9 @@ def test_sustained_deviation_acknowledgement_and_recovery_are_reliable_and_recor
             assert listed(client, sid, active=True) == []
             assert listed(client, sid)[0]["state"] == "cleared"
         client.delete(route).raise_for_status()
+        if not recording_enabled:
+            assert client.get("/api/v1/recordings").json() == []
+            return
         metadata = client.get(f"/recordings/{sid}/recording.json").json()
         assert client.get(f"/recordings/{sid}/catalog.json").json() == wire_catalog
         messages = [
@@ -305,6 +316,53 @@ def test_sustained_deviation_acknowledgement_and_recovery_are_reliable_and_recor
             "actor": {"kind": "agent", "name": "lab-check"},
             "note": "Checking thermostat",
         }
+
+
+@pytest.mark.parametrize("capture_fails", [False, True])
+def test_initial_alert_uses_matching_values_and_clock_despite_slow_or_failed_capture(
+    alert_catalog, capture_fails
+):
+    _, scene_file = alert_catalog
+    scene = yaml.safe_load(scene_file.read_text(encoding="utf-8"))
+    binding = scene["entities"][-1]
+    binding["config"] = {"initialTemperatureC": 39, "recoverDuringTick": True}
+    binding["alerts"]["temperatureDeviation"]["forSeconds"] = 0
+    scene_file.write_text(yaml.safe_dump(scene), encoding="utf-8")
+
+    class SlowCaptureSource(synthetic_source.SyntheticSource):
+        async def start(self, scene_id, options):
+            manifest, catalog = await super().start(scene_id, options)
+            body = next(node for node in manifest.nodes if node.kind == "body")
+            body.visuals.append(Mesh(meshId="slow-mesh", url="/meshes/slow-mesh.glb"))
+            return manifest, catalog
+
+        async def read_mesh(self, mesh_id):
+            # Advance the real Source while capture waits; temperature recovers on its first tick.
+            deadline = time.monotonic() + 2
+            while self.entity_snapshot().simTime < 0.2:
+                assert time.monotonic() < deadline
+                await asyncio.sleep(0.005)
+            if capture_fails:
+                raise OSError("Test mesh capture failed")
+            return (Path(__file__).resolve().parents[2] / "assets/visuals/equipment-cover.glb").read_bytes()
+
+    with TestClient(create_app(source_factory=lambda kind, sid: SlowCaptureSource(sid))) as client:
+        response = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@1", "controlHz": 20})
+        assert response.status_code == 201, response.text
+        sid = response.json()["sessionId"]
+        route = "/api/v1/sessions/" + sid
+        control(client, route, "pause")
+        [episode] = await_alerts(client, sid, 1)
+        assert episode["since"] == 0
+        events = client.get(route + "/events", params={"after": 0, "timeoutSeconds": 0}).json()["events"]
+        [raised] = [
+            event["message"] for event in events
+            if event["message"]["type"] == "entity.alert" and event["message"]["state"] == "raised"
+        ]
+        assert raised["simTime"] == 0 and raised["since"] == 0 and raised["value"] == 39
+        client.delete(route).raise_for_status()
+        metadata = client.get(f"/recordings/{sid}/recording.json").json()
+        assert metadata["status"] == ("incomplete" if capture_fails else "complete")
 
 
 @pytest.mark.parametrize("expires_after", [0.15, 0.4])
