@@ -3,7 +3,7 @@
   "sceneVersion": "falling-boxes@1",
   "sceneContentHash": "a23752358547a452293659141d002e91d443a0a499a3e7e77d35627fee00450f",
   "source": "newton",
-  "capturedAt": "2026-10-19T15:08:26.629708+00:00",
+  "capturedAt": "2026-10-19T15:53:01.300238+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -38,8 +38,12 @@
       "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
     },
     {
+      "path": "packages/info/binding_validation.py",
+      "sha256": "86e7b711a8ab8d584d5e30aec7398ad71c6b600c8f131bcddcac342109cbf8d5"
+    },
+    {
       "path": "packages/info/catalog.py",
-      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+      "sha256": "ee7c74540779e0cb6a264d61bc86cf3607f0e34422ef22397709f5667fb76033"
     },
     {
       "path": "packages/info/conditions.py",
@@ -87,7 +91,11 @@
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "55018273defbe007b08a9e04af2fc18790d2e8de26ce8f918cf36e4d086791fd"
+      "sha256": "9233947ffea45ddf7efe8255bf2c7cf64d3462970bd22451695cc12a50bb38e8"
+    },
+    {
+      "path": "packages/programs/robot_arm/taught.py",
+      "sha256": "b98ae93e03c041353f47e387264eafd35434cbb1bf5a288e9638226f4533c5eb"
     },
     {
       "path": "packages/programs/robot_arm/trajectory.py",
@@ -151,7 +159,7 @@
     },
     {
       "path": "packages/sim_runtime/scenes.py",
-      "sha256": "ddc9d373540a295df4c67ceee8cf58da4d32c964c123105854687928f8407de4"
+      "sha256": "40c24e712fa9a1a660107d2ed43eac9efb81949feb57f884b5ac5e1b311b73fa"
     },
     {
       "path": "packages/sim_runtime/simulation.py",
@@ -159,7 +167,7 @@
     },
     {
       "path": "packages/sim_runtime/sites.py",
-      "sha256": "c59b8f1e9fca0385c59320e416498525f460d6c74010ccbc4728d0e788f084cd"
+      "sha256": "80278752f333b60c791fcef05624f27fdfbcb19c2aaf0382d9d5d8b06665e3ae"
     },
     {
       "path": "packages/sim_runtime/transform_extractor.py",
@@ -193,10 +201,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "a258e1078a063aa3b4c7d15a7caacc66c6f05a35bf2a8189bb926f7a29a2adff",
-    "catalog.json": "bbf3de137c803a66a251adc02deefaf1f79a57e1b6ea6266188a93a95b7521cb",
-    "state.json": "d02b076f2dfb5e7e6c7e68ade3e90f734a66286a4e4e66b4e0412f15e84662d4",
-    "snapshot.bin": "86e7d4bee6d1ea921ee5d855d5c9779516316eaf1e82e8183bfb60fa0dd17248"
+    "manifest.json": "f687a49ae3406d11657299d9e2ee047d35596286260311ca054450a93efd7323",
+    "catalog.json": "17e81433f27b4fb8a4fafb80f342b95517e9b3b69b63f519330c6b82e5bd841a",
+    "state.json": "d218b9014398d8bb0d6a56bb39053c0a2a4ab6d07000b047ae1f30b83a6ec5fb",
+    "snapshot.bin": "d5a23d358864f14df45384ec690ce38c7cdc23b307a4ecdaecf8fa41e6a492b9"
   },
   "counts": {
     "physicalEntities": 3,

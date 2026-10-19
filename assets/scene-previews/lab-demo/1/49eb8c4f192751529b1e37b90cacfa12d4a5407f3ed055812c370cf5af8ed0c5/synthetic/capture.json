@@ -3,7 +3,7 @@
   "sceneVersion": "lab-demo@1",
   "sceneContentHash": "49eb8c4f192751529b1e37b90cacfa12d4a5407f3ed055812c370cf5af8ed0c5",
   "source": "synthetic",
-  "capturedAt": "2026-10-19T15:07:24.864938+00:00",
+  "capturedAt": "2026-10-19T15:51:58.105285+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -19,7 +19,7 @@
     },
     {
       "path": "apps/api/app/sources/synthetic_source.py",
-      "sha256": "b3dc9c6275fc91fe2e8e2ecd90fbaffd00ed6ef1bcf23ab22d8d2e7e8cf08bff"
+      "sha256": "07a75631c3224c6230bde460e24a5adb2be81b4a279c941fe46c2a4acabac5d5"
     },
     {
       "path": "assets/registry.yaml",
@@ -54,8 +54,12 @@
       "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
     },
     {
+      "path": "packages/info/binding_validation.py",
+      "sha256": "86e7b711a8ab8d584d5e30aec7398ad71c6b600c8f131bcddcac342109cbf8d5"
+    },
+    {
       "path": "packages/info/catalog.py",
-      "sha256": "88a55fc1a99d367536ce32ef0aadbbd33b6880860456de18a6d0dcf0047f0f43"
+      "sha256": "ee7c74540779e0cb6a264d61bc86cf3607f0e34422ef22397709f5667fb76033"
     },
     {
       "path": "packages/info/conditions.py",
@@ -106,8 +110,12 @@
       "sha256": "d49d5c0b7de6c1bd4fce82df31b1dcc7b810e993d82ed7871c9811cf91caf7b6"
     },
     {
+      "path": "packages/programs/robot_arm/taught.py",
+      "sha256": "b98ae93e03c041353f47e387264eafd35434cbb1bf5a288e9638226f4533c5eb"
+    },
+    {
       "path": "packages/programs/robot_arm/virtual.py",
-      "sha256": "3c1e6f5f6f051c0c447ebf11351ed8bf0cb3167094e78b409f6a7693a5e72315"
+      "sha256": "74cd4aa66a04f1685e1a81d99b3f0409b63005c20b28ebe3cc9bbb4e323b916d"
     },
     {
       "path": "packages/programs/signals.py",
@@ -115,7 +123,7 @@
     },
     {
       "path": "packages/programs/tube/virtual.py",
-      "sha256": "f75c578e07af71ca6d7187d24213203410c0e0ea321900f6e166807aec1a1a0b"
+      "sha256": "de0ae5c7ae12c6a36c2cff776a4bf6e399a00a5820d33055ce373d266b6ca248"
     },
     {
       "path": "packages/protocol/math.py",
@@ -127,7 +135,7 @@
     },
     {
       "path": "packages/sim_runtime/synthetic_lab.py",
-      "sha256": "7e128b95f6d66052d421763986a004297ee3e01c67675c346f7bf2a437a43134"
+      "sha256": "c0d1ed06e7aac77afaf87f37d183188a873de605294ab89658b08a12b2068537"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -149,10 +157,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "87c292399e6477996d9e6e0bb2c297053b4764a893f72a6771cbce9e45086902",
-    "catalog.json": "62bca4e7de16c189944fbd4b7a2c0a50a6d5de5d0f429de3c57a3bea9eb9bc53",
-    "state.json": "335e5335a134ffde476104be51693a0026f3a2e436584dc1a226f6a0d8f9388b",
-    "snapshot.bin": "ee295ed5951bdd6df0d239fa4131881403fa789e4fca790962d527ceb1006fc9"
+    "manifest.json": "8ce50076193ed2fb823a0aa64534ea34222ec4eaa5a7cc337794897fe3b56199",
+    "catalog.json": "cc2a5501b25c5e2b0ce52f2f57419c5806beef5e642a77f57542db4e0479b4ce",
+    "state.json": "a34709ba059b885d34be03135d2c42873f1b3723919644ea0c372bfe4d5f712a",
+    "snapshot.bin": "9560082cf51aefe4b1acc18c2352fafdcf2cd30dca167c774c64b47b408bf79d"
   },
   "counts": {
     "physicalEntities": 30,
