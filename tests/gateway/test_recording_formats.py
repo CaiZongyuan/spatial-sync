@@ -4,6 +4,7 @@ import json
 from hashlib import sha256
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from scene_support import ROOT, user_version
 
@@ -69,6 +70,36 @@ def metadata_v2():
         "sceneId": "lab-demo", "sceneVersion": "lab-demo@2", "sceneContentHash": "a" * 64,
         "kind": "session", "status": "complete", "segments": [],
     }
+
+
+def test_rejected_package_reload_cannot_add_a_revision_under_the_recorded_hash(tmp_path, monkeypatch):
+    package = user_version(tmp_path / "library", 2)
+    pinned_hash = package_digest(package)
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    with TestClient(create_app(Settings(recordings_root=tmp_path / "recordings"))) as client:
+        created = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@2"}).json()
+        route = "/api/v1/sessions/" + created["sessionId"]
+        unchanged = client.post(route + "/reload")
+        assert unchanged.status_code == 200, unchanged.text
+        assert unchanged.json()["sceneContentHash"] == pinned_hash
+        locations_file = package / "locations.yaml"
+        locations = yaml.safe_load(locations_file.read_text(encoding="utf-8"))
+        locations["locations"]["rack.A1"]["p"] = [0.91, -0.31, 0.83]
+        locations_file.write_text(yaml.safe_dump(locations), encoding="utf-8")
+        assert package_digest(package) != pinned_hash
+        rejected = client.post(route + "/reload")
+        assert rejected.status_code == 409 and rejected.json()["detail"]["code"] == "scene_not_launchable"
+        assert client.get(route).json()["sceneRevision"] == unchanged.json()["sceneRevision"]
+        client.delete(route).raise_for_status()
+        directory = "/recordings/" + created["sessionId"] + "/"
+        metadata = client.get(directory + "recording.json").json()
+        assert metadata["formatVersion"] == 2 and metadata["sceneVersion"] == "lab-demo@2"
+        assert metadata["sceneContentHash"] == pinned_hash
+        assert len(metadata["revisions"]) == 2
+        for revision in metadata["revisions"].values():
+            manifest = client.get(directory + revision["manifest"]).json()
+            site = next(site for site in manifest["sites"] if site["entityKey"] == "/World/Lab/Rack/A1")
+            assert site["localPose"]["p"] == [0.61, -0.31, 0.83]
 
 
 @pytest.mark.parametrize("field,value", [

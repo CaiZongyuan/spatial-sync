@@ -5,6 +5,11 @@ import type {} from '../../apps/web/src/components/Workbench';
 import type { ReplaySource } from '../../apps/web/src/lib/replay/replay-source';
 
 const fixture = resolve('../../tests/fixtures/recordings/v1');
+const v1Expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8')) as {
+  tubeKey: string; robotKey: string;
+  samples: { timeMs: number; seq: number; tubePose: { p: number[]; q: number[] };
+    tubeLocation: string; robotJoints: number[] }[];
+};
 
 for (const version of [1, 2]) test(`plays the v${version} Synthetic fixture with read-only Inspector and independent state comparisons`, async ({ page, baseURL }, testInfo) => {
   const fixture = resolve(`../../tests/fixtures/recordings/v${version}`);
@@ -79,6 +84,7 @@ test('recordings list visibly attributes legacy, exact-version and Live recordin
 });
 
 test('paused replay draws on asset, view and camera changes while idle frames stop', async ({ page, baseURL }) => {
+  const expected = v1Expected;
   let releaseMissing!: () => void;
   const missingAsset = new Promise<void>(resolve => { releaseMissing = resolve; });
   await page.route('**/fixture/demand/**', async route => {
@@ -172,6 +178,7 @@ test('paused replay draws on asset, view and camera changes while idle frames st
 });
 
 test('native End applies the final reliable record at a fractional millisecond duration', async ({ page, baseURL }) => {
+  const expected = v1Expected;
   const metadata = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
   const segment = metadata.segments[0];
   const originalSegment = readFileSync(join(fixture, segment.file));

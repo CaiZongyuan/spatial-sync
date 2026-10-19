@@ -70,6 +70,9 @@ packages. Content hashes include all package files in sorted relative-path
 order. Teach-location tools read the built-in package path; capture new teaching
 output into a new version rather than overwriting an existing one.
 
-Recording format 2 is a separate change. Existing format 1 recordings continue
-to replay. Version-attributed related recordings are currently unknown in scene
-details; the API does not invent a version for recordings lacking that metadata.
+New recordings use metadata format 2 and retain the session's exact
+`sceneVersion` and `sceneContentHash`. Scene details list recordings attributed
+to that exact version. Existing format 1 recordings continue to replay; readers
+derive `sceneId@1` and an unknown content hash without rewriting the original
+file. Live format 2 recordings retain null scene identity and are not attributed
+to a scene version. See [Recording compatibility](RECORDINGS.md).
