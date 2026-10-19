@@ -72,6 +72,8 @@ versions and training costs are not yet available. See [evaluations](docs/EVALUA
 **Resources · Compute** (`/resources/gpu`) shows host resources and
 managed Newton backends. These pages refresh every two seconds. **Recordings**
 (`/recordings`) links to read-only replay at `/replay/{id}`.
+**Resources · Models** (`/resources/models`) lists registered LLMs, masked Vault
+references and human-maintained prices. See [model and Vault setup](docs/MODELS_AND_VAULT.md).
 The sidebar collapses and remembers your preference; below 900 px it becomes
 top navigation. The theme follows your system until you choose Light or Dark.
 Latin IBM Plex fonts and navigation icons ship locally.

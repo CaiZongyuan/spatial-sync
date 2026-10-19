@@ -4,6 +4,11 @@
 operations call the HTTP API through `lw.client.GatewayClient`. Product skill
 listing/installation are local file operations dispatched before creating that client.
 
+`lw vault set` is also local: it accepts only hidden input in a real terminal and
+writes the private local Vault before constructing an HTTP client. Metadata
+commands `model ls/add/default` and `vault ls` use the shared command table and
+HTTP client. MCP exposes `model_ls` only; there is no Vault MCP tool.
+
 Add a shared command to `COMMANDS` in `lw/commands.py`. Declare its CLI path,
 help, arguments, GatewayClient method and output type once. Set `mcp_name` to
 publish its MCP tool; leave it unset for a CLI-only command. Paths can contain

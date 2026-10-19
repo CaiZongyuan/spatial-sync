@@ -389,6 +389,43 @@ COMMANDS = (
         method="recordings",
         output_type=list[dict[str, Any]],
     ),
+    Command(
+        path=("vault", "set"),
+        help="Save a local credential with hidden interactive input; never accepts values as arguments.",
+        method="vault_set",
+        arguments=(Argument("name", ("name",), str, "Credential name, such as llm/anthropic"),),
+        human_only=True,
+    ),
+    Command(
+        path=("vault", "ls"),
+        help="List credential names only; never returns credential values.",
+        method="vault_names",
+        output_type=list[str],
+    ),
+    Command(
+        path=("model", "ls"),
+        help="List configured LLM models and actual available health metadata.",
+        method="models",
+        arguments=(Argument("query", ("--query", "-q"), str | None, "Filter provider/model_id", None),),
+        output_type=list[dict[str, Any]],
+        mcp_name="model_ls",
+    ),
+    Command(
+        path=("model", "add"),
+        help="Register provider/model_id with a default thinking level and optional Vault name.",
+        method="add_model",
+        arguments=(
+            Argument("ref", ("provider/model_id",), str, "LLM model reference"),
+            Argument("default_thinking", ("--thinking",), str, "Default thinking level", "default"),
+            Argument("credential_name", ("--credential",), str | None, "Existing Vault name", None),
+        ),
+    ),
+    Command(
+        path=("model", "default"),
+        help="Select a registered model as the platform default.",
+        method="default_model",
+        arguments=(Argument("ref", ("provider/model_id",), str, "Registered LLM model reference"),),
+    ),
 )
 
 

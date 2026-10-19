@@ -62,7 +62,7 @@ def parameters(values):
 def parser():
     root = Parser(prog="lw", description="Inspect and control a laboratory gateway.")
     root.add_argument(
-        "--json", action="store_true", help="machine-readable JSON (accepted with every command)"
+        "--json", action="store_true", help="machine-readable JSON (vault set requires hidden terminal input)"
     )
     commands = root.add_subparsers(dest="command", required=True)
     register_cli(commands)
@@ -153,6 +153,27 @@ async def run(args, machine):
         result = list_skills() if declaration.method == "skills_list" else install_skills(args.target)
         output(result, machine)
         return 0
+    if declaration and declaration.method == "vault_set":
+        import getpass
+        import warnings
+
+        from packages.vault import Vault, valid_name
+
+        if machine or not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise GatewayError(
+                "Vault credentials require an interactive terminal without --json",
+                detail={"code": "vault_requires_human"},
+            )
+        valid_name(args.name)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", getpass.GetPassWarning)
+                value = getpass.getpass("Credential value (hidden): ")
+        except (EOFError, getpass.GetPassWarning):
+            raise GatewayError("A private terminal is required for credential input") from None
+        Vault().set(args.name, value)
+        print("Credential saved in the local Vault.", flush=True)
+        return 0
     async with GatewayClient() as client:
         command = args.command
         if command == "mcp":
@@ -229,6 +250,10 @@ def main(argv=None):
     except KeyboardInterrupt:
         return 0
     except (UsageError, GatewayError, ValueError) as exc:
+        if isinstance(exc, UsageError) and argv[:2] == ["vault", "set"]:
+            exc = UsageError(
+                "Use lw vault set <name>; enter the credential only in the hidden terminal prompt"
+            )
         if machine:
             output(
                 exc.document() if isinstance(exc, GatewayError) else {"error": {"message": str(exc)}}, True

@@ -25,6 +25,7 @@ import { Route as PlansIndexRouteImport } from './routes/plans.index'
 import { Route as PlansPlanIdRouteImport } from './routes/plans.$planId'
 import { Route as ReplayRecordingIdRouteImport } from './routes/replay.$recordingId'
 import { Route as ResourcesGpuRouteImport } from './routes/resources.gpu'
+import { Route as ResourcesModelsRouteImport } from './routes/resources.models'
 import { Route as ScenesIndexRouteImport } from './routes/scenes.index'
 import { Route as SessionsIndexRouteImport } from './routes/sessions.index'
 import { Route as SessionsSessionIdRouteImport } from './routes/sessions.$sessionId'
@@ -111,6 +112,11 @@ const ResourcesGpuRoute = ResourcesGpuRouteImport.update({
   path: '/resources/gpu',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResourcesModelsRoute = ResourcesModelsRouteImport.update({
+  id: '/resources/models',
+  path: '/resources/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScenesIndexRoute = ScenesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
+  '/resources/models': typeof ResourcesModelsRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets/': typeof AssetsIndexRoute
   '/eval/': typeof EvalIndexRoute
@@ -169,6 +176,7 @@ export interface FileRoutesByTo {
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
+  '/resources/models': typeof ResourcesModelsRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets': typeof AssetsIndexRoute
   '/eval': typeof EvalIndexRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
+  '/resources/models': typeof ResourcesModelsRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets/': typeof AssetsIndexRoute
   '/eval/': typeof EvalIndexRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
     | '/plans/$planId'
     | '/replay/$recordingId'
     | '/resources/gpu'
+    | '/resources/models'
     | '/sessions/$sessionId'
     | '/assets/'
     | '/eval/'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/plans/$planId'
     | '/replay/$recordingId'
     | '/resources/gpu'
+    | '/resources/models'
     | '/sessions/$sessionId'
     | '/assets'
     | '/eval'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/plans/$planId'
     | '/replay/$recordingId'
     | '/resources/gpu'
+    | '/resources/models'
     | '/sessions/$sessionId'
     | '/assets/'
     | '/eval/'
@@ -281,6 +293,7 @@ export interface RootRouteChildren {
   SessionsRoute: typeof SessionsRouteWithChildren
   ReplayRecordingIdRoute: typeof ReplayRecordingIdRoute
   ResourcesGpuRoute: typeof ResourcesGpuRoute
+  ResourcesModelsRoute: typeof ResourcesModelsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -397,6 +410,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResourcesGpuRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/resources/models': {
+      id: '/resources/models'
+      path: '/resources/models'
+      fullPath: '/resources/models'
+      preLoaderRoute: typeof ResourcesModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scenes/': {
       id: '/scenes/'
       path: '/'
@@ -511,6 +531,7 @@ const rootRouteChildren: RootRouteChildren = {
   SessionsRoute: SessionsRouteWithChildren,
   ReplayRecordingIdRoute: ReplayRecordingIdRoute,
   ResourcesGpuRoute: ResourcesGpuRoute,
+  ResourcesModelsRoute: ResourcesModelsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

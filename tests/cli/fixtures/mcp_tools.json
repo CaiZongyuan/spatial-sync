@@ -1,4 +1,29 @@
 {
+  "model_ls": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "title": "Query"
+        }
+      },
+      "title": "model_lsArguments"
+    },
+    "output": {
+      "properties": {
+        "result": {
+          "items": {"additionalProperties": true, "type": "object"},
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": ["result"],
+      "title": "model_lsOutput",
+      "type": "object"
+    }
+  },
   "list_entities": {
     "input": {
       "type": "object",

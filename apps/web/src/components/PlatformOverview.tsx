@@ -3,6 +3,7 @@ import { usePlatform } from '../lib/use-platform';
 import { bytes, percent } from '../lib/platform';
 import { NewtonViewerButton } from './NewtonViewerButton';
 import { sessionLabel } from '../lib/ui-labels';
+import { ResourceTabs } from './ResourceTabs';
 
 const unknown = '未知';
 const metricLabels: Record<string, string> = { 'Host CPU': '主机 CPU', 'Host RAM': '主机内存', 'GPU utilization': 'GPU 使用率', 'GPU memory': 'GPU 显存' };
@@ -44,7 +45,7 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
       {summaries.map(([label, text, value]) => <article key={label} aria-label={label}><strong>{value ?? unknown}</strong><span>{text}</span></article>)}
     </div>}
     {page === 'resources' && <>
-    <div className="resource-tabs"><span aria-current="page">算力</span></div>
+    <ResourceTabs current="gpu" />
     <div className="platform-section-heading"><h2 aria-label="Gateway machine">网关主机</h2><span>主机总量，包含其他应用</span></div>
     <div className="platform-metrics">
       <Metric title="Host CPU" value={percent(system?.cpu.percent)}>

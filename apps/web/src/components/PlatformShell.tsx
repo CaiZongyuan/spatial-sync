@@ -102,6 +102,7 @@ export function PlatformShell() {
           <Link to={current.to}>{current.text}</Link>
           {detail && <><span>/</span><span className="breadcrumb-id">{decodeURIComponent(detailId)}</span></>}
           {pathname === '/resources/gpu' && <><span>/</span><span>Compute</span></>}
+          {pathname === '/resources/models' && <><span>/</span><span>模型</span></>}
         </nav>
         {pendingCount !== undefined && <Link to="/approvals" className={`approval-topbar-chip ${pendingCount ? 'has-pending' : ''}`}
           aria-label={`待审批 ${pendingCount}`}><i aria-hidden="true" />待审批 {pendingCount}</Link>}
