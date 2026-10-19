@@ -1,0 +1,35 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "scene:falling-boxes@1",
+  "ranAt": "2026-10-19T00:12:25.350895+00:00",
+  "toolVersions": {
+    "python": "3.13.14"
+  },
+  "checks": [
+    {
+      "id": "package-files",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Metadata identity and required binding/location YAML mappings checked."
+    },
+    {
+      "id": "python-builder",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Registered builder python:falling-boxes exists; no engine was imported."
+    },
+    {
+      "id": "S1-S8",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Full import validation not run. USD checks S2/S3/S7 do not apply to Python stages."
+    },
+    {
+      "id": "P1-P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Physics checks not run during packaging; this report makes no physics pass claim."
+    }
+  ],
+  "launchable": true
+}

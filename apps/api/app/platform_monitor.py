@@ -13,8 +13,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import psutil
 
-from apps.api.app.session_manager import SCENES
-
 INTERVAL_SECONDS = 2
 
 
@@ -30,7 +28,6 @@ def unavailable_system(reason):
 
 def session_rows(manager):
     """Copy only owned state on the event loop; never retain a live Session in a worker."""
-    names = {scene["sceneId"]: scene["name"] for scene in SCENES}
     rows = []
     for session in manager.platform_sessions():
         backend = None
@@ -55,7 +52,10 @@ def session_rows(manager):
             }
         rows.append({
             "sessionId": session.session_id, "sceneId": session.scene_id,
-            "sceneName": names.get(session.scene_id, session.scene_id), "source": session.kind,
+            "sceneVersion": session.scene_version.id if getattr(session, "scene_version", None)
+            else f"{session.scene_id}@1",
+            "sceneName": session.scene_version.metadata["title"] if getattr(session, "scene_version", None)
+            else session.scene_id, "source": session.kind,
             "state": session.state, "connectedClients": len(session.clients),
             "simTime": session.sim_time, "actualRtf": session.actual_rtf if session.state == "RUNNING" else 0,
             "backend": backend,

@@ -1,0 +1,35 @@
+{
+  "sceneVersion": "lab-demo@2",
+  "sceneContentHash": "aa8907f9db1a09094bfecff4b0ce4fe22ee426eb2b4fd8037f361a43a35c64ad",
+  "tubeKey": "/World/Lab/Tubes/Tube01",
+  "robotKey": "/World/Lab/RobotA",
+  "samples": [
+    {
+      "timeMs": 10061.908900022507,
+      "seq": 304,
+      "tubePose": {
+        "p": [
+          -0.4000000059604645,
+          0.4000000059604645,
+          0.949999988079071
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "tubeLocation": "/World/Lab/Centrifuge/Rotor/Slot1",
+      "robotJoints": [
+        2.356194490192345,
+        0.41226059538940785,
+        2.0210197085003188,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

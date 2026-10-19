@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from packages.info.log import SessionLog, _atomic_json, read_segment, recover_recordings
+from packages.library.scenes import SceneLibrary
 from packages.protocol.schema import TransformFrame
 from packages.transport import HEADER as FRAME_HEADER
 from packages.transport import FrameCodec
@@ -44,7 +45,11 @@ def snapshot(t=1000, value="rack"):
 
 
 def new_log(tmp_path, **kwargs):
-    log = SessionLog(tmp_path / "session-test", "session-test", "lab-demo", **kwargs)
+    version = SceneLibrary().resolve("lab-demo@1")
+    log = SessionLog(
+        tmp_path / "session-test", "session-test", "lab-demo", scene_version=version.id,
+        scene_content_hash=version.content_hash, kind="session", **kwargs,
+    )
     log.add_revision(
         {"sceneRevision": "rev-test", "revisionNumericId": 1},
         {"sceneRevision": "rev-test"},

@@ -5,7 +5,7 @@ import type {} from '../../apps/web/src/components/Workbench';
 import type { ReplaySource } from '../../apps/web/src/lib/replay/replay-source';
 
 const fixture = resolve('../../tests/fixtures/recordings/v1');
-const expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8')) as {
+const v1Expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8')) as {
   tubeKey: string; robotKey: string;
   samples: { timeMs: number; seq: number; tubePose: { p: number[]; q: number[] };
     tubeLocation: string; robotJoints: number[] }[];
@@ -40,6 +40,7 @@ test('a delayed visual reframes the paused camera after the former five second c
 });
 
 test('an HTTP recording with a legal seq zero first snapshot creates and draws its canvas', async ({ page, baseURL }) => {
+  const expected = v1Expected;
   const segment = Buffer.from(readFileSync(join(fixture, 'seg-000001.bin')));
   let changed = false;
   for (let offset = 6; offset + 13 <= segment.length; offset += 4 + segment.readUInt32LE(offset)) {
@@ -67,22 +68,29 @@ test('an HTTP recording with a legal seq zero first snapshot creates and draws i
   expect(sockets).toBe(0);
 });
 
-test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log comparisons', async ({ page, baseURL }) => {
+for (const version of [1, 2]) test(`plays the v${version} Synthetic fixture with read-only Inspector and independent state comparisons`, async ({ page, baseURL }, testInfo) => {
+  const fixture = resolve(`../../tests/fixtures/recordings/v${version}`);
+  const expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8')) as {
+    tubeKey: string; robotKey: string;
+    samples: { timeMs: number; seq: number; tubePose: { p: number[]; q: number[] };
+      tubeLocation: string; robotJoints: number[] }[];
+  };
   const liveRequests: string[] = [];
   page.on('request', (request) => { if (new URL(request.url()).pathname.startsWith('/api/')) liveRequests.push(request.url()); });
   page.on('websocket', (socket) => {
     if (new URL(socket.url()).pathname.startsWith('/api/')) liveRequests.push(socket.url());
   });
-  await page.route('**/fixture/v1/**', async (route) => {
-    const relative = new URL(route.request().url()).pathname.split('/fixture/v1/')[1];
+  await page.route(`**/fixture/v${version}/**`, async (route) => {
+    const relative = new URL(route.request().url()).pathname.split(`/fixture/v${version}/`)[1];
     const path = join(fixture, relative);
     if (!existsSync(path)) await route.fulfill({ status: 404 });
     else await route.fulfill({ path, contentType: relative.endsWith('.json') ? 'application/json' : 'application/octet-stream' });
   });
-  const src = new URL('/fixture/v1/recording.json', baseURL).href;
-  await page.goto(`/replay/v1?src=${encodeURIComponent(src)}`);
+  const src = new URL(`/fixture/v${version}/recording.json`, baseURL).href;
+  await page.goto(`/replay/v${version}?src=${encodeURIComponent(src)}`);
   await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
   await expect(page.getByText('Read-only replay · complete')).toBeVisible();
+  await expect(page.getByText(`lab-demo@${version}`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Play replay' }).click();
   await expect(page.getByRole('button', { name: 'Pause replay' })).toBeEnabled();
   await expect.poll(() => page.locator('[aria-label="Replay position"]').inputValue().then(Number)).toBeGreaterThan(100);
@@ -115,10 +123,25 @@ test('plays the v1 Synthetic fixture with read-only Inspector and ten exact log 
   await expect(page.getByLabel('moveJoints positions', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Close session', exact: true })).toBeDisabled();
   expect(liveRequests).toEqual([]);
-  await page.screenshot({ path: '../../.scratch/info-i4-replay/fixture-replay.png' });
+  await page.screenshot({ path: testInfo.outputPath(`fixture-v${version}-replay.png`) });
+});
+
+test('recordings list visibly attributes legacy, exact-version and Live recordings', async ({ page }) => {
+  const legacy = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
+  const modern = JSON.parse(readFileSync(resolve('../../tests/fixtures/recordings/v2/recording.json'), 'utf8'));
+  const live = { ...modern, sessionId: 'live-main', kind: 'live', sceneId: null,
+    sceneVersion: null, sceneContentHash: null };
+  await page.route('**/api/v1/recordings', route => route.fulfill({ json: [legacy, modern, live] }));
+  await page.goto('/recordings');
+  const table = page.getByRole('region', { name: 'Recordings', exact: true });
+  await expect(table.getByText('lab-demo@1', { exact: true })).toBeVisible();
+  await expect(table.getByText('lab-demo@2', { exact: true })).toBeVisible();
+  await expect(table.getByText('Live', { exact: true })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'Replay' })).toHaveCount(3);
 });
 
 test('paused replay draws on asset, view and camera changes while idle frames stop', async ({ page, baseURL }) => {
+  const expected = v1Expected;
   let releaseMissing!: () => void;
   const missingAsset = new Promise<void>(resolve => { releaseMissing = resolve; });
   await page.route('**/fixture/demand/**', async route => {
@@ -212,6 +235,7 @@ test('paused replay draws on asset, view and camera changes while idle frames st
 });
 
 test('native End applies the final reliable record at a fractional millisecond duration', async ({ page, baseURL }) => {
+  const expected = v1Expected;
   const metadata = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
   const segment = metadata.segments[0];
   const originalSegment = readFileSync(join(fixture, segment.file));

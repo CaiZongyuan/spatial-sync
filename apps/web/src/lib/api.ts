@@ -31,10 +31,15 @@ export interface SceneSummary {
   name: string;
   sources: ('synthetic' | 'newton')[];
   description?: string;
+  sceneVersion?: string;
+  rev?: number;
+  launchable?: boolean;
 }
 export interface SessionSummary {
   sessionId: string;
   sceneId: string;
+  sceneVersion?: string;
+  sceneContentHash?: string | null;
   source: string | { kind: string };
   state: string;
   sceneRevision: string;
@@ -44,7 +49,17 @@ export interface SessionSummary {
   actualRtf?: number;
 }
 
-export const getScenes = () => request<{ scenes: SceneSummary[] }>('/scenes');
+// The temporary legacy form launches a bare name; explicit version selection belongs to the library UI.
+export const getScenes = async () => {
+  const { scenes } = await request<{ scenes: SceneSummary[] }>('/scenes');
+  const choices = new Map<string, SceneSummary>();
+  for (const scene of scenes) {
+    if (scene.launchable === false) continue;
+    const previous = choices.get(scene.sceneId);
+    if (!previous || (scene.rev ?? 0) > (previous.rev ?? 0)) choices.set(scene.sceneId, scene);
+  }
+  return { scenes: [...choices.values()] };
+};
 export const createSession = (
   sceneId: string,
   source: string,

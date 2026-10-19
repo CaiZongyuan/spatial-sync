@@ -1,0 +1,4 @@
+name: falling-boxes
+title: Newton Falling Boxes
+sources: [newton]
+stage: python:falling-boxes

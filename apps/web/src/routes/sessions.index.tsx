@@ -19,10 +19,9 @@ function Sessions() {
     getScenes()
       .then(({ scenes }) => {
         setScenes(scenes);
-        if (!scenes.some((scene) => scene.sceneId === 'lab-demo')) {
-          setSceneId(scenes[0]?.sceneId ?? '');
-          setSource(scenes[0]?.sources[0] ?? 'synthetic');
-        }
+        const preferred = scenes.find(scene => scene.sceneId === 'lab-demo') ?? scenes[0];
+        setSceneId(preferred?.sceneId ?? '');
+        setSource(preferred?.sources.includes('synthetic') ? 'synthetic' : preferred?.sources[0] ?? 'synthetic');
       })
       .catch((error: Error) => setError(error.message));
   }, []);

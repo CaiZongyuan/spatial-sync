@@ -1,0 +1,5 @@
+name: robot-and-tubes
+title: Newton Robot and Tubes
+sources: [newton]
+stage: python:robot-and-tubes
+simulation: {solver: mujoco, warmupSteps: 120}

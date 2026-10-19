@@ -1,0 +1,4 @@
+# Built-in package hashes must use the same bytes on Windows and Linux.
+*.yaml text eol=lf
+*.json text eol=lf
+*.usda text eol=lf

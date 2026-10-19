@@ -22,6 +22,9 @@ class FakeSampler:
 
 
 class FakeNewton(SyntheticSource):
+    # This lifecycle double always uses the Synthetic fixture, not Newton package bindings.
+    configure_scene = None
+
     async def start(self, scene_id, options):
         return await super().start("lab-demo", options)
 
@@ -129,7 +132,7 @@ async def test_loading_is_visible_without_publishing_an_unready_session_and_crea
 
     manager = SessionManager(Settings(recordings_enabled=False), factory)
     first = asyncio.create_task(manager.create("falling-boxes", "newton", SessionOptions()))
-    await started.wait()
+    await asyncio.wait_for(started.wait(), 5)
     pending = session_rows(manager)
     assert len(pending) == 1 and pending[0]["state"] == "LOADING"
     assert pending[0]["backend"]["pid"] == 123 and pending[0]["backend"]["alive"] is True
@@ -166,7 +169,7 @@ async def test_http_platform_exposes_loading_while_existing_health_and_session_r
         creation = asyncio.create_task(client.post(
             "/api/v1/sessions", json={"sceneId": "falling-boxes", "source": "newton"}
         ))
-        await started.wait()
+        await asyncio.wait_for(started.wait(), 5)
         try:
             for _ in range(100):
                 response = (await client.get("/api/v1/platform")).json()
@@ -206,7 +209,7 @@ async def test_failed_or_cancelled_initial_creation_cleans_staging_and_runner(ca
 
     manager = SessionManager(Settings(recordings_enabled=False), factory)
     task = asyncio.create_task(manager.create("falling-boxes", "newton", SessionOptions()))
-    await started.wait()
+    await asyncio.wait_for(started.wait(), 5)
     if cancel:
         task.cancel()
     else:
@@ -242,7 +245,7 @@ async def test_native_viewer_serializes_with_reload_and_reports_source_failure()
         session = await manager.create("falling-boxes", "newton", SessionOptions())
         route = f"/api/v1/sessions/{session.session_id}"
         viewer = asyncio.create_task(client.post(route + "/viewer"))
-        await started.wait()
+        await asyncio.wait_for(started.wait(), 5)
         reload = asyncio.create_task(client.post(route + "/reload"))
         await asyncio.sleep(0)
         assert events == ["viewer-start"]

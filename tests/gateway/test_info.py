@@ -332,7 +332,9 @@ def risky_catalog(tmp_path, monkeypatch):
     monkeypatch.setattr(
         synthetic_source,
         "load_catalog",
-        lambda manifest, scene_id, registry: load_catalog(manifest, scene_id, registry, root=device_root),
+        lambda manifest, scene_id, registry, **options: load_catalog(
+            manifest, scene_id, registry, root=device_root, **options
+        ),
     )
 
 

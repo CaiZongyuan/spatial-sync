@@ -1,10 +1,10 @@
-scene: lab-demo
+scene: robot-and-tubes
 entities:
 - key: /World/Lab/RobotA
   type: robot-arm/v1
-  program: robot_arm.virtual
+  program: robot_arm.newton
   config:
-    locations: lab-demo.locations.yaml
+    locations: locations.yaml
     tubes:
     - /World/Lab/Tubes/Tube01
     - /World/Lab/Tubes/Tube02
@@ -26,9 +26,24 @@ entities:
     - /World/Lab/Tubes/Tube18
     - /World/Lab/Tubes/Tube19
     - /World/Lab/Tubes/Tube20
+    speedScale: 0.5
+    graspMode: weld
+    jointKeys:
+    - /World/Lab/RobotA/fr3/fr3_joint1
+    - /World/Lab/RobotA/fr3/fr3_joint2
+    - /World/Lab/RobotA/fr3/fr3_joint3
+    - /World/Lab/RobotA/fr3/fr3_joint4
+    - /World/Lab/RobotA/fr3/fr3_joint5
+    - /World/Lab/RobotA/fr3/fr3_joint6
+    - /World/Lab/RobotA/fr3/fr3_joint7
+    fingerKeys:
+    - /World/Lab/RobotA/fr3/fr3_finger_joint1
+    - /World/Lab/RobotA/fr3/fr3_finger_joint2
+    handBody: /World/Lab/RobotA/fr3/fr3_hand
+    tcpSite: /World/Lab/RobotA/fr3/fr3_hand/tcp
 - key: /World/Lab/Centrifuge
   type: centrifuge/v1
-  program: centrifuge.virtual
+  program: centrifuge.newton
   config:
     slotSites:
     - /World/Lab/Centrifuge/Rotor/Slot1
@@ -56,6 +71,8 @@ entities:
     - /World/Lab/Tubes/Tube18
     - /World/Lab/Tubes/Tube19
     - /World/Lab/Tubes/Tube20
+    spindleJoint: /World/Lab/Centrifuge/Spindle
+    lidJoint: /World/Lab/Centrifuge/LidHinge
   interlocks:
     closeLid:
     - entity: /World/Lab/RobotA
@@ -64,17 +81,20 @@ entities:
       message: Move the arm out of the centrifuge zone first
 - match: /World/Lab/Tubes/*
   type: tube/v1
-  program: tube.virtual
+  program: tube.newton
   config:
     robots:
     - /World/Lab/RobotA
-    initialLocations:
-      /World/Lab/Tubes/Tube01: /World/Lab/Rack/A1
-      /World/Lab/Tubes/Tube02: /World/Lab/Rack/A2
-      /World/Lab/Tubes/Tube03: /World/Lab/Rack/A3
-      /World/Lab/Tubes/Tube04: /World/Lab/Rack/A4
-      /World/Lab/Tubes/Tube05: /World/Lab/Rack/B1
-      /World/Lab/Tubes/Tube06: /World/Lab/Rack/B2
-      /World/Lab/Tubes/Tube07: /World/Lab/Rack/B3
-      /World/Lab/Tubes/Tube08: /World/Lab/Rack/B4
-    locations: lab-demo.locations.yaml
+    locationSites:
+    - /World/Lab/Rack/A1
+    - /World/Lab/Rack/A2
+    - /World/Lab/Rack/A3
+    - /World/Lab/Rack/A4
+    - /World/Lab/Rack/B1
+    - /World/Lab/Rack/B2
+    - /World/Lab/Rack/B3
+    - /World/Lab/Rack/B4
+    - /World/Lab/Centrifuge/Rotor/Slot1
+    - /World/Lab/Centrifuge/Rotor/Slot2
+    - /World/Lab/Centrifuge/Rotor/Slot3
+    - /World/Lab/Centrifuge/Rotor/Slot4
