@@ -9,7 +9,7 @@ export interface ApprovalRecord {
   subjectId: string;
   sessionId: string | null;
   title: string;
-  details: { entityKey?: string; params?: Record<string, unknown> };
+  details: { entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number };
   requestedBy: ApprovalActor;
   createdAtMs: number;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' | 'unavailable';

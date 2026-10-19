@@ -26,6 +26,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
+from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
@@ -34,6 +35,7 @@ from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
+from packages.info.plans import PlanError
 from packages.library.assets import AssetLibrary
 from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
@@ -124,6 +126,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app):
         manager.approvals.startup()
+        manager.plans.startup()
         # Resolve the operator's roots at startup, before any owned workers or recordings.
         manager.library
         library_assets.startup()
@@ -156,6 +159,7 @@ def create_app(
     app.state.library_assets = library_assets
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
+    install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_library_routes(app, library_assets)
     request_times = defaultdict(deque)
@@ -506,7 +510,7 @@ def create_app(
                                 )
                             )
                         )
-                    except (PermissionError, KeyError, HTTPException) as exc:
+                    except (PermissionError, KeyError, HTTPException, PlanError) as exc:
                         connection.enqueue_reliable(
                             encode(
                                 ServerError(

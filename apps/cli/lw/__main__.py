@@ -68,6 +68,9 @@ def parser():
     waiting.add_argument("--wait", dest="wait", action="store_true", default=True)
     waiting.add_argument("--no-wait", dest="wait", action="store_false")
     action.add_argument("--timeout", type=positive, default=120)
+    action.add_argument("--plan", dest="planId")
+    action.add_argument("--step", dest="stepId", type=int)
+    action.add_argument("--plan-revision", dest="planRevision", type=int)
     invocation = commands.add_parser("inv", help="query an invocation")
     invocation.add_argument("id")
     invocation.add_argument("--wait", action="store_true")
@@ -76,6 +79,13 @@ def parser():
     for name in ("key", "property", "op", "value"):
         wait.add_argument(name)
     wait.add_argument("--timeout", type=positive, default=120)
+    check = commands.add_parser("check", help="Assert a Catalog property condition")
+    for name in ("key", "property", "op", "value"):
+        check.add_argument(name)
+    for command_parser in (wait, check):
+        command_parser.add_argument("--plan", dest="planId")
+        command_parser.add_argument("--step", dest="stepId", type=int)
+        command_parser.add_argument("--plan-revision", dest="planRevision", type=int)
     watch = commands.add_parser("watch", help="stream observations, events and calls as they arrive")
     watch.add_argument("key", nargs="?")
     session = commands.add_parser("session", help="control the simulation session")
@@ -175,21 +185,24 @@ async def run(args, machine):
                 parameters(args.params),
                 wait=args.wait,
                 timeout=args.timeout,
+                planId=args.planId, stepId=args.stepId, planRevision=args.planRevision,
             )
         elif command == "inv":
             result = await client.get_invocation(args.id, wait=args.wait, timeout=args.timeout)
-        elif command == "wait":
-            result = await client.wait_until(
+        elif command in ("wait", "check"):
+            operation = client.wait_until if command == "wait" else client.check_condition
+            result = await operation(
                 args.key,
                 args.property,
                 args.op,
                 parse_value(args.value),
-                timeout=args.timeout,
+                **({"timeout": args.timeout} if command == "wait" else {}),
+                planId=args.planId, stepId=args.stepId, planRevision=args.planRevision,
             )
         elif command == "session":
             result = await client.session_control(args.action, count=getattr(args, "count", 1))
         output(result, machine)
-        return exit_code(result) if declaration or command in ("do", "inv", "wait", "session") else 0
+        return exit_code(result) if declaration or command in ("do", "inv", "wait", "check", "session") else 0
 
 
 def main(argv=None):

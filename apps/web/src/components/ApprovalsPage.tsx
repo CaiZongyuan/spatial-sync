@@ -36,6 +36,7 @@ function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide
       {record.sessionId && <div><dt>会话</dt><dd><Link to="/sessions/$sessionId" params={{ sessionId: record.sessionId }}>{record.sessionId}</Link></dd></div>}
     </dl>
     {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
+    {record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}
     {(!processed || record.canRevoke) && <label className="approval-note">备注
       <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)}

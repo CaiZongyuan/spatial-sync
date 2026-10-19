@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from packages.info.approvals import ApprovalConflict
 from packages.info.conditions import evaluate_conditions
 from packages.info.invocations import TERMINAL, InvocationTable
+from packages.info.plans import PlanError
 from packages.protocol.schema import Invocation, InvocationError, InvocationUpdate, InvokeRequest
 
 
@@ -61,6 +62,7 @@ class ActionPipeline:
             if timer:
                 timer.cancel()
         self.publish(update)
+        self.session.plans.invocation(self.session, update)
         return True
 
     def _emit(self, invocation):
@@ -121,7 +123,7 @@ class ActionPipeline:
                     {"failed": failed} | ({"reason": "stale_reading"} if stale else {}))
         return None
 
-    async def invoke(self, request, role, actor):
+    async def invoke(self, request, role, actor, *, plan_context=None):
         if role != "operator":
             prior = await self.table.lookup_request(request.requestId)
             if prior and prior.error and prior.error.code == "not_permitted":
@@ -132,6 +134,7 @@ class ActionPipeline:
             if current is not self:
                 return await current.invoke(request, role, actor)
             return self._reject(self._new(request, actor), "not_permitted", "Operator permission is required")
+        self.session.plans.claim_request(self.session, request.requestId, plan_context)
         # Publish the Future before yielding: concurrent duplicate request IDs share dispatch.
         pending = self._inflight.get(request.requestId)
         if pending:
@@ -144,14 +147,23 @@ class ActionPipeline:
         invocation = self._new(request, actor)
         try:
             error = self._check(invocation)
+            plan_grant, force_approval = False, False
+            if not error or error[0] in ("precondition_failed", "busy"):
+                try:
+                    plan_grant, force_approval = self.session.plans.action(
+                        self.session, invocation, plan_context,
+                    )
+                except PlanError as exc:
+                    error = exc.detail["code"], str(exc), exc.detail
             if error:
                 code, message, details = error
                 result = self._reject(invocation, code, message, details=details)
             else:
                 definition = self.catalog.action(invocation.entityKey, invocation.action)
                 if (
-                    definition.get("risk", "normal") == "high"
-                    and self.session.options.approval.high == "require"
+                    not plan_grant
+                    and (force_approval or (definition.get("risk", "normal") == "high"
+                                           and self.session.options.approval.high == "require"))
                 ):
                     result = self._emit(invocation.model_copy(update={"status": "pending_approval"}))
                     self._approval_timers[result.invocationId] = asyncio.get_running_loop().call_later(

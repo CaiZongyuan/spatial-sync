@@ -20,6 +20,7 @@ from packages.assets.registry import AssetRegistry
 from packages.info.approvals import ApprovalStore
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
+from packages.info.plans import PlanStore
 from packages.info.store import StateStore
 from packages.library.scenes import SceneLibrary
 from packages.protocol.internal import SessionOptions
@@ -72,6 +73,7 @@ class Session:
         factory,
         recordings,
         approvals,
+        plans,
         scene_version=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
@@ -79,6 +81,7 @@ class Session:
         self.scene_version = scene_version
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
+        self.plans = plans
         self.source: SpatialSource | None = None
         self._starting_source: SpatialSource | None = None
         self.manifest: SceneManifest | None = None
@@ -454,6 +457,7 @@ class Session:
         self.state, self.actual_rtf = "FAILED", 0
         if self.pipeline:
             self.pipeline.fail_active("source_unavailable", message)
+        self.plans.invalidate(self, "source_unavailable")
         for client in self.clients:
             client.latest = None
         self.broadcast(ServerError(code="source_unavailable", message=message))
@@ -519,6 +523,7 @@ class Session:
         if isinstance(message, EntitySnapshot):
             if message.epoch > self.info.epoch:
                 self.pipeline.fail_active("session_reset", "Session was reset")
+                self.plans.invalidate(self, "session_reset")
             if not self.info.apply(message):
                 return
             for invocation in message.invocations:
@@ -586,6 +591,7 @@ class Session:
     def _apply_state(self, state: SessionState):
         if state.state in ("FAILED", "STOPPED") and self.pipeline:
             self.pipeline.fail_active("source_unavailable", state.cause.message or "Device host unavailable")
+            self.plans.invalidate(self, "source_unavailable")
         self._seq_high_water = max(self._seq_high_water, state.seq)
         if (self.state, self.epoch, self.options.realtimeFactor) != (
             state.state,
@@ -723,6 +729,8 @@ class Session:
         client.enqueue_reliable(self._encode_frame(snapshot), seq=snapshot.seq, force=True)
         if client.info:
             client.enqueue_reliable(encode(self.info_snapshot()))
+            for plan in self.plans.snapshots(self):
+                client.enqueue_reliable(encode(plan))
 
     async def observer_subscribe(self, client: ClientConnection, request: Subscribe):
         async with self.command_lock:
@@ -911,6 +919,7 @@ class Session:
             self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
             self.pipeline.fail_active("session_reset", "Scene was reloaded")
+            self.plans.invalidate(self, "scene_reloaded")
             self.broadcast(self._lifecycle_state())
             try:
                 await self._stop_source()
@@ -944,6 +953,7 @@ class Session:
             self._auto_paused = False
             if self.pipeline:
                 self.pipeline.fail_active("source_unavailable", "Session was stopped")
+                self.plans.invalidate(self, "session_stopped")
                 self.pipeline.close()
             self.state = "STOPPING"
             if self.manifest:
@@ -973,6 +983,7 @@ class SessionManager:
         self.settings, self.factory = settings, factory
         self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
         self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
+        self.plans = PlanStore(settings.state_root / "plans.jsonl", self.approvals)
         self._library = None
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
@@ -986,6 +997,7 @@ class SessionManager:
 
     async def create(self, scene_id, source, options, *, scene_version=None):
         self.approvals.startup()
+        self.plans.startup()
         selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
         source = source or selected.metadata["sources"][0]
         async with self._create_lock:
@@ -1011,6 +1023,7 @@ class SessionManager:
                 self.factory,
                 self.recordings,
                 self.approvals,
+                self.plans,
                 scene_version=selected,
             )
             self._starting_session = session

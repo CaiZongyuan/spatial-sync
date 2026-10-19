@@ -19,6 +19,12 @@ async def test_generated_inspections_match_http_cli_and_mcp_and_preserve_all_too
         # Public input/output schemas captured from the unmodified baseline, 63abf03.
         expected = json.loads((Path(__file__).parent / "fixtures/mcp_tools.json").read_text(encoding="utf-8"))
         schemas = {tool.name: {"input": tool.input_schema, "output": tool.output_schema} for tool in tools}
+        # The operation-plan feature adds optional HTTP correlation, leaving legacy calls unchanged.
+        for name in ("invoke_action", "wait_until"):
+            for field in ("planId", "stepId", "planRevision"):
+                declaration = schemas[name]["input"]["properties"].pop(field)
+                assert declaration["default"] is None
+                assert field not in schemas[name]["input"].get("required", [])
         assert {name: schemas[name] for name in expected} == expected
         assert all("approv" not in tool.name for tool in tools)
         forbidden = await mcp.call_tool("approve_invocation", {"invocation_id": "inv-do-not-approve"})

@@ -6,9 +6,23 @@ types belong here; neither frontend needs another registration.
 Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
 """
 
+import argparse
 from dataclasses import dataclass
 from inspect import Parameter
-from typing import Any, get_args
+from pathlib import Path
+from typing import Any, get_args, get_origin
+
+import yaml
+
+
+def yaml_document(path):
+    try:
+        value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("Plan must be a mapping")
+        return value
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise argparse.ArgumentTypeError(f"Cannot read plan document: {exc}") from exc
 
 
 @dataclass(frozen=True)
@@ -39,7 +53,7 @@ class Argument:
         else:
             # Omitted nullable options stay None; supplied values use their concrete type.
             kinds = get_args(self.annotation)
-            options["type"] = (
+            options["type"] = yaml_document if get_origin(self.annotation) is dict else (
                 next(kind for kind in kinds if kind is not type(None))
                 if type(None) in kinds else self.annotation
             )
@@ -67,6 +81,31 @@ class Command:
 
 
 COMMANDS = (
+    Command(
+        path=("plan", "create"), help="Submit an operation plan; CLI reads a local YAML file.",
+        method="plan_create", arguments=(Argument("document", ("plan.yaml",), dict[str, Any],
+                                                    "Operation plan content (CLI: local YAML file)"),),
+        mcp_name="plan_create", actor=True,
+    ),
+    Command(
+        path=("plan", "revise"), help="Create an immutable plan revision, preserving completed content.",
+        method="plan_revise", arguments=(Argument("id", ("id",), str, "Plan ID"),
+                                          Argument("document", ("plan.yaml",), dict[str, Any],
+                                                   "New operation plan content (CLI: local YAML file)")),
+        mcp_name="plan_revise", actor=True,
+    ),
+    Command(
+        path=("plan", "show"), help="Read the plan, step results, bindings and revision differences.",
+        method="plan_show", arguments=(Argument("id", ("id",), str, "Plan ID"),
+                                        Argument("revision", ("--revision",), int | None,
+                                                 "Historical revision", None)),
+        mcp_name="plan_show",
+    ),
+    Command(
+        path=("plan", "ls"), help="List plans, optionally filtered by status.", method="plan_list",
+        arguments=(Argument("status", ("--status",), str | None, "Plan status", None),),
+        output_type=list[dict[str, Any]], mcp_name="plan_list",
+    ),
     Command(
         path=("skills", "ls"),
         help="List product skills bundled with this platform version; does not contact the gateway.",
