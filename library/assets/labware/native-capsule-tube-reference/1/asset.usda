@@ -17,4 +17,3 @@ def Xform "Asset"
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
     }
 }
-

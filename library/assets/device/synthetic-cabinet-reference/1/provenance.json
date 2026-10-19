@@ -3,8 +3,8 @@
   "revision": "186454ff61869d072d42494a7b94281ab06e9b82",
   "producer": {
     "path": "tools/package_binding_references.py",
-    "sha256": "4e93337d7eefc5a3edd88599eb97899c3c27525a28b65993baeb943f47689223",
-    "bytes": 10212
+    "sha256": "a3c4bfc27f9f1e9b991b2f16d0ccc7206be78cf9a605c29c0d5af669faa97978",
+    "bytes": 10276
   },
   "sourceFiles": {
     "packages/sim_runtime/synthetic_lab.py": {
@@ -35,8 +35,8 @@
   ],
   "files": {
     "asset.usda": {
-      "sha256": "2dbaa0978d5a0c62bd27884ec3c5876a0f29662271b1badfc54f03dc89518146",
-      "bytes": 395
+      "sha256": "dba7fcde749f023391e7ad9e750590d3ff44a4ed106c1146858f08f0b462710e",
+      "bytes": 394
     },
     "asset.yaml": {
       "sha256": "caf23faae0ec3e0d9abdaba6d5f47b628a2d3f8410b7d165007339ee47569554",

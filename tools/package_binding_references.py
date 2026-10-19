@@ -79,6 +79,7 @@ def write_stage(path, node, sites):
         q = pose["q"]
         site.AddOrientOp().Set(Gf.Quatf(q[3], Gf.Vec3f(*q[:3])))
     stage.GetRootLayer().Export(str(path))
+    path.write_bytes(path.read_bytes().rstrip(b"\r\n") + b"\n")
 
 
 def main():

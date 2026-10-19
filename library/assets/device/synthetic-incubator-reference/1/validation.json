@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "asset:device/synthetic-incubator-reference@1",
-  "ranAt": "2026-10-19T18:43:13.540935+00:00",
+  "ranAt": "2026-10-19T18:48:45.374497+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",

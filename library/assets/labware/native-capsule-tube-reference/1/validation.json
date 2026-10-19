@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "asset:labware/native-capsule-tube-reference@1",
-  "ranAt": "2026-10-19T18:43:14.810516+00:00",
+  "ranAt": "2026-10-19T18:48:46.595334+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",
