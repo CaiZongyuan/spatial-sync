@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import struct
 import sys
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -21,6 +20,7 @@ from pydantic import ValidationError
 from packages.library.common import content_hash, document
 from packages.library.metadata import Locations
 from packages.library.reports import parse_report
+from packages.library.visuals import glb_budget
 
 
 def check(identifier, status, message, **details):
@@ -170,140 +170,6 @@ class USDGraph:
         return stage
 
 
-def image_dimensions(value):
-    if value.startswith(b"\x89PNG\r\n\x1a\n") and len(value) >= 24:
-        return struct.unpack(">II", value[16:24])
-    if value.startswith(b"\xff\xd8"):
-        cursor = 2
-        while cursor + 4 <= len(value):
-            if value[cursor] != 255:
-                cursor += 1
-                continue
-            marker = value[cursor + 1]
-            cursor += 2
-            if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:
-                continue
-            length = int.from_bytes(value[cursor : cursor + 2], "big")
-            if marker in (0xC0, 0xC1, 0xC2, 0xC3) and length >= 7:
-                return (
-                    int.from_bytes(value[cursor + 5 : cursor + 7], "big"),
-                    int.from_bytes(value[cursor + 3 : cursor + 5], "big"),
-                )
-            if length < 2:
-                break
-            cursor += length
-    if len(value) >= 30 and value[:4] == b"RIFF" and value[8:16] == b"WEBPVP8X":
-        return (1 + int.from_bytes(value[24:27], "little"), 1 + int.from_bytes(value[27:30], "little"))
-    raise ValueError("Unsupported or malformed embedded texture")
-
-
-def glb_budget(path):
-    try:
-        return inspect_glb(path)
-    except (KeyError, IndexError, TypeError, AttributeError, struct.error) as exc:
-        raise ValueError("Malformed GLB document, buffer, or accessor") from exc
-
-
-def inspect_glb(path):
-    value = Path(path).read_bytes()
-    if len(value) < 20 or value[:4] != b"glTF" or struct.unpack_from("<I", value, 4)[0] != 2:
-        raise ValueError("Visual is not a glTF2 binary")
-    if struct.unpack_from("<I", value, 8)[0] != len(value):
-        raise ValueError("GLB length does not match its bytes")
-    chunks, cursor = {}, 12
-    while cursor + 8 <= len(value):
-        length, kind = struct.unpack_from("<II", value, cursor)
-        cursor += 8
-        if length % 4 or cursor + length > len(value) or kind in chunks:
-            raise ValueError("GLB chunk exceeds its bytes")
-        chunks[kind] = value[cursor : cursor + length]
-        cursor += length
-    if cursor != len(value):
-        raise ValueError("GLB has trailing or incomplete chunks")
-    document = json.loads(chunks[0x4E4F534A])
-    if document["asset"]["version"] != "2.0":
-        raise ValueError("Visual is not a glTF2 document")
-    binary = chunks.get(0x004E4942, b"")
-    buffers = document.get("buffers", [])
-    if len(buffers) != 1 or "uri" in buffers[0] or not 0 <= buffers[0]["byteLength"] <= len(binary):
-        raise ValueError("GLB must contain one bounded embedded binary buffer")
-    views = document.get("bufferViews", [])
-    for view in views:
-        start, length = view.get("byteOffset", 0), view["byteLength"]
-        if (
-            view["buffer"] != 0
-            or type(start) is not int
-            or type(length) is not int
-            or start < 0
-            or length < 0
-            or start + length > buffers[0]["byteLength"]
-        ):
-            raise ValueError("GLB bufferView exceeds its embedded buffer")
-
-    def accessor_count(index, *, positions=False):
-        accessor = document["accessors"][index]
-        count, offset = accessor["count"], accessor.get("byteOffset", 0)
-        components = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
-        widths = {5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4}
-        width = widths[accessor["componentType"]] * components[accessor["type"]]
-        if type(count) is not int or count <= 0 or type(offset) is not int or offset < 0:
-            raise ValueError("GLB accessor has invalid count or offset")
-        if positions and (accessor["type"] != "VEC3" or accessor["componentType"] != 5126):
-            raise ValueError("GLB POSITION must use floating point VEC3 coordinates")
-        if "bufferView" in accessor:
-            view = views[accessor["bufferView"]]
-            stride = view.get("byteStride", width)
-            if (
-                type(stride) is not int
-                or stride < width
-                or offset + (count - 1) * stride + width > view["byteLength"]
-            ):
-                raise ValueError("GLB accessor exceeds its bufferView")
-        elif "sparse" not in accessor:
-            raise ValueError("GLB accessor has neither embedded nor sparse data")
-        if "sparse" in accessor:
-            sparse = accessor["sparse"]
-            if type(sparse["count"]) is not int or not 0 < sparse["count"] <= count:
-                raise ValueError("GLB sparse accessor has invalid count")
-            for field, item_width in (
-                ("indices", widths[sparse["indices"]["componentType"]]),
-                ("values", width),
-            ):
-                item = sparse[field]
-                if item.get("byteOffset", 0) < 0 or (
-                    item.get("byteOffset", 0) + sparse["count"] * item_width
-                    > views[item["bufferView"]]["byteLength"]
-                ):
-                    raise ValueError("GLB sparse accessor exceeds its bufferView")
-        return count
-
-    triangles = 0
-    for mesh in document.get("meshes", []):
-        for primitive in mesh["primitives"]:
-            count = accessor_count(primitive["attributes"]["POSITION"], positions=True)
-            if "indices" in primitive:
-                count = accessor_count(primitive["indices"])
-                accessor = document["accessors"][primitive["indices"]]
-                if accessor["type"] != "SCALAR" or accessor["componentType"] not in (5121, 5123, 5125):
-                    raise ValueError("GLB indices must be unsigned scalar coordinates")
-            mode = primitive.get("mode", 4)
-            if mode not in range(7) or (mode == 4 and count % 3):
-                raise ValueError("GLB primitive mode or triangle coordinate count is invalid")
-            triangles += count // 3 if mode == 4 else max(0, count - 2) if mode in (5, 6) else 0
-    if triangles > 500000:
-        raise ValueError(f"Visual has {triangles} triangles; maximum is 500000")
-    for image in document.get("images", []):
-        if "bufferView" not in image:
-            raise ValueError("GLB textures must be embedded in the uploaded package")
-        view = views[image["bufferView"]]
-        start = view.get("byteOffset", 0)
-        pixels = binary[start : start + view["byteLength"]]
-        width, height = image_dimensions(pixels)
-        if min(width, height) <= 0 or max(width, height) > 4096:
-            raise ValueError(f"Texture is {width}x{height}; maximum is 4096x4096")
-    return triangles
-
-
 def validate(payload):
     kind, metadata, package = payload["kind"], payload["metadata"], payload["package"]
     checks = {"S1": check("S1", "pass", "Package metadata and declared files match their schemas")}
@@ -328,7 +194,7 @@ def validate(payload):
             else "USD dependencies resolve only to package-local or indexed library files",
             **({"notApplicable": True} if python_stage else {}),
         )
-    prims = list(stage.Traverse()) if stage else []
+    prims = list(stage.Traverse(Usd.TraverseInstanceProxies())) if stage else []
     if stage:
         correct = UsdGeom.GetStageUpAxis(stage) == "Z" and UsdGeom.GetStageMetersPerUnit(stage) == 1
         checks["S2"] = check("S2", "pass" if correct else "fail", "Stage must use Z up and metersPerUnit=1")
@@ -408,7 +274,7 @@ def validate(payload):
     bindings = (
         payload.get("bindings", {}).get("entities", []) if kind == "scene" else metadata.get("implements", [])
     )
-    reference_problems, posture_groups, bound = [], [], set()
+    reference_problems, posture_groups, bound, pending_templates = [], [], set(), []
     types = payload["types"]
     for binding in bindings:
         entity = binding.get("key", "/Asset") if kind == "scene" else "/Asset"
@@ -432,6 +298,8 @@ def validate(payload):
         if binding.get("template"):
             if binding["template"] not in graph.assets:
                 reference_problems.append("Unknown asset template: " + binding["template"])
+            else:
+                pending_templates.append(binding["template"])
             continue  # Template expansion is a separate capability; never invent its effective bindings.
         if binding.get("type") not in types:
             reference_problems.append("Unknown entity type: " + str(binding.get("type")))
@@ -509,10 +377,12 @@ def validate(payload):
                                 posture_groups.append((robot, paths, taught.get("locations", {})))
     checks["S5"] = check(
         "S5",
-        "fail" if reference_problems else "warn" if stage is None else "pass",
+        "fail" if reference_problems else "warn" if stage is None or pending_templates else "pass",
         "; ".join(dict.fromkeys(reference_problems))
         or (
-            "Program/type declarations checked; stage resources were not inspected"
+            "Asset templates have not been expanded; effective Config references were not inspected"
+            if pending_templates
+            else "Program/type declarations checked; stage resources were not inspected"
             if stage is None
             else "Declared types and Config spatial references exist"
         ),
@@ -520,28 +390,28 @@ def validate(payload):
     visual_problem, triangles = None, None
     if kind == "asset" and metadata.get("visual"):
         try:
-            triangles = glb_budget(package["files"][metadata["visual"]])
-        except (KeyError, ValueError, TypeError, IndexError, struct.error) as exc:
+            triangles = glb_budget(package["files"][metadata["visual"]], package)
+        except (KeyError, ValueError, TypeError, IndexError, OSError) as exc:
             visual_problem = str(exc)
         checks["S6"] = check(
             "S6",
             "fail" if visual_problem else "pass",
-            visual_problem or f"Visual budget: {triangles} triangles; embedded textures <=4096x4096",
+            visual_problem or f"Visual budget: {triangles} triangles; package-local textures <=4096x4096",
         )
     elif kind == "asset":
         checks["S6"] = check("S6", "warn", "PBR visual is missing")
     else:
-        dressing = [
-            prim
-            for prim in prims
-            if str(prim.GetPath()).startswith("/World/Dressing/") and prim.HasAuthoredReferences()
-        ]
+        dressing_prims = [prim for prim in prims if str(prim.GetPath()).startswith("/World/Dressing/")]
+        dressing = [prim for prim in dressing_prims if prim.HasAuthoredReferences()]
         checks["S6"] = check(
             "S6",
-            "warn" if stage is None else "fail" if len(dressing) > 64 else "pass",
+            "warn" if stage is None or dressing_prims else "pass",
             "Dressing visual budget was not inspected because the USD stage is unavailable"
             if stage is None
-            else f"Dressing has {len(dressing)} referenced visual groups; maximum is 64",
+            else f"Dressing has {len(dressing)} USD reference groups; merged GLB count has not been checked"
+            if dressing_prims
+            else "No Dressing visual groups are declared",
+            **({"dressingReferenceCount": len(dressing)} if stage is not None else {}),
         )
     posture_problems = []
     for entity, joints, locations in posture_groups if stage is not None else []:

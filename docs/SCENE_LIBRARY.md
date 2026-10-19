@@ -97,6 +97,8 @@ composition; USDZ containers/package-member paths and unsupported composition
 formats are rejected. Config location documents resolve only to indexed local
 files and must select the matching robot. Imported previews and other package
 files use the indexed `/library/files` route and the package integrity check.
+Template expansion and merged Dressing GLB export are later capabilities;
+reports warn when those effective bindings or the final GLB count were not inspected.
 
 Revalidation uses `POST /api/v1/library/scenes/{name}/{rev}/validate` or generic
 MCP `library_validate`. It appends a report outside the immutable version and

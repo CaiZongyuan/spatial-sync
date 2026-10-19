@@ -12,17 +12,7 @@ from packages.library.imports import LibraryImports
 from packages.library.validation import StructuralValidator
 
 
-def install_library_routes(app, assets: AssetLibrary, scenes=None):
-    if scenes is None:
-        from packages.library.scenes import SceneLibrary
-
-        scene_index = SceneLibrary(
-            builtin_root=assets.roots["builtin"],
-            user_root=assets.roots["user"],
-            state_root=assets.jobs_root.parent,
-        )
-        def scenes():
-            return scene_index
+def install_library_routes(app, assets: AssetLibrary, scenes):
     validator = StructuralValidator(assets.jobs_root.parent, program_schemas)
 
     @app.get("/api/v1/library/assets")

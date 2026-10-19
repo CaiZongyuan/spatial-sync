@@ -1,5 +1,6 @@
 """Budget boundaries use real GLB binary buffers and encoded PNG texture bytes."""
 
+import base64
 import json
 import struct
 import zlib
@@ -7,7 +8,7 @@ import zlib
 import pytest
 import trimesh
 
-from packages.library.structural import glb_budget
+from packages.library.visuals import glb_budget
 
 
 def glb(path, triangles=1, *, texture=None, change=None):
@@ -88,9 +89,30 @@ def test_encoded_texture_budget_boundary_and_oversized_texture(tmp_path):
         lambda doc: doc["accessors"][1].update(count=300),
         lambda doc: doc["bufferViews"][0].update(byteLength=1000),
         lambda doc: doc["accessors"][0].update(bufferView=500),
+        lambda doc: doc["accessors"][0].update(bufferView=-1),
         lambda doc: doc["meshes"][0]["primitives"][0].update(indices="not-an-index"),
     ],
 )
 def test_malformed_visual_buffers_and_accessors_fail_with_a_validation_error(tmp_path, change):
     with pytest.raises(ValueError):
         glb_budget(glb(tmp_path / "invalid.glb", change=change))
+
+
+@pytest.mark.parametrize("uri", ["texture.png", "data"])
+def test_confined_package_and_inline_texture_resources_have_the_same_budget(tmp_path, uri):
+    texture = tmp_path / "texture.png"
+    texture.write_bytes(png(4096, 1))
+    reference = (
+        "data:image/png;base64," + base64.b64encode(texture.read_bytes()).decode() if uri == "data" else uri
+    )
+    path = glb(tmp_path / "visual.glb", change=lambda doc: doc.update(images=[{"uri": reference}]))
+    package = {"path": str(tmp_path), "files": {path.name: str(path), texture.name: str(texture)}}
+    assert glb_budget(path, package) == 1
+
+
+@pytest.mark.parametrize("uri", ["../outside.png", "https://reviewer.invalid/texture.png", "missing.png"])
+def test_glb_texture_cannot_load_external_or_unindexed_files(tmp_path, uri):
+    path = glb(tmp_path / "visual.glb", change=lambda doc: doc.update(images=[{"uri": uri}]))
+    package = {"path": str(tmp_path), "files": {path.name: str(path)}}
+    with pytest.raises(ValueError, match="package"):
+        glb_budget(path, package)
