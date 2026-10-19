@@ -72,7 +72,8 @@ jobs:
             sleep 0.5
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
-          SPATIAL_E2E_VIDEO=1 pnpm test:e2e --shard="$PLAYWRIGHT_SHARD"
+          # Split individual cases between shards; each gateway still runs one test worker.
+          SPATIAL_E2E_VIDEO=1 pnpm test:e2e --fully-parallel --workers=1 --shard="$PLAYWRIGHT_SHARD"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
