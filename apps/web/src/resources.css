@@ -1,9 +1,4 @@
 .model-resources { min-width: 0; }
-.model-resources button { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line-2); cursor: pointer; }
-.model-resources button:hover:not(:disabled) { background: var(--surface); border-color: var(--ghost); }
-.model-resources button.primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
-.model-resources input { background: var(--ground); color: var(--ink); border: 1px solid var(--line-2); }
-.model-resources button:focus-visible, .model-resources input:focus-visible, .resource-page-tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .resource-panel .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .model-resources .page-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
 .resource-page-tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--line); margin-bottom: 22px; overflow-x: auto; }

@@ -62,9 +62,14 @@ test('real model resources mask a local credential and persist audited human pri
   });
   expect(saved.audit.at(-1).actor).toEqual({ kind: 'user', name: 'local' });
   expect(saved.audit.at(-1).at).toBeTruthy();
+  const controlBackground = () => page.getByRole('button', { name: '刷新', exact: true }).evaluate(
+    element => getComputedStyle(element).backgroundColor,
+  );
   await page.getByLabel('Color theme').selectOption('dark');
+  await expect.poll(controlBackground).toBe('rgb(32, 31, 29)');
   await page.screenshot({ path: testInfo.outputPath('models-dark-1440.png'), fullPage: true });
   await page.getByLabel('Color theme').selectOption('light');
+  await expect.poll(controlBackground).toBe('rgb(240, 239, 234)');
   await page.screenshot({ path: testInfo.outputPath('models-light-1440.png'), fullPage: true });
   await page.setViewportSize({ width: 400, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
