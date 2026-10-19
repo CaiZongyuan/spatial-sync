@@ -308,6 +308,9 @@ class NewtonSource:
     async def cancel(self, invocation_id):
         return await self._request("cancel", timeout=0.5, invocationId=invocation_id)
 
+    async def revoke_before_start(self, invocation_id):
+        return await self._request("revoke_before_start", timeout=0.5, invocationId=invocation_id)
+
     async def snapshot(self) -> TransformFrame:
         if self._samples and self._samples.paused and self._latest is not None:
             return self._latest.model_copy(update={"type": "stream.snapshot"})

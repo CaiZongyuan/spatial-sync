@@ -1,5 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { ApprovalInboxContext, useApprovalInbox } from '../lib/approvals';
+import '../approvals.css';
 
 type Theme = 'system' | 'light' | 'dark';
 const themeKey = 'lab.theme';
@@ -16,6 +18,7 @@ function remember(key: string, value: string) {
 const pages = [
   { to: '/', label: 'Overview', text: '概览', icon: 'overview' },
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
+  { to: '/approvals', label: 'Approvals', text: '待审批', icon: 'approvals' },
   { to: '/sessions', label: 'Sessions', text: '会话', icon: 'sessions' },
   { to: '/recordings', label: 'Recordings', text: '录制', icon: 'recordings' },
 ] as const;
@@ -26,6 +29,7 @@ function Icon({ name }: { name: string }) {
     resources: 'M5 6h14v12H5z M9 2v4 M15 2v4 M9 18v4 M15 18v4 M1 10h4 M1 14h4 M19 10h4 M19 14h4 M9 10h6v4H9z',
     sessions: 'M4 4h16v16H4z M4 9h16 M9 9v11',
     recordings: 'M4 4h16v16H4z M10 8l6 4-6 4z',
+    approvals: 'M8 4h12v17H4V4h4 M8 2h8v4H8z M8 13l3 3 6-6',
     collapse: 'M14 6l-6 6 6 6',
   };
   return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={paths[name]} /></svg>;
@@ -33,6 +37,9 @@ function Icon({ name }: { name: string }) {
 
 export function PlatformShell() {
   const pathname = useRouterState({ select: state => state.location.pathname });
+  const replay = pathname.startsWith('/replay/');
+  const approvals = useApprovalInbox(!replay);
+  const pendingCount = replay || approvals.error ? undefined : approvals.inbox?.pendingCount;
   const [collapsed, setCollapsed] = useState(() => preference(sidebarKey) === 'true');
   const [theme, setTheme] = useState<Theme>(() => {
     const value = preference(themeKey);
@@ -43,7 +50,7 @@ export function PlatformShell() {
     else document.documentElement.dataset.theme = theme;
     remember(themeKey, theme);
   }, [theme]);
-  const current = pathname.startsWith('/replay/') ? pages[3] :
+  const current = replay ? pages.find(page => page.to === '/recordings')! :
     pages.find(page => page.to !== '/' && pathname.startsWith(page.to === '/resources/gpu' ? '/resources' : page.to)) ?? pages[0];
   const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/');
   return <div className={`platform-shell ${collapsed ? 'is-collapsed' : ''}`}>
@@ -57,6 +64,8 @@ export function PlatformShell() {
         {pages.map(page => <Link key={page.to} to={page.to} className={`nav-item ${current.to === page.to ? 'is-current' : ''}`}
           aria-label={page.label} aria-current={current.to === page.to ? 'page' : undefined}>
           <Icon name={page.icon} /><span className="sidebar-label">{page.text}</span>
+          {page.to === '/approvals' && pendingCount !== undefined && pendingCount > 0 &&
+            <span className="approval-nav-count" data-testid="approval-pending-badge" aria-label={`${pendingCount} 条待审批`}>{pendingCount}</span>}
           <span className="nav-tooltip" role="tooltip">{page.text}</span>
         </Link>)}
       </nav>
@@ -80,8 +89,11 @@ export function PlatformShell() {
           {detail && <><span>/</span><span className="breadcrumb-id">{decodeURIComponent(pathname.split('/').at(-1) ?? '')}</span></>}
           {pathname === '/resources/gpu' && <><span>/</span><span>Compute</span></>}
         </nav>
+        {pendingCount !== undefined && <Link to="/approvals" className={`approval-topbar-chip ${pendingCount ? 'has-pending' : ''}`}
+          aria-label={`待审批 ${pendingCount}`}><i aria-hidden="true" />待审批 {pendingCount}</Link>}
+        {!replay && approvals.error && <span className="approval-topbar-chip" role="status">审批暂不可用</span>}
       </header>
-      <div id="page-content" tabIndex={-1}><Outlet /></div>
+      <div id="page-content" tabIndex={-1}><ApprovalInboxContext.Provider value={approvals}><Outlet /></ApprovalInboxContext.Provider></div>
     </div>
   </div>;
 }
