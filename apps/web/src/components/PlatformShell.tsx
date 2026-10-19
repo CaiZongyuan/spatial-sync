@@ -14,10 +14,10 @@ function remember(key: string, value: string) {
 }
 
 const pages = [
-  { to: '/', label: 'Overview', icon: 'overview' },
-  { to: '/resources/gpu', label: 'Resources', icon: 'resources' },
-  { to: '/sessions', label: 'Sessions', icon: 'sessions' },
-  { to: '/recordings', label: 'Recordings', icon: 'recordings' },
+  { to: '/', label: 'Overview', text: '概览', icon: 'overview' },
+  { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
+  { to: '/sessions', label: 'Sessions', text: '会话', icon: 'sessions' },
+  { to: '/recordings', label: 'Recordings', text: '录制', icon: 'recordings' },
 ] as const;
 
 function Icon({ name }: { name: string }) {
@@ -50,33 +50,33 @@ export function PlatformShell() {
     <a className="skip-link" href="#page-content">Skip to content</a>
     <aside className="platform-sidebar" aria-label="Platform navigation">
       <Link to="/" className="platform-brand" aria-label="Lab platform home">
-        <span className="platform-brand-mark">L<span>·</span></span>
-        <span className="sidebar-label"><strong>Laboratory</strong><small>Spatial workbench</small></span>
+        <span className="platform-brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l8.2 4.6L12 12.8 3.8 8.2z M3.8 8.2v7.4l8.2 4.6 8.2-4.6V8.2 M12 12.8v7.4" /></svg></span>
+        <span className="sidebar-label"><strong>spatial-sync</strong><small>仪器控制台 · local</small></span>
       </Link>
       <nav aria-label="Main navigation">
         {pages.map(page => <Link key={page.to} to={page.to} className={`nav-item ${current.to === page.to ? 'is-current' : ''}`}
           aria-label={page.label} aria-current={current.to === page.to ? 'page' : undefined}>
-          <Icon name={page.icon} /><span className="sidebar-label">{page.label}</span>
-          <span className="nav-tooltip" role="tooltip">{page.label}</span>
+          <Icon name={page.icon} /><span className="sidebar-label">{page.text}</span>
+          <span className="nav-tooltip" role="tooltip">{page.text}</span>
         </Link>)}
       </nav>
       <div className="sidebar-footer">
         <label className="theme-picker" title="Color theme">
           <span aria-hidden="true">◐</span><span className="sidebar-label">Theme</span>
           <select aria-label="Color theme" value={theme} onChange={event => setTheme(event.target.value as Theme)}>
-            <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
+            <option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option>
           </select>
         </label>
         <button className="sidebar-collapse" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed} onClick={() => {
             setCollapsed(!collapsed); remember(sidebarKey, String(!collapsed));
-          }}><Icon name="collapse" /><span className="sidebar-label">Collapse sidebar</span></button>
+          }}><Icon name="collapse" /><span className="sidebar-label">收起侧栏</span></button>
       </div>
     </aside>
     <div className={`platform-page ${detail ? 'is-detail' : ''}`}>
       <header className="page-topbar">
-        <nav aria-label="Breadcrumb"><Link to="/">Lab</Link><span>/</span>
-          <Link to={current.to}>{current.label}</Link>
+        <nav aria-label="Breadcrumb"><Link to="/">spatial-sync</Link><span>›</span>
+          <Link to={current.to}>{current.text}</Link>
           {detail && <><span>/</span><span className="breadcrumb-id">{decodeURIComponent(pathname.split('/').at(-1) ?? '')}</span></>}
           {pathname === '/resources/gpu' && <><span>/</span><span>Compute</span></>}
         </nav>

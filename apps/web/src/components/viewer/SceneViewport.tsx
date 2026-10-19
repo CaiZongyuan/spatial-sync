@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
 import {
   InstancedPrimitives,
@@ -6,13 +6,15 @@ import {
   type InstanceController,
 } from './InstancedPrimitives';
 import { Canvas, events, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Edges, Grid, OrbitControls } from '@react-three/drei';
 import {
   DoubleSide,
   Box3,
+  Color,
   Group,
   Mesh,
   MeshStandardMaterial,
+  Vector3,
   type Material,
   type Object3D,
 } from 'three';
@@ -25,6 +27,10 @@ import {
 import type { SceneManifest, Visual, Pose } from '../../lib/protocol';
 import { IDENTITY } from '../../lib/scene/pose';
 import { createPrimitiveGeometry } from '../../lib/geometry/primitives';
+import { ViewerThemeContext, useViewerTheme } from '../../lib/scene/viewer-theme';
+import { CameraRig, type CameraPreset } from './CameraRig';
+import { DeviceAnnotations, DeviceAnnotationLayer, type DeviceAnnotation } from './DeviceAnnotations';
+import type { PlacedLabel } from '../../lib/scene/label-layout';
 import type { SessionClient } from '../../lib/stream/client';
 import type { FrameRecorder } from '../../lib/performance/frame-recorder';
 
@@ -79,23 +85,33 @@ function Asset({
   selected: boolean;
   collider: boolean;
 }) {
+  const theme = useContext(ViewerThemeContext);
   useEffect(() => {
     object?.traverse((child) => {
       if (!(child instanceof Mesh)) return;
+      child.castShadow = true; child.receiveShadow = true;
       const materials: Material[] = Array.isArray(child.material)
         ? child.material
         : [child.material];
       materials.forEach((material) => {
-        if ('wireframe' in material) material.wireframe = collider;
-        material.transparent = collider;
-        material.opacity = collider ? 0.7 : 1;
+        if (!material.userData.authoredAppearance) material.userData.authoredAppearance = {
+          transparent: material.transparent, opacity: material.opacity,
+          wireframe: 'wireframe' in material ? material.wireframe : false,
+        };
+        const authored = material.userData.authoredAppearance;
+        if ('wireframe' in material) material.wireframe = collider || authored.wireframe;
+        material.transparent = collider || authored.transparent;
+        material.opacity = collider ? 0.7 : authored.opacity;
         if (material instanceof MeshStandardMaterial) {
-          material.emissive.set(selected ? '#b86b16' : '#000000');
+          material.emissive.set(selected ? theme.accent : '#000000');
+          if (!material.userData.authoredColor) material.userData.authoredColor = material.color.clone();
+          material.color.copy(material.userData.authoredColor);
+          if (!material.map) material.color.lerp(new Color(authored.transparent ? theme.glass : material.metalness > .5 ? theme.steel : theme.body), .35);
           material.emissiveIntensity = selected ? 0.4 : 0;
         }
       });
     });
-  }, [object, selected, collider]);
+  }, [object, selected, collider, theme]);
   return (
     <group
       rotation={visual.assetUpAxis === 'Y' ? [Math.PI / 2, 0, 0] : [0, 0, 0]}
@@ -115,6 +131,7 @@ function PrimitiveMesh({
   selected: boolean;
   collider: boolean;
 }) {
+  const theme = useContext(ViewerThemeContext);
   const geometry = useMemo(
     () => createPrimitiveGeometry(visual.geometry),
     [visual.geometry],
@@ -125,20 +142,19 @@ function PrimitiveMesh({
       <meshStandardMaterial
         color={
           collider
-            ? '#71e3be'
-            : selected
-              ? '#ffbf69'
-              : visual.geometry.type === 'plane'
-                ? '#3a4852'
-                : '#8dabb5'
+            ? theme.accent
+            : visual.geometry.type === 'plane'
+                ? theme.floor
+                : theme.body
         }
-        roughness={0.45}
-        metalness={0.24}
+        roughness={0.7}
+        metalness={0.12}
         side={DoubleSide}
         wireframe={collider}
-        transparent={collider}
-        opacity={collider ? 0.8 : 1}
+        transparent={collider || visual.geometry.type === 'plane'}
+        opacity={collider ? 0.8 : visual.geometry.type === 'plane' ? theme.ao : 1}
       />
+      {!collider && visual.geometry.type !== 'plane' && <Edges threshold={35} color={selected ? theme.accent : theme.edge} opacity={selected ? 1 : theme.edgeOpacity} transparent raycast={skipPicking} />}
     </mesh>
   );
 }
@@ -303,11 +319,12 @@ function Body({
   const ownSites = manifest.sites.filter(
     (site) => site.parentBodyKey === node.entityKey,
   );
+  const [hovered, setHovered] = useState(false);
   const isSelected = selected === node.entityKey;
   const pose: Pose = node.kind === 'static' ? node.initialPose : IDENTITY;
   return (
     <group
-      userData={{ entityKey: node.entityKey }}
+      userData={{ entityKey: node.entityKey, frameExcluded: node.visuals.length > 0 && node.visuals.every(visual => visual.kind === 'primitive' && visual.geometry.type === 'plane') }}
       ref={(object) =>
         register(
           node.entityKey,
@@ -318,6 +335,8 @@ function Body({
       position={pose.p}
       quaternion={pose.q}
       visible={!hidden.has(node.entityKey)}
+      onPointerOver={(event) => { event.stopPropagation(); setHovered(true); }}
+      onPointerOut={() => setHovered(false)}
       onPointerDown={(event) => {
         if (
           !isVisible(event.eventObject) ||
@@ -331,7 +350,7 @@ function Body({
     >
       <NodeVisuals
         node={node}
-        selected={isSelected}
+        selected={isSelected || hovered}
         colliders={layers.colliders}
         warn={warn}
       />
@@ -411,8 +430,11 @@ function SceneContents({
   inspectVisuals,
   recorder,
   renderContinuously = true,
+  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout,
 }: ViewportProps) {
   const invalidate = useThree((state) => state.invalidate);
+  const theme = useContext(ViewerThemeContext);
+  useEffect(() => { invalidate(); }, [theme, invalidate]);
   useEffect(() => {
     if (!client.readOnly || renderContinuously) return;
     // Replay reducers mutate pose buffers without changing the manifest identity.
@@ -459,6 +481,25 @@ function SceneContents({
     [rendered],
   );
   const extraBounds = useCallback(() => instances.current?.bounds(), []);
+  const frameBounds = useCallback(() => {
+    const box = new Box3();
+    for (const object of physicalNodes.current.values()) {
+      if (object.visible && !object.userData.frameExcluded) box.expandByObject(object);
+    }
+    const instanced = instances.current?.bounds();
+    if (instanced) box.union(instanced);
+    return box;
+  }, []);
+  const deviceBounds = useCallback((keys: string[]) => {
+    const bounds = new Box3();
+    for (const key of keys) {
+      const object = physicalNodes.current.get(key);
+      if (object?.visible) bounds.expandByObject(object);
+      const instance = instances.current?.inspect(key);
+      if (instance) bounds.union(new Box3(new Vector3(...instance.min), new Vector3(...instance.max)));
+    }
+    return bounds;
+  }, []);
   const elapsed = useRef({ time: 0, frames: 0 });
   const register = (
     key: string,
@@ -560,26 +601,23 @@ function SceneContents({
         mode={useInstances ? 'instanced' : 'individual'}
         extraBounds={extraBounds}
       />
-      <color attach="background" args={['#172329']} />
-      <ambientLight intensity={1.5} />
-      <directionalLight position={[3, 6, 3]} intensity={3} />
-      <directionalLight
-        position={[-4, 2, -2]}
-        intensity={1.2}
-        color="#8bbfda"
-      />
-      {layers.grid && (
-        <gridHelper
-          args={[12, 24, '#48636a', '#2a3d44']}
-          position={[0, -0.002, 0]}
-        />
-      )}
+      <CameraRig preset={cameraPreset} bounds={frameBounds} />
+      <color attach="background" args={[theme.ground]} />
+      {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
+      <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
+      <directionalLight position={[3, 6, 3]} intensity={theme.key * Math.PI} color={theme.sun} castShadow
+        shadow-mapSize={[1024, 1024]} shadow-camera-left={-5} shadow-camera-right={5}
+        shadow-camera-top={5} shadow-camera-bottom={-5} shadow-bias={-.0005} shadow-radius={4} />
+      {layers.grid && <Grid position={[0, -.004, 0]} args={[20, 20]} cellSize={.25}
+        cellThickness={.5} cellColor={theme.grid} sectionSize={1} sectionThickness={.5}
+        sectionColor={theme.grid} fadeDistance={6} fadeStrength={1.5} infiniteGrid raycast={skipPicking} />}
       <group name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
         {useInstances && (
           <InstancedPrimitives
             nodes={instancedNodes}
             client={client}
             selected={selectedEntity}
+            highlightedKeys={highlightedKeys}
             hidden={hidden}
             rendered={rendered}
             controller={instances}
@@ -605,7 +643,7 @@ function SceneContents({
                 warn,
                 client,
               }}
-              selected={selectedEntity}
+              selected={highlightedKeys?.has(node.entityKey) ? node.entityKey : selectedEntity}
             />
           ))}
         {manifest.sites
@@ -624,6 +662,7 @@ function SceneContents({
             />
           ))}
       </group>
+      {annotations && onLabelLayout && <DeviceAnnotations annotations={annotations} layout={onLabelLayout} boundsForKeys={deviceBounds} />}
       <OrbitControls
         makeDefault
         target={[0, 0.65, 0]}
@@ -646,29 +685,46 @@ interface ViewportProps {
   inspectVisuals: React.RefObject<InspectVisuals | undefined>;
   recorder: FrameRecorder;
   renderContinuously?: boolean;
+  cameraPreset?: CameraPreset;
+  annotations?: DeviceAnnotation[];
+  highlightedKeys?: Set<string>;
+  compact?: boolean;
+  onLabelLayout?: (labels: PlacedLabel[]) => void;
 }
 
 export function SceneViewport(props: ViewportProps) {
+  const theme = useViewerTheme();
+  const [labels, setLabels] = useState<PlacedLabel[]>([]);
+  const element = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
+    if (element.current) observer.observe(element.current);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="viewport" data-testid="scene-viewport">
+    <div ref={element} className="viewport" data-testid="scene-viewport">
       <Canvas
-        frameloop={props.client.readOnly && props.renderContinuously === false ? 'demand' : 'always'}
+        flat
+        shadows
+        frameloop={!visible ? 'never' : props.client.readOnly && props.renderContinuously === false ? 'demand' : 'always'}
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
         gl={{ antialias: true }}
         onPointerMissed={() => props.select('')}
       >
-        <SceneContents key={props.manifest.sceneRevision} {...props} />
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={props.manifest.sceneRevision} {...props} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas>
-      <div className="viewport-label">
+      {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
+      {!props.compact && <><div className="viewport-label">
         <span className="live-dot" /> {props.client.readOnly ? 'RECORDED SPATIAL VIEW' : 'LIVE SPATIAL VIEW'}{' '}
         <small>METERS · Z-UP</small>
       </div>
       <div className="viewport-hint">
         Drag to orbit <span>·</span> Scroll to zoom <span>·</span> Click to
         inspect
-      </div>
+      </div></>}
     </div>
   );
 }
