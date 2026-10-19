@@ -12,6 +12,43 @@ from test_plans import plan
 from apps.api.app.main import create_app
 
 
+@pytest.mark.parametrize("kind", ["check", "wait", "expect"])
+@pytest.mark.parametrize("field", ["entity", "property"])
+def test_invalid_condition_identifiers_report_the_step_without_allocating(kind, field):
+    app = create_app()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        create(client)
+        for invalid in (None, "", 1, True, [], {}, ["lidOpen"], {"name": "lidOpen"}):
+            condition = {"entity": CENTRIFUGE, "property": "lidOpen", "equals": True}
+            condition[field] = invalid
+            step = {"id": 1, kind: condition}
+            if kind == "expect":
+                step["do"] = {"entity": CENTRIFUGE, "action": "closeLid"}
+            response = client.post("/api/v1/plans", json=plan(step))
+            assert response.status_code == 422, (kind, field, invalid, response.text)
+            detail = response.json()["detail"]
+            assert detail["code"] == "invalid_plan" and detail["errors"][0]["stepId"] == 1
+            assert client.get("/api/v1/plans").json()["plans"] == []
+            assert app.state.manager.approvals.records == {}
+
+
+def test_nested_expect_identifiers_are_validated_before_catalog_lookup():
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        create(client)
+        for field in ("entity", "property"):
+            condition = {"property": "lidOpen", "equals": False, field: []}
+            step = {
+                "id": 1,
+                "do": {"entity": CENTRIFUGE, "action": "closeLid"},
+                "expect": {"all": [{"all": [condition]}]},
+            }
+            invalid = client.post("/api/v1/plans", json=plan(step))
+            assert invalid.status_code == 422, invalid.text
+            assert invalid.json()["detail"]["errors"][0]["stepId"] == 1
+        step["expect"] = {"all": [{"property": "lidOpen", "equals": False}]}
+        assert client.post("/api/v1/plans", json=plan(step)).status_code == 201
+
+
 def condition_call(client, route, kind, plan_id, *, value=True):
     body = {
         "key": CENTRIFUGE,

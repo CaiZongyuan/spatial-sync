@@ -65,6 +65,13 @@ def validate_plan(document, session, *, plan_id=None, revision=1):
         raise PlanError("target_unavailable", "A live device host is not connected", status=503)
     if any(hasattr(step, "do") and step.do.entity.startswith("/Real/") for step in plan.steps):
         raise PlanError("target_unavailable", "A live device host is not connected", status=503)
+
+    def property_schema(entity, prop):
+        for name, identifier in (("entity", entity), ("property", prop)):
+            if not isinstance(identifier, str) or not identifier:
+                raise ValueError(f"Condition {name} must be a nonempty string")
+        return session.catalog.property(entity, prop)["schema"]
+
     errors, seen = [], set()
     if plan.status != "draft" or not plan.steps:
         errors.append({"stepId": None, "message": "Submit nonempty draft content; lifecycle is server-owned"})
@@ -86,11 +93,7 @@ def validate_plan(document, session, *, plan_id=None, revision=1):
                 conditions, default_entity = [condition], condition.get("entity")
                 if not default_entity:
                     raise ValueError("Check and wait conditions require an entity")
-            validate_conditions(
-                conditions,
-                default_entity,
-                lambda entity, prop: session.catalog.property(entity, prop)["schema"],
-            )
+            validate_conditions(conditions, default_entity, property_schema)
         except (KeyError, ValueError, ValidationError) as exc:
             errors.append({"stepId": step.id, "message": str(exc)})
     if errors:
@@ -316,7 +319,6 @@ class PlanStore:
         """Return a server-owned one-use approval grant, never a client approval bit."""
         record, step = None, None
         if context:
-            self.require_writable()
             record = self.get(context["planId"])
             self.require_target(record, session)
             if context.get("planRevision", record.plan.revision) != record.plan.revision:
@@ -338,8 +340,10 @@ class PlanStore:
         high = session.catalog.action(invocation.entityKey, invocation.action).get("risk") == "high"
         if exact and (step.status in ("done", "running") or (high and consumed)):
             exact = False
-        if exact and not self.approved(record):
-            raise PlanError("plan_not_approved", "This plan revision requires approval")
+        if exact:
+            self.require_writable()
+            if not self.approved(record):
+                raise PlanError("plan_not_approved", "This plan revision requires approval")
         active = [
             item
             for item in self.records.values()

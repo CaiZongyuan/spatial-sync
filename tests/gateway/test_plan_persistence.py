@@ -14,6 +14,145 @@ from apps.api.app.main import create_app
 from apps.api.app.sources.synthetic_source import SyntheticSource
 
 
+@pytest.mark.parametrize("writer_state", ["held", "failed"])
+async def test_outside_actions_keep_their_own_permissions_when_plan_history_is_unavailable(
+    tmp_path, monkeypatch, writer_state
+):
+    risky_catalog(tmp_path, monkeypatch)
+    admissions = []
+
+    class ObservedSource(SyntheticSource):
+        async def invoke(self, request):
+            admissions.append(request.action)
+            return await super().invoke(request)
+
+    app = create_app(source_factory=lambda kind, sid: ObservedSource(sid))
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            created = (
+                await client.post(
+                    "/api/v1/sessions",
+                    json={
+                        "sceneId": "lab-demo",
+                        "realtimeFactor": 10,
+                        "continueWithoutObservers": True,
+                    },
+                )
+            ).json()
+            route = "/api/v1/sessions/" + created["sessionId"]
+            submitted = (await client.post("/api/v1/plans", json=plan(close_step(), close_step(2)))).json()
+            approval = "/api/v1/approvals/" + submitted["approvalId"]
+            assert (
+                await client.post(approval + "/decision", json={"decision": "approve"})
+            ).status_code == 200
+            journal = app.state.manager.plans.journal
+            entered, release = threading.Event(), threading.Event()
+            original = journal._write_batch
+
+            def unavailable_write(stream, entries):
+                entered.set()
+                if writer_state == "failed":
+                    raise OSError("Injected actual plan history failure")
+                assert release.wait(5), "The test must release its owned writer"
+                original(stream, entries)
+
+            monkeypatch.setattr(journal, "_write_batch", unavailable_write)
+            context = {"planId": submitted["id"], "stepId": 1}
+            body = {"entityKey": CENTRIFUGE, "action": "closeLid", **context}
+            exact = asyncio.create_task(client.post(route + "/actions", json={**body, "requestId": "exact"}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 1)
+                if writer_state == "failed":
+                    assert (await exact).status_code == 503
+                    other_exact = await client.post(
+                        route + "/actions",
+                        json={
+                            **body,
+                            "requestId": "unconsumed-exact",
+                            "stepId": 2,
+                        },
+                    )
+                    assert other_exact.status_code == 503
+                    assert other_exact.json()["error"]["code"] == "plan_persistence_unavailable"
+                else:
+                    assert not exact.done()
+                assert admissions == []
+                outside = await asyncio.wait_for(
+                    client.post(
+                        route + "/actions",
+                        json={
+                            **body,
+                            "requestId": "ordinary-outside",
+                            "action": "openLid",
+                            "wait": True,
+                        },
+                    ),
+                    1,
+                )
+                assert outside.status_code == 200 and outside.json()["status"] == "succeeded", outside.text
+                assert admissions == ["openLid"]
+                high = await asyncio.wait_for(
+                    client.post(
+                        route + "/actions",
+                        json={
+                            **body,
+                            "requestId": "high-outside",
+                        },
+                    ),
+                    1,
+                )
+                assert high.status_code == 202 and high.json()["status"] == "pending_approval", high.text
+                assert admissions == ["openLid"]
+                markers = [
+                    row["message"]["data"]
+                    for row in (await client.get(route + "/events", params={"timeoutSeconds": 0})).json()[
+                        "events"
+                    ]
+                    if row["message"].get("event") == "plan.invocation"
+                ]
+                for invocation in (outside.json(), high.json()):
+                    assert any(
+                        item["invocationId"] == invocation["invocationId"] and item["outOfPlan"]
+                        for item in markers
+                    )
+                await client.post(route + "/invocations/" + high.json()["invocationId"] + "/cancel")
+                for invalid_context in ({"stepId": 99}, {"planRevision": 2}, {"planId": "unknown"}):
+                    invalid = await client.post(
+                        route + "/actions",
+                        json={
+                            **body,
+                            "action": "openLid",
+                            "requestId": "invalid-" + str(invalid_context),
+                            **invalid_context,
+                        },
+                    )
+                    assert invalid.status_code == 409
+                    assert invalid.json()["error"]["code"] in ("invalid_plan_reference", "unknown_plan")
+                await client.post(
+                    route + "/commands",
+                    json={
+                        "type": "command.request",
+                        "requestId": "reset",
+                        "command": "reset",
+                    },
+                )
+                stale = await client.post(
+                    route + "/actions",
+                    json={
+                        **body,
+                        "action": "openLid",
+                        "requestId": "stale-target",
+                    },
+                )
+                assert stale.status_code == 409 and stale.json()["error"]["code"] == "invalid_plan_reference"
+                assert admissions == ["openLid"]
+            finally:
+                release.set()
+                await asyncio.gather(exact, return_exceptions=True)
+                await client.delete(route)
+    assert not journal._thread.is_alive()
+
+
 @pytest.mark.parametrize("reset_while_waiting", [False, True])
 async def test_held_writer_does_not_block_health_or_dispatch_before_consumption_is_saved(
     tmp_path, monkeypatch, reset_while_waiting
@@ -228,10 +367,9 @@ async def test_actual_worker_failure_after_terminal_does_not_report_a_host_failu
                     "stepId": 1,
                 },
             )
-            assert (
-                refused.status_code == 503
-                and refused.json()["error"]["code"] == "plan_persistence_unavailable"
-            )
+            # A completed ordinary step is outside; it needs no persisted plan grant.
+            assert refused.status_code == 202 and refused.json()["status"] == "accepted", refused.text
+            assert store.get(submitted["id"]).plan.steps[0].status == "done"
             await client.delete(route)
     assert not store.journal._thread.is_alive()
 
