@@ -43,7 +43,8 @@ def test_authentication_precedes_body_validation_and_preserves_json_headers(tmp_
 
 
 @pytest.mark.parametrize("remote", [False, True])
-def test_cors_preflight_remains_available_before_authentication(tmp_path, remote):
+@pytest.mark.parametrize("method,path", [("GET", "/api/v1/scenes"), ("PUT", "/api/v1/prices")])
+def test_cors_preflight_remains_available_before_authentication(tmp_path, remote, method, path):
     settings = Settings(
         remote=remote,
         operator_token="operator",
@@ -52,16 +53,16 @@ def test_cors_preflight_remains_available_before_authentication(tmp_path, remote
     )
     with TestClient(create_app(settings)) as client:
         response = client.options(
-            "/api/v1/scenes",
+            path,
             headers={
                 "Origin": ORIGIN,
-                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Method": method,
                 "Access-Control-Request-Headers": "Authorization, X-Actor",
             },
         )
     assert response.status_code == 200 and response.content == b"OK"
     assert response.headers["access-control-allow-origin"] == ORIGIN
-    assert response.headers["access-control-allow-methods"] == "GET, POST, DELETE"
+    assert response.headers["access-control-allow-methods"] == "GET, POST, PUT, DELETE"
     assert {"authorization", "x-actor"}.issubset(
         {header.strip().lower() for header in response.headers["access-control-allow-headers"].split(",")}
     )
