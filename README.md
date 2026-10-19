@@ -144,6 +144,11 @@ closing the lid. Rejections include structured reasons and condition messages.
 permissions. Agents cannot approve calls. Reuse a `requestId` to retrieve the
 same invocation without executing it twice.
 
+Declarative [alerts](docs/ALERTS.md) use the session's simulation clock. Read
+`GET /api/v1/alerts?active=true` or `lw alerts --active`; acknowledge an episode
+with `lw alerts ack <id> --note "Checking"`. Human operators and agents can
+acknowledge. Every transition and acknowledgement note is reliably recorded.
+
 The **Approvals** inbox at `/approvals` shows pending requests and their decision
 history. An operator can approve or deny with a note, and revoke an approval
 while its invocation is still queued. Once execution starts, revocation is
@@ -215,7 +220,7 @@ gateway checks metadata, allocates immutable revisions and deduplicates identica
 content. Reports currently cover schema only; remaining structure and physics
 checks stay explicit gaps. See [asset packages](docs/ASSET_LIBRARY.md).
 
-`lw mcp` serves twelve generic tools over stdio through the pinned official MCP
+`lw mcp` serves generic tools over stdio through the pinned official MCP
 SDK. Library discovery and launch work before any session exists; the original
 eight device/session tool schemas are unchanged. See [scene versions](docs/SCENE_LIBRARY.md)
 for package roots, latest versus latest-launchable selection and compatibility.
@@ -235,6 +240,7 @@ For a Claude Code MCP configuration, replace the repository path below:
 
 MCP can discover and launch a workspace. Tools cover discovery, definitions, state,
 actions, invocation reads/cancellation, property waits and session control.
+`alerts_list` and `alert_ack` mirror alert reads and acknowledgement with notes.
 Approval remains a human operation in Web or CLI. The agent receives Catalog
 instructions and condition hints, and its client name is recorded as its actor.
 

@@ -9,6 +9,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from packages.protocol.schema import (
     ActionRequest,
+    Catalog,
     ClientMessage,
     Command,
     CommandAck,
@@ -45,6 +46,14 @@ def test_python_sample_roundtrips(manifest):
         )
         result = adapter.validate_json(json.dumps(message))
         assert result.model_dump(mode="json", exclude_none=True) == message
+
+
+def test_alert_catalog_fixture_roundtrips_with_type_defaults_and_binding_overrides():
+    fixture = json.loads((FIXTURES / "catalog-alerts.json").read_bytes())
+    parsed = Catalog.model_validate(fixture)
+    assert parsed.model_dump(mode="json", exclude_none=True) == fixture
+    assert parsed.types["incubator/v1"].alerts["tempDeviation"].forSeconds == 60
+    assert parsed.entities["/World/Incubator"].alerts["tempDeviation"].forSeconds == 10
 
 
 @pytest.mark.parametrize(

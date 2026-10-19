@@ -14,6 +14,7 @@ from packages.protocol.schema import (  # noqa: E402
     ActionApprove,
     ActionCancel,
     ActionRequest,
+    Catalog,
     Command,
     CommandAck,
     EntityAlert,
@@ -176,6 +177,24 @@ def main():
     write("types/protocol.schema.json", schema)
     manifest = manifest_sample()
     write("fixtures/manifest.json", manifest.model_dump(mode="json", exclude_none=True))
+    rule = {
+        "when": {"all": [{"property": "temperatureC", "deviatesFrom": "setpointC", "by": 1.0}]},
+        "forSeconds": 60, "severity": "critical", "message": "Temperature differs from target",
+    }
+    catalog = Catalog(
+        sceneRevision=manifest.sceneRevision,
+        types={"incubator/v1": {
+            "type": "incubator/v1", "title": "Incubator",
+            "properties": {"temperatureC": {"schema": {"type": "number"}},
+                           "setpointC": {"schema": {"type": "number"}}},
+            "alerts": {"tempDeviation": rule},
+        }},
+        entities={"/World/Incubator": {
+            "key": "/World/Incubator", "type": "incubator/v1", "program": "incubator.virtual",
+            "unplaced": True, "alerts": {"tempDeviation": rule | {"forSeconds": 10}},
+        }},
+    )
+    write("fixtures/catalog-alerts.json", catalog.model_dump(mode="json", exclude_none=True))
     frame_args = dict(
         sessionId=manifest.sessionId,
         sceneRevision=manifest.sceneRevision,

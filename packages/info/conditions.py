@@ -161,4 +161,8 @@ def condition_state(conditions, entity_key, values, metadata=None):
     """True/False/None for a known condition or an unavailable observation."""
     compiled = conditions if isinstance(conditions, CompiledConditions) else CompiledConditions(conditions)
     results = [item[3] for item in compiled.results(entity_key, values, metadata)]
-    return False if any(item is False for item in results) else None if UNKNOWN in results else True
+    if any(item is False for item in results):
+        return False
+    if any(item is UNKNOWN for item in results):
+        return None
+    return True

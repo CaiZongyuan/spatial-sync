@@ -5,15 +5,27 @@ import test from 'node:test'
 import Ajv from 'ajv'
 import manifest from '../fixtures/manifest.json'
 import messages from '../fixtures/messages.json'
+import alertCatalog from '../fixtures/catalog-alerts.json'
 import math from '../fixtures/math.json'
 import schema from '../types/protocol.schema.json'
-import type { ClientMessage, CommandRequest, Pose, PrimitiveGeometry, SceneManifest, ServerMessage, Snapshot, TransformFrame, Visual } from '../types/index'
+import type { Catalog, ClientMessage, CommandRequest, Pose, PrimitiveGeometry, SceneManifest, ServerMessage, Snapshot, TransformFrame, Visual } from '../types/index'
 import { validateManifest } from '../types/validate'
 
 const ajv = new Ajv({ strict: false, allErrors: true })
 ajv.addSchema(schema)
 const server = ajv.compile<ServerMessage>({ $ref: `${schema.$id}#/$defs/ServerMessage` })
 const client = ajv.compile<ClientMessage>({ $ref: `${schema.$id}#/$defs/ClientMessage` })
+
+test('Python-produced alert declarations validate as typed defaults and binding overrides', () => {
+  const check = ajv.compile<Catalog>({ $ref: `${schema.$id}#/$defs/Catalog` })
+  assert.ok(check(alertCatalog), ajv.errorsText(check.errors))
+  const typed = alertCatalog as Catalog
+  assert.equal(typed.types['incubator/v1'].alerts?.tempDeviation.forSeconds, 60)
+  assert.equal(typed.entities['/World/Incubator'].alerts?.tempDeviation.forSeconds, 10)
+  const invalid = structuredClone(alertCatalog)
+  invalid.types['incubator/v1'].alerts.tempDeviation.forSeconds = -1
+  assert.equal(check(invalid), false)
+})
 
 test('Python-produced Manifest validates and preserves full contract', () => {
   const value: SceneManifest = validateManifest(manifest)

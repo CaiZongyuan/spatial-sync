@@ -142,6 +142,9 @@ raised ──► acknowledged ──► cleared
 - 人或 agent 都可以确认（acknowledge），确认时记录操作者与备注。确认不是人工关口。
 - 每次状态变化发出一条 `entity.alert` 消息：`{entityKey, alertId, rule, severity, state, message, hint, value, since, actor?}`。
 - 可靠消息复用 `sceneRevision / epoch / simTime / sampleTimeMs` 信封；`since` 是条件首次成立的非负仿真秒数。`actor` 复用现有 Actor。确认备注属于告警 API 的实现契约，不另外发明 actor 形状。
+- 已发布的 2.1 `EntityAlert` 字段保持不变。确认同时写入一条既有 `entity.event`：`event: alert.acknowledged`，`data: {alertId, actor, note}`；它是网关的确认审计，不要求设备程序声明事件。HTTP episode 的 `acknowledgement` 保留首次操作者、备注与时间，重复确认不覆盖也不重发。
+- 普通比较中任一依赖读数缺失或过期时，条件为未知：未触发候选重新计时，已有告警保持，直到已知条件为假才 `cleared`。显式 `stale` 条件照常求值。
+- reset、reload、会话结束或源失败会结束当前 episode 上下文，HTTP 以 `closedContext` 记录原因并将其排除于 active；这不表示设备恢复，不伪造 `cleared`。旧上下文或已 cleared 的告警不可再确认。再次持续触发生成新的 `alertId`。
 
 ## 6. 遥测历史
 

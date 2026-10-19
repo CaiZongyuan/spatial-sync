@@ -13,6 +13,8 @@ TOOLS = {
     "library_describe",
     "library_import",
     "scene_launch",
+    "alerts_list",
+    "alert_ack",
     "list_entities",
     "describe_entity",
     "get_state",

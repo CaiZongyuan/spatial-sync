@@ -170,6 +170,21 @@ class GatewayClient:
         self._session_id, self._session_explicit = result["sessionId"], False
         return result
 
+    async def alerts_list(self, active=False, state=None, severity=None):
+        params = {"active": "true"} if active else {}
+        if state is not None:
+            params["state"] = state
+        if severity is not None:
+            params["severity"] = severity
+        if self._session_explicit:
+            params["sessionId"] = self._session_id
+        return (await self.request("GET", "/api/v1/alerts", params=params))["alerts"]
+
+    async def alert_ack(self, alertId, note="", *, actor="cli:lw"):
+        return await self.request(
+            "POST", "/api/v1/alerts/" + quote(alertId, safe="") + "/ack", json={"note": note}, actor=actor
+        )
+
     async def list_entities(self, type=None, query=None):
         params = {key: value for key, value in {"type": type, "q": query}.items() if value is not None}
         return (await self.request("GET", await self.route() + "/entities", params=params))["entities"]

@@ -557,7 +557,10 @@ class Session:
             self._advance_alerts(clock)
 
     def _advance_alerts(self, clock):
-        if not self.alerts or not self._recording_revision_ready or self.state not in ("RUNNING", "PAUSED"):
+        if (
+            not self.alerts or not self.alerts.rules or not self._recording_revision_ready
+            or self.state not in ("RUNNING", "PAUSED")
+        ):
             return
         for alert in self.alerts.advance(
             clock.epoch, clock.simTime, clock.sampleTimeMs, self.info.values(), self.info.metadata()
