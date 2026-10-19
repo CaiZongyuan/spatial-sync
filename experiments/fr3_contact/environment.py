@@ -1,5 +1,7 @@
 """Experiment-owned manager environment; all backend packages remain untouched."""
 
+import json
+
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab_newton.physics import NewtonManager
 
@@ -20,4 +22,17 @@ class FR3ContactEnv(ManagerBasedRLEnv):
         history = getattr(self, "_fr3_placement_progress", None)
         if history is not None and self.cfg.terminations is not None:
             self._fr3_validity.lifted.copy_(history.lifted)
-        return super().step(action)
+        result = super().step(action)
+        outputs = self._fr3_validity.transition_outputs
+        expected = self.cfg.decimation * NewtonManager._num_substeps
+        if not bool((outputs == expected).all()):
+            raise RuntimeError(
+                f"Raw solver output coverage failed: expected {expected}, got {outputs.tolist()}"
+            )
+        if self.common_step_counter <= 3:
+            print("FR3_NATIVE_COVERAGE=" + json.dumps({
+                "control_step": self.common_step_counter, "expected_outputs": expected,
+                "observed_min": int(outputs.min()), "observed_max": int(outputs.max()),
+                "cuda_graph": NewtonManager._graph is not None,
+            }), flush=True)
+        return result
