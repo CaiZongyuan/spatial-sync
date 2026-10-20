@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import type { OperationPlan } from '../lib/protocol';
 import type { SessionClient } from '../lib/stream/client';
 import { useInvocations } from '../lib/info/hooks';
-import { planChanges, stepCommand, stepEntity, type PlanDocument, type PlanStep } from '../lib/plans/model';
+import { planChanges, stepCommand, stepEntity, stepInvocationStatus, type PlanDocument, type PlanStep } from '../lib/plans/model';
 import type { PlanEntry } from '../lib/plans/store';
 
 const planStates: Record<OperationPlan['status'], [string, string]> = {
@@ -57,7 +57,7 @@ export function PlanChecklist({ client, plan, entry, document, previous, selecte
     {metadataError && <p role="status" className="plan-inline-error">计划详情暂不可用：{metadataError} <button onClick={metadataRetry}>重试</button></p>}
     {actualMetadata?.persistence.status === 'failed' && <p className="plan-inline-error" role="alert">计划历史未能保存，请检查网关。</p>}
     {plan.revision > 1 && <div className="plan-revision-note" data-testid="plan-revision-diff"><span aria-hidden="true">↳</span><span>
-      r{plan.revision - 1} → r{plan.revision}：{changes === undefined ? '当前录制片段未包含上一修订。' : changes.length ?
+      r{plan.revision - 1} → r{plan.revision}：{changes === undefined ? '缺少上一修订，无法比较步骤变化。' : changes.length ?
         changes.map(change => change.change === 'title' ? '名称变更' : `${({ added: '新增', removed: '移除', changed: '修改', moved: '调整顺序' } as const)[change.change]}步骤 ${change.stepId}`).join('；') : '步骤内容未改变。'}
       {historyError && <small>上一修订详情暂不可用。</small>}</span></div>}
     <ol className="plan-steps" aria-label="步骤清单">{plan.steps.map(step => {
@@ -83,7 +83,7 @@ export function PlanChecklist({ client, plan, entry, document, previous, selecte
         </button>
         {ids.length > 0 && <details className="plan-associated"><summary>关联调用 · {ids.length}</summary>{ids.map(id => {
           const value = invocations.find(item => item.invocationId === id);
-          return <div key={id}><code>{id}</code><span>{value?.status ?? result?.invocationStatus ?? '此片段未包含调用状态'}</span>
+          return <div key={id}><code>{id}</code><span>{stepInvocationStatus(result, id, value) ?? '调用状态未知（当前快照未包含）'}</span>
             {value?.error && <p>{value.error.message}</p>}</div>;
         })}</details>}
         {client.readOnly && 'do' in step && step.status !== 'pending' && !ids.length && <small className="plan-association-unknown">此片段未记录调用关联</small>}

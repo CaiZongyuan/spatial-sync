@@ -72,7 +72,8 @@ export class PlanStore {
       }
       this.entries.set(id, { plan: structuredClone(message.plan), sceneRevision: message.sceneRevision,
         epoch: message.epoch, simTime: message.simTime, sampleTimeMs: message.sampleTimeMs, associations,
-        changes: sameRevision ? prior?.changes : prior ? planChanges(prior.plan, message.plan) : undefined });
+        changes: sameRevision ? prior?.changes : prior?.plan.revision === message.plan.revision - 1
+          ? planChanges(prior.plan, message.plan) : undefined });
     } else {
       if (!prior || message.revision !== prior.plan.revision
         || !prior.plan.steps.some(step => step.id === message.stepId)) return;

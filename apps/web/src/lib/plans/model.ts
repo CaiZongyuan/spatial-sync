@@ -9,6 +9,10 @@ export interface StepResult {
   outOfOrder?: boolean;
   [key: string]: JsonValue | undefined;
 }
+
+export function stepInvocationStatus(result: StepResult | undefined, id: string, known?: { status: string }) {
+  return known?.status ?? (result?.invocationId === id ? result.invocationStatus : undefined);
+}
 export interface PlanDocument extends OperationPlan {
   sessionId: string;
   sceneRevision: string;
@@ -86,8 +90,14 @@ export const stepEntity = (step: PlanStep) => 'do' in step ? step.do.entity :
   String(('wait' in step ? step.wait : step.check).entity ?? '');
 
 export function stepCommand(plan: OperationPlan, step: PlanStep, shell: 'powershell' | 'bash'): string {
-  const quote = (value: string) => /^[a-zA-Z0-9_./:@,+=-]+$/.test(value) ? value :
-    `'${value.replaceAll("'", shell === 'powershell' ? "''" : "'\\''")}'`;
+  const quote = (value: string) => {
+    if (/^[a-zA-Z0-9_./:@,+=-]+$/.test(value)) return value;
+    const literal = (text: string) => `'${text.replaceAll("'", shell === 'powershell' ? "''" : "'\\''")}'`;
+    if (shell !== 'powershell' || !value.includes('"')) return literal(value);
+    // Legacy Windows PowerShell removes JSON quotes when invoking a native CLI.
+    const native = `"${value.replace(/(\\*)"/g, (_match, slashes: string) => `${slashes}${slashes}""`).replace(/(\\+)$/, '$1$1')}"`;
+    return `$(if ($PSNativeCommandArgumentPassing -in 'Standard', 'Windows') { ${literal(value)} } else { ${literal(native)} })`;
+  };
   const suffix = ['--plan', plan.id, '--step', String(step.id), '--plan-revision', String(plan.revision)];
   if ('do' in step) return ['lw', 'do', step.do.entity, step.do.action,
     ...Object.entries(step.do.params).map(([key, value]) => `${key}=${JSON.stringify(value)}`),
@@ -98,7 +108,7 @@ export function stepCommand(plan: OperationPlan, step: PlanStep, shell: 'powersh
   if (!operator) return '';
   const value = condition[operator];
   return ['lw', 'wait' in step ? 'wait' : 'check', String(condition.entity), String(condition.property),
-    operator, typeof value === 'string' ? value : JSON.stringify(value),
+    operator, JSON.stringify(value),
     ...('by' in condition ? ['--by', String(condition.by)] : []),
     ...('wait' in step && step.timeoutSeconds != null ? ['--timeout', String(step.timeoutSeconds)] : []),
     ...suffix].map(quote).join(' ');

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityEvent, OperationPlan, PlanFullUpdate, PlanStepUpdate } from '../protocol';
 import { PlanStore } from './store';
-import { planChanges, previewBodies, previewMatches, stepCommand, type MotionPreview } from './model';
+import { planChanges, previewBodies, previewMatches, stepCommand, stepInvocationStatus, type MotionPreview } from './model';
 import { validateManifest } from '../validate-manifest';
 import syntheticManifest from '../../../../../assets/scene-previews/lab-demo/2/d29d122e8068a592c58925f1d21c355496f9b4dc6761c92897e22538c9128f39/synthetic/manifest.json';
 
@@ -65,6 +65,17 @@ describe('shared plan FIFO state', () => {
     expect(store.getSnapshot().entries[0].associations[1].invocationIds).toEqual(['call-1']);
     expect(store.getSnapshot().deviations).toEqual([]);
   });
+
+  it('does not label a difference across missing revisions as the immediately previous revision', () => {
+    const store = new PlanStore(); store.configure('scene', 1); store.apply(full());
+    const third = { ...plan, revision: 3, title: 'Two unseen revisions' };
+    store.apply(full({ sampleTimeMs: 300, plan: third }));
+    expect(store.getSnapshot().entries[0].changes).toBeUndefined();
+    store.apply(full({ sampleTimeMs: 400, plan: third }));
+    expect(store.getSnapshot().entries[0].changes).toBeUndefined();
+    store.apply(full({ sampleTimeMs: 500, plan: { ...third, revision: 4, title: 'Adjacent revision' } }));
+    expect(store.getSnapshot().entries[0].changes).toEqual([{ change: 'title' }]);
+  });
 });
 
 it('describes actual revision content and order without confusing status or JSON key order', () => {
@@ -82,10 +93,28 @@ it('formats real correlated CLI action/wait/check arguments and shell-specific q
   expect(stepCommand(plan, plan.steps[0], 'bash')).toBe("lw do /arm moveJoints 'positions=[1,0.2]' --plan plan-1 --step 1 --plan-revision 1");
   expect(stepCommand(plan, plan.steps[1], 'powershell')).toBe('lw check /device lidOpen equals false --plan plan-1 --step 2 --plan-revision 1');
   expect(stepCommand(plan, { id: 3, status: 'pending', wait: { entity: '/device', property: 'temperatureC',
-    deviatesFrom: 'setpointC', by: 2 }, timeoutSeconds: 15 }, 'bash')).toBe('lw wait /device temperatureC deviatesFrom setpointC --by 2 --timeout 15 --plan plan-1 --step 3 --plan-revision 1');
+    deviatesFrom: 'setpointC', by: 2 }, timeoutSeconds: 15 }, 'bash')).toBe(`lw wait /device temperatureC deviatesFrom '"setpointC"' --by 2 --timeout 15 --plan plan-1 --step 3 --plan-revision 1`);
   const quoted = { id: 4, status: 'pending' as const, check: { entity: '/device', property: 'name', equals: "O'Brien lab" } };
-  expect(stepCommand(plan, quoted, 'powershell')).toContain("'O''Brien lab'");
-  expect(stepCommand(plan, quoted, 'bash')).toContain("'O'\\''Brien lab'");
+  expect(stepCommand(plan, quoted, 'powershell')).toContain(`'"O''Brien lab"'`);
+  expect(stepCommand(plan, quoted, 'powershell')).toContain(`'"""O''Brien lab"""'`);
+  expect(stepCommand(plan, quoted, 'bash')).toContain(`'"O'\\''Brien lab"'`);
+});
+
+it('keeps JSON-looking condition strings distinct from scalar values in copied commands', () => {
+  for (const [value, argument] of [['false', `'"false"'`], ['null', `'"null"'`], ['12', `'"12"'`],
+    [false, 'false'], [null, 'null'], [12, '12']] as const) {
+    const check = { id: 7, status: 'pending' as const, check: { entity: '/device', property: 'location', equals: value } };
+    expect(stepCommand(plan, check, 'bash')).toBe(`lw check /device location equals ${argument} --plan plan-1 --step 7 --plan-revision 1`);
+    expect(stepCommand(plan, check, 'powershell')).toContain(argument);
+  }
+});
+
+it('does not assign the latest retry status to a missing historical attempt', () => {
+  const result = { invocationId: 'retry-success', invocationIds: ['first-failed', 'retry-success'], invocationStatus: 'succeeded' };
+  expect(stepInvocationStatus(result, 'first-failed')).toBeUndefined();
+  expect(stepInvocationStatus(result, 'retry-success')).toBe('succeeded');
+  expect(stepInvocationStatus(result, 'first-failed', { status: 'failed' })).toBe('failed');
+  expect(stepInvocationStatus(result, 'retry-success', { status: 'running' })).toBe('running');
 });
 
 it('rejects stale or nonfinite preview geometry and accepts disclosed policy target-only DTO', () => {
