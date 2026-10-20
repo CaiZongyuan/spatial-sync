@@ -1,5 +1,6 @@
 """Public Program/PhysicsPort contract checks without importing Newton."""
 
+import math
 from types import SimpleNamespace
 
 import numpy as np
@@ -58,6 +59,7 @@ class ArmContext:
             locations={"locations": {}},
             graspMode="weld",
             speedScale=0.5,
+            graspHeightM=0.0,
         )
         self.values, self.fact_due = {}, True
 
@@ -66,6 +68,35 @@ class ArmContext:
 
     def get(self, name):
         return self.values.get(name)
+
+
+def test_real_finger_region_checks_rotated_upper_point_without_moving_tcp():
+    program, ctx = RobotArmProgram(), ArmContext()
+    ctx.config.graspHeightM = 0.1
+    ctx.config.graspMode = "contact"
+    ctx.physics.body[1, :3] = [0, 0, -0.1]
+    program.init(ctx)
+    assert program._in_fingers(ctx.physics, 1)
+    ctx.physics.body[1, 3:] = [0, math.sin(math.radians(9.5)), 0, math.cos(math.radians(9.5))]
+    program._facts(ctx)
+    assert program._finger_position(ctx.physics, 1) == pytest.approx(
+        [0.03255681544571567, 0, -0.00544814244006832])
+    assert not program._in_fingers(ctx.physics, 1)
+    assert ctx.values["holding"] is None
+    assert ctx.values["tcpPose"] == [0, 0, 0, 0, 0, 0, 1]
+
+
+def test_release_does_not_ignore_the_rotated_grasp_points_y_offset():
+    program, ctx = RobotArmProgram(), ArmContext()
+    ctx.config.graspHeightM = 0.1
+    ctx.physics.body[1, :3] = [0, 0, -0.1]
+    ctx.physics.body[1, 3:] = [math.sin(math.radians(9.5)), 0, 0, math.cos(math.radians(9.5))]
+    program.init(ctx)
+    program._open(ctx)
+    ctx.physics.width = 0.03  # This releases h=0 in the existing test below.
+    program._drive_gripper(ctx, 0)
+    assert ctx.physics.enabled
+    assert program.pending_release == {1}
 
 
 @pytest.mark.parametrize(

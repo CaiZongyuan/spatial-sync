@@ -8,7 +8,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from packages.library.scenes import builtin_scene_path
-from packages.library.templates import config_fields, instantiate, manifest_resources, resolve
+from packages.library.templates import config_description, instantiate, manifest_resources, resolve
 from packages.protocol.schema import Catalog as CatalogDocument
 
 from .binding_validation import compile_alert_rules, validate_binding_semantics
@@ -92,7 +92,7 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
     scene = instantiate(
         resolved,
         manifest_resources(manifest),
-        {name: {"fields": config_fields(program)} for name, program in registry.items()},
+        {name: config_description(program) for name, program in registry.items()},
     )
     types = {}
     for path in sorted((root / "types").glob("*.yaml")):

@@ -150,7 +150,7 @@ class SceneVersion:
         self.require_launchable()
         from packages.sim_runtime.info_catalog import REGISTRY
 
-        from .templates import config_fields
+        from .templates import config_description
 
         return {
             "kind": "scene", "metadata": deepcopy(self.metadata),
@@ -158,7 +158,7 @@ class SceneVersion:
                         "files": {name: str(self.path / name) for name in self.files}},
             "assets": deepcopy(list(self.runtime_assets.values())),
             "expectedAssets": pinned_assets(self, "scene"), "structure": deepcopy(self.report()),
-            "programs": {name: {"fields": config_fields(program)} for name, program in REGISTRY.items()},
+            "programs": {name: config_description(program) for name, program in REGISTRY.items()},
         }
 
     def read_visual(self, url):

@@ -1,6 +1,6 @@
 """Snapshot existing pure program definitions for the engine-free library validator."""
 
-from packages.library.templates import config_fields
+from packages.library.templates import config_description
 
 
 def program_schemas():
@@ -17,6 +17,6 @@ def program_schemas():
                 "configModule": program.__module__,
                 "configClass": program.__qualname__,
                 **({"taughtLimits": program.taught_limits} if hasattr(program, "taught_limits") else {}),
-                "fields": config_fields(program),
+                **config_description(program),
             }
     return result

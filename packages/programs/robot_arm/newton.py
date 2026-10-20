@@ -5,8 +5,8 @@ from pydantic import Field, model_validator
 
 from packages.info.preview import PathPreview
 from packages.info.program import ProgramConfig, Reject
-from packages.protocol.math import rotate_vector
 
+from .grasp import grasp_point_in_tcp
 from .preview import joint_targets, path_preview, taught_waypoints
 from .taught import require_postures
 from .trajectory import plan_trajectory
@@ -23,10 +23,12 @@ class RobotArmProgram:
         tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
         speedScale: float = Field(default=0.5, gt=0, le=1)
         graspMode: str = Field(default="weld", pattern="^(contact|weld)$")
+        graspHeightM: float = Field(default=0.0, ge=0, allow_inf_nan=False, strict=True)
         jointKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint", "posture": True})
         fingerKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint"})
         handBody: str = Field(json_schema_extra={"spatialReference": "body"})
-        tcpSite: str = Field(json_schema_extra={"spatialReference": "site"})
+        tcpSite: str = Field(json_schema_extra={"spatialReference": "site", "postureEndpoint": {
+            "offsetField": "graspHeightM", "offsetAxis": "worldZ"}})
 
         @model_validator(mode="after")
         def taught_poses(self):
@@ -40,6 +42,7 @@ class RobotArmProgram:
         self.hand, self.tcp = port.bind_body(ctx.config.handBody), port.bind_site(ctx.config.tcpSite)
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
         self.locations = ctx.config.locations["locations"]
+        self.grasp_height = ctx.config.graspHeightM
         self.handle, self.segment, self.plan = None, None, []
         self.transport, self.cancel_requested, self.released = False, False, None
         self.pick_tube = None
@@ -57,7 +60,7 @@ class RobotArmProgram:
 
     def _finger_position(self, port, tube):
         p, q = port.site_pose(self.tcp)
-        return rotate_vector([-q[0], -q[1], -q[2], q[3]], port.body[tube, :3] - p)
+        return grasp_point_in_tcp(port.body[tube, :3] - p, port.body[tube, 3:], q, self.grasp_height)
 
     def _in_fingers(self, port, tube):
         local = self._finger_position(port, tube)

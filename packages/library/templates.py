@@ -147,6 +147,11 @@ def config_fields(program):
     }
 
 
+def config_description(program):
+    """Private registered roles and their actual declared Config scalar schemas."""
+    return {"fields": config_fields(program), "configSchema": program.Config.model_json_schema()}
+
+
 def require_spatial_domain(config, fields, root):
     """A scene's configured physics identities stay in its imported USD subtree."""
     for name, information in fields.items():
