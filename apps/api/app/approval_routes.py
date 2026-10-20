@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+import anyio
 from fastapi import HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +20,8 @@ def install_approval_routes(app, manager, role_for):
     store = manager.approvals
 
     def document(record):
+        if record.subject == "deletion":
+            record = manager.library_deletions.describe(record)
         session = manager.sessions.get(record.sessionId)
         invocation = (
             session.pipeline.table.get(record.subjectId)
@@ -35,7 +38,9 @@ def install_approval_routes(app, manager, role_for):
                                and all(step.status == "pending" for step in plan.plan.steps))
         return {
             **record.model_dump(mode="json"),
-            "canRevoke": available
+            "canRevoke": (record.subject == "deletion" and record.status in ("approved", "denied")
+                          and record.details.get("execution", {}).get("status")
+                          in ("not_started", "blocked", "failed")) or available
             and (
                 (record.status == "denied" and (record.subject != "plan" or plan_current))
                 or (record.status == "approved" and plan_can_revoke)
@@ -94,6 +99,14 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.subject == "deletion":
+            try:
+                await anyio.to_thread.run_sync(
+                    manager.library_deletions.decide, approval_id, body.decision, actor, body.note,
+                )
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
+            return document(get_record(approval_id))
         session = manager.sessions.get(record.sessionId)
         if (record.subject not in ("invocation", "plan") or not session
                 or session.state not in ("RUNNING", "PAUSED")):

@@ -27,6 +27,7 @@ from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
+from apps.api.app.library_validation import program_schemas
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import RecordingRepository, install_recording_routes
@@ -37,9 +38,10 @@ from apps.api.app.structured_logging import configure_gateway_logging
 from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
 from packages.info.plans import PlanError
-from packages.library.assets import AssetLibrary
+from packages.library.deletions import LibraryDeletions
 from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
+from packages.library.validation import StructuralValidator
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
     PROTOCOL_MINOR_VERSION,
@@ -121,7 +123,11 @@ def create_app(
     recordings = RecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
-    library_assets = AssetLibrary(settings.state_root)
+    library_assets = manager.library_assets
+    manager.library_deletions = LibraryDeletions(
+        library_assets, lambda: manager.library, manager.approvals, recordings,
+        manager.platform_sessions, StructuralValidator(settings.state_root, program_schemas),
+    )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
     @asynccontextmanager
@@ -131,7 +137,8 @@ def create_app(
             manager.plans.startup()
             await manager.plans.flush()
             # Resolve the operator's roots at startup, before any owned workers or recordings.
-            manager.library
+            await asyncio.to_thread(manager.library_deletions.recover)
+            manager.library.refresh()
             library_assets.startup()
             await recordings.startup()
             await monitor.start()
@@ -164,7 +171,8 @@ def create_app(
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
-    install_library_routes(app, library_assets, lambda: manager.library)
+    install_library_routes(app, library_assets, lambda: manager.library, manager,
+                           lambda headers: _role(headers, settings))
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):

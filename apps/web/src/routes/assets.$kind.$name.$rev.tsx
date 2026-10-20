@@ -4,6 +4,7 @@ import { assetKinds, dimensionsLabel, getAssetDetail, type AssetDetail } from '.
 import { AssetCompleteness } from '../components/AssetCompleteness';
 import { AssetModelViewport } from '../components/AssetModelViewport';
 import { AssetBindings, AssetEntityTypes, AssetProvenance, AssetReferencingScenes, licenseFile } from '../components/AssetDetailPanels';
+import { LibraryDeletionRequest } from '../components/LibraryDeletion';
 
 export const Route = createFileRoute('/assets/$kind/$name/$rev')({ component: AssetDetails });
 function AssetImage({ url, label }: { url: string; label: string }) {
@@ -33,6 +34,6 @@ function AssetDetails() {
       <AssetBindings asset={asset} />
     </div><aside className="asset-detail-stack"><section className="asset-panel"><header><h2>属性</h2></header><dl className="asset-kv asset-panel-body">
       <div><dt>素材 ID</dt><dd><code>{asset.id}</code></dd></div><div><dt>种类</dt><dd>{assetKinds[asset.kind]}</dd></div><div><dt>尺寸</dt><dd>{dimensionsLabel(asset.dimensionsM)}</dd></div><div><dt>实现类型</dt><dd><code>{asset.implementedTypes.join(' · ') || '无'}</code></dd></div><div><dt>来源库</dt><dd>{asset.root === 'builtin' ? '内置库' : '用户库'}</dd></div><div><dt>许可证</dt><dd>{license ? <a href={asset.files[license]} target="_blank" rel="noreferrer">查看原文 ↗</a> : '未提供'}</dd></div><div><dt>不可变版本</dt><dd>是 · {asset.rev}</dd></div>
-    </dl></section><AssetEntityTypes asset={asset} /><AssetProvenance asset={asset} /><AssetReferencingScenes asset={asset} /><Link to="/assets" className="asset-back">← 素材库</Link></aside></div>
+    </dl></section><AssetEntityTypes asset={asset} /><AssetProvenance asset={asset} /><AssetReferencingScenes asset={asset} /><LibraryDeletionRequest resource="asset" id={asset.id} root={asset.root} /><Link to="/assets" className="asset-back">← 素材库</Link></aside></div>
   </>}</main>;
 }

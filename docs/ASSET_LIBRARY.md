@@ -7,6 +7,8 @@ lw asset ls --kind robot --json
 lw asset show robot/fr3@1 --json
 lw asset import ./my-asset --json
 lw asset validate robot/fr3@1 --json
+lw asset rm labware/my-tube@2 --json
+lw scene rm my-lab@3 --json
 ```
 
 Built-in assets live under `library/assets/`; imports go to `LW_LIBRARY`
@@ -15,6 +17,37 @@ Built-in assets live under `library/assets/`; imports go to `LW_LIBRARY`
 the latest version. Revisions are immutable; changed bytes create another
 revision, while identical content returns the existing one. A full ID present
 in both roots prevents gateway startup.
+
+`rm` requires an exact revision and only requests human approval. The Web
+detail page offers the same **申请删除此版本** action. Built-in versions are
+read-only. An unused user version returns `202 pending_approval` with its
+approval ID; its files remain available until a person approves it in
+`/approvals` or confirms `lw approve <approval-id>` in an interactive terminal.
+MCP's generic `library_remove` tool can request deletion; it cannot approve it.
+JSON, non-TTY and MCP approval attempts remain prohibited.
+
+Deletion checks all retained asset and scene versions, exact templates, nested
+USD dependencies, bound validation history (including legacy hashless IDs),
+recordings and starting/active sessions. `409 version_in_use` lists consumers;
+`409 reference_inspection_incomplete` lists objects that could not be inspected.
+No deletion request is created in either case. Nonempty `tasks/`, `jobs/` or
+`policies/` directories also block deletion until their product readers exist.
+Approval repeats these checks and checks the original package's raw hash, so a
+reference added while a request waits can block execution. The approval card
+distinguishes the human decision from the execution result.
+
+If initial source startup and cleanup both fail, the failed session remains
+tracked. The 503 response supplies its session ID; inspect it and retry stopping
+it before deleting retained versions. A failed state does not imply that its
+resources have been released.
+
+Approved deletion withdraws only the selected version and its indexed file
+URLs. It cannot be revoked after execution. Interrupted, uncommitted withdrawal
+is restored before the gateway serves its index; a committed withdrawal stays
+deleted and any remaining quarantine cleanup can finish on restart. Keep the
+user library's hidden transaction/revision files in backups: deleting a latest
+version never makes its public revision number available for reuse. Importing
+its original bytes again allocates a new revision.
 
 The directory must contain an `asset.yaml` and its referenced USD file:
 

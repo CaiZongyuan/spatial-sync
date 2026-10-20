@@ -3,17 +3,34 @@
 import tempfile
 
 import anyio
-from fastapi import Request
-from fastapi.responses import FileResponse
+from fastapi import HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 
+from apps.api.app.info_routes import actor_from_headers
 from apps.api.app.library_validation import program_schemas
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
 from packages.library.imports import LibraryImports
 from packages.library.validation import StructuralValidator
 
 
-def install_library_routes(app, assets: AssetLibrary, scenes):
+def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for):
     validator = StructuralValidator(assets.jobs_root.parent, program_schemas)
+
+    async def request_deletion(kind, identifier, request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        actor = actor_from_headers(request.headers)
+        record = await anyio.to_thread.run_sync(manager.library_deletions.request, kind, identifier, actor)
+        return JSONResponse({"code": "pending_approval", "approvalId": record.approvalId,
+                             "subjectId": record.subjectId}, status_code=202)
+
+    @app.delete("/api/v1/library/assets/{kind}/{name}/{rev}")
+    async def delete_asset(kind: str, name: str, rev: str, request: Request):
+        return await request_deletion("asset", f"{kind}/{name}@{rev}", request)
+
+    @app.delete("/api/v1/library/scenes/{name}/{rev}")
+    async def delete_scene(name: str, rev: str, request: Request):
+        return await request_deletion("scene", f"{name}@{rev}", request)
 
     @app.get("/api/v1/library/assets")
     async def list_assets(kind: str | None = None, q: str | None = None, gaps: bool = False):

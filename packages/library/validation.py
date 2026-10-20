@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from packages.library.archive import package_files
+from packages.library.archive import destination_parent, import_lock, package_files
 from packages.library.common import REPO_ROOT, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.reports import parse_report, pinned_assets
 
@@ -105,10 +105,38 @@ class StructuralValidator:
             getattr(version, "locations", None),
             expected_assets=expected_assets,
         )
-        if content_hash(version.path) != version.content_hash:
-            raise LibraryError(
-                "asset_changed" if kind == "asset" else "scene_not_launchable",
-                "Immutable package changed during validation",
-                409,
-            )
-        return version.reports.save(report, version.content_hash)
+        return self.commit(version, kind, assets, report, expected_assets=expected_assets)
+
+    def commit(self, version, kind, assets, report, *, expected_assets=()):
+        """Shared final publication boundary for structural and later physics workers.
+
+        Already durable pins survive failed revalidation of missing/changed dependencies.
+        A newly learned byte identity must still exist when its report is published.
+        """
+        with assets._lock, import_lock(assets.roots["user"]):
+            code = "asset_changed" if kind == "asset" else "scene_not_launchable"
+            try:
+                root = assets.roots[version.root]
+                destination_parent(root, version.path.relative_to(root).parts)
+                package_files(version.path)
+                if not version.path.is_dir() or content_hash(version.path) != version.content_hash:
+                    raise ValueError("Immutable package changed or disappeared during validation")
+                # Scan the actual library again: deletion may have committed while the worker ran.
+                assets.startup()
+                previous = {item["id"]: item["contentHash"] for item in expected_assets}
+                current = {item["id"]: item["contentHash"] for item in pinned_assets(version, kind)}
+                incoming = {item["id"]: item["contentHash"] for item in report.get("referencedAssets", [])}
+                if any(incoming.get(name) != digest for name, digest in current.items()):
+                    raise ValueError("Validation would forget or contradict a durable dependency pin")
+                for name, digest in incoming.items():
+                    if previous.get(name) == digest:
+                        continue
+                    dependency = assets.resolve(name)
+                    dependency_root = assets.roots[dependency.root]
+                    destination_parent(dependency_root, dependency.path.relative_to(dependency_root).parts)
+                    package_files(dependency.path)
+                    if dependency.content_hash != digest or content_hash(dependency.path) != digest:
+                        raise ValueError("Newly recorded dependency changed during validation: " + name)
+            except (OSError, ValueError, LibraryError) as exc:
+                raise LibraryError(code, str(exc), 409) from exc
+            return version.reports.save(report, version.content_hash)
