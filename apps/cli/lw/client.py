@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tarfile
 import tempfile
 import uuid
@@ -141,6 +142,13 @@ class GatewayClient:
         if "@" not in id:
             raise ValueError("Validation requires an exact asset or scene version with @rev")
         return await self.request("POST", self._library_path(id) + "/validate", actor=actor)
+
+    async def library_remove(self, id, *, actor="cli:lw"):
+        if not re.fullmatch(
+            r"(?:(?:robot|device|labware|environment)/)?[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*", id,
+        ):
+            raise ValueError("Deletion requires an exact asset kind/name@rev or scene name@rev")
+        return await self.request("DELETE", self._library_path(id), actor=actor)
 
     async def library_import(self, directory, *, actor="cli:lw"):
         # The gateway independently validates paths, schema and upload/expansion limits.

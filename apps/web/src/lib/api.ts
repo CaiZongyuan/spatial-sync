@@ -1,3 +1,7 @@
+export class ApiError extends Error {
+  constructor(message: string, readonly detail: unknown) { super(message); }
+}
+
 export async function request<T>(
   path: string,
   options?: RequestInit,
@@ -11,7 +15,7 @@ export async function request<T>(
     const detail = body?.detail;
     const structuredDetail =
       detail !== null && typeof detail === 'object' ? detail : undefined;
-    throw new Error(
+    throw new ApiError(
       typeof detail === 'string'
         ? detail
         : (structuredDetail?.message ??
@@ -19,6 +23,7 @@ export async function request<T>(
           body?.message ??
           body?.error?.message ??
           `Request failed (${response.status})`),
+      detail,
     );
   }
   if (response.status === 204) return undefined as T;

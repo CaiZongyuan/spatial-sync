@@ -224,6 +224,13 @@ content. CPU-only structural checks record S1–S8 results; physics checks remai
 explicitly not run. Revalidation appends a report without changing published
 version bytes or their hash. See [asset packages](docs/ASSET_LIBRARY.md).
 
+`lw asset rm kind/name@rev` and `lw scene rm name@rev` request human approval
+to delete an unused user version. Referenced versions return `version_in_use`
+with their consumers; incomplete reference inspection blocks deletion. Approve
+in the Web inbox or interactive `lw approve`. Execution rechecks references
+and package bytes, updates both indexes and preserves revision numbers. Built-in
+versions are read-only; an executed deletion cannot be revoked.
+
 `lw mcp` serves generic tools over stdio through the pinned official MCP
 SDK. Library discovery and launch work before any session exists; the original
 eight device/session tool schemas are unchanged. See [scene versions](docs/SCENE_LIBRARY.md)

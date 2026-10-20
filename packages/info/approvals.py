@@ -1,6 +1,8 @@
 """Gateway approval metadata and append-only audit, separate from spatial recordings."""
 
 import json
+import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -46,6 +48,7 @@ class ApprovalStore:
         self.records: dict[str, ApprovalRecord] = {}
         self._invocations = {}
         self._started = False
+        self._write_lock = threading.Lock()
 
     def startup(self):
         if self._started:
@@ -71,13 +74,17 @@ class ApprovalStore:
         self._started = True
 
     def _save(self, record):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = json.dumps(record.model_dump(mode="json"), ensure_ascii=False, allow_nan=False)
-        with self.path.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(payload + "\n")
-        self.records[record.approvalId] = record
-        if record.subject == "invocation":
-            self._invocations[record.subjectId] = record.approvalId
+        # The action pipeline and library worker can append to the same audit concurrently.
+        with self._write_lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps(record.model_dump(mode="json"), ensure_ascii=False, allow_nan=False)
+            with self.path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(payload + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            self.records[record.approvalId] = record
+            if record.subject == "invocation":
+                self._invocations[record.subjectId] = record.approvalId
         return record
 
     def submit(self, *, subject: Subject, subject_id, requester, title, details=None, session_id=None):

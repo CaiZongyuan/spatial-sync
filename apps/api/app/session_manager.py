@@ -24,6 +24,8 @@ from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.plans import PlanError, PlanStore
 from packages.info.store import StateStore
+from packages.library.archive import import_lock
+from packages.library.assets import AssetLibrary
 from packages.library.scenes import SceneLibrary
 from packages.protocol.internal import InformationClock, SessionOptions
 from packages.protocol.json import encode
@@ -1034,6 +1036,7 @@ class SessionManager:
         self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
         self.plans = PlanStore(settings.state_root / "plans.jsonl", self.approvals)
         self._library = None
+        self.library_assets = AssetLibrary(settings.state_root)
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
         self._create_lock = asyncio.Lock()
@@ -1048,40 +1051,49 @@ class SessionManager:
         self.approvals.startup()
         self.plans.startup()
         await self.plans.flush()
-        selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
-        if not selected.metadata["stage"].startswith("python:"):
-            raise HTTPException(503, {"code": "source_unavailable",
-                                      "message": "This source does not load USD scene packages"})
-        source = source or selected.metadata["sources"][0]
         async with self._create_lock:
             for session in self.sessions.values():
                 if session.state == "FAILED":
                     # A failed control stream may leave its runner alive; release it before replacement.
                     await session.close()
-                if session.state not in ("STOPPED", "FAILED"):
-                    if session.scene_version.id == selected.id and session.kind == source:
-                        return session
-                    raise HTTPException(
-                        409,
-                        {
+            def register_starting():
+                # No await while holding this lock. Deletion sees the reservation before Source.start.
+                with self.library_assets._lock, import_lock(self.library_assets.roots["user"]):
+                    self.library.refresh()
+                    selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
+                    selected_source = source or selected.metadata["sources"][0]
+                    if not selected.metadata["stage"].startswith("python:"):
+                        raise HTTPException(503, {"code": "source_unavailable",
+                                                  "message": "This source does not load USD scene packages"})
+                    for session in self.sessions.values():
+                        if session.state in ("STOPPED", "FAILED"):
+                            continue
+                        if session.scene_version.id == selected.id and session.kind == selected_source:
+                            return session
+                        raise HTTPException(409, {
                             "code": "session_exists",
                             "message": "Close the active session before starting another scene",
-                        },
+                        })
+                    session = Session(
+                        selected.name, selected_source, options, self.settings, self.factory,
+                        self.recordings, self.approvals, self.plans, scene_version=selected,
                     )
-            session = Session(
-                selected.name,
-                source,
-                options,
-                self.settings,
-                self.factory,
-                self.recordings,
-                self.approvals,
-                self.plans,
-                scene_version=selected,
-            )
-            self._starting_session = session
+                    self._starting_session = session
+                    return session
+
+            registration = asyncio.create_task(asyncio.to_thread(register_starting))
+            try:
+                session = await asyncio.shield(registration)
+            except asyncio.CancelledError:
+                session = await registration
+                if session is self._starting_session:
+                    self._starting_session = None
+                raise
+            if session is not self._starting_session:
+                return session
             try:
                 await session.start()
+                self.sessions[session.session_id] = session
             except asyncio.CancelledError:
                 await session.close()
                 raise
@@ -1091,7 +1103,6 @@ class SessionManager:
                 raise HTTPException(503, {"code": "source_unavailable", "message": str(exc)}) from exc
             finally:
                 self._starting_session = None
-            self.sessions[session.session_id] = session
             return session
 
     def platform_sessions(self):
