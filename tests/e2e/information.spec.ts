@@ -62,6 +62,8 @@ test('Inspector schema forms reject an action with unmet preconditions', async (
   });
   expect(created.ok()).toBe(true);
   const { sessionId } = await created.json();
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
   try {
     await device(page, sessionId);
     const start = await action(page, 'start');
@@ -71,6 +73,7 @@ test('Inspector schema forms reject an action with unmet preconditions', async (
     await start.getByRole('button', { name: 'Run start', exact: true }).click();
     await expect(invocation(page, 'start').locator('.invocation-status')).toHaveText('rejected');
     await expect(start.getByRole('status')).toContainText('precondition_failed');
+    expect(errors).toEqual([]);
   } finally {
     await request.delete(`${api}/api/v1/sessions/${sessionId}`);
   }
