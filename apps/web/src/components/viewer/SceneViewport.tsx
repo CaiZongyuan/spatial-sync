@@ -441,6 +441,13 @@ function SceneContents({
   cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact,
 }: ViewportProps) {
   const invalidate = useThree((state) => state.invalidate);
+  const gl = useThree((state) => state.gl);
+  useEffect(() => {
+    const autoReset = gl.info.autoReset;
+    // GizmoHelper renders the world and its HUD separately; retain both passes.
+    gl.info.autoReset = false;
+    return () => { gl.info.autoReset = autoReset; };
+  }, [gl]);
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
   useEffect(() => {
@@ -628,6 +635,9 @@ function SceneContents({
       metrics.current.objects = objects;
       elapsed.current = { time: 0, frames: 0 };
     }
+    // Samples above read the completed previous frame. Reset once before this
+    // frame's world, shadows and optional HUD, rather than on each render pass.
+    gl.info.reset();
     if (capture && !captured.current && readyNodes.current.size === manifest.nodes.filter(node => node.kind !== 'group').length
       && client.buffer.latestSample) {
       // The next frame lets CameraRig fit the fully loaded, posed geometry.

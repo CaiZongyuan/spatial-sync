@@ -113,7 +113,7 @@ test('viewer contract discards a pending URL after its session stops', async ({ 
   value.sessions[0].state = 'STOPPED'; value.sessions[0].backend!.alive = false;
   value.summary.runningSessions = 0; value.summary.newtonBackends = 0;
   await expect(summary(page, 'Newton backends alive')).toHaveText('0');
-  await expect(page.getByTestId('platform-session-newton-live')).toContainText('STOPPED');
+  await expect(page.getByTestId('platform-session-newton-live')).toContainText('已停止');
   await expect.poll(() => tab.isClosed()).toBe(true);
   release();
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('The session is not running.');
@@ -228,11 +228,11 @@ test('real platform counts follow a session, observer connection, pause and stop
     await expect(row).toContainText('1 位观察者');
     await page.screenshot({ path: testInfo.outputPath('platform-real-synthetic.png'), fullPage: true });
     await observer.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(row).toContainText('PAUSED');
+    await expect(row).toContainText('已暂停');
     await observer.close();
     await expect(row).toContainText('0 位观察者');
     expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`)).ok()).toBe(true);
-    await expect(row).toContainText('STOPPED');
+    await expect(row).toContainText('已停止');
     const latest = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
     await expect(summary(page, 'Running')).toHaveText(String(latest.summary.runningSessions));
     await expect(summary(page, 'Newton backends alive')).toHaveText(String(latest.summary.newtonBackends));
@@ -319,7 +319,7 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
     await currentNative.screenshot({ path: testInfo.outputPath('native-newton-after-reload.png') });
     await page.screenshot({ path: testInfo.outputPath('platform-real-native.png'), fullPage: true });
     expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`)).ok()).toBe(true);
-    await expect(row).toContainText('STOPPED');
+    await expect(row).toContainText('已停止');
     await expect(row.getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
     const stopped = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
     observed.stopped = stopped;

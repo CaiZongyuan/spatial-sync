@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
+import { Icon } from './Icon';
 import type { SceneManifest } from '../lib/protocol';
 import type { InfoStore } from '../lib/info/store';
 import { terminal } from '../lib/info/store';
@@ -34,7 +35,7 @@ export function InvocationsPanel({
   if (!metadata.catalog || !Object.keys(metadata.catalog.entities).length)
     return null;
   return (
-    <section className="invocations-panel" aria-label="Invocations">
+    <section className={`invocations-panel${!invocations.length && !error ? ' is-empty' : ''}`} aria-label="Invocations">
       <div className="invocations-heading">
         <h2>
           关联调用 <span>{invocations.length}</span>
@@ -64,7 +65,7 @@ export function InvocationsPanel({
               data-testid={`invocation-${invocation.invocationId}`}
             >
               <summary>
-                <strong>{invocation.action}</strong>
+                <strong><Icon name="chevron" />{invocation.action}</strong>
                 <span title={invocation.entityKey}>
                   {invocation.entityKey.split('/').at(-1)}
                 </span>

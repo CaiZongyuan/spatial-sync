@@ -125,6 +125,13 @@ for (const version of [1, 2]) test(`plays the v${version} Synthetic fixture with
   await expect(page.getByLabel('moveJoints positions', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Close session', exact: true })).toBeDisabled();
   expect(liveRequests).toEqual([]);
+  await page.evaluate(() => window.__spatialRenderDebug!.fitScene());
+  // Reuse the profiler's fitted-workload gate: a final HUD pass must not replace
+  // the submitted world geometry in the renderer's completed-frame counters.
+  await expect.poll(() => page.evaluate(() => {
+    const geometry = window.__spatialRenderDebug!.frameStats();
+    return geometry.potentialTriangles > 0 && geometry.submittedTriangles >= geometry.potentialTriangles * 0.99;
+  })).toBe(true);
   await page.screenshot({ path: testInfo.outputPath(`fixture-v${version}-replay.png`) });
 });
 
