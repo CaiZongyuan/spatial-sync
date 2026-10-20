@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-20T14:25:41.881262+00:00",
+  "capturedAt": "2026-10-20T16:42:03.666748+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -333,7 +333,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
+      "sha256": "710e98b2efdeb5fb56d6f137a721ada2e10f3ed37e9a5faaa5fe0a4a9466063a"
     }
   ],
   "documents": {
@@ -343,11 +343,11 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "0f7209be3b9cf1d7bc4ede6c31bdcb57e940af78f6c0e53e1a12124e0b38b612",
-    "catalog.json": "64437724d19d75eff0031de708b7c92d95c772f935c489d9490e833ca9706b40",
-    "state.json": "cc08a3e559e28cfd4332ef6b09006c510c26fdb915df5a187ef97e5f1084d5d1",
-    "snapshot.bin": "5589990a77b06e81f4b9e1abf15a79cd650de35addb0e7a77ad6fbb099e47ced",
-    "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
+    "manifest.json": "2bcd967e81837454764285de255541db114c6321434c332c174458ecc3441d66",
+    "catalog.json": "dd9e0310e5217afe7b42f2fd71b492c6e2171e825cf92125666257cbfac8ae1e",
+    "state.json": "233f9645ed091a9a211fb2892d8ad6804f4d452506c1619b2dfbf8d1a7b887d3",
+    "snapshot.bin": "13968571e5558d59b3c7d933e383eabe4f7c80e4130b8dcedd1eb4fa7af14105",
+    "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
     "assets/sha256-363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c.glb": "363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c",
