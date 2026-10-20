@@ -6,7 +6,7 @@ import {
   type InstanceController,
 } from './InstancedPrimitives';
 import { Canvas, events, useFrame, useThree } from '@react-three/fiber';
-import { Edges, GizmoHelper, GizmoViewport, Grid, OrbitControls } from '@react-three/drei';
+import { Edges, Grid, OrbitControls } from '@react-three/drei';
 import {
   DoubleSide,
   Box3,
@@ -34,6 +34,7 @@ import type { PlacedLabel } from '../../lib/scene/label-layout';
 import type { SessionClient } from '../../lib/stream/client';
 import type { FrameRecorder } from '../../lib/performance/frame-recorder';
 import { PlatformRuntimeContext } from '../../lib/platform-runtime';
+import { PhysicalAxes, PhysicalAxesProjection } from './PhysicalAxes';
 
 export interface DebugLayers {
   colliders: boolean;
@@ -438,16 +439,9 @@ function SceneContents({
   inspectVisuals,
   recorder,
   renderContinuously = true,
-  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact,
-}: ViewportProps) {
+  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact, axesElement,
+}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null> }) {
   const invalidate = useThree((state) => state.invalidate);
-  const gl = useThree((state) => state.gl);
-  useEffect(() => {
-    const autoReset = gl.info.autoReset;
-    // GizmoHelper renders the world and its HUD separately; retain both passes.
-    gl.info.autoReset = false;
-    return () => { gl.info.autoReset = autoReset; };
-  }, [gl]);
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
   useEffect(() => {
@@ -468,6 +462,7 @@ function SceneContents({
     manifest.joints.find((joint) => joint.entityKey === selected)
       ?.anchorSiteKey ?? selected;
   const bodies = useRef(new Map<number, Group>());
+  const physicsRoot = useRef<Group>(null);
   const physicalNodes = useRef(new Map<string, Group>());
   const instances = useRef<InstanceController | undefined>(undefined);
   const [boundsRevision, setBoundsRevision] = useState(0);
@@ -635,9 +630,7 @@ function SceneContents({
       metrics.current.objects = objects;
       elapsed.current = { time: 0, frames: 0 };
     }
-    // Samples above read the completed previous frame. Reset once before this
-    // frame's world, shadows and optional HUD, rather than on each render pass.
-    gl.info.reset();
+    // Three resets before its shadow and world passes, so samples include both.
     if (capture && !captured.current && readyNodes.current.size === manifest.nodes.filter(node => node.kind !== 'group').length
       && client.buffer.latestSample) {
       // The next frame lets CameraRig fit the fully loaded, posed geometry.
@@ -666,7 +659,7 @@ function SceneContents({
       {layers.grid && <Grid position={[0, -.004, 0]} args={[20, 20]} cellSize={.25}
         cellThickness={.5} cellColor={theme.grid} sectionSize={1} sectionThickness={.5}
         sectionColor={theme.grid} fadeDistance={6} fadeStrength={1.5} infiniteGrid raycast={skipPicking} />}
-      <group name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
+      <group ref={physicsRoot} name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
         {useInstances && (
           <InstancedPrimitives
             nodes={instancedNodes}
@@ -724,10 +717,7 @@ function SceneContents({
         target={[0, 0.65, 0]}
         minDistance={0.3}
       />
-      {!compact && !capture && <GizmoHelper alignment="bottom-left" margin={[40, 40]}>
-        <group rotation={[-Math.PI / 2, 0, 0]}><GizmoViewport disabled hideNegativeAxes axisHeadScale={.8}
-          axisColors={[theme.axisX, theme.axisY, theme.axisZ]} labelColor={theme.ground} /></group>
-      </GizmoHelper>}
+      {!compact && !capture && <PhysicalAxesProjection element={axesElement} root={physicsRoot} />}
     </>
   );
 }
@@ -770,6 +760,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   const theme = useViewerTheme();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
   const element = useRef<HTMLDivElement>(null);
+  const axesElement = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
   const receivedState = useRef(false);
   if (hasPose) receivedState.current = true;
@@ -792,8 +783,9 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} axesElement={axesElement} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
+      {displayScene && !props.compact && !props.capture && <PhysicalAxes element={axesElement} theme={theme} />}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">
         <span className="live-dot" /> {props.client.readOnly ? '录制空间视图' : '实时空间视图'}{' '}
