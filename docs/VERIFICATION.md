@@ -37,6 +37,14 @@ other consumer. Each test and benchmark owns its recording directory.
 
 ## Information and recording checks
 
+The latency budgets in information specification section12 use this development
+machine's Linux/WSL2 environment, as used for the I3 acceptance, as the reference.
+Windows results are diagnostic references and do not gate delivery. Before
+optimizing a performance issue, compare the candidate and acceptance baseline
+under the same environment, workload and measurement boundary; use
+`check-benchmark` to assess the comparison. #70 tracks the Windows difference
+and does not block I5 or another ticket. Record the I5 MCP journey on Linux.
+
 The browser suite includes real format1 and format2 recording fixtures. Format1
 retains ten pose/location/joint samples; format2 pins a selected scene version
 and compares the final paused state with independent public HTTP reads. Live
@@ -81,11 +89,19 @@ partial first header: it must become incomplete without inventing samples.
 ```powershell
 uv run --no-sync python tools/smoke_newton.py --device cpu
 uv run --no-sync python tools/smoke_newton_source.py --scene robot-and-tubes --device cpu --crash
-uv run --no-sync python tools/smoke_info_newton.py --help
+uv run --no-sync python tools/smoke_info_newton.py
 uv run --no-sync python -m pytest tests/sim_runtime -m "not gpu" -q
 ```
 
 These require installed simulation/USD extras and use the actual Newton engine.
+All four commands above are required before merging changes to
+`packages/sim_runtime/**`, `packages/programs/**`, `library/scenes/**`, or a
+recaptured Newton preview under `assets/scene-previews/**`. Run the commands
+against the candidate with owned state/library/recording roots, retain their
+results, and add a `Newton CPU` paragraph with commands, results and tick P95
+to the PR. Use Linux/WSL2 for the latency gate; keep Windows observations
+separate. A focused native test is additional evidence, not a replacement for
+these four checks.
 Optional browser journeys use `SPATIAL_NEWTON_E2E=1` and `SPATIAL_TEST_NEWTON=1`.
 Failure probes can terminate only the Runner belonging to their own session.
 

@@ -10,3 +10,7 @@ examples/usd-library/scene/** -text
 packages/protocol/types/index.ts text eol=lf
 packages/protocol/types/protocol.schema.json text eol=lf
 packages/protocol/fixtures/*.json text eol=lf
+
+library/scenes/**/validation.json linguist-generated=true
+library/assets/**/validation.json linguist-generated=true
+assets/scene-previews/** linguist-generated=true
