@@ -53,6 +53,18 @@ def prepare_scene_config(payload, *, include_visuals=False):
                            xform=wp.transform((0, 0, offset), wp.quat_identity()))
         if not asset:
             add_taught_sites(result, stage, paths, payload)
+            bindings = payload.get("structure", {}).get("effectiveBindings", {}).get("newton", [])
+            pairs = configured_weld_pairs(
+                bindings, {str(path): index for path, index in paths["path_body_map"].items()},
+                {label: result.shape_body[index] for index, label in enumerate(result.shape_label)
+                 if int(result.shape_flags[index]) & int(newton.ShapeFlags.SITE)},
+            )
+            if pairs:
+                if (metadata.get("simulation") or {}).get("solver") != "mujoco":
+                    raise ValueError("Configured program welds require the MuJoCo solver")
+                from .welds import declare_weld_pairs
+
+                declare_weld_pairs(result, pairs)
             if include_visuals:
                 attach_visuals(result, stage, graph, paths)
         else:
@@ -62,6 +74,34 @@ def prepare_scene_config(payload, *, include_visuals=False):
     simulation = metadata.get("simulation") or {}
     return SceneConfig(builder, solver=simulation.get("solver") or "xpbd",
                        warmup_steps=simulation.get("warmupSteps") or 1)
+
+
+def configured_weld_pairs(bindings, bodies, sites):
+    """Resolve existing arm/centrifuge Config references before model finalization.
+
+    The shared loader already validates their spatialReference metadata and
+    materializes Sites. Keep program-specific assembly here, outside HTTP/info.
+    """
+    pairs = set()
+    for binding in bindings:
+        config, program = binding["config"], binding["program"]
+        try:
+            if program == "robot_arm.newton":
+                # Contact-mode opening also queries the disabled hand/tube weld.
+                parents = [bodies[config["handBody"]]]
+            elif program == "centrifuge.newton":
+                parents = [sites[key] for key in config["slotSites"]]
+            else:
+                continue
+            for parent in parents:
+                for key in config["tubes"]:
+                    child = bodies[key]
+                    if parent < 0 or child < 0 or parent == child:
+                        raise ValueError("Configured weld endpoints must be distinct imported bodies")
+                    pairs.add((parent, child))
+        except KeyError as error:
+            raise ValueError("Configured weld reference was not imported: " + str(error)) from error
+    return sorted(pairs)
 
 
 def add_taught_sites(builder, stage, paths, payload):

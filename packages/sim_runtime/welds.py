@@ -9,12 +9,16 @@ from newton._src.solvers.mujoco.equality import _add_equality_constraint
 
 def declare_welds(builder, parents, tubes):
     """Declare every possible pair disabled, before model finalization."""
+    declare_weld_pairs(builder, ((parent, tube) for parent in parents for tube in tubes))
+
+
+def declare_weld_pairs(builder, endpoints):
+    """Declare the exact pairs resolved by the scene's existing programs."""
     pairs = {}
-    for parent in parents:
-        for tube in tubes:
-            pairs[parent, tube] = _add_equality_constraint(
-                builder, EqType.WELD, body1=parent, body2=tube, enabled=False, label=f"weld:{parent}:{tube}"
-            )
+    for parent, tube in endpoints:
+        pairs[parent, tube] = _add_equality_constraint(
+            builder, EqType.WELD, body1=parent, body2=tube, enabled=False, label=f"weld:{parent}:{tube}"
+        )
     builder.spatial_weld_pairs = pairs
 
 
