@@ -85,6 +85,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     const panel = page.getByTestId('plan-panel');
     await expect(panel).toContainText('agent · issue26-e2e');
     await expect(panel).toContainText(plan.approvalMode === 'auto' ? '自动批准' : '人工审批');
+    await expect(page.getByTestId('plan-preview-status')).toContainText('策略预览尚未接入');
     const preview = await json<AvailablePreview>(await request.get(`${api}/api/v1/plans/${plan.id}/steps/4/preview?revision=1`));
     const firstGeometry = await geometry(page, preview);
     const liveMaterials = await page.evaluate(keys => Object.fromEntries(keys.map(key =>
@@ -229,6 +230,7 @@ test('disclosed policy preview contract fixture draws only the actual target', a
     await page.route(`**/api/v1/plans/${plan.id}/steps/1/preview?*`, route => route.fulfill({ json: fixture }));
     await page.goto(`/plans/${plan.id}`);
     await expect(page.getByRole('button', { name: '策略', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('plan-preview-status')).toContainText('当前程序仅提供目标位姿');
     await expect(page.getByTestId('plan-preview-figure')).toContainText('由策略执行 · 仅显示目标');
     await expect.poll(() => page.evaluate(() => window.__planViewDebug?.())).toMatchObject({
       policyDriven: true, target: actual.targetPose.p, points: [], ghosts: {}, targetInView: true,

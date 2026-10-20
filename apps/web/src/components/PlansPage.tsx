@@ -17,6 +17,7 @@ export function PreviewNotice({ preview }: { preview: ReturnType<typeof useMotio
       <span>执行方式</span><div><button type="button" aria-pressed={!preview.value.policyDriven} disabled={preview.value.policyDriven}
         title="按当前程序提供的预览显示">示教轨迹</button><button type="button" aria-pressed={preview.value.policyDriven} disabled={!preview.value.policyDriven}
         title="按当前程序提供的预览显示">策略</button></div></div>}
+    {preview.value && <p>{preview.value.policyDriven ? '由策略执行；当前程序仅提供目标位姿。' : '当前程序提供示教轨迹；策略预览尚未接入。'}</p>}
     {preview.loading ? <p role="status" aria-busy="true">正在读取当前关节状态的预览…</p> :
       preview.error ? <p role="status" className="plan-inline-error">路径暂不可用：{preview.error} <button onClick={preview.retry}>重试</button></p> :
         preview.explanation ? <p role="status">{preview.explanation}</p> : null}
