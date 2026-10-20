@@ -84,3 +84,36 @@ headers once as `{points, recordingId, sinceMs, untilMs, everyMs, agg, limit,
 truncated, message}` so both machine and human output keep the explanation.
 Closed segments can have optional verified `seg-NNNNNN.index.json` sidecars;
 missing, stale or corrupt indexes fall back to sequential reads, including formats1/2.
+
+Read attention messages at the start of a work round or after a long wait:
+
+```text
+lw inbox --json
+lw inbox --since CURSOR --kinds alert,approval --json
+```
+
+The generic MCP mirror is `inbox_poll(after?, kinds?)`; both use
+`GET /api/v1/inbox?after=&kinds=`. The response has `alerts`, `approvals`,
+`messages` and `cursor`. The first read includes all current active alerts,
+all pending approvals, and the latest20 messages matching the requested kinds.
+Later reads return ordered messages after the cursor. Alerts include their
+acknowledged state; raised/cleared transitions, approval status changes,
+failed/rejected invocations, and actual plan revisions/states/steps enter the
+message stream. Repeated state saves and cancelled calls add no failure notice.
+
+Pass the returned opaque cursor unchanged. It remains valid across gateway
+restarts using the same state root. Gateway sessions end on restart; old alert
+episodes and session authorization do not become active again. Historical inbox
+messages remain readable. The cursor follows one global stream, including kinds
+filtered out of a response. Changing filters later does not rewind those events;
+keep separate cursors for independent filtered readers. `LW_SESSION` selects
+device operations, while the inbox covers the gateway.
+
+Allowed kinds are `alert,approval,invocation,plan,job`; jobs gain a producer when
+their platform feature is installed. A wrong-stream, damaged or unavailable
+position returns `invalid_inbox_cursor`; omit `after` for a fresh snapshot.
+An unreadable or failed journal returns `inbox_unavailable` without changing
+device actions or human approval decisions. A delivered cursor follows actual
+fsync of its captured message prefix. MCP connection instructions include the
+current active alert count, or explicitly mark it unavailable when the inbox
+cannot be read. Critical alerts should be reported to a person before device work.

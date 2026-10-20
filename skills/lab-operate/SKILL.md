@@ -16,6 +16,27 @@ Keep credential values out of messages, logs and model context.
 
 ## Observe before acting
 
+At the start of each work round, and after a long wait, read the inbox:
+
+```text
+lw inbox --json
+lw inbox --since <cursor> --json
+```
+
+Use the returned opaque `cursor` for the next read, including across gateway
+restarts. The first response includes active alerts, pending approvals and the
+latest20 attention messages. Report a critical alert to the person before
+continuing device work. Hand `/Real/` device intervention to the human boundary
+above. Use the declared state/history interfaces to explain what is known:
+
+```text
+lw history <entity-key> <property> --since 1h --every 1m --agg mean --json
+```
+
+For a nonnumeric property, select `--agg last`. When a gateway reports an invalid
+cursor, read a fresh inbox snapshot and retain its new cursor. Inbox reads cover
+the gateway; `LW_SESSION` still selects the target for device operations.
+
 1. Use the gateway and session supplied for the task. `LW_URL` selects the gateway;
    `LW_SESSION` pins a session. With neither an explicit session nor one active
    session, choose a real target before any device call.
@@ -133,4 +154,6 @@ lw rec ls --json
 Reset changes the session's epoch and invalidates its plan authorizations;
 refresh state and submit a new plan afterward. Watch is a stream, not a completion
 condition. Plan changes appear in the existing reliable session event stream and
-recordings. Inbox and history commands will be added by later releases.
+recordings. Inbox messages include actual plan changes and failed or rejected
+calls. Keep the last cursor when waiting on a declared condition; read the inbox
+afterward to learn what else needs attention.

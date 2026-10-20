@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 from packages.info.approvals import ApprovalConflict
 from packages.info.conditions import evaluate_conditions, validate_conditions
 from packages.info.invocations import TERMINAL
-from packages.info.plan_journal import JournalError, PlanJournal
+from packages.info.journal import AppendJournal, JournalError
 from packages.info.schema_subset import json_equal
 from packages.protocol.schema import Actor, EntityEvent, OperationPlan, PlanFullUpdate, PlanStepUpdate
 
@@ -102,14 +102,15 @@ def validate_plan(document, session, *, plan_id=None, revision=1):
 
 
 class PlanStore:
-    def __init__(self, path: Path, approvals):
+    def __init__(self, path: Path, approvals, *, on_change=None):
         self.path, self.approvals = path, approvals
         self.records: dict[str, StoredPlan] = {}
         self.history: dict[str, dict[int, StoredPlan]] = {}
         self.bindings: dict[str, tuple[str, int, int]] = {}
         self.requests = {}
         self._started = False
-        self.journal = PlanJournal(path)
+        self.journal = AppendJournal(path)
+        self.on_change = on_change
 
     def startup(self):
         if self._started:
@@ -156,6 +157,8 @@ class PlanStore:
             # Keep actual observed state; all future plan grants and success barriers fail closed.
             pass
         self._retain(record)
+        if self.on_change is not None:
+            self.on_change(record)
 
     def require_started(self):
         if not self._started:

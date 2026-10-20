@@ -5,7 +5,8 @@ import threading
 
 import pytest
 
-from packages.info.plan_journal import JournalError, PlanJournal
+from packages.info.journal import AppendJournal as PlanJournal
+from packages.info.journal import JournalError
 
 
 async def test_full_queue_fails_closed_but_close_drains_accepted_fifo_and_joins(tmp_path, monkeypatch):
@@ -47,7 +48,7 @@ async def test_fsync_failure_never_acknowledges_the_write_and_rejects_future_wor
     def failed_sync(_):
         raise OSError("Injected fsync failure")
 
-    monkeypatch.setattr("packages.info.plan_journal.os.fsync", failed_sync)
+    monkeypatch.setattr("packages.info.journal.os.fsync", failed_sync)
     ticket = journal.append('{"sequence":1}')
     with pytest.raises(JournalError, match="fsync failure"):
         await journal.flush()
