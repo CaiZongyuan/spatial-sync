@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-20T07:13:14.317102+00:00",
+  "capturedAt": "2026-10-20T09:47:22.806734+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -209,7 +209,7 @@
     },
     {
       "path": "packages/sim_runtime/welds.py",
-      "sha256": "dbb822334e79b24bccbb3ee1168fd798a142e518f6444617b5eea527b9ef4cb1"
+      "sha256": "29bb0431ac107bff3243976c7359f0f0c7f90b8430346dbd57d6fc50d6454348"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -235,10 +235,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "6f301bb7c290b50604fe1f966338bc59ca4ca60b5dbe9d33c1e056c9dba86610",
-    "catalog.json": "5a4e64f3bf57419ee3a686a544f74b920eeb302de90653c433c674bcdf00106b",
-    "state.json": "3548052df1f6be581e4b748e2ea4d608f01e60b03a0ce3bc53ca20f146fb02a1",
-    "snapshot.bin": "8734e36374309c65e7b2ae1e9dd9ae7ab8deed7be423661b3910edb45980b942",
+    "manifest.json": "8e0af90b106a9624243642290318dd9c51ce386afadf5c7d209463c2311ee557",
+    "catalog.json": "7d52f469b7fa8dcd74ab6443072124c7c62fdd7f79080e1e3091993fe66b9399",
+    "state.json": "91554d3abe3d3f7444a6186a8290904f594ef709821f97ae0087cee7c49eb2ed",
+    "snapshot.bin": "7f1cb24a2032392ad79c48324e5a398000345e8bd57ecf08984221f5a869b834",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
