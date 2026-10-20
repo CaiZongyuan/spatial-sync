@@ -19,7 +19,11 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   request,
 }, testInfo) => {
   const errors: string[] = [];
+  let pausedHeartbeats = 0, watchingPaused = false;
   page.on('pageerror', (error) => errors.push(error.message));
+  page.on('websocket', socket => socket.on('framereceived', ({ payload }) => {
+    if (watchingPaused && typeof payload === 'string' && JSON.parse(payload).type === 'server.heartbeat') pausedHeartbeats++;
+  }));
   await page.goto('/scenes/lab-demo/1?source=synthetic');
   await page.getByLabel('启动物理源', { exact: true }).selectOption('synthetic');
   await page.getByRole('button', { name: '启动会话' }).click();
@@ -115,6 +119,7 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   await page.getByRole('button', { name: 'Pause simulation' }).click();
   await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
   await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
+  watchingPaused = true;
   await expect(
     page.getByText('Command applied', { exact: true }),
   ).toBeVisible();
@@ -173,8 +178,9 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     path: testInfo.outputPath('workbench-site-inspector.png'),
   });
 
-  // A paused observer remains healthy through multiple heartbeat periods.
-  await page.waitForTimeout(3300);
+  // Four received heartbeats span three complete heartbeat periods while the
+  // independent Inspector checks run above.
+  await expect.poll(() => pausedHeartbeats).toBeGreaterThanOrEqual(4);
   await expect(page.getByTestId('connection-status')).toHaveText('connected');
   expect(
     (

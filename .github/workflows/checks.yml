@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python-checks:
     name: python-checks (${{ matrix.lane }})
@@ -15,30 +19,9 @@ jobs:
       matrix:
         include:
           - lane: core
-            tests: tests/contract tests/unit
+            tests: tests/contract tests/unit tests/cli
           - lane: gateway
-            tests: >-
-              tests/gateway
-              --ignore=tests/gateway/test_binding_templates.py
-              --ignore=tests/gateway/test_template_pin_history.py
-              --ignore=tests/gateway/test_template_previews.py
-              --ignore=tests/gateway/test_builtin_template_migration.py
-              --ignore=tests/gateway/test_template_asset_references.py
-              --ignore=tests/gateway/test_library_deletions.py
-              --ignore=tests/gateway/test_asset_imports.py
-              --ignore=tests/gateway/test_structure_validation.py
-          - lane: library-templates
-            tests: >-
-              tests/gateway/test_binding_templates.py
-              tests/gateway/test_template_pin_history.py
-              tests/gateway/test_template_previews.py
-              tests/gateway/test_builtin_template_migration.py
-              tests/gateway/test_template_asset_references.py
-              tests/gateway/test_library_deletions.py
-              tests/gateway/test_asset_imports.py
-              tests/gateway/test_structure_validation.py
-          - lane: cli
-            tests: tests/cli
+            tests: tests/gateway
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -58,7 +41,7 @@ jobs:
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
         if: matrix.lane == 'core'
-      - run: uv run --no-sync python -m pytest ${{ matrix.tests }} -q
+      - run: uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q
       - run: uv run --no-sync ruff check apps packages tools tests
         if: matrix.lane == 'core'
       - run: uv run --no-sync python tools/check_platform_skills.py
@@ -89,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -109,7 +92,7 @@ jobs:
       - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/3
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
@@ -132,6 +115,7 @@ jobs:
             /tmp/spatial-api.log
             .scratch/viewer-e2e/report
             .scratch/viewer-e2e/results
+            .scratch/viewer-e2e/results.json
 
   contract-gateway-viewer:
     if: always()

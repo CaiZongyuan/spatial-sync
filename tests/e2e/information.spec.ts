@@ -56,13 +56,33 @@ const invocation = (page: Page, name: string) =>
     .filter({ has: page.getByText(name, { exact: true }) })
     .first();
 
+test('Inspector schema forms reject an action with unmet preconditions', async ({ page, request }) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneId: 'lab-demo', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  try {
+    await device(page, sessionId);
+    const start = await action(page, 'start');
+    await expect(start.getByRole('list', { name: 'start preconditions' }).locator('.unmet')).not.toHaveCount(0);
+    await start.getByLabel('start rpm', { exact: true }).fill('3000');
+    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
+    await start.getByRole('button', { name: 'Run start', exact: true }).click();
+    await expect(invocation(page, 'start').locator('.invocation-status')).toHaveText('rejected');
+    await expect(start.getByRole('status')).toContainText('precondition_failed');
+  } finally {
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});
+
 test('Inspector schema forms run a centrifuge action and two observers see its lifecycle', async ({
   page,
   browser,
   request,
 }, info) => {
   const created = await request.post(`${api}/api/v1/sessions`, {
-    data: { sceneId: 'lab-demo', source: 'synthetic' },
+    data: { sceneId: 'lab-demo', source: 'synthetic', realtimeFactor: 2 },
   });
   expect(created.ok()).toBe(true);
   const { sessionId } = await created.json();
@@ -74,23 +94,8 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
   page.on('pageerror', (error) => errors.push(error.message));
   observer.on('pageerror', (error) => errors.push(error.message));
   try {
-    await device(page, sessionId);
-    await device(observer, sessionId);
+    await Promise.all([device(page, sessionId), device(observer, sessionId)]);
     const start = await action(page, 'start');
-    await expect(
-      start
-        .getByRole('list', { name: 'start preconditions' })
-        .locator('.unmet'),
-    ).not.toHaveCount(0);
-    await start.getByLabel('start rpm', { exact: true }).fill('3000');
-    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
-    await start.getByRole('button', { name: 'Run start', exact: true }).click();
-    await expect(
-      invocation(page, 'start').locator('.invocation-status'),
-    ).toHaveText('rejected');
-    await expect(start.getByRole('status')).toContainText(
-      'precondition_failed',
-    );
     await (await action(page, 'closeLid'))
       .getByRole('button', { name: 'Run closeLid', exact: true })
       .click();

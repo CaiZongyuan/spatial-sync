@@ -13,7 +13,8 @@ Do not resynchronize an environment while it serves another process;
 ## Mandatory checks
 
 ```powershell
-uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli -q
+uv run --no-sync python -m pytest tests/gateway -n auto -q
+uv run --no-sync python -m pytest tests/contract tests/unit tests/cli -n auto -q
 uv run --no-sync ruff check apps packages tools tests
 pnpm protocol:check
 pnpm test:protocol:ts
@@ -34,6 +35,12 @@ Set `SPATIAL_STATE_ROOT` to an owned test directory alongside recordings.
 CLI tests use the installed `lw` entrypoint, actual HTTP, official SDK clients
 and stdio; run `uv sync --frozen --group dev` before the environment serves any
 other consumer. Each test and benchmark owns its recording directory.
+
+CI runs those two Python lanes and shards individual Playwright cases. Browser
+workers stay at one per gateway because sessions are exclusive. Each browser
+case must finish within 60% of its configured timeout (27s at the 45s default);
+the JSON report in `.scratch/viewer-e2e/results.json` records its duration,
+timeout and status. The workflow retains this report with the browser artifacts.
 
 ## Information and recording checks
 

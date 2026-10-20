@@ -39,13 +39,10 @@ test('a paused live viewport draws on changes and wakes for Step, theme and proj
   } finally { await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' }); }
 });
 
-test('the real overview connects an isometric scene, readouts, device actions, activity and theme', async ({ page, request }, testInfo) => {
+test('the real overview connects an isometric scene, readouts, device actions and activity', async ({ page, request }) => {
   const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
   expect(response.ok()).toBe(true);
   const { sessionId, sceneVersion } = await response.json();
-  let scenes = 0, sockets = 0;
-  page.on('request', request => { if (request.url().endsWith(`/sessions/${sessionId}/scene`)) scenes++; });
-  page.on('websocket', socket => { if (socket.url().includes(`/sessions/${sessionId}/ws`)) sockets++; });
   try {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: '概览', exact: true })).toBeVisible();
@@ -56,8 +53,6 @@ test('the real overview connects an isometric scene, readouts, device actions, a
     await expect(page.locator('.overview-page-heading')).toContainText(sessionId);
     await expect(page.locator('.overview-page-heading')).toContainText(sceneVersion);
     await expect(page.getByRole('complementary', { name: '检查器' })).toContainText(sceneVersion);
-    const initialSceneRequests = scenes;
-    const initialSockets = sockets;
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.drawnEntities().length ?? 0)).toBeGreaterThan(20);
     await expect(page.locator('canvas')).toHaveCount(1);
@@ -82,6 +77,25 @@ test('the real overview connects an isometric scene, readouts, device actions, a
     await label.click();
     await page.getByRole('button', { name: '关闭设备抽屉', exact: true }).click();
     await expect(label).toHaveAttribute('aria-pressed', 'false');
+  } finally {
+    await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' });
+  }
+});
+
+test('the real overview preserves its connection, selected device and preferences across theme and layout changes', async ({ page, request }, testInfo) => {
+  const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
+  expect(response.ok()).toBe(true);
+  const { sessionId } = await response.json();
+  let scenes = 0, sockets = 0;
+  page.on('request', request => { if (request.url().endsWith(`/sessions/${sessionId}/scene`)) scenes++; });
+  page.on('websocket', socket => { if (socket.url().includes(`/sessions/${sessionId}/ws`)) sockets++; });
+  try {
+    await page.goto('/');
+    const label = page.getByTestId(`device-label-${centrifuge}`);
+    await expect(label).toBeVisible();
+    await expect(page.getByRole('complementary', { name: '设备抽屉' })).toHaveAttribute('data-connection', 'connected');
+    const initialSceneRequests = scenes;
+    const initialSockets = sockets;
     await page.getByLabel('Color theme').selectOption('dark');
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.appearance().background)).toBe('121211');
     const dark = await page.evaluate(() => window.__spatialRenderDebug?.appearance());

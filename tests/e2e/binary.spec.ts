@@ -67,10 +67,8 @@ test('binary browsers share authoritative controls, recovery and replacement', a
     sockets.push(socket);
   });
   try {
-    await page.goto(`/sessions/${sessionId}`);
-    await observer.goto(`/sessions/${sessionId}`);
-    await connected(page);
-    await connected(observer);
+    await Promise.all([page.goto(`/sessions/${sessionId}`), observer.goto(`/sessions/${sessionId}`)]);
+    await Promise.all([connected(page), connected(observer)]);
     await expect
       .poll(async () => (await metrics(page))?.frameFormat)
       .toBe('binary');
