@@ -139,7 +139,7 @@ def test_wrong_posture_reports_s8_before_unsupported_usd_runtime_and_allocates_n
         assert client.get("/api/v1/health").json()["sessions"] == []
 
 
-@pytest.mark.parametrize("revision", [1, 2])
+@pytest.mark.parametrize("revision", [1, 2, 3])
 def test_unchanged_builtin_revalidation_remains_launchable(revision):
     with TestClient(create_app()) as client:
         response = client.post(f"/api/v1/library/scenes/lab-demo/{revision}/validate")

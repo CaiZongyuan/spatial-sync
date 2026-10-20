@@ -45,7 +45,7 @@ async def test_asset_cli_mcp_upload_filters_description_and_export_dedup(gateway
         "complete": True, "reason": None, "uninspectedScenes": [],
     }
     assert inspected["referencingScenes"] == []
-    assert cli("asset", "ls", "--kind", "device", "--gaps", "-q", "centrifuge") == [
+    assert cli("asset", "ls", "--kind", "device", "--gaps", "-q", "Test centrifuge") == [
         {
             key: value
             for key, value in inspected.items()

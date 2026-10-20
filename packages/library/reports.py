@@ -15,6 +15,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool
 
+from packages.library.templates import template_id
+
 SUBJECT = re.compile(
     r"(?:scene:[a-z0-9]+(?:-[a-z0-9]+)*|asset:(?:robot|device|labware|environment)/"
     r"[a-z0-9]+(?:-[a-z0-9]+)*)@[1-9][0-9]*"
@@ -74,6 +76,33 @@ def launchable(report):
     )
 
 
+def pinned_assets(version, kind):
+    """A known exact dependency is immutable across all bound, durable validation receipts."""
+    subject = f"{kind}:{version.id}"
+    history = version.reports.history(subject, version.content_hash) if version.reports else []
+    pinned = {}
+    for report in [version.validation, *history]:
+        if report is None:
+            continue
+        parse_report(report, subject)
+        entries = report.get("referencedAssets", [])
+        if not isinstance(entries, list):
+            raise ValueError("Invalid recorded asset dependencies")
+        for item in entries:
+            if not isinstance(item, dict):
+                raise ValueError("Invalid recorded asset dependency")
+            identifier = template_id(item.get("id"))
+            digest = item.get("contentHash")
+            if digest is None:
+                continue  # Legacy hashless references establish no historical byte identity.
+            if not isinstance(digest, str) or not HASH.fullmatch(digest):
+                raise ValueError("Invalid recorded asset hash: " + identifier)
+            if identifier in pinned and pinned[identifier] != digest:
+                raise ValueError("Conflicting recorded asset hashes: " + identifier)
+            pinned[identifier] = digest
+    return [{"id": name, "contentHash": pinned[name]} for name in sorted(pinned)]
+
+
 def validation_status(report):
     if report is None:
         return "missing"
@@ -105,12 +134,32 @@ class ReportStore:
         report_id = json.loads(pointer.read_text(encoding="utf-8"))["reportId"]
         if not isinstance(report_id, str) or not re.fullmatch(r"[a-f0-9]{32}", report_id):
             raise ValueError("Invalid validation history pointer")
-        value = parse_report(
-            json.loads((directory / f"{report_id}.json").read_text(encoding="utf-8")), subject
-        )
-        if value.get("contentHash") != content_hash or value.get("reportId") != report_id:
+        value = self._read(directory, report_id, subject, content_hash)
+        if value is None:
             raise ValueError("Validation history does not match immutable package")
         return value
+
+    @staticmethod
+    def _read(directory, report_id, subject, content_hash):
+        value = json.loads((directory / f"{report_id}.json").read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("Invalid validation history document")
+        if (
+            value.get("subject") != subject
+            or value.get("contentHash") != content_hash
+            or value.get("reportId") != report_id
+        ):
+            return None
+        return parse_report(value, subject)
+
+    def history(self, subject, content_hash):
+        directory = self.directory(subject, content_hash)
+        return [
+            value
+            for path in sorted(directory.glob("*.json"))
+            if re.fullmatch(r"[a-f0-9]{32}", path.stem)
+            and (value := self._read(directory, path.stem, subject, content_hash)) is not None
+        ]
 
     def save(self, report, content_hash):
         value = parse_report(report)

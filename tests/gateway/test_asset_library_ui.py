@@ -29,7 +29,7 @@ def test_asset_library_list_projects_dimensions_and_types_from_the_immutable_pac
         assert detail["dimensionsM"] == asset["dimensionsM"]
         assert detail["implementedTypes"] == asset["implementedTypes"]
         assert detail["referenceInspection"]["complete"]
-        assert detail["referencingScenes"] == []
+        assert [scene["id"] for scene in detail["referencingScenes"]] == ["robot-and-tubes@2"]
         assert client.get(asset["visualUrl"]).content[:4] == b"glTF"
 
 

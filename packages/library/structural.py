@@ -18,10 +18,13 @@ from pxr import Ar, Sdf, Usd, UsdGeom, UsdPhysics, UsdUtils
 from pydantic import ValidationError
 
 from packages.info.binding_validation import compile_alert_rules, validate_binding_semantics
+from packages.info.declarations import EntityBindingDeclaration
 from packages.library.common import content_hash, document
 from packages.library.metadata import Locations
 from packages.library.python_stages import resources as python_resources
 from packages.library.reports import parse_report
+from packages.library.templates import TemplateError, instantiate, references
+from packages.library.templates import resolve as resolve_templates
 from packages.library.visuals import glb_budget
 from packages.programs.robot_arm.taught import posture_problems as posture_problems_for
 
@@ -53,12 +56,12 @@ def config_locations(value, package):
 
 def checked_config(program, config, kind):
     if not program.get("configModule"):
-        return  # Small SDK fixtures can supply role metadata without a runtime Config class.
+        return config  # Small SDK fixtures supply role metadata without a runtime Config class.
     owner = import_module(program["configModule"])
     for part in program["configClass"].split("."):
         owner = getattr(owner, part)
     try:
-        owner.Config.model_validate(config)
+        return owner.Config.model_validate(config).model_dump(mode="json")
     except ValidationError as exc:
         # An asset template is partial: locations/tubes can be supplied by its eventual scene.
         errors = [
@@ -71,6 +74,7 @@ def checked_config(program, config, kind):
                 "Invalid program Config: "
                 + "; ".join(".".join(map(str, error["loc"])) + ": " + error["msg"] for error in errors)
             ) from exc
+        return config
 
 
 def usd_resources(stage):
@@ -116,7 +120,7 @@ def usd_resources(stage):
 class USDGraph:
     """Preflight and rewrite all layer asset paths before opening a composed stage."""
 
-    def __init__(self, package, assets):
+    def __init__(self, package, assets, expected=()):
         self.package = package
         self.assets = {asset["id"]: asset for asset in assets}
         self.library_files = {
@@ -126,6 +130,7 @@ class USDGraph:
         }
         self.clones, self.errors, self.referenced = {}, [], set()
         self.verified = set()
+        self.expected = {value["id"]: value["contentHash"] for value in expected}
 
     def resolve(self, owner, filename, reference):
         if not reference:
@@ -136,6 +141,11 @@ class USDGraph:
             target = self.library_files.get(reference.removeprefix("library:"))
             if target is None:
                 raise ValueError(f"Unknown indexed library reference: {reference}")
+            if (
+                target[0]["id"] in self.expected
+                and target[0]["contentHash"] != self.expected[target[0]["id"]]
+            ):
+                raise ValueError("Referenced immutable asset changed: " + target[0]["id"])
             self.referenced.add(target[0]["id"])
             return target
         if PureWindowsPath(reference).drive or "\\" in reference or ":" in reference:
@@ -214,13 +224,34 @@ class USDGraph:
 def validate(payload):
     kind, metadata, package = payload["kind"], payload["metadata"], payload["package"]
     checks = {"S1": check("S1", "pass", "Package metadata and declared files match their schemas")}
-    graph = USDGraph(package, payload["assets"])
+    graph = USDGraph(package, payload["assets"], payload.get("expectedAssets", []))
     stage, parse_error = None, None
+    scene_source = (metadata.get("sources") or [None])[0]
+    authored = payload.get("bindings", {})
+    authored = {
+        "scene": authored.get("scene", payload["subject"].split(":", 1)[1].split("@")[0]),
+        "entities": authored.get("entities", []),
+    }
+    resolved, template_error = None, None
+    declarations = authored
+    if kind == "scene":
+        try:
+            # A failed implements/source selection must not discard already known package bytes.
+            graph.referenced.update(name for name in references(authored) if name in graph.assets)
+            resolved = resolve_templates(
+                authored, scene_source, graph.assets, payload.get("expectedAssets", [])
+            )
+            declarations = resolved.bootstrap()
+        except (TemplateError, OSError, ValueError) as exc:
+            template_error = str(exc)
+            declarations = authored | {
+                "entities": [binding for binding in authored["entities"] if not binding.get("template")]
+            }
     python_stage = metadata["stage"].startswith("python:")
     resources, python_error = None, None
     if python_stage:
         try:
-            resources = python_resources(metadata, package, payload.get("bindings", {}))
+            resources = python_resources(metadata, package, declarations)
             if "usdPath" in resources:
                 path = Path(resources["usdPath"])
                 scope = {
@@ -258,6 +289,11 @@ def validate(payload):
         "joint": set((resources or {}).get("joints", {})),
     }
     resource_keys = resource_entities | set().union(*resource_roles.values())
+    if kind == "scene" and resolved is not None and resources is not None:
+        try:
+            declarations = instantiate(resolved, resources, payload["programs"])
+        except TemplateError as exc:
+            template_error = str(exc)
     if stage:
         correct = UsdGeom.GetStageUpAxis(stage) == "Z" and UsdGeom.GetStageMetersPerUnit(stage) == 1
         checks["S2"] = check("S2", "pass" if correct else "fail", "Stage must use Z up and metersPerUnit=1")
@@ -334,13 +370,13 @@ def validate(payload):
         checks["S4"] = check(
             "S4", "warn", "Asset provenance check applies to asset versions", notApplicable=True
         )
-    bindings = (
-        payload.get("bindings", {}).get("entities", []) if kind == "scene" else metadata.get("implements", [])
-    )
-    reference_problems, posture_groups, bound, pending_templates = [], [], set(), []
+    bindings = declarations["entities"] if kind == "scene" else metadata.get("implements", [])
+    reference_problems, posture_groups, bound = [], [], set()
+    if template_error:
+        reference_problems.append(template_error)
     if python_error:
         reference_problems.append(python_error)
-    semantic_bindings = {}
+    semantic_bindings, normalised_bindings = {}, {}
     types = payload["types"]
     for binding in bindings:
         entity = binding.get("key", "/Asset") if kind == "scene" else "/Asset"
@@ -363,12 +399,6 @@ def validate(payload):
                 if key in bound:
                     reference_problems.append("Duplicate binding: " + key)
                 bound.add(key)
-        if binding.get("template"):
-            if binding["template"] not in graph.assets:
-                reference_problems.append("Unknown asset template: " + binding["template"])
-            else:
-                pending_templates.append(binding["template"])
-            continue  # Template expansion is a separate capability; never invent its effective bindings.
         if binding.get("type") not in types:
             reference_problems.append("Unknown entity type: " + str(binding.get("type")))
         programs = binding.get("programs", {}) if kind == "asset" else {"declared": binding.get("program")}
@@ -394,7 +424,7 @@ def validate(payload):
                         reference_problems.append(str(exc))
                         config[field] = {"locations": {}}
             try:
-                checked_config(program, config, kind)
+                config = checked_config(program, config, kind)
             except ValueError as exc:
                 reference_problems.append(str(exc))
             posture_paths = None
@@ -453,16 +483,17 @@ def validate(payload):
                         key, binding, definition, property_schema, resource_roles["site"]
                     )
                 compile_alert_rules(key, binding, definition, property_schema)
+                normalised_bindings[key] = EntityBindingDeclaration.model_validate(binding).model_dump(
+                    mode="json", exclude_none=True
+                )
             except (ValueError, KeyError, TypeError) as exc:
                 reference_problems.append(f"Invalid binding semantics on {key}: {exc}")
     checks["S5"] = check(
         "S5",
-        "fail" if reference_problems else "warn" if resources is None or pending_templates else "pass",
+        "fail" if reference_problems else "warn" if resources is None else "pass",
         "; ".join(dict.fromkeys(reference_problems))
         or (
-            "Asset templates have not been expanded; effective Config references were not inspected"
-            if pending_templates
-            else "Program/type declarations checked; stage resources were not inspected"
+            "Program/type declarations checked; stage resources were not inspected"
             if resources is None
             else "Declared types and Config spatial references exist"
         ),
@@ -613,13 +644,20 @@ def validate(payload):
         "launchable": not any(item["status"] == "fail" for item in ordered),
         "untypedEntities": untyped,
         "referencedAssets": [
-            {"id": name, "contentHash": graph.assets[name]["contentHash"]}
-            for name in sorted(graph.referenced)
+            {
+                "id": name,
+                "contentHash": graph.expected[name]
+                if name in graph.expected
+                else graph.assets[name]["contentHash"],
+            }
+            for name in sorted(graph.referenced | graph.expected.keys())
         ],
         "inspection": "CPU USD structure only; no physics engine was loaded",
     }
     if items:
         result["completeness"] = items
+    if kind == "scene" and scene_source is not None and checks["S5"]["status"] == "pass":
+        result["effectiveBindings"] = {scene_source: list(normalised_bindings.values())}
     if stage and kind == "scene":
         result |= {"entityCount": len(entity_paths), "bindingCount": len(bound)}
     return parse_report(result)

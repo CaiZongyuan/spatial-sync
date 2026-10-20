@@ -159,12 +159,17 @@ async def test_scene_cli_and_mcp_bootstrap_inspection_launch_and_replacement(gat
         assert {scene["sceneVersion"] for scene in scenes} == {
             "lab-demo@1",
             "lab-demo@2",
+            "lab-demo@3",
             "falling-boxes@1",
             "robot-and-tubes@1",
+            "robot-and-tubes@2",
             "usd-lab@1",
         }
         robot = cli("show", "robot-and-tubes")
-        assert robot["sceneVersion"] == "robot-and-tubes@1"
+        assert robot["sceneVersion"] == "robot-and-tubes@2"
+        assert all(entity.get("template") for entity in robot["entities"])
+        assert robot["templateResolution"]["status"] == "resolved"
+        assert len(robot["effectiveBindings"]["newton"]) == 22
         assert "pickPlace" in robot["types"]["robot-arm/v1"]["actions"]
         assert robot["locations"]["centrifuge.slot1"]["grasp"]
         assert any(entity.get("key") == "/World/Lab/RobotA" for entity in robot["entities"])
@@ -179,8 +184,8 @@ async def test_scene_cli_and_mcp_bootstrap_inspection_launch_and_replacement(gat
                 assert await result(mcp, "library_describe", id="robot-and-tubes") == robot
                 launched = await result(mcp, "scene_launch", sceneVersion="lab-demo")
                 owned.append(launched["sessionId"])
-                assert launched["sceneId"] == "lab-demo" and launched["sceneVersion"] == "lab-demo@2"
-                assert cli("launch", "lab-demo@2")["sessionId"] == launched["sessionId"]
+                assert launched["sceneId"] == "lab-demo" and launched["sceneVersion"] == "lab-demo@3"
+                assert cli("launch", "lab-demo@3")["sessionId"] == launched["sessionId"]
                 closed = await result(mcp, "invoke_action", key="/World/Lab/Centrifuge", action="closeLid")
                 assert closed["status"] == "succeeded" and closed["actor"]["name"] == "library-agent"
                 http.delete("/api/v1/sessions/" + launched["sessionId"]).raise_for_status()

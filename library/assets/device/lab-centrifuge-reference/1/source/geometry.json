@@ -1,0 +1,91 @@
+{
+  "repository": "https://github.com/CaiZongyuan/spatial-sync",
+  "sourceRevision": "882607f56e07464c14e839f2e39832d358c06062",
+  "source": "packages/sim_runtime/synthetic_lab.py",
+  "sourceFile": {
+    "sha256": "55248657cf19867001c55dc00780c67c797d0f97fd97d3fc0b40d2b026cb8c5d",
+    "bytes": 11024
+  },
+  "entityKey": "/World/Lab/Centrifuge/Housing",
+  "visuals": [
+    {
+      "kind": "primitive",
+      "geometry": {
+        "type": "box",
+        "halfExtents": [
+          0.22,
+          0.22,
+          0.05
+        ]
+      },
+      "localPose": {
+        "p": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "q": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "sites": {
+    "Rotor/Slot1": {
+      "p": [
+        0.1,
+        0.0,
+        0.1
+      ],
+      "q": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "Rotor/Slot2": {
+      "p": [
+        0.0,
+        0.1,
+        0.1
+      ],
+      "q": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "Rotor/Slot3": {
+      "p": [
+        -0.1,
+        0.0,
+        0.1
+      ],
+      "q": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "Rotor/Slot4": {
+      "p": [
+        0.0,
+        -0.1,
+        0.1
+      ],
+      "q": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "normalization": "Copy visual-local poses into /Asset; omit source node/world pose. Sites retain their original rotor-local poses; the rotor body/articulation is not supplied."
+}

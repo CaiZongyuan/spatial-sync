@@ -11,7 +11,7 @@ from pathlib import Path
 
 from packages.library.archive import package_files
 from packages.library.common import REPO_ROOT, TYPE_ROOT, LibraryError, content_hash, document
-from packages.library.reports import parse_report
+from packages.library.reports import parse_report, pinned_assets
 
 
 class StructuralValidator:
@@ -30,7 +30,9 @@ class StructuralValidator:
             "files": {name: str(path / name) for name in package_files(path)},
         }
 
-    def run(self, path, kind, subject, metadata, assets, bindings=None, locations=None):
+    def run(
+        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
+    ):
         payload = {
             "kind": kind,
             "subject": subject,
@@ -51,6 +53,7 @@ class StructuralValidator:
                 value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
             },
             "programs": self.programs() if self.programs else {},
+            "expectedAssets": list(expected_assets),
         }
         self.state_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=".structure-", dir=self.state_root) as temporary:
@@ -86,6 +89,12 @@ class StructuralValidator:
                 "Immutable package changed after indexing",
                 409,
             )
+        try:
+            expected_assets = pinned_assets(version, kind)
+        except (ValueError, OSError) as exc:
+            raise LibraryError(
+                "asset_changed" if kind == "asset" else "scene_not_launchable", str(exc), 409
+            ) from exc
         report = self.run(
             version.path,
             kind,
@@ -94,6 +103,7 @@ class StructuralValidator:
             assets,
             getattr(version, "bindings", None),
             getattr(version, "locations", None),
+            expected_assets=expected_assets,
         )
         if content_hash(version.path) != version.content_hash:
             raise LibraryError(

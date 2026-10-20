@@ -70,6 +70,7 @@ test('real asset API, URL filters, shared thumbnails and FR3 completeness stay s
   await expect(image).toBeVisible();
   expect((await image.getAttribute('src')) === lightImage).toBe(true);
   await page.getByLabel('素材种类', { exact: true }).selectOption('device');
+  await page.getByRole('searchbox', { name: '搜索素材' }).fill('no-such-reference-asset');
   await expect(page.getByRole('heading', { name: '没有匹配的素材' })).toBeVisible();
   await expect(page).toHaveURL(/kind=device/);
   await page.getByLabel('素材种类', { exact: true }).selectOption('robot');

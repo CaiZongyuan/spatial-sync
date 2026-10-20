@@ -1,0 +1,12 @@
+id: device/synthetic-cabinet-reference
+kind: device
+title: Synthetic biosafety cabinet box proxy
+description: Binding reference with extracted primitive visuals only. World placement,
+  articulation, collision, mass, GLB and license are not supplied. Registered Python
+  scenes retain their existing spatial builders.
+stage: asset.usda
+implements:
+- type: biosafety-cabinet/v1
+  programs:
+    synthetic: biosafety_cabinet.virtual
+  config: {}

@@ -2,8 +2,9 @@
   "schema": "lw.scene-preview/1",
   "sceneVersion": "usd-lab@1",
   "sceneContentHash": "59f978a14f59333f831bb6f08fb32af4285720ad844bfbf9839de02691186334",
+  "templateAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-19T16:36:57.046111+00:00",
+  "capturedAt": "2026-10-20T00:11:57.851928+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -55,7 +56,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "107aa7bab2f0e09da150af0eeec1b56faf415fcda1411b3922b9c2761f7ac60f"
+      "sha256": "649b0fcaeb7194769dcb4d60e069a5d7d5c48a748619763dfec00ee6fae09a6f"
     },
     {
       "path": "packages/info/conditions.py",
@@ -78,20 +79,28 @@
       "sha256": "e7c9f0117bd69666afa8dd31f2d524c07ad9ac249ec615134a7235fe7896a7bf"
     },
     {
+      "path": "packages/library/archive.py",
+      "sha256": "a4fbe2023cb623821cd667d59154b3ff3031baf6497f22ca852fcdfc8a768dcf"
+    },
+    {
       "path": "packages/library/common.py",
       "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "a01c8e043151ea4dc12edb2499d820160d9c0fdce9a5b641f0b6c9311c3758fb"
+      "sha256": "2941383671e9a3e95001ed74aa1cf3c049fce1fec777d59171e31352e70a28a9"
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "dbded9fdf8e7f1c3eacbbc2da01827e0b04f9255aace612f5709f7946c9fcd8d"
+      "sha256": "084fbd430eea7405bf74acec255ed9b29467028243ac247ba1591d6fba45b257"
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "70d47498b91750c7c62fbc66a6cd313388d466b34ce365676a39ef6d82062bce"
+      "sha256": "c30fc1f5067f8968289f937a13ee647fd676a855154595eb278bf727596cd2fa"
+    },
+    {
+      "path": "packages/library/templates.py",
+      "sha256": "016ff3a415009d07f90e464fc6935ed6387305f2ae15367e864c2ffa81736b6d"
     },
     {
       "path": "packages/programs/centrifuge/newton.py",
@@ -139,7 +148,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "e0253e349a8a973a60fdee282805244ea0a56f36923325e51a177fda5fb75a0e"
+      "sha256": "73f629b955a4d3be79f16b725b92d0ed411c19215d2869fbd2064acf8a482ef8"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -211,7 +220,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "e8769fcbcb57e9cc06e81c96f1641cf66ba4c6e59e455d3c4037b3eda3a06867"
+      "sha256": "4c489de88e477fb716025577618acc9fa1781e44a9c4f82e1ed9f9b82b09f373"
     },
     {
       "path": "uv.lock",
@@ -225,10 +234,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "9f34e834e2cdb9f902f54bd1374d9dff0725a96c65cc0046398e612b52e791e1",
-    "catalog.json": "a1b426d4e3c835eb62ca67b9a9ee5d263aaa9aa3e050963f636e15b27d87b490",
-    "state.json": "5276cc51c9a304b58fe6a86b166215b74aa5396cb07528ff31a57dd67c9dd961",
-    "snapshot.bin": "91c034fa0b14a56da1da34fa3296987ec951dd4ed7abd2174167f4f706838208",
+    "manifest.json": "63490298330de91f25bcaacdc7135f287edb4e35c662c03538f0ca9004aa8fec",
+    "catalog.json": "5dac6152ab00941240326e5fe3247fed56c5df69d239abece19d71eef6216ba7",
+    "state.json": "79f748e513e10f7200993b48e6440bf6f3bd49d2d230e5f8b93639973093f412",
+    "snapshot.bin": "042b84f46d3e9ea3bbe718f229e094d084e0e1167652201c3a85da90b806b404",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"

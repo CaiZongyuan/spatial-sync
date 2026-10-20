@@ -1,0 +1,54 @@
+{
+  "repository": "https://github.com/CaiZongyuan/spatial-sync",
+  "sourceRevision": "882607f56e07464c14e839f2e39832d358c06062",
+  "producer": {
+    "path": "tools/package_binding_references.py",
+    "sha256": "aa75df269e929111b5562917d21d2e4a113697e16f0da03a1d35d1256989b609",
+    "bytes": 10973
+  },
+  "sourceFiles": {
+    "packages/sim_runtime/synthetic_lab.py": {
+      "sha256": "55248657cf19867001c55dc00780c67c797d0f97fd97d3fc0b40d2b026cb8c5d",
+      "bytes": 11024
+    },
+    "library/scenes/lab-demo/2/scene.yaml": {
+      "sha256": "b4fbef5569bc98ee2c66faf1c99472c2afaf003cf6b5aad5e42af4169965cd30",
+      "bytes": 229
+    },
+    "library/scenes/lab-demo/2/devices.yaml": {
+      "sha256": "fd4db75424456867128e891bf8564c720bb557f6bbd1cabef00c268651a50225",
+      "bytes": 2632
+    },
+    "library/scenes/lab-demo/2/locations.yaml": {
+      "sha256": "4887d634615cf2a8bbc95ee0afa32a0f0ddf287c276ac0252a8a3f3d54ea5b1e",
+      "bytes": 5143
+    }
+  },
+  "toolVersions": {
+    "python": "3.13.14",
+    "usd-core": "26.8",
+    "pyyaml": "6.0.3",
+    "pydantic": "2.12.4"
+  },
+  "license": "Not established; repository presence does not grant redistribution permission",
+  "limitations": [
+    "Primitive reference, not a complete physical device",
+    "GLB not generated",
+    "No collision, mass or inertia supplied",
+    "Physics validation not run"
+  ],
+  "files": {
+    "asset.usda": {
+      "sha256": "e79ecddada55b0bee71b0129ba2cf7f1558155c8649c3e0f5b35ad1eb42478c0",
+      "bytes": 405
+    },
+    "asset.yaml": {
+      "sha256": "576db17643afbc7ef609deda37929feb2fffb9a1676d0adfe600599ed200d365",
+      "bytes": 405
+    },
+    "source/geometry.json": {
+      "sha256": "d78685a983d3839dd9f91ac26d18e5c63a9ba4bff74bae3d5ab23a51284a6000",
+      "bytes": 896
+    }
+  }
+}

@@ -1,0 +1,342 @@
+{
+  "schema": "lw.scene-preview/1",
+  "sceneVersion": "lab-demo@3",
+  "sceneContentHash": "224e5a762fb296e3f97468debdcde106e797274100547f2dd88cb17678b83b9a",
+  "templateAssets": [
+    {
+      "id": "device/lab-centrifuge-reference@1",
+      "contentHash": "71664a732be700a4626f2deef4d54fcbcb5afa1bbc01df314fa60ce4ecc20894"
+    },
+    {
+      "id": "device/synthetic-cabinet-reference@1",
+      "contentHash": "f671314a96623b9e9f95e1ea0a66e2eb73cd2a90d14e34f4ee697e293111a5c9"
+    },
+    {
+      "id": "device/synthetic-incubator-reference@1",
+      "contentHash": "d32e560c9f373e936a247ec7dd98e7670b21a3908472328669f69e8f58528d56"
+    },
+    {
+      "id": "device/synthetic-sensor-reference@1",
+      "contentHash": "428c571c69efb773ee27ce5e9e2b79a2acb21ce535d2a945ca87968457d0737b"
+    },
+    {
+      "id": "labware/synthetic-tube-reference@1",
+      "contentHash": "41b709645a5f9964e937d9edb69de17adea0366bbdaa82ff108a66aa9e82e3dc"
+    },
+    {
+      "id": "robot/synthetic-arm-reference@1",
+      "contentHash": "249b7fee183cca0b62d98004c492665e66b53ae958b28540e412599ba93cbe58"
+    }
+  ],
+  "source": "synthetic",
+  "capturedAt": "2026-10-20T00:09:40.080476+00:00",
+  "simTime": 0.0,
+  "runtime": {
+    "python": "3.13.14",
+    "source": "SyntheticSource",
+    "device": "cpu",
+    "numpy": "2.5.4"
+  },
+  "dependencyDigest": "sha256-text-lf-v1",
+  "dependencies": [
+    {
+      "path": "apps/api/app/recordings.py",
+      "sha256": "13d4406101abebea6d4b84fd140c7ad504fbdb22e7a08804d94073a5f4bbab1d"
+    },
+    {
+      "path": "apps/api/app/sources/synthetic_source.py",
+      "sha256": "e029e3e2a2511d1a0506a659916e58f88613d1b1b6f4d4772885c7e9ba260d69"
+    },
+    {
+      "path": "assets/registry.yaml",
+      "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
+    },
+    {
+      "path": "devices/types/biosafety-cabinet.v1.yaml",
+      "sha256": "6662cfe473845cc0bc911956c24204a6332d44a9be3a0c81c6d3c561a2ced995"
+    },
+    {
+      "path": "devices/types/centrifuge.v1.yaml",
+      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+    },
+    {
+      "path": "devices/types/env-sensor.v1.yaml",
+      "sha256": "95ac04b69c84f27b4fd0d079d0a91607422188b9a8898c77499d9785c9aba4b4"
+    },
+    {
+      "path": "devices/types/incubator.v1.yaml",
+      "sha256": "f1665f610193c4d85d6e76213db68cc138e1f846851b72ac3c4d34de69bff41a"
+    },
+    {
+      "path": "devices/types/robot-arm.v1.yaml",
+      "sha256": "5ffd33f18471b065e9a84f2401840d563f67089c3bf3111f3f47b82a764c2903"
+    },
+    {
+      "path": "devices/types/tube.v1.yaml",
+      "sha256": "6cd2179acff472a9df10dbdb42dd0e6580f5c17d9ef2489c972dc6abaf125525"
+    },
+    {
+      "path": "library/assets/device/lab-centrifuge-reference/1/asset.usda",
+      "sha256": "79eceec394af1a985b916e01a37ec426ac3e5857ceda03ab6626f7ebcfdd20f6"
+    },
+    {
+      "path": "library/assets/device/lab-centrifuge-reference/1/asset.yaml",
+      "sha256": "c0e70caf9ddcae8b48f7408d222a603358ae8ca6066f9f06c0374d94cc8633d5"
+    },
+    {
+      "path": "library/assets/device/lab-centrifuge-reference/1/provenance.json",
+      "sha256": "a567b3a4a7fb7e7450c0d56ebdda7bec3a1b77250e193628689d9880d51aaa58"
+    },
+    {
+      "path": "library/assets/device/lab-centrifuge-reference/1/source/geometry.json",
+      "sha256": "ce8fab6abf125447c2fbfa0f7a459a1594156530669dd69f1b5442965d6183af"
+    },
+    {
+      "path": "library/assets/device/lab-centrifuge-reference/1/validation.json",
+      "sha256": "d9fb8bd6b74bdd609d7946d90491f48261c018317e46aa17df1a068db0136506"
+    },
+    {
+      "path": "library/assets/device/synthetic-cabinet-reference/1/asset.usda",
+      "sha256": "dba7fcde749f023391e7ad9e750590d3ff44a4ed106c1146858f08f0b462710e"
+    },
+    {
+      "path": "library/assets/device/synthetic-cabinet-reference/1/asset.yaml",
+      "sha256": "caf23faae0ec3e0d9abdaba6d5f47b628a2d3f8410b7d165007339ee47569554"
+    },
+    {
+      "path": "library/assets/device/synthetic-cabinet-reference/1/provenance.json",
+      "sha256": "6a2fb4f01f4100ac27aa6ac30ed89136ce5e84858665f6a7860ed55520855b40"
+    },
+    {
+      "path": "library/assets/device/synthetic-cabinet-reference/1/source/geometry.json",
+      "sha256": "b38843bbe5fc96ea7281f70eadda9104be742e52d7fffaee3cbac806fe19ddbd"
+    },
+    {
+      "path": "library/assets/device/synthetic-cabinet-reference/1/validation.json",
+      "sha256": "9b3d450d939bec2c681171d2922c6e18894585dd137d398fb0780a491c5fca50"
+    },
+    {
+      "path": "library/assets/device/synthetic-incubator-reference/1/asset.usda",
+      "sha256": "8fa5e16012d3040b4ef6200725ee7e5d86808f0fa040c0b8281b805f38d2e5db"
+    },
+    {
+      "path": "library/assets/device/synthetic-incubator-reference/1/asset.yaml",
+      "sha256": "fccd22ce036abfda7d2ee2f8516db817e61388fc6378b20cda5f149c63683007"
+    },
+    {
+      "path": "library/assets/device/synthetic-incubator-reference/1/provenance.json",
+      "sha256": "056438947cc0f2732a44abf2b7b841d86cbdd140b84c100396cb4c0b4db5b500"
+    },
+    {
+      "path": "library/assets/device/synthetic-incubator-reference/1/source/geometry.json",
+      "sha256": "e18eba8926345890ad231e2411973faeb59451b6e734375e0ffd110170863096"
+    },
+    {
+      "path": "library/assets/device/synthetic-incubator-reference/1/validation.json",
+      "sha256": "2653faaaba8ae8a6717180bf491abfb63b459b26bcab33955d3e67017556e0e3"
+    },
+    {
+      "path": "library/assets/device/synthetic-sensor-reference/1/asset.usda",
+      "sha256": "fd97697b61483030f094da277e52e87fab93e7cc34371e1256f53eeef66f236c"
+    },
+    {
+      "path": "library/assets/device/synthetic-sensor-reference/1/asset.yaml",
+      "sha256": "849f9819ec6c514403185f253338d5d54c32600638b071d5e6543c454d59cd60"
+    },
+    {
+      "path": "library/assets/device/synthetic-sensor-reference/1/provenance.json",
+      "sha256": "32c4afa9e391f28184035d36e99786d7b4d56848ca24ad352b2099ac61bf45b3"
+    },
+    {
+      "path": "library/assets/device/synthetic-sensor-reference/1/source/geometry.json",
+      "sha256": "226606259c741878c7b759afc4e3d80b89172e4b00e1efa44343ab23263e9c9b"
+    },
+    {
+      "path": "library/assets/device/synthetic-sensor-reference/1/validation.json",
+      "sha256": "d67faeadd542c3710dad1181e3fca9907a585e48b6ee53fa5a5a9f0802cb7650"
+    },
+    {
+      "path": "library/assets/labware/synthetic-tube-reference/1/asset.usda",
+      "sha256": "e79ecddada55b0bee71b0129ba2cf7f1558155c8649c3e0f5b35ad1eb42478c0"
+    },
+    {
+      "path": "library/assets/labware/synthetic-tube-reference/1/asset.yaml",
+      "sha256": "576db17643afbc7ef609deda37929feb2fffb9a1676d0adfe600599ed200d365"
+    },
+    {
+      "path": "library/assets/labware/synthetic-tube-reference/1/provenance.json",
+      "sha256": "95a9d524551b6a2e65161791041ec8b838ec150f605d736ecdaaadf3d13128d1"
+    },
+    {
+      "path": "library/assets/labware/synthetic-tube-reference/1/source/geometry.json",
+      "sha256": "d78685a983d3839dd9f91ac26d18e5c63a9ba4bff74bae3d5ab23a51284a6000"
+    },
+    {
+      "path": "library/assets/labware/synthetic-tube-reference/1/validation.json",
+      "sha256": "86b2269a5d352271575674ade08e9d6e0798be9741521a78845ccb26d9ab7006"
+    },
+    {
+      "path": "library/assets/robot/synthetic-arm-reference/1/asset.usda",
+      "sha256": "5aa53d7b76b804090742bd4465ec460f5e385f52c57f87c31c521f47d08c13b7"
+    },
+    {
+      "path": "library/assets/robot/synthetic-arm-reference/1/asset.yaml",
+      "sha256": "40e3c5f547b38ae27b03c2ce91693cf17d12d4845bcb06e591d5ca60c1dbe22a"
+    },
+    {
+      "path": "library/assets/robot/synthetic-arm-reference/1/provenance.json",
+      "sha256": "fd624ff7a8fb949a825744af8e26e5d8225e89d1bf97b5558f2d7ca4d534ee6b"
+    },
+    {
+      "path": "library/assets/robot/synthetic-arm-reference/1/source/geometry.json",
+      "sha256": "9e9f308def0090c5aca59b6311e95dfc8e34442e0d12898d568930e7843c754f"
+    },
+    {
+      "path": "library/assets/robot/synthetic-arm-reference/1/validation.json",
+      "sha256": "130eeeb4e0c301c16b1e4af4f7b41e8b6eae966adaf5c98de92122ee40d2e029"
+    },
+    {
+      "path": "library/scenes/lab-demo/3/devices.yaml",
+      "sha256": "749c09dd5c386bc8b5a44f531c9d295367f12e75d13826afab0d1fdb33b66812"
+    },
+    {
+      "path": "library/scenes/lab-demo/3/locations.yaml",
+      "sha256": "4887d634615cf2a8bbc95ee0afa32a0f0ddf287c276ac0252a8a3f3d54ea5b1e"
+    },
+    {
+      "path": "packages/assets/registry.py",
+      "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
+    },
+    {
+      "path": "packages/info/binding_validation.py",
+      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
+    },
+    {
+      "path": "packages/info/catalog.py",
+      "sha256": "649b0fcaeb7194769dcb4d60e069a5d7d5c48a748619763dfec00ee6fae09a6f"
+    },
+    {
+      "path": "packages/info/conditions.py",
+      "sha256": "15024a91f38dda4a563dca1f5f56fce9c14571a9adbf1b0e5b54519f936afa31"
+    },
+    {
+      "path": "packages/info/declarations.py",
+      "sha256": "c6ed9509200157374509b73a9c90e51797673827dae69cb89c8eb52eb31d07d6"
+    },
+    {
+      "path": "packages/info/diff.py",
+      "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
+    },
+    {
+      "path": "packages/info/program.py",
+      "sha256": "b5210b7c9bbeeff4017eb69daa8c8c2f1232321cde35bdada4667c648e1cc398"
+    },
+    {
+      "path": "packages/info/schema_subset.py",
+      "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
+    },
+    {
+      "path": "packages/library/archive.py",
+      "sha256": "a4fbe2023cb623821cd667d59154b3ff3031baf6497f22ca852fcdfc8a768dcf"
+    },
+    {
+      "path": "packages/library/common.py",
+      "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
+    },
+    {
+      "path": "packages/library/previews.py",
+      "sha256": "2941383671e9a3e95001ed74aa1cf3c049fce1fec777d59171e31352e70a28a9"
+    },
+    {
+      "path": "packages/library/reports.py",
+      "sha256": "084fbd430eea7405bf74acec255ed9b29467028243ac247ba1591d6fba45b257"
+    },
+    {
+      "path": "packages/library/scenes.py",
+      "sha256": "c30fc1f5067f8968289f937a13ee647fd676a855154595eb278bf727596cd2fa"
+    },
+    {
+      "path": "packages/library/templates.py",
+      "sha256": "016ff3a415009d07f90e464fc6935ed6387305f2ae15367e864c2ffa81736b6d"
+    },
+    {
+      "path": "packages/programs/biosafety_cabinet/virtual.py",
+      "sha256": "153e540a52a9a94b1ad8212f9a33413865278b0fcd3d78e9696a06a077a42d09"
+    },
+    {
+      "path": "packages/programs/centrifuge/virtual.py",
+      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
+    },
+    {
+      "path": "packages/programs/env_sensor/virtual.py",
+      "sha256": "6387461eb20951967455f56975b638f8559707162a76ab1726950e910e382257"
+    },
+    {
+      "path": "packages/programs/incubator/virtual.py",
+      "sha256": "d49d5c0b7de6c1bd4fce82df31b1dcc7b810e993d82ed7871c9811cf91caf7b6"
+    },
+    {
+      "path": "packages/programs/robot_arm/taught.py",
+      "sha256": "b98ae93e03c041353f47e387264eafd35434cbb1bf5a288e9638226f4533c5eb"
+    },
+    {
+      "path": "packages/programs/robot_arm/virtual.py",
+      "sha256": "74cd4aa66a04f1685e1a81d99b3f0409b63005c20b28ebe3cc9bbb4e323b916d"
+    },
+    {
+      "path": "packages/programs/signals.py",
+      "sha256": "f0f3d6235f3ab927b7d55cfa856a80bd9962faf044ee4a19182b666befe5b9cf"
+    },
+    {
+      "path": "packages/programs/tube/virtual.py",
+      "sha256": "de0ae5c7ae12c6a36c2cff776a4bf6e399a00a5820d33055ce373d266b6ca248"
+    },
+    {
+      "path": "packages/protocol/internal.py",
+      "sha256": "f19e453b1041c2d1abe4e95de3e7d9ee08dee9e7ddf925918376f188f3dde0d5"
+    },
+    {
+      "path": "packages/protocol/math.py",
+      "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
+    },
+    {
+      "path": "packages/protocol/schema/__init__.py",
+      "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
+    },
+    {
+      "path": "packages/sim_runtime/synthetic_lab.py",
+      "sha256": "55248657cf19867001c55dc00780c67c797d0f97fd97d3fc0b40d2b026cb8c5d"
+    },
+    {
+      "path": "packages/transport/__init__.py",
+      "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
+    },
+    {
+      "path": "tools/capture_scene_preview.py",
+      "sha256": "4c489de88e477fb716025577618acc9fa1781e44a9c4f82e1ed9f9b82b09f373"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
+    }
+  ],
+  "documents": {
+    "manifest": "manifest.json",
+    "catalog": "catalog.json",
+    "spatial": "snapshot.bin",
+    "state": "state.json"
+  },
+  "files": {
+    "manifest.json": "8f231756dd8b03635f7b46c6f79419c36cdcd670e9563ab1910c4bacbc1b5362",
+    "catalog.json": "c6b0f76437b00ef496f82661b6c237f7adf0453970f571840ede4817b7b5b9bc",
+    "state.json": "5478717410a9b158b2384404363db09a7224b76beeb7e5990937288881d034a4",
+    "snapshot.bin": "171406e39dc65f241f2126b8b70021917a27429a58fd261aade8adc7e1d3a0a3"
+  },
+  "counts": {
+    "physicalEntities": 33,
+    "bindings": 25,
+    "groups": 7
+  },
+  "bounds": null,
+  "thumbnail": {}
+}

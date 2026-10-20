@@ -48,7 +48,7 @@ def device_nodes(bindings):
     return nodes
 
 
-def build_manifest(session_id, options, scene_package=None):
+def build_manifest(session_id, options, scene_package=None, *, declarations=None):
     nodes = [
         {"kind": "group", "entityKey": "/World", "name": "World"},
         {"kind": "group", "entityKey": BASE, "name": "Lab", "parentEntityKey": "/World"},
@@ -179,7 +179,7 @@ def build_manifest(session_id, options, scene_package=None):
     from packages.library.scenes import builtin_scene_path
 
     if scene_package:
-        nodes.extend(device_nodes(scene_package.bindings["entities"]))
+        nodes.extend(device_nodes((declarations or scene_package.bindings)["entities"]))
 
     locations = yaml.safe_load(
         (

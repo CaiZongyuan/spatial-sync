@@ -181,6 +181,7 @@ async def capture(version, source_kind, root):
     if any(cache_root.is_relative_to(path.resolve()) for path in package_roots):
         raise ValueError("Derived captures must stay outside published scene packages")
     version.require_launchable()
+    template_assets = version.template_dependencies()
     if source_kind not in version.metadata["sources"]:
         raise ValueError("Source is not supported by this version")
     opened = set()
@@ -218,6 +219,8 @@ async def capture(version, source_kind, root):
             raise ValueError("; ".join(native["errors"]))
     if content_hash(version.path) != version.content_hash:
         raise ValueError("Scene package changed while capturing")
+    if version.template_dependencies() != template_assets:
+        raise ValueError("Template dependencies changed while capturing")
     dependencies = module_inputs(
         type(version), Source, FrameCodec, freeze_manifest, AssetRegistry, capture, capture_runner,
         native_capture_inputs,
@@ -249,6 +252,7 @@ async def capture(version, source_kind, root):
     }
     value = {
         "schema": SCHEMA, "sceneVersion": version.id, "sceneContentHash": version.content_hash,
+        "templateAssets": template_assets,
         "source": source_kind, "capturedAt": datetime.now(UTC).isoformat(), "simTime": frame.simTime,
         "runtime": {"python": sys.version.split()[0], "source": Source.__name__, "device": "cpu",
                     **{name: importlib.metadata.version(name) for name in (

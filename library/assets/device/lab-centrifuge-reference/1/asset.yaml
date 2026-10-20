@@ -1,0 +1,18 @@
+id: device/lab-centrifuge-reference
+kind: device
+title: Laboratory centrifuge housing proxy
+description: Binding reference with extracted primitive visuals only. World placement,
+  articulation, collision, mass, GLB and license are not supplied. Registered Python
+  scenes retain their existing spatial builders.
+stage: asset.usda
+implements:
+- type: centrifuge/v1
+  programs:
+    synthetic: centrifuge.virtual
+    newton: centrifuge.newton
+  config:
+    slotSites:
+    - Rotor/Slot1
+    - Rotor/Slot2
+    - Rotor/Slot3
+    - Rotor/Slot4

@@ -20,11 +20,12 @@ from packages.library.structural import validate
 from packages.library.validation import StructuralValidator
 types = {v['type']: v for f in TYPE_ROOT.glob('*.yaml') if (v := document(f))}
 library = SceneLibrary(user_root=sys.argv[1], state_root=sys.argv[1])
-for selector in ('lab-demo@1', 'lab-demo@2', 'robot-and-tubes@1'):
+for selector in ('lab-demo@1', 'lab-demo@2', 'lab-demo@3', 'robot-and-tubes@1', 'robot-and-tubes@2'):
     scene = library.resolve(selector)
     report = validate({'kind': 'scene', 'subject': 'scene:' + scene.id,
                        'metadata': scene.metadata, 'bindings': scene.bindings, 'locations': scene.locations,
-                       'package': StructuralValidator.scope(scene.path), 'assets': [],
+                       'package': StructuralValidator.scope(scene.path),
+                       'assets': list(scene.template_assets.values()),
                        'types': types, 'programs': program_schemas()})
     checks = {c['id']: c for c in report['checks']}
     assert checks['S5']['status'] == checks['S8']['status'] == 'pass', report

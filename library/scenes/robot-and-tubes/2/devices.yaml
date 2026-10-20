@@ -1,0 +1,126 @@
+scene: robot-and-tubes
+entities:
+- key: /World/Lab/RobotA
+  config:
+    locations: locations.yaml
+    tubes:
+    - /World/Lab/Tubes/Tube01
+    - /World/Lab/Tubes/Tube02
+    - /World/Lab/Tubes/Tube03
+    - /World/Lab/Tubes/Tube04
+    - /World/Lab/Tubes/Tube05
+    - /World/Lab/Tubes/Tube06
+    - /World/Lab/Tubes/Tube07
+    - /World/Lab/Tubes/Tube08
+    - /World/Lab/Tubes/Tube09
+    - /World/Lab/Tubes/Tube10
+    - /World/Lab/Tubes/Tube11
+    - /World/Lab/Tubes/Tube12
+    - /World/Lab/Tubes/Tube13
+    - /World/Lab/Tubes/Tube14
+    - /World/Lab/Tubes/Tube15
+    - /World/Lab/Tubes/Tube16
+    - /World/Lab/Tubes/Tube17
+    - /World/Lab/Tubes/Tube18
+    - /World/Lab/Tubes/Tube19
+    - /World/Lab/Tubes/Tube20
+    jointKeys:
+    - /World/Lab/RobotA/fr3/fr3_joint1
+    - /World/Lab/RobotA/fr3/fr3_joint2
+    - /World/Lab/RobotA/fr3/fr3_joint3
+    - /World/Lab/RobotA/fr3/fr3_joint4
+    - /World/Lab/RobotA/fr3/fr3_joint5
+    - /World/Lab/RobotA/fr3/fr3_joint6
+    - /World/Lab/RobotA/fr3/fr3_joint7
+    fingerKeys:
+    - /World/Lab/RobotA/fr3/fr3_finger_joint1
+    - /World/Lab/RobotA/fr3/fr3_finger_joint2
+    handBody: /World/Lab/RobotA/fr3/fr3_hand
+    tcpSite: /World/Lab/RobotA/fr3/fr3_hand/tcp
+  template: robot/fr3@1
+- key: /World/Lab/Centrifuge
+  config:
+    tubes:
+    - /World/Lab/Tubes/Tube01
+    - /World/Lab/Tubes/Tube02
+    - /World/Lab/Tubes/Tube03
+    - /World/Lab/Tubes/Tube04
+    - /World/Lab/Tubes/Tube05
+    - /World/Lab/Tubes/Tube06
+    - /World/Lab/Tubes/Tube07
+    - /World/Lab/Tubes/Tube08
+    - /World/Lab/Tubes/Tube09
+    - /World/Lab/Tubes/Tube10
+    - /World/Lab/Tubes/Tube11
+    - /World/Lab/Tubes/Tube12
+    - /World/Lab/Tubes/Tube13
+    - /World/Lab/Tubes/Tube14
+    - /World/Lab/Tubes/Tube15
+    - /World/Lab/Tubes/Tube16
+    - /World/Lab/Tubes/Tube17
+    - /World/Lab/Tubes/Tube18
+    - /World/Lab/Tubes/Tube19
+    - /World/Lab/Tubes/Tube20
+    spindleJoint: /World/Lab/Centrifuge/Spindle
+    lidJoint: /World/Lab/Centrifuge/LidHinge
+  interlocks:
+    closeLid:
+    - entity: /World/Lab/RobotA
+      property: zone
+      notEquals: centrifuge
+      message: Move the arm out of the centrifuge zone first
+  template: device/lab-centrifuge-reference@1
+- match: /World/Lab/Tubes/Tube0[1-4]
+  config:
+    robots:
+    - /World/Lab/RobotA
+    locationSites:
+    - /World/Lab/Rack/A1
+    - /World/Lab/Rack/A2
+    - /World/Lab/Rack/A3
+    - /World/Lab/Rack/A4
+    - /World/Lab/Rack/B1
+    - /World/Lab/Rack/B2
+    - /World/Lab/Rack/B3
+    - /World/Lab/Rack/B4
+    - /World/Lab/Centrifuge/Rotor/Slot1
+    - /World/Lab/Centrifuge/Rotor/Slot2
+    - /World/Lab/Centrifuge/Rotor/Slot3
+    - /World/Lab/Centrifuge/Rotor/Slot4
+  template: labware/native-small-tube-reference@1
+- match: /World/Lab/Tubes/Tube0[5-9]
+  config:
+    robots:
+    - /World/Lab/RobotA
+    locationSites:
+    - /World/Lab/Rack/A1
+    - /World/Lab/Rack/A2
+    - /World/Lab/Rack/A3
+    - /World/Lab/Rack/A4
+    - /World/Lab/Rack/B1
+    - /World/Lab/Rack/B2
+    - /World/Lab/Rack/B3
+    - /World/Lab/Rack/B4
+    - /World/Lab/Centrifuge/Rotor/Slot1
+    - /World/Lab/Centrifuge/Rotor/Slot2
+    - /World/Lab/Centrifuge/Rotor/Slot3
+    - /World/Lab/Centrifuge/Rotor/Slot4
+  template: labware/native-capsule-tube-reference@1
+- match: /World/Lab/Tubes/Tube[12][0-9]
+  config:
+    robots:
+    - /World/Lab/RobotA
+    locationSites:
+    - /World/Lab/Rack/A1
+    - /World/Lab/Rack/A2
+    - /World/Lab/Rack/A3
+    - /World/Lab/Rack/A4
+    - /World/Lab/Rack/B1
+    - /World/Lab/Rack/B2
+    - /World/Lab/Rack/B3
+    - /World/Lab/Rack/B4
+    - /World/Lab/Centrifuge/Rotor/Slot1
+    - /World/Lab/Centrifuge/Rotor/Slot2
+    - /World/Lab/Centrifuge/Rotor/Slot3
+    - /World/Lab/Centrifuge/Rotor/Slot4
+  template: labware/native-capsule-tube-reference@1

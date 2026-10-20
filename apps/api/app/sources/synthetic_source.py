@@ -81,6 +81,7 @@ class SyntheticSource:
             self.scene_package.name if self.scene_package else scene_id,
             REGISTRY,
             **({"scene_file": self.scene_package.path / "devices.yaml"} if self.scene_package else {}),
+            template_assets=self.scene_package.template_assets if self.scene_package else None,
         )
         self.host = HostCore(
             self.catalog,
@@ -252,7 +253,10 @@ class SyntheticSource:
         return poses
 
     def _manifest(self):
-        return build_manifest(self.session_id, self.options, self.scene_package)
+        declarations = (
+            self.scene_package.declarations("synthetic").bootstrap() if self.scene_package else None
+        )
+        return build_manifest(self.session_id, self.options, self.scene_package, declarations=declarations)
 
     async def execute(self, command: Command) -> CommandResult:
         async with self._lock:

@@ -43,7 +43,10 @@ async def test_real_preview_preserves_existing_session_and_serves_only_verified_
         detail = client.get("/api/v1/library/scenes/lab-demo/1").json()
         assert detail["preview"]["status"] == "available", detail
         assert detail["entityCount"] == 30 and detail["deviceCount"] == 22
-        assert detail["inspection"] == "declarative bindings; match selectors are unexpanded"
+        assert detail["templateResolution"] == {"status": "not_required", "error": None}
+        assert detail["effectiveBindings"] == {}
+        assert detail["entities"] == detail["rawBindings"]["entities"] == version.bindings["entities"]
+        assert any(binding.get("match") == "/World/Lab/Tubes/*" for binding in detail["entities"])
         manifest = client.get(detail["preview"]["documents"]["manifest"]).json()
         assert manifest["sessionId"] != active["sessionId"]
         assert next(site for site in manifest["sites"] if site["entityKey"] == "/World/Lab/Rack/A1")[
@@ -72,11 +75,11 @@ async def test_real_preview_preserves_existing_session_and_serves_only_verified_
 
 async def test_missing_wrong_source_or_stale_preview_does_not_change_launchability(tmp_path, monkeypatch):
     user_root = tmp_path / "library"
-    package = user_root / "scenes/lab-demo/3"
+    package = user_root / "scenes/lab-demo/4"
     shutil.copytree(ROOT / "library/scenes/lab-demo/1", package)
     report_file = package / "validation.json"
     report = json.loads(report_file.read_bytes())
-    report["subject"] = "scene:lab-demo@3"
+    report["subject"] = "scene:lab-demo@4"
     report_file.write_text(json.dumps(report), encoding="utf-8")
     monkeypatch.setenv("LW_LIBRARY", str(user_root))
     library = SceneLibrary(user_root=user_root)
@@ -84,7 +87,7 @@ async def test_missing_wrong_source_or_stale_preview_does_not_change_launchabili
     await capture(version, "synthetic", tmp_path / "previews")
     settings = Settings(recordings_root=tmp_path / "recordings", scene_previews_root=tmp_path / "previews")
     with TestClient(create_app(settings)) as client:
-        missing = client.get("/api/v1/library/scenes/lab-demo/3").json()
+        missing = client.get("/api/v1/library/scenes/lab-demo/4").json()
         assert missing["launchable"] is True and missing["preview"]["status"] == "unavailable"
         assert missing["entityCount"] is None and missing["deviceCount"] is None
         wrong_source = client.get("/api/v1/library/scenes/lab-demo/1?source=newton").json()

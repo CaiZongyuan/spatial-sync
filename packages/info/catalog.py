@@ -8,6 +8,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from packages.library.scenes import builtin_scene_path
+from packages.library.templates import config_fields, instantiate, manifest_resources, resolve
 from packages.protocol.schema import Catalog as CatalogDocument
 
 from .binding_validation import compile_alert_rules, validate_binding_semantics
@@ -73,7 +74,7 @@ class Catalog(BaseModel):
         return deepcopy(adapter.validate_python(data)) if adapter else deepcopy(data)
 
 
-def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None):
+def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None, template_assets=None):
     root = Path(root)
     scene_file = (
         Path(scene_file)
@@ -87,55 +88,44 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
     scene = yaml.safe_load(scene_file.read_text(encoding="utf-8"))
     if set(scene) != {"scene", "entities"} or scene["scene"] != scene_id:
         raise ValueError("Scene binding document must name its registered scene")
+    resolved = resolve(scene, getattr(getattr(manifest, "source", None), "kind", None), template_assets or {})
+    scene = instantiate(
+        resolved,
+        manifest_resources(manifest),
+        {name: {"fields": config_fields(program)} for name, program in registry.items()},
+    )
     types = {}
     for path in sorted((root / "types").glob("*.yaml")):
         definition = yaml.safe_load(path.read_text(encoding="utf-8"))
         if definition["type"] in types:
             raise ValueError(f"Duplicate entity type: {definition['type']}")
         types[definition["type"]] = definition
-    nodes = {node.entityKey for node in manifest.nodes}
     sites = {site.entityKey for site in manifest.sites}
     entities = {}
     configs = {}
-    for template in scene["entities"]:
-        if ("key" in template) == ("match" in template):
-            raise ValueError("Binding requires exactly one key or match")
-        keys = (
-            sorted(key for key in nodes if fnmatchcase(key, template["match"]))
-            if "match" in template
-            else [template["key"]]
-        )
-        if not keys:
-            raise ValueError(f"Binding glob matched no entities: {template['match']}")
-        for key in keys:
-            if key in entities:
-                raise ValueError(f"Duplicate binding: {key}")
-            binding = deepcopy(template)
-            binding.pop("match", None)
-            binding["key"] = key
-            if key not in nodes and not binding.get("unplaced", False):
-                raise ValueError(f"Binding entity does not exist in Manifest: {key}")
-            cls = registry.get(binding["program"])
-            if cls is None or cls.type != binding["type"]:
-                raise ValueError(f"Unknown program or program/type mismatch: {binding['program']}")
-            config = binding.get("config", {})
-            for name, value in list(config.items()):
-                if isinstance(value, str) and value.endswith(".yaml"):
-                    target = (scene_file.parent / value).resolve()
-                    if not target.is_relative_to(scene_file.parent.resolve()):
-                        raise ValueError("Config documents must stay in the scene directory")
-                    config[name] = yaml.safe_load(target.read_text(encoding="utf-8"))
-                elif isinstance(value, list) and all(isinstance(item, str) for item in value):
-                    expanded = []
-                    for item in value:
-                        expanded.extend(
-                            sorted(s for s in sites if fnmatchcase(s, item)) if "*" in item else [item]
-                        )
-                    config[name] = expanded
-            parsed = cls.Config.model_validate(config)
-            configs[key] = parsed
-            binding["config"] = parsed.model_dump(mode="json")
-            entities[key] = binding
+    for binding in scene["entities"]:
+        key = binding["key"]
+        cls = registry.get(binding["program"])
+        if cls is None or cls.type != binding["type"]:
+            raise ValueError(f"Unknown program or program/type mismatch: {binding['program']}")
+        config = binding.get("config", {})
+        for name, value in list(config.items()):
+            if isinstance(value, str) and value.endswith(".yaml"):
+                target = (scene_file.parent / value).resolve()
+                if not target.is_relative_to(scene_file.parent.resolve()):
+                    raise ValueError("Config documents must stay in the scene directory")
+                config[name] = yaml.safe_load(target.read_text(encoding="utf-8"))
+            elif isinstance(value, list) and all(isinstance(item, str) for item in value):
+                expanded = []
+                for item in value:
+                    expanded.extend(
+                        sorted(s for s in sites if fnmatchcase(s, item)) if "*" in item else [item]
+                    )
+                config[name] = expanded
+        parsed = cls.Config.model_validate(config)
+        configs[key] = parsed
+        binding["config"] = parsed.model_dump(mode="json")
+        entities[key] = binding
     type_declarations = {key: EntityTypeDeclaration.model_validate(value) for key, value in types.items()}
     binding_declarations = {
         key: EntityBindingDeclaration.model_validate(value) for key, value in entities.items()
