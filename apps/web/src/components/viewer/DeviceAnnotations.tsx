@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Box3, Vector3 } from 'three';
 import { placeLabels, type PlacedLabel } from '../../lib/scene/label-layout';
 
-export interface DeviceAnnotation { key: string; label: string; detail: string; bodyKeys: string[]; stale?: boolean }
+export interface DeviceAnnotation { key: string; label: string; detail: string; bodyKeys: string[]; stale?: boolean; alert?: 'raised' | 'acknowledged' }
 
 export function DeviceAnnotations({ annotations, layout, boundsForKeys }: {
   annotations: DeviceAnnotation[]; layout: (labels: PlacedLabel[]) => void; boundsForKeys: (keys: string[]) => Box3;
@@ -50,6 +50,7 @@ export function DeviceAnnotationLayer({ labels, annotations, selected, select }:
           data-testid={`device-label-${label.key}`} aria-pressed={selected === label.key}
           aria-label={annotation.label} onClick={() => select(label.key)}
           style={{ left: label.x, top: label.y, width: label.width, height: label.height }}>
+          {annotation.alert && <i className={`device-alert-dot ${annotation.alert === 'acknowledged' ? 'is-acknowledged' : ''}`} aria-label={annotation.alert === 'acknowledged' ? '活动告警已确认' : '活动告警'} />}
           <strong>{annotation.label}</strong>{annotation.detail && <span>{annotation.detail}</span>}
         </button>;
       })}
