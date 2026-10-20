@@ -101,6 +101,10 @@ class ActionPipeline:
                 "Invalid action parameters",
                 {"errors": exc.errors(include_url=False, include_context=False)},
             )
+        available = getattr(self.session.source, "availability", None)
+        unavailable = available(invocation.entityKey) if available is not None else None
+        if unavailable is not None:
+            return unavailable.code, unavailable.message, unavailable.details
         if not action.get("concurrent", False):
             for active in [*self.table.active_for(invocation.entityKey), *self._reserved.values()]:
                 if active.invocationId == invocation.invocationId or active.entityKey != invocation.entityKey:
