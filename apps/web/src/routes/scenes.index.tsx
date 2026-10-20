@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getSceneLibrary, sourceLabel, rootLabel, type SceneSource, type SceneVersion } from '../lib/library';
 import { SceneThumbnails } from '../components/SceneThumbnails';
 import { LaunchStatus } from '../components/SceneStatus';
@@ -23,16 +23,20 @@ function SceneLibrary() {
     try { return localStorage.getItem(viewKey) === 'list' ? 'list' : 'card'; } catch { return 'card'; }
   });
   const view = search.view ?? preferred;
-  const [scenes, setScenes] = useState<SceneVersion[]>();
-  const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  // Retire old results during render, before effects cancel their requests.
+  const query = useMemo(() => ({ q: search.q, source: search.source, launchable: search.launchable, attempt }),
+    [search.q, search.source, search.launchable, attempt]);
+  const [result, setResult] = useState<{ query: typeof query; scenes?: SceneVersion[]; error?: string }>();
+  const current = result?.query === query ? result : undefined;
+  const scenes = current?.scenes, error = current?.error;
   useEffect(() => {
     const controller = new AbortController();
-    setError(undefined);
-    void getSceneLibrary(search, controller.signal).then(value => setScenes(value.scenes))
-      .catch((error: Error) => { if (!controller.signal.aborted) setError(error.message); });
+    void getSceneLibrary(query, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setResult({ query, scenes: value.scenes }); })
+      .catch((error: Error) => { if (!controller.signal.aborted) setResult({ query, error: error.message }); });
     return () => controller.abort();
-  }, [search.q, search.source, search.launchable, attempt]);
+  }, [query]);
   const change = (next: Partial<Search>) => void navigate({ search: previous => ({ ...previous, ...next }), replace: true });
   return <main className="scene-library-page">
     <header className="scene-page-heading"><div><h1>场景库</h1><p>选择一个不可变版本，检查场景后启动会话。</p></div>
