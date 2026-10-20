@@ -1,6 +1,6 @@
 param([switch]$Execute)
 $ErrorActionPreference = 'Stop'
-$round2Preparation = 'D:/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-29-round2/first-home-prep-v2'
+$round2Preparation = 'D:/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-29-round2/first-home-prep-v3'
 $round2IdentityPath = Join-Path $round2Preparation 'prepared_identity.json'
 $round2Identity = Get-Content -Raw -Encoding UTF8 -LiteralPath $round2IdentityPath | ConvertFrom-Json
 $round2Phase = 'frozen-home-all-first-' + [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmssfff')
@@ -14,6 +14,12 @@ $round2Inner = @($round2Identity.primary_python, $round2Identity.run_owned, '--p
 if (-not $Execute) {
     [pscustomobject]@{state='dry_run_no_gpu';command=$round2Inner;hard_seconds=900;cleanup_seconds=15;reservation_seconds=930} | ConvertTo-Json -Depth 4
     exit 0
+}
+$round2Gpu = & nvidia-smi --query-gpu=uuid,memory.free --format=csv,noheader,nounits
+if ($LASTEXITCODE -ne 0) { throw 'GPU inventory is unavailable; do not launch.' }
+$round2GpuValues = @($round2Gpu -split ',')
+if ($round2GpuValues.Count -ne 2 -or $round2GpuValues[0].Trim() -ne 'GPU-ea968db7-d722-8e6a-d1d7-70adca2d5248' -or [int]$round2GpuValues[1].Trim() -lt 4096) {
+    throw 'Expected GPU or 4GiB free VRAM unavailable; leave consumers intact and reschedule.'
 }
 New-Item -ItemType Directory -Path $round2Evidence -ErrorAction Stop | Out-Null
 foreach ($round2File in @('frozen_home_trace.py', 'trace_contract.py', 'round2_home.py', 'owned_status.py', 'prepared_identity.json')) {

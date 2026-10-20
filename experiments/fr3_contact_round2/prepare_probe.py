@@ -12,7 +12,7 @@ ROOT = Path("D:/Projects/Robots/spatial-sync")
 OLD = ROOT / ".scratch/rsi-platform/issue-29"
 NEW = ROOT / ".scratch/rsi-platform/issue-29-round2"
 REPO = ROOT / ".worktrees/issue-29-round2"
-PREP = NEW / "first-home-prep-v2"
+PREP = NEW / "first-home-prep-v3"
 PYTHON = ROOT / ".worktrees/issue-29/experiments/fr3_contact/.venv/Scripts/python.exe"
 
 
@@ -64,6 +64,11 @@ def main():
     watchdog = watchdog.replace("'FR3_DIAG_MAX_CONTROL_STEPS': '111'", "'FR3_DIAG_MAX_CONTROL_STEPS': '601'")
     watchdog = replace_once(
         watchdog,
+        "'FR3_CONTACT_ASSETS': identity['assets']",
+        "'WARP_CACHE_PATH': identity['warp_cache_base'], 'FR3_CONTACT_ASSETS': identity['assets']",
+    )
+    watchdog = replace_once(
+        watchdog,
         "('frozen_home_trace.py', 'trace_contract.py', 'native_home_trace.py', "
         "'native_contract.py', 'owned_status.py')",
         "('frozen_home_trace.py', 'trace_contract.py', 'round2_home.py', 'owned_status.py')",
@@ -78,6 +83,7 @@ def main():
         "archive": str(NEW),
         "source_repository": str(REPO),
         "primary_python": str(PYTHON),
+        "warp_cache_base": str(NEW / "warp-cache-v1"),
         "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
         "run_owned": str(PREP / "run_owned_terminal.py"),
         "prepared_module_sha256": {
@@ -87,6 +93,11 @@ def main():
     }
     # Keep every original identity input and explicitly freeze the new owned observer/supervisor files.
     identity["files"] = dict(prior["files"])
+    cache_receipt = NEW / "cache-seed-receipt-v1.json"
+    identity["files"]["round2_cache_seed_receipt"] = {
+        "path": str(cache_receipt),
+        "sha256": sha(cache_receipt),
+    }
     for path in sorted((REPO / "experiments/fr3_contact").glob("*.py")):
         identity["files"]["round2_task_" + path.name] = {"path": str(path), "sha256": sha(path)}
     for path in PREP.iterdir():
@@ -109,7 +120,7 @@ def main():
         "state": "prepared_not_executed",
         "prepared_identity_sha256": sha(PREP / "prepared_identity.json"),
         "gpu_execution_count": 0,
-        "diagnostic_reservation_seconds": 915,
+        "diagnostic_reservation_seconds": 930,
         "hard_execution_seconds": 900,
         "cleanup_seconds": 15,
         "max_controls": 601,
