@@ -1,7 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Request } from '@playwright/test';
 import type { SceneManifest } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
+type SceneListGate = { ready: boolean; delivered: boolean; release: () => void };
+type SceneListGateWindow = Window & { __sceneListSuccessGate: SceneListGate };
 
 test('a failed preview does not transfer its error to the next healthy capture', async ({ page, request }) => {
   const { scenes } = await (await request.get(`${api}/api/v1/library/scenes`)).json();
@@ -89,6 +91,110 @@ test('a library larger than the shared thumbnail cache keeps every completed ima
   await expect(page.getByRole('img', { name: 'thumbnail-fixture@1 的真实初始场景' })).toBeVisible();
   await expect(page.getByText('预览加载失败', { exact: true })).toHaveCount(0);
   await expect(page.locator('canvas')).toHaveCount(0);
+});
+
+test('changing scene filters retires old results and queued previews before the next response', async ({ page, request }) => {
+  const live: string[] = [], aborted = new Set<Request>(), held: Request[] = [];
+  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/v1/sessions')) live.push(request.url()); });
+  page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) live.push(socket.url()); });
+  page.on('requestfailed', request => aborted.add(request));
+  const before = await (await request.get(`${api}/api/v1/health`)).json();
+  await page.addInitScript(() => {
+    const fetch = window.fetch.bind(window);
+    const gate: SceneListGate = { ready: false, delivered: false, release: () => {} };
+    const released = new Promise<void>(resolve => { gate.release = resolve; });
+    (window as SceneListGateWindow).__sceneListSuccessGate = gate;
+    window.fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      const url = new URL(typeof input === 'object' && 'url' in input ? input.url : String(input), location.href);
+      if (url.pathname === '/api/v1/library/scenes' && url.searchParams.get('source') === 'newton') {
+        const json = response.json.bind(response);
+        response.json = async () => {
+          const value = await json(); // Keep the actual API payload; delay an already successful continuation.
+          gate.ready = true;
+          await released;
+          gate.delivered = true;
+          return value;
+        };
+      }
+      return response;
+    };
+  });
+  let releaseOld!: () => void, releaseNext!: () => void, oldStarted!: () => void, nextStarted!: () => void;
+  const oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
+  const nextGate = new Promise<void>(resolve => { releaseNext = resolve; });
+  const oldReady = new Promise<void>(resolve => { oldStarted = resolve; });
+  const nextReady = new Promise<void>(resolve => { nextStarted = resolve; });
+  let retryStarted!: () => void, releaseRetry!: () => void, failOnce = true;
+  const retryReady = new Promise<void>(resolve => { retryStarted = resolve; });
+  const retryGate = new Promise<void>(resolve => { releaseRetry = resolve; });
+  let blockOld = true;
+  await page.route('**/api/v1/library/scenes/**/preview/**/manifest.json', async route => {
+    if (!blockOld) return route.continue();
+    held.push(route.request()); oldStarted();
+    await oldGate;
+    await route.abort().catch(() => {}); // Cleanup is also valid after the browser already cancelled it.
+  });
+  await page.route('**/api/v1/library/scenes*', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== '/api/v1/library/scenes') return route.fallback();
+    if (url.searchParams.get('q') === 'lab-demo') {
+      if (failOnce) {
+        failOnce = false;
+        return route.fulfill({ status: 503, json: { detail: 'Controlled scene library retry' } });
+      }
+      retryStarted(); await retryGate;
+    }
+    if (url.searchParams.get('source') === 'synthetic') {
+      nextStarted(); await nextGate;
+    }
+    await route.continue();
+  });
+  try {
+    await page.goto('/scenes');
+    await expect(page.locator('.scene-card')).toHaveCount(7);
+    await oldReady;
+    await expect.poll(() => held.some(request => !request.failure())).toBe(true);
+    const activeOld = held.filter(request => !request.failure());
+    await page.getByLabel('物理源筛选').selectOption('synthetic');
+    await nextReady;
+    await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible({ timeout: 1000 });
+    await expect(page.locator('.scene-card')).toHaveCount(0);
+    await expect(page.locator('.scene-thumbnail-renderer')).toHaveCount(0);
+    await expect.poll(() => activeOld.every(request => aborted.has(request)), { timeout: 1000 }).toBe(true);
+    blockOld = false;
+    releaseNext();
+    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await page.getByLabel('物理源筛选').selectOption('newton');
+    await page.waitForFunction(() => (window as SceneListGateWindow).__sceneListSuccessGate.ready);
+    await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible();
+    await expect(page.locator('.scene-card')).toHaveCount(0);
+    await page.getByLabel('物理源筛选').selectOption('synthetic');
+    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate.release());
+    await page.waitForFunction(() => (window as SceneListGateWindow).__sceneListSuccessGate.delivered);
+    // Let the late continuation and React commit before checking the visible result.
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await expect(page.locator('.scene-card-grid')).not.toContainText('robot-and-tubes');
+    await page.getByLabel('搜索场景').fill('lab-demo');
+    await expect(page.getByRole('alert')).toContainText('Controlled scene library retry');
+    await expect(page.locator('.scene-card')).toHaveCount(0);
+    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await retryReady;
+    await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.locator('.scene-card')).toHaveCount(0);
+    releaseRetry();
+    await expect(page.locator('.scene-card')).toHaveCount(3);
+    expect(live).toEqual([]);
+    const after = await (await request.get(`${api}/api/v1/health`)).json();
+    expect(after.sessionCount).toBe(before.sessionCount);
+  } finally {
+    await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate?.release()).catch(() => {});
+    releaseOld(); releaseNext(); releaseRetry();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });
 
 test('real scene capture, shared thumbnails, filters, URL preferences and exact launch', async ({ page, request }, testInfo) => {
