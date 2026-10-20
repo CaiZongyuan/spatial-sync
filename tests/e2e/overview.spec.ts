@@ -287,7 +287,6 @@ test('overview annotations keep working with packed instanced geometry', async (
     await expect(page.getByRole('complementary', { name: '设备抽屉' })).toHaveAttribute('data-read-only', 'false');
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.frameStats().mode)).toBe('instanced');
     await expect(page.getByTestId(`device-label-${centrifuge}`)).toBeVisible();
-    await page.locator('.device-legend summary').click();
     const tube = '/World/Lab/Tubes/Tube01';
     await page.getByTestId(`legend-${tube}`).click();
     await expect(page.getByTestId(`device-label-${tube}`)).toBeVisible();
