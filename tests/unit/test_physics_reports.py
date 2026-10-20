@@ -7,6 +7,8 @@ import pytest
 
 from packages.library import reports
 from packages.library.assets import AssetLibrary, AssetVersion
+from packages.library.scenes import SceneLibrary
+from packages.library.validation import StructuralValidator
 
 SUBJECT = "scene:physics-fixture@1"
 
@@ -156,3 +158,55 @@ def test_asset_physics_gap_and_filter_follow_complete_successful_measurement(tmp
     library.versions = {selected.id: selected}
     assert ("physics_validation" in selected.summary()["gaps"]) is (case != "completed")
     assert bool(library.list(only_gaps=True)) is (case != "completed")
+
+
+def commit_fixture(tmp_path):
+    root = tmp_path / "user"
+    path = root / "scenes/physics-fixture/1"
+    path.mkdir(parents=True)
+    (path / "scene.yaml").write_text(
+        "name: physics-fixture\ntitle: Fixture\nsources: [newton]\nstage: python:falling-boxes\n",
+        encoding="utf-8",
+    )
+    (path / "devices.yaml").write_text("scene: physics-fixture\nentities: []\n", encoding="utf-8")
+    (path / "locations.yaml").write_text("locations: {}\n", encoding="utf-8")
+    assets = AssetLibrary(tmp_path / "state", builtin_root=tmp_path / "builtin", user_root=root)
+    scene = SceneLibrary(builtin_root=tmp_path / "builtin", user_root=root, state_root=tmp_path / "state")
+    selected = scene.resolve("physics-fixture@1")
+    source = structure() | {"referencedAssets": []}
+    return assets, selected, source
+
+
+@pytest.mark.parametrize("identifier", ["P1", "P6"])
+def test_final_commit_reads_later_failure_under_shared_library_lock(tmp_path, monkeypatch, identifier):
+    import packages.library.validation as validation
+
+    assets, selected, source = commit_fixture(tmp_path)
+    pending_skip = reports.merge_physics(source, skipped())
+    later = selected.reports.save(reports.merge_physics(source, completed(identifier=identifier)),
+                                   selected.content_hash)
+    read = validation.latest_physics_evidence
+
+    def locked_read(version, kind):
+        assert assets._lock.locked()
+        return read(version, kind)
+
+    monkeypatch.setattr(validation, "latest_physics_evidence", locked_read)
+    result = StructuralValidator(tmp_path / "state").commit(selected, "scene", assets, pending_skip)
+    assert not result["launchable"]
+    assert any(row["id"] == identifier and row["status"] == "fail" for row in result["checks"])
+    assert result["physics"]["retainedFrom"]["reportId"] == later["reportId"]
+    assert selected.report() == result
+
+
+def test_final_skip_retains_genuine_new_success_instead_of_unioning_historical_failures(tmp_path):
+    assets, selected, source = commit_fixture(tmp_path)
+    selected.reports.save(reports.merge_physics(source, completed()), selected.content_hash)
+    pending_skip = reports.merge_physics(source, skipped())
+    later = selected.reports.save(
+        reports.merge_physics(source, completed(status="pass")), selected.content_hash
+    )
+    result = StructuralValidator(tmp_path / "state").commit(selected, "scene", assets, pending_skip)
+    assert result["launchable"]
+    assert result["physics"]["retainedFrom"]["reportId"] == later["reportId"]
+    assert not any(row["status"] == "fail" for row in result["checks"])

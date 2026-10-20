@@ -10,8 +10,11 @@ import pytest
 from lw.client import GatewayClient
 
 from packages.library import physics
+from packages.library.assets import AssetLibrary
 from packages.library.common import LibraryError, content_hash
+from packages.library.references import ReferenceInspection
 from packages.library.reports import ReportStore, merge_physics
+from packages.library.scenes import SceneLibrary
 from packages.library.validation import StructuralValidator
 
 
@@ -106,6 +109,7 @@ def test_physics_timeout_preserves_published_failure_and_latest_pointer(tmp_path
         raise LibraryError("validation_unavailable", "Physics validation timed out", 503)
 
     monkeypatch.setattr(validator, "worker", worker)
+    monkeypatch.setattr("packages.library.validation.physics_availability", lambda payload: (None, {}))
     with pytest.raises(LibraryError) as failure:
         validator.revalidate(selected, "scene", SimpleNamespace(versions={}))
     assert failure.value.status == 503
@@ -127,6 +131,72 @@ def test_reference_structure_entrypoint_never_starts_physics_worker(tmp_path, mo
     monkeypatch.setattr(validator, "worker", worker)
     result = validator.run_structure(tmp_path, "scene", report["subject"], {}, SimpleNamespace(versions={}))
     assert result == report
+    assert calls == ["structural"]
+
+
+def test_missing_tools_return_real_skip_without_starting_a_physics_child(tmp_path, monkeypatch):
+    report = {"schema": "lw.validation/1", "subject": "scene:missing-tools@1", "launchable": True,
+              "checks": [{"id": "S8", "tier": "structural", "status": "pass", "message": "Valid"}]}
+    validator = StructuralValidator(tmp_path / "state")
+    calls = []
+
+    def worker(module, payload, timeout):
+        calls.append(module)
+        assert module == "structural"
+        return report
+
+    def missing(name):
+        if name in ("newton", "warp-lang"):
+            raise physics.PackageNotFoundError(name)
+        return "26.8"
+
+    monkeypatch.setattr(validator, "worker", worker)
+    monkeypatch.setattr(physics, "version", missing)
+    result = validator.run(tmp_path, "scene", report["subject"], {"sources": ["newton"]},
+                           SimpleNamespace(versions={}))
+    assert calls == ["structural"]
+    assert result["physics"]["status"] == "skipped"
+    assert result["physics"]["missingTools"] == ["newton", "warp-lang"]
+
+
+def test_actual_reference_scan_fills_missing_s7_with_only_structure(tmp_path, monkeypatch):
+    root = tmp_path / "user-library"
+    target = root / "assets/labware/target/1"
+    target.mkdir(parents=True)
+    target.joinpath("asset.yaml").write_text(
+        "id: labware/target\nkind: labware\ntitle: Target\nstage: asset.usda\n", encoding="utf-8"
+    )
+    target.joinpath("asset.usda").write_text('#usda 1.0\ndef Xform "Asset" {}\n', encoding="utf-8")
+    owner = root / "scenes/reference-owner/1"
+    owner.mkdir(parents=True)
+    owner.joinpath("scene.yaml").write_text(
+        "name: reference-owner\ntitle: Owner\nsources: [newton]\nstage: scene.usda\n", encoding="utf-8"
+    )
+    owner.joinpath("devices.yaml").write_text("scene: reference-owner\nentities: []\n", encoding="utf-8")
+    owner.joinpath("locations.yaml").write_text("locations: {}\n", encoding="utf-8")
+    owner.joinpath("scene.usda").write_text('#usda 1.0\ndef Xform "World" {}\n', encoding="utf-8")
+    assets = AssetLibrary(tmp_path / "state", builtin_root=tmp_path / "builtin", user_root=root)
+    assets.startup()
+    scenes = SceneLibrary(builtin_root=tmp_path / "builtin", user_root=root, state_root=tmp_path / "state")
+    validator = StructuralValidator(tmp_path / "state")
+    calls = []
+
+    def worker(module, payload, timeout):
+        calls.append(module)
+        assert module == "structural"
+        return {"schema": "lw.validation/1", "subject": payload["subject"], "launchable": True,
+                "checks": [{"id": "S7", "tier": "structural", "status": "pass", "message": "Inspected"}],
+                "referencedAssets": []}
+
+    monkeypatch.setattr(validator, "worker", worker)
+    monkeypatch.setattr("packages.library.validation.physics_availability",
+                        lambda payload: pytest.fail("Reference inspection queried physics availability"))
+    inspection = ReferenceInspection(assets, lambda: scenes, SimpleNamespace(root=tmp_path / "recordings"),
+                                     lambda: [], validator)
+    selected = assets.resolve("labware/target@1")
+    result = inspection.scan(selected, "asset")
+    assert result["complete"] and result["references"] == []
+    assert inspection.scan(selected, "asset")["complete"]
     assert calls == ["structural"]
 
 

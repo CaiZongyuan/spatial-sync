@@ -337,11 +337,12 @@ def taught_checks(sim, payload):
     return rows or [not_applicable("P6", "Scene has no configured taught arm locations")]
 
 
-def validate(payload):
+def availability(payload):
+    """Only distribution metadata is needed to observe an unavailable worker."""
     if any(row["status"] == "fail" for row in payload.get("structure", {}).get("checks", [])):
-        return skipped("Physics was not run because structural validation failed")
+        return skipped("Physics was not run because structural validation failed"), {}
     if payload["kind"] == "scene" and "newton" not in payload["metadata"]["sources"]:
-        return skipped("This scene has no Newton physics source")
+        return skipped("This scene has no Newton physics source"), {}
     tools, missing = {}, []
     for name in ("newton", "warp-lang", "usd-core"):
         try:
@@ -349,7 +350,14 @@ def validate(payload):
         except PackageNotFoundError:
             missing.append(name)
     if missing:
-        return skipped("Physics tools are not installed: " + ", ".join(missing), missing)
+        return skipped("Physics tools are not installed: " + ", ".join(missing), missing), {}
+    return None, tools
+
+
+def validate(payload):
+    unavailable, tools = availability(payload)
+    if unavailable is not None:
+        return unavailable
     # Import failures with installed distributions are worker failures, never missing-tool skips.
     import newton
     import warp as wp
@@ -366,6 +374,8 @@ def validate(payload):
     rows = result["checks"]
     try:
         sim = simulation(payload)
+    except ImportError:
+        raise  # An unavailable runtime is infrastructure failure, not failed package physics.
     except Exception as exc:
         rows.append(check("P1", "fail", f"Newton model could not load ({type(exc).__name__})"))
         rows.extend(check(f"P{i}", "warn", "Not measured because model loading failed") for i in range(2, 7))

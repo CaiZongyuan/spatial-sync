@@ -153,7 +153,11 @@ Import and validation are synchronous. Structural and physical workers have
 library import/validate wait up to 240 seconds. Worker failure or timeout returns
 `503 validation_unavailable` and publishes no partial version or new report.
 Disconnecting stops the client's wait; the accepted operation may finish within
-the server's bounds. Re-read the version or import list to inspect its result.
+the worker's execution bounds after it obtains the library transaction. An import
+holds that transaction through validation and publication; other library
+mutations and session registration can wait for it. Time spent waiting for a
+transaction is additional to the worker limits, and a client can exhaust its
+240-second wait first. Re-read the version or import list to inspect its result.
 
 `contentHash` covers every published file, including the generated report:
 relative paths sorted lexically, each UTF-8 path plus a zero byte followed by

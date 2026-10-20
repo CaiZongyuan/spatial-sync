@@ -11,7 +11,8 @@ from pathlib import Path
 
 from packages.library.archive import destination_parent, import_lock, package_files
 from packages.library.common import REPO_ROOT, TYPE_ROOT, LibraryError, content_hash, document
-from packages.library.reports import merge_physics, parse_report, pinned_assets
+from packages.library.physics import availability as physics_availability
+from packages.library.reports import latest_physics_evidence, merge_physics, parse_report, pinned_assets
 
 
 class StructuralValidator:
@@ -32,8 +33,21 @@ class StructuralValidator:
         }
 
     def run(
+        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
+    ):
+        return self._run(path, kind, subject, metadata, assets, bindings, locations,
+                         expected_assets=expected_assets, include_physics=True)
+
+    def run_structure(
+        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
+    ):
+        """Dependency/reference inspection must never start a physics worker."""
+        return self._run(path, kind, subject, metadata, assets, bindings, locations,
+                         expected_assets=expected_assets, include_physics=False)
+
+    def _run(
         self, path, kind, subject, metadata, assets, bindings=None, locations=None, *,
-        expected_assets=(), include_physics=True
+        expected_assets=(), include_physics
     ):
         payload = {
             "kind": kind,
@@ -62,18 +76,14 @@ class StructuralValidator:
             if not include_physics:
                 return structure
             payload |= {"structure": structure, "kernelCache": str(self.state_root / "physics-kernel-cache")}
-            return merge_physics(structure, self.worker("physics", payload, self.physics_timeout))
+            physical, _ = physics_availability(payload)
+            if physical is None:
+                physical = self.worker("physics", payload, self.physics_timeout)
+            return merge_physics(structure, physical)
         except (ValueError, KeyError, TypeError) as exc:
             raise LibraryError(
                 "validation_unavailable", "Validation worker returned invalid data", 503
             ) from exc
-
-    def run_structure(
-        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
-    ):
-        """Dependency/reference inspection must never start a physics worker."""
-        return self.run(path, kind, subject, metadata, assets, bindings, locations,
-                        expected_assets=expected_assets, include_physics=False)
 
     def worker(self, module, payload, timeout):
         self.state_root.mkdir(parents=True, exist_ok=True)
@@ -101,12 +111,11 @@ class StructuralValidator:
                     "validation_unavailable", "Validation worker could not start", 503
                 ) from exc
             try:
-                try:
-                    process.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    raise LibraryError(
-                        "validation_unavailable", f"{module.capitalize()} validation timed out", 503
-                    ) from None
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                raise LibraryError(
+                    "validation_unavailable", f"{module.capitalize()} validation timed out", 503
+                ) from None
             finally:
                 if process.poll() is None:
                     try:
@@ -153,7 +162,7 @@ class StructuralValidator:
         return self.commit(version, kind, assets, report, expected_assets=expected_assets)
 
     def commit(self, version, kind, assets, report, *, expected_assets=()):
-        """Shared final publication boundary for structural and later physics workers.
+        """Shared final publication boundary for structural and physics workers.
 
         Already durable pins survive failed revalidation of missing/changed dependencies.
         A newly learned byte identity must still exist when its report is published.
@@ -182,6 +191,13 @@ class StructuralValidator:
                     package_files(dependency.path)
                     if dependency.content_hash != digest or content_hash(dependency.path) != digest:
                         raise ValueError("Newly recorded dependency changed during validation: " + name)
+                if (report.get("physics") or {}).get("status") == "skipped":
+                    # Another validation may have completed while this worker was unavailable.
+                    # Re-read its bound measurements under the same publication/deletion locks.
+                    physical = {"physics": report["physics"], "checks": [
+                        item for item in report["checks"] if item["tier"] == "physics"
+                    ]}
+                    report = merge_physics(report, physical, latest_physics_evidence(version, kind))
             except (OSError, ValueError, LibraryError) as exc:
                 raise LibraryError(code, str(exc), 409) from exc
             return version.reports.save(report, version.content_hash)
