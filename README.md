@@ -72,9 +72,13 @@ Latin IBM Plex fonts and navigation icons ship locally.
 same isometric scene, with device actions, declared alert rules, acknowledgement
 notes and per-property history (one-hour query, one-minute means). Charts label
 only the available data span; stale readings and trends turn gray and dashed.
+Static single-property alert thresholds appear as dashed guides inside the
+observed range. Outside thresholds and unreconstructed compound/dynamic
+thresholds are explained without extending the recorded range.
 Critical active alerts also appear on Overview, and Live's navigation badge
 counts active episodes, including acknowledged ones. The active query is capped
-at 1,000 and explicitly shows `≥1000` at that boundary; recent history is separate.
+at 1,000 and explicitly shows `≥1000` at that boundary; recent history and the
+critical-banner query are separate so newer warnings cannot hide a critical alert.
 Acknowledgement preserves its first actor and note; Cancel closes an unsubmitted
 form. The page identifies simulation sources; physical Device Host/MQTT support
 is delivered separately. History comes from session recordings and can be queried

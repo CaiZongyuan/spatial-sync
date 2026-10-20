@@ -25,14 +25,12 @@ export function AlertAcknowledgement({ alert }: { alert: AlertEpisode }) {
 }
 
 export function CriticalAlertBanner() {
-  const { active, activeCapped } = useContext(AlertContext);
-  const critical = active?.filter(alert => alert.severity === 'critical') ?? [];
-  if (!critical.length) return null;
-  const alert = critical[0];
+  const { critical: alert } = useContext(AlertContext);
+  if (!alert) return null;
   return <section className="critical-alert-banner" role="alert" aria-label="Critical 告警" data-testid="critical-alert-banner">
     <i className={`alert-pulse ${alert.acknowledgement ? 'is-acknowledged' : ''}`} aria-hidden="true" />
     <div className="critical-alert-copy"><div><code>{alert.entityKey}</code><strong>触发值 {reading(alert.value)}</strong><Severity severity="critical" /></div>
-      <p>{alert.message} · {alert.rule} · 自 {reading(alert.since)} s 起{critical.length > 1 ? ` · ${activeCapped ? '已获取' : '共'} ${critical.length} 条 critical` : ''}</p></div>
+      <p>{alert.message} · {alert.rule} · 自 {reading(alert.since)} s 起</p></div>
     <AlertAcknowledgement key={alert.alertId} alert={alert} /><Link to="/live" className="reference-link">查看实况 →</Link>
   </section>;
 }

@@ -7,16 +7,17 @@ export interface AlertEpisode extends EntityAlert {
   acknowledgement: { actor: Actor; note: string; simTime: number; sampleTimeMs: number } | null;
   closedContext: { reason: string; epoch: number; simTime: number } | null;
 }
-export interface AlertState { active?: AlertEpisode[]; recent?: AlertEpisode[]; activeCapped?: boolean; error?: string }
+export interface AlertState { active?: AlertEpisode[]; recent?: AlertEpisode[]; critical?: AlertEpisode; activeCapped?: boolean; error?: string }
 export const AlertContext = createContext<AlertState>({});
 const changed = 'lab:alerts-changed';
 
 export async function fetchAlerts(signal?: AbortSignal): Promise<AlertState> {
-  const [active, recent] = await Promise.all([
+  const [active, recent, critical] = await Promise.all([
     request<{ alerts: AlertEpisode[] }>('/alerts?active=true&limit=1000', { signal }),
     request<{ alerts: AlertEpisode[] }>('/alerts?limit=100', { signal }),
+    request<{ alerts: AlertEpisode[] }>('/alerts?active=true&severity=critical&limit=1', { signal }),
   ]);
-  return { active: active.alerts, recent: recent.alerts, activeCapped: active.alerts.length === 1000 };
+  return { active: active.alerts, recent: recent.alerts, critical: critical.alerts[0], activeCapped: active.alerts.length === 1000 };
 }
 
 export function useAlerts(enabled: boolean): AlertState {
@@ -59,12 +60,62 @@ export interface RuleDeclarations {
   types: Record<string, { alerts?: Record<string, AlertRule> }>;
 }
 
+/** Python fnmatchcase semantics, including slash, Unicode, negated sets and invalid ranges. */
+function matchesEntityPattern(value: string, pattern: string): boolean {
+  const source = Array.from(pattern), characters = Array.from(value);
+  const tokens: (string | RegExp | null)[] = [];
+  for (let i = 0; i < source.length; i++) {
+    const character = source[i];
+    if (character === '*') { if (tokens.at(-1) !== null) tokens.push(null); }
+    else if (character === '?') tokens.push(/^[\s\S]$/u);
+    else if (character !== '[') tokens.push(character);
+    else {
+      let end = i + 1;
+      if (source[end] === '!') end++;
+      if (source[end] === ']') end++;
+      while (end < source.length && source[end] !== ']') end++;
+      if (end === source.length) { tokens.push('['); continue; }
+      const chunks: string[][] = [];
+      let start = i + 1, cursor = source[start] === '!' ? start + 2 : start + 1;
+      while (true) {
+        cursor = source.indexOf('-', cursor);
+        if (cursor < 0 || cursor >= end) break;
+        chunks.push(source.slice(start, cursor)); start = cursor + 1; cursor += 3;
+      }
+      const tail = source.slice(start, end);
+      if (tail.length) chunks.push(tail); else chunks.at(-1)!.push('-');
+      // fnmatch removes reversed ranges, including their endpoints.
+      for (let index = chunks.length - 1; index > 0; index--) {
+        if (chunks[index - 1].at(-1)!.codePointAt(0)! > chunks[index][0].codePointAt(0)!) {
+          chunks[index - 1] = [...chunks[index - 1].slice(0, -1), ...chunks[index].slice(1)]; chunks.splice(index, 1);
+        }
+      }
+      const negated = chunks[0]?.[0] === '!';
+      if (negated) chunks[0].shift();
+      const contents = chunks.map(chunk => chunk.map(character => ['\\', '-', ']', '[', '^'].includes(character) ? `\\${character}` : character).join('')).join('-');
+      tokens.push(!contents ? (negated ? /^[\s\S]$/u : /(?!)/u) : new RegExp(`^[${negated ? '^' : ''}${contents}]$`, 'u'));
+      i = end;
+    }
+  }
+  // Explicit reachable positions keep '*' matching bounded by pattern × key length.
+  let positions = new Set([0]);
+  for (const token of tokens) {
+    if (token === null) {
+      const start = Math.min(...positions);
+      positions = new Set(Array.from({ length: characters.length - start + 1 }, (_, offset) => start + offset));
+    }
+    else positions = new Set([...positions].filter(position => position < characters.length &&
+      (typeof token === 'string' ? token === characters[position] : token.test(characters[position]))).map(position => position + 1));
+    if (!positions.size) return false;
+  }
+  return positions.has(characters.length);
+}
+
 /** Resolve author declarations against the actual Catalog identities, as the host does. */
 export function declaredRules(document: RuleDeclarations, catalog: Catalog, source: string): DeclaredRule[] {
   const bindings = document.effectiveBindings?.[source] ?? document.entities;
   return Object.values(catalog.entities).flatMap(entity => {
-    const binding = bindings.find(binding => binding.key === entity.key || (binding.match &&
-      new RegExp(`^${binding.match.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(entity.key)));
+    const binding = bindings.find(binding => binding.key === entity.key || (binding.match && matchesEntityPattern(entity.key, binding.match)));
     if (!binding || binding.type !== entity.type) return [];
     return Object.entries({ ...document.types[entity.type]?.alerts, ...binding.alerts })
       .map(([name, rule]) => ({ ...rule, key: entity.key, name }));
@@ -83,6 +134,29 @@ export function sparkline(points: HistoryPoint[]) {
   const path = samples.map(([at, value], i) => `${i ? 'L' : 'M'}${x(at).toFixed(2)},${y(value).toFixed(2)}`).join(' ');
   const last = samples.at(-1)!;
   return { path, start, end, low, high, last: [x(last[0]), y(last[1])] as const, count: samples.length };
+}
+
+/** Draw only static single-property thresholds; dynamic/compound rules need history of their other inputs. */
+export function alertGuides(rules: DeclaredRule[], property: string, chart: NonNullable<ReturnType<typeof sparkline>>) {
+  const thresholds: { rule: string; value: number; operator: string; y: number | undefined }[] = [];
+  const unplotted: string[] = [];
+  const operators = { lt: '<', lte: '≤', gt: '>', gte: '≥', equals: '=' };
+  const clauses = (condition: Condition): Condition[] => Array.isArray(condition.all)
+    ? (condition.all as Condition[]).flatMap(clauses) : [condition];
+  for (const rule of rules) {
+    const conditions = clauses(rule.when);
+    const affectsProperty = conditions.some(condition => (condition.entity === undefined || condition.entity === rule.key)
+      && (condition.property === property || condition.deviatesFrom === property));
+    if (!affectsProperty) continue;
+    const condition = conditions[0];
+    const operator = Object.entries(operators).find(([name]) => typeof condition[name] === 'number' && Number.isFinite(condition[name]));
+    if (conditions.length !== 1 || condition.property !== property || !operator) { unplotted.push(rule.name); continue; }
+    const value = condition[operator[0]] as number;
+    const y = value < chart.low || value > chart.high ? undefined : chart.high === chart.low ? 28
+      : Number((7 + (1 - (value - chart.low) / (chart.high - chart.low)) * 42).toFixed(3));
+    thresholds.push({ rule: rule.name, value, operator: operator[1], y });
+  }
+  return { thresholds, unplotted };
 }
 
 export const reading = (value: unknown) => value === undefined ? '—' : typeof value === 'number'

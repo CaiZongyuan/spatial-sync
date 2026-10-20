@@ -23,6 +23,14 @@
 .live-table code { font: 400 10.5px/1.5 var(--mono); overflow-wrap: anywhere; }
 .live-table small { font-size: 11px; color: var(--faint); margin-top: 4px; }
 .live-number { font: 400 12.5px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+.live-table .live-number { text-align: right; }
+.live-loading { color: var(--faint); font-size: 10.5px; padding: 12px 0; }
+.live-skeleton { display: grid; gap: 12px; margin-top: 12px; }
+.live-skeleton i { display: block; height: 12px; background: var(--line-2); border-radius: 4px; animation: live-loading 1.5s ease-in-out infinite; }
+.live-rules-skeleton { grid-template-columns: 2fr 3fr 1fr 1fr; padding: 12px 0; }
+.live-trend-skeleton { min-height: 62px; align-content: space-between; }
+.live-trend-skeleton i:last-child { width: 55%; }
+@keyframes live-loading { 50% { opacity: .4; } }
 .declared-rules { margin-top: 24px; }
 .declared-rules h3 { margin: 0 0 6px; }
 .declared-rules details { color: var(--muted); margin-top: 6px; font-size: 11px; }
@@ -49,6 +57,8 @@
 .live-trend text { fill: var(--faint); font: 8px var(--mono); }
 .trend-grid { fill: none; stroke: var(--line); stroke-width: .5; }
 .trend-line { stroke: currentColor; fill: none; stroke-width: 1.4; }
+.trend-alert-guide { stroke: var(--bad); stroke-width: 1; stroke-dasharray: 4 3; }
+.trend-guide-note { display: block; margin-top: 4px; }
 .live-trend.is-stale { color: var(--ghost); }
 .live-trend.is-stale .trend-line { stroke-dasharray: 4 3; }
 .live-trend > span, .trend-status { font: 400 10.5px/1.5 var(--mono); color: var(--faint); }
@@ -79,5 +89,5 @@
 .alert-ack-form button { padding: 5px 8px; font-size: 11px; }
 .device-annotation.is-stale > span { color: var(--faint); text-decoration: underline dashed; }
 @keyframes alert-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb,var(--bad) 15%,transparent); } }
-@media (prefers-reduced-motion: reduce) { .alert-pulse, .device-alert-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .alert-pulse, .device-alert-dot, .live-skeleton i { animation: none; } }
 @media (max-width: 900px) { .live-device-grid, .live-source-history { grid-template-columns: minmax(0,1fr); }.is-collapsed .live-nav-count { position: static; }.live-table { min-width: 620px; }.critical-alert-banner { padding: 16px; } }
