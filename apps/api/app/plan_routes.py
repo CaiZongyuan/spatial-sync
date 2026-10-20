@@ -2,10 +2,11 @@
 
 from typing import Any
 
-from fastapi import Request
+from fastapi import Path, Query, Request
 
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
+from packages.info.preview import PreviewRequest, SourcePreview
 
 
 def plan_context(plan_id=None, step_id=None, revision=None):
@@ -81,3 +82,50 @@ def install_plan_routes(app, manager, role_for):
     async def plan(plan_id: str, revision: int | None = None):
         await store.flush()
         return store.document(store.get(plan_id, revision))
+
+    @app.get("/api/v1/plans/{plan_id}/steps/{step_id}/preview")
+    async def preview(plan_id: str, step_id: int = Path(ge=1), revision: int | None = Query(None, ge=1)):
+        await store.flush()
+        record = store.get(plan_id, revision)
+        session = manager.sessions.get(record.sessionId)
+        if session is None:
+            raise PlanError("target_unavailable", "The plan session is unavailable")
+        source = session.source
+
+        def current():
+            if store.get(plan_id).plan.revision != record.plan.revision:
+                raise PlanError("invalid_plan_reference", "Select the current plan revision")
+            store.require_target(record, session)
+            if (session.source is not source or source is None or session.state not in ("RUNNING", "PAUSED")):
+                raise PlanError("target_unavailable", "The plan source is unavailable")
+
+        async with session.command_lock:
+            current()
+            step = next((value for value in record.plan.steps if value.id == step_id), None)
+            if step is None:
+                raise PlanError("unknown_plan_step", "Unknown plan step", status=404)
+            metadata = {"planId": plan_id, "revision": record.plan.revision, "stepId": step_id,
+                        "sessionId": session.session_id, "sceneRevision": record.sceneRevision,
+                        "epoch": record.epoch}
+            if not hasattr(step, "do"):
+                return metadata | {"available": False, "reason": "step_has_no_action"}
+            callback = getattr(source, "preview", None)
+            if callback is None:
+                return metadata | {"available": False, "reason": "source_preview_unavailable"}
+            request = PreviewRequest(entityKey=step.do.entity, action=step.do.action, params=step.do.params,
+                                     planId=plan_id, revision=record.plan.revision, stepId=step_id)
+            try:
+                result = SourcePreview.model_validate(await callback(request))
+            except (ValueError, KeyError) as error:
+                raise PlanError("invalid_preview", str(error), status=422) from error
+            except Exception as error:
+                raise PlanError("preview_unavailable", str(error), status=503) from error
+            current()
+            if (result.sceneRevision, result.epoch) != (record.sceneRevision, record.epoch):
+                raise PlanError("invalid_plan_reference", "The preview source context changed")
+            if result.preview is None:
+                return metadata | {"entityKey": step.do.entity, "available": False,
+                                    "reason": "program_preview_unavailable"}
+            return metadata | {"entityKey": step.do.entity, "available": True,
+                                "simTime": result.simTime, "sampleTimeMs": result.sampleTimeMs,
+                                **result.preview.model_dump(mode="json")}

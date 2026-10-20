@@ -5,6 +5,7 @@ import os
 import time
 import uuid
 
+from packages.info.preview import PreviewRequest, SourcePreview
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
 from packages.protocol.schema import (
     Command,
@@ -325,6 +326,18 @@ class _Runner:
             self.control.offer(
                 {"kind": "invocation_result", "token": token, "update": result.model_dump(mode="json")}
             )
+        elif kind == "preview":
+            try:
+                preview = self.info.preview(PreviewRequest.model_validate(packet["request"]))
+                result = SourcePreview(sceneRevision=self.manifest.sceneRevision, epoch=self.sim.epoch,
+                                       simTime=self.sim.sim_time, sampleTimeMs=time.monotonic() * 1000,
+                                       preview=preview)
+                self.control.offer({"kind": "preview_result", "token": token,
+                                    "result": result.model_dump(mode="json")})
+            except Exception as error:
+                self.control.offer({"kind": "preview_error", "token": token,
+                                    "invalid": isinstance(error, (ValueError, KeyError)),
+                                    "message": str(error)})
         elif kind == "open_viewer":
             try:
                 current = self._viewer_stats()

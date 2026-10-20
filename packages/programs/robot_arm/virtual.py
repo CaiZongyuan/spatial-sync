@@ -7,11 +7,14 @@ from pydantic import Field, model_validator
 from packages.info.program import ProgramConfig, Reject
 from packages.protocol.math import compose_pose
 
+from .preview import joint_targets, path_preview, taught_waypoints
 from .taught import require_postures
+from .trajectory import plan_trajectory
 
 HOME = [0.0, 0.3, -0.6, 0.0, 0.0, 0.0, 0.0]
 TAUGHT_LIMITS = tuple((None, None) for _ in HOME)
 BASE_HEIGHT = 0.9
+VELOCITY_LIMITS = (1.0,) * len(HOME)
 
 
 def kinematics(joints):
@@ -74,6 +77,16 @@ class RobotArmProgram:
             if not any(ctx.read(tube, "location") == locations[name]["site"] for tube in ctx.config.tubes):
                 return Reject(code="location_empty", message=f"No tube at {name}")
 
+    def preview(self, action, params, ctx):
+        targets = joint_targets(action, params, self._locations(ctx), HOME)
+        if targets is None:
+            return None
+        start = ctx.values["jointPositions"]
+        return ctx.cached(tuple(start), lambda: path_preview(
+            start, targets, VELOCITY_LIMITS, lambda joints: kinematics(joints)[2],
+            speed_scale=ctx.config.speedScale, speed=params.get("speed", 1), minimum_duration=0.2,
+        ))
+
     def start(self, inv, ctx):
         if inv.action == "stop":
             self.cancel_requested = True
@@ -98,14 +111,15 @@ class RobotArmProgram:
             )
             for operation, name in operations:
                 location = self._locations(ctx)[name]
+                approach, grasp, retreat = taught_waypoints(location)
                 self.plan.extend(
                     [
-                        ("move", location["approach"], name),
+                        ("move", approach, name),
                         ("gripper", 0.08 if operation == "pick" else 0.016, None),
                         ("check", None, name),
-                        ("move", location["grasp"], name),
+                        ("move", grasp, name),
                         (operation, None, name),
-                        ("move", location["approach"], name),
+                        ("move", retreat, name),
                     ]
                 )
         self.total_segments = len(self.plan)
@@ -137,15 +151,13 @@ class RobotArmProgram:
             self.segment = kind, target, name
             self.elapsed = 0.0
             self.initial = ctx.get("jointPositions")
-            self.duration = (
-                max(
-                    0.2,
-                    max(abs(a - b) for a, b in zip(self.initial, target))
-                    / (ctx.config.speedScale * inv.params.get("speed", 1)),
-                )
-                if kind == "move"
-                else 0.2
-            )
+            if kind == "move":
+                self.motion = plan_trajectory(self.initial, target, VELOCITY_LIMITS,
+                                              speed_scale=ctx.config.speedScale,
+                                              speed=inv.params.get("speed", 1))
+                self.duration = max(0.2, self.motion.duration)
+            else:
+                self.duration = 0.2
             if name:
                 ctx.set(zone=self._locations(ctx)[name]["zone"])
             ctx.set(phase="moving" if kind == "move" else "releasing" if kind == "place" else "grasping")
@@ -153,7 +165,7 @@ class RobotArmProgram:
         self.elapsed += dt
         fraction = min(1.0, self.elapsed / self.duration)
         if kind == "move":
-            self._set_joints(ctx, [a + (b - a) * fraction for a, b in zip(self.initial, target)])
+            self._set_joints(ctx, self.motion.sample(self.elapsed)[0].tolist())
         if fraction + 1e-9 < 1:
             inv.progress((self.completed + fraction) / self.total_segments)
             return

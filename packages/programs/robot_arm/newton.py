@@ -3,9 +3,11 @@
 import numpy as np
 from pydantic import Field, model_validator
 
+from packages.info.preview import PathPreview
 from packages.info.program import ProgramConfig, Reject
 from packages.protocol.math import rotate_vector
 
+from .preview import joint_targets, path_preview, taught_waypoints
 from .taught import require_postures
 from .trajectory import plan_trajectory
 
@@ -98,6 +100,25 @@ class RobotArmProgram:
             if not any(ctx.read(tube, "location") == self.locations[name]["site"] for tube in self.tubes):
                 return Reject(code="location_empty", message=f"No tube at {name}")
 
+    def preview(self, action, params, ctx):
+        targets = joint_targets(action, params, self.locations, HOME)
+        if targets is None:
+            return None
+        snapshot = ctx.kinematics
+        keys = ctx.config.jointKeys
+        start = snapshot.positions(keys)
+        snapshot.validate_targets(keys, targets)
+
+        def build():
+            value = path_preview(start, targets, VELOCITY_LIMITS,
+                                 lambda joints: snapshot.forward(keys, joints, ctx.config.tcpSite),
+                                 speed_scale=ctx.config.speedScale, speed=params.get("speed", 1))
+            return PathPreview.model_validate(value.model_dump(mode="json") | {
+                "targetBodyPoses": snapshot.target_body_poses(keys),
+            })
+
+        return ctx.cached((tuple(start), snapshot.fingerprint), build)
+
     def start(self, inv, ctx):
         if inv.action == "stop":
             self._hold(ctx)
@@ -126,20 +147,21 @@ class RobotArmProgram:
             self.pick_tube = ctx.get("holding")
             for operation, name in operations:
                 location = self.locations[name]
+                approach, grasp, retreat = taught_waypoints(location)
                 if operation == "pick":
                     self.pick_tube = next(
                         tube for tube in self.tubes if ctx.read(tube, "location") == location["site"]
                     )
                     self.pick_height = float(ctx.physics.body[self.tubes[self.pick_tube], 2])
-                self.plan.append(("move", location["approach"], name))
+                self.plan.append(("move", approach, name))
                 if operation == "pick":
                     self.plan.append(("gripper", 0.08, None))
                 self.plan.extend(
                     [
                         ("check", None, name),
-                        ("move", location["grasp"], name),
+                        ("move", grasp, name),
                         (operation, None, name),
-                        ("move", location["approach"], name),
+                        ("move", retreat, name),
                         ("verify" + operation, None, name),
                     ]
                 )

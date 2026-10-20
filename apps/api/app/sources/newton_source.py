@@ -8,6 +8,7 @@ import uuid
 from collections import OrderedDict
 
 from packages.info.catalog import Catalog
+from packages.info.preview import PreviewRequest, SourcePreview
 from packages.info.store import StateStore
 from packages.protocol.internal import CommandResult, InformationClock, JointState, SessionOptions
 from packages.protocol.schema import (
@@ -204,6 +205,13 @@ class NewtonSource:
                     self._cache(value)
                 elif kind == "joint_result":
                     value = JointState.model_validate(packet["state"])
+                elif kind == "preview_result":
+                    value = SourcePreview.model_validate(packet["result"])
+                elif kind == "preview_error":
+                    if future is not None and not future.done():
+                        error = ValueError if packet["invalid"] else RuntimeError
+                        future.set_exception(error(packet["message"]))
+                    return
                 elif kind == "mesh_result":
                     value = packet["data"]
                 elif kind == "viewer_result":
@@ -337,6 +345,9 @@ class NewtonSource:
 
     async def query_joint_state(self, joint_key: str) -> JointState:
         return await self._request("joint", key=joint_key, timeout=0.2)
+
+    async def preview(self, request: PreviewRequest) -> SourcePreview:
+        return await self._request("preview", request=request.model_dump(mode="json"), timeout=5)
 
     async def read_mesh(self, mesh_id: str) -> bytes:
         return await self._request("mesh", key=mesh_id)

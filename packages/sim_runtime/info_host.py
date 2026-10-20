@@ -62,6 +62,9 @@ class NewtonInfoHost:
     def snapshot(self):
         return self.host.snapshot()
 
+    def preview(self, request):
+        return self.host.preview(request)
+
     def stats(self):
         declared, active = self.port.welds.counts() if self.port else (0, 0)
         return {
