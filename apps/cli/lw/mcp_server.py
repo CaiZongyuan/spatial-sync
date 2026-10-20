@@ -117,6 +117,13 @@ async def create_server(client: GatewayClient):
         "directory from this MCP client's filesystem. Use scene_launch to start an inspected scene. "
         "Describe entities before acting. Approval requires a human operator."
     )
+    try:
+        inbox = await client.inbox_poll()
+        attention = f"Active alerts: {len(inbox['alerts'])}. "
+    except GatewayError:
+        attention = "Active alerts: unavailable (inbox unavailable). "
+    attention += "Start each work round with inbox_poll; report critical alerts to the human before acting. "
+    instructions = attention + instructions[:1500 - len(attention)]
     server = MCPServer("Laboratory", instructions=instructions, middleware=[reject_human_decisions])
 
     for command in COMMANDS:

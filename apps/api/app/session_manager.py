@@ -20,6 +20,7 @@ from packages.assets.registry import AssetRegistry
 from packages.info.alerts import AlertEngine
 from packages.info.approvals import ApprovalStore
 from packages.info.catalog import Catalog
+from packages.info.inbox import InboxStore
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.plans import PlanError, PlanStore
@@ -78,6 +79,7 @@ class Session:
         approvals,
         plans,
         scene_version=None,
+        inbox=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
@@ -85,6 +87,7 @@ class Session:
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
         self.plans = plans
+        self.inbox = inbox
         self.source: SpatialSource | None = None
         # An unclosed initial candidate remains owned here even after startup fails.
         self._starting_source: SpatialSource | None = None
@@ -539,6 +542,8 @@ class Session:
         )
 
     def broadcast_info(self, message):
+        if self.inbox is not None:
+            self.inbox.session_message(self.session_id, message)
         payload = self.info.record(message)
         if self._recording_revision_ready:
             self._record_json(message, payload)
@@ -1055,14 +1060,29 @@ class SessionManager:
     def __init__(self, settings: Settings, factory: Callable = default_source_factory, recordings=None):
         self.settings, self.factory = settings, factory
         self.recordings = recordings or RecordingRepository(settings, AssetRegistry.from_file())
-        self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
-        self.plans = PlanStore(settings.state_root / "plans.jsonl", self.approvals)
+        self.inbox = InboxStore(settings.state_root / "inbox.jsonl")
+        self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl", on_change=self.inbox.approval)
+        self.plans = PlanStore(settings.state_root / "plans.jsonl", self.approvals, on_change=self.inbox.plan)
         self._library = None
         self.library_assets = AssetLibrary(settings.state_root)
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
         self._session_view: tuple[Session, ...] = ()
         self._create_lock = asyncio.Lock()
+        self._startup_lock = asyncio.Lock()
+        self._information_started = False
+
+    async def startup(self):
+        async with self._startup_lock:
+            if self._information_started:
+                return
+            await asyncio.to_thread(self.inbox.startup)
+            self.approvals.startup()
+            self.plans.startup()
+            self.inbox.reconcile(list(self.approvals.records.values()), list(self.plans.records.values()))
+            await self.plans.flush()
+            await self.inbox.flush()
+            self._information_started = True
 
     @property
     def library(self):
@@ -1071,9 +1091,7 @@ class SessionManager:
         return self._library
 
     async def create(self, scene_id, source, options, *, scene_version=None):
-        self.approvals.startup()
-        self.plans.startup()
-        await self.plans.flush()
+        await self.startup()
         async with self._create_lock:
             for session in self.sessions.values():
                 if session.state == "FAILED":
@@ -1100,6 +1118,7 @@ class SessionManager:
                     session = Session(
                         selected.name, selected_source, options, self.settings, self.factory,
                         self.recordings, self.approvals, self.plans, scene_version=selected,
+                        inbox=self.inbox,
                     )
                     self._starting_session = session
                     self._session_view = (*self.sessions.values(), session)
@@ -1163,4 +1182,7 @@ class SessionManager:
             for session in self.sessions.values():
                 await session.close()
         finally:
-            await self.plans.close()
+            try:
+                await self.plans.close()
+            finally:
+                await self.inbox.close()

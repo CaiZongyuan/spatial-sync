@@ -1,4 +1,4 @@
-"""One owned FIFO writer for internal plan history; acknowledgements follow fsync."""
+"""One owned FIFO writer for internal histories; acknowledgements follow fsync."""
 
 import asyncio
 import os
@@ -12,9 +12,9 @@ class JournalError(Exception):
     pass
 
 
-class PlanJournal:
-    def __init__(self, path: Path, *, capacity=1024):
-        self.path, self.capacity = path, capacity
+class AppendJournal:
+    def __init__(self, path: Path, *, capacity=1024, label="Plan"):
+        self.path, self.capacity, self.label = path, capacity, label
         self._condition = threading.Condition()
         self._queue = deque()
         self._thread = None
@@ -36,16 +36,16 @@ class PlanJournal:
                 "status": "failed"
                 if self._error
                 else ("saved" if self._acknowledged == self._sequence else "pending"),
-                **({"message": "Plan history could not be saved"} if self._error else {}),
+                **({"message": f"{self.label} history could not be saved"} if self._error else {}),
             }
 
     def append(self, payload):
         with self._condition:
             if self._error or self._closing:
-                self._error = self._error or "Plan journal is closed"
+                self._error = self._error or f"{self.label} journal is closed"
                 raise JournalError(self._error)
             if len(self._queue) >= self.capacity:
-                self._error = "Plan history writer queue is full"
+                self._error = f"{self.label} history writer queue is full"
                 raise JournalError(self._error)
             self._sequence += 1
             ticket = Future()
@@ -53,7 +53,9 @@ class PlanJournal:
             self._queue.append((self._sequence, payload, ticket))
             if self._thread is None:
                 try:
-                    self._thread = threading.Thread(target=self._run, name="plan-history-writer", daemon=True)
+                    self._thread = threading.Thread(
+                        target=self._run, name=f"{self.label.lower()}-history-writer", daemon=True
+                    )
                     self._thread.start()
                 except Exception as exc:
                     self._thread = None
@@ -106,6 +108,10 @@ class PlanJournal:
     async def flush(self):
         with self._condition:
             ticket = self._tail
+        await self.wait(ticket)
+
+    async def wait(self, ticket):
+        """Wait for one captured prefix; later admission cannot extend it."""
         if ticket is not None:
             # Caller cancellation never cancels a shared persistence acknowledgement.
             await asyncio.shield(asyncio.wrap_future(ticket))

@@ -26,6 +26,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.history_routes import install_history_routes
+from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
@@ -134,9 +135,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app):
         try:
-            manager.approvals.startup()
-            manager.plans.startup()
-            await manager.plans.flush()
+            await manager.startup()
             # Resolve the operator's roots at startup, before any owned workers or recordings.
             await asyncio.to_thread(manager.library_deletions.recover)
             manager.library.refresh()
@@ -173,6 +172,7 @@ def create_app(
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_history_routes(app, manager, recordings)
+    install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
                            lambda headers: _role(headers, settings))
     request_times = defaultdict(deque)
