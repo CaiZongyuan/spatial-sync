@@ -32,7 +32,7 @@ export function NewtonViewerButton({ sessionId, source, state, sceneRevision, ba
     ? 'The Newton backend is not available.' : viewer?.status === 'unavailable'
       ? viewer.reason ?? 'Newton viewer is not available.' : undefined;
   return <div className="newton-viewer-action">
-    <button aria-label="Open Newton viewer" disabled={pending || Boolean(unavailable)} title={unavailable ?? '在新标签页打开，请在网关电脑上使用。'}
+    <button aria-label={pending ? 'Opening viewer…' : 'Open Newton viewer'} disabled={pending || Boolean(unavailable)} title={unavailable ?? '在新标签页打开，请在网关电脑上使用。'}
       onClick={async () => {
         if (opening.current || unavailable) return;
         setError(undefined);

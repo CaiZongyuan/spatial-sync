@@ -189,7 +189,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             {manifest?.source.kind ?? 'source'}
           </span>
           <span className="observer-count">{Array.isArray(state.stats?.clients) ? state.stats.clients.length : '—'} 位观察者</span>
-          <Link to={client.readOnly ? '/recordings' : '/sessions'} className="subtle-link">
+            <Link to={client.readOnly ? '/recordings' : '/sessions'} className="subtle-link" aria-label={client.readOnly ? 'Recordings' : 'Sessions'}>
             {client.readOnly ? '录制列表' : '会话列表'}<Icon name="external" />
           </Link>
           {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
