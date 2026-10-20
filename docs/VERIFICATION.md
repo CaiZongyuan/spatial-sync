@@ -89,6 +89,12 @@ These require installed simulation/USD extras and use the actual Newton engine.
 Optional browser journeys use `SPATIAL_NEWTON_E2E=1` and `SPATIAL_TEST_NEWTON=1`.
 Failure probes can terminate only the Runner belonging to their own session.
 
+Static previews verify the actual source files used for their capture. After an
+input changes, regenerate the affected version/source, for example:
+`uv run --no-sync python tools/capture_scene_preview.py robot-and-tubes@2 --source newton --cache-root .scratch/scene-previews`.
+Copy the generated capture directory into `assets/scene-previews/`; keep published
+scene and asset package bytes unchanged.
+
 Launch each registered scene/source, select Body and Site, Pause, Step, Reset
 and Resume. Two browsers must share the authoritative sample and control results.
 Compare paused Inspector and HTTP pose at matching seq/simTime; Body and Site
