@@ -10,6 +10,7 @@ import { request } from '../api';
 import { validateManifest } from '../validate-manifest';
 import { PoseBuffer } from './pose-buffer';
 import { InfoStore } from '../info/store';
+import { PlanStore } from '../plans/store';
 
 export interface ViewState {
   manifest?: SceneManifest;
@@ -35,6 +36,7 @@ export class SessionClient {
   readonly readOnly: boolean = false;
   readonly buffer = new PoseBuffer();
   readonly info = new InfoStore();
+  readonly plans = new PlanStore();
   private state: ViewState = {
     role: 'viewer',
     connection: 'connecting',
@@ -114,6 +116,7 @@ export class SessionClient {
     );
     this.buffer.configure(manifest);
     this.info.configure(manifest.sceneRevision, manifest.epoch);
+    this.plans.configure(manifest.sceneRevision, manifest.epoch);
     this.update({ manifest, error: undefined });
   }
 
@@ -277,6 +280,7 @@ export class SessionClient {
               this.buffer.pushBinary(event.data, performance.now())
             ) {
               this.receivedFrames++;
+              this.plans.advanceEpoch(this.buffer.epoch);
               this.rates.push(performance.now());
               // Pose buffers stay outside React; paused views still need a draw after an authoritative sample.
               this.listeners.forEach(listener => listener());
@@ -395,6 +399,7 @@ export class SessionClient {
     switch (message.type) {
       case 'session.state':
         if (message.sceneRevision !== this.buffer.revision) return true;
+        this.plans.advanceEpoch(message.epoch);
         this.buffer.paused = message.state === 'PAUSED';
         if (this.buffer.paused) this.buffer.applyLatest();
         this.update({
@@ -412,6 +417,11 @@ export class SessionClient {
       case 'entity.event':
       case 'invocation.update':
         this.info.apply(message);
+        if (message.sceneRevision === this.buffer.revision) this.plans.advanceEpoch(message.epoch);
+        if (message.type === 'entity.event') this.plans.apply(message);
+        return true;
+      case 'plan.update':
+        this.plans.apply(message);
         return true;
       case 'server.error':
         this.update({ error: `${message.code}: ${message.message}` });
