@@ -2,6 +2,8 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { ApprovalInboxContext, useApprovalInbox } from '../lib/approvals';
 import '../approvals.css';
+import { AlertContext, useAlerts } from '../lib/live';
+import '../live.css';
 
 type Theme = 'system' | 'light' | 'dark';
 const themeKey = 'lab.theme';
@@ -17,6 +19,7 @@ function remember(key: string, value: string) {
 
 const pages = [
   { to: '/', label: 'Overview', text: '概览', icon: 'overview' },
+  { to: '/live', label: 'Live', text: '实况', icon: 'live' },
   { to: '/assets', label: 'Assets', text: '素材库', icon: 'assets' },
   { to: '/scenes', label: 'Scenes', text: '场景库', icon: 'scenes' },
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
@@ -28,6 +31,7 @@ const pages = [
 function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     overview: 'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z',
+    live: 'M3 12h4l3-7 4 14 3-7h4',
     resources: 'M5 6h14v12H5z M9 2v4 M15 2v4 M9 18v4 M15 18v4 M1 10h4 M1 14h4 M19 10h4 M19 14h4 M9 10h6v4H9z',
     sessions: 'M4 4h16v16H4z M4 9h16 M9 9v11',
     scenes: 'M12 3l9 5-9 5-9-5z M3 8v9l9 5 9-5V8 M12 13v9',
@@ -43,6 +47,9 @@ export function PlatformShell() {
   const pathname = useRouterState({ select: state => state.location.pathname });
   const replay = pathname.startsWith('/replay/');
   const approvals = useApprovalInbox(!replay);
+  const alertState = useAlerts(!replay);
+  const activeAlerts = alertState.active?.length;
+  const alertCount = alertState.activeCapped ? '≥1000' : activeAlerts;
   const pendingCount = replay || approvals.error ? undefined : approvals.inbox?.pendingCount;
   const [collapsed, setCollapsed] = useState(() => preference(sidebarKey) === 'true');
   const [theme, setTheme] = useState<Theme>(() => {
@@ -69,6 +76,8 @@ export function PlatformShell() {
         {pages.map(page => <Link key={page.to} to={page.to} className={`nav-item ${current.to === page.to ? 'is-current' : ''}`}
           aria-label={page.label} aria-current={current.to === page.to ? 'page' : undefined}>
           <Icon name={page.icon} /><span className="sidebar-label">{page.text}</span>
+          {page.to === '/live' && activeAlerts !== undefined && activeAlerts > 0 &&
+            <span className="live-nav-count" data-testid="live-alert-badge" aria-label={`${alertCount} 条活动告警`}>{alertCount}</span>}
           {page.to === '/approvals' && pendingCount !== undefined && pendingCount > 0 &&
             <span className="approval-nav-count" data-testid="approval-pending-badge" aria-label={`${pendingCount} 条待审批`}>{pendingCount}</span>}
           <span className="nav-tooltip" role="tooltip">{page.text}</span>
@@ -97,8 +106,10 @@ export function PlatformShell() {
         {pendingCount !== undefined && <Link to="/approvals" className={`approval-topbar-chip ${pendingCount ? 'has-pending' : ''}`}
           aria-label={`待审批 ${pendingCount}`}><i aria-hidden="true" />待审批 {pendingCount}</Link>}
         {!replay && approvals.error && <span className="approval-topbar-chip" role="status">审批暂不可用</span>}
+        {!replay && activeAlerts !== undefined && activeAlerts > 0 && <Link to="/live" className="live-topbar-chip">告警 {alertCount}</Link>}
+        {!replay && alertState.error && <span className="approval-topbar-chip" role="status">告警暂不可用</span>}
       </header>
-      <div id="page-content" tabIndex={-1}><ApprovalInboxContext.Provider value={approvals}><Outlet /></ApprovalInboxContext.Provider></div>
+      <div id="page-content" tabIndex={-1}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><Outlet /></ApprovalInboxContext.Provider></AlertContext.Provider></div>
     </div>
   </div>;
 }

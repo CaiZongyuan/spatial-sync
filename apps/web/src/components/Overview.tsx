@@ -12,6 +12,7 @@ import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { SceneViewport, type InspectVisuals, type RenderedPose, type RenderMetrics } from './viewer/SceneViewport';
 import { EntityPanel } from './EntityPanel';
 import { useInvocations } from '../lib/info/hooks';
+import { CriticalAlertBanner } from './Alerts';
 
 const value = (input: unknown) => typeof input === 'string' ? input : JSON.stringify(input);
 const title = (manifest: SceneManifest, catalog: Catalog, key: string) =>
@@ -234,6 +235,7 @@ export function Overview() {
   const recent = snapshot && !selecting ? recordings.find(recording => recording.kind === 'session'
     && recording.segments.length > 0 && recording.status !== 'recording') : undefined;
   return <main className="overview-page">
+    <CriticalAlertBanner />
     {confirmed?.error && <div role="alert" className="platform-error">{confirmed.error}</div>}
     {recordingError && <div role="alert" className="platform-error">无法读取最近录制：{recordingError}</div>}
     {active || recent ? <SessionOverview key={active?.sessionId ?? recent!.sessionId} session={active} snapshot={snapshot} recording={active ? undefined : recent} /> : <>
