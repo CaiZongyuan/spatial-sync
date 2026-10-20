@@ -68,6 +68,17 @@ managed Newton backends. These pages refresh every two seconds. **Recordings**
 The sidebar collapses and remembers your preference; below 900 px it becomes
 top navigation. The theme follows your system until you choose Light or Dark.
 Latin IBM Plex fonts and navigation icons ship locally.
+**Live (实况)** (`/live`) shows the active simulation's telemetry devices in the
+same isometric scene, with device actions, declared alert rules, acknowledgement
+notes and per-property history (one-hour query, one-minute means). Charts label
+only the available data span; stale readings and trends turn gray and dashed.
+Critical active alerts also appear on Overview, and Live's navigation badge
+counts active episodes, including acknowledged ones. The active query is capped
+at 1,000 and explicitly shows `≥1000` at that boundary; recent history is separate.
+Acknowledgement preserves its first actor and note; Cancel closes an unsubmitted
+form. The page identifies simulation sources; physical Device Host/MQTT support
+is delivered separately. History comes from session recordings and can be queried
+with the page's copyable `lw history` command.
 Session workspaces can switch between perspective and isometric cameras;
 `?camera=isometric` shares that view. Light/dark themes update viewport materials
 and lighting without restarting the source or reloading its scene.
