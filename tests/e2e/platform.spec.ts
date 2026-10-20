@@ -224,7 +224,7 @@ test('real platform counts follow a session, observer connection, pause and stop
     await expect(row).toContainText('RUNNING'); await expect(row).toContainText('0 connected clients');
     await expect(row.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', `/sessions/${sessionId}`);
     await observer.goto(`/sessions/${sessionId}`);
-    await expect(observer.getByTestId('connection-status')).toHaveText('connected');
+    await expect(observer.getByTestId('connection-status')).toHaveText('已连接');
     await expect(row).toContainText('1 connected client');
     await page.screenshot({ path: testInfo.outputPath('platform-real-synthetic.png'), fullPage: true });
     await observer.getByRole('button', { name: 'Pause simulation' }).click();

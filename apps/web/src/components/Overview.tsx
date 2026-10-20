@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Catalog, SceneManifest } from '../lib/protocol';
 import { usePlatform } from '../lib/use-platform';
 import { bytes, percent, type PlatformSession, type PlatformSnapshot } from '../lib/platform';
@@ -13,6 +13,9 @@ import { SceneViewport, type InspectVisuals, type RenderedPose, type RenderMetri
 import { EntityPanel } from './EntityPanel';
 import { useInvocations } from '../lib/info/hooks';
 import { CriticalAlertBanner } from './Alerts';
+import { AlertContext } from '../lib/live';
+import { Icon } from './Icon';
+import { sessionLabel } from '../lib/ui-labels';
 
 const value = (input: unknown) => typeof input === 'string' ? input : JSON.stringify(input);
 const title = (manifest: SceneManifest, catalog: Catalog, key: string) =>
@@ -64,10 +67,12 @@ function DeviceDrawer({ client, manifest, catalog, selected, select }: {
   const binding = catalog?.entities[selected];
   const definition = binding && catalog?.types[binding.type];
   const locations = catalog && binding ? teachingLocations(catalog, binding.key) : [];
-  const actionable = Object.values(catalog?.entities ?? {}).filter(binding => Object.keys(catalog?.types[binding.type]?.actions ?? {}).length);
+  const alerts = useContext(AlertContext);
+  const alertKeys = new Set((alerts.active ?? []).filter(alert => !client.readOnly && alert.sessionId === client.sessionId).map(alert => alert.entityKey));
+  const visible = Object.values(catalog?.entities ?? {}).filter(binding => !binding.unplaced && manifest.nodes.some(node => node.entityKey === binding.key));
   return <aside className="overview-device-drawer" aria-label="设备抽屉" data-connection={state.connection} data-role={state.role} data-state={state.sessionState} data-ready={client.info.getMetadata().ready} data-read-only={client.readOnly}>
     {binding && definition ? <>
-      <div className="drawer-heading"><span className="eyebrow">设备</span><button className="reference-link" aria-label="关闭设备抽屉" onClick={() => select('')}>× 关闭</button></div>
+      <div className="drawer-heading"><span className="eyebrow">设备</span><button className="reference-link" aria-label="关闭设备抽屉" onClick={() => select('')}><Icon name="close" />关闭</button></div>
       <h2>{title(manifest, catalog!, selected)}</h2><code className="drawer-key">{selected}</code>
       <dl className="reference-kv"><div><dt>实体类型</dt><dd><code>{binding.type}</code></dd></div>
         <div><dt>属性</dt><dd><code>{Object.keys(definition.properties).join(' · ')}</code></dd></div>
@@ -79,14 +84,11 @@ function DeviceDrawer({ client, manifest, catalog, selected, select }: {
     </> : <>
       <span className="eyebrow">设备抽屉</span><h2>点击地图上的设备</h2><p className="drawer-instruction">查看它的实体类型、动作与示教位置。</p>
       <span className="eyebrow">图例</span>
-      <div className="device-legend">{actionable.map(binding => <button key={binding.key} onClick={() => select(binding.key)} data-testid={`legend-${binding.key}`}>
-        <i /><span>{title(manifest, catalog!, binding.key)}</span><code>{binding.type}</code>
+      <div className="device-legend">{visible.map(binding => <button key={binding.key} onClick={() => select(binding.key)} data-testid={`legend-${binding.key}`}>
+        <i className={alertKeys.has(binding.key) ? 'has-alert' : ''} /><span>{title(manifest, catalog!, binding.key)}</span><code>{binding.type}</code>
       </button>)}
-        {catalog && Object.keys(catalog.entities).length > actionable.length && <details><summary>其他实体 · {Object.keys(catalog.entities).length - actionable.length}</summary>
-          {Object.values(catalog.entities).filter(binding => !actionable.includes(binding)).map(binding => <button key={binding.key} data-testid={`legend-${binding.key}`} onClick={() => select(binding.key)}>
-            <i /><span>{title(manifest, catalog, binding.key)}</span><code>{binding.type}</code></button>)}
-        </details>}
         {!catalog && <p className="drawer-instruction">正在读取实体目录…</p>}
+        {catalog && !visible.length && <p className="drawer-instruction">当前场景没有带空间位置的实体。</p>}
       </div>
     </>}
   </aside>;
@@ -167,7 +169,7 @@ function SessionOverview({ session, snapshot, recording }: { session?: PlatformS
     }) : [];
   return <>
     <header className="overview-page-heading"><h1>概览</h1><p><code title={recording?.sceneContentHash ?? undefined}>{sceneLabel}</code><span>·</span><code>{sessionId}</code><span>·</span>
-      <span className="reference-chip"><i />{client.readOnly ? '最近录制 · 只读预览' : `${state.sessionState} · ${state.simTime.toFixed(2)} s`}</span></p></header>
+      <span className="reference-chip"><i />{client.readOnly ? '最近录制 · 只读预览' : `${sessionLabel(state.sessionState)} · ${state.simTime.toFixed(2)} s`}</span></p></header>
     {error || state.error || state.infoError ? <div role="alert" className="platform-error">{error || state.error || state.infoError}</div> : null}
     <div className="overview-hero">
       <figure className="overview-figure">

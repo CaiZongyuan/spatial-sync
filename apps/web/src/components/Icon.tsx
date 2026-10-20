@@ -29,6 +29,7 @@ const paths = {
   copy: 'M8 8h13v13H8z M16 8V3H3v13h5',
   external: 'M14 3h7v7 M21 3L10 14 M10 4H3v17h17v-7',
   theme: 'M12 2a10 10 0 1 0 0 20V2z M12 2a10 10 0 0 1 0 20',
+  list: 'M8 5h13 M8 12h13 M8 19h13 M3 5h.01 M3 12h.01 M3 19h.01',
 } as const;
 
 export type IconName = keyof typeof paths;

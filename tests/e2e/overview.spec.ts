@@ -17,11 +17,11 @@ test('a paused live viewport draws on changes and wakes for Step, theme and proj
   const { sessionId } = await response.json();
   try {
     await page.goto(`/sessions/${sessionId}`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1)).toBeGreaterThanOrEqual(0);
     await expect(page.locator('canvas')).toBeVisible();
     await page.getByRole('button', { name: 'Pause simulation', exact: true }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     const receipt = await page.evaluate(async () => {
       const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       await frame(); await frame();
@@ -263,7 +263,7 @@ test('session projection is shareable and preserves a single real scene connecti
   const { sessionId } = await response.json();
   try {
     await page.goto(`/sessions/${sessionId}?camera=isometric`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect(page.getByRole('button', { name: 'Isometric camera', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
     await page.getByRole('button', { name: 'Perspective camera', exact: true }).click();
@@ -272,7 +272,7 @@ test('session projection is shareable and preserves a single real scene connecti
     await page.getByRole('button', { name: 'Isometric camera', exact: true }).click();
     await page.reload();
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   } finally {
     await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' });
   }

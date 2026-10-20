@@ -31,7 +31,7 @@ async function launch(page: Page, request: APIRequestContext, sceneId: string) {
   await page.getByRole('button', { name: '启动会话' }).click();
   const created = await creating;
   expect(created.ok(), await created.text()).toBe(true);
-  await expect(page.getByTestId('connection-status')).toHaveText('connected');
+  await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   const sid = new URL(page.url()).pathname.split('/').at(-1)!;
   const manifest = (await (
     await request.get(`${api}/api/v1/sessions/${sid}/scene`)
@@ -76,7 +76,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
       )
       .toBe('visuals');
     await page.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     await page.getByRole('button', { name: 'Reset simulation' }).click();
     await expect
       .poll(() =>
@@ -151,7 +151,7 @@ test('real Y-up GLB and native mesh fallback preserve world bounds and exclusive
     // Drop only the native mesh HTTP request; poses and every remaining asset still use the real gateway.
     await page.route('**/meshes/*', (route) => route.abort('failed'));
     await page.reload();
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect
       .poll(() =>
         page.evaluate(
@@ -230,7 +230,7 @@ test('real Franka robot renders every simultaneous native visual and exposes its
     )!;
     expect(tcp).toBeTruthy();
     await page.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     const expected = await (
       await request.get(
         `${api}/api/v1/sessions/${sid}/pose?key=${encodeURIComponent(tcp.entityKey)}`,

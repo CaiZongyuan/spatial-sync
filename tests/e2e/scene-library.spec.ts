@@ -215,11 +215,11 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
     await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
   await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(7);
   await expect(page.locator('canvas')).toHaveCount(0);
-  await page.getByRole('button', { name: '☷ 列表', exact: true }).click();
+  await page.getByRole('button', { name: '列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
   await expect(page.locator('.scene-mini-thumbnail').first()).toHaveCSS('width', '72px');
   await page.reload();
-  await expect(page.getByRole('button', { name: '☷ 列表', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '列表', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('物理源筛选').selectOption('newton');
   await expect(page.locator('.scene-library-table')).not.toContainText('lab-demo@1');
   await page.getByLabel('物理源筛选').selectOption('synthetic');
@@ -253,7 +253,7 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   const { sessionId } = await response.json();
   try {
     await expect(page).toHaveURL(new RegExp(`/sessions/${sessionId}$`));
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect(page.locator('canvas')).toHaveCount(1);
   } finally { await request.delete(`${api}/api/v1/sessions/${sessionId}`); }
   expect(errors).toEqual([]);

@@ -12,7 +12,7 @@ test('lab-demo version 2 shows seeded lab device readings and keeps high risk co
   const { sessionId } = await created.json();
   try {
     await page.goto(`/sessions/${sessionId}`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await page.getByTestId('entity-/World/Lab/Incubator').click();
     const temperature = page.getByTestId('property-temperatureC').locator('output');
     await expect(temperature).not.toHaveText('Unknown');
@@ -36,7 +36,7 @@ test('lab-demo version 2 shows seeded lab device readings and keeps high risk co
 
 async function device(page: Page, sessionId: string) {
   await page.goto(`/sessions/${sessionId}`);
-  await expect(page.getByTestId('connection-status')).toHaveText('connected');
+  await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   await page.getByTestId(`entity-${centrifuge}`).click();
   await expect(page.getByTestId('entity-panel')).toBeVisible();
   await expect(
@@ -275,7 +275,7 @@ test('schema string fields preserve JSON Schema Unicode and pattern semantics', 
   const { sessionId } = await created.json();
   try {
     await page.goto(`/sessions/${sessionId}`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await page.getByTestId('entity-/World/Lab/RobotA').click();
     const move = await action(page, 'moveJoints');
     await move

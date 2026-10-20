@@ -25,7 +25,7 @@ test('workbench preserves public controls, tree navigation, exact Inspector and 
     const tube = manifest.nodes.find(node => node.kind === 'body' && /^Tube\s*0?1$/i.test(node.name))!;
     expect(tube).toBeTruthy();
     await page.goto(`/sessions/${sessionId}?camera=isometric`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect(page.getByTestId('phase-/World/Lab/RobotA')).toBeVisible();
     await expect(page.getByRole('button', { name: `Hide ${tube.name}`, exact: true })).toBeVisible();
     const owner = page.getByTestId(`entity-${body.entityKey}`), marker = page.getByTestId(`entity-${site.entityKey}`);
@@ -50,7 +50,7 @@ test('workbench preserves public controls, tree navigation, exact Inspector and 
     await page.getByRole('button', { name: 'Realtime factor 1', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Realtime factor 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Pause simulation', exact: true }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     await marker.click();
     const poseResponse = await request.get(`${api}/api/v1/sessions/${sessionId}/pose`, { params: { key: site.entityKey } });
     expect(poseResponse.ok()).toBe(true);
@@ -85,7 +85,7 @@ test('workbench preserves public controls, tree navigation, exact Inspector and 
     }
     if (diagnostics) await diagnostics.observeWorkbench(probeContext);
     await page.getByRole('button', { name: 'Resume simulation', exact: true }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
+    await expect(page.getByTestId('session-state')).toHaveText('运行中');
     if (diagnostics) { await page.goto('/'); await diagnostics.observeOverview(probeContext); }
     expect(errors).toEqual([]);
   } finally {

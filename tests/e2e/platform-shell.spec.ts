@@ -15,7 +15,7 @@ test('platform navigation, persistent preferences, system theme and local assets
     .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
   await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(244, 243, 239)');
+  await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(243, 242, 238)');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(18, 18, 17)');
   await page.getByLabel('Color theme').selectOption('light');
@@ -23,7 +23,7 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.reload();
   await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeVisible();
   await expect(page.locator('.platform-sidebar')).toHaveCSS('width', '44px');
-  await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(244, 243, 239)');
+  await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(243, 242, 238)');
   await navigation.getByRole('link', { name: 'Sessions', exact: true }).focus();
   await expect(page.getByRole('tooltip', { name: '会话', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
@@ -67,7 +67,7 @@ test('400 px pages and live workspace stay within the page width', async ({ page
   const { sessionId } = await response.json();
   try {
     await page.goto(`/sessions/${sessionId}`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect(page.locator('canvas')).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
     await page.screenshot({ path: testInfo.outputPath('workspace-400.png'), fullPage: true });
@@ -102,7 +102,7 @@ test('scene library launches the selected exact version and connects to its real
   const { sessionId } = await response.json();
   try {
     await expect(page).toHaveURL(new RegExp(`/sessions/${sessionId}$`));
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   } finally {
     await request.delete(`${api}/api/v1/sessions/${sessionId}`);
   }

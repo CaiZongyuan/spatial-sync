@@ -832,6 +832,7 @@ pre {
 .viewport {
   position: absolute;
   inset: 0;
+  background: radial-gradient(120% 95% at 50% 36%, var(--stage-1), var(--stage-2));
 }
 .viewport > div:first-child {
   position: absolute !important;

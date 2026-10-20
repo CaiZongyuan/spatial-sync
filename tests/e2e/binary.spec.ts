@@ -9,7 +9,7 @@ const metrics = (page: Page) =>
   page.evaluate(() => window.__spatialDebug?.getStreamMetrics());
 
 async function connected(page: Page) {
-  await expect(page.getByTestId('connection-status')).toHaveText('connected');
+  await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   await expect
     .poll(async () => (await sample(page))?.seq ?? -1)
     .toBeGreaterThan(0);
@@ -76,8 +76,8 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       .toBe('binary');
     expect((await metrics(observer))?.frameFormat).toBe('binary');
     await page.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
-    await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
+    await expect(observer.getByTestId('session-state')).toHaveText('已暂停');
     const snapshot = (await (
       await request.get(`${route}/snapshot`)
     ).json()) as Snapshot;
@@ -115,7 +115,7 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       .at(-1)!
       .close({ code: 4001, reason: 'Recovery verification' });
     await expect(page.getByTestId('connection-status')).not.toHaveText(
-      'connected',
+      '已连接',
     );
     block = false;
     await connected(page);

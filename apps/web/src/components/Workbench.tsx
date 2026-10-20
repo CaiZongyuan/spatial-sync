@@ -17,6 +17,7 @@ import { ApprovalBanner, InvocationsPanel } from './InvocationsPanel';
 import { Diagnostics } from './Diagnostics';
 import { NewtonViewerButton } from './NewtonViewerButton';
 import { Icon } from './Icon';
+import { connectionLabel, sessionLabel } from '../lib/ui-labels';
 import '../workbench.css';
 import {
   SceneViewport,
@@ -183,7 +184,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
         </div>
         <div className="header-status">
           <span className={`connection-dot ${connected ? 'connected' : ''}`} />
-          <span data-testid="connection-status">{state.connection}</span>
+          <span data-testid="connection-status" data-connection={state.connection} title={state.connection}>{connectionLabel(state.connection)}</span>
           <span className="source-pill">
             {manifest?.source.kind ?? 'source'}
           </span>
@@ -217,8 +218,10 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <span
             className={`state-pill ${state.sessionState.toLowerCase()}`}
             data-testid="session-state"
+            data-state={state.sessionState}
+            title={state.sessionState}
           >
-            {state.sessionState}
+            {sessionLabel(state.sessionState)}
           </span>
           <button
             disabled={!canControl || pending || !active}
@@ -285,8 +288,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
       {(pending || state.commandResult) && (
         <div role="status" className="command-notice">
           {pending
-            ? 'Waiting for source acknowledgement…'
-            : state.commandResult}
+            ? '等待物理源确认…'
+            : state.commandResult === 'Command applied' ? '命令已应用' : state.commandResult}
         </div>
       )}
       {!manifest ? (
@@ -294,8 +297,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <div className="loading-orbit" />
           <h2>
             {loadError
-              ? 'Gateway unavailable'
-              : 'Loading your spatial workspace'}
+              ? '网关暂不可用'
+              : '正在加载空间工作台'}
           </h2>
           <p>
             {loadError ??

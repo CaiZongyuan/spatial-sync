@@ -14,10 +14,10 @@ test('full binary frames retain instanced poses, picking and object visibility',
   try {
     const manifest = (await (await request.get(`${route}/scene`)).json()) as SceneManifest;
     await page.goto(`/sessions/${sessionId}?render=instanced`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1)).toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     const snapshot = (await (await request.get(`${route}/snapshot`)).json()) as Snapshot;
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.frameStats().appliedBodies)).toBe(snapshot.poses.length);
     const bodies = manifest.nodes.filter((node) => node.kind === 'body');

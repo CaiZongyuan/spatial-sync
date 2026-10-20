@@ -4,7 +4,7 @@ import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
 async function waitConnected(page: Page) {
-  await expect(page.getByTestId('connection-status')).toHaveText('connected');
+  await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   await expect
     .poll(() =>
       page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
@@ -24,9 +24,9 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   await page.getByLabel('启动物理源', { exact: true }).selectOption('synthetic');
   await page.getByRole('button', { name: '启动会话' }).click();
   await waitConnected(page);
-  if ((await page.getByTestId('session-state').textContent()) === 'PAUSED') {
+  if ((await page.getByTestId('session-state').getAttribute('data-state')) === 'PAUSED') {
     await page.getByRole('button', { name: 'Resume simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
+    await expect(page.getByTestId('session-state')).toHaveText('运行中');
   }
   const sessionId = new URL(page.url()).pathname.split('/').at(-1)!;
   const manifestResponse = await request.get(
@@ -113,10 +113,10 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   await observer.goto(page.url());
   await waitConnected(observer);
   await page.getByRole('button', { name: 'Pause simulation' }).click();
-  await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
-  await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
+  await expect(page.getByTestId('session-state')).toHaveText('已暂停');
+  await expect(observer.getByTestId('session-state')).toHaveText('已暂停');
   await expect(
-    page.getByText('Command applied', { exact: true }),
+    page.getByText('命令已应用', { exact: true }),
   ).toBeVisible();
   const snapshot = (await (
     await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
@@ -175,7 +175,7 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
 
   // A paused observer remains healthy through multiple heartbeat periods.
   await page.waitForTimeout(3300);
-  await expect(page.getByTestId('connection-status')).toHaveText('connected');
+  await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   expect(
     (
       (await (
@@ -209,9 +209,9 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
       page.evaluate(() => window.__spatialDebug?.getSample()?.simTime),
     )
     .toBe(0);
-  await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+  await expect(page.getByTestId('session-state')).toHaveText('已暂停');
   await page.getByRole('button', { name: 'Resume simulation' }).click();
-  await expect(observer.getByTestId('session-state')).toHaveText('RUNNING');
+  await expect(observer.getByTestId('session-state')).toHaveText('运行中');
   await expect
     .poll(() =>
       page.evaluate(() => window.__spatialDebug?.getSample()?.simTime ?? 0),
@@ -225,7 +225,7 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     .at(-1)!
     .close({ code: 4001, reason: 'Network-loss test' });
   await expect(observer.getByTestId('connection-status')).not.toHaveText(
-    'connected',
+    '已连接',
   );
   blockObserverNetwork = false;
   await waitConnected(observer);
