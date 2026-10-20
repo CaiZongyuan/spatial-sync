@@ -17,6 +17,7 @@ from pydantic import (
 )
 
 from packages.library.scenes import REPO_ROOT, content_hash
+from packages.library.templates import template_id
 from packages.protocol.schema import Catalog, EntitySnapshot, SceneManifest
 from packages.transport import FrameCodec
 
@@ -25,7 +26,7 @@ DEPENDENCY_DIGEST = "sha256-text-lf-v1"
 CODE_ROOTS = (
     "packages/", "apps/api/app/sources/", "apps/api/app/recordings.py", "tools/capture_scene_preview.py",
 )
-DATA_ROOTS = ("assets/", "devices/types/", "examples/usd-lab/")
+DATA_ROOTS = ("assets/", "devices/types/", "examples/usd-lab/", "library/")
 
 _NonemptyString = Annotated[str, Field(min_length=1)]
 _Vector = Annotated[list[FiniteFloat], Field(min_length=3, max_length=3)]
@@ -44,6 +45,17 @@ class _Bounds(BaseModel):
         return self
 
 
+class _TemplateAsset(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    id: str
+    contentHash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+    @field_validator("id")
+    @classmethod
+    def exact_identity(cls, value):
+        return template_id(value)
+
+
 class _CaptureMetadata(BaseModel):
     """Validate every field exposed by describe before a cache can be selected."""
 
@@ -55,6 +67,14 @@ class _CaptureMetadata(BaseModel):
     counts: dict[str, Annotated[int, Field(ge=0)]]
     thumbnail: dict[str, _NonemptyString] = Field(default_factory=dict)
     bounds: _Bounds | None = None
+    templateAssets: list[_TemplateAsset] = Field(default_factory=list)
+
+    @field_validator("templateAssets")
+    @classmethod
+    def unique_templates(cls, value):
+        if len({item.id for item in value}) != len(value):
+            raise ValueError("Template asset identities must be unique")
+        return value
 
     @field_validator("runtime")
     @classmethod
@@ -105,6 +125,7 @@ class PreviewRepository:
         self.roots = (Path(root), Path(bundled_root))
 
     def _capture(self, version, source):
+        expected_templates = version.template_dependencies()
         if source not in version.metadata["sources"]:
             raise ValueError("所选物理源不支持此场景版本")
         if content_hash(version.path) != version.content_hash:
@@ -130,6 +151,10 @@ class PreviewRepository:
                     raise ValueError("预览归属与当前场景版本或物理源不一致")
                 if value.get("dependencyDigest") != DEPENDENCY_DIGEST:
                     raise ValueError("预览的构建输入摘要规则不受支持，需要重新采集")
+                if {item["id"]: item["contentHash"] for item in value["templateAssets"]} != {
+                    item["id"]: item["contentHash"] for item in expected_templates
+                }:
+                    raise ValueError("Preview template dependencies are incomplete or differ; recapture")
                 dependencies = value["dependencies"]
                 if not dependencies or any(input_hash(dependency_path(item)) != item["sha256"]
                                            for item in dependencies):

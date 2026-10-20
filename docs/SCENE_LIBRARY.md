@@ -194,6 +194,14 @@ Binary inputs, frozen outputs and public package content hashes use raw bytes.
 Unsupported digest rules require recapture. Only indexed files are served;
 external paths and unindexed model asset references are rejected.
 
+Template captures also record `templateAssets`, the complete list of exact asset
+IDs and raw package hashes used by the source. Describe and preview file reads
+check these against the actual validated snapshots from the configured library
+roots. External library paths stay out of capture metadata. Missing dependencies,
+changed bytes, malformed or partial identity lists make that capture unavailable.
+Older captures without templates remain readable; a template capture without its
+dependency identities requires recapture.
+
 Capture a producer explicitly, with no managed session or recording:
 
 ```powershell

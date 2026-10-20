@@ -62,6 +62,20 @@ class SceneVersion:
             else (self.validation)
         )
 
+    def template_dependencies(self):
+        if self.template_error:
+            raise TemplateError(self.template_error)
+        selected = references(self.bindings)
+        if set(selected) != set(self.template_assets):
+            raise TemplateError("Template dependency snapshots are incomplete")
+        for identifier in selected:
+            snapshot = self.template_assets[identifier]
+            if snapshot["id"] != identifier:
+                raise TemplateError("Template dependency snapshot identity differs")
+            verify_snapshot(snapshot)
+        return [{"id": identifier, "contentHash": self.template_assets[identifier]["contentHash"]}
+                for identifier in selected]
+
     def require_launchable(self):
         report = self.report()
         if not launchable(report):
@@ -70,10 +84,7 @@ class SceneVersion:
                 "scene_not_launchable", message, 409, sceneVersion=self.id, validation=deepcopy(report)
             )
         try:
-            if self.template_error:
-                raise TemplateError(self.template_error)
-            for snapshot in self.template_assets.values():
-                verify_snapshot(snapshot)
+            self.template_dependencies()
         except (TemplateError, OSError, ValueError) as exc:
             raise LibraryError(
                 "scene_not_launchable", str(exc), 409, sceneVersion=self.id, validation=deepcopy(report)
