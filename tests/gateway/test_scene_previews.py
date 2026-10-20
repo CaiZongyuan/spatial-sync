@@ -43,7 +43,10 @@ async def test_real_preview_preserves_existing_session_and_serves_only_verified_
         detail = client.get("/api/v1/library/scenes/lab-demo/1").json()
         assert detail["preview"]["status"] == "available", detail
         assert detail["entityCount"] == 30 and detail["deviceCount"] == 22
-        assert detail["inspection"] == "declarative bindings; match selectors are unexpanded"
+        assert detail["templateResolution"] == {"status": "not_required", "error": None}
+        assert detail["effectiveBindings"] == {}
+        assert detail["entities"] == detail["rawBindings"]["entities"] == version.bindings["entities"]
+        assert any(binding.get("match") == "/World/Lab/Tubes/*" for binding in detail["entities"])
         manifest = client.get(detail["preview"]["documents"]["manifest"]).json()
         assert manifest["sessionId"] != active["sessionId"]
         assert next(site for site in manifest["sites"] if site["entityKey"] == "/World/Lab/Rack/A1")[

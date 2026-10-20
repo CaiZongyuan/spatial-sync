@@ -87,7 +87,7 @@ async def test_internal_ready_preserves_private_rules_and_rejects_drift_without_
     tmp_path, monkeypatch, mode
 ):
     root = Path(__file__).resolve().parents[2]
-    package = tmp_path / "scenes/robot-and-tubes/2"
+    package = tmp_path / "scenes/robot-and-tubes/3"
     shutil.copytree(root / "library/scenes/robot-and-tubes/1", package)
     scene = yaml.safe_load((package / "devices.yaml").read_text(encoding="utf-8"))
     binding = next(value for value in scene["entities"] if value.get("key") == KEY)
@@ -104,7 +104,7 @@ async def test_internal_ready_preserves_private_rules_and_rejects_drift_without_
         json.dumps(
             {
                 "schema": "lw.validation/1",
-                "subject": "scene:robot-and-tubes@2",
+                "subject": "scene:robot-and-tubes@3",
                 "launchable": True,
                 "checks": [
                     {
@@ -137,7 +137,8 @@ async def test_internal_ready_preserves_private_rules_and_rejects_drift_without_
     )
     (package / "rpc-manifest.json").write_text(manifest.model_dump_json(), encoding="utf-8")
     (package / "rpc-mode.txt").write_text(mode, encoding="utf-8")
-    selected = SceneLibrary(user_root=tmp_path).resolve("robot-and-tubes@2", launch=True)
+    selected = SceneLibrary(user_root=tmp_path).resolve("robot-and-tubes@3", launch=True)
+    assert selected.id == "robot-and-tubes@3" and selected.path == package
     monkeypatch.setattr(runner, "run_runner", catalog_rpc_runner)
     source = NewtonSource("rpc-alert-" + mode)
     source.configure_scene(selected)

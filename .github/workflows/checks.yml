@@ -7,6 +7,7 @@ on:
 
 jobs:
   python-checks:
+    name: python-checks (${{ matrix.lane }})
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -16,7 +17,20 @@ jobs:
           - lane: core
             tests: tests/contract tests/unit
           - lane: gateway
-            tests: tests/gateway
+            tests: >-
+              tests/gateway
+              --ignore=tests/gateway/test_binding_templates.py
+              --ignore=tests/gateway/test_template_pin_history.py
+              --ignore=tests/gateway/test_template_previews.py
+              --ignore=tests/gateway/test_builtin_template_migration.py
+              --ignore=tests/gateway/test_template_asset_references.py
+          - lane: library-templates
+            tests: >-
+              tests/gateway/test_binding_templates.py
+              tests/gateway/test_template_pin_history.py
+              tests/gateway/test_template_previews.py
+              tests/gateway/test_builtin_template_migration.py
+              tests/gateway/test_template_asset_references.py
           - lane: cli
             tests: tests/cli
     steps:

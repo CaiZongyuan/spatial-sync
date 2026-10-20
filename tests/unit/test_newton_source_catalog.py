@@ -19,7 +19,7 @@ ROBOT = "/World/Lab/RobotA"
 
 @pytest.mark.parametrize("tampered", [False, True])
 async def test_ready_rebuilds_selected_package_catalog_and_still_rejects_disagreement(tmp_path, tampered):
-    package = tmp_path / "scenes/robot-and-tubes/2"
+    package = tmp_path / "scenes/robot-and-tubes/3"
     shutil.copytree(ROOT / "library/scenes/robot-and-tubes/1", package)
     bindings = yaml.safe_load((package / "devices.yaml").read_text(encoding="utf-8"))
     robot = next(binding for binding in bindings["entities"] if binding.get("key") == ROBOT)
@@ -32,11 +32,12 @@ async def test_ready_rebuilds_selected_package_catalog_and_still_rejects_disagre
     (package / "devices.yaml").write_text(yaml.safe_dump(bindings), encoding="utf-8")
     (package / "selected-locations.yaml").write_text(yaml.safe_dump(locations), encoding="utf-8")
     (package / "validation.json").write_text(json.dumps({
-        "schema": "lw.validation/1", "subject": "scene:robot-and-tubes@2", "launchable": True,
+        "schema": "lw.validation/1", "subject": "scene:robot-and-tubes@3", "launchable": True,
         "checks": [{"id": "fixture", "tier": "structural", "status": "warn",
                     "message": "Test fixture; no full structural or physics validation is claimed."}],
     }), encoding="utf-8")
-    selected = SceneLibrary(user_root=tmp_path).resolve("robot-and-tubes@2", launch=True)
+    selected = SceneLibrary(user_root=tmp_path).resolve("robot-and-tubes@3", launch=True)
+    assert selected.id == "robot-and-tubes@3" and selected.path == package
     keys = [ROBOT, "/World/Lab/Centrifuge", *[f"/World/Lab/Tubes/Tube{i:02d}" for i in range(1, 21)]]
     manifest = SceneManifest(
         sessionId="selected-newton", sceneRevision="selected-revision", revisionNumericId=1,
