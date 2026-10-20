@@ -122,6 +122,5 @@ readers ignore the new message types and continue spatial/property playback.
 MCP provides structured `plan_create`, `plan_revise`, `plan_show`, `plan_list`
 and `check_condition`; `invoke_action` and `wait_until` accept optional plan
 references. CLI reads local YAML files; MCP submits document objects. Neither
-client can approve its own requests. Plan updates already use the session's
-reliable event stream; the future unified inbox can consume that stream without
-a separate plan-only polling API.
+client can approve its own requests. Plan updates use the session's reliable
+event stream and the unified inbox without a separate plan-only polling API.
