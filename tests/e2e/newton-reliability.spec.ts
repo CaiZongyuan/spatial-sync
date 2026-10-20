@@ -106,6 +106,7 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
       )
     ).json();
     expect(expectedSite.seq).toBe(snapshot.seq);
+    await page.getByTestId(`entity-${body.entityKey}`).press('ArrowRight');
     await page.getByTestId(`entity-${site.entityKey}`).click();
     for (let i = 0; i < 3; i++)
       expect(

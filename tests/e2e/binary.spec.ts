@@ -3,26 +3,13 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type {} from '../../apps/web/src/components/Workbench';
 import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
+import { cleanupObserver } from './cleanup-observer';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const sample = (page: Page) =>
   page.evaluate(() => window.__spatialDebug?.getSample());
 const metrics = (page: Page) =>
   page.evaluate(() => window.__spatialDebug?.getStreamMetrics());
-
-async function cleanupObserver(context: Pick<BrowserContext, 'close'> | undefined, routes: readonly string[], priorFailures: readonly unknown[] = []) {
-  const failures = [...priorFailures];
-  try { await context?.close(); } catch (error) { failures.push(error); }
-  for (const route of routes) {
-    try {
-      // Node HTTP remains usable after Playwright cancels the browser operation.
-      const response = await fetch(route, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`Owned session cleanup failed: HTTP ${response.status}`);
-    } catch (error) { failures.push(error); }
-  }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, 'Binary journey and cleanup failures', { cause: failures[0] });
-}
 
 async function connected(page: Page) {
   await expect(page.getByTestId('connection-status')).toHaveText('已连接');
@@ -233,6 +220,22 @@ test('observer close failure stops only its owned session and preserves the orig
     await expect(cleanupObserver(context, [route])).rejects.toBe(close);
     await expect(cleanupObserver(undefined, [route], [undefined])).rejects.toBeUndefined();
     expect((await (await request.get(nextRoute)).json()).state).toBe('RUNNING');
+    let releaseClose!: () => void;
+    const heldClose = new Promise<void>(resolve => { releaseClose = resolve; });
+    let closeStarted = false, closeFinished = false;
+    const stopping = cleanupObserver({ close: async () => {
+      closeStarted = true; await heldClose; closeFinished = true;
+    } }, [nextRoute]);
+    try {
+      await expect.poll(async () => (await (await request.get(nextRoute)).json()).state).toBe('STOPPED');
+      expect(closeStarted).toBe(true);
+      expect(closeFinished).toBe(false);
+    } catch (error) { failures.push(error); }
+    finally {
+      releaseClose();
+      await stopping.catch(error => { failures.push(error); });
+    }
+    expect(closeFinished).toBe(true);
     const deleted: string[] = [];
     const faults = createServer((request, response) => {
       deleted.push(`${request.method} ${request.url}`);

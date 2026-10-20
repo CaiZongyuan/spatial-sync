@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import type {} from '../../apps/web/src/components/Workbench';
+import { cleanupObserver } from './cleanup-observer';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const centrifuge = '/World/Lab/Centrifuge';
@@ -56,6 +57,32 @@ const invocation = (page: Page, name: string) =>
     .filter({ has: page.getByText(name, { exact: true }) })
     .first();
 
+test('Inspector schema forms reject an action with unmet preconditions', async ({ page, request }) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneId: 'lab-demo', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const errors: string[] = [];
+  const failures: unknown[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await device(page, sessionId);
+    const start = await action(page, 'start');
+    await expect(start.getByRole('list', { name: 'start preconditions' }).locator('.unmet')).not.toHaveCount(0);
+    await start.getByLabel('start rpm', { exact: true }).fill('3000');
+    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
+    await start.getByRole('button', { name: 'Run start', exact: true }).click();
+    await expect(invocation(page, 'start').locator('.invocation-status')).toHaveText('rejected');
+    await expect(start.getByRole('status')).toContainText('precondition_failed');
+    expect(errors).toEqual([]);
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    await cleanupObserver(undefined, [`${api}/api/v1/sessions/${sessionId}`], failures);
+  }
+});
+
 test('Inspector schema forms run a centrifuge action and two observers see its lifecycle', async ({
   page,
   browser,
@@ -66,31 +93,16 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
   });
   expect(created.ok()).toBe(true);
   const { sessionId } = await created.json();
-  const context = await browser.newContext({
-    viewport: { width: 1440, height: 960 },
-  });
-  const observer = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  observer.on('pageerror', (error) => errors.push(error.message));
+  let context: BrowserContext | undefined;
+  const failures: unknown[] = [];
   try {
-    await device(page, sessionId);
-    await device(observer, sessionId);
+    context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+    const observer = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    observer.on('pageerror', (error) => errors.push(error.message));
+    await Promise.all([device(page, sessionId), device(observer, sessionId)]);
     const start = await action(page, 'start');
-    await expect(
-      start
-        .getByRole('list', { name: 'start preconditions' })
-        .locator('.unmet'),
-    ).not.toHaveCount(0);
-    await start.getByLabel('start rpm', { exact: true }).fill('3000');
-    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
-    await start.getByRole('button', { name: 'Run start', exact: true }).click();
-    await expect(
-      invocation(page, 'start').locator('.invocation-status'),
-    ).toHaveText('rejected');
-    await expect(start.getByRole('status')).toContainText(
-      'precondition_failed',
-    );
     await (await action(page, 'closeLid'))
       .getByRole('button', { name: 'Run closeLid', exact: true })
       .click();
@@ -155,9 +167,10 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
       path: info.outputPath('device-properties-and-invocations.png'),
     });
     expect(errors).toEqual([]);
+  } catch (error) {
+    failures.push(error);
   } finally {
-    await context.close();
-    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+    await cleanupObserver(context, [`${api}/api/v1/sessions/${sessionId}`], failures);
   }
 });
 

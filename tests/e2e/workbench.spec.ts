@@ -159,6 +159,7 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     py + vy + qw * ty + qz * tx - qx * tz,
     pz + vz + qw * tz + qx * ty - qy * tx,
   ];
+  await page.getByTestId(`entity-${body.entityKey}`).press('ArrowRight');
   await page.getByTestId(`entity-${site.entityKey}`).click();
   for (let i = 0; i < 3; i++)
     expect(
