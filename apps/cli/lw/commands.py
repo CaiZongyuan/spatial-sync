@@ -88,6 +88,18 @@ class Command:
 
 COMMANDS = (
     Command(
+        path=("history",), help="Query recorded property measurements, with at most 2000 points.",
+        method="history_query", mcp_name="history_query", arguments=(
+            Argument("key", ("key",), str, "Entity key; /Real/ selects Live Lab"),
+            Argument("property", ("property",), str, "Property name"),
+            Argument("since", ("--since",), str, "Lookback duration (1h) or raw sampleTimeMs"),
+            Argument("until", ("--until",), str | None, "End sampleTimeMs; defaults to recording end", None),
+            Argument("every", ("--every",), str | None, "Bucket duration (1m); omit for raw samples", None),
+            Argument("agg", ("--agg",), str, "mean, last, min or max", "mean"),
+            Argument("recording", ("--recording",), str | None, "Retained recording ID", None),
+        ),
+    ),
+    Command(
         path=("plan", "create"), help="Submit an operation plan; CLI reads a local YAML file.",
         method="plan_create", arguments=(Argument("document", ("plan.yaml",), dict[str, Any],
                                                     "Operation plan content (CLI: local YAML file)"),),

@@ -25,6 +25,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
+from apps.api.app.history_routes import install_history_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
@@ -171,6 +172,7 @@ def create_app(
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
+    install_history_routes(app, manager, recordings)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
                            lambda headers: _role(headers, settings))
     request_times = defaultdict(deque)

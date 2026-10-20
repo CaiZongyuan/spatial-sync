@@ -4,6 +4,7 @@ import json
 import struct
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -72,6 +73,49 @@ async def test_literal_v1_bytes_preserve_nsynth_payload_and_fifo(tmp_path):
     assert [item.kind for item in result.records] == [1, 2, 2]
     assert result.records[-1].payload == payload.encode()
     assert result.records[-1].t_ms == 900
+
+
+async def test_optional_index_disk_work_never_holds_producer_admission(tmp_path, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked_index(path):
+        entered.set()
+        assert release.wait(5)
+        raise OSError("Optional index unavailable")
+
+    monkeypatch.setattr("packages.info.history.write_property_index", blocked_index)
+    log = new_log(tmp_path, segment_seconds=1)
+    assert log.append_frame(frame(2100, 2), 2100)
+    assert await asyncio.to_thread(entered.wait, 5)
+    try:
+        with ThreadPoolExecutor(1) as executor:
+            admitted = executor.submit(log.append_json, snapshot(2200, "slot"), 2200)
+            assert admitted.result(timeout=0.5)
+    finally:
+        release.set()
+        await log.close()
+    assert log.error is None
+    assert json.loads((log.directory / "recording.json").read_bytes())["status"] == "complete"
+
+
+async def test_disk_failure_releases_a_waiting_history_checkpoint(tmp_path):
+    entered, release = threading.Event(), threading.Event()
+
+    def failed_open(path):
+        entered.set()
+        assert release.wait(5)
+        raise OSError("Injected disk failure")
+
+    log = new_log(tmp_path, open_segment=failed_open)
+    assert await asyncio.to_thread(entered.wait, 5)
+    checkpoint = asyncio.create_task(log.checkpoint())
+    await asyncio.sleep(0)
+    release.set()
+    try:
+        with pytest.raises(OSError, match="checkpoint"):
+            await asyncio.wait_for(checkpoint, 2)
+    finally:
+        await log.close()
 
 
 async def test_roll_snapshot_uses_written_fifo_position_not_producer_future(tmp_path):

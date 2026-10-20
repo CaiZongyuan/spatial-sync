@@ -57,7 +57,7 @@ class GatewayClient:
         if self._owns_http:
             await self.http.aclose()
 
-    async def request(self, method, path, *, actor="cli:lw", timeout=30, **kwargs):
+    async def request(self, method, path, *, actor="cli:lw", timeout=30, response_headers=None, **kwargs):
         headers = kwargs.pop("headers", {}) | {"X-Actor": actor}
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
@@ -66,6 +66,8 @@ class GatewayClient:
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
             # Exception URLs/messages can contain credentials. Keep diagnostics local and generic.
             raise GatewayError(f"Gateway connection failed ({type(exc).__name__})") from exc
+        if response_headers is not None:
+            response_headers.update(response.headers)
         try:
             document = response.json()
         except ValueError as exc:
@@ -202,6 +204,26 @@ class GatewayClient:
         if self._session_explicit:
             params["sessionId"] = self._session_id
         return (await self.request("GET", "/api/v1/alerts", params=params))["alerts"]
+
+    async def history_query(self, key, property, since, until=None, every=None, agg="mean", recording=None):
+        params = {name: value for name, value in {
+            "key": key, "property": property, "since": since, "until": until,
+            "every": every, "agg": agg, "recording": recording,
+        }.items() if value is not None}
+        if recording is None and not key.startswith("/Real/") and self._session_explicit:
+            params["sessionId"] = self._session_id
+        # History's public HTTP body is a point array. Capture only this call's
+        # headers to expose its cap and range through both CLI and MCP.
+        headers = {}
+        points = await self.request("GET", "/api/v1/history", params=params, response_headers=headers)
+        every_ms = headers["x-history-every-ms"]
+        return {"points": points, "recordingId": headers["x-history-recording"],
+                "limit": int(headers["x-history-limit"]),
+                "truncated": headers["x-history-truncated"] == "true",
+                "sinceMs": float(headers["x-history-since-ms"]),
+                "untilMs": float(headers["x-history-until-ms"]),
+                "everyMs": None if every_ms == "raw" else float(every_ms),
+                "agg": headers["x-history-agg"], "message": headers.get("x-history-explanation")}
 
     async def alert_ack(self, alertId, note="", *, actor="cli:lw"):
         return await self.request(
