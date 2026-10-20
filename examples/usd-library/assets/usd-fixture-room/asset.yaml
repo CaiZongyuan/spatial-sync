@@ -1,0 +1,11 @@
+description: Authored loading fixture; not a production device.
+dimensionsM:
+- 1.6
+- 1.2
+- 0.7
+dressing: true
+id: environment/usd-fixture-room
+kind: environment
+stage: asset.usda
+title: USD fixture dressing
+visual: visual.glb

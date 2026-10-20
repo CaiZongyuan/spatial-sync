@@ -1,0 +1,14 @@
+description: Authored loading fixture; not a production device.
+dimensionsM:
+- 1.2
+- 0.8
+- 0.05
+id: environment/usd-fixture-table
+kind: environment
+physics:
+  collision: authored
+  massKg: 20.0
+  massSource: estimated
+stage: asset.usda
+title: USD fixture work surface
+visual: visual.glb

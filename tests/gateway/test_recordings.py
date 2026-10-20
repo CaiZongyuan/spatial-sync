@@ -254,13 +254,13 @@ def test_reload_capture_intake_waits_for_prefix_then_archives_exact_rejection(tm
     original_freeze = session_manager.freeze_manifest
     calls = 0
 
-    async def slow_second_capture(*args):
+    async def slow_second_capture(*args, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 2:
             entered.set()
             assert await asyncio.to_thread(release.wait, 5)
-        return await original_freeze(*args)
+        return await original_freeze(*args, **kwargs)
 
     monkeypatch.setattr(session_manager, "freeze_manifest", slow_second_capture)
     with (

@@ -23,7 +23,7 @@ from packages.library.common import content_hash, document
 from packages.library.metadata import Locations
 from packages.library.python_stages import resources as python_resources
 from packages.library.reports import parse_report
-from packages.library.templates import TemplateError, instantiate, references
+from packages.library.templates import TemplateError, instantiate, references, require_spatial_domain
 from packages.library.templates import resolve as resolve_templates
 from packages.library.visuals import glb_budget
 from packages.programs.robot_arm.taught import posture_problems as posture_problems_for
@@ -425,6 +425,8 @@ def validate(payload):
                         config[field] = {"locations": {}}
             try:
                 config = checked_config(program, config, kind)
+                if kind == "scene" and not python_stage:
+                    require_spatial_domain(config, program["fields"], "/World/Lab")
             except ValueError as exc:
                 reference_problems.append(str(exc))
             posture_paths = None

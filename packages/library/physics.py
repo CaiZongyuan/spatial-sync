@@ -20,6 +20,7 @@ from packages.library.physics_checks import (
     tcp_error,
 )
 from packages.protocol.math import compose_pose, normalize_entity_key
+from packages.sim_runtime.library_scene import add_taught_sites as add_taught_sites
 
 
 def skipped(reason, missing_tools=()):
@@ -45,93 +46,15 @@ def model_state(model, state):
 
 
 def simulation(payload):
-    import newton
-    import warp as wp
-    from pxr import UsdGeom, UsdPhysics
-
-    from packages.library.structural import USDGraph
-    from packages.sim_runtime.scenes import SceneConfig
+    from packages.sim_runtime.library_scene import prepare_scene_config
     from packages.sim_runtime.simulation import NewtonSimulation
 
     metadata = payload["metadata"]
     if metadata["stage"].startswith("python:"):
         return NewtonSimulation(metadata["stage"].removeprefix("python:"), device="cpu",
                                 solver=(metadata.get("simulation") or {}).get("solver"))
-
-    graph = USDGraph(payload["package"], payload["assets"], payload.get("expectedAssets", []))
-    stage = graph.compose(metadata["stage"])
-    if stage is None or graph.errors:
-        raise ValueError("USD physics dependencies could not be composed")
-    asset = payload["kind"] == "asset"
-    root = "/Asset" if asset else "/World/Lab"
-    if not stage.GetPrimAtPath(root):
-        raise ValueError("USD physics root is missing")
-    offset = 0.
-    if asset:
-        cache = UsdGeom.BBoxCache(0, ["default", "render", "proxy"])
-        bottoms = [float(cache.ComputeWorldBound(prim).ComputeAlignedRange().GetMin()[2])
-                   for prim in stage.Traverse() if prim.HasAPI(UsdPhysics.CollisionAPI)
-                   and UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False]
-        if bottoms:
-            offset = -min(bottoms)
-            if not math.isfinite(offset):
-                raise ValueError("Asset collision bounds are not finite")
-
-    def builder():
-        result = newton.ModelBuilder(up_axis=newton.Axis.Z)
-        if (metadata.get("simulation") or {}).get("solver") == "mujoco":
-            from newton.solvers import SolverMuJoCo
-
-            SolverMuJoCo.register_custom_attributes(result)
-        paths = result.add_usd(stage, root_path=root, apply_up_axis_from_stage=False,
-                               xform=wp.transform((0, 0, offset), wp.quat_identity()))
-        for kind in ("body", "shape", "joint"):
-            labels = getattr(result, f"{kind}_label")
-            for path, index in paths[f"path_{kind}_map"].items():
-                labels[index] = str(path)
-        if not asset:
-            add_taught_sites(result, stage, paths, payload)
-        if asset:
-            result.add_ground_plane(label="Validation/Ground")
-        return result
-
-    return NewtonSimulation("library-validation", device="cpu", config=SceneConfig(builder),
+    return NewtonSimulation("library-validation", device="cpu", config=prepare_scene_config(payload),
                             solver=(metadata.get("simulation") or {}).get("solver"))
-
-
-def add_taught_sites(builder, stage, paths, payload):
-    """A declared USD Site can be an ordinary Xform; measure its authored geometry."""
-    import newton
-    import warp as wp
-    from pxr import UsdGeom
-
-    requested = set()
-    for binding in payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []):
-        config = binding["config"]
-        for name, role in payload["programs"][binding["program"]]["fields"].items():
-            value = config.get(name)
-            if role.get("spatialReference") == "site":
-                requested.update([value] if isinstance(value, str) else value or [])
-            if role.get("documentSchema") == "locations" and isinstance(value, dict):
-                requested.update(location["site"] for location in value["locations"].values()
-                                 if location.get("site"))
-    sites = {str(path) for path, index in paths["path_shape_map"].items()
-             if int(builder.shape_flags[index]) & int(newton.ShapeFlags.SITE)}
-    bodies = {str(path): index for path, index in paths["path_body_map"].items()}
-    cache = UsdGeom.XformCache()
-    for key in sorted(requested - sites):
-        prim = stage.GetPrimAtPath(key)
-        if not prim or not prim.IsA(UsdGeom.Xformable):
-            continue
-        world = cache.GetLocalToWorldTransform(prim)
-        quaternion = world.ExtractRotationQuat()
-        pose = wp.transform(tuple(world.ExtractTranslation()),
-                            wp.quat(*quaternion.GetImaginary(), quaternion.GetReal()))
-        owners = [path for path in bodies if key.startswith(path + "/")]
-        body = bodies[max(owners, key=len)] if owners else -1
-        if body >= 0:
-            pose = wp.transform_multiply(wp.transform_inverse(builder.body_q[body]), pose)
-        builder.add_site(body, xform=pose, label=key)
 
 
 def contact_observations(sim):
@@ -177,7 +100,7 @@ def contact_observations(sim):
     ):
         raise ValueError("Contact reduction overflow")
     model = sim.model
-    poses = sim.state.body_q.numpy()
+    poses = sim.state.body_q.numpy() if model.body_count else []
     bodies = model.shape_body.numpy()
     shape0, shape1 = contacts.rigid_contact_shape0.numpy(), contacts.rigid_contact_shape1.numpy()
     points0, points1 = contacts.rigid_contact_point0.numpy(), contacts.rigid_contact_point1.numpy()
@@ -241,6 +164,8 @@ def initial_joint_checks(sim):
     import newton
 
     model = sim.model
+    if model.joint_count == 0:
+        return [not_applicable("P5", "Scene has no bounded articulated joints")]
     positions = sim.state.joint_q.numpy()
     qstarts, dstarts = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
     lower, upper = model.joint_limit_lower.numpy(), model.joint_limit_upper.numpy()
@@ -405,12 +330,12 @@ def validate(payload):
                          not_applicable("P6", "Taught positions belong to a scene")])
         free = [int(child) for kind, child in zip(sim.model.joint_type.numpy(), sim.model.joint_child.numpy())
                 if kind == newton.JointType.FREE]
-        initial = sim.state.body_q.numpy().copy()
+        initial = sim.state.body_q.numpy().copy() if sim.model.body_count else None
         try:
             sim.step(480)  # The reference is the initial state; no warmup or body exclusion.
             if abs(sim.sim_time - 2.) > 1e-10:
                 raise ValueError("Settling did not measure exactly two simulation seconds")
-            final = sim.state.body_q.numpy()
+            final = sim.state.body_q.numpy() if sim.model.body_count else None
             rows.extend(settling(normalize_entity_key(sim.model.body_label[index]),
                                  initial[index, :3].tolist(), final[index, :3].tolist()) for index in free)
             if not free:
@@ -424,7 +349,8 @@ def validate(payload):
         try:
             static = sum(int(body) < 0 and bool(int(flags) & int(newton.ShapeFlags.COLLIDE_SHAPES))
                          for body, flags in zip(sim.model.shape_body.numpy(), sim.model.shape_flags.numpy()))
-            row = penetration(contact_observations(sim), world_static_shapes=static)
+            row = (penetration(contact_observations(sim), world_static_shapes=static)
+                   if sim.model.shape_count else not_applicable("P3", "Model has no collision shapes"))
             row.setdefault("measurements", {})["simTime"] = sim.sim_time
             rows.append(row)
         except (ValueError, RuntimeError) as exc:

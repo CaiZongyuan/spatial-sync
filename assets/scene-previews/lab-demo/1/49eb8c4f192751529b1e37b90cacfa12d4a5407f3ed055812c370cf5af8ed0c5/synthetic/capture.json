@@ -3,8 +3,9 @@
   "sceneVersion": "lab-demo@1",
   "sceneContentHash": "49eb8c4f192751529b1e37b90cacfa12d4a5407f3ed055812c370cf5af8ed0c5",
   "templateAssets": [],
+  "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-20T04:18:07.076781+00:00",
+  "capturedAt": "2026-10-20T07:10:48.264190+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -16,7 +17,7 @@
   "dependencies": [
     {
       "path": "apps/api/app/recordings.py",
-      "sha256": "13d4406101abebea6d4b84fd140c7ad504fbdb22e7a08804d94073a5f4bbab1d"
+      "sha256": "37de051a7726d7eddb867e361d3843c160d601d156907850c425cef35a565687"
     },
     {
       "path": "apps/api/app/sources/synthetic_source.py",
@@ -100,7 +101,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "2941383671e9a3e95001ed74aa1cf3c049fce1fec777d59171e31352e70a28a9"
+      "sha256": "a9917e52a0b90e62292d45b43baae163a12bcddf70128b24015072dbb04c278a"
     },
     {
       "path": "packages/library/reports.py",
@@ -108,11 +109,11 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "c30fc1f5067f8968289f937a13ee647fd676a855154595eb278bf727596cd2fa"
+      "sha256": "12e4a3c50c03073e8606ccdc6a6ad22e6c2a533757fe2327d81b403941a4b0c5"
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "016ff3a415009d07f90e464fc6935ed6387305f2ae15367e864c2ffa81736b6d"
+      "sha256": "81f561e7b9a32385c9fa7e516f9726d1a70dea3575c6ef9e265c30f1df24d013"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -168,7 +169,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "4c489de88e477fb716025577618acc9fa1781e44a9c4f82e1ed9f9b82b09f373"
+      "sha256": "403324d42000d8d25a344debf6a0e79a3fff947a5858ce068ef69bc60070ca9e"
     },
     {
       "path": "uv.lock",
@@ -182,10 +183,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "12b3b3f4d93f2353bdef3fc1a760f6e044d3040db602ac79cef854538421b127",
-    "catalog.json": "9450daa9084d741ae9e14154ed7b0bc04c1c8f6c563250ee1cb42aa2217dc38f",
-    "state.json": "394144b965cd660146deac946f6bdaf8c8009dde4d1f9038cd71845d09b61f75",
-    "snapshot.bin": "7e40243c8134015e8fb71aed20fb14fc5f37ba31a0c71fd5b411f34d3253a763"
+    "manifest.json": "49fb6780a7cfde9e68087eb26bdefc5d6a1fe90c6dc73f628e04970207f561db",
+    "catalog.json": "618da17a96950572946ba2a2836ee0af4d1450d34d04e70b836d9990412b450c",
+    "state.json": "2a743dd116352d340cefb197e2c74a84406f8600b0ca79706ade3807dc8ffc67",
+    "snapshot.bin": "6b328194412a968b177671f618a17c44e2bd06c5aee58b70aae880393f910f17"
   },
   "counts": {
     "physicalEntities": 30,

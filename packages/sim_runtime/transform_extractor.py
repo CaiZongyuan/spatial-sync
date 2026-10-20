@@ -50,6 +50,8 @@ class TransformExtractor:
     def capture(self, body_q, *, on_complete=None, block=False) -> Future | None:
         if self._closed or self.error:
             raise RuntimeError(f"Transform extractor unavailable: {self.error or 'closed'}")
+        if body_q is None and self.body_count == 0:
+            body_q = np.empty((0, 7), dtype=np.float32)
         if len(body_q) != self.body_count:
             raise ValueError("Unexpected model body transform count")
         try:

@@ -38,8 +38,14 @@ class _Runner:
         self.wp, self.newton = wp, newton
         self.transport, self.session_id, self.options = transport, session_id, options
         simulation = scene_package.metadata.get("simulation", {}) if scene_package else {}
+        config = None
+        if scene_package and not scene_package.metadata["stage"].startswith("python:"):
+            from .library_scene import prepare_scene_config
+
+            config = prepare_scene_config(scene_package.runtime_payload(), include_visuals=True)
         self.sim = NewtonSimulation(
-            scene_id, device=options.device, physics_dt=options.physicsDt, solver=simulation.get("solver")
+            scene_id, device=options.device, physics_dt=options.physicsDt,
+            solver=simulation.get("solver"), config=config,
         )
         self.manifest = export_manifest(
             self.sim,
@@ -68,11 +74,13 @@ class _Runner:
         self.step_hz = 0.0
         self.publish_ms = 0.0
         self._metric_clock, self._metric_steps, self._steps = time.monotonic(), 0, 0
-        self._joint_q = wp.empty_like(self.sim.state.joint_q)
-        self._joint_qd = wp.empty_like(self.sim.state.joint_qd)
+        self._joint_q = (wp.empty_like(self.sim.state.joint_q) if self.sim.model.joint_coord_count
+                         else wp.empty(0, dtype=float, device=self.sim.model.device))
+        self._joint_qd = (wp.empty_like(self.sim.state.joint_qd) if self.sim.model.joint_dof_count
+                          else wp.empty(0, dtype=float, device=self.sim.model.device))
         # Maximal-coordinate solvers need IK for their on-demand joint query.
         # Reduced-coordinate solvers already maintain authoritative joint_q.
-        if self.sim.solver_kind == "xpbd":
+        if self.sim.solver_kind == "xpbd" and self.sim.model.joint_count:
             newton.eval_ik(self.sim.model, self.sim.state, self._joint_q, self._joint_qd)
         # Compile the real contact/solver path while LOADING, then restore the
         # zero-step FK authority before advertising readiness or accepting commands.

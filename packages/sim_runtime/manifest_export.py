@@ -3,6 +3,7 @@
 from importlib.metadata import version
 
 import newton
+import warp as wp
 
 from packages.assets.bindings import apply_bindings
 from packages.protocol.math import normalize_quaternion
@@ -43,12 +44,23 @@ def export_manifest(
 ) -> SceneManifest:
     model = sim.model
     sim.meshes = MeshStore()
+    builder = getattr(sim, "builder", None)
+    site_aliases = getattr(builder, "spatial_site_visuals", {})
     labels = labels_for_model(
         model,
         missing_labels=getattr(sim, "missing_labels", ()),
         strict=strict_labels,
+        site_aliases=site_aliases,
     )
     warnings = list(labels.warnings)
+    reserved = {item.entity_key for item in [*labels.shapes, *labels.joints]
+                if item.kind in ("site", "joint")}
+
+    def node_parent(key):
+        parent = key.rsplit("/", 1)[0]
+        while parent in reserved:
+            parent = parent.rsplit("/", 1)[0]
+        return parent
     shape_bodies = model.shape_body.numpy()
     shape_flags = model.shape_flags.numpy()
     transforms = model.shape_transform.numpy()
@@ -56,6 +68,7 @@ def export_manifest(
     scales = model.shape_scale.numpy()
     nodes = []
     body_nodes = {}
+    static_nodes = {}
     sites = []
     anchor_to_joint = {shape: joint for joint, shape in sim.anchor_sites.items()}
     for identity in labels.bodies:
@@ -120,18 +133,29 @@ def export_manifest(
         if visual is None:
             visual = {"kind": "primitive", "geometry": geometry, "localPose": _pose(transforms[shape])}
         if body == -1:
-            node = {
-                "entityKey": identity.entity_key,
-                "kind": "static",
-                "name": identity.entity_key.rsplit("/", 1)[-1],
-                "stableKey": identity.stable,
-                "initialPose": visual["localPose"],
-                "visuals": [],
-                "colliders": [],
-                "debug": {"newtonShapeIndex": shape},
-            }
-            visual = {**visual, "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 1]}}
-            nodes.append(node)
+            key = identity.entity_key
+            site_visual = shape in site_aliases.values()
+            if site_visual:
+                # The prim keeps its Site identity. Its original world-static visual belongs
+                # to the actual parent prim, preserving the protocol's unique public keys.
+                key = node_parent(key)
+            node = static_nodes.get(key)
+            if node is None:
+                node = {
+                    "entityKey": key, "kind": "static", "name": key.rsplit("/", 1)[-1],
+                    "stableKey": identity.stable,
+                    "initialPose": ({"p": [0, 0, 0], "q": [0, 0, 0, 1]}
+                                    if site_visual else visual["localPose"]),
+                    "visuals": [], "colliders": [], "debug": {"newtonShapeIndex": shape},
+                }
+                static_nodes[key] = node
+                nodes.append(node)
+            initial, world = node["initialPose"], visual["localPose"]
+            local = wp.transform_multiply(
+                wp.transform_inverse(wp.transform(tuple(initial["p"]), tuple(initial["q"]))),
+                wp.transform(tuple(world["p"]), tuple(world["q"])),
+            )
+            visual = {**visual, "localPose": _pose(local)}
         else:
             node = body_nodes[body]
         if shape_flags[shape] & int(newton.ShapeFlags.VISIBLE):
@@ -139,14 +163,23 @@ def export_manifest(
         if shape_flags[shape] & int(newton.ShapeFlags.COLLIDE_SHAPES | newton.ShapeFlags.COLLIDE_PARTICLES):
             node["colliders"].append(visual)
 
+    for body, visuals in getattr(builder, "spatial_visuals", {}).items():
+        node = body_nodes[body]
+        node["fallbackVisuals"], node["visuals"] = node["visuals"], visuals
+    for key, visuals in getattr(builder, "spatial_static_visuals", {}).items():
+        node = static_nodes[key]
+        node["fallbackVisuals"], node["visuals"] = node["visuals"], visuals
+    nodes.extend(getattr(builder, "spatial_dressing", ()))
+
     # Logical hierarchy comes from label paths, independently of body transforms.
     keys = {n["entityKey"] for n in nodes}
     groups = {}
     for node in list(nodes):
-        parent = node["entityKey"].rsplit("/", 1)[0]
+        parent = node_parent(node["entityKey"])
         node["parentEntityKey"] = parent or None
         while parent and parent not in keys and parent not in groups:
-            grandparent, _, name = parent.rpartition("/")
+            name = parent.rsplit("/", 1)[-1]
+            grandparent = node_parent(parent)
             groups[parent] = {
                 "entityKey": parent,
                 "kind": "group",

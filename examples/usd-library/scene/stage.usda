@@ -1,0 +1,40 @@
+#usda 1.0
+(defaultPrim = "World"
+ metersPerUnit = 1
+ upAxis = "Z")
+def Xform "World" {
+ def Xform "Lab" {
+  def Mesh "Table" (references = @library:assets/environment/usd-fixture-table/1/asset.usda@</Asset>) {
+   double3 xformOp:translate = (0, 0, 0.025)
+   uniform token[] xformOpOrder = ["xformOp:translate"]
+  }
+  def Xform "Tubes" {
+   def Cylinder "Tube1" (references = @library:assets/labware/usd-fixture-tube/1/asset.usda@</Asset>) {
+    double3 xformOp:translate = (-0.14, 0, 0.11)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+   }
+   def Cylinder "Tube2" (references = @library:assets/labware/usd-fixture-tube/1/asset.usda@</Asset>) {
+    double3 xformOp:translate = (0.14, 0, 0.11)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+   }
+  }
+  def Xform "Stations" {
+   def Sphere "SlotA" {
+    double radius = 0.003
+    double3 xformOp:translate = (-0.14, 0, 0.11)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+   }
+   def Mesh "SlotB" {
+    point3f[] points = [(-0.003, 0, 0), (0.003, 0, 0), (0, 0.003, 0)]
+    int[] faceVertexCounts = [3]
+    int[] faceVertexIndices = [0, 1, 2]
+    uniform token subdivisionScheme = "none"
+    double3 xformOp:translate = (0.14, 0, 0.11)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+   }
+  }
+ }
+ def Xform "Dressing" {
+  def Xform "Room" (references = @library:assets/environment/usd-fixture-room/1/asset.usda@</Asset>) {}
+ }
+}

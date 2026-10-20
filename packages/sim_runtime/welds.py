@@ -21,6 +21,10 @@ def declare_welds(builder, parents, tubes):
 class Welds:
     def __init__(self, model, solver, pairs):
         self.model, self.solver, self.pairs = model, solver, pairs
+        if not pairs:
+            self.enabled, self.relpose = np.zeros(0, dtype=bool), np.empty((0, 7))
+            self.dirty = False
+            return
         self.enabled = model.mujoco.equality_constraint_enabled.numpy().copy()
         self.relpose = model.mujoco.equality_constraint_relpose.numpy().copy()
         self.dirty = False
@@ -44,9 +48,10 @@ class Welds:
 
     def flush(self):
         if self.dirty:
-            self.model.mujoco.equality_constraint_enabled.assign(self.enabled)
-            self.model.mujoco.equality_constraint_relpose.assign(self.relpose)
-            self.solver.notify_model_changed(newton.ModelFlags.CONSTRAINT_PROPERTIES)
+            if self.pairs:
+                self.model.mujoco.equality_constraint_enabled.assign(self.enabled)
+                self.model.mujoco.equality_constraint_relpose.assign(self.relpose)
+                self.solver.notify_model_changed(newton.ModelFlags.CONSTRAINT_PROPERTIES)
             self.dirty = False
 
     def reset(self):

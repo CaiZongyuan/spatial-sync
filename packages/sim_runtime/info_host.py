@@ -14,8 +14,8 @@ from .physics_port import PhysicsPort
 class NewtonInfoHost:
     def __init__(self, simulation, manifest, options, emit, *, scene_package=None):
         self.sim, self.emit = simulation, emit
-        self.port = PhysicsPort(simulation, manifest) if simulation.scene_id == "robot-and-tubes" else None
         self.catalog = load_info_catalog(manifest, simulation.scene_id, scene_package=scene_package)
+        self.port = PhysicsPort(simulation, manifest) if self.catalog.entities else None
         self.host = HostCore(self.catalog, REGISTRY, physics=self.port, source="sim", fact_hz=options.factHz,
                              seed=options.seed)
         self.timings = deque(maxlen=6000)

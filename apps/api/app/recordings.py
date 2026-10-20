@@ -36,7 +36,7 @@ def _standalone_gltf(payload, suffix):
             raise ValueError("Recording capture requires self-contained GLTF buffers and images")
 
 
-async def freeze_manifest(manifest, source, registry):
+async def freeze_manifest(manifest, source, registry, *, library_reader=None):
     """Capture every render/fallback/collider asset before its Runner can close."""
     value = manifest.model_dump(mode="json")
     assets, urls = {}, {}
@@ -54,10 +54,12 @@ async def freeze_manifest(manifest, source, registry):
                     payload = await source.read_mesh(visual["meshId"])
                     suffix = ".glb"
                 else:
-                    asset_id = asset_id_from_url(url)
                     try:
-                        asset = await asyncio.to_thread(registry.read, asset_id)
-                        payload = asset.data
+                        if url.startswith("/api/v1/library/files/") and library_reader is not None:
+                            payload = await asyncio.to_thread(library_reader, url)
+                        else:
+                            asset_id = asset_id_from_url(url)
+                            payload = (await asyncio.to_thread(registry.read, asset_id)).data
                     except KeyError:
                         # Preserve the intentional missing-primary fallback, locally.
                         visual["url"] = urls[url] = (
