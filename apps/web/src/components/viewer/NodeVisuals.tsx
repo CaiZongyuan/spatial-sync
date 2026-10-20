@@ -42,7 +42,6 @@ function Asset({
         material.transparent = ghost || collider || authored.transparent;
         material.opacity = ghost ? .24 : collider ? 0.7 : authored.opacity;
         if (ghost) material.depthWrite = false;
-        if (ghost && 'color' in material && material.color instanceof Color) material.color.set(theme.accent);
         if (material instanceof MeshStandardMaterial) {
           material.emissive.set(selected ? theme.accent : '#000000');
           if (!material.userData.authoredColor) material.userData.authoredColor = material.color.clone();
@@ -50,7 +49,7 @@ function Asset({
           if (!material.map) material.color.lerp(new Color(authored.transparent ? theme.glass : material.metalness > .5 ? theme.steel : theme.body), .35);
           if (ghost) { material.color.set(theme.accent); material.emissive.set(theme.accent); }
           material.emissiveIntensity = ghost ? .12 : selected ? 0.4 : 0;
-        }
+        } else if (ghost && 'color' in material && material.color instanceof Color) material.color.set(theme.accent);
       });
     });
   }, [object, selected, collider, ghost, theme]);
