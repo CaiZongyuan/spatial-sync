@@ -91,9 +91,14 @@ test('the real overview preserves its connection, selected device and preference
   page.on('websocket', socket => { if (socket.url().includes(`/sessions/${sessionId}/ws`)) sockets++; });
   try {
     await page.goto('/');
+    // The overview can show a completed recording before the platform cache
+    // discovers this session. Establish the owned live transport before baselining.
+    await expect(page.locator('.overview-page-heading')).toContainText(sessionId);
     const label = page.getByTestId(`device-label-${centrifuge}`);
     await expect(label).toBeVisible();
+    await expect(page.getByRole('complementary', { name: '设备抽屉' })).toHaveAttribute('data-read-only', 'false');
     await expect(page.getByRole('complementary', { name: '设备抽屉' })).toHaveAttribute('data-connection', 'connected');
+    expect(scenes).toBeGreaterThan(0); expect(sockets).toBeGreaterThan(0);
     const initialSceneRequests = scenes;
     const initialSockets = sockets;
     await page.getByLabel('Color theme').selectOption('dark');
