@@ -16,6 +16,8 @@ import { Inspector } from './Inspector';
 import { ApprovalBanner, InvocationsPanel } from './InvocationsPanel';
 import { Diagnostics } from './Diagnostics';
 import { NewtonViewerButton } from './NewtonViewerButton';
+import { Icon } from './Icon';
+import '../workbench.css';
 import {
   SceneViewport,
   type DebugLayers,
@@ -173,10 +175,10 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
     <main className="workbench">
       <header className="workbench-header">
         <Link to="/sessions" className="brand" title="Choose scene or session">
-          <span className="eyebrow">SESSION WORKSPACE</span>
+          <span className="eyebrow">会话工作台</span>
         </Link>
         <div className="workspace-title">
-          <strong>{manifest?.sceneName ?? 'Opening session…'}</strong>
+          <strong>{manifest?.sceneName ?? '正在打开会话…'}</strong>
           <span>{sessionId}</span>
         </div>
         <div className="header-status">
@@ -185,12 +187,14 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <span className="source-pill">
             {manifest?.source.kind ?? 'source'}
           </span>
+          <span className="observer-count">{Array.isArray(state.stats?.clients) ? state.stats.clients.length : '—'} 位观察者</span>
           <Link to={client.readOnly ? '/recordings' : '/sessions'} className="subtle-link">
-            {client.readOnly ? 'Recordings ↗' : 'Sessions ↗'}
+            {client.readOnly ? '录制列表' : '会话列表'}<Icon name="external" />
           </Link>
           {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
             source={manifest?.source.kind ?? ''} state={state.sessionState} sceneRevision={manifest?.sceneRevision} />}
           <button
+            aria-label="Close session"
             disabled={client.readOnly || pending || state.role !== 'operator'}
             onClick={async () => {
               try {
@@ -204,7 +208,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
               }
             }}
           >
-            Close session
+            <Icon name="close" />关闭会话
           </button>
         </div>
       </header>
@@ -217,39 +221,40 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             {state.sessionState}
           </span>
           <button
-            className="primary"
             disabled={!canControl || pending || !active}
             onClick={() => client.command(paused ? 'resume' : 'pause')}
             aria-label={paused ? 'Resume simulation' : 'Pause simulation'}
           >
-            <span>{paused ? '▶' : 'Ⅱ'}</span> {paused ? 'Resume' : 'Pause'}
+            <Icon name={paused ? 'play' : 'pause'} />{paused ? '继续' : '暂停'}
           </button>
           <button
             disabled={!canControl || pending || !paused}
             onClick={() => client.command('step', { count: 1 })}
             aria-label="Step simulation"
           >
-            ▹│ Step
+            <Icon name="step" />单步
           </button>
           <button
             disabled={!canControl || pending || !active}
             onClick={() => client.command('reset')}
             aria-label="Reset simulation"
           >
-            ↺ Reset
+            <Icon name="reset" />重置
           </button>
           <button
+            aria-label="Reload scene"
             disabled={pending || !active || state.role !== 'operator'}
             onClick={() => void lifecycle('reload')}
           >
-            Reload scene
+            <Icon name="reload" />重新载入场景
           </button>
           {state.sessionState === 'FAILED' && (
             <button
+              aria-label="Restart source"
               disabled={pending || state.role !== 'operator'}
               onClick={() => void lifecycle('restart')}
             >
-              Restart source
+              <Icon name="reload" />重启物理源
             </button>
           )}
         </div>
@@ -259,32 +264,12 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             {state.simTime.toFixed(4)}
             <small>s</small>
           </output>
-          <label>
-            RTF
-            <select
-              aria-label="Realtime factor"
-              value={
-                state.realtimeFactor === null
-                  ? 'unlimited'
-                  : String(state.realtimeFactor)
-              }
-              onChange={(event) => {
-                client.command('set_realtime_factor', {
-                  value:
-                    event.target.value === 'unlimited'
-                      ? null
-                      : Number(event.target.value),
-                });
-              }}
-              disabled={!canControl || pending || !active}
-            >
-              <option value="0.25">0.25×</option>
-              <option value="0.5">0.5×</option>
-              <option value="1">1.0×</option>
-              <option value="2">2.0×</option>
-              <option value="unlimited">Unlimited</option>
-            </select>
-          </label>
+          <div className="rtf-picker"><span>RTF</span><div className="rtf-segment" role="group" aria-label="Realtime factor">
+            {([.25, .5, 1, 2, null] as const).map(value => <button key={value ?? 'unlimited'}
+              aria-label={`Realtime factor ${value ?? 'Unlimited'}`} aria-pressed={state.realtimeFactor === value}
+              disabled={!canControl || pending || !active} onClick={() => client.command('set_realtime_factor', { value })}>
+              {value === null ? '不限' : `${value}×`}</button>)}
+          </div></div>
         </div>
       </div>}
       <ApprovalBanner
@@ -339,16 +324,18 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             <div className="scene-toolbar">
               <div className="view-tabs">
                 <button
+                  aria-label="Spatial view"
                   aria-selected={tab === 'scene'}
                   onClick={() => setTab('scene')}
                 >
-                  Spatial view
+                  空间视图
                 </button>
                 <button
+                  aria-label="Diagnostics"
                   aria-selected={tab === 'diagnostics'}
                   onClick={() => setTab('diagnostics')}
                 >
-                  Diagnostics
+                  诊断
                   {warningCount > 0 && (
                     <span className="warning-count">{warningCount}</span>
                   )}
@@ -364,6 +351,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                     <label key={layer}>
                       <input
                         type="checkbox"
+                        aria-label={{ grid: 'Grid', sites: 'Sites', origins: 'Origins', colliders: 'Colliders' }[layer]}
                         checked={layers[layer]}
                         onChange={(event) =>
                           setLayers((previous) => ({
@@ -372,9 +360,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                           }))
                         }
                       />
-                      {layer === 'sites'
-                        ? 'Sites'
-                        : layer[0].toUpperCase() + layer.slice(1)}
+                      <span>{{ grid: '网格', sites: '站点', origins: '原点', colliders: '碰撞体' }[layer]}</span>
                     </label>
                   ),
                 )}
@@ -417,13 +403,13 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
       <footer className="status-bar">
         <div>
           <span className="live-dot" />
-          {metrics.current.fps.toFixed(0)} <small>RENDER FPS</small>
+          {metrics.current.fps.toFixed(0)} <small>渲染帧率</small>
         </div>
         <div>
-          {client.buffer.grantedRateHz} Hz <small>STREAM</small>
+          {client.buffer.grantedRateHz} Hz <small>状态流</small>
         </div>
         <div>
-          {state.actualRtf.toFixed(2)}× <small>ACTUAL RTF</small>
+          {state.actualRtf.toFixed(2)}× <small>实际倍率</small>
         </div>
         <div
           className={
@@ -433,12 +419,12 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           {state.sessionState === 'RUNNING'
             ? `${age.toFixed(0)} ms`
             : paused
-              ? 'Paused'
+              ? '已暂停'
               : '—'}{' '}
-          <small>FRAME AGE</small>
+          <small>样本时延</small>
         </div>
         <div>
-          Epoch{' '}
+          轮次{' '}
           <output data-testid="epoch">
             {client.buffer.epoch < 0
               ? (manifest?.epoch ?? '—')
@@ -446,19 +432,20 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           </output>
         </div>
         <div>
-          Seq{' '}
+          序号{' '}
           <output data-testid="sequence">
             {client.buffer.lastSeq < 0 ? '—' : client.buffer.lastSeq}
           </output>
         </div>
         <button
           className="status-warnings"
+          aria-label="查看诊断警告"
           onClick={() => setTab('diagnostics')}
         >
-          {warningCount ? `△ ${warningCount} warnings` : '✓ Scene compatible'}
+          <Icon name={warningCount ? 'warning' : 'check'} />{warningCount ? `${warningCount} 条诊断警告` : '场景兼容'}
         </button>
         <span className="revision-label">
-          {manifest?.sceneRevision ?? 'Awaiting manifest'}
+          {manifest?.sceneRevision ?? '等待读取场景'}
         </span>
       </footer>
     </main>

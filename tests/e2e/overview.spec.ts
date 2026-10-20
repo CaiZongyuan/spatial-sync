@@ -1,9 +1,16 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const centrifuge = '/World/Lab/Centrifuge';
+
+async function waitMaterialTheme(page: Page) {
+  await expect.poll(() => page.evaluate(() => {
+    const body = getComputedStyle(document.documentElement).getPropertyValue('--m-body').trim().replace('#', '');
+    return window.__spatialRenderDebug?.appearance().materialColors.includes(body);
+  })).toBe(true);
+}
 
 test('a paused live viewport draws on changes and wakes for Step, theme and projection', async ({ page, request }, testInfo) => {
   const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
@@ -32,7 +39,8 @@ test('a paused live viewport draws on changes and wakes for Step, theme and proj
       return JSON.stringify(window.__spatialDebug!.getRenderedPose(key)) === JSON.stringify(window.__spatialDebug!.getAuthoritativePose(key));
     })).toBe(true);
     await page.getByLabel('Color theme').selectOption('light');
-    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.appearance().background)).toBe('f4f3ef');
+    await waitMaterialTheme(page);
+    expect(await page.evaluate(() => window.__spatialRenderDebug!.appearance())).toMatchObject({ background: '', alpha: true, clearAlpha: 0 });
     await page.getByRole('button', { name: 'Isometric camera', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.camera().projection)).toBe('OrthographicCamera');
     await testInfo.attach('paused-render-receipt', { body: Buffer.from(JSON.stringify(receipt)), contentType: 'application/json' });
@@ -83,13 +91,16 @@ test('the real overview connects an isometric scene, readouts, device actions, a
     await page.getByRole('button', { name: '关闭设备抽屉', exact: true }).click();
     await expect(label).toHaveAttribute('aria-pressed', 'false');
     await page.getByLabel('Color theme').selectOption('dark');
-    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.appearance().background)).toBe('121211');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await waitMaterialTheme(page);
     const dark = await page.evaluate(() => window.__spatialRenderDebug?.appearance());
     await page.screenshot({ path: testInfo.outputPath('overview-dark-1440.png'), fullPage: true });
     await page.getByLabel('Color theme').selectOption('light');
-    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.appearance().background)).toBe('f4f3ef');
+    await waitMaterialTheme(page);
     const light = await page.evaluate(() => window.__spatialRenderDebug?.appearance());
     expect(light?.materialColors).not.toEqual(dark?.materialColors);
+    expect(dark).toMatchObject({ background: '', alpha: true, clearAlpha: 0 });
+    expect(light).toMatchObject({ background: '', alpha: true, clearAlpha: 0 });
     expect(scenes).toBe(initialSceneRequests); expect(sockets).toBe(initialSockets);
     await label.click();
     await page.screenshot({ path: testInfo.outputPath('overview-selected-light-1440.png'), fullPage: true });

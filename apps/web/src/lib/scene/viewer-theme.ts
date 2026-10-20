@@ -4,6 +4,7 @@ export const defaultViewerTheme = {
   ground: '#121211', floor: '#2a2926', wall: '#363531', body: '#9a978f', steel: '#8c8b85',
   glass: '#aabdcc', edge: '#c9c5bb', grid: '#46443f', accent: '#9ca4ff', sky: '#eef0ff',
   sun: '#fff4e4', hemi: .95, key: 1.05, ao: .66, edgeOpacity: .32,
+  axisX: '#d0703a', axisY: '#1f9e80', axisZ: '#7078e8',
 };
 export type ViewerTheme = typeof defaultViewerTheme;
 export const ViewerThemeContext = createContext(defaultViewerTheme);
@@ -25,6 +26,8 @@ function readTheme(): ViewerTheme {
     sky: color('--m-sky', defaultViewerTheme.sky), sun: color('--m-sun', defaultViewerTheme.sun),
     hemi: number('--m-hemi', .95), key: number('--m-key', 1.05), ao: number('--m-ao', .66),
     edgeOpacity: number('--m-edge-o', .32),
+    axisX: color('--c2', defaultViewerTheme.axisX), axisY: color('--c3', defaultViewerTheme.axisY),
+    axisZ: color('--c1', defaultViewerTheme.axisZ),
   };
 }
 

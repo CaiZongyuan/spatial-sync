@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { openNewtonViewer, type NewtonViewer } from '../lib/platform';
+import { Icon } from './Icon';
 
 export function NewtonViewerButton({ sessionId, source, state, sceneRevision, backendPid, backendAlive, viewer }: {
   sessionId: string;
@@ -31,7 +32,7 @@ export function NewtonViewerButton({ sessionId, source, state, sceneRevision, ba
     ? 'The Newton backend is not available.' : viewer?.status === 'unavailable'
       ? viewer.reason ?? 'Newton viewer is not available.' : undefined;
   return <div className="newton-viewer-action">
-    <button disabled={pending || Boolean(unavailable)} title={unavailable ?? 'Opens a new tab. Use this on the gateway machine.'}
+    <button aria-label="Open Newton viewer" disabled={pending || Boolean(unavailable)} title={unavailable ?? '在新标签页打开，请在网关电脑上使用。'}
       onClick={async () => {
         if (opening.current || unavailable) return;
         setError(undefined);
@@ -69,7 +70,7 @@ export function NewtonViewerButton({ sessionId, source, state, sceneRevision, ba
           }
         }
       }}>
-      {pending ? 'Opening viewer…' : 'Open Newton viewer'}
+      <Icon name="external" />{pending ? '正在打开…' : 'Newton 原生查看器'}
     </button>
     {unavailable && <small className="muted">{unavailable}</small>}
     {error && <small role="alert">{error}</small>}

@@ -19,6 +19,7 @@
   --ease: cubic-bezier(.2,.7,.2,1); --dur: 180ms;
   --panel-shadow: inset 0 1px 0 rgb(255 255 255 / 3.5%), 0 16px 36px -20px rgb(0 0 0 / 65%);
   --grain-o: .16;
+  --stage-1: #1e1e1c; --stage-2: #151514;
   --m-floor: #2a2926; --m-wall: #363531; --m-body: #9a978f; --m-steel: #8c8b85; --m-glass: #aabdcc; --m-edge: #c9c5bb;
   --m-sky: #eef0ff; --m-sun: #fff4e4; --m-hemi: .95; --m-key: 1.05; --m-ao: .66;
   --m-grid: #46443f; --m-edge-o: .32;
@@ -36,6 +37,7 @@
     --c1: #4a50d4; --c2: #d0662c; --c3: #1a9a74;
     --panel-shadow: inset 0 1px 0 rgb(255 255 255 / 95%), 0 16px 34px -22px rgb(48 38 18 / 30%);
     --grain-o: .22;
+    --stage-1: #ffffff; --stage-2: #e9e7e0;
     --m-floor: #dedbd3; --m-wall: #e3e0d9; --m-body: #f2f1ec; --m-steel: #cfcec8; --m-glass: #a9c6d8; --m-edge: #6e6b63;
     --m-sky: #f4f6ff; --m-sun: #fff6ea; --m-hemi: .58; --m-key: .64; --m-ao: .42;
     --m-grid: #bab6ab; --m-edge-o: .62;
@@ -50,6 +52,7 @@
   --c1: #4a50d4; --c2: #d0662c; --c3: #1a9a74;
   --panel-shadow: inset 0 1px 0 rgb(255 255 255 / 95%), 0 16px 34px -22px rgb(48 38 18 / 30%);
   --grain-o: .22;
+  --stage-1: #ffffff; --stage-2: #e9e7e0;
   --m-floor: #dedbd3; --m-wall: #e3e0d9; --m-body: #f2f1ec; --m-steel: #cfcec8; --m-glass: #a9c6d8; --m-edge: #6e6b63;
   --m-sky: #f4f6ff; --m-sun: #fff6ea; --m-hemi: .58; --m-key: .64; --m-ao: .42;
   --m-grid: #bab6ab; --m-edge-o: .62;

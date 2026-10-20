@@ -6,6 +6,7 @@ import type { SessionClient, ViewState } from '../lib/stream/client';
 import { multiplyPose } from '../lib/scene/pose';
 import { jointPositionError } from '../lib/scene/joint-error';
 import { request } from '../lib/api';
+import { Icon } from './Icon';
 
 const format = (value: number) => value.toFixed(6);
 
@@ -22,6 +23,7 @@ export function Inspector({
 }) {
   const [jointState, setJointState] = useState<unknown>();
   const [tab, setTab] = useState<'spatial' | 'device'>('spatial');
+  const [copied, setCopied] = useState<string>();
   const metadata = useSyncExternalStore(
     client.info.subscribeMetadata,
     client.info.getMetadata,
@@ -82,28 +84,35 @@ export function Inspector({
   return (
     <aside className="inspector-panel">
       <div className="panel-heading">
-        <h2>Inspector</h2>
-        <span className="inspect-icon">⌖</span>
+        <h2>检查器</h2>
+        <Icon name="site" className="inspect-icon" />
       </div>
       {device && (
         <div
           className="inspector-tabs"
           role="tablist"
           aria-label="Inspector view"
+          onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault(); setTab(tab === 'spatial' ? 'device' : 'spatial');
+            const tabs = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]');
+            tabs[tab === 'spatial' ? 1 : 0]?.focus();
+          } }}
         >
           <button
             role="tab"
+            aria-label="Spatial"
             aria-selected={tab === 'spatial'}
             onClick={() => setTab('spatial')}
           >
-            Spatial
+            空间
           </button>
           <button
             role="tab"
+            aria-label="Device"
             aria-selected={tab === 'device'}
             onClick={() => setTab('device')}
           >
-            Device
+            设备 · {manifest.nodes.find(node => node.entityKey === key)?.name ?? key?.split('/').at(-1)}
           </button>
         </div>
       )}
@@ -125,33 +134,35 @@ export function Inspector({
         />
       ) : !selected ? (
         <div className="inspector-empty">
-          <div>⌖</div>
-          <h3>Explore a world coordinate</h3>
+          <Icon name="site" className="inspector-empty-icon" />
+          <h3>查看世界坐标</h3>
           <p>
-            Select a body, site, or joint in the scene or explorer to inspect
-            its authoritative pose.
+            在场景或场景树中选择刚体、站点或关节，查看物理源提供的最新位姿。
           </p>
         </div>
       ) : (
         <div className="inspector-content">
           <span className="eyebrow">
             {joint
-              ? 'JOINT ANCHOR'
+              ? '关节锚点'
               : site
-                ? `${site.role} · SITE`
-                : node?.kind.toUpperCase()}
+                ? `${site.role} · 站点`
+                : node?.kind === 'body' ? '刚体' : node?.kind === 'static' ? '静态物体' : '逻辑组'}
           </span>
           <h3>{node?.name ?? selected.split('/').at(-1)}</h3>
-          <code className="entity-key">{selected}</code>
+          <div className="inspector-path"><code className="entity-key">{selected}</code><button aria-label="Copy entity path"
+            title={copied === selected ? '已复制' : '复制路径'} onClick={async () => {
+              try { await navigator.clipboard.writeText(selected); setCopied(selected); } catch { setCopied(undefined); }
+            }}><Icon name={copied === selected ? 'check' : 'copy'} /></button></div>
           {!pose && (node?.kind === 'body' || site || joint) && (
             <p className="field-note" data-testid="pose-unavailable">
-              Waiting for the first valid pose.
+              等待首个有效位姿。
             </p>
           )}
           {pose && (
             <section className="inspector-section">
               <div className="section-label">
-                WORLD POSITION <span>m</span>
+                世界位置 <span>m</span>
               </div>
               <div className="vector-values">
                 {pose.p.map((value, i) => (
@@ -166,7 +177,7 @@ export function Inspector({
                 ))}
               </div>
               <div className="section-label">
-                QUATERNION <span>xyzw</span>
+                四元数 <span>xyzw</span>
               </div>
               <div className="quaternion-values">
                 {pose.q.map((value, i) => (
@@ -179,8 +190,8 @@ export function Inspector({
                 ))}
               </div>
               <p className="field-note">
-                Latest authoritative sample
-                {site ? ' · Body × Site local pose' : ''}
+                物理源的最新样本
+                {site ? ' · 刚体 × 站点局部位姿' : ''}
               </p>
               <dl className="inspector-dl">
                 <div>
@@ -190,7 +201,7 @@ export function Inspector({
                   </dd>
                 </div>
                 <div>
-                  <dt>Sequence</dt>
+                  <dt>序号</dt>
                   <dd data-testid="inspector-seq">{sample?.seq ?? '—'}</dd>
                 </div>
                 <div>
@@ -198,7 +209,7 @@ export function Inspector({
                   <dd>{sample?.sampleTimeMs.toFixed(2) ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Epoch</dt>
+                  <dt>轮次</dt>
                   <dd>{sample?.epoch ?? manifest.epoch}</dd>
                 </div>
               </dl>
@@ -206,38 +217,37 @@ export function Inspector({
           )}
           {site && (
             <section className="inspector-section">
-              <div className="section-label">SITE BINDING</div>
+              <div className="section-label">站点绑定</div>
               <dl className="inspector-dl">
                 <div>
-                  <dt>Parent body</dt>
-                  <dd>{site.parentBodyKey?.split('/').at(-1) ?? 'World'}</dd>
+                  <dt>父级刚体</dt>
+                  <dd>{site.parentBodyKey?.split('/').at(-1) ?? '世界'}</dd>
                 </div>
                 <div>
-                  <dt>Role</dt>
+                  <dt>角色</dt>
                   <dd>{site.role}</dd>
                 </div>
               </dl>
               <p className="field-note">
-                This marker is a Newton Site. It is distinct from the body
-                origin.
+                该标记为 Newton 站点；它的位置可与刚体原点不同。
               </p>
             </section>
           )}
           {joint && (
             <section className="inspector-section">
-              <div className="section-label">JOINT CONSTRAINT</div>
+              <div className="section-label">关节约束</div>
               <dl className="inspector-dl">
                 <div>
-                  <dt>Type / DOF</dt>
+                  <dt>类型 / 自由度</dt>
                   <dd>
                     {joint.type} / {joint.dofCount}
                   </dd>
                 </div>
                 <div>
-                  <dt>Position error</dt>
+                  <dt>位置误差</dt>
                   <dd>
                     {error === undefined
-                      ? 'Unsupported / not applicable'
+                      ? '不支持或不适用'
                       : `${error.toExponential(3)} m`}
                   </dd>
                 </div>
@@ -249,15 +259,15 @@ export function Inspector({
           )}
           {node?.kind === 'body' && (
             <section className="inspector-section">
-              <div className="section-label">NEWTON BINDING</div>
+              <div className="section-label">Newton 绑定</div>
               <dl className="inspector-dl">
                 <div>
-                  <dt>Stream ID</dt>
+                  <dt>流 ID</dt>
                   <dd>{node.streamId}</dd>
                 </div>
                 <div>
-                  <dt>Stable key</dt>
-                  <dd>{node.stableKey ? 'Yes' : 'No · generated label'}</dd>
+                  <dt>稳定标识</dt>
+                  <dd>{node.stableKey ? '是' : '否 · 自动标签'}</dd>
                 </div>
               </dl>
               {binding && <pre>{JSON.stringify(binding, null, 2)}</pre>}
@@ -265,7 +275,7 @@ export function Inspector({
           )}
           {node?.kind === 'group' && (
             <p className="field-note">
-              Logical group. Its members retain independent world transforms.
+              逻辑组的成员各自保留独立的世界变换。
             </p>
           )}
         </div>

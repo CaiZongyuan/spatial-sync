@@ -4,6 +4,7 @@ import { ApprovalInboxContext, useApprovalInbox } from '../lib/approvals';
 import '../approvals.css';
 import { AlertContext, useAlerts } from '../lib/live';
 import '../live.css';
+import { Icon } from './Icon';
 
 type Theme = 'system' | 'light' | 'dark';
 const themeKey = 'lab.theme';
@@ -27,21 +28,6 @@ const pages = [
   { to: '/sessions', label: 'Sessions', text: '会话', icon: 'sessions' },
   { to: '/recordings', label: 'Recordings', text: '录制', icon: 'recordings' },
 ] as const;
-
-function Icon({ name }: { name: string }) {
-  const paths: Record<string, string> = {
-    overview: 'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z',
-    live: 'M3 12h4l3-7 4 14 3-7h4',
-    resources: 'M5 6h14v12H5z M9 2v4 M15 2v4 M9 18v4 M15 18v4 M1 10h4 M1 14h4 M19 10h4 M19 14h4 M9 10h6v4H9z',
-    sessions: 'M4 4h16v16H4z M4 9h16 M9 9v11',
-    scenes: 'M12 3l9 5-9 5-9-5z M3 8v9l9 5 9-5V8 M12 13v9',
-    assets: 'M12 3l9 5v9l-9 5-9-5V8z M3 8l9 5 9-5 M12 13v9',
-    recordings: 'M4 4h16v16H4z M10 8l6 4-6 4z',
-    approvals: 'M8 4h12v17H4V4h4 M8 2h8v4H8z M8 13l3 3 6-6',
-    collapse: 'M14 6l-6 6 6 6',
-  };
-  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={paths[name]} /></svg>;
-}
 
 export function PlatformShell() {
   const pathname = useRouterState({ select: state => state.location.pathname });

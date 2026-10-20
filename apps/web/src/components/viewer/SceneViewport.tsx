@@ -6,7 +6,7 @@ import {
   type InstanceController,
 } from './InstancedPrimitives';
 import { Canvas, events, useFrame, useThree } from '@react-three/fiber';
-import { Edges, Grid, OrbitControls } from '@react-three/drei';
+import { Edges, GizmoHelper, GizmoViewport, Grid, OrbitControls } from '@react-three/drei';
 import {
   DoubleSide,
   Box3,
@@ -55,6 +55,7 @@ export interface VisualGeometryInfo {
   visualCount: number;
   meshCount: number;
   normalsComplete: boolean;
+  materials?: { type: string; opacity: number; depthWrite: boolean; castShadow: boolean; receiveShadow: boolean }[];
   min: number[];
   max: number[];
 }
@@ -138,8 +139,8 @@ function PrimitiveMesh({
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
-    <mesh geometry={geometry} castShadow receiveShadow>
-      <meshStandardMaterial
+    <mesh geometry={geometry} castShadow={visual.geometry.type !== 'plane'} receiveShadow>
+      {!collider && visual.geometry.type === 'plane' ? <shadowMaterial opacity={theme.ao} depthWrite={false} /> : <meshStandardMaterial
         color={
           collider
             ? theme.accent
@@ -153,7 +154,7 @@ function PrimitiveMesh({
         wireframe={collider}
         transparent={collider || visual.geometry.type === 'plane'}
         opacity={collider ? 0.8 : visual.geometry.type === 'plane' ? theme.ao : 1}
-      />
+      />}
       {!collider && visual.geometry.type !== 'plane' && <Edges threshold={35} color={selected ? theme.accent : theme.edge} opacity={selected ? 1 : theme.edgeOpacity} transparent raycast={skipPicking} />}
     </mesh>
   );
@@ -436,7 +437,7 @@ function SceneContents({
   inspectVisuals,
   recorder,
   renderContinuously = true,
-  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture,
+  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact,
 }: ViewportProps) {
   const invalidate = useThree((state) => state.invalidate);
   const theme = useContext(ViewerThemeContext);
@@ -555,10 +556,15 @@ function SceneContents({
       const bounds = new Box3().setFromObject(group);
       let meshCount = 0;
       let normalsComplete = true;
+      const materials: NonNullable<VisualGeometryInfo['materials']> = [];
       group.traverse((object) => {
         if (object instanceof Mesh) {
           meshCount++;
           normalsComplete &&= Boolean(object.geometry.getAttribute('normal'));
+          for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.push({
+            type: material.type, opacity: material.opacity, depthWrite: material.depthWrite,
+            castShadow: object.castShadow, receiveShadow: object.receiveShadow,
+          });
         }
       });
       return {
@@ -566,6 +572,7 @@ function SceneContents({
         visualCount: group.children.length,
         meshCount,
         normalsComplete,
+        materials,
         min: bounds.min.toArray(),
         max: bounds.max.toArray(),
       };
@@ -640,7 +647,6 @@ function SceneContents({
         inspectVisuals={inspectGeometry}
       />
       <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} />
-      <color attach="background" args={[theme.ground]} />
       {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
       <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
       <directionalLight position={[3, 6, 3]} intensity={theme.key * Math.PI} color={theme.sun} castShadow
@@ -707,6 +713,10 @@ function SceneContents({
         target={[0, 0.65, 0]}
         minDistance={0.3}
       />
+      {!compact && !capture && <GizmoHelper alignment="bottom-left" margin={[40, 40]}>
+        <group rotation={[-Math.PI / 2, 0, 0]}><GizmoViewport disabled hideNegativeAxes axisHeadScale={.8}
+          axisColors={[theme.axisX, theme.axisY, theme.axisZ]} labelColor={theme.ground} /></group>
+      </GizmoHelper>}
     </>
   );
 }
@@ -761,19 +771,18 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
-        gl={{ antialias: true, preserveDrawingBuffer: Boolean(props.capture) }}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
         <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">
-        <span className="live-dot" /> {props.client.readOnly ? 'RECORDED SPATIAL VIEW' : 'LIVE SPATIAL VIEW'}{' '}
-        <small>METERS · Z-UP</small>
+        <span className="live-dot" /> {props.client.readOnly ? '录制空间视图' : '实时空间视图'}{' '}
+        <small>米 · Z 向上</small>
       </div>
       <div className="viewport-hint">
-        Drag to orbit <span>·</span> Scroll to zoom <span>·</span> Click to
-        inspect
+        拖动旋转 <span>·</span> 滚动缩放 <span>·</span> 点击查看
       </div></>}
     </div>
   );
