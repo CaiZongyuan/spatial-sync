@@ -10,13 +10,13 @@ Intent lives in three documents:
 
 ## Current focus
 
-The user maintains this section; update it when a milestone lands or direction changes.
+The PM updates this section in the PR that completes a milestone; the user may override it.
 
-- Delivered: information spec I0–I4, the native Newton viewer, RSI W0/A1/A2, A3 USD loading and Dressing (#17), and L1 sensors, alerts, history, agent inbox and simulation Live UI (#19–#23). This includes the platform shell and approvals, immutable scene versions and previews, recording v2 compatibility, product skills, asset imports, binding templates, library UI, approved deletion and CPU physics validation. Live operations still has gaps, including `watch --until`.
+- Delivered: information spec I0–I4, the native Newton viewer, RSI W0/A1/A2, A3 USD loading and Dressing (#17), L1 sensors, alerts, history, agent inbox and simulation Live UI (#19–#23), and L2 operation plans and motion preview (#24–#25). Live operations still has gaps, including `watch --until`.
 - Open: I5, Claude Code completing the I3 journey on `robot-and-tubes` through MCP, recorded.
-- Active: L2 motion preview (#25). A3 `fr3-lab` import (#18) remains incomplete; its approved grasp-height prerequisite is in progress, and physical feasibility remains unproven. The platform-external T0 FR3 experiment (#29) is on hold; training is incomplete and the fixed policy audit remains 0/1,024 episodes, below its delivery gate.
-- Next: complete A3 and L2; T1 also requires T0. Use `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md` for user stories, delivery order, contract changes, test seams and error codes; `docs/spec/LAB_WEB_UI_SPEC_V1.md` holds the design system and page contracts. Tickets are GitHub sub-issues #3–#46 of PRD issue #2, with native blocking edges.
-- Follow-on specifications: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A2–A3), `docs/spec/LAB_TRAINING_SPEC_V1.md` (T1–T3: jobs, Training View, evaluation, policies, the Lab Notebook, programs and demonstrations), `docs/spec/LAB_LIVE_OPERATIONS_SPEC_V1.md` (L1–L3: sensors, alerts, history, inbox, operation plans and Live Lab over MQTT), and `docs/spec/LAB_RSI_SPEC_V1.md` (R1–R4: evaluation and cost centers, Agent runner, Harness RSI and robot resources). T1 follows A3 and T0. The UI prototype at `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only; production code follows the Web UI spec.
+- Active: A3 `fr3-lab` import (#18), including its approved grasp-height prerequisite; L2 plan UI (#26); and L3 Device Host/MQTT (#27). A3 physical feasibility remains unproven. T0 (#29) resumes a second round alongside platform work: publish measurable hypotheses, budget and the unchanged fixed-home audit before GPU execution. Diagnostics have at most 2 GPU hours; at most one full training has 4 hours. The first round remains 0/1,024, below 922. Stop after a second failure and submit a T2 specification proposal labelled `ready-for-human` for the user to decide.
+- Next: finish A3 and L2; T1 starts with #30 after A3 (#18), independently of T0. T0 blocks #35 (policies and `robot_arm.policy`), not T1. Use `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md` for stories, delivery order, contracts, test seams and errors; `docs/spec/LAB_WEB_UI_SPEC_V1.md` holds page contracts. Tickets #3–#46 are native sub-issues of #2.
+- Follow-on specifications: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A2–A3), `docs/spec/LAB_TRAINING_SPEC_V1.md` (T1–T3), `docs/spec/LAB_LIVE_OPERATIONS_SPEC_V1.md` (L1–L3), and `docs/spec/LAB_RSI_SPEC_V1.md` (R1–R4). The UI prototype at `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only; production code follows the Web UI spec.
 - Vocabulary lives in `GLOSSARY.md`; architecture decisions in `docs/adr/`.
 
 Scope comes from a spec milestone or an explicit user request. When a task reaches beyond both, confirm with the user before building; a proposed direction gets a spec first.
@@ -33,12 +33,17 @@ These are hard to reverse. Change them deliberately, with the user.
 
 ## Working style
 
-- One agent carries an issue end to end; the user reviews the diff and merges. Use `pm-development`, parallel agents or independent reviewers when the user asks for them.
+- One agent carries an issue end to end. Follow the user's session authorization for publishing and merging. Use `pm-development`, parallel agents or independent reviewers when requested.
 - Use `grilling` for decisions that touch the contracts above or the device model. Settle everything else with sensible defaults and state them in the reply.
 - A milestone is done when it demos: one local command starts it, or it is visible in the browser.
 - Evidence lives in the PR description and CI. Repository docs describe current behavior for users and agents; process receipts, review logs and benchmark output go to `.scratch/`.
 - Add an abstraction when its second consumer exists.
 - The CI gate stays GPU-free and under 5 minutes. Newton smoke tests and benchmarks run manually.
+- Merge only while the latest main push CI is successful. When it is red, repair it before merging other PRs; if a repair is not ready within one hour, revert the introducing squash commit.
+- Before merging a PR that changes `packages/sim_runtime/**`, `packages/programs/**`, `library/scenes/**`, or recaptures a Newton preview under `assets/scene-previews/**`, run all four Newton CPU checks in `docs/VERIFICATION.md` under "Real physics and browser checks". Add a `Newton CPU` paragraph to the PR with commands, results and tick P95. Performance budgets use the documented Linux baseline.
+- Rebase the PR head onto current main before merging; that exact head must pass CI. Verify the integrated tree equals the reviewed and tested candidate.
+- Start a regression-fix PR description with `Regression from #N`, naming the introducing PR.
+- Post progress to #2 after each merged batch and at least every 12 active hours: merged PR → issue, active issue/branch/next step, paused work/reason/resume condition, main CI, and user actions. Comment on a ticket when starting or pausing it. Keep conclusions and key numbers in issues/PRs; raw receipts stay in `.scratch/`.
 - Bind process cleanup to this task's current process handle, or verify its PID, command and creation time against the current ownership receipt before stopping it.
 
 ## Repository workflow
