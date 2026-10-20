@@ -1,6 +1,7 @@
 """Optional real CPU FK checks; the GPU-free gate uses actual Virtual programs."""
 
 import copy
+import math
 
 import numpy as np
 import pytest
@@ -86,7 +87,13 @@ def test_xpbd_snapshot_reads_current_ik_without_writing_live_coordinates():
         joint = next(key for key in port.joints if key.endswith("Hinge"))
         current = snapshot.positions([joint])
         assert current != pytest.approx([-np.pi / 4], abs=1e-3)
-        site = next(key for key, value in port.sites.items() if value.body == port.bodies["/World/Pendulum/Link"])
+        body = port.bodies["/World/Pendulum/Link"]
+        # Independent geometric oracle: anchor=(1,0,1.5), the local COM is
+        # (0,0,-.35), and the actual world body has rotated about positive Y.
+        position = sim.state.body_q.numpy()[body, :3]
+        angle = -math.atan2(float(position[0]) - 1, 1.5 - float(position[2]))
+        assert current == pytest.approx([angle], abs=1e-5)
+        site = next(key for key, value in port.sites.items() if value.body == body)
         pose = snapshot.forward([joint], current, site)
         # The actual hinge anchor stays fixed while the pendulum swings.
         assert pose["p"] == pytest.approx([1, 0, 1.5], abs=1e-5)
