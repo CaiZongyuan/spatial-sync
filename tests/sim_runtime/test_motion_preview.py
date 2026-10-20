@@ -43,7 +43,12 @@ def test_real_arm_preview_keeps_both_states_controls_facts_and_motion_history_un
         port = info.port
         port.relative_site_velocity(next(iter(port.bodies.values())), tuple(port.sites.values())[:2])
         states = [(owner, arrays(owner)) for owner in (sim.state, sim.next_state, sim.control)]
-        values = info.snapshot().model_dump(mode="json")
+        # Only the envelope read timestamp is generated anew by snapshot().
+        # Per-entity observation metadata remains part of the equality check.
+        values = info.snapshot().model_dump(mode="json", exclude={"sampleTimeMs"})
+        host = info.host
+        watermark = (host.sim_time, host.epoch, host.tick_index, host._next_fact, host.fact_due,
+                     tuple(host._errors), frozenset(host._disabled))
         previous = port.previous_positions.copy()
         history = copy.deepcopy(port._site_motion_history)
         pending = (port.target_q.copy(), port.target_qd.copy(), port.last_time, port.sample_time_ms)
@@ -64,7 +69,9 @@ def test_real_arm_preview_keeps_both_states_controls_facts_and_motion_history_un
         assert info.preview(request).points[0] != (99, 99, 99)
         for owner, expected in states:
             assert_arrays(owner, expected)
-        assert info.snapshot().model_dump(mode="json") == values
+        assert info.snapshot().model_dump(mode="json", exclude={"sampleTimeMs"}) == values
+        assert (host.sim_time, host.epoch, host.tick_index, host._next_fact, host.fact_due,
+                tuple(host._errors), frozenset(host._disabled)) == watermark
         np.testing.assert_array_equal(port.previous_positions, previous)
         np.testing.assert_array_equal(port.target_q, pending[0])
         np.testing.assert_array_equal(port.target_qd, pending[1])

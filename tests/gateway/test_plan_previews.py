@@ -201,3 +201,49 @@ async def test_cancelled_preview_releases_lifecycle_lock_and_rejects_wrong_sourc
             assert result.status_code == 409
             assert result.json()["detail"]["code"] == "invalid_plan_reference"
             assert (await client.delete(session_route)).status_code == 204
+
+
+async def test_public_revision_waits_for_actual_source_preview_then_changes_next_read():
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class Held(SyntheticSource):
+        async def preview(self, request):
+            value = await super().preview(request)
+            entered.set()
+            await release.wait()
+            return value
+
+    app = create_app(Settings(), source_factory=lambda kind, sid: Held(sid))
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            created = await client.post("/api/v1/sessions", json={"sceneId": "lab-demo"})
+            assert created.status_code == 201, created.text
+            route = "/api/v1/sessions/" + created.json()["sessionId"]
+            document = {"title": "Revision race", "target": "session", "steps": [move()]}
+            submitted = await client.post("/api/v1/plans", json=document)
+            assert submitted.status_code == 201, submitted.text
+            plan_route = "/api/v1/plans/" + submitted.json()["id"]
+            pending = asyncio.create_task(client.get(plan_route + "/steps/1/preview"))
+            revising = None
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                document["steps"] = [move(target=[.2] * 7)]
+                revising = asyncio.create_task(client.post(plan_route + "/revisions", json=document))
+                await asyncio.sleep(.05)
+                assert not revising.done()
+            finally:
+                release.set()
+            result = await asyncio.wait_for(pending, 2)
+            assert result.status_code == 200, result.text
+            assert result.json()["revision"] == 1
+            assert result.json()["targetJointPositions"] == move()["do"]["params"]["positions"]
+            revised = await asyncio.wait_for(revising, 2)
+            assert revised.status_code == 201, revised.text
+            assert revised.json()["revision"] == 2
+            newest = await client.get(plan_route + "/steps/1/preview")
+            assert newest.status_code == 200, newest.text
+            assert newest.json()["revision"] == 2
+            assert newest.json()["targetJointPositions"] == [.2] * 7
+            assert (await client.get(plan_route)).json()["steps"] == revised.json()["steps"]
+            assert (await client.get(route + "/invocations")).json()["invocations"] == []
+            assert (await client.delete(route)).status_code == 204
