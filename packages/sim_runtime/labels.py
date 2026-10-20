@@ -22,7 +22,8 @@ class LabelIndex:
 
 
 def resolve_labels(
-    body_labels, shape_labels, joint_labels, *, site_indices=(), missing_labels=(), strict=False
+    body_labels, shape_labels, joint_labels, *, site_indices=(), missing_labels=(), strict=False,
+    shape_bodies=None, site_aliases=None,
 ) -> LabelIndex:
     warnings = []
     seen = {}
@@ -40,10 +41,17 @@ def resolve_labels(
             identity = Identity(entity_kind, index, key, not missing)
             if key in seen:
                 previous = seen[key]
-                raise ValueError(
-                    f"Duplicate label {key}: {previous.kind}[{previous.index}] conflicts with "
-                    f"{entity_kind}[{index}]"
-                )
+                body_shape = (previous.kind == "body" and entity_kind == "shape"
+                              and shape_bodies is not None and shape_bodies[index] == previous.index)
+                site_visual = (previous.kind == "shape" and entity_kind == "site"
+                               and (site_aliases or {}).get(index) == previous.index
+                               and shape_bodies is not None
+                               and shape_bodies[index] == shape_bodies[previous.index])
+                if not (body_shape or site_visual):
+                    raise ValueError(
+                        f"Duplicate label {key}: {previous.kind}[{previous.index}] conflicts with "
+                        f"{entity_kind}[{index}]"
+                    )
             seen[key] = identity
             result.append(identity)
             if missing:
@@ -62,10 +70,19 @@ def resolve_labels(
     return LabelIndex(bodies, shapes, joints, warnings)
 
 
-def labels_for_model(model, *, missing_labels=(), strict=False) -> LabelIndex:
+def labels_for_model(model, *, missing_labels=(), strict=False, site_aliases=None) -> LabelIndex:
     import newton
 
-    sites = {i for i, flags in enumerate(model.shape_flags.numpy()) if flags & int(newton.ShapeFlags.SITE)}
+    flags = model.shape_flags.numpy()
+    sites = {i for i, value in enumerate(flags) if value & int(newton.ShapeFlags.SITE)}
+    transforms = model.shape_transform.numpy()
+    colliding = int(newton.ShapeFlags.COLLIDE_SHAPES | newton.ShapeFlags.COLLIDE_PARTICLES)
+    for site, original in (site_aliases or {}).items():
+        if (site not in sites or not 0 <= original < len(flags) or original in sites
+                or flags[original] & colliding
+                or any(abs(float(a) - float(b)) > 1e-6
+                       for a, b in zip(transforms[site], transforms[original], strict=True))):
+            raise ValueError("Generated Config Site differs from its noncolliding USD visual")
     return resolve_labels(
         model.body_label,
         model.shape_label,
@@ -73,4 +90,5 @@ def labels_for_model(model, *, missing_labels=(), strict=False) -> LabelIndex:
         site_indices=sites,
         missing_labels=missing_labels,
         strict=strict,
+        shape_bodies=model.shape_body.numpy(), site_aliases=site_aliases,
     )

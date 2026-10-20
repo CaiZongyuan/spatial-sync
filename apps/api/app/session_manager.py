@@ -261,7 +261,8 @@ class Session:
             return
         try:
             manifest, assets = await freeze_manifest(
-                self.manifest, self.source, self.recordings.asset_registry
+                self.manifest, self.source, self.recordings.asset_registry,
+                library_reader=self.scene_version.read_visual if self.scene_version else None,
             )
             self.recording.add_revision(
                 manifest,
@@ -1084,7 +1085,7 @@ class SessionManager:
                     self.library.refresh()
                     selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
                     selected_source = source or selected.metadata["sources"][0]
-                    if not selected.metadata["stage"].startswith("python:"):
+                    if not selected.metadata["stage"].startswith("python:") and selected_source != "newton":
                         raise HTTPException(503, {"code": "source_unavailable",
                                                   "message": "This source does not load USD scene packages"})
                     for session in self.sessions.values():

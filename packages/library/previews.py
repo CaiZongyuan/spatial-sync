@@ -68,8 +68,9 @@ class _CaptureMetadata(BaseModel):
     thumbnail: dict[str, _NonemptyString] = Field(default_factory=dict)
     bounds: _Bounds | None = None
     templateAssets: list[_TemplateAsset] = Field(default_factory=list)
+    libraryAssets: list[_TemplateAsset] = Field(default_factory=list)
 
-    @field_validator("templateAssets")
+    @field_validator("templateAssets", "libraryAssets")
     @classmethod
     def unique_templates(cls, value):
         if len({item.id for item in value}) != len(value):
@@ -126,6 +127,7 @@ class PreviewRepository:
 
     def _capture(self, version, source):
         expected_templates = version.template_dependencies()
+        expected_assets = version.asset_dependencies()
         if source not in version.metadata["sources"]:
             raise ValueError("所选物理源不支持此场景版本")
         if content_hash(version.path) != version.content_hash:
@@ -155,6 +157,10 @@ class PreviewRepository:
                     item["id"]: item["contentHash"] for item in expected_templates
                 }:
                     raise ValueError("Preview template dependencies are incomplete or differ; recapture")
+                if {item["id"]: item["contentHash"] for item in value["libraryAssets"]} != {
+                    item["id"]: item["contentHash"] for item in expected_assets
+                }:
+                    raise ValueError("Preview USD asset dependencies are incomplete or differ; recapture")
                 dependencies = value["dependencies"]
                 if not dependencies or any(input_hash(dependency_path(item)) != item["sha256"]
                                            for item in dependencies):

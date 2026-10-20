@@ -22,6 +22,12 @@ def builtin_scene_path(name):
     return BUILTIN_ROOT / "scenes" / name / "1"
 
 
+def visual_url(snapshot, filename):
+    return f"/api/v1/library/files/{snapshot['root']}/" + quote(
+        f"assets/{snapshot['id'].replace('@', '/')}/{filename}", safe="/"
+    )
+
+
 @dataclass(frozen=True)
 class SceneVersion:
     name: str
@@ -37,6 +43,8 @@ class SceneVersion:
     files: tuple[str, ...] = ()
     template_assets: dict = field(default_factory=dict)
     template_error: str | None = None
+    runtime_assets: dict = field(default_factory=dict)
+    asset_error: str | None = None
 
     @property
     def id(self):
@@ -53,7 +61,7 @@ class SceneVersion:
 
     @property
     def launchable(self):
-        return self.template_error is None and launchable(self.report())
+        return self.template_error is None and self.asset_error is None and launchable(self.report())
 
     def report(self):
         return (
@@ -76,6 +84,14 @@ class SceneVersion:
         return [{"id": identifier, "contentHash": self.template_assets[identifier]["contentHash"]}
                 for identifier in selected]
 
+    def asset_dependencies(self):
+        if self.asset_error:
+            raise TemplateError(self.asset_error)
+        for snapshot in self.runtime_assets.values():
+            verify_snapshot(snapshot)
+        return [{"id": identifier, "contentHash": snapshot["contentHash"]}
+                for identifier, snapshot in sorted(self.runtime_assets.items())]
+
     def require_launchable(self):
         report = self.report()
         if not launchable(report):
@@ -85,6 +101,7 @@ class SceneVersion:
             )
         try:
             self.template_dependencies()
+            self.asset_dependencies()
         except (TemplateError, OSError, ValueError) as exc:
             raise LibraryError(
                 "scene_not_launchable", str(exc), 409, sceneVersion=self.id, validation=deepcopy(report)
@@ -107,16 +124,51 @@ class SceneVersion:
             )
 
     def with_templates(self, roots):
+        selected = []
         try:
             selected = references(self.bindings)
-            if not selected:
+            usd = not self.metadata["stage"].startswith("python:")
+            if not selected and not usd:
                 return self
             expected = pinned_assets(self, "scene")
+            identifiers = sorted(set(selected) | ({item["id"] for item in expected} if usd else set()))
+            snapshots = load_snapshots(roots, identifiers, expected)
+            for snapshot in snapshots.values():
+                snapshot["root"] = next(name for name, root in roots.items()
+                                        if Path(snapshot["path"]).is_relative_to(Path(root)))
             return replace(
-                self, template_assets=load_snapshots(roots, selected, expected), template_error=None
+                self, template_assets={identifier: snapshots[identifier] for identifier in selected},
+                template_error=None, runtime_assets=snapshots if usd else {}, asset_error=None,
             )
         except (ValueError, OSError, LibraryError) as exc:
-            return replace(self, template_assets={}, template_error=str(exc))
+            if selected or self.metadata["stage"].startswith("python:"):
+                return replace(self, template_assets={}, template_error=str(exc))
+            return replace(self, runtime_assets={}, asset_error=str(exc))
+
+    def runtime_payload(self):
+        """Transport verified authoring scope to the Runner without importing its SDK."""
+        self.require_launchable()
+        from packages.sim_runtime.info_catalog import REGISTRY
+
+        from .templates import config_fields
+
+        return {
+            "kind": "scene", "metadata": deepcopy(self.metadata),
+            "package": {"id": self.id, "path": str(self.path), "contentHash": self.content_hash,
+                        "files": {name: str(self.path / name) for name in self.files}},
+            "assets": deepcopy(list(self.runtime_assets.values())),
+            "expectedAssets": pinned_assets(self, "scene"), "structure": deepcopy(self.report()),
+            "programs": {name: {"fields": config_fields(program)} for name, program in REGISTRY.items()},
+        }
+
+    def read_visual(self, url):
+        """Read only a declared GLB in this version's verified asset snapshots."""
+        for snapshot in self.runtime_assets.values():
+            visual = snapshot["metadata"].get("visual")
+            if visual and url == visual_url(snapshot, visual):
+                verify_snapshot(snapshot)
+                return Path(snapshot["files"][visual]).read_bytes()
+        raise KeyError(url)
 
     def declarations(self, source):
         if self.template_error:
@@ -134,6 +186,8 @@ class SceneVersion:
         untyped = (report or {}).get("untypedEntities", [])
         if self.template_error:
             gaps.append({"kind": "template_dependency", "message": self.template_error})
+        if self.asset_error:
+            gaps.append({"kind": "asset_dependency", "message": self.asset_error})
         return {
             "sceneId": self.name,
             "sceneVersion": self.id,
@@ -150,7 +204,7 @@ class SceneVersion:
             "launchReason": None
             if allowed
             else (
-                self.template_error
+                self.template_error or self.asset_error
                 or (
                     "缺少验证报告"
                     if report is None

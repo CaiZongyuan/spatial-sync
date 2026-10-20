@@ -20,6 +20,17 @@ allowlist. Filesystem paths and arbitrary Python modules are not API selectors.
 Newton solver and warmup settings come from the selected package; Newton itself
 is imported only in its owned Runner.
 
+USD scene packages run through the Newton source. The Runner resolves exact
+`@library:` references from the version's verified asset snapshots and imports
+only `/World/Lab`. `/World/Dressing` contributes static GLB nodes to the browser
+Manifest without bodies, collision shapes, joints or device behavior. Provided
+PBR GLBs attach to their actual body or static shape; an ambiguous whole-asset
+binding keeps native visuals with a warning. Ordinary USD transforms used as
+declared Config Sites become noncolliding Sites while retaining their original
+visuals. Default recordings freeze the referenced library GLB bytes locally so
+replay remains independent of the live session. See the small authored
+[USD library example](../examples/usd-library/README.md).
+
 `lab-demo@2` adds a virtual incubator, biosafety cabinet and environment sensor.
 Version 1 retains its original bindings and layout. Version 3 keeps version 2's
 behavior with pinned asset binding templates. Bare `lab-demo` launches version 3
@@ -99,7 +110,7 @@ initial joint coordinates and limits. P6 applies each configured `grasp` through
 Newton FK and measures the configured TCP Site against the target Site in world
 meters; errors above 10 mm include the entity, taught location and measured
 deviation. P4 applies to individual asset packages. USD scene physics imports only
-`/World/Lab`; Dressing is excluded. This does not enable live USD sessions.
+`/World/Lab`; Dressing is excluded.
 Python builders also run S5 and S8. Their registered pure scene inputs provide
 the resource identities: Synthetic uses the same manifest construction as a
 running session, and the native FR3 uses the builder's shared labels and pinned
@@ -230,8 +241,10 @@ Newton version such as `robot-and-tubes@1`. Captures run on CPU. A tool-only
 spawn wrapper observes the unchanged production Runner's executed project code
 and data inputs. URDF dependencies come from the actual importer/resolver; USD
 dependencies come from the composed Stage's used layers and native dependency
-resolution. Unresolved or repository-external native inputs reject the capture
-with a reason. Python file auditing alone does not cover native file reads.
+resolution. Imported scene and asset bytes retain exact package hashes in the
+capture identity, including user-library inputs outside the repository. Other
+unresolved or external native inputs reject capture with a reason. Python file
+auditing alone does not cover native file reads.
 
 The output root must be outside every published scene package, and an existing
 capture directory is never overwritten. The Web list generates cached PNGs

@@ -12,10 +12,10 @@ Intent lives in three documents:
 
 The user maintains this section; update it when a milestone lands or direction changes.
 
-- Delivered: information spec I0–I4, the native Newton viewer, and RSI W0/A1: platform shell and approvals, immutable scene versions with read-only previews and exact-version launch, recording v2 compatibility, and product skills.
+- Delivered: information spec I0–I4, the native Newton viewer, and RSI W0/A1/A2: platform shell and approvals, immutable scene versions and previews, recording v2 compatibility, product skills, asset imports, binding templates, library UI, approved deletion and CPU physics validation.
 - Open: I5, Claude Code completing the I3 journey on `robot-and-tubes` through MCP, recorded.
-- Active: the platform-external T0 FR3 contact-grasp experiment; training and the fixed 1,024-episode policy audit remain incomplete.
-- Next: A2 asset packages and validation, then A3 `fr3-lab` import; L1 and L2 can follow A1. Use `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md` for user stories, delivery order, contract changes, test seams and error codes; `docs/spec/LAB_WEB_UI_SPEC_V1.md` holds the design system and page contracts. Tickets are GitHub sub-issues #3–#46 of PRD issue #2, with native blocking edges.
+- Active: A3 USD scene loading and Dressing (#17), followed by `fr3-lab` import (#18). The platform-external T0 FR3 experiment (#29) is on hold; its training and fixed 1,024-episode policy audit remain incomplete and have not met the delivery gate.
+- Next: complete A3; L1 and L2 can follow A1, while T1 also requires T0. Use `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md` for user stories, delivery order, contract changes, test seams and error codes; `docs/spec/LAB_WEB_UI_SPEC_V1.md` holds the design system and page contracts. Tickets are GitHub sub-issues #3–#46 of PRD issue #2, with native blocking edges.
 - Follow-on specifications: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A2–A3), `docs/spec/LAB_TRAINING_SPEC_V1.md` (T1–T3: jobs, Training View, evaluation, policies, the Lab Notebook, programs and demonstrations), `docs/spec/LAB_LIVE_OPERATIONS_SPEC_V1.md` (L1–L3: sensors, alerts, history, inbox, operation plans and Live Lab over MQTT), and `docs/spec/LAB_RSI_SPEC_V1.md` (R1–R4: evaluation and cost centers, Agent runner, Harness RSI and robot resources). T1 follows A3 and T0. The UI prototype at `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only; production code follows the Web UI spec.
 - Vocabulary lives in `GLOSSARY.md`; architecture decisions in `docs/adr/`.
 

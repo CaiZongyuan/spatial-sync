@@ -1,0 +1,1 @@
+CC0-1.0. Self-authored geometry and materials for spatial-sync loading tests.

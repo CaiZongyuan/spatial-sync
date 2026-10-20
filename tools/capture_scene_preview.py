@@ -40,6 +40,12 @@ def capture_runner(*args):
 
     files, errors, code_cache = set(), [], {}
     observing = True
+    package = args[4] if len(args) > 4 else None
+    verified_files = set()
+    if package:
+        verified_files.update((package.path / name).resolve() for name in package.files)
+        for snapshot in [*package.template_assets.values(), *package.runtime_assets.values()]:
+            verified_files.update(Path(name).resolve() for name in snapshot["files"].values())
 
     def data_file(value, *, required=False):
         if not isinstance(value, (str, os.PathLike)):
@@ -49,6 +55,8 @@ def capture_runner(*args):
             if path.is_file():
                 files.add(path)
                 return
+        if path in verified_files and path.is_file():
+            return  # External package bytes are pinned by sceneContentHash/libraryAssets.
         if required:
             errors.append(f"Native preview input is not a stable repository file: {value}")
 
@@ -85,14 +93,19 @@ def capture_runner(*args):
                 for layer in stage.GetUsedLayers():
                     if not layer.anonymous:
                         data_file(layer.realPath, required=True)
-                layers, assets, unresolved = UsdUtils.ComputeAllDependencies(str(frame.f_locals["path"]))
-                for layer in layers:
-                    if not layer.anonymous:
-                        data_file(layer.realPath, required=True)
-                for asset in assets:
-                    data_file(asset, required=True)
-                if unresolved:
-                    errors.append(f"Native USD dependencies could not be resolved: {unresolved}")
+                source = frame.f_locals["path"]
+                if isinstance(source, (str, os.PathLike)):
+                    layers, assets, unresolved = UsdUtils.ComputeAllDependencies(str(source))
+                    for layer in layers:
+                        if not layer.anonymous:
+                            data_file(layer.realPath, required=True)
+                    for asset in assets:
+                        data_file(asset, required=True)
+                    if unresolved:
+                        errors.append(f"Native USD dependencies could not be resolved: {unresolved}")
+                else:
+                    for path in frame.f_locals["builder"].spatial_dependency_files:
+                        data_file(path, required=True)
 
     sys.addaudithook(opened)
     previous = sys.getprofile()
@@ -182,6 +195,7 @@ async def capture(version, source_kind, root):
         raise ValueError("Derived captures must stay outside published scene packages")
     version.require_launchable()
     template_assets = version.template_dependencies()
+    library_assets = version.asset_dependencies()
     if source_kind not in version.metadata["sources"]:
         raise ValueError("Source is not supported by this version")
     opened = set()
@@ -210,7 +224,9 @@ async def capture(version, source_kind, root):
             frame = (await source.snapshot()).model_copy(deep=True)
             state = source.entity_snapshot().model_copy(deep=True)
             registry = AssetRegistry.from_file()
-            frozen, assets = await freeze_manifest(manifest, source, registry)
+            frozen, assets = await freeze_manifest(
+                manifest, source, registry, library_reader=version.read_visual
+            )
         finally:
             await source.close()
             observing = False
@@ -221,6 +237,8 @@ async def capture(version, source_kind, root):
         raise ValueError("Scene package changed while capturing")
     if version.template_dependencies() != template_assets:
         raise ValueError("Template dependencies changed while capturing")
+    if version.asset_dependencies() != library_assets:
+        raise ValueError("USD asset dependencies changed while capturing")
     dependencies = module_inputs(
         type(version), Source, FrameCodec, freeze_manifest, AssetRegistry, capture, capture_runner,
         native_capture_inputs,
@@ -253,6 +271,7 @@ async def capture(version, source_kind, root):
     value = {
         "schema": SCHEMA, "sceneVersion": version.id, "sceneContentHash": version.content_hash,
         "templateAssets": template_assets,
+        "libraryAssets": library_assets,
         "source": source_kind, "capturedAt": datetime.now(UTC).isoformat(), "simTime": frame.simTime,
         "runtime": {"python": sys.version.split()[0], "source": Source.__name__, "device": "cpu",
                     **{name: importlib.metadata.version(name) for name in (

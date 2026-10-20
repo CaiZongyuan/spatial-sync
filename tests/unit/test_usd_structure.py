@@ -6,6 +6,8 @@ import json
 import pytest
 from pxr import Usd, UsdGeom, UsdPhysics
 
+from apps.api.app.library_validation import program_schemas
+from packages.library.common import TYPE_ROOT, document
 from packages.library.structural import validate
 
 
@@ -49,6 +51,41 @@ def test_lab_physics_and_dressing_without_physics_are_separate(tmp_path):
     report = validate(data)
     assert next(check for check in report["checks"] if check["id"] == "S3")["status"] == "pass"
     assert next(check for check in report["checks"] if check["id"] == "S6")["status"] == "warn"
+
+
+@pytest.mark.parametrize("target,allowed", [
+    ("/World/Lab/Marker", True), ("/World/Dressing/Room/Marker", False),
+    ("/Other/Marker", False), ("/Asset/Marker", False),
+])
+def test_scene_config_sites_require_lab_domain_even_when_other_root_prims_exist(tmp_path, target, allowed):
+    data, stage = payload(tmp_path)
+    UsdPhysics.RigidBodyAPI.Apply(UsdGeom.Xform.Define(stage, "/World/Lab/Tube").GetPrim())
+    UsdGeom.Xform.Define(stage, target)
+    stage.GetRootLayer().Save()
+    data["metadata"]["sources"] = ["newton"]
+    data["types"] = {value["type"]: value for file in TYPE_ROOT.glob("*.yaml") if (value := document(file))}
+    data["programs"] = program_schemas()
+    data["bindings"] = {"scene": "structure-fixture", "entities": [{
+        "key": "/World/Lab/Tube", "type": "tube/v1", "program": "tube.newton",
+        "config": {"robots": [], "locationSites": [target]},
+    }]}
+    report = validate(data)
+    check = next(row for row in report["checks"] if row["id"] == "S5")
+    assert check["status"] == ("pass" if allowed else "fail")
+    if not allowed:
+        assert target in check["message"] and "/World/Lab" in check["message"]
+
+
+def test_asset_template_sites_keep_their_own_asset_domain(tmp_path):
+    data, stage = payload(tmp_path, kind="asset")
+    UsdGeom.Xform.Define(stage, "/Asset/Marker")
+    stage.GetRootLayer().Save()
+    data["types"] = {value["type"]: value for file in TYPE_ROOT.glob("*.yaml") if (value := document(file))}
+    data["programs"] = program_schemas()
+    data["metadata"]["implements"] = [{"type": "tube/v1", "programs": {"newton": "tube.newton"},
+                                       "config": {"robots": [], "locationSites": ["Marker"]}}]
+    report = validate(data)
+    assert next(row for row in report["checks"] if row["id"] == "S5")["status"] == "pass"
 
 
 def test_instance_proxies_cannot_hide_physics_under_dressing(tmp_path):

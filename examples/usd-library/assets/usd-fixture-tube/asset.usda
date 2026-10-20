@@ -1,0 +1,11 @@
+#usda 1.0
+(defaultPrim = "Asset"
+ metersPerUnit = 1
+ upAxis = "Z")
+
+def Cylinder "Asset" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsCollisionAPI", "PhysicsMassAPI"]) {
+ double radius = 0.02
+ double height = 0.12
+ uniform token axis = "Z"
+ float physics:mass = 0.1
+}

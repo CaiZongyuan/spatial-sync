@@ -4,6 +4,9 @@ tools/package_fr3_asset.py text eol=lf
 tools/package_binding_references.py text eol=lf
 packages/sim_runtime/synthetic_lab.py text eol=lf
 *.glb -text
+# Example package bytes must retain their provenance hashes on every checkout.
+examples/usd-library/assets/** -text
+examples/usd-library/scene/** -text
 packages/protocol/types/index.ts text eol=lf
 packages/protocol/types/protocol.schema.json text eol=lf
 packages/protocol/fixtures/*.json text eol=lf

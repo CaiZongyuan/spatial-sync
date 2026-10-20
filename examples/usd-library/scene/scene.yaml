@@ -1,0 +1,10 @@
+description: Small authored fixture for library references, PBR visuals and nonphysical
+  dressing.
+name: usd-library-fixture
+simulation:
+  solver: xpbd
+  warmupSteps: 1
+sources:
+- newton
+stage: stage.usda
+title: 'USD loading: two tubes and dressing'

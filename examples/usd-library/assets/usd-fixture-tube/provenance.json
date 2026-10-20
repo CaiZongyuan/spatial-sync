@@ -1,0 +1,22 @@
+{
+  "source": "examples/usd-library/generate.py",
+  "license": "CC0-1.0",
+  "files": {
+    "asset.yaml": {
+      "sha256": "dc488481fa7fb58ad23c3cbd38ddbc200b2917f8192207e33839aca0793c0965",
+      "bytes": 360
+    },
+    "asset.usda": {
+      "sha256": "3d3d97eca802ad5ce9b16303cb7f6c61386863770b73d4295cbb18b1f6bab8b9",
+      "bytes": 277
+    },
+    "visual.glb": {
+      "sha256": "76964b3efc69acde33de1de4a67041ecfc19536addf79c9d24ddd5b43916bb21",
+      "bytes": 2804
+    },
+    "LICENSE.txt": {
+      "sha256": "b9c80cb3f7a51305976deb324ec762292e0e053af4bc92582d0660ed12bd07af",
+      "bytes": 78
+    }
+  }
+}

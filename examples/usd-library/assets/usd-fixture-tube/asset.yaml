@@ -1,0 +1,20 @@
+description: Authored loading fixture; not a production device.
+dimensionsM:
+- 0.04
+- 0.04
+- 0.12
+id: labware/usd-fixture-tube
+implements:
+- config:
+    robots: []
+  programs:
+    newton: tube.newton
+  type: tube/v1
+kind: labware
+physics:
+  collision: authored
+  massKg: 0.1
+  massSource: estimated
+stage: asset.usda
+title: USD fixture tube
+visual: visual.glb

@@ -147,6 +147,21 @@ def config_fields(program):
     }
 
 
+def require_spatial_domain(config, fields, root):
+    """A scene's configured physics identities stay in its imported USD subtree."""
+    for name, information in fields.items():
+        value = config.get(name)
+        if information.get("spatialReference") and value is not None:
+            paths = value if isinstance(value, list) else [value]
+        elif information.get("documentSchema") == "locations" and isinstance(value, dict):
+            paths = [location["site"] for location in value["locations"].values() if location.get("site")]
+        else:
+            continue
+        for path in paths:
+            if not isinstance(path, str) or not (path == root or path.startswith(root + "/")):
+                raise TemplateError(f"Config {name} references {path} outside {root}")
+
+
 def manifest_resources(manifest):
     return {
         "entities": {node.entityKey for node in manifest.nodes},

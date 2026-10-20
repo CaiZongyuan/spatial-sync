@@ -1,0 +1,8 @@
+entities:
+- config:
+    locationSites:
+    - /World/Lab/Stations/SlotA
+    - /World/Lab/Stations/SlotB
+  match: /World/Lab/Tubes/*
+  template: labware/usd-fixture-tube@1
+scene: usd-library-fixture

@@ -149,7 +149,7 @@ def test_contact_transfer_uses_builtin_numbers_for_real_float32_body_frame_data(
     )
     sim = SimpleNamespace(
         collision_pipeline=pipeline, state=SimpleNamespace(body_q=array([[0, 0, height, 0, 0, 0, 1]])),
-        model=SimpleNamespace(shape_count=2, shape_body=array([0, -1], np.int32),
+        model=SimpleNamespace(body_count=1, shape_count=2, shape_body=array([0, -1], np.int32),
                               shape_label=["Sphere", "Ground"]),
     )
     observations = physics.contact_observations(sim)
