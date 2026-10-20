@@ -184,7 +184,7 @@ def tube_bounds(stage, key):
               [max(point[i] for point in points) for i in range(3)]]
     # Mesh points are Vec3f in USD. Two float32 roundings at this body's scale
     # cover the observed .129 -> .1289999783 conversion, not millimetres of geometry.
-    representation = max(abs(value) for point in bounds for value in point) * 2 ** -22
+    representation = max(abs(point[2]) for point in bounds) * 2 ** -22
     if abs(bounds[0][2]) > representation or bounds[1][2] <= representation:
         raise ValueError("Grasp tube origin must be its actual collision bottom with local +Z height")
     return {"boundsM": bounds, "representationM": representation}

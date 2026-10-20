@@ -97,6 +97,14 @@ def test_actual_mesh_points_override_a_forged_extent(fixture):
     assert tube_bounds(stage, TUBE)["boundsM"][1][2] == pytest.approx(.129)
 
 
+def test_lateral_size_cannot_hide_a_one_mm_wrong_bottom_origin(fixture):
+    stage, *_ = fixture
+    mesh = UsdGeom.Mesh(stage.GetPrimAtPath(TUBE + "/Hull"))
+    mesh.GetPointsAttr().Set([(-1_000_000, -.01, .001), (1_000_000, -.01, .001), (0, .01, .129)])
+    with pytest.raises(ValueError, match="actual collision bottom"):
+        tube_bounds(stage, TUBE)
+
+
 @pytest.mark.parametrize("change", ["no-template", "height", "bottom", "unknown", "conflict"])
 def test_s5_rejects_unknown_or_incompatible_nonzero_height(fixture, change):
     stage, binding, program, authored, graph = fixture
