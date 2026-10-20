@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
 import type {} from '../../apps/web/src/components/Workbench';
 import type {} from '../../apps/web/src/components/PlansPage';
 import type { AvailablePreview, PlanDocument } from '../../apps/web/src/lib/plans/model';
@@ -42,6 +42,13 @@ async function closeLid(request: APIRequestContext, sessionId: string, plan: Pla
   }));
   expect(result.status).toBe('succeeded');
   return result;
+}
+async function stopSession(request: APIRequestContext, sessionId: string, info: TestInfo) {
+  const response = await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  expect(response.ok(), await response.text()).toBe(true);
+  const after = await json<{ state: string }>(await request.get(`${api}/api/v1/sessions/${sessionId}`));
+  expect(after.state).toBe('STOPPED');
+  await info.attach('session-cleanup.json', { body: JSON.stringify({ sessionId, deleteStatus: response.status(), after }), contentType: 'application/json' });
 }
 async function geometry(page: Page, preview: AvailablePreview, detail = false) {
   const inspect = () => page.evaluate(detail => detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry(), detail);
@@ -88,6 +95,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     await expect(page.getByTestId('plan-preview-status')).toContainText('策略预览尚未接入');
     const preview = await json<AvailablePreview>(await request.get(`${api}/api/v1/plans/${plan.id}/steps/4/preview?revision=1`));
     const firstGeometry = await geometry(page, preview);
+    await info.attach('initial-rendered-preview.json', { body: JSON.stringify({ preview, rendered: firstGeometry }), contentType: 'application/json' });
     const liveMaterials = await page.evaluate(keys => Object.fromEntries(keys.map(key =>
       [key, window.__spatialDebug?.inspectVisuals(key)?.materialOpacity])), Object.keys(preview.targetBodyPoses));
     for (const values of Object.values(liveMaterials)) {
@@ -132,7 +140,8 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     await page.goto(`/plans/${plan.id}?step=4`);
     await expect(page.getByRole('table')).toContainText(plan.id);
     await expect(page.getByRole('table')).toContainText('issue26-e2e');
-    await geometry(page, updated, true);
+    const detailGeometry = await geometry(page, updated, true);
+    await info.attach('detail-rendered-preview.json', { body: JSON.stringify({ preview: updated, rendered: detailGeometry }), contentType: 'application/json' });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.getByRole('button', { name: '复制', exact: true }).click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await page.getByTestId('plan-command').textContent());
@@ -141,8 +150,8 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
       await page.screenshot({ path: info.outputPath(`plans-${theme}-1440.png`), fullPage: true });
     }
     await page.setViewportSize({ width: 400, height: 960 });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
     await page.screenshot({ path: info.outputPath('plans-light-400.png'), fullPage: true });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const reduced = await geometry(page, updated, true);
     const offsets = await page.evaluate(async () => {
@@ -156,7 +165,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     expect(offsets).toEqual(Array(4).fill(reduced.dashOffset));
     expect(errors).toEqual([]);
     await info.attach('rendered-preview.json', { body: JSON.stringify({ preview: updated, rendered: reduced }), contentType: 'application/json' });
-  } finally { await page.goto('about:blank'); await request.delete(`${api}/api/v1/sessions/${sessionId}`); }
+  } finally { await stopSession(request, sessionId, info); }
 });
 
 test('actual recorded plans rebuild on backward seek and scene rollover without any live API or socket', async ({ page, request, baseURL }, info) => {
@@ -171,8 +180,7 @@ test('actual recorded plans rebuild on backward seek and scene rollover without 
     await request.get(`${api}/api/v1/sessions/${sessionId}/state`);
     await json(await request.post(`${api}/api/v1/sessions/${sessionId}/reload`));
     const second = await submit(request, 'Recorded replacement scene', [move(1)]);
-    const stopped = await request.delete(`${api}/api/v1/sessions/${sessionId}`);
-    expect(stopped.ok()).toBe(true); closed = true;
+    await stopSession(request, sessionId, info); closed = true;
     const recordings = await json<(Recording & { url: string })[]>(await request.get(`${api}/api/v1/recordings`));
     const recording = recordings.find(value => value.sessionId === sessionId)!;
     expect(recording.status).toBe('complete'); expect(recording.segments).toHaveLength(2);
@@ -218,7 +226,7 @@ test('actual recorded plans rebuild on backward seek and scene rollover without 
     await expect(page.getByRole('button', { name: 'Close session', exact: true })).toBeDisabled();
     expect(live).toEqual([]);
     await info.attach('recorded-plan-times.json', { body: JSON.stringify({ sessionId, times, segments: recording.segments, live }), contentType: 'application/json' });
-  } finally { await page.goto('about:blank'); if (!closed) await request.delete(`${api}/api/v1/sessions/${sessionId}`); }
+  } finally { if (!closed) await stopSession(request, sessionId, info); }
 });
 
 test('disclosed policy preview contract fixture draws only the actual target', async ({ page, request }, info) => {
@@ -236,5 +244,5 @@ test('disclosed policy preview contract fixture draws only the actual target', a
       policyDriven: true, target: actual.targetPose.p, points: [], ghosts: {}, targetInView: true,
     });
     await info.attach('disclosed-policy-contract-fixture.json', { body: JSON.stringify(fixture), contentType: 'application/json' });
-  } finally { await page.goto('about:blank'); await request.delete(`${api}/api/v1/sessions/${sessionId}`); }
+  } finally { await stopSession(request, sessionId, info); }
 });

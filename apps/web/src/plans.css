@@ -57,7 +57,7 @@
 .plan-step { position: relative; min-width: 0; }
 .plan-step:not(:last-child)::after { content: ''; position: absolute; left: 21.5px; top: 34px; bottom: -11px; width: 1px; background: var(--line-2); z-index: 0; }
 .plan-step.done::after { background: var(--ink-2); opacity: .6; }
-.plan-step-select { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; text-align: left; border: 1px solid transparent; border-radius: 7px; padding: 10px 8px; background: transparent; color: var(--ink); font: inherit; }
+.plan-step-select { position: relative; z-index: 1; width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; text-align: left; white-space: normal; border: 1px solid transparent; border-radius: 7px; padding: 10px 8px; background: transparent; color: var(--ink); font: inherit; }
 .plan-step-select:hover { background: var(--surface-2); border-color: transparent; }
 .plan-step-select.is-selected { background: var(--surface-2); border-color: var(--line-2); }
 .plan-step-copy { display: grid; min-width: 0; gap: 4px; }
