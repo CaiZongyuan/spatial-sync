@@ -4,7 +4,7 @@
   "sceneContentHash": "49eb8c4f192751529b1e37b90cacfa12d4a5407f3ed055812c370cf5af8ed0c5",
   "templateAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-20T00:09:37.482437+00:00",
+  "capturedAt": "2026-10-20T04:18:07.076781+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -104,7 +104,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "084fbd430eea7405bf74acec255ed9b29467028243ac247ba1591d6fba45b257"
+      "sha256": "efedc02883678fceeb1ccf18ca05c7f1b8b000e50bc701922555a2a8c62178b0"
     },
     {
       "path": "packages/library/scenes.py",
@@ -182,10 +182,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "0e0d7fedabd0039cb5f10746f58ecd7ecd9785e57ee6dcd32762e3c772e48d7e",
-    "catalog.json": "45965ebafd149a3e044ec99be5dc8bdf160e2ea582bd61ca12f2c846625b9e66",
-    "state.json": "6e501a88ce8380692de4b4e51310cb7b7232981334c00aeb5b15c8897b8ad282",
-    "snapshot.bin": "327e1d12497dd6d504d459995110dc7a1a3e04d543ff66f5b2a0d1cf3ed99eba"
+    "manifest.json": "12b3b3f4d93f2353bdef3fc1a760f6e044d3040db602ac79cef854538421b127",
+    "catalog.json": "9450daa9084d741ae9e14154ed7b0bc04c1c8f6c563250ee1cb42aa2217dc38f",
+    "state.json": "394144b965cd660146deac946f6bdaf8c8009dde4d1f9038cd71845d09b61f75",
+    "snapshot.bin": "7e40243c8134015e8fb71aed20fb14fc5f37ba31a0c71fd5b411f34d3253a763"
   },
   "counts": {
     "physicalEntities": 30,

@@ -91,7 +91,15 @@ deduplication rules of [asset import](ASSET_LIBRARY.md). New packages omit
 schema failures return 422 without a revision. Other failed checks remain
 inspectable and prevent launch. S8 checks the selected robot's taught coordinate
 counts and scalar joint limits, converting revolute degrees to radians and
-retaining prismatic meters. Physics checks remain explicitly not run.
+retaining prismatic meters. With installed simulation tools and passing structure,
+an independent Newton CPU worker runs P1–P6. P2 measures every FREE body's
+displacement from its initial position after two simulation seconds, with no
+warmup. P3 re-queries collision separation at that final state. P5 checks actual
+initial joint coordinates and limits. P6 applies each configured `grasp` through
+Newton FK and measures the configured TCP Site against the target Site in world
+meters; errors above 10 mm include the entity, taught location and measured
+deviation. P4 applies to individual asset packages. USD scene physics imports only
+`/World/Lab`; Dressing is excluded. This does not enable live USD sessions.
 Python builders also run S5 and S8. Their registered pure scene inputs provide
 the resource identities: Synthetic uses the same manifest construction as a
 running session, and the native FR3 uses the builder's shared labels and pinned
@@ -172,6 +180,14 @@ keeps its content hash unchanged. Existing held versions also consult the latest
 report before launch/reload. USD packages can be imported and inspected; until
 the USD runtime is delivered, an otherwise launchable USD version returns
 `503 source_unavailable` before allocating a session.
+
+Missing tools and structural failures record an explicit physics skip. Skips
+preserve earlier measured physical failures; a genuine newer measurement may
+replace them. Built-in embedded reports are never revalidated at startup.
+Explicit revalidation can change launchability when a scene's authored initial
+motion exceeds the physical thresholds. Tool-version staleness changes only the
+report's freshness label. Worker timeouts publish no new report. See the
+[asset validation waiting limits](ASSET_LIBRARY.md) for CLI/MCP behavior.
 
 ## Static previews
 

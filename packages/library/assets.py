@@ -23,8 +23,21 @@ from packages.library.metadata import asset_metadata as metadata
 from packages.library.reports import HASH, SUBJECT, ReportStore, parse_report, validation_status
 
 
-def gaps(data, path):
+def gaps(data, path, report=None):
     missing = ["structure_validation", "physics_validation"]
+    checks = (report or {}).get("checks", [])
+    if {f"S{i}" for i in range(1, 9)}.issubset({item["id"] for item in checks}):
+        missing.remove("structure_validation")
+    measured = {
+        item["id"] for item in checks if item["tier"] == "physics"
+        and (item["status"] in ("pass", "fail") or item.get("notApplicable"))
+    }
+    if ((report or {}).get("physics") or {}).get("status") == "completed" and {
+        "P1", "P2", "P3", "P4"
+    }.issubset(measured) and not any(
+        item["tier"] == "physics" and item["status"] == "fail" for item in checks
+    ):
+        missing.remove("physics_validation")
     if not data.get("visual"):
         missing.append("visual")
     if not data.get("dimensionsM"):
@@ -72,8 +85,8 @@ class AssetVersion:
         )
 
     def summary(self):
-        missing = gaps(self.metadata, self.path)
         report = self.report()
+        missing = gaps(self.metadata, self.path, report)
         items = (report or {}).get("completeness")
         if items is None:
             physics = self.metadata.get("physics") or {}
@@ -93,8 +106,6 @@ class AssetVersion:
                 }
                 for name, status in statuses.items()
             ]
-        if {f"S{i}" for i in range(1, 9)}.issubset({item["id"] for item in (report or {}).get("checks", [])}):
-            missing.remove("structure_validation")
         missing = list(
             dict.fromkeys(
                 missing + [item["id"] for item in items if item["status"] in ("missing", "warning")]
@@ -201,13 +212,16 @@ class AssetLibrary:
         self.versions, self.files = versions, files
 
     def list(self, kind=None, query=None, only_gaps=False):
-        return [
-            deepcopy(version.summary())
-            for version in sorted(self.versions.values(), key=lambda item: (item.bare_id, item.rev))
-            if (not kind or version.metadata["kind"] == kind)
-            and (not query or query.casefold() in f"{version.id} {version.metadata['title']}".casefold())
-            and (not only_gaps or gaps(version.metadata, version.path))
-        ]
+        result = []
+        for version in sorted(self.versions.values(), key=lambda item: (item.bare_id, item.rev)):
+            if kind and version.metadata["kind"] != kind:
+                continue
+            if query and query.casefold() not in f"{version.id} {version.metadata['title']}".casefold():
+                continue
+            summary = version.summary()
+            if not only_gaps or summary["gaps"]:
+                result.append(deepcopy(summary))
+        return result
 
     def resolve(self, selector):
         bare_id, separator, revision = selector.partition("@")
@@ -283,12 +297,14 @@ class AssetLibrary:
         definitions = {
             value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
         }
+        report = version.report()
         return deepcopy(
             version.summary()
             | {
                 "metadata": version.metadata,
-                "validation": version.report(),
-                "validationCoverage": "Read the recorded checks; physics checks have not run",
+                "validation": report,
+                "validationCoverage": (report or {}).get("inspection")
+                or "Read the recorded checks; physics execution is not recorded",
                 "provenance": provenance,
                 "referencingScenes": referencing,
                 "referenceInspection": {

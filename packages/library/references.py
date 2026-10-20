@@ -111,7 +111,7 @@ class ReferenceInspection:
                         if not check:
                             key = (owner_kind, version.id, version.content_hash)
                             if key not in self._inspected:
-                                self._inspected[key] = self.validator.run(
+                                self._inspected[key] = self.validator.run_structure(
                                     version.path, owner_kind, f"{owner_kind}:{version.id}",
                                     version.metadata, self.assets, getattr(version, "bindings", None),
                                     getattr(version, "locations", None),

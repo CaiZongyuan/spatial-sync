@@ -141,7 +141,7 @@ class GatewayClient:
     async def library_validate(self, id, *, actor="cli:lw"):
         if "@" not in id:
             raise ValueError("Validation requires an exact asset or scene version with @rev")
-        return await self.request("POST", self._library_path(id) + "/validate", actor=actor)
+        return await self.request("POST", self._library_path(id) + "/validate", actor=actor, timeout=240)
 
     async def library_remove(self, id, *, actor="cli:lw"):
         if not re.fullmatch(
@@ -178,6 +178,7 @@ class GatewayClient:
                     content=chunks(),
                     headers={"Content-Type": "application/x-tar"},
                     actor=actor,
+                    timeout=240,
                 )
         except OSError as exc:
             raise ValueError("Library directory could not be read") from exc

@@ -1,4 +1,5 @@
 import { request } from './api';
+import type { ValidationReport } from './library';
 
 export const assetKinds = { robot: '机器人', device: '设备', labware: '实验耗材', environment: '环境' } as const;
 export type AssetKind = keyof typeof assetKinds;
@@ -11,7 +12,7 @@ export const statusLabels: Record<CompletenessStatus, string> = {
   present: '有', warning: '警告', missing: '缺', not_applicable: '不适用',
 };
 const gapLabels: Record<string, string> = {
-  ...completenessLabels, structure_validation: '结构检查未完成', physics_validation: '物理检查未完成',
+  ...completenessLabels, structure_validation: '结构检查未完成', physics_validation: '物理检查存在缺口',
   dimensions: '尺寸未提供', mass: '质量未提供', mass_estimated: '质量为估计值', provenance: '来源记录缺失',
 };
 export interface CompletenessItem { id: string; status: CompletenessStatus; message: string }
@@ -23,6 +24,7 @@ export interface AssetVersion {
   validationStatus: string; thumbnailUrl: string | null; visualUrl: string | null;
 }
 export interface AssetDetail extends AssetVersion {
+  validation: ValidationReport | null;
   metadata: { id: string; dimensionsM?: number[]; implements?: { type: string; programs?: Record<string, string>; config?: Record<string, unknown> }[] };
   validationCoverage: string; provenance: Record<string, unknown> | null; files: Record<string, string>;
   types: Record<string, AssetEntityType | null>;

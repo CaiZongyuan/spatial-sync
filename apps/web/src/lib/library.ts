@@ -41,7 +41,12 @@ export interface ValidationReport {
   subject: string;
   ranAt?: string;
   launchable: boolean;
-  checks: { id: string; tier: string; status: 'pass' | 'warn' | 'fail'; message: string }[];
+  physics?: {
+    status: 'completed' | 'skipped'; reason?: string; ranAt?: string;
+    retainedFrom?: { reportId?: string; ranAt?: string };
+  };
+  checks: { id: string; tier: string; status: 'pass' | 'warn' | 'fail'; message: string;
+    entityKey?: string; location?: string }[];
 }
 export interface SceneDetail extends SceneVersion {
   metadata: { name: string; title: string; stage: string; description?: string;

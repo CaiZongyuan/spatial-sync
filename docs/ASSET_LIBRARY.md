@@ -88,8 +88,20 @@ The gateway generates `validation.json` with S1–S8 structural results using a
 bounded CPU-only USD worker. It checks stage units/identity, provenance and
 license hashes, registered types and Config references, visual budgets and
 confined USD dependencies. A 500,000-triangle or 4096-pixel texture boundary is
-valid. Physics checks have **not run** and remain explicit warnings. A supplied report cannot claim
-passes: omit `validation.json` from a new package. An exact exported version,
+valid. After structure passes, a separate Newton CPU worker measures loading and
+finite state (P1), initial-to-two-second FREE-body displacement ≤5 mm (P2),
+collision penetration ≤2 mm (P3), and positive mass with collision-volume density
+50–20,000 kg/m³ (P4). Assets are placed on a ground plane for these measurements;
+P5/P6 apply to scenes. The gateway imports no physics SDK.
+Newton omits contact queries between world-static shapes. P3 reports their
+excluded pair count and warns about that coverage; any measured penetration
+above 2 mm still fails. Zero returned contacts do not establish a full pass
+when such pairs were omitted.
+
+Missing physics distributions produce `physics.status: skipped`, an explicit
+reason and `missingTools`; unmeasured checks never claim a pass. Structural
+failures also skip physics. A supplied report cannot claim passes: omit
+`validation.json` from a new package. An exact exported version,
 including its generated report, can be imported again and deduplicates.
 
 The six completeness items describe collision geometry, mass and inertia, PBR
@@ -128,6 +140,24 @@ as unavailable.
 report and all published bytes stay unchanged. The latest matching report is
 read after a restart. CLI validation exits 3 when any check fails. The versioned
 report schema is [validation.schema.json](../packages/library/schemas/validation.schema.json).
+
+The physics layer records its actual CPU execution time and tool versions.
+Changed tool versions, or installing a previously missing tool, mark the report
+stale without changing its recorded conclusion. A skipped revalidation retains
+the latest completed physical conclusion and its provenance, including genuine
+load failures. A newly completed measurement can replace an older conclusion.
+The Web report shows skips, retained results and stale status.
+
+Import and validation are synchronous. Structural and physical workers have
+20-second and 180-second execution limits, with bounded cleanup. CLI and MCP
+library import/validate wait up to 240 seconds. Worker failure or timeout returns
+`503 validation_unavailable` and publishes no partial version or new report.
+Disconnecting stops the client's wait; the accepted operation may finish within
+the worker's execution bounds after it obtains the library transaction. An import
+holds that transaction through validation and publication; other library
+mutations and session registration can wait for it. Time spent waiting for a
+transaction is additional to the worker limits, and a client can exhaust its
+240-second wait first. Re-read the version or import list to inspect its result.
 
 `contentHash` covers every published file, including the generated report:
 relative paths sorted lexically, each UTF-8 path plus a zero byte followed by

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { getSceneDetail, launchScene, rootLabel, sourceLabel, type SceneDetail, type SceneSource } from '../lib/library';
 import { FrozenViewport, useScenePreview } from '../components/ScenePreview';
 import { LaunchStatus } from '../components/SceneStatus';
+import { ValidationReport, ValidationStatus } from '../components/ValidationReport';
 import { deviceKey } from '../lib/info/binding';
 import { LibraryDeletionRequest } from '../components/LibraryDeletion';
 
@@ -73,8 +74,8 @@ function Detail({ scene }: { scene: SceneDetail }) {
         }}>{launching ? '正在启动…' : '启动会话'} <span aria-hidden="true">↗</span></button>
         <p className="scene-note">启动固定版本 <code>{scene.id}</code></p>{!scene.launchable && <p className="scene-failure">{scene.launchReason}</p>}{launchError && <p className="scene-failure" role="alert">{launchError}</p>}
       </div></section>
-      <section className="reference-panel"><header><h2>验证报告</h2><span className="scene-note">{scene.validationStatus === 'stale' ? '工具版本已变化' : scene.validationStatus === 'missing' ? '报告缺失' : '已记录'}</span></header>
-        {scene.validation ? <div className="scene-validation">{['structural', 'physics'].map(tier => <div key={tier}><h3>{tier === 'structural' ? '结构检查' : '物理检查'}</h3>{scene.validation!.checks.filter(check => check.tier === tier).length ? scene.validation!.checks.filter(check => check.tier === tier).map(check => <div key={check.id} className={`scene-check is-${check.status}`}><strong>{check.id}<span>{check.status === 'pass' ? '通过' : check.status === 'warn' ? '警告' : '失败'}</span></strong><p>{check.message}</p></div>) : <p className="scene-note">未记录此类检查。</p>}</div>)}<small>{scene.validation.ranAt ? `执行于 ${new Date(scene.validation.ranAt).toLocaleString()}` : '未记录执行时间'}</small></div> : <p className="scene-panel-body scene-failure">缺少验证报告，无法启动此版本。</p>}
+      <section className="reference-panel"><header><h2>验证报告</h2><ValidationStatus status={scene.validationStatus} /></header>
+        <ValidationReport report={scene.validation} />
       </section>
       <section className="reference-panel"><header><h2>属性</h2></header><div className="scene-panel-body"><dl className="reference-kv">
         <div><dt>场景</dt><dd><code>{scene.id}</code></dd></div><div><dt>物理源</dt><dd>{sourceLabel(source)}</dd></div><div><dt>构建方式</dt><dd title={scene.metadata.stage}>{scene.metadata.stage.startsWith('python:') ? 'Python 构建器' : scene.metadata.stage}</dd></div><div><dt>来源</dt><dd>{rootLabel(scene.root)}</dd></div><div><dt>求解器</dt><dd>{scene.metadata.simulation?.solver ?? '未声明'}</dd></div><div><dt>预热</dt><dd>{scene.metadata.simulation?.warmupSteps == null ? '未声明' : `${scene.metadata.simulation.warmupSteps} 步`}</dd></div><div><dt>尺寸</dt><dd>{scene.preview.bounds ? scene.preview.bounds.max.map((max, index) => `${(max - scene.preview.bounds!.min[index]).toFixed(2)}`).join(' × ') + ' m' : '未测量'}</dd></div>
