@@ -180,6 +180,20 @@ COMMANDS = (
         actor=True,
     ),
     Command(
+        path=("asset", "rm"),
+        help="Request human approval to delete an unused exact library version; never approves it.",
+        method="library_remove",
+        arguments=(Argument("id", ("kind/name@rev",), str, "Exact asset version to request deletion"),),
+        mcp_name="library_remove", actor=True,
+    ),
+    Command(
+        path=("scene", "rm"),
+        help="Request human approval to delete an unused exact scene version; never approves it.",
+        method="library_remove",
+        arguments=(Argument("id", ("name@rev",), str, "Exact scene version to request deletion"),),
+        actor=True,
+    ),
+    Command(
         path=("scene", "import"),
         help="Pack a local scene directory and upload tar bytes for immutable import and validation.",
         method="library_import",

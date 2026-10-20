@@ -2,6 +2,8 @@ import { Link } from '@tanstack/react-router';
 import { useContext, useState } from 'react';
 import { ApprovalInboxContext, decideApproval, type ApprovalDecision, type ApprovalRecord } from '../lib/approvals';
 import '../approvals.css';
+import { LibraryDeletionApproval } from './LibraryDeletion';
+import type { DeletionDetails } from '../lib/library-deletions';
 
 const statusText: Record<ApprovalRecord['status'], string> = {
   pending: '待审批', approved: '已批准', denied: '已驳回', revoked: '已撤销', expired: '已超时', unavailable: '已关闭',
@@ -37,6 +39,7 @@ function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide
     </dl>
     {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
     {record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
+    {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}
     {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}
     {(!processed || record.canRevoke) && <label className="approval-note">备注
       <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)}
@@ -64,7 +67,7 @@ export function ApprovalsPage() {
   ]).sort((a, b) => b.at - a.at).slice(0, 30) ?? [];
   return <main className="approvals-page" data-testid="approvals-page">
     <header className="approvals-page-heading"><h1>待审批</h1>
-      <p>提交请求，由人决定 · 批准后调用才会进入执行队列</p></header>
+      <p>提交请求，由人决定 · 批准后才会执行对应操作</p></header>
     <div className="approval-stage-strip" role="group" aria-label="具身层阶段">
       {['素材', '场景', '计划', '作业', '评估', '策略'].map((label, index) => <button className="approval-stage"
         key={label} disabled aria-label={`${label}阶段概览暂不可用`}>

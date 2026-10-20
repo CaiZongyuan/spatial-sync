@@ -5,6 +5,7 @@ import { FrozenViewport, useScenePreview } from '../components/ScenePreview';
 import { LaunchStatus } from '../components/SceneStatus';
 import { ValidationReport, ValidationStatus } from '../components/ValidationReport';
 import { deviceKey } from '../lib/info/binding';
+import { LibraryDeletionRequest } from '../components/LibraryDeletion';
 
 export const Route = createFileRoute('/scenes/$name/$rev')({
   validateSearch: (value: Record<string, unknown>): { source?: SceneSource } => ({ source: value.source === 'synthetic' || value.source === 'newton' ? value.source : undefined }),
@@ -82,6 +83,7 @@ function Detail({ scene }: { scene: SceneDetail }) {
       </section>
       <section className="reference-panel"><header><h2>相关录制</h2><span className="scene-note">{scene.recordings.length}</span></header><div className="scene-panel-body scene-related-recordings">{scene.recordings.length ? scene.recordings.map(recording => <Link key={recording.sessionId} to="/replay/$recordingId" params={{ recordingId: recording.sessionId }} search={{ src: undefined }}>
         <code>{recording.sessionId}</code><span>{new Date(recording.createdAt).toLocaleString()} · {recording.status === 'recording' ? '录制中' : `${((recording.durationMs ?? 0) / 1000).toFixed(1)} s`}</span><small className={recording.sceneContentHash && recording.sceneContentHash !== scene.contentHash ? 'scene-failure' : 'scene-note'}>{recording.sceneContentHash === scene.contentHash ? '内容摘要一致' : recording.sceneContentHash ? '同版本名，内容摘要不同' : '旧版录制 · 内容摘要未知'}</small></Link>) : <p className="scene-note">此版本还没有录制。会话会自动记录。</p>}</div></section>
+      <LibraryDeletionRequest resource="scene" id={scene.id} root={scene.root} />
     </aside></div>
   </>;
 }

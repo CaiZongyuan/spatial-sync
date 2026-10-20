@@ -24,6 +24,8 @@ from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.plans import PlanError, PlanStore
 from packages.info.store import StateStore
+from packages.library.archive import import_lock
+from packages.library.assets import AssetLibrary
 from packages.library.scenes import SceneLibrary
 from packages.protocol.internal import InformationClock, SessionOptions
 from packages.protocol.json import encode
@@ -84,6 +86,7 @@ class Session:
         self.approvals = approvals
         self.plans = plans
         self.source: SpatialSource | None = None
+        # An unclosed initial candidate remains owned here even after startup fails.
         self._starting_source: SpatialSource | None = None
         self.manifest: SceneManifest | None = None
         self.state = "CREATED"
@@ -125,6 +128,7 @@ class Session:
         if self.manifest:
             self.broadcast(self._lifecycle_state())
         candidate = None
+        retain_candidate = False
         try:
             candidate = self.factory(self.kind, self.session_id)
             self._starting_source = candidate
@@ -196,20 +200,27 @@ class Session:
             if self._heartbeat_task is None:
                 self._heartbeat_task = asyncio.create_task(self._heartbeat(), name="session-heartbeat")
         except BaseException as exc:
-            with contextlib.suppress(Exception):
-                if candidate:
+            cleanup_error = None
+            if candidate is not None:
+                try:
                     await candidate.close()
+                except BaseException as failure:
+                    retain_candidate = True
+                    cleanup_error = str(failure) or type(failure).__name__
             # A failed candidate must never be read as the previous valid sample.
             self.source = None
             if self.manifest is previous_manifest:
                 self._recording_revision_ready = recording_was_ready
-            if isinstance(exc, asyncio.CancelledError):
+            if retain_candidate:
+                self.fail(f"{exc}; Source cleanup did not complete: {cleanup_error}")
+            elif isinstance(exc, asyncio.CancelledError):
                 self.state = "STOPPED"
             elif self.state != "FAILED":
                 self.fail(str(exc))
             raise
         finally:
-            self._starting_source = None
+            if not retain_candidate:
+                self._starting_source = None
 
     async def open_viewer(self):
         if self.kind != "newton":
@@ -948,12 +959,20 @@ class Session:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
-        if self.source:
-            await self.source.close()
+        source = self.source
+        if source is not None:
+            await source.close()
             self.source = None
+        if self._starting_source is not None:
+            if self._starting_source is not source:
+                await self._starting_source.close()
+            self._starting_source = None
 
     async def reload(self):
         async with self.command_lock:
+            if self.manifest is None or self.pipeline is None:
+                raise HTTPException(409, {"code": "invalid_state",
+                                          "message": "Stop this incomplete session before starting another"})
             if self.scene_version:
                 self.scene_version.require_launchable()
             self._cache_frame(self.latest_frame())
@@ -1003,7 +1022,11 @@ class Session:
             self.state = "STOPPING"
             if self.manifest:
                 self.broadcast(self._lifecycle_state())
-            await self._stop_source()
+            try:
+                await self._stop_source()
+            except Exception as exc:
+                self.fail("Source cleanup did not complete: " + str(exc))
+                raise HTTPException(503, self.error | {"sessionId": self.session_id}) from exc
             self.state = "STOPPED"
             if self.manifest:
                 self.broadcast(self._lifecycle_state())
@@ -1034,8 +1057,10 @@ class SessionManager:
         self.approvals = ApprovalStore(settings.state_root / "approvals.jsonl")
         self.plans = PlanStore(settings.state_root / "plans.jsonl", self.approvals)
         self._library = None
+        self.library_assets = AssetLibrary(settings.state_root)
         self.sessions: dict[str, Session] = {}
         self._starting_session: Session | None = None
+        self._session_view: tuple[Session, ...] = ()
         self._create_lock = asyncio.Lock()
 
     @property
@@ -1048,57 +1073,84 @@ class SessionManager:
         self.approvals.startup()
         self.plans.startup()
         await self.plans.flush()
-        selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
-        if not selected.metadata["stage"].startswith("python:"):
-            raise HTTPException(503, {"code": "source_unavailable",
-                                      "message": "This source does not load USD scene packages"})
-        source = source or selected.metadata["sources"][0]
         async with self._create_lock:
             for session in self.sessions.values():
                 if session.state == "FAILED":
                     # A failed control stream may leave its runner alive; release it before replacement.
                     await session.close()
-                if session.state not in ("STOPPED", "FAILED"):
-                    if session.scene_version.id == selected.id and session.kind == source:
-                        return session
-                    raise HTTPException(
-                        409,
-                        {
+            def register_starting():
+                # No await while holding this lock. Deletion sees the reservation before Source.start.
+                with self.library_assets._lock, import_lock(self.library_assets.roots["user"]):
+                    self.library.refresh()
+                    selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
+                    selected_source = source or selected.metadata["sources"][0]
+                    if not selected.metadata["stage"].startswith("python:"):
+                        raise HTTPException(503, {"code": "source_unavailable",
+                                                  "message": "This source does not load USD scene packages"})
+                    for session in self.sessions.values():
+                        if session.state in ("STOPPED", "FAILED"):
+                            continue
+                        if session.scene_version.id == selected.id and session.kind == selected_source:
+                            return session
+                        raise HTTPException(409, {
                             "code": "session_exists",
                             "message": "Close the active session before starting another scene",
-                        },
+                        })
+                    session = Session(
+                        selected.name, selected_source, options, self.settings, self.factory,
+                        self.recordings, self.approvals, self.plans, scene_version=selected,
                     )
-            session = Session(
-                selected.name,
-                source,
-                options,
-                self.settings,
-                self.factory,
-                self.recordings,
-                self.approvals,
-                self.plans,
-                scene_version=selected,
-            )
-            self._starting_session = session
+                    self._starting_session = session
+                    self._session_view = (*self.sessions.values(), session)
+                    return session
+
+            registration = asyncio.create_task(asyncio.to_thread(register_starting))
+            try:
+                session = await asyncio.shield(registration)
+            except asyncio.CancelledError:
+                # A repeated request cancellation must not abandon the worker reservation.
+                while True:
+                    try:
+                        session = await asyncio.shield(registration)
+                        break
+                    except asyncio.CancelledError:
+                        if registration.cancelled():
+                            raise
+                    except Exception:
+                        raise asyncio.CancelledError from None
+                if session is self._starting_session:
+                    self._starting_session = None
+                    self._session_view = tuple(self.sessions.values())
+                raise
+            if session is not self._starting_session:
+                return session
             try:
                 await session.start()
             except asyncio.CancelledError:
-                await session.close()
-                raise
-            except HTTPException:
+                try:
+                    await session.close()
+                except BaseException as exc:
+                    session.fail("Source cleanup did not complete: " + str(exc))
                 raise
             except Exception as exc:
-                raise HTTPException(503, {"code": "source_unavailable", "message": str(exc)}) from exc
+                if isinstance(exc, HTTPException) and session._starting_source is None:
+                    raise
+                detail = {"code": "source_unavailable", "message": str(exc)}
+                if session._starting_source is not None:
+                    detail = session.error | {"sessionId": session.session_id}
+                raise HTTPException(503, detail) from exc
             finally:
+                # Initial failure is still discoverable/stoppable if cleanup has not succeeded.
+                if session.source is not None or session._starting_source is not None:
+                    self.sessions[session.session_id] = session
                 self._starting_session = None
-            self.sessions[session.session_id] = session
+                self._session_view = tuple(self.sessions.values())
             return session
 
     def platform_sessions(self):
-        sessions = list(self.sessions.values())
-        if self._starting_session is not None:
-            sessions.append(self._starting_session)
-        return sessions
+        # Worker readers must copy one immutable membership view. Reading the mapping and
+        # starting slot separately can lose a session while its creator moves between them.
+        return list(self._session_view)
 
     def get(self, session_id):
         if session_id not in self.sessions:

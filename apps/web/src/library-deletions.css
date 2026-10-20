@@ -1,0 +1,14 @@
+.library-deletion-panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; font-size: 13px; }
+.library-deletion-panel > header { padding: 16px; border-bottom: 1px solid var(--line); }
+.library-deletion-panel h2 { margin: 0; font: 500 15px var(--sans); }
+.library-deletion-panel > div { padding: 16px; }
+.library-deletion-panel p { margin: 0 0 12px; line-height: 1.7; color: var(--muted); }
+.library-deletion-panel code, .approval-deletion code { overflow-wrap: anywhere; }
+.library-deletion-panel a { display: block; margin: 8px 0; }
+.library-deletion-panel small, .library-reference-inspection small { display: block; color: var(--muted); overflow-wrap: anywhere; line-height: 1.6; }
+.library-deletion-panel [role=alert] { color: var(--warn); margin-top: 12px; }
+.library-reference-inspection ul { padding-left: 18px; margin: 8px 0; }
+.library-reference-inspection li { margin-bottom: 8px; }
+.approval-deletion { border-top: 1px solid var(--line); padding-top: 12px; line-height: 1.7; }
+.approval-deletion details { color: var(--muted); font-size: 12px; margin: 8px 0; }
+.approval-deletion-coverage { color: var(--muted); font-size: 12px; }

@@ -7,6 +7,7 @@ from pathlib import Path
 from packages.library.archive import destination_parent, extract_package, import_lock, invalid
 from packages.library.common import content_hash
 from packages.library.metadata import asset_metadata, scene_metadata
+from packages.library.transactions import reserve_revision, revisions
 
 
 class LibraryImports:
@@ -68,6 +69,7 @@ class LibraryImports:
                     ),
                     default=0,
                 )
+                revision = max(revision, 1 + revisions(root).get(f"{kind}:{bare_id}", 0))
                 report = self.validator.run(
                     stage, kind, f"{kind}:{bare_id}@{revision}", data, self.assets, bindings, locations
                 ) | {"importContentHash": upload_hash}
@@ -77,6 +79,7 @@ class LibraryImports:
                 destination = destination_parent(root, parents, create=True) / str(revision)
                 if destination.exists() or destination.is_symlink() or destination.is_junction():
                     raise invalid("Revision destination already exists")
+                reserve_revision(root, f"{kind}:{bare_id}", revision)
                 stage.rename(destination)
                 self.assets.startup()
                 self.scenes.refresh()
