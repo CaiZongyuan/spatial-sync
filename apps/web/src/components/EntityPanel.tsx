@@ -10,6 +10,7 @@ import type {
 import type { InfoStore } from '../lib/info/store';
 import { useEntity, useInvocations } from '../lib/info/hooks';
 import { evaluateConditions } from '../lib/info/conditions';
+import { Icon } from './Icon';
 import {
   isJsonField,
   isTextField,
@@ -38,7 +39,7 @@ function ConditionStatus({
   return (
     <li className={failure ? 'condition unmet' : 'condition met'}>
       <span aria-label={failure ? 'Not satisfied' : 'Satisfied'}>
-        {failure ? '○' : '✓'}
+        <Icon name={failure ? 'circle' : 'check'} />
       </span>
       <span>
         {typeof condition.message === 'string'

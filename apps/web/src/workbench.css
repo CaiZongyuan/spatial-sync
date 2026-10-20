@@ -1,5 +1,7 @@
 .platform-shell:has(.workbench) { padding-bottom: 24px; }
-.platform-page.is-detail .workbench { height: calc(100dvh - 140px); min-height: 650px; background: transparent; }
+.platform-page.is-detail .workbench { height: calc(100dvh - 140px); min-height: 650px; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.workbench .invocations-panel { background: var(--surface); }
+.workbench .invocations-heading select { height: 28px; padding: 0 8px; font-size: 11.5px; }
 .workbench .nav-icon { width: 14px; height: 14px; flex: none; }
 .workbench button, .workbench .subtle-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .workbench .workbench-header { padding: 0 0 22px; min-height: 78px; border: 0; background: none; gap: 16px; }
@@ -95,7 +97,7 @@
 .workbench .axis { background: transparent; padding: 0; font: 500 11px var(--mono); }
 .workbench .axis-0 { color: var(--c2); }.workbench .axis-1 { color: var(--c3); }.workbench .axis-2 { color: var(--c1); }
 .workbench .quaternion-values { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.workbench .quaternion-values > div { min-width: 0; padding: 7px 3px; text-align: center; border: 1px solid var(--line); background: transparent; }
+.workbench .quaternion-values > div { display: grid; justify-content: stretch; gap: 5px; min-width: 0; padding: 7px 0; text-align: center; border: 1px solid var(--line); background: transparent; }
 .workbench .quaternion-values output { font-size: 10.5px; }
 .workbench .inspector-empty { padding: 48px 20px; }
 .workbench .inspector-empty-icon { width: 36px; height: 36px; color: var(--ghost); margin-bottom: 12px; }
@@ -104,6 +106,6 @@
 .workbench .status-bar small { font-size: 10px; }
 .workbench .status-warnings { display: inline-flex; gap: 4px; font-size: 10.5px; padding: 0; }
 @keyframes workbench-pulse { 50% { opacity: .35; } }
-@media (max-width: 1100px) { .workbench .tree-panel { width: 225px; min-width: 225px; }.workbench .inspector-panel { width: 270px; min-width: 270px; }.workbench .workbench-header { flex-wrap: wrap; }.workbench .header-status { margin-left: 0; } }
-@media (max-width: 900px) { .platform-page.is-detail .workbench { height: auto; min-height: 0; }.workbench .workbench-main { display: grid; grid-template-columns: minmax(0, 1fr); overflow: visible; }.workbench .tree-panel, .workbench .inspector-panel { width: auto; min-width: 0; max-width: none; }.workbench .tree-body { max-height: 300px; }.workbench .scene-content { height: 420px; flex: auto; }.workbench .timing-control { margin-left: 0; }.workbench .control-bar { align-items: start; }.workbench .playback-controls { gap: 4px; }.workbench .playback-controls .state-pill { margin-right: 4px; }.workbench .workspace-title strong { font-size: 26px; } }
+@media (max-width: 1100px) { .workbench .tree-panel { width: 225px; min-width: 225px; }.workbench .inspector-panel { width: 270px; min-width: 270px; }.workbench .quaternion-values { grid-template-columns: repeat(2, minmax(0, 1fr)); }.workbench .workbench-header { flex-wrap: wrap; }.workbench .header-status { margin-left: 0; } }
+@media (max-width: 900px) { .platform-page.is-detail .workbench { height: auto; min-height: 0; }.workbench .workbench-main { display: grid; grid-template-columns: minmax(0, 1fr); overflow: visible; }.workbench .tree-panel, .workbench .inspector-panel { width: auto; min-width: 0; max-width: none; }.workbench .quaternion-values { grid-template-columns: repeat(4, minmax(0, 1fr)); }.workbench .tree-body { max-height: 300px; }.workbench .scene-content { height: 420px; flex: auto; }.workbench .timing-control { margin-left: 0; }.workbench .control-bar { align-items: start; }.workbench .playback-controls { gap: 4px; }.workbench .playback-controls .state-pill { margin-right: 4px; }.workbench .workspace-title strong { font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .workbench .phase-running::before { animation: none; } }

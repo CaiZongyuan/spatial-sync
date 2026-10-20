@@ -128,18 +128,47 @@ for (const version of [1, 2]) test(`plays the v${version} Synthetic fixture with
   await page.screenshot({ path: testInfo.outputPath(`fixture-v${version}-replay.png`) });
 });
 
-test('recordings list visibly attributes legacy, exact-version and Live recordings', async ({ page }) => {
+test('recordings list attributes versions and sources from frozen manifests, preserving unknowns (contract)', async ({ page }) => {
   const legacy = JSON.parse(readFileSync(join(fixture, 'recording.json'), 'utf8'));
   const modern = JSON.parse(readFileSync(resolve('../../tests/fixtures/recordings/v2/recording.json'), 'utf8'));
   const live = { ...modern, sessionId: 'live-main', kind: 'live', sceneId: null,
     sceneVersion: null, sceneContentHash: null };
-  await page.route('**/api/v1/recordings', route => route.fulfill({ json: [legacy, modern, live] }));
+  const unavailable = { ...modern, sessionId: 'unavailable-archive', durationMs: null };
+  const mismatched = { ...modern, sessionId: 'mismatched-archive' };
+  // Explicit contract-only producer; the two committed fixture manifests remain unmodified.
+  const newton = { ...modern, sessionId: 'contract-newton', revisions: {
+    [modern.sceneRevision]: { ...modern.revisions[modern.sceneRevision], manifest: 'revisions/current/manifest.json' },
+  } };
+  const frozen = JSON.parse(readFileSync(resolve('../../tests/fixtures/recordings/v2/manifest.json'), 'utf8'));
+  const manifests: Record<string, unknown> = {
+    [legacy.sessionId]: JSON.parse(readFileSync(join(fixture, 'manifest.json'), 'utf8')),
+    [modern.sessionId]: frozen,
+    [mismatched.sessionId]: frozen,
+    [newton.sessionId]: { ...frozen, sessionId: newton.sessionId, source: { ...frozen.source, kind: 'newton' } },
+  };
+  const manifestReads: string[] = [];
+  await page.route('**/recordings/*/**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const id = pathname.split('/')[2];
+    manifestReads.push(pathname);
+    return manifests[id] ? route.fulfill({ json: manifests[id] }) : route.fulfill({ status: 404 });
+  });
+  await page.route('**/api/v1/recordings', route => route.fulfill({ json: [legacy, modern, live, unavailable, mismatched, newton] }));
   await page.goto('/recordings');
   const table = page.getByRole('region', { name: 'Recordings', exact: true });
   await expect(table.getByText('lab-demo@1', { exact: true })).toBeVisible();
-  await expect(table.getByText('lab-demo@2', { exact: true })).toBeVisible();
+  await expect(table.getByText('lab-demo@2', { exact: true })).toHaveCount(4);
   await expect(table.getByText('Live', { exact: true })).toBeVisible();
-  await expect(table.getByRole('link', { name: 'Replay' })).toHaveCount(3);
+  await expect(table.getByRole('link', { name: 'Replay' })).toHaveCount(6);
+  for (const [id, source] of [[legacy.sessionId, 'synthetic'], [modern.sessionId, 'synthetic'], [live.sessionId, 'live'],
+    [unavailable.sessionId, 'unknown'], [mismatched.sessionId, 'unknown'], [newton.sessionId, 'newton']]) {
+    await expect(page.getByTestId(`recording-source-${id}`)).toHaveAttribute('data-source', source);
+  }
+  const missingRow = table.getByRole('row').filter({ hasText: unavailable.sessionId });
+  await expect(missingRow.locator('td').nth(2)).toHaveText('未知');
+  expect(await missingRow.evaluate(row => row.getBoundingClientRect().height)).toBeCloseTo(45, 0);
+  expect(manifestReads).toContain(`/recordings/${newton.sessionId}/revisions/current/manifest.json`);
+  expect(manifestReads.some(path => path.includes(live.sessionId))).toBe(false);
 });
 
 test('paused replay draws on asset, view and camera changes while idle frames stop', async ({ page, baseURL }) => {

@@ -32,8 +32,8 @@ test('platform contract UI preserves unknown metrics, reports stale errors and r
   await expect(summary(page, 'Newton backends alive')).toHaveText('1');
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Resources', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Host CPU', exact: true }).locator('strong')).toHaveText('0.0%');
-  await expect(page.getByRole('article', { name: 'GPU utilization', exact: true }).locator('strong')).toHaveText('Not available');
-  await expect(page.getByRole('article', { name: 'GPU memory', exact: true }).locator('strong')).toHaveText('Not available');
+  await expect(page.getByRole('article', { name: 'GPU utilization', exact: true }).locator('strong')).toHaveText('未知');
+  await expect(page.getByRole('article', { name: 'GPU memory', exact: true }).locator('strong')).toHaveText('未知');
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Sessions', exact: true }).click();
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('240.5%');
   await expect(page.getByTestId('platform-session-newton-old').getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
@@ -44,13 +44,13 @@ test('platform contract UI preserves unknown metrics, reports stale errors and r
   fail = true;
   await expect(page.getByRole('alert').filter({ hasText: 'Host sampler unavailable' })).toBeVisible();
   await expect(summary(page, 'Running')).toHaveText('1');
-  await expect(page.getByRole('status').filter({ hasText: 'Sample is stale' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '采样已过期' })).toBeVisible();
   fail = false;
   value = sample(); value.summary.runningSessions = 0; value.summary.pausedSessions = 1; value.summary.connectedClients = 0;
   value.sessions[0].state = 'PAUSED'; value.sessions[0].connectedClients = 0;
   await expect(summary(page, 'Paused')).toHaveText('1');
-  await expect(page.getByTestId('platform-session-newton-live')).toContainText('0 connected clients');
-  await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
+  await expect(page.getByTestId('platform-session-newton-live')).toContainText('0 位观察者');
+  await expect(page.getByRole('status').filter({ hasText: '实时' })).toBeVisible();
   value.sessions[0].backend!.viewer = { status: 'unavailable', url: null, clientCount: null, reason: 'Only available on the gateway machine.' };
   await expect(page.getByTestId('platform-session-newton-live').getByRole('button', { name: 'Open Newton viewer' })).toBeDisabled();
   await expect(page.getByTestId('platform-session-newton-live')).toContainText('Only available on the gateway machine.');
@@ -221,16 +221,16 @@ test('real platform counts follow a session, observer connection, pause and stop
   try {
     await page.goto('/sessions');
     const row = page.getByTestId(`platform-session-${sessionId}`);
-    await expect(row).toContainText('RUNNING'); await expect(row).toContainText('0 connected clients');
+    await expect(row).toContainText('运行中'); await expect(row).toContainText('0 位观察者');
     await expect(row.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', `/sessions/${sessionId}`);
     await observer.goto(`/sessions/${sessionId}`);
     await expect(observer.getByTestId('connection-status')).toHaveText('已连接');
-    await expect(row).toContainText('1 connected client');
+    await expect(row).toContainText('1 位观察者');
     await page.screenshot({ path: testInfo.outputPath('platform-real-synthetic.png'), fullPage: true });
     await observer.getByRole('button', { name: 'Pause simulation' }).click();
     await expect(row).toContainText('PAUSED');
     await observer.close();
-    await expect(row).toContainText('0 connected clients');
+    await expect(row).toContainText('0 位观察者');
     expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`)).ok()).toBe(true);
     await expect(row).toContainText('STOPPED');
     const latest = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
@@ -253,7 +253,7 @@ test('real native Newton viewer shares its runner and becomes unavailable after 
   try {
     await page.goto('/sessions');
     const row = page.getByTestId(`platform-session-${sessionId}`);
-    await expect(row).toContainText('RUNNING', { timeout: 120_000 });
+    await expect(row).toContainText('运行中', { timeout: 120_000 });
     const before = await (await request.get(`${api}/api/v1/platform`)).json() as PlatformSnapshot;
     const runnerPid = before.sessions.find(session => session.sessionId === sessionId)!.backend!.pid;
     observed.before = before;

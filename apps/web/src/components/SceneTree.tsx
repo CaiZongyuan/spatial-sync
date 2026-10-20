@@ -3,7 +3,7 @@ import type { InfoStore } from '../lib/info/store';
 import type { SceneManifest } from '../lib/protocol';
 import { Icon, type IconName } from './Icon';
 
-const kindLabels: Record<string, string> = { group: '组', body: '刚体', static: '静态', site: '站点', joint: '关节' };
+const kindLabels: Record<string, string> = { group: '组', device: '设备', body: '刚体', static: '静态', site: '站点', joint: '关节' };
 
 export function SceneTree({ info, manifest, selected, select, hidden, toggle }: {
   info: InfoStore; manifest: SceneManifest; selected?: string; select: (key: string) => void;
@@ -139,7 +139,7 @@ export function SceneTree({ info, manifest, selected, select, hidden, toggle }: 
       {filtered ? filtered.length ? filtered.map(item => row(item.key, item.name, item.kind, 0)) : <p className="tree-empty">没有匹配的对象。</p> : <>
         {manifest.nodes.filter(node => !node.parentEntityKey).map(node => renderNode(node, 0))}
         {secondaryRows('', 0)}</>}
-    </div><div className="tree-legend">{(['group', 'body', 'static', 'site', 'joint'] as const).map(kind =>
+    </div><div className="tree-legend">{(['group', 'device', 'body', 'static', 'site', 'joint'] as const).map(kind =>
       <span key={kind}><Icon name={kind} className="legend-icon" />{kindLabels[kind]}</span>)}</div>
   </aside>;
 }

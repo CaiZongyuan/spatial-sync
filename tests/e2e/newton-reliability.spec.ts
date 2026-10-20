@@ -177,7 +177,7 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
       )
       .toBeGreaterThan(restarted.seq);
     await expect(
-      page.getByText('Explore a world coordinate', { exact: true }),
+      page.getByRole('heading', { name: '查看世界坐标', exact: true }),
     ).toBeVisible();
     await page.reload();
     await expect(page.getByTestId('connection-status')).toHaveText('已连接');

@@ -58,6 +58,18 @@ test('workbench preserves public controls, tree navigation, exact Inspector and 
     await expect(page.getByTestId('inspector-seq')).toHaveText(String(pose.seq));
     for (const [index, axis] of ['x', 'y', 'z'].entries()) expect(Number(await page.getByTestId(`world-${axis}`).textContent())).toBeCloseTo(pose.p[index], 5);
     for (const [index, value] of pose.q.entries()) expect(Number(await page.getByTestId(`quaternion-${index}`).textContent())).toBeCloseTo(value, 5);
+    const quaternionBounds = await page.locator('.quaternion-values > div').evaluateAll(cells => cells.map(cell => {
+      const output = cell.querySelector('output')!;
+      const range = document.createRange(); range.selectNodeContents(output);
+      const text = range.getBoundingClientRect(), box = cell.getBoundingClientRect();
+      return { value: output.textContent?.trim(), inside: text.left >= box.left && text.right <= box.right
+        && text.top >= box.top && text.bottom <= box.bottom };
+    }));
+    expect(quaternionBounds).toHaveLength(4);
+    for (const cell of quaternionBounds) {
+      expect(cell.value).toMatch(/^-?\d+\.\d{6}$/);
+      expect(cell.inside, JSON.stringify(cell)).toBe(true);
+    }
     const floors = manifest.nodes.filter(node => node.kind !== 'group' && [...node.visuals, ...(node.fallbackVisuals ?? []), ...node.colliders]
       .some(visual => visual.kind === 'primitive' && visual.geometry.type === 'plane')).map(node => node.entityKey);
     expect(floors.length).toBeGreaterThan(0);

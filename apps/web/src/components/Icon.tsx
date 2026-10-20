@@ -25,6 +25,7 @@ const paths = {
   reload: 'M20 10a8 8 0 0 0-14-5L3 8 M3 3v5h5 M4 14a8 8 0 0 0 14 5l3-3 M16 16h5v5',
   close: 'M6 6l12 12 M18 6L6 18',
   check: 'M4 12l5 5L20 6',
+  circle: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18',
   warning: 'M12 3l10 18H2z M12 9v5 M12 17h.01',
   copy: 'M8 8h13v13H8z M16 8V3H3v13h5',
   external: 'M14 3h7v7 M21 3L10 14 M10 4H3v17h17v-7',

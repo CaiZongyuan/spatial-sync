@@ -132,6 +132,14 @@
 .is-detail .workbench { height: calc(100dvh - 111px); min-height: 640px; border: 1px solid var(--line); border-radius: 12px; }
 .workbench-header { background: var(--surface); }
 .workspace-title strong { font-size: 21px; }
+.platform-overview .platform-session-list td { padding-block: 11px; }
+.platform-session-list .number { text-align: right; }
+.recording-table th, .recording-table td { white-space: nowrap; }
+.recording-table td { height: 45px; padding: 0 14px; vertical-align: middle; }
+.recording-table td > code, .recording-table td > span { display: inline; margin: 0; }
+.recording-table .state-pill { display: inline-flex; align-items: center; height: 20px; margin: 0; padding: 0 7px; border: 1px solid var(--line); border-radius: 4px; }
+.recording-table .recording-incomplete { margin-left: 8px; font-size: 10.5px; color: var(--warn); }
+.empty-recording-icon { width: 40px; height: 40px; color: var(--ghost); margin-bottom: 16px; }
 
 @media (max-width: 1180px) { .overview-lower { grid-template-columns: minmax(0,1fr); } }
 @media (max-width: 1100px) { .overview-hero { grid-template-columns: minmax(0,1fr); gap: 24px; }.overview-device-drawer { border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 0; }.device-legend { max-height: 320px; } }
