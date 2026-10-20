@@ -76,6 +76,15 @@ def test_real_arm_preview_keeps_both_states_controls_facts_and_motion_history_un
             np.testing.assert_array_equal(after[0], bodies)
             np.testing.assert_array_equal(after[1], sites)
             assert after[2] == sampled_at
+        # A subsequent real solver/control tick invalidates the physical context.
+        first = info.preview(request)
+        sim.step(8)
+        changed = info.preview(request)
+        q = sim.state.joint_q.numpy()
+        wanted = [float(q[port.joints[key].q][0]) for key in binding["jointKeys"]]
+        assert changed.startJointPositions == wanted
+        assert changed.startJointPositions != first.startJointPositions
+        assert len(info.host._preview_cache) == 2
 
 
 def test_xpbd_snapshot_reads_current_ik_without_writing_live_coordinates():
