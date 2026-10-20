@@ -1,18 +1,76 @@
-import { expect, test } from '@playwright/test';
-import { execFile } from 'node:child_process';
+import { expect, test as base } from '@playwright/test';
+import { execFile, spawn } from 'node:child_process';
 import { cp, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:net';
 
-const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
-let ownedVersion: { id: string; target: string; contentHash: string } | undefined;
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const test = base.extend<{ isolatedAPI: string }>({
+  isolatedAPI: async ({ playwright, page }, use, info) => {
+    const port = await new Promise<number>((resolve, reject) => {
+      const reservation = createServer();
+      reservation.once('error', reject);
+      reservation.listen(0, '127.0.0.1', () => {
+        const { port } = reservation.address() as { port: number };
+        reservation.close(error => error ? reject(error) : resolve(port));
+      });
+    });
+    const api = `http://127.0.0.1:${port}`;
+    const python = resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
+    const child = spawn(python, ['-m', 'uvicorn', 'approval_gateway:app', '--app-dir', 'tests/fixtures', '--host', '127.0.0.1', '--port', String(port)], {
+      cwd: resolve('../..'), windowsHide: true, env: { ...process.env, SPATIAL_REMOTE: '0',
+        LW_LIBRARY: info.outputPath('api-library'), SPATIAL_STATE_ROOT: info.outputPath('api-state'),
+        SPATIAL_RECORDINGS_ROOT: info.outputPath('api-recordings'),
+      },
+    });
+    let output = '', launchError: Error | undefined;
+    child.stdout.on('data', data => { output += data.toString(); });
+    child.stderr.on('data', data => { output += data.toString(); });
+    child.once('error', error => { launchError = error; });
+    const exited = new Promise<boolean>(resolve => child.once('exit', () => resolve(true)));
+    const health = await playwright.request.newContext();
+    try {
+      const deadline = Date.now() + 15_000;
+      let ready = false;
+      while (Date.now() < deadline) {
+        if (launchError || child.exitCode !== null) throw launchError ?? new Error(output);
+        if (output.includes('Uvicorn running on')) {
+          try { ready = (await health.get(`${api}/api/v1/health`, { timeout: 500 })).ok(); } catch { /* startup */ }
+          if (ready) break;
+        }
+        await delay(50);
+      }
+      expect(ready, output).toBe(true);
+      // Only forward real HTTP bytes; shared cases deliberately retain invalid packages.
+      await page.route('**/api/v1/**', async route => {
+        const url = new URL(route.request().url());
+        const response = await route.fetch({ url: api + url.pathname + url.search });
+        await route.fulfill({ response });
+      });
+      await use(api);
+    } finally {
+      await page.unrouteAll({ behavior: 'wait' }).catch(() => {});
+      await health.dispose().catch(() => {});
+      // This current ChildProcess owns a single uvicorn (no worker/Runner is launched).
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      let stopped = await Promise.race([exited, delay(3_000).then(() => false)]);
+      if (!stopped) { child.kill('SIGKILL'); stopped = await Promise.race([exited, delay(3_000).then(() => false)]); }
+      await writeFile(info.outputPath('isolated-api.log'), output);
+      await writeFile(info.outputPath('isolated-api-receipt.json'), JSON.stringify({ api, pid: child.pid, source: resolve('../..'), python, stopped, exitCode: child.exitCode, signalCode: child.signalCode }));
+      expect(stopped, 'Owned isolated API must exit').toBe(true);
+    }
+  },
+});
+let ownedVersion: { api: string; id: string; target: string; contentHash: string } | undefined;
 
 test.afterEach(async ({ playwright }, info) => {
   if (!ownedVersion) return;
   // Worker-owned API context survives the page/test request context closing on a case timeout.
   const cleanup = await playwright.request.newContext({ extraHTTPHeaders: { 'X-Actor': 'user:e2e-cleanup' } });
   const owned = ownedVersion;
+  const api = owned.api;
   try {
     const current = await cleanup.get(api + owned.target);
     if (current.status() === 404) return;
@@ -32,7 +90,7 @@ test.afterEach(async ({ playwright }, info) => {
   } finally { ownedVersion = undefined; await cleanup.dispose(); }
 });
 
-test('exact user asset requests a human decision, then disappears from the library', async ({ page, request }, info) => {
+test('exact user asset requests a human decision, then disappears from the library', async ({ page, request, isolatedAPI: api }, info) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   const directory = info.outputPath('deletion-asset');
   await cp(resolve('../../tests/fixtures/asset-library/gap-cylinder'), directory, { recursive: true });
@@ -45,7 +103,7 @@ test('exact user asset requests a human decision, then disappears from the libra
   const imported = JSON.parse(stdout);
   const revision = imported.assetVersion.split('@')[1];
   const target = `/api/v1/library/assets/labware/deletion-browser/${revision}`;
-  ownedVersion = { id: imported.assetVersion, target, contentHash: imported.contentHash };
+  ownedVersion = { api, id: imported.assetVersion, target, contentHash: imported.contentHash };
   await writeFile(info.outputPath('owned-version.json'), JSON.stringify(ownedVersion));
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -63,6 +121,7 @@ test('exact user asset requests a human decision, then disappears from the libra
   const pendingResponse = page.waitForResponse(response => new URL(response.url()).pathname === target && response.request().method() === 'DELETE');
   await panel.getByRole('button', { name: '申请删除此版本' }).click();
   const pending = await (await pendingResponse).json();
+  expect(pending.code).toBe('pending_approval');
   await expect(panel.getByRole('status')).toContainText('版本尚未删除');
   expect((await request.get(api + target)).ok()).toBe(true);
   await panel.getByRole('link', { name: '查看待审批' }).click();
@@ -91,4 +150,5 @@ test('exact user asset requests a human decision, then disappears from the libra
   await page.getByRole('searchbox', { name: '搜索素材' }).fill('deletion-browser');
   await expect(page.getByRole('heading', { name: '没有匹配的素材' })).toBeVisible();
   expect(errors).toEqual([]);
+  expect((await (await request.get(`${api}/api/v1/health`)).json()).sessions).toEqual([]);
 });
