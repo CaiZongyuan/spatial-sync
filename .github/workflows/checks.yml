@@ -25,6 +25,8 @@ jobs:
               --ignore=tests/gateway/test_builtin_template_migration.py
               --ignore=tests/gateway/test_template_asset_references.py
               --ignore=tests/gateway/test_library_deletions.py
+              --ignore=tests/gateway/test_asset_imports.py
+              --ignore=tests/gateway/test_structure_validation.py
           - lane: library-templates
             tests: >-
               tests/gateway/test_binding_templates.py
@@ -33,6 +35,8 @@ jobs:
               tests/gateway/test_builtin_template_migration.py
               tests/gateway/test_template_asset_references.py
               tests/gateway/test_library_deletions.py
+              tests/gateway/test_asset_imports.py
+              tests/gateway/test_structure_validation.py
           - lane: cli
             tests: tests/cli
     steps:
