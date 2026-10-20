@@ -163,6 +163,20 @@ class ReferenceInspection:
                 continue
             if kind == "scene" and session.scene_version.id == target.id:
                 reference("session", session.session_id, f"Session holds this version ({session.state})")
+            if kind == "asset":
+                held = session.scene_version
+                try:
+                    templates = set(references(held.bindings)) | set(held.template_assets)
+                    if target.id in templates:
+                        reference("session", session.session_id,
+                                  "Session holds an exact template: " + held.id)
+                    indexed = self.scenes.versions.get(held.id)
+                    if indexed is None or indexed.content_hash != held.content_hash:
+                        # The graph above covers the held version only while that exact immutable
+                        # scene remains indexed. Otherwise its transitive asset closure is unknown.
+                        raise ValueError("Held scene version is no longer indexed unchanged: " + held.id)
+                except (OSError, ValueError, LibraryError) as exc:
+                    problem("session", session.session_id, exc)
         return {
             "references": found, "complete": not unknown, "uninspected": unknown,
             "coverage": ["all scene and asset versions", "all bound validation history",

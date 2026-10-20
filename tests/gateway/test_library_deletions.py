@@ -4,8 +4,9 @@ import asyncio
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
+from threading import Event, local
 
+import httpx
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from packages.library.validation import StructuralValidator
+from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import Actor
 
 TARGET = "/api/v1/library/assets/labware/test-tube/2"
@@ -385,6 +387,323 @@ def test_starting_and_active_session_without_recording_protect_exact_scene(tmp_p
         assert client.get("/api/v1/recordings").json() == []
         client.delete("/api/v1/sessions/" + created.json()["sessionId"])
         assert decision(client, requested.json()["approvalId"]).status_code == 200
+
+
+def test_cross_thread_publication_keeps_the_no_recording_deletion_reference(tmp_path, monkeypatch):
+    from scene_support import user_version
+
+    user_version(tmp_path / "user-library", 4)
+    entered, release, reading, published = Event(), Event(), Event(), Event()
+    reader = local()
+
+    class HeldSource(SyntheticSource):
+        async def start(self, *args, **kwargs):
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 10)
+            return await super().start(*args, **kwargs)
+
+    class PausedMapping(dict):
+        def values(self):
+            values = tuple(super().values())
+            if getattr(reader, "active", False):
+                # Retain the real dictionary snapshot while the actual creator finishes.
+                reading.set()
+                assert published.wait(10)
+            return values
+
+    app = create_app(Settings(recordings_enabled=False), source_factory=lambda kind, sid: HeldSource(sid))
+    with TestClient(app) as client:
+        target = "/api/v1/library/scenes/lab-demo/4"
+        requested = client.delete(target)
+        assert requested.status_code == 202, requested.text
+        manager = app.state.manager
+        manager.sessions = PausedMapping(manager.sessions)
+        snapshot = manager.platform_sessions
+
+        def paused_consumer():
+            reader.active = True
+            try:
+                result = snapshot()  # Actual platform/deletion consumer, not a replacement result.
+                reading.set()
+                assert published.wait(10)
+                return result
+            finally:
+                reader.active = False
+
+        monkeypatch.setattr(manager.library_deletions.inspection, "sessions", paused_consumer)
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            creation = workers.submit(client.post, "/api/v1/sessions", json={
+                "sceneVersion": "lab-demo@4", "source": "synthetic",
+            })
+            approval = created = None
+            try:
+                assert entered.wait(5)
+                approval = workers.submit(decision, client, requested.json()["approvalId"])
+                assert reading.wait(5)
+                release.set()
+                created = creation.result(timeout=10)
+                assert created.status_code == 201, created.text
+                published.set()
+                result = approval.result(timeout=10)
+                assert result.status_code == 409, result.text
+                assert result.json()["detail"]["code"] == "version_in_use"
+                assert any(ref["kind"] == "session" and ref["id"] == created.json()["sessionId"]
+                           for ref in result.json()["detail"]["references"])
+                assert client.get(target).status_code == 200
+                assert client.get("/api/v1/recordings").json() == []
+            finally:
+                release.set()
+                published.set()
+                created = created or creation.result(timeout=10)
+                if approval is not None:
+                    approval.result(timeout=10)
+                if created.status_code == 201:
+                    client.delete("/api/v1/sessions/" + created.json()["sessionId"])
+
+
+@pytest.mark.parametrize("cancel_count", [1, 2])
+async def test_cancelled_registration_clears_its_unstarted_reference(tmp_path, monkeypatch, cancel_count):
+    from scene_support import user_version
+
+    user_version(tmp_path / "user-library", 4)
+    entered, release = Event(), Event()
+    sources = []
+
+    def factory(kind, sid):
+        sources.append(sid)
+        return SyntheticSource(sid)
+
+    manager = create_app(Settings(recordings_enabled=False), source_factory=factory).state.manager
+    resolve = manager.library.resolve
+
+    def held_resolution(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return resolve(*args, **kwargs)
+
+    monkeypatch.setattr(manager.library, "resolve", held_resolution)
+    creation = asyncio.create_task(manager.create("lab-demo", "synthetic", SessionOptions(),
+                                                scene_version="lab-demo@4"))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        for _ in range(cancel_count):
+            creation.cancel()
+            # Drain the scheduled cancellation callbacks while the actual worker is still held.
+            for _ in range(3):
+                checkpoint = asyncio.get_running_loop().create_future()
+                asyncio.get_running_loop().call_soon(checkpoint.set_result, None)
+                await checkpoint
+            assert not creation.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await creation
+        assert manager.platform_sessions() == [] and manager.sessions == {}
+        assert sources == []
+    finally:
+        release.set()
+        if not creation.done():
+            creation.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await creation
+        await manager.close()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_failed_or_cancelled_start_keeps_its_reference_until_source_closes(tmp_path, cancel):
+    from scene_support import user_version
+
+    user_version(tmp_path / "user-library", 4)
+    started, release_start, closing, release_close = (asyncio.Event() for _ in range(4))
+    sources = []
+
+    class ClosingSource(SyntheticSource):
+        async def start(self, *args, **kwargs):
+            started.set()
+            await release_start.wait()
+            raise RuntimeError("Injected initial source failure")
+
+        async def close(self):
+            closing.set()
+            await release_close.wait()
+            await super().close()
+
+    def factory(kind, sid):
+        source = ClosingSource(sid)
+        sources.append(source)
+        return source
+
+    app = create_app(Settings(recordings_enabled=False), source_factory=factory)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            target = "/api/v1/library/scenes/lab-demo/4"
+            requested = await client.delete(target)
+            assert requested.status_code == 202, requested.text
+            approval = f"/api/v1/approvals/{requested.json()['approvalId']}/decision"
+            creation = asyncio.create_task(client.post("/api/v1/sessions", json={
+                "sceneVersion": "lab-demo@4", "source": "synthetic",
+            }))
+            try:
+                await asyncio.wait_for(started.wait(), 5)
+                if cancel:
+                    creation.cancel()
+                else:
+                    release_start.set()
+                await asyncio.wait_for(closing.wait(), 5)
+                held = app.state.manager.platform_sessions()
+                assert len(held) == 1 and held[0].scene_version.id == "lab-demo@4"
+                blocked = await client.post(approval, json={"decision": "approve"})
+                assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "version_in_use"
+                assert any(ref["kind"] == "session" and ref["id"] == held[0].session_id
+                           for ref in blocked.json()["detail"]["references"])
+            finally:
+                release_start.set()
+                release_close.set()
+                if cancel:
+                    with pytest.raises(asyncio.CancelledError):
+                        await creation
+                else:
+                    response = await creation
+                    assert response.status_code == 503, response.text
+            assert app.state.manager.platform_sessions() == [] and sources[0]._state == "STOPPED"
+            assert (await client.post(approval, json={"decision": "approve"})).status_code == 200
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_failed_source_cleanup_remains_visible_and_blocks_deletion_until_stop_retry(tmp_path, cancel):
+    from scene_support import user_version
+
+    user_version(tmp_path / "user-library", 4)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class FailedSource(SyntheticSource):
+        resource_alive = True
+        allow_close = False
+        close_attempts = 0
+
+        async def start(self, *args, **kwargs):
+            started.set()
+            await release.wait()
+            raise RuntimeError("Injected start failure while resource remains owned")
+
+        async def close(self):
+            self.close_attempts += 1
+            if not self.allow_close:
+                raise RuntimeError("Injected close failure; ownership is unresolved")
+            await super().close()
+            self.resource_alive = False
+
+    source = None
+
+    def factory(kind, sid):
+        nonlocal source
+        source = FailedSource(sid)
+        return source
+
+    app = create_app(Settings(recordings_enabled=False), source_factory=factory)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            target = "/api/v1/library/scenes/lab-demo/4"
+            requested = await client.delete(target)
+            assert requested.status_code == 202, requested.text
+            approval = f"/api/v1/approvals/{requested.json()['approvalId']}/decision"
+            creation = asyncio.create_task(client.post("/api/v1/sessions", json={
+                "sceneVersion": "lab-demo@4", "source": "synthetic",
+            }))
+            session_id = None
+            try:
+                await asyncio.wait_for(started.wait(), 5)
+                assert source is not None
+                if cancel:
+                    creation.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await creation
+                else:
+                    release.set()
+                    failed = await creation
+                    assert failed.status_code == 503, failed.text
+                retained = app.state.manager.platform_sessions()
+                assert len(retained) == 1 and source.resource_alive
+                session_id = retained[0].session_id
+                if not cancel:
+                    assert failed.json()["detail"]["sessionId"] == session_id
+                assert (await client.get("/api/v1/sessions/" + session_id)).json()["state"] == "FAILED"
+                assert (await client.post(f"/api/v1/sessions/{session_id}/restart")).status_code == 409
+                blocked = await client.post(approval, json={"decision": "approve"})
+                assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "version_in_use"
+                assert any(ref["kind"] == "session" and ref["id"] == session_id
+                           for ref in blocked.json()["detail"]["references"])
+                failed_stop = await client.delete("/api/v1/sessions/" + session_id)
+                assert failed_stop.status_code == 503 and source.resource_alive
+                assert (await client.post(approval, json={"decision": "approve"})).status_code == 409
+                assert (await client.get(target)).status_code == 200
+                assert (await client.get("/api/v1/recordings")).json() == []
+                source.allow_close = True
+                assert (await client.delete("/api/v1/sessions/" + session_id)).status_code == 204
+                assert not source.resource_alive and source.close_attempts >= 3
+                assert (await client.post(approval, json={"decision": "approve"})).status_code == 200
+            finally:
+                release.set()
+                if source is not None:
+                    source.allow_close = True
+                if not creation.done():
+                    creation.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await creation
+                if session_id is not None:
+                    await client.delete("/api/v1/sessions/" + session_id)
+                elif source is not None and source.resource_alive:
+                    await source.close()  # The old implementation lost this fault fixture's owner.
+
+
+def test_actual_held_scene_keeps_templates_and_unknown_transitive_assets_when_index_drifts(tmp_path):
+    from template_support import reference_files, scene_files
+    from template_support import upload as template_upload
+
+    app = create_app(Settings(recordings_enabled=False))
+    with TestClient(app) as client:
+        assert upload(client).status_code == 200
+        files = reference_files()
+        files["asset.usda"] = files["asset.usda"].replace(
+            b'def Xform "Asset" {', b'def Xform "Asset" (references = '
+            b'@library:assets/labware/test-tube/1/asset.usda@</Asset>) {',
+        )
+        imported = template_upload(client, files)
+        assert imported.status_code == 200, imported.text
+        assert next(check for check in imported.json()["validation"]["checks"]
+                    if check["id"] == "S7")["status"] == "pass"
+        scene, _ = scene_files()
+        assert template_upload(client, scene).status_code == 200
+        created = client.post("/api/v1/sessions", json={
+            "sceneVersion": "template-slice@1", "source": "synthetic",
+        })
+        assert created.status_code == 201, created.text
+        manager = app.state.manager
+        session = manager.get(created.json()["sessionId"])
+        held_scene = session.scene_version
+        asset = app.state.library_assets.resolve("device/slice-reference-centrifuge@1")
+        moved_scene, moved_asset = tmp_path / "offline-scene", tmp_path / "offline-asset"
+        try:
+            # Direct filesystem drift must not erase the actual running source's retained version.
+            held_scene.path.rename(moved_scene)
+            blocked = client.delete("/api/v1/library/assets/device/slice-reference-centrifuge/1")
+            assert blocked.status_code == 409, blocked.text
+            assert blocked.json()["detail"]["code"] == "version_in_use"
+            assert any(ref["kind"] == "session" and ref["id"] == session.session_id
+                       for ref in blocked.json()["detail"]["references"])
+            assert held_scene.id not in manager.library.versions
+            asset.path.rename(moved_asset)
+            transitive = client.delete("/api/v1/library/assets/labware/test-tube/1")
+            assert transitive.status_code == 409, transitive.text
+            assert transitive.json()["detail"]["code"] == "reference_inspection_incomplete"
+            assert any(item["kind"] == "session" and item["id"] == session.session_id
+                       for item in transitive.json()["detail"]["uninspected"])
+            assert client.get("/api/v1/library/assets/labware/test-tube/1").status_code == 200
+        finally:
+            if moved_asset.exists():
+                moved_asset.rename(asset.path)
+            if moved_scene.exists():
+                moved_scene.rename(held_scene.path)
+            client.delete("/api/v1/sessions/" + session.session_id)
 
 
 @pytest.mark.parametrize("format_version", [1, 2])

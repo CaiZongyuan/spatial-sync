@@ -36,6 +36,11 @@ Approval repeats these checks and checks the original package's raw hash, so a
 reference added while a request waits can block execution. The approval card
 distinguishes the human decision from the execution result.
 
+If initial source startup and cleanup both fail, the failed session remains
+tracked. The 503 response supplies its session ID; inspect it and retry stopping
+it before deleting retained versions. A failed state does not imply that its
+resources have been released.
+
 Approved deletion withdraws only the selected version and its indexed file
 URLs. It cannot be revoked after execution. Interrupted, uncommitted withdrawal
 is restored before the gateway serves its index; a committed withdrawal stays
