@@ -43,12 +43,13 @@ class ApprovalRecord(BaseModel):
 
 
 class ApprovalStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, on_change=None):
         self.path = path
         self.records: dict[str, ApprovalRecord] = {}
         self._invocations = {}
         self._started = False
         self._write_lock = threading.Lock()
+        self.on_change = on_change
 
     def startup(self):
         if self._started:
@@ -85,6 +86,8 @@ class ApprovalStore:
             self.records[record.approvalId] = record
             if record.subject == "invocation":
                 self._invocations[record.subjectId] = record.approvalId
+            if self.on_change is not None:
+                self.on_change(record)
         return record
 
     def submit(self, *, subject: Subject, subject_id, requester, title, details=None, session_id=None):

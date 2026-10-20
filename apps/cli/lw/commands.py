@@ -88,6 +88,14 @@ class Command:
 
 COMMANDS = (
     Command(
+        path=("inbox",), help="Read attention messages and continue with a persistent opaque cursor.",
+        method="inbox_poll", mcp_name="inbox_poll", arguments=(
+            Argument("after", ("--since",), str | None, "Cursor from the previous inbox response", None),
+            Argument("kinds", ("--kinds",), str | None,
+                     "Comma-separated alert, approval, invocation, plan, job", None),
+        ),
+    ),
+    Command(
         path=("history",), help="Query recorded property measurements, with at most 2000 points.",
         method="history_query", mcp_name="history_query", arguments=(
             Argument("key", ("key",), str, "Entity key; /Real/ selects Live Lab"),

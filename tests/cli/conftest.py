@@ -21,7 +21,7 @@ def gateway_directory(tmp_path_factory):
 def gateway_url(gateway_directory):
     directory = gateway_directory
     with socket.socket() as reservation:
-        reservation.bind(("127.0.0.1", 0))
+        reservation.bind(("127.0.0.1", int(os.environ.get("SPATIAL_CLI_TEST_PORT", "0"))))
         port = reservation.getsockname()[1]
     with (directory / "gateway.log").open("wb") as log:
         process = subprocess.Popen(

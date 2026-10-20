@@ -225,6 +225,11 @@ class GatewayClient:
                 "everyMs": None if every_ms == "raw" else float(every_ms),
                 "agg": headers["x-history-agg"], "message": headers.get("x-history-explanation")}
 
+    async def inbox_poll(self, after=None, kinds=None):
+        params = {name: value for name, value in {"after": after, "kinds": kinds}.items()
+                  if value is not None}
+        return await self.request("GET", "/api/v1/inbox", params=params)
+
     async def alert_ack(self, alertId, note="", *, actor="cli:lw"):
         return await self.request(
             "POST", "/api/v1/alerts/" + quote(alertId, safe="") + "/ack", json={"note": note}, actor=actor
