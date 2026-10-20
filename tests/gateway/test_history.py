@@ -31,14 +31,16 @@ def observation(t, value, rev, *, epoch=0, meta=None):
                 {"key": KEY, "rev": rev, "values": {"temperature": value}, "meta": meta or {}}]}
 
 
-async def recording(root, *, count=None, reset=False, repeated_time=False, reload=False):
+async def recording(root, *, count=None, reset=False, repeated_time=False, reload=False, stale_prefix=False):
     log = SessionLog(root / "history-test", "history-test", "lab-demo", scene_version="lab-demo@1",
                      scene_content_hash="a" * 64, kind="session", segment_seconds=0.6)
     frame = FrameCodec("history-test", "rev-history", 1).encode(TransformFrame(
         type="stream.snapshot", sessionId="history-test", sceneRevision="rev-history", epoch=0,
         seq=1, simTime=0, sampleTimeMs=1000, poses=[(1, 0, 0, 0, 0, 0, 0, 1)]))
-    log.add_revision({"sceneRevision": "rev-history", "revisionNumericId": 1}, {}, frame,
-                     json.dumps(snapshot(1000, 2)))
+    initial = snapshot(1000, 2)
+    if stale_prefix:
+        initial["entities"][0]["meta"]["temperature"]["stale"] = True
+    log.add_revision({"sceneRevision": "rev-history", "revisionNumericId": 1}, {}, frame, json.dumps(initial))
     rows = ([observation(1000 + i, i, i + 1) for i in range(1, count)] if count else [
         observation(1100, 4, 2), observation(1400, 10, 3),
         observation(1450, 777, 1),  # Rejected older entity revision.
@@ -71,15 +73,16 @@ async def recording(root, *, count=None, reset=False, repeated_time=False, reloa
     return root / "history-test"
 
 
-@pytest.mark.parametrize("mode", ["index", "missing", "corrupt", "wrong-segment", "recovered"])
+@pytest.mark.parametrize("mode", ["index", "missing", "corrupt", "wrong-segment", "recovered",
+                                  "stale-prefix", "stale-prefix-scan"])
 async def test_index_old_scan_corrupt_and_recovered_query_the_same_measurements(tmp_path, mode):
-    directory = await recording(tmp_path)
+    directory = await recording(tmp_path, stale_prefix=mode.startswith("stale-prefix"))
     metadata = json.loads((directory / "recording.json").read_bytes())
     assert len(metadata["segments"]) >= 2
     for segment in metadata["segments"]:
         sidecar = directory / segment["propertyIndex"]
         assert sidecar.is_file()
-        if mode == "missing":
+        if mode in ("missing", "stale-prefix-scan"):
             sidecar.unlink()
         elif mode == "corrupt":
             sidecar.write_text('{"properties": []}')

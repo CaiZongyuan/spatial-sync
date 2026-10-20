@@ -83,8 +83,6 @@ def scan_samples(raw):
                     continue
                 meta = meta or message
                 at = meta["sampleTimeMs"]
-                if meta.get("stale", False):
-                    continue
                 if kind == "entity.observations" and old and prop in old.meta:
                     if at < old.meta[prop].sampleTimeMs:
                         continue
@@ -148,8 +146,7 @@ def indexed_samples(raw, path, key, prop, since, until):
             entity = entities[entity_index]
             meta = entity.get("meta", {}).get(prop) or message
             if (entity["key"] != key or at != meta["sampleTimeMs"]
-                    or epoch != message["epoch"] or meta.get("stale", False)
-                    or not math.isfinite(at)):
+                    or epoch != message["epoch"] or not math.isfinite(at)):
                 raise ValueError("Property index disagrees with its record")
             samples.append(Sample(key, prop, at, entity["values"][prop], message["sceneRevision"],
                                   epoch, offset, message["type"] == "entity.snapshot", entity_index))

@@ -72,7 +72,8 @@ from that end, including for old recordings. Omit `--every` for raw measurements
 Buckets are half-open from `since`, `until` is inclusive, and each bucket uses its
 last actual sample timestamp. Reset and reload contexts stay separate. Repeated
 roll snapshots and stale transitions do not add measurements; missing snapshot
-property timestamps are unknown and omitted. `last` retains any JSON property value;
+property timestamps are unknown and omitted. A stale snapshot with a known sample
+timestamp retains that original measurement. `last` retains any JSON property value;
 `mean`, `min` and `max` require numbers when aggregating.
 
 `GET /api/v1/history` returns `[[tMs, value], ...]`. Its `X-History-*` headers name
