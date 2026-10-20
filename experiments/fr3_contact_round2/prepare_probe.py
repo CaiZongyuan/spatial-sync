@@ -12,7 +12,7 @@ ROOT = Path("D:/Projects/Robots/spatial-sync")
 OLD = ROOT / ".scratch/rsi-platform/issue-29"
 NEW = ROOT / ".scratch/rsi-platform/issue-29-round2"
 REPO = ROOT / ".worktrees/issue-29-round2"
-PREP = NEW / "first-home-prep-v3"
+PREP = NEW / "first-home-prep-v4"
 PYTHON = ROOT / ".worktrees/issue-29/experiments/fr3_contact/.venv/Scripts/python.exe"
 
 
@@ -31,6 +31,28 @@ def write(name, text):
         stream.write(text)
 
 
+def latch_before_final_callback(trace):
+    """Move the existing read-only checks before the counter's final SystemExit."""
+    begin = "        observations, rewards, dones, extras = result\n"
+    end = "        flags = int(tensor(trace.flags)[0])"
+    if trace.count(begin) != 1 or trace.count(end) != 1:
+        raise ValueError("The reviewed returned-state diagnostic seam changed")
+    checks = trace[trace.index(begin) : trace.index(end)]
+    trace = replace_once(trace, checks, "")
+    registration = "    arguments = evaluation.install_episode_counter()"
+    guard = (
+        "    original_returned_step = RslRlVecEnvWrapper.step\n\n"
+        "    @wraps(original_returned_step)\n"
+        "    def returned_step(self, actions):\n"
+        "        result = original_returned_step(self, actions)\n"
+        "        trace = trace_for(self.unwrapped)\n"
+        "        if trace is None:\n"
+        "            return result\n" + checks + "        return result\n\n"
+        "    RslRlVecEnvWrapper.step = returned_step\n" + registration
+    )
+    return replace_once(trace, registration, guard)
+
+
 def main():
     global PREP
     parser = argparse.ArgumentParser()
@@ -47,6 +69,7 @@ def main():
     trace = replace_once(
         trace, "'timeout_reproduction_claim': False", "'timeout_reproduction_claim': done_count == 1024"
     )
+    trace = latch_before_final_callback(trace)
     write("frozen_home_trace.py", trace)
     contract = (
         (base / "trace_contract.py")

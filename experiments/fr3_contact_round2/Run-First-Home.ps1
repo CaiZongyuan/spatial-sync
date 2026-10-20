@@ -1,6 +1,6 @@
 param([switch]$Execute)
 $ErrorActionPreference = 'Stop'
-$round2Preparation = 'D:/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-29-round2/first-home-prep-v3'
+$round2Preparation = 'D:/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-29-round2/first-home-prep-v4'
 $round2IdentityPath = Join-Path $round2Preparation 'prepared_identity.json'
 $round2Identity = Get-Content -Raw -Encoding UTF8 -LiteralPath $round2IdentityPath | ConvertFrom-Json
 $round2Phase = 'frozen-home-all-first-' + [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmssfff')
