@@ -1,4 +1,4 @@
-"""Own a bounded structural worker and append reports without changing version bytes."""
+"""Own bounded validation workers and append reports without changing version bytes."""
 
 from __future__ import annotations
 
@@ -11,14 +11,15 @@ from pathlib import Path
 
 from packages.library.archive import package_files
 from packages.library.common import REPO_ROOT, TYPE_ROOT, LibraryError, content_hash, document
-from packages.library.reports import parse_report, pinned_assets
+from packages.library.reports import merge_physics, parse_report, pinned_assets
 
 
 class StructuralValidator:
-    def __init__(self, state_root, programs=None, *, timeout=20):
-        self.state_root = Path(state_root)
+    def __init__(self, state_root, programs=None, *, timeout=20, physics_timeout=180):
+        self.state_root = Path(state_root).resolve()
         self.programs = programs
         self.timeout = timeout
+        self.physics_timeout = physics_timeout
 
     @staticmethod
     def scope(path, *, identifier="package", metadata=None, digest=None):
@@ -31,7 +32,8 @@ class StructuralValidator:
         }
 
     def run(
-        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
+        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *,
+        expected_assets=(), include_physics=True
     ):
         payload = {
             "kind": kind,
@@ -55,32 +57,75 @@ class StructuralValidator:
             "programs": self.programs() if self.programs else {},
             "expectedAssets": list(expected_assets),
         }
+        try:
+            structure = parse_report(self.worker("structural", payload, self.timeout), subject)
+            if not include_physics:
+                return structure
+            payload |= {"structure": structure, "kernelCache": str(self.state_root / "physics-kernel-cache")}
+            return merge_physics(structure, self.worker("physics", payload, self.physics_timeout))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise LibraryError(
+                "validation_unavailable", "Validation worker returned invalid data", 503
+            ) from exc
+
+    def run_structure(
+        self, path, kind, subject, metadata, assets, bindings=None, locations=None, *, expected_assets=()
+    ):
+        """Dependency/reference inspection must never start a physics worker."""
+        return self.run(path, kind, subject, metadata, assets, bindings, locations,
+                        expected_assets=expected_assets, include_physics=False)
+
+    def worker(self, module, payload, timeout):
         self.state_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix=".structure-", dir=self.state_root) as temporary:
+        prefix = ".structure-" if module == "structural" else ".physics-"
+        with tempfile.TemporaryDirectory(prefix=prefix, dir=self.state_root) as temporary:
             directory = Path(temporary)
             source, result = directory / "input.json", directory / "output.json"
             source.write_text(json.dumps(payload, allow_nan=False), encoding="utf-8")
-            command = [sys.executable, "-m", "packages.library.structural", str(source), str(result)]
+            command = [sys.executable, "-m", f"packages.library.{module}", str(source), str(result)]
             environment = os.environ | {
                 "CUDA_VISIBLE_DEVICES": "",
                 "OMP_NUM_THREADS": "1",
                 "OPENBLAS_NUM_THREADS": "1",
                 "MKL_NUM_THREADS": "1",
+                "PXR_WORK_THREAD_LIMIT": "1",
+                "MUJOCO_GL": "disable",
             }
-            with subprocess.Popen(
-                command, cwd=REPO_ROOT, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            ) as process:
+            try:
+                process = subprocess.Popen(
+                    command, cwd=REPO_ROOT, env=environment,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+            except OSError as exc:
+                raise LibraryError(
+                    "validation_unavailable", "Validation worker could not start", 503
+                ) from exc
+            try:
                 try:
-                    process.wait(timeout=self.timeout)
+                    process.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
-                    process.kill()  # The current Popen owns this CPU-only child; no historical PID lookup.
-                    process.wait()
                     raise LibraryError(
-                        "validation_unavailable", "Structural validation timed out", 503
+                        "validation_unavailable", f"{module.capitalize()} validation timed out", 503
                     ) from None
+            finally:
+                if process.poll() is None:
+                    try:
+                        process.kill()  # Only this current creating handle is eligible for cleanup.
+                        process.wait(timeout=5)
+                    except (OSError, subprocess.TimeoutExpired):
+                        raise LibraryError(
+                            "validation_unavailable", "Validation worker cleanup could not be verified", 503
+                        ) from None
             if process.returncode != 0 or not result.is_file():
-                raise LibraryError("validation_unavailable", "Structural validation worker failed", 503)
-            return parse_report(json.loads(result.read_text(encoding="utf-8")), subject)
+                raise LibraryError(
+                    "validation_unavailable", f"{module.capitalize()} validation worker failed", 503
+                )
+            try:
+                return json.loads(result.read_text(encoding="utf-8"))
+            except (ValueError, OSError) as exc:
+                raise LibraryError(
+                    "validation_unavailable", "Validation worker returned invalid data", 503
+                ) from exc
 
     def revalidate(self, version, kind, assets):
         if content_hash(version.path) != version.content_hash:

@@ -220,8 +220,9 @@ connection error,2 rejection,3 failure/cancellation and4 wait timeout.
 
 Asset and scene imports upload an uncompressed tar from the CLI client's directory. The
 gateway checks metadata, allocates immutable revisions and deduplicates identical
-content. CPU-only structural checks record S1–S8 results; physics checks remain
-explicitly not run. Revalidation appends a report without changing published
+content. CPU-only structural checks record S1–S8 results; an independent Newton
+CPU worker runs physics checks when the simulation tools are installed, or records
+an explicit skip reason. Revalidation appends a report without changing published
 version bytes or their hash. See [asset packages](docs/ASSET_LIBRARY.md).
 
 `lw mcp` serves generic tools over stdio through the pinned official MCP

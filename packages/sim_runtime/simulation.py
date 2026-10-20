@@ -12,12 +12,14 @@ from .sites import add_joint_anchor_sites
 
 
 class NewtonSimulation:
-    def __init__(self, scene_id="falling-boxes", *, device="cpu", physics_dt=1 / 240, solver=None):
+    def __init__(
+        self, scene_id="falling-boxes", *, device="cpu", physics_dt=1 / 240, solver=None, config=None
+    ):
         if physics_dt <= 0:
             raise ValueError("physics_dt must be positive")
         self.scene_id = scene_id
         self.physics_dt = physics_dt
-        self.config = get_scene_config(scene_id)
+        self.config = config if config is not None else get_scene_config(scene_id)
         self.solver_kind = solver or self.config.solver
         if self.solver_kind not in ("xpbd", "mujoco", "featherstone"):
             raise ValueError(f"Unsupported scene solver: {self.solver_kind}")

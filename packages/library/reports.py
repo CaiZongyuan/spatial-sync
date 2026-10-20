@@ -13,7 +13,7 @@ from importlib.metadata import version as installed_version
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from packages.library.templates import template_id
 
@@ -42,6 +42,40 @@ class CompletenessItem(BaseModel):
     message: str = Field(min_length=1)
 
 
+class PhysicsEvidence(BaseModel):
+    model_config = ConfigDict(extra="allow", strict=True)
+    reportId: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    ranAt: AwareDatetime | None = None
+    toolVersions: dict[str, str] = Field(default_factory=dict)
+
+
+class PhysicsLayer(BaseModel):
+    """Execution provenance is separate from each check's unchanged outcome enum."""
+
+    model_config = ConfigDict(extra="allow", strict=True)
+    status: Literal["completed", "skipped"]
+    reason: str | None = None
+    missingTools: list[str] = Field(default_factory=list)
+    device: Literal["cpu"] | None = None
+    ranAt: AwareDatetime | None = None
+    toolVersions: dict[str, str] = Field(default_factory=dict)
+    retainedFrom: PhysicsEvidence | None = None
+
+    @model_validator(mode="after")
+    def execution_identity(self):
+        if self.status == "skipped" and not (self.reason and self.reason.strip()):
+            raise ValueError("Skipped physics requires a reason")
+        if self.status == "completed" and (
+            self.device != "cpu" or self.ranAt is None or not self.toolVersions.get("newton")
+        ):
+            raise ValueError("Completed physics requires its actual CPU execution identity")
+        if len(set(self.missingTools)) != len(self.missingTools) or any(
+            not name.strip() for name in self.missingTools
+        ):
+            raise ValueError("Missing tool observations must be nonempty and unique")
+        return self
+
+
 class ValidationReport(BaseModel):
     """lw.validation/1 includes its original partial and timestamp-free reports."""
 
@@ -57,6 +91,20 @@ class ValidationReport(BaseModel):
     reportId: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     completeness: list[CompletenessItem] | None = None
     untypedEntities: list[str] = Field(default_factory=list)
+    physics: PhysicsLayer | None = None
+
+    @model_validator(mode="after")
+    def measured_physics(self):
+        if self.physics and self.physics.status == "completed" and not any(
+            item.tier == "physics" and item.id in PHYSICS_CHECKS
+            and item.status in ("pass", "fail") and not item.notApplicable
+            for item in self.checks
+        ):
+            raise ValueError("A physics placeholder is not a completed measurement")
+        return self
+
+
+PHYSICS_CHECKS = frozenset(f"P{i}" for i in range(1, 7))
 
 
 def parse_report(value, subject=None):
@@ -106,14 +154,81 @@ def pinned_assets(version, kind):
 def validation_status(report):
     if report is None:
         return "missing"
-    for tool, expected in report.get("toolVersions", {}).items():
+    physics = report.get("physics") or {}
+    versions = [report.get("toolVersions", {}), physics.get("toolVersions", {}),
+                (physics.get("retainedFrom") or {}).get("toolVersions", {})]
+    for tool, expected in (item for group in versions for item in group.items()):
         try:
             actual = platform.python_version() if tool == "python" else installed_version(tool)
         except PackageNotFoundError:
             return "stale"
         if actual != expected:
             return "stale"
+    for tool in physics.get("missingTools", []):
+        try:
+            installed_version(tool)
+        except PackageNotFoundError:
+            continue
+        return "stale"  # The formerly unavailable worker can now be run explicitly.
     return "available"
+
+
+def latest_physics_evidence(version, kind):
+    """A skip cannot erase a bound measurement; genuinely new execution can replace it."""
+    subject = f"{kind}:{version.id}"
+    history = version.reports.history(subject, version.content_hash) if version.reports else []
+    candidates = []
+    for report in [version.validation, *history]:
+        if report is None:
+            continue
+        parse_report(report, subject)
+        layer = report.get("physics") or {}
+        if layer.get("status") == "skipped":
+            continue
+        checks = [item for item in report["checks"] if item["tier"] == "physics"
+                  and item["id"] in PHYSICS_CHECKS]
+        # Individual legacy failures remain conservative evidence. The historical
+        # P1-P6/warn placeholder establishes no measured result.
+        if layer.get("status") == "completed" or any(item["status"] == "fail" for item in checks):
+            candidates.append(report)
+    earliest = datetime.min.replace(tzinfo=UTC)
+    return max(candidates, key=lambda item: (
+        datetime.fromisoformat(item["ranAt"]) if item.get("ranAt") else earliest,
+        item.get("reportId") or "",
+    ), default=None)
+
+
+def merge_physics(structure, result, retained=None):
+    """Compose fresh structural facts with completed or explicitly skipped physics."""
+    from copy import deepcopy
+
+    report = deepcopy(structure)
+    layer = deepcopy(result["physics"])
+    PhysicsLayer.model_validate_json(json.dumps(layer, allow_nan=False))
+    checks = deepcopy(result["checks"])
+    if layer["status"] == "skipped" and retained is not None:
+        previous = [deepcopy(item) for item in retained["checks"]
+                    if item["tier"] == "physics" and item["id"] in PHYSICS_CHECKS]
+        present = {item["id"] for item in previous}
+        checks = previous + [item for item in checks if item["id"] not in present]
+        old_layer = retained.get("physics") or {}
+        layer["retainedFrom"] = {
+            "reportId": retained.get("reportId"),
+            "ranAt": old_layer.get("ranAt", retained.get("ranAt")),
+            "toolVersions": deepcopy(old_layer.get("toolVersions", retained.get("toolVersions", {}))),
+        }
+    if layer["status"] == "completed":
+        report["toolVersions"] = report.get("toolVersions", {}) | layer.get("toolVersions", {})
+    report["physics"] = layer
+    report["checks"] = [item for item in report["checks"] if item["tier"] != "physics"] + checks
+    report["launchable"] = report["launchable"] and not any(
+        item["status"] == "fail" for item in report["checks"]
+    )
+    report["inspection"] = (
+        "Recorded structure and Newton CPU physics checks" if layer["status"] == "completed"
+        else "Recorded structure; physics was skipped: " + layer["reason"]
+    )
+    return parse_report(report, structure["subject"])
 
 
 class ReportStore:

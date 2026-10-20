@@ -109,6 +109,128 @@
       ],
       "title": "CompletenessItem",
       "type": "object"
+    },
+    "PhysicsEvidence": {
+      "additionalProperties": true,
+      "properties": {
+        "reportId": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reportid"
+        },
+        "ranAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranat"
+        },
+        "toolVersions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Toolversions",
+          "type": "object"
+        }
+      },
+      "title": "PhysicsEvidence",
+      "type": "object"
+    },
+    "PhysicsLayer": {
+      "additionalProperties": true,
+      "description": "Execution provenance is separate from each check's unchanged outcome enum.",
+      "properties": {
+        "status": {
+          "enum": [
+            "completed",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "missingTools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missingtools",
+          "type": "array"
+        },
+        "device": {
+          "anyOf": [
+            {
+              "const": "cpu",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Device"
+        },
+        "ranAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranat"
+        },
+        "toolVersions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Toolversions",
+          "type": "object"
+        },
+        "retainedFrom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhysicsEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "PhysicsLayer",
+      "type": "object"
     }
   },
   "additionalProperties": true,
@@ -216,6 +338,17 @@
       },
       "title": "Untypedentities",
       "type": "array"
+    },
+    "physics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PhysicsLayer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
