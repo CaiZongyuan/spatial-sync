@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import struct
 import threading
 import time
 from collections import OrderedDict, deque
+from concurrent.futures import Future
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -240,6 +242,7 @@ class _Entry:
     invocation_id: str | None = None
     revision: tuple | None = None
     gap: dict | None = None
+    checkpoint: Future | None = None
 
 
 class SessionLog:
@@ -295,6 +298,8 @@ class SessionLog:
         self._last_flush = time.monotonic()
         self._projection = None
         self._clock = 0
+        self._checkpoints = set()
+        self._checkpoint_queued = 0
         self.thread = threading.Thread(target=self._run, name=f"recording-{session_id}", daemon=True)
         self.thread.start()
 
@@ -337,7 +342,7 @@ class SessionLog:
         with self._condition:
             if self._closing:
                 return False
-            if len(self._queue) >= self.queue_size:
+            if len(self._queue) - self._checkpoint_queued >= self.queue_size:
                 if not entry.reliable:
                     self._lost(entry)
                     return False
@@ -387,6 +392,23 @@ class SessionLog:
             self._condition.notify()
         await asyncio.to_thread(self.thread.join)
 
+    async def checkpoint(self):
+        """Flush the admitted FIFO prefix without making a producer wait for disk."""
+        with self._condition:
+            closing = self._closing
+            if not closing:
+                future = Future()
+                self._checkpoints.add(future)
+                # Control entries never evict data or consume the reliable
+                # queue's admission budget. Each query follows its own prefix.
+                self._queue.append(_Entry(checkpoint=future))
+                self._checkpoint_queued += 1
+                self._condition.notify()
+        if closing:
+            await asyncio.to_thread(self.thread.join)
+            return deepcopy(self.metadata)
+        return await asyncio.shield(asyncio.wrap_future(future))
+
     def stop_incomplete(self, reason):
         with self._condition:
             self._failure = str(reason)
@@ -401,11 +423,19 @@ class SessionLog:
                 with self._condition:
                     self._condition.wait_for(lambda: self._queue or self._closing, timeout=1)
                     entry = self._queue.popleft() if self._queue else None
+                    if entry is not None and entry.checkpoint is not None:
+                        self._checkpoint_queued -= 1
                     done = self._closing and not self._queue and entry is None
                 if done:
                     break
                 if entry is not None:
-                    if entry.revision:
+                    if entry.checkpoint is not None:
+                        self._flush()
+                        self._metadata()
+                        with self._condition:
+                            self._checkpoints.remove(entry.checkpoint)
+                        entry.checkpoint.set_result(deepcopy(self.metadata))
+                    elif entry.revision:
                         self._revision(entry.revision)
                     else:
                         self._consume(entry)
@@ -429,6 +459,10 @@ class SessionLog:
                         with contextlib.suppress(OSError):
                             file.close()
         finally:
+            with self._condition:
+                for future in self._checkpoints:
+                    future.set_exception(OSError("Recording checkpoint failed"))
+                self._checkpoints.clear()
             self.metadata["status"] = "incomplete" if self._failure else "complete"
             if self._failure:
                 self.metadata["error"] = self._failure
@@ -547,6 +581,15 @@ class SessionLog:
             self._flush()
             self._file.close()
             self._file = None
+            # Optional acceleration must never poison the authoritative log.
+            try:
+                from packages.info.history import write_property_index
+
+                self._segment["propertyIndex"] = write_property_index(
+                    self.directory / self._segment["file"]
+                )
+            except Exception:
+                logging.getLogger(__name__).warning("Property index unavailable", exc_info=True)
             self._metadata()
 
     def _metadata(self):

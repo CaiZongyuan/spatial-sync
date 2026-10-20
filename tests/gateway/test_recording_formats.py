@@ -54,7 +54,8 @@ def test_new_recording_pins_actual_selected_scene_version_and_keeps_binary_v1(tm
         segment = client.get(directory + "/" + metadata["segments"][0]["file"]).content
         assert segment[:6] == b"LWLG\x01\x00"
         assert not read_segment(segment).truncated
-        assert "propertyIndex" not in metadata["segments"][0]
+        assert metadata["segments"][0]["propertyIndex"] == "seg-000001.index.json"
+        assert client.get(directory + "/seg-000001.index.json").status_code == 200
         related = client.get("/api/v1/library/scenes/lab-demo/4").json()["recordings"]
         assert [item["sessionId"] for item in related] == [summary["sessionId"]]
         assert client.get("/api/v1/library/scenes/lab-demo/1").json()["recordings"] == []

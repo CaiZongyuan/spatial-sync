@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 LW = Path(sys.executable).parent / ("lw.exe" if os.name == "nt" else "lw")
 TOOLS = {
+    "history_query",
     "library_search",
     "library_describe",
     "library_import",

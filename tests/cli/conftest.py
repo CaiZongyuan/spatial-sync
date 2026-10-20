@@ -13,8 +13,13 @@ from cli_support import LW, ROOT, stop
 
 
 @pytest.fixture(scope="module")
-def gateway_url(tmp_path_factory):
-    directory = tmp_path_factory.mktemp("lw-gateway")
+def gateway_directory(tmp_path_factory):
+    return tmp_path_factory.mktemp("lw-gateway")
+
+
+@pytest.fixture(scope="module")
+def gateway_url(gateway_directory):
+    directory = gateway_directory
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]

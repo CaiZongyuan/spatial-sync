@@ -52,3 +52,34 @@ action parameters, waits and simulation subcommands. The eight published MCP
 tool names and schemas remain unchanged alongside the three library tools. Verify changes with
 `uv run --no-sync python -m pytest tests/cli -q`; these tests use the installed
 `lw` executable, actual HTTP handlers and official SDK/stdio clients.
+
+Property history reads the active session's recording, or an explicit retained recording:
+
+```text
+lw history /World/Lab/Incubator temperatureC --since 1h --every 1m --agg mean --json
+lw history /World/Lab/Centrifuge lidOpen --since 1h --agg last --recording ID --json
+```
+
+`history_query` is the generic MCP mirror with the same parameters. `/Real/` keys
+select Live Lab; they return `live_unavailable` until its host is installed.
+`LW_SESSION` selects an active session explicitly, while `--recording` takes precedence.
+
+History uses the recording's original monotonic `sampleTimeMs`, not UNIX time or
+simulation seconds. `--since` accepts a positive duration (`ms`, `s`, `m`, `h`, `d`)
+or a numeric sample timestamp; `--until` accepts a numeric sample timestamp and
+defaults to the recording's latest checkpoint. Relative `--since` counts backward
+from that end, including for old recordings. Omit `--every` for raw measurements.
+Buckets are half-open from `since`, `until` is inclusive, and each bucket uses its
+last actual sample timestamp. Reset and reload contexts stay separate. Repeated
+roll snapshots and stale transitions do not add measurements; missing snapshot
+property timestamps are unknown and omitted. `last` retains any JSON property value;
+`mean`, `min` and `max` require numbers when aggregating.
+
+`GET /api/v1/history` returns `[[tMs, value], ...]`. Its `X-History-*` headers name
+the recording, effective range, interval (`raw` when omitted), aggregation, limit
+and truncation. More than 2,000 resulting points returns the first 2,000 with an
+explanation to narrow the window or increase `every`. CLI and MCP expose these
+headers once as `{points, recordingId, sinceMs, untilMs, everyMs, agg, limit,
+truncated, message}` so both machine and human output keep the explanation.
+Closed segments can have optional verified `seg-NNNNNN.index.json` sidecars;
+missing, stale or corrupt indexes fall back to sequential reads, including formats1/2.
