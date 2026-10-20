@@ -154,11 +154,13 @@ class SceneVersion:
 
         return {
             "kind": "scene", "metadata": deepcopy(self.metadata),
+            "bindings": deepcopy(self.bindings),
             "package": {"id": self.id, "path": str(self.path), "contentHash": self.content_hash,
                         "files": {name: str(self.path / name) for name in self.files}},
             "assets": deepcopy(list(self.runtime_assets.values())),
             "expectedAssets": pinned_assets(self, "scene"), "structure": deepcopy(self.report()),
-            "programs": {name: config_description(program) for name, program in REGISTRY.items()},
+            "programs": {name: {"type": program.type, "source": "newton", **config_description(program)}
+                         for name, program in REGISTRY.items()},
         }
 
     def read_visual(self, url):

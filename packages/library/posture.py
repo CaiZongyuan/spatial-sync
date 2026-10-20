@@ -2,6 +2,7 @@
 
 import math
 import re
+import struct
 from dataclasses import dataclass
 
 from packages.library.physics_checks import check, tcp_error
@@ -61,7 +62,7 @@ def resolve_endpoint(fields, config, config_schema):
     return PostureEndpoint(name, site, height, bool(marked))
 
 
-def _require_calibration(endpoint, expected, observed):
+def require_calibration(endpoint, expected, observed, *, pose_storage=None):
     """Compare trusted pinned-asset extraction with composed/model observations.
 
     Neither a metadata role nor a boolean receipt supplies physical calibration.
@@ -92,6 +93,13 @@ def _require_calibration(endpoint, expected, observed):
         raise ValueError("Physical endpoint calibration requires actual local poses")
     if not all(type(value) in (int, float) and math.isfinite(value) for value in [*first, *second]):
         raise ValueError("Physical endpoint calibration local pose must be finite")
+    if pose_storage == "float32":
+        # The importer stores the directly extracted USD local pose in
+        # wp.transform (float32). Compare exact representable values, not a
+        # spatial-distance allowance that could hide a moved TCP.
+        first = [struct.unpack("f", struct.pack("f", value))[0] for value in first]
+    elif pose_storage is not None:
+        raise ValueError("Physical endpoint calibration pose storage is unknown")
     if list(first[:3]) != list(second[:3]):
         raise ValueError("Physical endpoint calibration local position differs")
     a, b = normalize_quaternion(first[3:]), normalize_quaternion(second[3:])
@@ -108,11 +116,13 @@ def posture_check(
     *,
     expected_calibration=None,
     observed_calibration=None,
+    pose_storage=None,
 ):
     """Never report a point-distance pass before a nonzero physical-frame check."""
     try:
         if endpoint.height:
-            _require_calibration(endpoint, expected_calibration, observed_calibration)
+            require_calibration(endpoint, expected_calibration, observed_calibration,
+                                pose_storage=pose_storage)
         target = nominal_grasp_target(bottom_site, endpoint.height)
     except (ValueError, TypeError) as error:
         return check("P6", "fail", str(error), entity=entity, location=location)

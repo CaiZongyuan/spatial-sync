@@ -29,7 +29,7 @@ from packages.protocol.schema import (
     TransformFrame,
     validate_command_args,
 )
-from packages.sim_runtime.synthetic_geometry import world_site_pose, world_site_poses
+from packages.sim_runtime.synthetic_geometry import tube_height, world_site_pose, world_site_poses
 from packages.sim_runtime.synthetic_lab import (
     BASE,
     CENTRIFUGE,
@@ -96,7 +96,9 @@ class SyntheticSource:
             fact_hz=options.factHz,
             publication_clock=self._publication_clock,
             seed=options.seed,
-            physics=SimpleNamespace(site_pose=self._location_pose),
+            physics=SimpleNamespace(site_pose=self._location_pose,
+                                    tube_height=lambda key: tube_height(self.manifest, key),
+                                    preview_snapshot=lambda: None),
         )
         self._centrifuge_phase = self.host.reader(CENTRIFUGE, "phase")
         self._centrifuge_rpm = self.host.reader(CENTRIFUGE, "rpm")

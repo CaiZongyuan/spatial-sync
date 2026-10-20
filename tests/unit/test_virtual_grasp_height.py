@@ -21,7 +21,8 @@ class Context:
         self.config = RobotArmProgram.Config.model_validate(
             {"graspHeightM": height, "tubes": [TUBE], "locations": {"locations": {"rack.A1": location}}}
         )
-        self.physics = SimpleNamespace(site_pose=lambda key: (bottom, [0, 0, 0, 1]))
+        self.physics = SimpleNamespace(site_pose=lambda key: (bottom, [0, 0, 0, 1]),
+                                       tube_height=lambda key: .08)
         self.values = {}
 
     def set(self, **values):
@@ -84,6 +85,12 @@ def test_nonzero_without_actual_site_geometry_cannot_initialize_as_supported():
     ctx = Context(0.020)
     ctx.physics = None
     with pytest.raises(ValueError, match="actual Synthetic"):
+        RobotArmProgram().init(ctx)
+
+
+def test_nonzero_height_outside_actual_synthetic_tube_cannot_initialize():
+    ctx = Context(.081)
+    with pytest.raises(ValueError, match="exceeds actual Synthetic tube height"):
         RobotArmProgram().init(ctx)
 
 

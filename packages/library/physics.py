@@ -17,8 +17,8 @@ from packages.library.physics_checks import (
     mass_density,
     penetration,
     settling,
-    tcp_error,
 )
+from packages.library.posture import posture_check, resolve_endpoint
 from packages.protocol.math import compose_pose, normalize_entity_key
 from packages.sim_runtime.library_scene import add_taught_sites as add_taught_sites
 
@@ -195,9 +195,9 @@ def initial_joint_checks(sim):
 
 def taught_checks(sim, payload):
     bindings = payload["structure"].get("effectiveBindings", {}).get("newton", [])
-    configured = [(binding, payload["programs"][binding["program"]]["fields"]) for binding in bindings]
-    configured = [(binding, fields) for binding, fields in configured
-                  if any(role.get("posture") for role in fields.values())]
+    configured = [(binding, payload["programs"][binding["program"]]) for binding in bindings]
+    configured = [(binding, program) for binding, program in configured
+                  if any(role.get("posture") for role in program["fields"].values())]
     if not configured:
         return [not_applicable("P6", "Scene has no configured taught arm locations")]
 
@@ -228,15 +228,40 @@ def taught_checks(sim, payload):
         return compose_pose({"p": pose[:3], "q": pose[3:]}, local)["p"]
 
     rows = []
-    for binding, fields in configured:
+    for binding, program in configured:
+        fields = program["fields"]
         entity = binding["key"]
         postures = [name for name, info in fields.items() if info.get("posture")]
         documents = [name for name, info in fields.items() if info.get("documentSchema") == "locations"]
-        endpoints = [name for name, info in fields.items() if info.get("spatialReference") == "site"]
-        if len(postures) != 1 or len(documents) != 1 or len(endpoints) != 1:
+        if len(postures) != 1 or len(documents) != 1:
             rows.append(check("P6", "fail", "Taught Config roles are ambiguous", entity=entity))
             continue
         config = binding["config"]
+        try:
+            endpoint = resolve_endpoint(fields, config, program.get("configSchema", {}))
+            expected, observed = None, None
+            if endpoint.height:
+                receipts = getattr(getattr(sim, "builder", None), "spatial_grasp_calibrations", {})
+                receipt = receipts.get(entity)
+                if not receipt:
+                    raise ValueError("Actual model has no verified pinned physical calibration")
+                expected = receipt["expected"]
+                matches = sites[endpoint.site]
+                if len(matches) != 1:
+                    raise ValueError("Physical TCP identity is ambiguous in the model")
+                shape = matches[0]
+                parent = int(parents[shape])
+                if not 0 <= parent < len(model.body_label):
+                    raise ValueError("Physical TCP has no actual model rigid body owner")
+                observed = receipt["composed"] | {
+                    "siteOwner": normalize_entity_key(model.body_label[parent]),
+                    "handToTcpPose": list(map(float, transforms[shape])),
+                }
+        except (ValueError, KeyError, TypeError) as exc:
+            for name in config.get(documents[0], {}).get("locations", {}) or [None]:
+                rows.append(check("P6", "fail", "Taught grasp cannot be measured: " + str(exc),
+                                  entity=entity, location=name))
+            continue
         for name, location in config[documents[0]]["locations"].items():
             try:
                 values, keys = location["grasp"], config[postures[0]]
@@ -259,8 +284,13 @@ def taught_checks(sim, payload):
                     q[int(starts[joint])] = value
                 state.joint_q.assign(q)
                 newton.eval_fk(sim.model, state.joint_q, state.joint_qd, state)
-                rows.append(tcp_error(entity, name, list(map(float, site_world(config[endpoints[0]], state))),
-                                      list(map(float, site_world(location["site"], state)))))
+                rows.append(posture_check(
+                    entity, name, list(map(float, site_world(endpoint.site, state))),
+                    list(map(float, site_world(location["site"], state))), endpoint,
+                    expected_calibration=expected, observed_calibration=observed,
+                    pose_storage=("float32" if endpoint.height
+                                  and transforms.dtype.name == "float32" else None),
+                ))
             except (ValueError, KeyError, TypeError) as exc:
                 rows.append(check("P6", "fail", "Taught grasp cannot be measured: " + str(exc),
                                   entity=entity, location=name))

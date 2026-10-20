@@ -9,6 +9,7 @@ from packages.protocol.internal import SessionOptions
 def resources(metadata, package, bindings):
     builder = metadata["stage"].removeprefix("python:")
     if builder == "lab-demo":
+        from packages.sim_runtime.synthetic_geometry import tube_height
         from packages.sim_runtime.synthetic_lab import build_manifest
 
         manifest = build_manifest(
@@ -25,6 +26,11 @@ def resources(metadata, package, bindings):
             "bodies": [node.entityKey for node in manifest.nodes if node.kind == "body"],
             "sites": [site.entityKey for site in manifest.sites],
             "joints": {joint.entityKey: {"kind": joint.type, "limits": None} for joint in manifest.joints},
+            "tubeHeights": {key: tube_height(manifest, key)
+                            for binding in bindings["entities"]
+                            if binding.get("program") == "robot_arm.virtual"
+                            and binding.get("config", {}).get("graspHeightM")
+                            for key in binding.get("config", {}).get("tubes", [])},
         }
     if builder == "robot-and-tubes":
         from packages.sim_runtime.robot_definition import structure

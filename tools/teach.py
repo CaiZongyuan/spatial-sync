@@ -1,7 +1,9 @@
 """Capture live FR3 joint poses or regenerate offline joint-space waypoints.
 
 After lw moveJoints, use --capture rack.A1 --pose grasp --output locations.yaml.
-The runtime never uses IK; --write regenerates the default offline waypoints.
+The runtime never uses IK. Write results outside published library packages.
+For another layout, select --scene-version name@rev and optionally --robot key;
+the tool reads its pinned FR3, base, effective height and existing bottom Sites.
 """
 
 import argparse
@@ -9,16 +11,17 @@ import json
 import os
 import sys
 import xml.etree.ElementTree as ET
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 import numpy as np
 import yaml
-from scipy.optimize import least_squares
-from scipy.spatial.transform import Rotation
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from packages.programs.robot_arm.grasp import nominal_grasp_target
 from packages.programs.robot_arm.newton import HOME
 from packages.protocol.math import compose_pose
 
@@ -27,8 +30,11 @@ LOCATIONS = ROOT / "library/scenes/robot-and-tubes/1/locations.yaml"
 
 
 class Teacher:
-    def __init__(self):
-        joints = ET.parse(ASSET).getroot().findall("joint")
+    def __init__(self, asset=ASSET, base=None):
+        self.base = np.eye(4) if base is None else np.array(base, dtype=float)
+        if base is None:
+            self.base[:3, 3] = [-0.5, 0, 0.75]
+        joints = ET.parse(asset).getroot().findall("joint")
         by_child = {j.find("child").get("link"): j for j in joints}
         self.chain = []
         link = "fr3_hand_tcp"
@@ -42,8 +48,9 @@ class Teacher:
         self.velocity_limits = [float(j.find("limit").get("velocity")) for j in arm]
 
     def fk(self, coordinates):
-        transform = np.eye(4)
-        transform[:3, 3] = [-0.5, 0, 0.75]
+        from scipy.spatial.transform import Rotation
+
+        transform = self.base.copy()
         index = 0
         for joint in self.chain:
             origin = joint.find("origin")
@@ -63,6 +70,9 @@ class Teacher:
         return transform
 
     def solve(self, position, initial=HOME):
+        from scipy.optimize import least_squares
+        from scipy.spatial.transform import Rotation
+
         target = Rotation.from_euler("xyz", [np.pi, 0, 0]).as_matrix()
 
         def error(q):
@@ -83,6 +93,103 @@ class Teacher:
         if np.linalg.norm(error(result.x)) > 1e-4:
             raise ValueError(f"Unreachable taught point {position}: {error(result.x)}")
         return result.x.tolist()
+
+
+@dataclass
+class TeachingScene:
+    teacher: Teacher
+    config: dict
+    bottom_sites: dict
+    identity: dict
+    protected_roots: tuple[Path, ...]
+
+
+def select_scene(selector, robot=None, library_root=None):
+    """Read one exact scene and its physical pin; never start Newton or a Source."""
+    from pxr import UsdGeom
+
+    from apps.api.app.library_validation import program_schemas
+    from packages.library.grasp_calibration import physical_calibration
+    from packages.library.scenes import SceneLibrary
+    from packages.library.structural import USDGraph, validate
+    from packages.library.validation import StructuralValidator
+
+    if "@" not in selector:
+        raise ValueError("Teaching requires an exact scene version name@rev")
+    library = SceneLibrary(user_root=library_root)
+    version = library.resolve(selector)
+    if version.metadata["stage"].startswith("python:") or version.metadata["sources"] != ["newton"]:
+        raise ValueError("Selected-scene teaching requires an imported Newton USD scene")
+    if version.template_error or version.asset_error:
+        raise ValueError(version.template_error or version.asset_error)
+    payload = {"kind": "scene", "subject": "scene:" + version.id, "metadata": version.metadata,
+               "package": StructuralValidator.scope(version.path), "bindings": version.bindings,
+               "locations": version.locations, "programs": program_schemas(),
+               "assets": list(version.runtime_assets.values()), "types": {}}
+    from packages.library.common import TYPE_ROOT, document
+
+    payload["types"] = {value["type"]: value for path in TYPE_ROOT.glob("*.yaml")
+                        if (value := document(path))}
+    report = validate(payload)
+    failures = [row["message"] for row in report["checks"] if row["status"] == "fail"]
+    if failures:
+        raise ValueError("Selected scene structural checks failed: " + "; ".join(failures))
+    candidates = [binding for binding in report.get("effectiveBindings", {}).get("newton", [])
+                  if binding["program"] == "robot_arm.newton" and (robot is None or binding["key"] == robot)]
+    if len(candidates) != 1:
+        raise ValueError("Select exactly one configured FR3 with --robot")
+    binding = candidates[0]
+    graph = USDGraph(payload["package"], payload["assets"])
+    stage = graph.compose(version.metadata["stage"])
+    calibration = physical_calibration(stage, binding, payload["programs"][binding["program"]],
+                                       version.bindings, graph)["expected"]
+    if calibration["assetId"] != "robot/fr3@1":
+        raise ValueError("Teaching currently supports the pinned robot/fr3@1 physical model")
+    asset = graph.assets[calibration["assetId"]]
+    # Gf uses row vectors; Teacher uses column vectors.
+    base = np.array(UsdGeom.XformCache().GetLocalToWorldTransform(stage.GetPrimAtPath(binding["key"]))).T
+    teacher = Teacher(Path(asset["path"]) / "source/fr3_franka_hand.urdf", base)
+    config = binding["config"]
+    bottom_sites = {}
+    for name, location in config["locations"]["locations"].items():
+        prim = stage.GetPrimAtPath(location["site"])
+        if not prim:
+            raise ValueError("Selected bottom Site is unavailable: " + location["site"])
+        bottom_sites[name] = list(UsdGeom.XformCache().GetLocalToWorldTransform(prim).ExtractTranslation())
+    return TeachingScene(teacher, config, bottom_sites,
+                         {"sceneVersion": version.id, "sceneContentHash": version.content_hash,
+                          "robot": binding["key"], "assetId": calibration["assetId"],
+                          "assetContentHash": calibration["assetContentHash"],
+                          "physicalTcpSite": calibration["tcpSite"], "baseWorldMatrix": base.tolist()},
+                         tuple(library.roots.values()))
+
+
+def teach_selected(selection):
+    document = deepcopy(selection.config["locations"])
+    evidence = []
+    height = selection.config.get("graspHeightM", 0.0)
+    for name, location in document["locations"].items():
+        bottom = selection.bottom_sites[name]
+        target = nominal_grasp_target(bottom, height)
+        grasp = selection.teacher.solve(np.array(target), location.get("grasp", HOME))
+        approach = selection.teacher.solve(np.array(target) + [0, 0, .15], grasp)
+        location.update(grasp=grasp, approach=approach)
+        tcp = selection.teacher.fk(grasp)[:3, 3]
+        evidence.append(selection.identity | {"location": name, "bottomSiteWorld": bottom,
+                        "graspHeightM": height, "graspTargetWorld": list(target),
+                        "physicalTcpWorld": tcp.tolist(), "tcpErrorM": float(np.linalg.norm(tcp - target)),
+                        "targetDefinition": "tube-grasp-height/1"})
+    return document, evidence
+
+
+def write_locations(target, document, protected_roots=()):
+    roots = (ROOT / "library", Path(os.getenv("LW_LIBRARY", "~/.spatial-sync/library")).expanduser(),
+             *protected_roots)
+    target = target.resolve()
+    if any(target.is_relative_to(root.resolve() / "scenes") for root in roots):
+        raise ValueError("Published scene packages are immutable; use --output outside library/scenes")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
 
 def teach():
@@ -124,6 +231,9 @@ def teach():
 
 def capture(args):
     """Merge one measured joint vector; preserve all other taught positions."""
+    selection = (select_scene(args.scene_version, args.robot, args.library_root)
+                 if getattr(args, "scene_version", None) else None)
+    robot = selection.identity["robot"] if selection else "/World/Lab/RobotA"
     with httpx.Client(base_url=args.url, timeout=30, trust_env=False) as client:
         session_id = args.session
         if not session_id:
@@ -141,17 +251,21 @@ def capture(args):
         response = client.get(route)
         response.raise_for_status()
         summary = response.json()
-        if summary.get("source") != "newton" or summary.get("sceneId") != "robot-and-tubes":
-            raise ValueError("FR3 teaching requires a Newton robot-and-tubes session")
-        response = client.get(route + "/state", params={"keys": "/World/Lab/RobotA"})
+        expected_version = selection.identity["sceneVersion"] if selection else "robot-and-tubes@1"
+        if summary.get("source") != "newton" or summary.get("sceneVersion") != expected_version:
+            raise ValueError("FR3 teaching session must match the selected exact Newton scene version")
+        if selection and summary.get("sceneContentHash") != selection.identity["sceneContentHash"]:
+            raise ValueError("Teaching session scene content differs from the selected immutable package")
+        response = client.get(route + "/state", params={"keys": robot})
         response.raise_for_status()
-        state = response.json()["entities"]["/World/Lab/RobotA"]
+        state = response.json()["entities"][robot]
         joints = state["values"]["jointPositions"]
         if len(joints) != 7 or not all(np.isfinite(joints)):
             raise ValueError("The current FR3 state must contain seven finite joint positions")
         target = args.output or args.input
         source = target if target.exists() else args.input
-        document = yaml.safe_load(source.read_text(encoding="utf-8"))
+        document = (deepcopy(selection.config["locations"]) if selection and not target.exists()
+                    else yaml.safe_load(source.read_text(encoding="utf-8")))
         if args.capture not in document["locations"]:
             raise ValueError(f"Unknown taught location {args.capture}")
         location = document["locations"][args.capture]
@@ -168,11 +282,12 @@ def capture(args):
             if site.get("parentBodyKey")
             else site["localPose"]
         )
-        tcp = Teacher().fk(joints)[:3, 3]
-        distance = float(np.linalg.norm(tcp - world["p"]))
+        height = selection.config.get("graspHeightM", 0.0) if selection else 0.0
+        nominal = nominal_grasp_target(world["p"], height)
+        tcp = (selection.teacher if selection else Teacher()).fk(joints)[:3, 3]
+        distance = float(np.linalg.norm(tcp - nominal))
         location[args.pose] = list(joints)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+        write_locations(target, document, selection.protected_roots if selection else ())
         warning = args.pose == "grasp" and distance > 0.01
         if warning:
             print(f"WARNING: grasp TCP is {distance:.6f}m from {location['site']} (>0.01m)", file=sys.stderr)
@@ -186,6 +301,12 @@ def capture(args):
             "output": str(target.resolve()),
             "tcpFk": tcp.tolist(),
             "siteWorld": world["p"],
+            "bottomSiteWorld": world["p"],
+            "graspHeightM": height,
+            "graspTargetWorld": list(nominal),
+            "physicalTcpWorld": tcp.tolist(),
+            "targetDefinition": "tube-grasp-height/1",
+            "inputIdentity": selection.identity if selection else {"sceneVersion": expected_version},
             "tcpErrorM": distance,
             "graspDistanceWarning": warning,
             "physicsImported": "newton" in sys.modules or "warp" in sys.modules,
@@ -202,12 +323,17 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--url", default=os.getenv("LW_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--session", default=os.getenv("LW_SESSION"))
+    parser.add_argument("--scene-version", help="Exact imported Newton scene name@rev")
+    parser.add_argument("--robot", help="Configured robot entityKey in the selected version")
+    parser.add_argument("--library-root", type=Path, help="User library root for the selected scene")
     args = parser.parse_args()
     if args.capture:
         print(json.dumps(capture(args), indent=2))
     else:
-        document, evidence = teach()
+        selection = (select_scene(args.scene_version, args.robot, args.library_root)
+                     if args.scene_version else None)
+        document, evidence = teach_selected(selection) if selection else teach()
         if args.write or args.output:
             target = args.output or args.input
-            target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+            write_locations(target, document, selection.protected_roots if selection else ())
         print(json.dumps(evidence, indent=2))

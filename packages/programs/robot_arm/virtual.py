@@ -54,6 +54,11 @@ class RobotArmProgram:
         self._set_joints(ctx, HOME)
         ctx.set(phase="idle", gripperWidth=0.08, holding=None, atLocation=None, zone=None)
         if ctx.config.graspHeightM:
+            if ctx.physics is None or not hasattr(ctx.physics, "tube_height"):
+                raise ValueError("Nonzero grasp height requires actual Synthetic tube geometry")
+            for tube in ctx.config.tubes:
+                if ctx.config.graspHeightM > ctx.physics.tube_height(tube):
+                    raise ValueError("Grasp height exceeds actual Synthetic tube height")
             for location in self._locations(ctx).values():
                 actual = self._bottom_site(ctx, location)
                 declared = location.get("p")
