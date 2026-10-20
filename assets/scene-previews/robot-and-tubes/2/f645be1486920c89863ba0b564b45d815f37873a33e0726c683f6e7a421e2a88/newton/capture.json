@@ -21,7 +21,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-10-20T00:11:31.251071+00:00",
+  "capturedAt": "2026-10-20T04:20:10.968873+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -305,7 +305,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "084fbd430eea7405bf74acec255ed9b29467028243ac247ba1591d6fba45b257"
+      "sha256": "efedc02883678fceeb1ccf18ca05c7f1b8b000e50bc701922555a2a8c62178b0"
     },
     {
       "path": "packages/library/scenes.py",
@@ -409,7 +409,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "d16b8e3042179e3782c7e74d9dd4bd155083b8c8efd71ccfe2cb689ceea69bd7"
+      "sha256": "d40d046714dfba13801e72615567f049c0d125910bbc84ec5ece8eb885260028"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -447,10 +447,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "30480e54fe12b228c9e69b4bcfbe2be4799c5cc391baf71ba4d512279a808f29",
-    "catalog.json": "75d40fb83b46a80a4ea23114e327cd118452aac7102b347f62d9c3c7ba03db38",
-    "state.json": "7095e5bfe98e720d26e0a67604093c9ca72a6e16988c6bf7306cbeadf0383a0f",
-    "snapshot.bin": "abe87622114004383fa28a84f4cb5b4ef32a35a3e7148fd7fbbdff201cd71706",
+    "manifest.json": "63a60d8d3c61f5e8f423d089a4b5f0084d5ddc70966a0071ba57e751e8958c4f",
+    "catalog.json": "699ed64d4666541994a919b4f79f26a77c434e8d8d468e7b741518a410bd00dd",
+    "state.json": "842d4cb0711a9221734557543bb12985f02aa9981ed0fcd0db85c039a26d9ab9",
+    "snapshot.bin": "164f796f242673126a7eaacdd4149716d6d02f2fa314578aaa31918fff28f834",
     "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
