@@ -3,14 +3,15 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500&family=Noto+Serif+SC:wght@400;500;600&display=swap">
 <style>
 /* Lab Platform Redesign · design plan
-   Direction  A quiet, instrument-grade workbench. Dark stone is the primary theme (after deeprsi); light is a warm paper.
+   Direction  A quiet, instrument-grade workbench. Dark stone is the primary theme (after deeprsi); light is a warm paper: bipolar warm tooth, faint cloud and a top-left
+              lamp on the ground only, so panels and figures sit on it as smooth card stock.
               Both neutrals carry a faint warm bias. One indigo accent marks only what is live, selected or proposed by
               the agent (running job, selected device, ghost arm, TCP path). Green / amber / red stay small dots until
               something is critical; only a critical alert tints a surface.
    Type       Noto Serif SC for display (titles, big numerals, card titles) · IBM Plex Sans for UI and body ·
               IBM Plex Mono for ids, numbers, eyebrows and figure numbers. Scale 10.5 / 12.5 / 14 / 15 / 17 / 19 / 26 / 32-48.
    Space      4 · 8 · 12 · 16 · 24 · 32 · 48 · 64. Radii 4 / 7 / 12 / 16.
-   Surface    Hairlines first. Panels: 1px line, a 1px inner top highlight, a very soft long shadow. Film grain over all.
+   Surface    Hairlines first. Panels: 1px line, a 1px inner top highlight, a very soft long shadow. Dark: film grain over all.
    Figures    Three.js r128, one shared WebGL renderer copied into per-figure canvases: orthographic isometric camera,
               sky/ground + warm key light with soft shadow maps, blurred contact shadows, 1px crease edges for the drafted
               look, cutaway walls with poche tops, a floor grid that fades out. SVG line art is the no-WebGL fallback.
@@ -33,6 +34,7 @@
   --stage-1:#1e1e1c;--stage-2:#151514;--dot:rgba(239,237,231,.06);
   --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
   --grain-o:.16;
+  --paper:none;--paper-size:auto;--paper-att:scroll;
   --pk-bg:#efede7;--pk-ink:#141413;--pk-line:rgba(20,20,19,.12);
   --m-floor:#2a2926;--m-floor-side:#1a1917;--m-wall:#363531;--m-cut:#0b0b0a;--m-grid:#46443f;--m-edge:#c9c5bb;--m-edge-o:.32;
   --m-body:#9a978f;--m-body-2:#68665f;--m-dark:#262523;--m-steel:#8c8b85;--m-alu:#6a6964;--m-plate:#34332f;
@@ -48,50 +50,54 @@
 }
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
   color-scheme:light;
-  --ground:#f4f3ef;--ground-2:#ecebe6;--surface:#fbfbf9;--surface-2:#f0efea;--line:#e3e1da;--line-2:#d0cdc4;--ghost:#b3b0a7;
-  --ink:#1b1a17;--ink-2:#36342f;--muted:#5f5c55;--faint:#6f6c65;
-  --accent:#4a50d4;--accent-ink:#3c41b5;--on-accent:#ffffff;
+  --ground:#f3f2ee;--ground-2:#eae8e2;--surface:#fdfdfb;--surface-2:#f1efea;--line:#e2dfd7;--line-2:#cdc9bf;--ghost:#aca89e;
+  --ink:#181713;--ink-2:#33312c;--muted:#5d5a53;--faint:#6d6a62;
+  --accent:#4c50c4;--accent-ink:#3b3fa6;--on-accent:#ffffff;
   --ok:#2f7b4f;--warn:#94620b;--bad:#c63d2f;--on-bad:#ffffff;
-  --c1:#4a50d4;--c2:#d0662c;--c3:#1a9a74;
-  --row-hover:rgba(60,48,20,.035);
-  --bevel:inset 0 1px 0 rgba(255,255,255,.9);
-  --shadow-1:inset 0 1px 0 rgba(255,255,255,.95),0 1px 2px rgba(48,38,18,.06),0 16px 34px -22px rgba(48,38,18,.3);
+  --c1:#4c50c4;--c2:#d0662c;--c3:#1a9a74;
+  --row-hover:rgba(60,48,20,.05);
+  --bevel:inset 0 1px 0 #ffffff;
+  --shadow-1:inset 0 1px 0 #ffffff,0 0 0 .5px rgba(48,38,18,.03),0 1px 2px rgba(48,38,18,.07),0 20px 40px -26px rgba(48,38,18,.36);
   --shadow-2:0 16px 40px -12px rgba(48,38,18,.38),0 2px 6px rgba(48,38,18,.14);
-  --stage-1:#fdfdfb;--stage-2:#f0efea;--dot:rgba(60,48,20,.085);
+  --stage-1:#ffffff;--stage-2:#e9e7e0;--dot:rgba(60,48,20,.1);
   --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .6 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
-  --grain-o:.22;
+  --grain-o:0;
+  --paper:radial-gradient(1100px 620px at 18% -8%,rgba(255,255,255,.75),rgba(255,255,255,0) 72%),radial-gradient(140% 120% at 50% 30%,rgba(0,0,0,0) 55%,rgba(110,85,50,.07) 100%),url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'260'%20height%3D'260'%3E%3Cfilter%20id%3D'd'%20x%3D'0'%20y%3D'0'%20width%3D'100%25'%20height%3D'100%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.78'%20numOctaves%3D'2'%20seed%3D'7'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20values%3D'0%200%200%200%200.3%20%200%200%200%200%200.22%20%200%200%200%200%200.12%20%20.63%200%200%200%20-.311'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23d)'%2F%3E%3C%2Fsvg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'260'%20height%3D'260'%3E%3Cfilter%20id%3D'l'%20x%3D'0'%20y%3D'0'%20width%3D'100%25'%20height%3D'100%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.9'%20numOctaves%3D'2'%20seed%3D'23'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20values%3D'0%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%200%20.714%200%200%20-.344'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23l)'%2F%3E%3C%2Fsvg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'900'%20height%3D'900'%3E%3Cfilter%20id%3D'c'%20x%3D'0'%20y%3D'0'%20width%3D'100%25'%20height%3D'100%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.0055'%20numOctaves%3D'4'%20seed%3D'4'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20values%3D'0%200%200%200%200.42%20%200%200%200%200%200.32%20%200%200%200%200%200.17%20%20.21%200%200%200%20-.085'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23c)'%2F%3E%3C%2Fsvg%3E");
+  --paper-size:auto,auto,260px 260px,260px 260px,900px 900px;--paper-att:fixed,fixed,scroll,scroll,scroll;
   --pk-bg:#1b1a17;--pk-ink:#f4f3ef;--pk-line:rgba(244,243,239,.14);
-  --m-floor:#dedbd3;--m-floor-side:#c4c0b6;--m-wall:#e3e0d9;--m-cut:#3b3934;--m-grid:#bab6ab;--m-edge:#6e6b63;--m-edge-o:.62;
+  --m-floor:#e2ded4;--m-floor-side:#c4c0b6;--m-wall:#e3e0d9;--m-cut:#3b3934;--m-grid:#bab6ab;--m-edge:#4f4c45;--m-edge-o:.74;
   --m-body:#f2f1ec;--m-body-2:#d3d1ca;--m-dark:#47453f;--m-steel:#cfcec8;--m-alu:#b8b6af;--m-plate:#6d6b65;
   --m-glass:#a9c6d8;--m-medium:#e2a198;--m-cap:#6c84c6;--m-leaf:#8cad87;--m-shadow:#2e2416;
-  --m-sky:#f4f6ff;--m-gnd:#b9ae9c;--m-sun:#fff6ea;--m-hemi:.58;--m-key:.64;--m-ao:.42;
+  --m-sky:#f4f6ff;--m-gnd:#b9ae9c;--m-sun:#fff6ea;--m-hemi:.54;--m-key:.7;--m-ao:.5;
 }}
 :root[data-theme="light"]{
   color-scheme:light;
-  --ground:#f4f3ef;--ground-2:#ecebe6;--surface:#fbfbf9;--surface-2:#f0efea;--line:#e3e1da;--line-2:#d0cdc4;--ghost:#b3b0a7;
-  --ink:#1b1a17;--ink-2:#36342f;--muted:#5f5c55;--faint:#6f6c65;
-  --accent:#4a50d4;--accent-ink:#3c41b5;--on-accent:#ffffff;
+  --ground:#f3f2ee;--ground-2:#eae8e2;--surface:#fdfdfb;--surface-2:#f1efea;--line:#e2dfd7;--line-2:#cdc9bf;--ghost:#aca89e;
+  --ink:#181713;--ink-2:#33312c;--muted:#5d5a53;--faint:#6d6a62;
+  --accent:#4c50c4;--accent-ink:#3b3fa6;--on-accent:#ffffff;
   --ok:#2f7b4f;--warn:#94620b;--bad:#c63d2f;--on-bad:#ffffff;
-  --c1:#4a50d4;--c2:#d0662c;--c3:#1a9a74;
-  --row-hover:rgba(60,48,20,.035);
-  --bevel:inset 0 1px 0 rgba(255,255,255,.9);
-  --shadow-1:inset 0 1px 0 rgba(255,255,255,.95),0 1px 2px rgba(48,38,18,.06),0 16px 34px -22px rgba(48,38,18,.3);
+  --c1:#4c50c4;--c2:#d0662c;--c3:#1a9a74;
+  --row-hover:rgba(60,48,20,.05);
+  --bevel:inset 0 1px 0 #ffffff;
+  --shadow-1:inset 0 1px 0 #ffffff,0 0 0 .5px rgba(48,38,18,.03),0 1px 2px rgba(48,38,18,.07),0 20px 40px -26px rgba(48,38,18,.36);
   --shadow-2:0 16px 40px -12px rgba(48,38,18,.38),0 2px 6px rgba(48,38,18,.14);
-  --stage-1:#fdfdfb;--stage-2:#f0efea;--dot:rgba(60,48,20,.085);
+  --stage-1:#ffffff;--stage-2:#e9e7e0;--dot:rgba(60,48,20,.1);
   --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .6 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
-  --grain-o:.22;
+  --grain-o:0;
+  --paper:radial-gradient(1100px 620px at 18% -8%,rgba(255,255,255,.75),rgba(255,255,255,0) 72%),radial-gradient(140% 120% at 50% 30%,rgba(0,0,0,0) 55%,rgba(110,85,50,.07) 100%),url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'260'%20height%3D'260'%3E%3Cfilter%20id%3D'd'%20x%3D'0'%20y%3D'0'%20width%3D'100%25'%20height%3D'100%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.78'%20numOctaves%3D'2'%20seed%3D'7'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20values%3D'0%200%200%200%200.3%20%200%200%200%200%200.22%20%200%200%200%200%200.12%20%20.63%200%200%200%20-.311'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23d)'%2F%3E%3C%2Fsvg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'260'%20height%3D'260'%3E%3Cfilter%20id%3D'l'%20x%3D'0'%20y%3D'0'%20width%3D'100%25'%20height%3D'100%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.9'%20numOctaves%3D'2'%20seed%3D'23'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20values%3D'0%200%200%200%201%20%200%200%200%200%201%20%200%200%200%200%201%20%200%20.714%200%200%20-.344'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23l)'%2F%3E%3C%2Fsvg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'900'%20height%3D'900'%3E%3Cfilter%20id%3D'c'%20x%3D'0'%20y%3D'0'%20width%3D'100%25'%20height%3D'100%25'%3E%3CfeTurbulence%20type%3D'fractalNoise'%20baseFrequency%3D'0.0055'%20numOctaves%3D'4'%20seed%3D'4'%20stitchTiles%3D'stitch'%2F%3E%3CfeColorMatrix%20values%3D'0%200%200%200%200.42%20%200%200%200%200%200.32%20%200%200%200%200%200.17%20%20.21%200%200%200%20-.085'%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D'100%25'%20height%3D'100%25'%20filter%3D'url(%23c)'%2F%3E%3C%2Fsvg%3E");
+  --paper-size:auto,auto,260px 260px,260px 260px,900px 900px;--paper-att:fixed,fixed,scroll,scroll,scroll;
   --pk-bg:#1b1a17;--pk-ink:#f4f3ef;--pk-line:rgba(244,243,239,.14);
-  --m-floor:#dedbd3;--m-floor-side:#c4c0b6;--m-wall:#e3e0d9;--m-cut:#3b3934;--m-grid:#bab6ab;--m-edge:#6e6b63;--m-edge-o:.62;
+  --m-floor:#e2ded4;--m-floor-side:#c4c0b6;--m-wall:#e3e0d9;--m-cut:#3b3934;--m-grid:#bab6ab;--m-edge:#4f4c45;--m-edge-o:.74;
   --m-body:#f2f1ec;--m-body-2:#d3d1ca;--m-dark:#47453f;--m-steel:#cfcec8;--m-alu:#b8b6af;--m-plate:#6d6b65;
   --m-glass:#a9c6d8;--m-medium:#e2a198;--m-cap:#6c84c6;--m-leaf:#8cad87;--m-shadow:#2e2416;
-  --m-sky:#f4f6ff;--m-gnd:#b9ae9c;--m-sun:#fff6ea;--m-hemi:.58;--m-key:.64;--m-ao:.42;
+  --m-sky:#f4f6ff;--m-gnd:#b9ae9c;--m-sun:#fff6ea;--m-hemi:.54;--m-key:.7;--m-ao:.5;
 }
 :root[data-theme="dark"]{color-scheme:dark}
 
 /* ---------- base ---------- */
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-body{margin:0;background:var(--ground);color:var(--ink);font:400 var(--fs-ui)/1.6 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-kerning:normal}
+body{margin:0;background:var(--ground);background-image:var(--paper);background-size:var(--paper-size);background-attachment:var(--paper-att);color:var(--ink);font:400 var(--fs-ui)/1.6 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-kerning:normal}
 body::after{content:"";position:fixed;inset:0;z-index:40;pointer-events:none;background-image:var(--grain);background-size:220px 220px;opacity:var(--grain-o)}
 ::selection{background:color-mix(in oklab,var(--accent) 34%,transparent);color:var(--ink)}
 h1,h2,h3,h4,p,figure,dl,dd,ul,ol{margin:0}
@@ -367,7 +373,7 @@ circle.adot{fill:var(--bad);stroke:var(--ground);stroke-width:1.5}circle.adot.ac
 .ivg td{padding-block:8px}
 
 /* ---------- prototype pill ---------- */
-.pk{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;align-items:center;gap:4px;padding:4px 4px 4px 5px;border-radius:999px;background:var(--pk-bg);color:var(--pk-ink);box-shadow:var(--shadow-2)}
+.pk{position:fixed;left:calc(16px + env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;align-items:center;gap:4px;padding:4px 4px 4px 5px;border-radius:999px;background:var(--pk-bg);color:var(--pk-ink);box-shadow:var(--shadow-2)}
 .pk .pm{font:500 9.5px/1 var(--mono);letter-spacing:.12em;padding:6px 8px;border-radius:999px;background:var(--accent);color:var(--on-accent)}
 .pk button{height:28px;padding:0 11px;border-radius:999px;color:var(--pk-ink);font:500 12px/1 var(--sans);white-space:nowrap}
 .pk button:hover{background:var(--pk-line)}
@@ -631,9 +637,147 @@ tr.cur td{background:color-mix(in oklab,var(--ok) 6%,transparent)}
 @media(max-width:900px){.rcp{grid-template-columns:minmax(0,1fr)}.rul::before{display:none}.rul{padding:10px 0}.node,.rbt{grid-template-columns:minmax(0,1fr)}.roles{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 0}.roles>div:nth-child(3){border-left:0;padding-left:0}}
 @media(max-width:520px){.roles{grid-template-columns:minmax(0,1fr)}.roles>div{border-left:0;padding-left:0}.cstk li{grid-template-columns:minmax(0,1fr);gap:4px}.cstk .lyr{text-align:left;padding-top:0}.rls li{grid-template-columns:minmax(0,1fr);gap:4px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+/* ---------- theme switch (rail foot · spec §2.4) ---------- */
+.thm{display:flex;gap:2px;padding:2px;margin:0 6px;border-radius:9px;background:var(--ground-2);border:1px solid var(--line)}
+.thm button{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;height:26px;border-radius:7px;font:500 11.5px/1 var(--sans);color:var(--faint);white-space:nowrap}
+.thm button:hover{color:var(--ink)}
+.thm button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--bevel),inset 0 0 0 1px var(--line-2)}
+.thm .ic{width:13px;height:13px}
+@media(min-width:901px){.A.rc .thm{margin:0;width:44px;padding:2px}.A.rc .thm button span{display:none}.A.rc .thm button:not([aria-pressed="true"]){display:none}}
+@media(max-width:900px){.thm{display:none}}
+
+/* ---------- session workbench (会话详情) ---------- */
+.wbc{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:9px 12px 9px 14px;border:1px solid var(--line);border-bottom:0;border-radius:var(--r3) var(--r3) 0 0;background:var(--surface);box-shadow:var(--bevel)}
+.grp{display:inline-flex;gap:2px;padding:2px;border-radius:9px;background:var(--ground-2);border:1px solid var(--line)}
+.grp button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px 0 9px;border-radius:7px;font:500 12.5px/1 var(--sans);color:var(--ink-2)}
+.grp button:hover:not([disabled]){background:var(--surface);color:var(--ink);box-shadow:var(--bevel),inset 0 0 0 1px var(--line-2)}
+.grp button[disabled]{color:var(--faint);opacity:.55;cursor:not-allowed}
+.grp .ic{width:13px;height:13px}
+.wbc .sp{flex:1}
+.wbc .vr{width:1px;height:22px;background:var(--line)}
+.clk{display:flex;align-items:baseline;gap:8px}
+.clk b{font:500 19px/1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em;color:var(--ink);min-width:8.5ch;text-align:right}
+.clk small{font:400 12px var(--mono);color:var(--faint)}
+.wbc .seg button{height:24px;padding:0 9px;font:500 11.5px/1 var(--mono)}
+.wb{display:grid;grid-template-columns:268px minmax(0,1fr) 304px;height:clamp(560px,calc(100vh - 286px),880px);border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow-1);overflow:hidden}
+.wb>*{min-width:0;min-height:0}
+.wbf{display:flex;align-items:center;gap:6px 18px;flex-wrap:wrap;padding:8px 14px;border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r3) var(--r3);background:var(--ground-2);font:400 11px/1.4 var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.wbf b{font-weight:500;color:var(--ink-2)}
+.wbf .sp{flex:1}
+.wbf .lv{display:inline-flex;align-items:center;gap:7px}
+.wbf .lv i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2.2s var(--ease) infinite}
+.wbf button{font:inherit;color:var(--warn);display:inline-flex;align-items:center;gap:5px}
+.wbf button:hover{text-decoration:underline;text-underline-offset:3px}
+.wbf button .ic{width:12px;height:12px}
+.wcol{display:flex;flex-direction:column;min-height:0;min-width:0}
+.wcol+.wcol{border-left:1px solid var(--line)}
+.whd{display:flex;align-items:center;justify-content:space-between;gap:8px;height:44px;flex:none;padding:0 10px 0 14px;border-bottom:1px solid var(--line)}
+.whd h3{font:500 13px/1 var(--sans);color:var(--ink);display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.whd h3 .n{font:400 11px var(--mono);color:var(--faint)}
+.ib{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:6px;color:var(--faint)}
+.ib:hover{color:var(--ink);background:var(--row-hover)}
+.ib .ic{width:14px;height:14px}
+/* scene tree */
+.tsr{position:relative;margin:10px 10px 8px;flex:none}
+.tsr .ic{position:absolute;left:9px;top:50%;margin-top:-7px;width:14px;height:14px;color:var(--faint);pointer-events:none}
+.tsr input{-webkit-appearance:none;appearance:none;width:100%;height:30px;padding:0 10px 0 30px;border-radius:var(--r2);border:1px solid var(--line-2);background:var(--ground);color:var(--ink);font:400 12.5px/1 var(--sans)}
+.tsr input::placeholder{color:var(--faint)}
+.tsr input:hover{border-color:var(--ghost)}
+.tsr input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--accent) 20%,transparent)}
+.tkf{display:flex;gap:2px;flex:none;margin:0 10px 6px;padding:2px;border-radius:8px;background:var(--ground-2);border:1px solid var(--line)}
+.tkf button{flex:1;display:inline-flex;align-items:center;justify-content:center;height:22px;border-radius:6px;font:500 11px/1 var(--sans);color:var(--muted);white-space:nowrap}
+.tkf button:hover{color:var(--ink)}
+.tkf button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--bevel),inset 0 0 0 1px var(--line-2)}
+.tbody{flex:1;overflow:auto;padding:4px 6px 14px 8px;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+.tr{position:relative;display:flex;align-items:center;height:28px;padding-right:4px;border-radius:6px;color:var(--ink-2);font-size:13px;cursor:pointer;white-space:nowrap}
+.tr:hover{background:var(--row-hover)}
+.tr .ig{flex:none;align-self:stretch;width:calc(var(--d) * 14px);background-image:repeating-linear-gradient(to right,transparent 0 7px,var(--line) 7px 8px,transparent 8px 14px)}
+.tr .tw2{flex:none;display:grid;place-items:center;width:16px;height:18px;border-radius:4px;color:var(--faint)}
+.tr .tw2 .ic{width:10px;height:10px;stroke-width:2;transition:transform var(--dur) var(--ease)}
+.tr .tw2[aria-expanded="true"] .ic{transform:rotate(90deg)}
+.tr button.tw2:hover{color:var(--ink);background:var(--row-hover)}
+.tr .ki{flex:none;width:15px;height:15px;margin:0 7px 0 2px;color:var(--faint);vertical-align:0}
+.tr .tn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tr .tm{flex:none;margin-left:6px;font:400 10.5px var(--mono);color:var(--faint)}
+.tr .chip{height:18px;padding:0 7px 0 6px;font-size:10.5px;margin-left:6px}
+.tr .eye{flex:none;display:grid;place-items:center;width:22px;height:22px;margin-left:2px;border-radius:5px;color:var(--faint);opacity:0}
+.tr .eye .ic{width:13px;height:13px}
+.tr:hover .eye,.tr .eye:focus-visible,.tr.hid .eye{opacity:1}
+.tr .eye:hover{color:var(--ink);background:var(--row-hover)}
+.tr.sec{height:24px;font:400 11.5px var(--mono);color:var(--muted)}
+.tr.sec .ki{width:13px;height:13px;margin:0 8px 0 3px}
+.tr.dev .tn{color:var(--ink);font-weight:500}
+.tr.dev .ki{color:var(--ink-2)}
+.tr.anc .tn{color:var(--ink)}
+.tr.hid .tn,.tr.hid .ki{color:var(--ghost)}
+.tr.on{background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-2);color:var(--ink)}
+.tr.on::before{content:"";position:absolute;left:-6px;top:6px;bottom:6px;width:2px;border-radius:0 2px 2px 0;background:var(--accent)}
+.tr.on .ki{color:var(--accent)}
+.tr mark{background:color-mix(in oklab,var(--accent) 22%,transparent);color:inherit;border-radius:2px;padding:0 1px}
+.tlg{display:flex;flex-wrap:wrap;gap:4px 10px;flex:none;padding:10px 14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--faint)}
+.tlg span{display:inline-flex;align-items:center;gap:5px}
+.tlg .ic{width:12px;height:12px}
+.tempty{padding:18px 8px;color:var(--muted);font-size:12.5px}
+/* viewport column */
+.wtab{display:flex;align-items:center;gap:6px 12px;height:44px;flex:none;padding:0 10px 0 14px;border-bottom:1px solid var(--line)}
+.wtab .tabs{border:0;margin:0;gap:22px;align-self:stretch;overflow:visible}
+.wtab .tab{padding:0;font-size:13px;height:100%}
+.wtab .tab .bd{height:16px;min-width:18px;font-size:10px;background:color-mix(in oklab,var(--warn) 18%,transparent);color:var(--warn)}
+.wtab .sp{flex:1}
+.wtab .seg button{height:24px;padding:0 9px;font-size:11.5px}
+.lyr{display:inline-flex;gap:4px}
+.lyr button{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px 0 7px;border-radius:999px;font:500 11.5px/1 var(--sans);color:var(--muted);box-shadow:inset 0 0 0 1px var(--line-2)}
+.lyr button:hover{color:var(--ink);box-shadow:inset 0 0 0 1px var(--ghost)}
+.lyr button i{position:relative;width:11px;height:11px;border-radius:3px;box-shadow:inset 0 0 0 1.2px var(--ghost)}
+.lyr button[aria-pressed="true"]{color:var(--ink);background:var(--surface-2)}
+.lyr button[aria-pressed="true"] i{background:var(--ink);box-shadow:none}
+.lyr button[aria-pressed="true"] i::after{content:"";position:absolute;left:3px;top:2px;width:3px;height:5px;border:solid var(--surface);border-width:0 1.4px 1.4px 0;transform:rotate(45deg)}
+.wst{position:relative;flex:1;min-height:0;background:radial-gradient(120% 95% at 50% 36%,var(--stage-1),var(--stage-2))}
+.wst .stage{position:absolute;inset:0;aspect-ratio:auto;border-radius:0}
+.wst .chr2{position:absolute;z-index:3;left:14px;top:12px;display:flex;align-items:center;gap:10px;font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);pointer-events:none}
+.wst .chr2 i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2.2s var(--ease) infinite}
+.wst .whint{position:absolute;left:0;right:0;bottom:12px;z-index:3;text-align:center;font-size:11.5px;color:var(--faint);pointer-events:none}
+.wst .gz{position:absolute;left:14px;bottom:12px;z-index:3;width:46px;height:46px;pointer-events:none}
+.gz text{font:500 9px var(--mono)}
+.wdg{flex:1;overflow:auto;padding:14px 16px}
+.winv{flex:none;border-top:1px solid var(--line)}
+.winv .whd{border-bottom:0;height:42px}
+.winv .sel select{height:26px;font-size:12px}
+.winv p{padding:0 14px 14px;font-size:12.5px;color:var(--muted)}
+/* inspector */
+.wins{flex:1;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+.wins>.seg{display:flex;margin:10px 14px 2px}
+.wins>.seg button{flex:1;justify-content:center}
+.isec{padding:14px 16px 12px;border-top:1px solid var(--line)}
+.isec.hd{border-top:0;padding-top:12px}
+.ihd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+.iname{font:400 21px/1.25 var(--serif);letter-spacing:-.005em;color:var(--ink);margin:6px 0 6px;overflow-wrap:anywhere}
+.ipath{display:flex;align-items:flex-start;gap:4px;font:400 11px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.ipath code{flex:1;min-width:0;font-size:inherit;color:inherit}
+.ipath .ib{width:22px;height:22px;margin-top:-3px}
+.ipath .ib .ic{width:12px;height:12px}
+.xyz>div{display:grid;grid-template-columns:3px 18px minmax(0,1fr);align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.xyz>div:last-child{border-bottom:0}
+.xyz i{height:14px;border-radius:2px}
+.xyz dt{font:500 11px var(--mono);color:var(--muted)}
+.xyz dd{font:500 14px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.quat{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--ground-2)}
+.quat>div{display:grid;gap:3px;padding:7px 8px 8px;border-left:1px solid var(--line)}
+.quat>div:first-child{border-left:0}
+.quat dt{font:500 10px var(--mono);color:var(--faint);text-transform:uppercase}
+.quat dd{font:400 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.iacts{display:grid}
+.iacts li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.iacts li:last-child{border-bottom:0}
+.iacts code{font-size:12px;color:var(--ink)}
+.iempty{display:grid;justify-items:center;gap:8px;padding:56px 24px;text-align:center;color:var(--muted);font-size:12.5px}
+.iempty .ic{width:28px;height:28px;color:var(--ghost);stroke-width:1.1}
+.iempty b{font:400 17px/1.3 var(--serif);color:var(--ink)}
+@media(max-width:1180px){.wb{grid-template-columns:240px minmax(0,1fr);height:auto}.wb>.wcol:last-child{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}.wst{min-height:420px}.wcol.wtr{max-height:640px}}
+@media(max-width:760px){.wb{grid-template-columns:minmax(0,1fr)}.wcol+.wcol{border-left:0;border-top:1px solid var(--line)}.wcol.wtr{max-height:420px}}
 </style>
 <div class="wrap" id="root"></div>
-<div class="pk" role="group" aria-label="原型"><span class="pm">PROTOTYPE</span><button id="pk-theme" type="button" aria-label="切换明暗主题">明/暗</button></div>
+<div class="pk" role="note" aria-label="原型"><span class="pm">PROTOTYPE</span></div>
 <div id="tip" role="tooltip" hidden></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -983,7 +1127,16 @@ res:'<rect x="4" y="4" width="8" height="8" rx="1.2"/><path d="M6.5 1.8V4M9.5 1.
 lock:'<rect x="3.2" y="7.2" width="9.6" height="6.6" rx="1.4"/><path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8"/>',
 list:'<path d="M5.6 4h8M5.6 8h8M5.6 12h8"/><circle cx="2.7" cy="4" r=".8" fill="currentColor" stroke="none"/><circle cx="2.7" cy="8" r=".8" fill="currentColor" stroke="none"/><circle cx="2.7" cy="12" r=".8" fill="currentColor" stroke="none"/>',
 rcol:'<rect x="2" y="2.6" width="12" height="10.8" rx="1.8"/><path d="M6 2.6v10.8"/><path d="M10.8 6.2L9 8l1.8 1.8"/>',
-rexp:'<rect x="2" y="2.6" width="12" height="10.8" rx="1.8"/><path d="M6 2.6v10.8"/><path d="M9 6.2L10.8 8 9 9.8"/>'};
+rexp:'<rect x="2" y="2.6" width="12" height="10.8" rx="1.8"/><path d="M6 2.6v10.8"/><path d="M9 6.2L10.8 8 9 9.8"/>',
+pause:'<rect x="4" y="3.2" width="2.6" height="9.6" rx=".8"/><rect x="9.4" y="3.2" width="2.6" height="9.6" rx=".8"/>',play:'<path d="M5 3.2l7.5 4.8L5 12.8z"/>',step:'<path d="M3.6 3.6l6 4.4-6 4.4z"/><path d="M12.2 3.4v9.2"/>',
+reset:'<path d="M3.3 8a4.7 4.7 0 1 0 1.4-3.3"/><path d="M3.1 2.6v2.7h2.7"/>',reload:'<path d="M12.7 6.2A4.9 4.9 0 0 0 3.6 6"/><path d="M3.3 9.8a4.9 4.9 0 0 0 9.1.2"/><path d="M12.9 2.8v3.4H9.5M3.1 13.2V9.8h3.4"/>',
+stop:'<rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1.6"/>',ext:'<path d="M9.5 2.5h4v4M13.5 2.5L7.6 8.4"/><path d="M12 9.6v2.9a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2.9"/>',
+search:'<circle cx="7" cy="7" r="4.3"/><path d="M10.3 10.3l3.2 3.2"/>',target:'<circle cx="8" cy="8" r="4.6"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><path d="M8 1.4v2.4M8 12.2v2.4M1.4 8h2.4M12.2 8h2.4"/>',fold:'<path d="M5 2.8l3 3 3-3M5 13.2l3-3 3 3"/>',
+eye:'<path d="M1.6 8s2.4-4.4 6.4-4.4S14.4 8 14.4 8s-2.4 4.4-6.4 4.4S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="1.9"/>',eyeoff:'<path d="M2.4 2.4l11.2 11.2"/><path d="M6.4 3.8c.5-.1 1-.2 1.6-.2 4 0 6.4 4.4 6.4 4.4s-.6 1.1-1.8 2.3M10.1 12c-.6.3-1.3.4-2.1.4-4 0-6.4-4.4-6.4-4.4s.8-1.4 2.2-2.7"/>',
+kgrp:'<path d="M2.2 4.7c0-.6.4-1 1-1h2.9l1.3 1.5h5.4c.6 0 1 .4 1 1v5.6c0 .6-.4 1-1 1H3.2c-.6 0-1-.4-1-1z"/>',kdev:'<rect x="2.3" y="3.3" width="11.4" height="9.4" rx="2"/><path d="M4.9 6.2h3.4"/><circle cx="10.7" cy="9.7" r="1.3" fill="currentColor" stroke="none"/>',
+kbody:'<path d="M8 1.8l5.6 3.1v6.2L8 14.2l-5.6-3.1V4.9z"/><path d="M2.4 4.9L8 8l5.6-3.1M8 8v6.2"/>',kstat:'<path d="M8 1.9l4.8 2.6v5.2L8 12.3 3.2 9.7V4.5z"/><path d="M3.2 4.5L8 7.1l4.8-2.6M8 7.1v5.2"/><path d="M1.8 14.4h12.4"/>',
+ksite:'<circle cx="8" cy="8" r="3.3"/><path d="M8 1.6v3.1M8 11.3v3.1M1.6 8h3.1M11.3 8h3.1"/>',kjoint:'<circle cx="4.7" cy="11.3" r="2.2"/><circle cx="11.3" cy="4.7" r="2.2"/><path d="M6.3 9.7l3.4-3.4"/>',
+sun:'<circle cx="8" cy="8" r="2.7"/><path d="M8 1.6v1.5M8 12.9v1.5M1.6 8h1.5M12.9 8h1.5M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1"/>',moon:'<path d="M13.1 9.5A5.5 5.5 0 0 1 6.5 2.9a5.5 5.5 0 1 0 6.6 6.6z"/>',auto:'<circle cx="8" cy="8" r="5.6"/><path d="M8 2.4v11.2A5.6 5.6 0 0 0 8 2.4z" fill="currentColor" stroke="none"/>'};
 const icon=(k,c)=>`<svg class="ic${c?' '+c:''}" viewBox="0 0 16 16" aria-hidden="true">${IC[k]||''}</svg>`;
 const demo='<span class="demo">示例数据</span>';
 const chip=(c,t)=>`<span class="chip ${c}"><i></i>${t}</span>`;
@@ -1268,14 +1421,80 @@ return `<div class="strip" role="group" aria-label="${sj==='agent'?'Agent 层':'
 /* ---------- pages ---------- */
 function drawer(){const id=S.eq;if(!id)return `<div class="eb">设备抽屉</div><h3>点击地图上的设备</h3><p class="mt sm">查看它的素材、实体类型与示教位置。</p><div class="eb" style="margin-top:6px">图例</div><div class="dl">${AS.map(a=>{const gp=gaps(a);return `<button type="button" data-a="eq" data-id="${a.id}"><i class="${gp.some(x=>x[2]==='gap')?'g':gp.length?'w':''}"></i><span>${a.nm}</span><span>${a.kk}</span></button>`}).join('')}</div>`;
 const a=findA(id);return `<div class="bar" style="justify-content:space-between"><span class="eb">${a.kk}</span><button type="button" class="lk back" id="drawer-close" data-a="eq" data-id="">${icon('x')}关闭</button></div><h3>${a.nm}</h3><code>${a.id}</code>${a.impl?`<div><div class="eb" style="margin-bottom:4px">实体类型 <code>${a.impl}</code></div>${etBlock(a.impl)}</div>`:'<p class="mt sm">无实体类型，仅作为障碍物或布景。</p>'}${a.id.indexOf('centrifuge')>0?'<div><div class="eb" style="margin-bottom:4px">示教位置</div><p><code>centrifuge.slot1</code> … <code>slot4</code></p></div>':''}${a.id.indexOf('rack')>0?'<div><div class="eb" style="margin-bottom:4px">示教位置</div><p><code>rack.A1</code> … <code>rack.A20</code></p></div>':''}<div>${gapChips(a)}</div><div>${go('asset',a.id,'打开素材详情'+icon('ar'),'btn')}</div>`}
+/* ---------- session workbench (会话详情 · 场景树 / 视口 / 检查器) ---------- */
+function tn(n,k,ch,x){return Object.assign({n,k,ch:ch||[]},x||{})}
+const LK=(n,j,ss)=>tn(n,'body',[...(ss||[]).map(s=>tn(s,'site')),tn('anchor','site'),tn(j,'joint')]);
+const SLOT=i=>tn('Slot'+i+'Body','body',[tn('Slot'+i,'site'),tn('anchor','site'),tn('Slot'+i+'Mount','joint')]);
+const RKS=['A1','A2','A3','A4','B1','B2','B3','B4'];
+const TREE=[tn('World','group',[tn('Lab','group',[
+tn('RobotA','device',[tn('fr3','group',[LK('base','fixed_base'),LK('fr3_link0','fr3_base_joint'),...[1,2,3,4,5,6,7,8].map(i=>LK('fr3_link'+i,'fr3_joint'+i)),LK('fr3_hand','fr3_hand_joint',['tcp']),LK('fr3_hand_tcp','fr3_hand_tcp_joint'),LK('fr3_leftfinger','fr3_finger_joint1'),LK('fr3_rightfinger','fr3_finger_joint2')])],{ty:'robot-arm/v1',ph:'idle',rd:[['phase','idle'],['gripperWidth','0.080 m'],['location','home']]}),
+tn('Tubes','group',Array.from({length:20},(_,i)=>{const n='Tube'+String(i+1).padStart(2,'0');return tn(n,'body',[tn(n+'_free_joint','joint')])})),
+tn('Centrifuge','device',[tn('Rotor','body',[SLOT(1),SLOT(2),SLOT(3),SLOT(4),tn('anchor','site'),tn('Spindle','joint')]),tn('Lid','body',[tn('anchor','site'),tn('LidHinge','joint')]),tn('Housing','static')],{ty:'centrifuge/v1',ph:'idle',rd:[['phase','idle'],['lidOpen','true'],['rpm','0'],['balanced','true']]}),
+tn('Workbench','group',['Top','Leg1','Leg2','Leg3','Leg4'].map(n=>tn(n,'static'))),
+tn('Rack','group',[...RKS.map(s=>tn(s+'Geometry','group',['Support','Guide0','Guide2'].map(n=>tn(n,'static')))),tn('Plate','static')]),
+tn('Floor','static')])]),...RKS.map(s=>tn(s,'site'))];
+const TIDX={},TALL=[];
+(function ix(L,par,d){L.forEach(x=>{x.key=(par||'')+'/'+x.n;x.d=d;x.par=par;TIDX[x.key]=x;TALL.push(x);ix(x.ch,x.key,d+1)})})(TREE,'',0);
+const KI={group:'kgrp',device:'kdev',body:'kbody',static:'kstat',site:'ksite',joint:'kjoint'};
+const KL={group:'组',device:'设备',body:'刚体',static:'静态',site:'站点',joint:'关节'};
+const PK2T={'robot/fr3@1':'/World/Lab/RobotA','device/labspin-centrifuge@1':'/World/Lab/Centrifuge','labware/tube-rack-5x4@1':'/World/Lab/Rack','environment/robot-bench-2000@1':'/World/Lab/Workbench'};
+const T2PK={};for(const k in PK2T)T2PK[PK2T[k]]=k;
+const WSEL0='/World/Lab/RobotA/fr3/fr3_link1';
+S.wb={sel:WSEL0,open:new Set(['/World','/World/Lab','/World/Lab/RobotA','/World/Lab/RobotA/fr3',WSEL0]),hid:new Set(),q:'',kf:'all',tab:'sp',ins:'sp',cam:'iso',ly:{grid:1,sites:1,org:0,col:0},pz:false,rtf:'1'};
+const ancOf=k=>{const r=[];let x=TIDX[k];while(x&&x.par){r.push(x.par);x=TIDX[x.par]}return r};
+const devOf=k=>{let x=TIDX[k];while(x&&x.k!=='device')x=TIDX[x.par];return x||null};
+const pkOf=k=>{let x=TIDX[k];while(x){if(T2PK[x.key])return T2PK[x.key];x=TIDX[x.par]}return null};
+const hl=(s,q)=>{const i=s.toLowerCase().indexOf(q.toLowerCase());return i<0?esc(s):esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+q.length))+'</mark>'+esc(s.slice(i+q.length))};
+function trow(x,d,flat){const W=S.wb,has=x.ch.length>0&&!flat,op=W.open.has(x.key),on=W.sel===x.key,hid=W.hid.has(x.key),sec=x.k==='site'||x.k==='joint',anc=!on&&W.sel.indexOf(x.key+'/')===0;
+const meta=flat?`<span class="tm">${esc((x.par||'/').split('/').pop()||'/')}</span>`:x.k==='device'?chip(x.ph==='running'?'run':'na',x.ph):x.k==='group'&&has&&!op?`<span class="tm">${x.ch.length}</span>`:'';
+return `<div class="tr${sec?' sec':''}${x.k==='device'?' dev':''}${on?' on':''}${anc?' anc':''}${hid?' hid':''}" style="--d:${d}" id="tr-${x.key.replace(/[^A-Za-z0-9]/g,'_')}" data-a="tsel" data-id="${x.key}" role="treeitem" aria-level="${d+1}"${has?` aria-expanded="${op}"`:''} aria-selected="${on}" tabindex="${on?0:-1}" title="${x.key}"><span class="ig"></span>${has?`<button type="button" class="tw2" data-a="ttog" data-id="${x.key}" tabindex="-1" aria-label="${op?'折叠':'展开'} ${x.n}" aria-expanded="${op}">${icon('chev')}</button>`:'<span class="tw2"></span>'}${icon(KI[x.k],'ki')}<span class="tn">${flat&&W.q?hl(x.n,W.q):esc(x.n)}</span>${meta}<button type="button" class="eye" data-a="tvis" data-id="${x.key}" tabindex="-1" aria-label="${hid?'显示':'隐藏'} ${x.n}" aria-pressed="${hid}">${icon(hid?'eyeoff':'eye')}</button></div>`}
+function tlist(){const W=S.wb,out=[];
+if(W.q||W.kf!=='all'){const q=W.q.toLowerCase();TALL.filter(x=>(W.kf==='all'||x.k===W.kf||(W.kf==='body'&&x.k==='static'))&&(!q||x.key.toLowerCase().indexOf(q)>=0)).forEach(x=>out.push(trow(x,0,true)));return out.length?out.join(''):'<p class="tempty">没有匹配的对象。换个名称，或清空筛选。</p>'}
+const walk=(L,d)=>L.forEach(x=>{out.push(trow(x,d));if(x.ch.length&&W.open.has(x.key))walk(x.ch,d+1)});walk(TREE,0);return out.join('')}
+const wTree=()=>`<section class="wcol wtr" aria-label="场景树"><header class="whd"><h3>场景树<span class="n">${TALL.length}</span></h3><div class="bar" style="gap:2px"><button type="button" class="ib" data-a="tfocus" aria-label="定位到选中对象" title="定位到选中对象">${icon('target')}</button><button type="button" class="ib" data-a="tfold" aria-label="全部折叠" title="全部折叠">${icon('fold')}</button></div></header>
+<div class="tsr">${icon('search')}<input id="tq" type="search" placeholder="筛选对象 · 名称或路径" value="${esc(S.wb.q)}" aria-label="筛选对象" data-wbq="1" autocomplete="off"></div>
+<div class="tkf" role="group" aria-label="按类型筛选">${[['all','全部'],['device','设备'],['body','刚体'],['site','站点'],['joint','关节']].map(k=>`<button type="button" id="tkf-${k[0]}" data-a="tkf" data-v="${k[0]}" aria-pressed="${S.wb.kf===k[0]}">${k[1]}</button>`).join('')}</div>
+<div class="tbody" id="tbody" role="tree" aria-label="场景对象">${tlist()}</div>
+<footer class="tlg" aria-label="图例">${['device','body','static','site','joint'].map(k=>`<span>${icon(KI[k])}${KL[k]}</span>`).join('')}</footer></section>`;
+const GZ=`<svg class="gz" viewBox="-23 -23 46 46" aria-hidden="true"><line x1="0" y1="0" x2="15" y2="8" stroke="var(--c2)" stroke-width="1.6" stroke-linecap="round"/><line x1="0" y1="0" x2="-15" y2="8" stroke="var(--c3)" stroke-width="1.6" stroke-linecap="round"/><line x1="0" y1="0" x2="0" y2="-17" stroke="var(--c1)" stroke-width="1.6" stroke-linecap="round"/><text x="17" y="14" fill="var(--c2)">X</text><text x="-22" y="14" fill="var(--c3)">Y</text><text x="3" y="-15" fill="var(--c1)">Z</text></svg>`;
+const DIAG=[['warn','visual','/World/Lab/RobotA/fr3/fr3_link3','GLB 材质缺少 metallicRoughness，回退为 PBR 默认值'],['warn','visual','/World/Lab/Rack/A1Geometry/Guide0','网格以基本几何体近似（box）'],['warn','collider','/World/Lab/Centrifuge/Lid','碰撞体与视觉包围盒偏差 6 mm'],['na','stream','—','首帧到达用时 412 ms']];
+function wCenter(){const W=S.wb,pk=pkOf(W.sel),ly=W.ly;
+const d={kind:'lab',th:'fr3',sel:pk,inter:'wpk',pins:[{a:'arm',id:'robot/fr3@1',k:'RobotA',t:'idle · 夹爪 0.080 m',dy:18},{a:'cent',id:'device/labspin-centrifuge@1',k:'Centrifuge',t:'idle · 盖 开',dy:26}],fb:()=>labSVG({th:'fr3',inter:true,sel:pk,labels:true})};
+const tabs=`<div class="tabs" role="tablist" aria-label="视图"><button type="button" class="tab" role="tab" id="wt-sp" data-a="wbt" data-v="sp" aria-selected="${W.tab==='sp'}">空间视图</button><button type="button" class="tab" role="tab" id="wt-dg" data-a="wbt" data-v="dg" aria-selected="${W.tab==='dg'}">诊断<b class="bd">60</b></button></div>`;
+const tools=W.tab==='sp'?`<div class="seg" role="group" aria-label="相机">${[['persp','透视'],['iso','等距']].map(c=>`<button type="button" data-a="wcam" data-v="${c[0]}" aria-pressed="${W.cam===c[0]}">${c[1]}</button>`).join('')}</div><div class="lyr" role="group" aria-label="显示图层">${[['grid','网格'],['sites','站点'],['org','原点'],['col','碰撞体']].map(l=>`<button type="button" id="ly-${l[0]}" data-a="wly" data-v="${l[0]}" aria-pressed="${!!ly[l[0]]}"><i aria-hidden="true"></i>${l[1]}</button>`).join('')}</div>`:demo;
+const main=W.tab==='sp'?`<div class="wst">${stage(d,'','fr3-lab@2 实时空间视图')}<div class="chr2"><i></i>实时空间视图<span style="opacity:.6">·</span>米 · Z 向上</div>${GZ}<div class="whint">拖动旋转 · 滚轮缩放 · 点击检查</div></div>`
+:`<div class="wdg">${tw(`<table><thead><tr><th>级别</th><th>类别</th><th>对象</th><th>说明</th></tr></thead><tbody>${DIAG.map(r=>`<tr><td>${chip(r[0],r[0]==='warn'?'警告':'信息')}</td><td><code>${r[1]}</code></td><td><code>${r[2]}</code></td><td class="mt">${r[3]}</td></tr>`).join('')}</tbody></table>`)}<p class="mt sm" style="margin-top:10px">另有 56 条同类警告 · 不影响权威状态</p></div>`;
+return `<section class="wcol" aria-label="视口"><header class="wtab">${tabs}<span class="sp"></span>${tools}</header>${main}<div class="winv"><header class="whd"><h3>调用<span class="n">0</span></h3><span class="sel"><select aria-label="按设备筛选调用"><option>全部设备</option><option>RobotA</option><option>Centrifuge</option></select>${icon('chev')}</span></header><p>运行设备动作后，这里显示进度与结果。</p></div></section>`}
+const PSE={[WSEL0]:[-0.5,0,1.083,0,0,0,1]};
+function poseOf(k){if(PSE[k])return PSE[k];let h=0;for(const c of k)h=(h*31+c.charCodeAt(0))>>>0;const r=i=>((h>>>(i*4))&255)/255;return[-.9+r(0)*1.8,-.6+r(1)*1.2,.75+r(2)*.6,0,0,(r(3)-.5)*.6,Math.sqrt(1-((r(3)-.5)*.6)**2)]}
+const f6=v=>(v<0?'−':'')+Math.abs(v).toFixed(6);
+function wInsp(){const W=S.wb,x=TIDX[W.sel],dv=x?devOf(W.sel):null;
+if(!x)return `<section class="wcol" aria-label="检查器"><header class="whd"><h3>检查器</h3></header><div class="iempty">${icon('target')}<b>选择一个对象</b><span>在场景树或视口中选择刚体、站点或关节，查看它的权威位姿。</span></div></section>`;
+const tabs=`<div class="seg" role="group" aria-label="检查器视图"><button type="button" data-a="wins" data-v="sp" aria-pressed="${W.ins!=='dev'||!dv}">空间</button><button type="button" data-a="wins" data-v="dev" aria-pressed="${W.ins==='dev'&&!!dv}"${dv?'':' disabled title="所选对象不属于任何设备"'}>设备${dv?' · '+esc(dv.n):''}</button></div>`;
+let body='';
+if(W.ins==='dev'&&dv){const et=ET[dv.ty]||{acts:[]};body=`<div class="isec hd"><span class="eb">设备 · <code>${dv.ty}</code></span><h3 class="iname">${esc(dv.n)}</h3><div class="ipath"><code>${dv.key}</code></div></div>
+<div class="isec"><div class="ihd"><span class="eb">读数</span>${chip('na',dv.ph)}</div>${kv(dv.rd.map(r=>[r[0],`<code>${r[1]}</code>`]))}</div>
+<div class="isec"><div class="ihd"><span class="eb">动作</span><span class="ft sm">经 HTTP 动作管线</span></div><ul class="iacts">${et.acts.map(a=>`<li><code>${esc(a)}</code><button type="button" class="btn sm">调用</button></li>`).join('')}</ul></div>`}
+else{const p=poseOf(x.key);body=`<div class="isec hd"><span class="eb">${KL[x.k]} · ${x.k}</span><h3 class="iname">${esc(x.n)}</h3><div class="ipath"><code>${x.key}</code><button type="button" class="ib" data-a="copy" data-k="wp" data-t="${x.key}" aria-label="复制路径">${icon(S.flags.copied==='wp'?'check':'copy')}</button></div></div>
+<div class="isec"><div class="ihd"><span class="eb">世界位置</span><span class="ft sm">m</span></div><dl class="xyz">${['X','Y','Z'].map((a,i)=>`<div><i style="background:var(--c${[2,3,1][i]})"></i><dt>${a}</dt><dd>${f6(p[i])}</dd></div>`).join('')}</dl></div>
+<div class="isec"><div class="ihd"><span class="eb">四元数</span><span class="ft sm">xyzw</span></div><dl class="quat">${['x','y','z','w'].map((a,i)=>`<div><dt>${a}</dt><dd>${p[3+i].toFixed(4)}</dd></div>`).join('')}</dl></div>
+<div class="isec"><div class="ihd"><span class="eb">最新权威样本</span></div>${kv([['simTime','<code>169.350000 s</code>'],['seq','<code>4923</code>'],['sampleTimeMs','<code>2240114.77</code>']])}</div>
+<div class="isec"><div class="ihd"><span class="eb">节点</span></div>${kv([['类型',KL[x.k]],['父级',x.par?`<code>${esc(x.par.split('/').pop())}</code>`:'—'],['稳定键','是'],['所属设备',dv?`<button type="button" class="lk" data-a="tsel" data-id="${dv.key}">${esc(dv.n)}</button>`:'<span class="ft">—</span>']])}</div>`}
+return `<section class="wcol" aria-label="检查器"><header class="whd"><h3>检查器</h3><span class="ft sm"><code>${S.wb.pz?'已暂停':'跟随最新样本'}</code></span></header><div class="wins" id="wins">${tabs}${body}</div></section>`}
+function wCtl(){const W=S.wb,pz=W.pz;return `<div class="wbc" role="toolbar" aria-label="仿真控制">${chip(pz?'warn':'run',pz?'已暂停':'运行中')}<div class="grp"><button type="button" id="wb-pause" data-a="wbp">${icon(pz?'play':'pause')}${pz?'继续':'暂停'}</button><button type="button" id="wb-step" data-a="wbstep"${pz?'':' disabled title="暂停后可单步"'}>${icon('step')}单步</button><button type="button" id="wb-reset" data-a="wbr">${icon('reset')}重置</button></div><button type="button" class="btn sm">${icon('reload')}重新载入场景</button><span class="sp"></span><div class="clk"><span class="eb">simTime</span><b>${pz?'169.3500':'169.3167'}</b><small>s</small></div><span class="vr" aria-hidden="true"></span><span class="eb">RTF</span><div class="seg" role="group" aria-label="实时倍率">${['0.25','0.5','1','2'].map(v=>`<button type="button" id="rtf-${v.replace('.','_')}" data-a="wrtf" data-v="${v}" aria-pressed="${W.rtf===v}">${v}×</button>`).join('')}</div></div>`}
+const wFoot=()=>`<div class="wbf" role="status" aria-label="流状态"><span class="lv"><i></i><b>60</b> fps 渲染</span><span><b>30</b> Hz 流</span><span><b>1.00×</b> 实际 RTF</span><span><b>2</b> ms 帧龄</span><span>epoch <b>0</b></span><span>seq <b>4923</b></span><span class="sp"></span><button type="button" data-a="wbt" data-v="dg">${icon('warn')}60 条诊断警告</button><span>rev-47f19e2</span></div>`;
+const pgWb=()=>`${wCtl()}<div class="wb">${wTree()}${wCenter()}${wInsp()}</div>${wFoot()}`;
+function themePref(){return document.documentElement.dataset.theme||'system'}
+function setTheme(v){const DE2=document.documentElement;if(v==='system')delete DE2.dataset.theme;else DE2.dataset.theme=v;try{if(v==='system')localStorage.removeItem('ls-theme');else localStorage.setItem('ls-theme',v)}catch(e){}if(G3)G3.retheme()}
+const thm=()=>`<div class="thm" role="group" aria-label="主题">${[['system','auto','跟随系统','系统'],['light','sun','浅色','浅色'],['dark','moon','深色','深色']].map(t=>`<button type="button" id="thm-${t[0]}" data-a="theme" data-v="${t[0]}" aria-pressed="${themePref()===t[0]}" aria-label="主题：${t[2]}" data-tip="主题 · ${t[2]}">${icon(t[1])}<span>${t[3]}</span></button>`).join('')}</div>`;
 const NAV=[['ov','概览'],['live','实况'],['assets','素材库'],['scenes','场景库'],['plan','计划'],['train','训练'],['eval','评估'],['cost','成本'],['res','资源'],['appr','待审批'],['sess','会话'],['rec','录制']];
-const PM={asset:'assets',scene:'scenes',job:'train',suite:'eval'};
+const PM={asset:'assets',scene:'scenes',job:'train',suite:'eval',wb:'sess'};
 const navKey=p=>PM[p]||p;
-const PAGES=NAV.map(n=>n[0]).concat(['asset','scene','job','suite']);
+const PAGES=NAV.map(n=>n[0]).concat(['asset','scene','job','suite','wb']);
 const MARK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l8.2 4.6L12 12.8 3.8 8.2z"/><path d="M3.8 8.2v7.4l8.2 4.6 8.2-4.6V8.2"/><path d="M12 12.8v7.4"/></svg>';
 function badge(k){if(k==='live'&&nal())return{h:`<b class="bd al">${nal()}</b>`,t:nal()+' 条告警'};if(k==='appr'&&np())return{h:`<b class="bd">${np()}</b>`,t:np()+' 项待审批'};if(k==='cost'&&nAn())return{h:'<i class="bdot" aria-hidden="true"></i>',t:nAn()+' 条未读异常'};return{h:'',t:''}}
 function rail(nk){const c=S.rail==='closed',tl=c?'展开侧栏':'收起侧栏';
-return `<aside class="rail" aria-label="侧栏"><div class="brand"><span class="mk">${MARK}</span><span class="bt2"><b>spatial-sync</b><small>仪器控制台 · local</small></span></div><nav aria-label="主导航">${NAV.map(n=>{const on=nk===n[0],b=badge(n[0]);return `<button type="button" class="ni${on?' on':''}" id="nav-${n[0]}" data-a="go" data-p="${n[0]}" data-tip="${n[1]}${b.t?' · '+b.t:''}" aria-label="${n[1]}${b.t?'，'+b.t:''}"${on?' aria-current="page"':''}>${icon(n[0])}<span class="nl">${n[1]}</span>${b.h}</button>`}).join('')}</nav><div class="rfoot"><span class="li"><i class="on"></i>GPU 租约 · <code>job-7f3a</code></span><span class="li"><i></i>Newton 1.7.0 · 平台</span><span>${demo}</span></div><button type="button" class="rtog" id="rail-toggle" data-a="rail" aria-expanded="${!c}" aria-label="${tl}" data-tip="${tl}">${icon(c?'rexp':'rcol')}<span class="nl">${tl}</span></button></aside>`}
+return `<aside class="rail" aria-label="侧栏"><div class="brand"><span class="mk">${MARK}</span><span class="bt2"><b>spatial-sync</b><small>仪器控制台 · local</small></span></div><nav aria-label="主导航">${NAV.map(n=>{const on=nk===n[0],b=badge(n[0]);return `<button type="button" class="ni${on?' on':''}" id="nav-${n[0]}" data-a="go" data-p="${n[0]}" data-tip="${n[1]}${b.t?' · '+b.t:''}" aria-label="${n[1]}${b.t?'，'+b.t:''}"${on?' aria-current="page"':''}>${icon(n[0])}<span class="nl">${n[1]}</span>${b.h}</button>`}).join('')}</nav><div class="rfoot"><span class="li"><i class="on"></i>GPU 租约 · <code>job-7f3a</code></span><span class="li"><i></i>Newton 1.7.0 · 平台</span><span>${demo}</span></div>${thm()}<button type="button" class="rtog" id="rail-toggle" data-a="rail" aria-expanded="${!c}" aria-label="${tl}" data-tip="${tl}">${icon(c?'rexp':'rcol')}<span class="nl">${tl}</span></button></aside>`}
 const viewTg=k=>`<div class="seg" role="group" aria-label="视图">${[['card','卡片','ov'],['list','列表','list']].map(x=>`<button type="button" id="view-${k}-${x[0]}" data-a="lib" data-k="${k}" data-v="${x[0]}" aria-pressed="${S.lib[k]===x[0]}">${icon(x[2])}${x[1]}</button>`).join('')}</div>`;
 const cardA=(a,i)=>`<button type="button" class="card" data-a="go" data-p="asset" data-id="${a.id}"><span class="fg">${thumbStage(a.th)}</span><span class="fc"><b>图 ${i+1}</b><code>${a.id}</code></span><span class="h4">${a.nm}</span><span class="meta">${dots(a)}${gaps(a).length?chip(gaps(a)[0][2],gaps(a)[0][1]):''}</span></button>`;
 const cardS=(s,i)=>`<button type="button" class="card" data-a="go" data-p="scene" data-id="${s.id}"><span class="fg">${labStage(s.th,{pad:[12,10,10,10]},'thumb',s.id+' 缩略图')}</span><span class="fc"><b>图 ${i+1}</b><code>${s.id}</code></span><span class="h4">${s.src} · ${s.org}</span><span class="meta">${sceneStatus(s)}<span class="mt sm">${s.ne} 实体 · ${s.nd} 绑定</span></span>${s.ok?`<span class="mt sm">${s.note}</span>`:`<span class="sm" style="color:var(--bad)">${s.reason}</span>`}</button>`;
@@ -1376,7 +1595,9 @@ else if(p==='cost'){cr=['<b>成本</b>'];title='成本与统计';sub='每个 Age
 else if(p==='res'){cr=['<b>资源</b>'];title='资源';sub='算力节点、LLM 与机器人模型、机器人本体及其控制器';body=pgRes()}
 else if(p==='appr'){cr=['<b>待审批</b>'];title='待审批';sub='agent 提议，人决定 · 批准前不会启动任何作业';const pend=S.appr.filter(a=>a.st==='pending'),done=S.appr.filter(a=>a.st!=='pending');
 body=`${strip('emb',null)}<div class="cmain"><main class="stack" aria-label="审批"><section class="pn inbox" aria-label="待审批收件箱"><header><h3>收件箱<span class="bd">${np()}</span></h3><div class="x"><span class="mt sm">三类训练关口 · 另有删除库版本</span></div></header>${pend.map(apprCard).join('')||`<div class="empty">${icon('check')}<span>没有待处理的门。</span></div>`}</section>${done.length?`<section class="pn inbox" aria-label="已处理"><header><h3>已处理</h3><div class="x"><span class="mt sm">可撤销</span></div></header>${done.map(apprCard).join('')}</section>`:''}</main><aside class="pn tla" aria-label="活动时间线"><header><h3>活动时间线</h3><div class="x">${demo}</div></header><div class="pb"><ul class="tl">${feedC()}</ul></div></aside></div>`}
-else if(p==='sess'){cr=['<b>会话</b>'];title='会话';sub='<code>session-8e1d03b7c4a2</code><span class="ft">·</span><code>fr3-lab@2</code>';
+else if(p==='wb'){cr=[go('sess',null,'会话','lk back'),'<b><code>session-8e1d03b7c4a2</code></b>'];title='fr3-lab@2';sub=`<code>session-8e1d03b7c4a2</code><span class="ft">·</span>${chip('run','已连接')}<span class="tag">newton · mujoco</span><span class="ft">·</span><span>2 个观察者</span>`;
+act=`<button type="button" class="btn">${icon('ext')}原生查看器</button><button type="button" class="btn">${icon('stop')}关闭会话</button>`;body=pgWb()}
+else if(p==='sess'){cr=['<b>会话</b>'];title='会话';sub='<code>session-8e1d03b7c4a2</code><span class="ft">·</span><code>fr3-lab@2</code>';act=`<button type="button" class="btn pri" id="open-wb" data-a="go" data-p="wb" data-id="session-8e1d03b7c4a2">打开工作台${icon('ar')}</button>`;
 body=`<div class="split wr"><div class="stack">${PN('视口 · fr3-lab@2',planView())}${PN('活动会话',sessBlock(),demo)}</div>${PN('操作计划 · plan-0012',opPlan())}</div>`}
 else{cr=['<b>录制</b>'];title='录制';sub='每个会话与评估回合都会留下可回放的录制';body=PN('录制',recTable(),demo)}
 const top=`<div class="top"><nav class="crumb" aria-label="位置"><span>spatial-sync</span>${cr.map(x=>sep+x).join('')}</nav><div class="bar">${demo}${chip(np()?'warn':'na','待审批 '+np())}${nal()?chip('bad','告警 '+nal()):''}${nAn()?chip('warn','异常 '+nAn()):''}</div></div>`;
@@ -1387,13 +1608,13 @@ const enc=s=>String(s).replace(/[^A-Za-z0-9._~-]/g,'.');
 function hashOf(){const g=S.pg,p=g.p;if(p==='res')return 'res~'+S.res;if(p==='train')return 'train~'+S.subj;if((p==='assets'||p==='scenes')&&S.lib[p]==='list')return p+'~list';return p+(g.id?'~'+enc(g.id):'')}
 function fromHash(){let h='';try{h=decodeURIComponent(location.hash.slice(1))}catch(e){h=''}if(!h)return false;const i=h.indexOf('~'),p=i<0?h:h.slice(0,i),t=i<0?'':h.slice(i+1);if(PAGES.indexOf(p)<0)return false;S.pg={p,id:null};
 if(p==='res'&&['gpu','model','robot'].indexOf(t)>=0)S.res=t;else if(p==='train'&&['emb','agent'].indexOf(t)>=0)S.subj=t;else if((p==='assets'||p==='scenes')&&(t==='list'||t==='card'))S.lib[p]=t;
-else if(t){const L={asset:AS.map(a=>a.id),scene:SC.map(s=>s.id),job:JB.map(j=>j.id),suite:SU.map(s=>s.id),plan:['plan-0012','tplan-003','plan-0009']}[p]||[];const m=L.find(x=>enc(x)===t);if(m)S.pg.id=m}return true}
+else if(t){const L={asset:AS.map(a=>a.id),scene:SC.map(s=>s.id),job:JB.map(j=>j.id),suite:SU.map(s=>s.id),plan:['plan-0012','tplan-003','plan-0009'],wb:['session-8e1d03b7c4a2']}[p]||[];const m=L.find(x=>enc(x)===t);if(m)S.pg.id=m}return true}
 const TIP=document.getElementById('tip');let THV=null;
 function hideTip(){if(THV&&THV.classList)THV.classList.remove('hv');THV=null;if(TIP)TIP.hidden=true}
 function showTip(el,x,y){const d=TT[el.getAttribute('data-tip')];if(!d||!TIP)return;if(THV!==el){if(THV)THV.classList.remove('hv');THV=el;el.classList.add('hv');TIP.textContent='';const t=document.createElement('div');t.className='tt';t.textContent=d.t;TIP.appendChild(t);
 d.r.forEach(r=>{const row=document.createElement('div');row.className='tr';const k=document.createElement('span');k.className='k'+(r[3]?' dl':'');k.style.borderTopColor='var('+r[0]+')';const l=document.createElement('span');l.textContent=r[1];const v=document.createElement('b');v.textContent=r[2];row.append(k,l,v);TIP.appendChild(row)});TIP.hidden=false}
 const w=TIP.offsetWidth,h=TIP.offsetHeight;let px=x+16,py=y+14;if(px+w>innerWidth-8)px=x-w-16;if(py+h>innerHeight-8)py=innerHeight-h-8;TIP.style.transform=`translate(${Math.max(8,px)}px,${Math.max(8,py)}px)`}
-function render(keep){VIEWS=[];TTN=0;for(const k in TT)delete TT[k];hideTip();const root=document.getElementById('root');root.innerHTML=view();try{const h='#'+hashOf();if(location.hash!==h)history.replaceState(null,'',h)}catch(e){}if(!keep)window.scrollTo(0,0);if(G3){G3.mount();G3.tickEnv(RM?5:(performance.now()-T0)/1000)}else tickSVG()}
+function render(keep){VIEWS=[];TTN=0;for(const k in TT)delete TT[k];hideTip();const KS={};['tbody','wins'].forEach(i=>{const e=document.getElementById(i);if(e)KS[i]=e.scrollTop});const root=document.getElementById('root');root.innerHTML=view();for(const i in KS){const e=document.getElementById(i);if(e)e.scrollTop=KS[i]}if(S.wb.rv){S.wb.rv=0;const o=document.querySelector('#tbody .tr.on');if(o)o.scrollIntoView({block:'nearest'})}try{const h='#'+hashOf();if(location.hash!==h)history.replaceState(null,'',h)}catch(e){}if(!keep)window.scrollTo(0,0);if(G3){G3.mount();G3.tickEnv(RM?5:(performance.now()-T0)/1000)}else tickSVG()}
 function railToggle(){S.rail=S.rail==='closed'?'open':'closed';try{localStorage.setItem('ls-rail',S.rail)}catch(e){}const A=document.querySelector('.A'),c=S.rail==='closed',l=c?'展开侧栏':'收起侧栏';if(A)A.classList.toggle('rc',c);const b=document.getElementById('rail-toggle');if(b){b.setAttribute('aria-expanded',String(!c));b.setAttribute('aria-label',l);b.dataset.tip=l;b.innerHTML=icon(c?'rexp':'rcol')+`<span class="nl">${l}</span>`}}
 function act(a,d){let keep=true;
 if(a==='rail'){railToggle();return}
@@ -1413,6 +1634,20 @@ else if(a==='subj'){S.subj=d.v}
 else if(a==='range'){S.cost.range=d.v}
 else if(a==='anom'){S.anom[d.id]=!S.anom[d.id]}
 else if(a==='anomall'){AN.forEach(x=>{S.anom[x.id]=true})}
+else if(a==='tsel'){S.wb.sel=d.id;ancOf(d.id).forEach(k=>S.wb.open.add(k));S.wb.rv=1}
+else if(a==='wpk'){const k=d.id&&PK2T[d.id];if(k){S.wb.sel=k;ancOf(k).forEach(x=>S.wb.open.add(x));S.wb.rv=1}}
+else if(a==='ttog'){const o=S.wb.open;if(o.has(d.id))o.delete(d.id);else o.add(d.id)}
+else if(a==='tvis'){const h=S.wb.hid;if(h.has(d.id))h.delete(d.id);else h.add(d.id)}
+else if(a==='tkf'){S.wb.kf=d.v;S.wb.rv=1}
+else if(a==='tfold'){S.wb.open=new Set(['/World','/World/Lab'])}
+else if(a==='tfocus'){S.wb.q='';S.wb.kf='all';ancOf(S.wb.sel).forEach(k=>S.wb.open.add(k));S.wb.rv=1}
+else if(a==='wbt'){S.wb.tab=d.v}
+else if(a==='wins'){S.wb.ins=d.v}
+else if(a==='wcam'){S.wb.cam=d.v}
+else if(a==='wly'){S.wb.ly[d.v]=!S.wb.ly[d.v]}
+else if(a==='wbp'){S.wb.pz=!S.wb.pz}
+else if(a==='wrtf'){S.wb.rtf=d.v}
+else if(a==='theme'){let v=d.v;if(S.rail==='closed'&&window.innerWidth>900){const o=['system','light','dark'];v=o[(o.indexOf(themePref())+1)%3]}setTheme(v)}
 const fid=document.activeElement&&document.activeElement.id;render(keep);if(keep&&fid){const el=document.getElementById(fid);if(el)try{el.focus({preventScroll:true})}catch(e){}}}
 document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(t){act(t.dataset.a,t.dataset);return}
 if(G3&&e.target.tagName==='CANVAS'){const el=e.target.closest('.stage.inter');if(!el)return;const id=G3.hit(el,e);if(id){const d=VIEWS[+el.dataset.view];act(d.inter,{id:(d.inter==='eq'&&S.eq===id)||(d.inter==='dev'&&S.dev===id)?'':id})}}});
@@ -1422,15 +1657,19 @@ document.addEventListener('pointermove',e=>{if(!G3)return;const el=e.target.tagN
 document.addEventListener('pointermove',e=>{const h=e.target&&e.target.closest?e.target.closest('.hit'):null;if(h)showTip(h,e.clientX,e.clientY);else if(THV)hideTip()},{passive:true});
 document.addEventListener('pointerleave',hideTip);
 window.addEventListener('scroll',()=>{if(THV)hideTip()},{passive:true});
-document.addEventListener('input',e=>{const n=e.target&&e.target.dataset&&e.target.dataset.note;if(n)S.notes[n]=e.target.value});
+document.addEventListener('input',e=>{const n=e.target&&e.target.dataset&&e.target.dataset.note;if(n)S.notes[n]=e.target.value;if(e.target&&e.target.dataset&&e.target.dataset.wbq){S.wb.q=e.target.value;const b=document.getElementById('tbody');if(b)b.innerHTML=tlist()}});
 document.addEventListener('change',e=>{const t=e.target,k=t&&t.dataset&&t.dataset.cf;if(!k)return;S.cost[k]=t.value;if(k==='from'||k==='to')S.cost.range='custom';const id=t.id;render(true);const el=document.getElementById(id);if(el)try{el.focus({preventScroll:true})}catch(x){}});
 window.addEventListener('resize',()=>{const n=window.innerWidth<640;if(n!==NARROW){NARROW=n;render(true)}},{passive:true});
 document.addEventListener('toggle',e=>{if(e.target&&e.target.id==='cost-dt')S.flags.dt=e.target.open},true);
 document.addEventListener('keydown',e=>{const t=e.target;
 if(t&&t.getAttribute&&t.getAttribute('role')==='tab'&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){const L=[...t.parentNode.querySelectorAll('[role=tab]')],n=L[(L.indexOf(t)+(e.key==='ArrowRight'?1:-1)+L.length)%L.length];e.preventDefault();act('tab',n.dataset);const el=document.getElementById(n.id);if(el)el.focus();return}
+if(t&&t.getAttribute&&t.getAttribute('role')==='treeitem'){const L=[...document.querySelectorAll('#tbody .tr')],i=L.indexOf(t),id=t.dataset.id,ex=t.getAttribute('aria-expanded'),rid=k=>'tr-'+k.replace(/[^A-Za-z0-9]/g,'_');let n=null;
+if(e.key==='ArrowDown')n=L[i+1];else if(e.key==='ArrowUp')n=L[i-1];
+else if(e.key==='ArrowRight'&&ex==='false'){e.preventDefault();act('ttog',{id});return}
+else if(e.key==='ArrowLeft'){if(ex==='true'){e.preventDefault();act('ttog',{id});return}const p=TIDX[id]&&TIDX[id].par;if(p)n=document.getElementById(rid(p))}
+else if(e.key==='Enter'||e.key===' '){e.preventDefault();act('tsel',{id});return}
+if(n){e.preventDefault();act('tsel',{id:n.dataset.id});const el=document.getElementById(n.id);if(el)el.focus()}return}
 if((e.key==='Enter'||e.key===' ')&&t&&t.getAttribute&&t.getAttribute('role')==='button'&&t.dataset.a){e.preventDefault();act(t.dataset.a,t.dataset)}});
-function curTheme(){const d=document.documentElement.dataset.theme;return d||(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}
-document.getElementById('pk-theme').addEventListener('click',()=>{const n=curTheme()==='light'?'dark':'light';document.documentElement.dataset.theme=n;try{localStorage.setItem('ls-theme',n)}catch(e){}if(G3)G3.retheme()});
 try{const t=localStorage.getItem('ls-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}
 try{const r=localStorage.getItem('ls-rail');if(r==='closed'||r==='open')S.rail=r}catch(e){}
 if(window.matchMedia){const mq=matchMedia('(prefers-color-scheme: light)');const f=()=>{if(G3)G3.retheme()};if(mq.addEventListener)mq.addEventListener('change',f);else if(mq.addListener)mq.addListener(f)}
