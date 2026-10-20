@@ -101,6 +101,7 @@ def simulation(payload):
 
 def add_taught_sites(builder, stage, paths, payload):
     """A declared USD Site can be an ordinary Xform; measure its authored geometry."""
+    import newton
     import warp as wp
     from pxr import UsdGeom
 
@@ -114,10 +115,11 @@ def add_taught_sites(builder, stage, paths, payload):
             if role.get("documentSchema") == "locations" and isinstance(value, dict):
                 requested.update(location["site"] for location in value["locations"].values()
                                  if location.get("site"))
-    shapes = {str(path) for path in paths["path_shape_map"]}
+    sites = {str(path) for path, index in paths["path_shape_map"].items()
+             if int(builder.shape_flags[index]) & int(newton.ShapeFlags.SITE)}
     bodies = {str(path): index for path, index in paths["path_body_map"].items()}
     cache = UsdGeom.XformCache()
-    for key in sorted(requested - shapes):
+    for key in sorted(requested - sites):
         prim = stage.GetPrimAtPath(key)
         if not prim or not prim.IsA(UsdGeom.Xformable):
             continue
@@ -284,6 +286,7 @@ def taught_checks(sim, payload):
     for index, label in enumerate(model.joint_label):
         joints.setdefault(normalize_entity_key(label), []).append(index)
     starts, dstarts = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
+    articulations = model.joint_articulation.numpy()
     lower, upper = model.joint_limit_lower.numpy(), model.joint_limit_upper.numpy()
     parents, transforms = model.shape_body.numpy(), model.shape_transform.numpy()
 
@@ -321,6 +324,8 @@ def taught_checks(sim, payload):
                     if len(matches) != 1:
                         raise ValueError("Configured joint identity is ambiguous in the model")
                     joint = matches[0]
+                    if not 0 <= int(articulations[joint]) < model.articulation_count:
+                        raise ValueError("Configured joint is outside Newton forward kinematics: " + key)
                     if starts[joint + 1] - starts[joint] != 1 or dstarts[joint + 1] - dstarts[joint] != 1:
                         raise ValueError("Grasp requires scalar configured joints")
                     dof = int(dstarts[joint])
@@ -331,8 +336,8 @@ def taught_checks(sim, payload):
                 newton.eval_fk(sim.model, state.joint_q, state.joint_qd, state)
                 rows.append(tcp_error(entity, name, list(map(float, site_world(config[endpoints[0]], state))),
                                       list(map(float, site_world(location["site"], state)))))
-            except (ValueError, KeyError, TypeError):
-                rows.append(check("P6", "fail", "Taught grasp has no valid Config/model TCP or target Site",
+            except (ValueError, KeyError, TypeError) as exc:
+                rows.append(check("P6", "fail", "Taught grasp cannot be measured: " + str(exc),
                                   entity=entity, location=name))
     return rows or [not_applicable("P6", "Scene has no configured taught arm locations")]
 

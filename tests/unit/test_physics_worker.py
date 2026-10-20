@@ -53,6 +53,80 @@ def test_p6_without_taught_config_has_no_geometry_export_or_engine_dependency():
     assert not {"newton", "warp"} & (set(sys.modules) - before)
 
 
+@pytest.mark.parametrize("imported_site,articulation,count", [
+    (False, 0, 1), (True, 0, 1), (False, -1, 1), (False, 0, 0),
+])
+def test_p6_measures_visual_and_imported_usd_sites(monkeypatch, imported_site, articulation, count):
+    """Exercise the real identity adapters; SDK geometry/FK are stubbed, not measured."""
+    site_flag = 8
+    tcp, target, joint = "/World/Lab/TCP", "/World/Lab/Target", "/World/Lab/Joint"
+
+    class Array:
+        def __init__(self, values):
+            self.values = np.array(values)
+
+        def numpy(self):
+            return self.values
+
+        def assign(self, values):
+            self.values = values
+
+    pose = [0, 0, 1, 0, 0, 0, 1]
+    builder = SimpleNamespace(shape_flags=[site_flag if imported_site else 1] * 2,
+                              shape_label=[tcp, target], shape_body=[-1, -1],
+                              shape_transform=[pose.copy(), pose.copy()])
+    original_flags = builder.shape_flags.copy()
+
+    def add_site(body, *, xform, label):
+        builder.shape_flags.append(site_flag)
+        builder.shape_label.append(label)
+        builder.shape_body.append(body)
+        builder.shape_transform.append(xform)
+
+    builder.add_site = add_site
+    world = SimpleNamespace(ExtractTranslation=lambda: pose[:3], ExtractRotationQuat=lambda:
+                            SimpleNamespace(GetImaginary=lambda: pose[3:6], GetReal=lambda: pose[6]))
+    stage = SimpleNamespace(GetPrimAtPath=lambda key: SimpleNamespace(IsA=lambda kind: True))
+    monkeypatch.setitem(sys.modules, "pxr", SimpleNamespace(UsdGeom=SimpleNamespace(
+        Xformable=object(), XformCache=lambda: SimpleNamespace(GetLocalToWorldTransform=lambda prim: world))))
+    monkeypatch.setitem(sys.modules, "warp", SimpleNamespace(
+        transform=lambda p, q: [*p, *q], quat=lambda *q: q))
+    monkeypatch.setitem(sys.modules, "newton", SimpleNamespace(
+        ShapeFlags=SimpleNamespace(SITE=site_flag), eval_fk=lambda *args: None))
+    payload = {"programs": {"fixture": {"fields": {
+        "joints": {"posture": True}, "tcp": {"spatialReference": "site"},
+        "locations": {"documentSchema": "locations"},
+    }}}, "structure": {"effectiveBindings": {"newton": [{
+        "key": "/World/Lab", "program": "fixture", "config": {
+            "joints": [joint], "tcp": tcp,
+            "locations": {"locations": {"station": {"site": target, "grasp": [0.]}}},
+        },
+    }]}}}
+    physics.add_taught_sites(builder, stage, {
+        "path_shape_map": {tcp: 0, target: 1}, "path_body_map": {},
+    }, payload)
+    model = SimpleNamespace(
+        **{name: Array(getattr(builder, name)) for name in
+           ("shape_flags", "shape_body", "shape_transform")},
+        shape_label=builder.shape_label, joint_label=[joint],
+        articulation_count=count, joint_articulation=Array([articulation]),
+        joint_q_start=Array([0, 1]), joint_qd_start=Array([0, 1]),
+        joint_limit_lower=Array([-1.]), joint_limit_upper=Array([1.]),
+        state=lambda: SimpleNamespace(joint_q=Array([0.]), joint_qd=Array([0.])),
+    )
+    result = physics.taught_checks(SimpleNamespace(model=model), payload)
+    if 0 <= articulation < count:
+        assert result[0]["status"] == "pass" and result[0]["measurements"]["errorMm"] == 0
+    else:
+        assert result[0]["status"] == "fail" and "measurements" not in result[0]
+        assert "outside Newton forward kinematics" in result[0]["message"]
+    site_labels = [label for label, flags in zip(builder.shape_label, builder.shape_flags, strict=True)
+                   if flags & site_flag]
+    assert sorted(site_labels) == [tcp, target]
+    assert builder.shape_flags[:2] == original_flags
+    assert builder.shape_transform[:2] == [pose, pose]
+
+
 @pytest.mark.parametrize("height,status", [(0.05, "pass"), (0.045, "fail")])
 def test_contact_transfer_uses_builtin_numbers_for_real_float32_body_frame_data(monkeypatch, height, status):
     def array(values, dtype=np.float32):
