@@ -79,6 +79,10 @@ test('workbench preserves public controls, tree navigation, exact Inspector and 
     const diagnostics = native && process.env.SPATIAL_UI_DIAGNOSTICS
       ? await import(pathToFileURL(process.env.SPATIAL_UI_DIAGNOSTICS).href) : undefined;
     const probeContext = { page, request, api, sessionId, manifest, testInfo };
+    if (diagnostics) {
+      const deadline = Number(process.env.SPATIAL_UI_WINDOW_DEADLINE_MS);
+      if (!Number.isFinite(deadline) || deadline - Date.now() < 20_000) throw new Error('Insufficient owned window budget for the diagnostic probe');
+    }
     if (diagnostics) await diagnostics.observeWorkbench(probeContext);
     await page.getByRole('button', { name: 'Resume simulation', exact: true }).click();
     await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
