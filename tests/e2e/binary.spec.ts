@@ -1,4 +1,6 @@
-import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type {} from '../../apps/web/src/components/Workbench';
 import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
 
@@ -7,6 +9,20 @@ const sample = (page: Page) =>
   page.evaluate(() => window.__spatialDebug?.getSample());
 const metrics = (page: Page) =>
   page.evaluate(() => window.__spatialDebug?.getStreamMetrics());
+
+async function cleanupObserver(context: Pick<BrowserContext, 'close'> | undefined, routes: readonly string[], priorFailures: readonly unknown[] = []) {
+  const failures = [...priorFailures];
+  try { await context?.close(); } catch (error) { failures.push(error); }
+  for (const route of routes) {
+    try {
+      // Node HTTP remains usable after Playwright cancels the browser operation.
+      const response = await fetch(route, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error(`Owned session cleanup failed: HTTP ${response.status}`);
+    } catch (error) { failures.push(error); }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Binary journey and cleanup failures', { cause: failures[0] });
+}
 
 async function connected(page: Page) {
   await expect(page.getByTestId('connection-status')).toHaveText('已连接');
@@ -27,46 +43,48 @@ test('binary browsers share authoritative controls, recovery and replacement', a
   expect(created.ok()).toBe(true);
   const { sessionId } = await created.json();
   const route = `${api}/api/v1/sessions/${sessionId}`;
-  const observerContext = await browser.newContext();
-  const observer = await observerContext.newPage();
-  const errors: string[] = [];
-  let binaryFrames = 0,
-    observerBinaryFrames = 0,
-    jsonFrames = 0,
-    jsonCommands = 0,
-    block = false;
-  const sockets: WebSocketRoute[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('websocket', (socket) => {
-    socket.on('framereceived', ({ payload }) => {
-      if (Buffer.isBuffer(payload)) {
-        expect(payload.subarray(0, 4).toString()).toBe('NSYN');
-        binaryFrames++;
-      } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
-        jsonFrames++;
-    });
-    socket.on('framesent', ({ payload }) => {
-      expect(typeof payload).toBe('string');
-      if (JSON.parse(payload as string).type === 'command.request')
-        jsonCommands++;
-    });
-  });
-  observer.on('websocket', (socket) =>
-    socket.on('framereceived', ({ payload }) => {
-      if (Buffer.isBuffer(payload)) {
-        expect(payload.subarray(0, 4).toString()).toBe('NSYN');
-        observerBinaryFrames++;
-      } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
-        jsonFrames++;
-    }),
-  );
-  await page.routeWebSocket('**/api/v1/sessions/*/ws', (socket) => {
-    if (block)
-      return socket.close({ code: 4001, reason: 'Recovery verification' });
-    socket.connectToServer();
-    sockets.push(socket);
-  });
+  let observerContext: BrowserContext | undefined;
+  const failures: unknown[] = [];
   try {
+    observerContext = await browser.newContext();
+    const observer = await observerContext.newPage();
+    const errors: string[] = [];
+    let binaryFrames = 0,
+      observerBinaryFrames = 0,
+      jsonFrames = 0,
+      jsonCommands = 0,
+      block = false;
+    const sockets: WebSocketRoute[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('websocket', (socket) => {
+      socket.on('framereceived', ({ payload }) => {
+        if (Buffer.isBuffer(payload)) {
+          expect(payload.subarray(0, 4).toString()).toBe('NSYN');
+          binaryFrames++;
+        } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
+          jsonFrames++;
+      });
+      socket.on('framesent', ({ payload }) => {
+        expect(typeof payload).toBe('string');
+        if (JSON.parse(payload as string).type === 'command.request')
+          jsonCommands++;
+      });
+    });
+    observer.on('websocket', (socket) =>
+      socket.on('framereceived', ({ payload }) => {
+        if (Buffer.isBuffer(payload)) {
+          expect(payload.subarray(0, 4).toString()).toBe('NSYN');
+          observerBinaryFrames++;
+        } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
+          jsonFrames++;
+      }),
+    );
+    await page.routeWebSocket('**/api/v1/sessions/*/ws', (socket) => {
+      if (block)
+        return socket.close({ code: 4001, reason: 'Recovery verification' });
+      socket.connectToServer();
+      sockets.push(socket);
+    });
     await page.goto(`/sessions/${sessionId}`);
     await observer.goto(`/sessions/${sessionId}`);
     await connected(page);
@@ -183,8 +201,61 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       ),
       contentType: 'application/json',
     });
+  } catch (error) {
+    failures.push(error);
   } finally {
-    await observerContext.close();
-    await request.delete(route);
+    await cleanupObserver(observerContext, [route], failures);
+  }
+});
+
+test('observer close failure stops only its owned session and preserves the original failure', async ({ request }) => {
+  const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic', continueWithoutObservers: true } });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const route = `${api}/api/v1/sessions/${sessionId}`;
+  const ownedRoutes = [route];
+  const failures: unknown[] = [];
+  try {
+    const original = new Error('Injected original journey failure');
+    const close = new Error('Injected observer close failure');
+    const context = { close: async () => { throw close; } };
+    const closeFailure = await cleanupObserver(context, [route], [original]).catch(error => error);
+    expect(closeFailure).toBeInstanceOf(AggregateError);
+    expect(closeFailure.cause).toBe(original);
+    expect(closeFailure.errors).toEqual([original, close]);
+    expect(closeFailure.errors[0]).toBe(original);
+    expect(closeFailure.errors[1]).toBe(close);
+    expect((await (await request.get(route)).json()).state).toBe('STOPPED');
+    const next = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic', continueWithoutObservers: true } });
+    expect(next.ok()).toBe(true);
+    const nextRoute = `${api}/api/v1/sessions/${(await next.json()).sessionId}`;
+    ownedRoutes.push(nextRoute);
+    await expect(cleanupObserver(context, [route])).rejects.toBe(close);
+    await expect(cleanupObserver(undefined, [route], [undefined])).rejects.toBeUndefined();
+    expect((await (await request.get(nextRoute)).json()).state).toBe('RUNNING');
+    const deleted: string[] = [];
+    const faults = createServer((request, response) => {
+      deleted.push(`${request.method} ${request.url}`);
+      if (request.url === '/reject') response.destroy();
+      else response.writeHead(request.url === '/500' ? 500 : 200).end();
+    });
+    try {
+      await new Promise<void>(resolve => faults.listen(0, '127.0.0.1', resolve));
+      const origin = `http://127.0.0.1:${(faults.address() as AddressInfo).port}`;
+      const deleteFailure = await cleanupObserver(undefined, ['/500', '/reject', '/after'].map(path => origin + path), [original]).catch(error => error);
+      expect(deleteFailure).toBeInstanceOf(AggregateError);
+      expect(deleteFailure.cause).toBe(original);
+      expect(deleteFailure.errors[0]).toBe(original);
+      expect(deleteFailure.errors[1].message).toBe('Owned session cleanup failed: HTTP 500');
+      expect(deleteFailure.errors[2]).toBeInstanceOf(TypeError);
+      expect(deleted).toEqual(['DELETE /500', 'DELETE /reject', 'DELETE /after']);
+    } finally {
+      faults.closeAllConnections();
+      await new Promise<void>(resolve => faults.close(() => resolve()));
+    }
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    await cleanupObserver(undefined, ownedRoutes, failures);
   }
 });
