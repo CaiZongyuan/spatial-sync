@@ -9,6 +9,7 @@ import time
 from collections.abc import AsyncIterator
 
 from packages.info.catalog import load_catalog
+from packages.info.preview import PreviewRequest, SourcePreview
 from packages.info.program import HostCore
 from packages.programs.biosafety_cabinet.virtual import BiosafetyCabinetProgram
 from packages.programs.centrifuge.virtual import CentrifugeProgram
@@ -21,6 +22,7 @@ from packages.protocol.math import compose_pose
 from packages.protocol.schema import (
     Command,
     CommandAck,
+    Pose,
     SessionState,
     TransformFrame,
     validate_command_args,
@@ -128,6 +130,20 @@ class SyntheticSource:
                 self._events.put_nowait(event)
             return result
 
+    async def preview(self, request: PreviewRequest):
+        async with self._lock:
+            value = self.host.preview(request)
+            if value is not None and request.entityKey == ROBOT:
+                # These are the same spatial bodies and FK used by _poses, not
+                # seven joints inferred from the two-joint virtual Manifest.
+                keys = {node.streamId: node.entityKey for node in self.manifest.nodes if node.kind == "body"}
+                value.targetBodyPoses = {
+                    keys[stream_id]: Pose.model_validate(pose)
+                    for stream_id, pose in self._arm_poses(value.targetJointPositions).items()
+                }
+            return SourcePreview(sceneRevision=self.manifest.sceneRevision, epoch=self._epoch,
+                                 simTime=self.sim_time, sampleTimeMs=time.monotonic() * 1000, preview=value)
+
     def _advance(self, count):
         self._step_index += count
         due = int(self.sim_time * self.options.controlHz + 1e-9)
@@ -212,9 +228,14 @@ class SyntheticSource:
         self._complete = self._latest
         return self._latest
 
+    @staticmethod
+    def _arm_poses(joints):
+        return dict(zip((1, 2, 3), kinematics(joints), strict=True))
+
     def _poses(self):
-        first, second, hand = kinematics(self._joint_positions())
-        poses = [(1, *first["p"], *first["q"]), (2, *second["p"], *second["q"]), (3, *hand["p"], *hand["q"])]
+        arm = self._arm_poses(self._joint_positions())
+        hand = arm[3]
+        poses = [(stream_id, *pose["p"], *pose["q"]) for stream_id, pose in arm.items()]
         rotor = {
             "p": [-0.5, 0.4, 0.85],
             "q": [0, 0, math.sin(self._rotor_angle / 2), math.cos(self._rotor_angle / 2)],

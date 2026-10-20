@@ -30,6 +30,8 @@ class PhysicsPort:
         self.sim = simulation
         model = simulation.model
         self.bodies = {"/" + label.strip("/"): i for i, label in enumerate(model.body_label)}
+        self.body_keys = {int(node.debug["newtonBodyIndex"]): node.entityKey
+                          for node in manifest.nodes if node.kind == "body"}
         q, qd = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
         targets = model.joint_target_q_start.numpy()
         self.joints = {
@@ -69,6 +71,11 @@ class PhysicsPort:
 
     def bind_body(self, key):
         return self.bodies[key]
+
+    def preview_snapshot(self):
+        from .kinematic_snapshot import KinematicSnapshot
+
+        return KinematicSnapshot(self)
 
     def bind_joint(self, key):
         return self.joints[key]

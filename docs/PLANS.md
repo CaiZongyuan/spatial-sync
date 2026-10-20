@@ -81,6 +81,29 @@ HTTP uses `POST /api/v1/plans`, `POST /api/v1/plans/{id}/revisions`, and
 Creation/revision accept the document and optional `sessionId`; absence selects
 the one active session. Only operation/session targets are available. A live
 target returns `target_unavailable` until a live host is connected.
+
+Read a supported arm step with `GET /api/v1/plans/{id}/steps/{n}/preview`.
+It returns at most64 world Z-up TCP points, current and target joint positions,
+the target TCP pose and target body world poses keyed by Manifest entityKey.
+The latter let viewers reuse actual robot visuals, including Synthetic's body
+keys outside the robot's lexical subtree. The response identifies the plan
+revision, session, scene revision, epoch and sampled simulation time. Optional
+`?revision=n` pins the current revision; stale revisions or reset/reloaded
+targets return409. Unsupported programs and wait/check steps return
+`available: false` with a reason. Invalid taught targets return422.
+
+Preview is a read: it is available before approval and does not execute an
+action, change step results or consume an approval. Both taught arm programs
+sample the same per-axis trapezoidal/triangular joint planner as their actual
+motion. Virtual uses velocity limits1rad/s per axis, scaled by its existing
+`speedScale` and action `speed`, and retains its minimum0.2s segment hold.
+This replaces Virtual's previous linear joint interpolation. Cache entries
+include plan revision/step, source/scene/epoch and current physical context.
+The geometry predicts taught posture, not collisions or grasp success.
+Compound pick/place paths finish at their taught retreat/approach pose; use
+`moveTo` with `pose: grasp` to inspect the grasp endpoint itself. Policy
+previews remain unavailable because no policy runtime is connected.
+
 `GET /api/v1/sessions/{id}/wait` and `POST /api/v1/sessions/{id}/check` share the
 condition syntax of `lw wait/check`. The check body is `{key, property, op,
 value}`. Action, wait and check HTTP requests accept optional `planId`,
@@ -99,6 +122,5 @@ readers ignore the new message types and continue spatial/property playback.
 MCP provides structured `plan_create`, `plan_revise`, `plan_show`, `plan_list`
 and `check_condition`; `invoke_action` and `wait_until` accept optional plan
 references. CLI reads local YAML files; MCP submits document objects. Neither
-client can approve its own requests. Plan updates already use the session's
-reliable event stream; the future unified inbox can consume that stream without
-a separate plan-only polling API.
+client can approve its own requests. Plan updates use the session's reliable
+event stream and the unified inbox without a separate plan-only polling API.

@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-20T09:45:37.953610+00:00",
+  "capturedAt": "2026-10-20T14:26:23.822179+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -25,7 +25,7 @@
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
-      "sha256": "77384316d8ad3b23dbe2f591fd7a25d194c78ba7aaa30ce0f2c7e9cb9bafcc75"
+      "sha256": "cf4d6635be80ae8197da0c713649daba4323d55ae111c1a3dfd282dd4fbc515a"
     },
     {
       "path": "assets/registry.yaml",
@@ -56,8 +56,12 @@
       "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
     },
     {
+      "path": "packages/info/preview.py",
+      "sha256": "d2a220d901d28ed544b6b8b58640b2e448c92109e72a1464c770a63c56d09beb"
+    },
+    {
       "path": "packages/info/program.py",
-      "sha256": "b5210b7c9bbeeff4017eb69daa8c8c2f1232321cde35bdada4667c648e1cc398"
+      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -101,7 +105,11 @@
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "9233947ffea45ddf7efe8255bf2c7cf64d3462970bd22451695cc12a50bb38e8"
+      "sha256": "3ecca22fa085065e0c173d642486fdde21914d0f9a7c90ac7f39c4e82e9d2266"
+    },
+    {
+      "path": "packages/programs/robot_arm/preview.py",
+      "sha256": "dc8105fe8dcc35eac48aee705eda043abd828753898ab4db3f5cedd5c4abbe32"
     },
     {
       "path": "packages/programs/robot_arm/taught.py",
@@ -141,7 +149,7 @@
     },
     {
       "path": "packages/sim_runtime/info_host.py",
-      "sha256": "d2cefddbd3b21e94c2cfeef7442738fd2c0c0e84716502abf6cfff21aff2b322"
+      "sha256": "31fd344d5b1eddb2f4e6706787591fba6b4b60d73c3d1db516ce26e586922807"
     },
     {
       "path": "packages/sim_runtime/labels.py",
@@ -161,7 +169,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "5d2df9a9a60ad59e96fc5f2e5276f8e1fa1a009c27c4da4f219898e053d711b6"
+      "sha256": "b7e94ca8bb22357a1d5480f1f4bd4c8694ee2a76f64516685a0e4757a3bc656e"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -169,7 +177,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "7a7e47e450629b0a3c3e19c8e864294fa37895cd82b31f160fe0976197e2fffb"
+      "sha256": "a078648937bd7b7416ee485c5976e5887de80e09fa28a3d8e57f0a35a0bc3bc9"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -215,10 +223,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "fde4278de6425370363cbcdaf3f9234a5f3fcdd4c10e1260b45a52ee8caef57d",
-    "catalog.json": "2b9fc1413c09e0874a8cc36d13488f2368f08865d64422133a6388406aaece9f",
-    "state.json": "c1e38d38aa1df002f4ac72514c0019c0c506523e45598d9dc3537a091a0d7ce3",
-    "snapshot.bin": "37cc7bc5023908ebf4a04e257dd9ef7e096f97212996e140c663fed206320f14"
+    "manifest.json": "20b6fa27b15b6b2dced448d49c5438192d79d0c2dc70a3a73c9784e773a67220",
+    "catalog.json": "125bdf6c26ba387d91542eea1155c9e969ff38864bd6fbd8eb347cf86938dabb",
+    "state.json": "64b39dd6a894822072a31e636826ec35d70cdcf230e623faf9c29f254a487628",
+    "snapshot.bin": "e3832974726b9948d5d7ce8ab4643f3f9e67b7bf841b365ac27275898b5eac73"
   },
   "counts": {
     "physicalEntities": 3,

@@ -30,7 +30,7 @@
   ],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-20T07:10:51.783873+00:00",
+  "capturedAt": "2026-10-20T14:25:14.840060+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -46,7 +46,7 @@
     },
     {
       "path": "apps/api/app/sources/synthetic_source.py",
-      "sha256": "e029e3e2a2511d1a0506a659916e58f88613d1b1b6f4d4772885c7e9ba260d69"
+      "sha256": "2ed365ddd94964ce81f685027d2c577491abd2e67d01290af32aa80f3fabe73d"
     },
     {
       "path": "assets/registry.yaml",
@@ -229,8 +229,12 @@
       "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
     },
     {
+      "path": "packages/info/preview.py",
+      "sha256": "d2a220d901d28ed544b6b8b58640b2e448c92109e72a1464c770a63c56d09beb"
+    },
+    {
       "path": "packages/info/program.py",
-      "sha256": "b5210b7c9bbeeff4017eb69daa8c8c2f1232321cde35bdada4667c648e1cc398"
+      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -277,12 +281,20 @@
       "sha256": "d49d5c0b7de6c1bd4fce82df31b1dcc7b810e993d82ed7871c9811cf91caf7b6"
     },
     {
+      "path": "packages/programs/robot_arm/preview.py",
+      "sha256": "dc8105fe8dcc35eac48aee705eda043abd828753898ab4db3f5cedd5c4abbe32"
+    },
+    {
       "path": "packages/programs/robot_arm/taught.py",
       "sha256": "b98ae93e03c041353f47e387264eafd35434cbb1bf5a288e9638226f4533c5eb"
     },
     {
+      "path": "packages/programs/robot_arm/trajectory.py",
+      "sha256": "3286496f51a35d6c8ccf74ea71a2315e0d84741fddc21ec960b02172ec7d3bbf"
+    },
+    {
       "path": "packages/programs/robot_arm/virtual.py",
-      "sha256": "74cd4aa66a04f1685e1a81d99b3f0409b63005c20b28ebe3cc9bbb4e323b916d"
+      "sha256": "746c52df533816e61cc2fad86153ff561362e15325cf535e3522814483426ac8"
     },
     {
       "path": "packages/programs/signals.py",
@@ -328,10 +340,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "f645de7ecc92ae7e5d856b605d5f2e683e39e28c495b80c9e2f31050d59a80fa",
-    "catalog.json": "5735d1beecd3e7042688889d6624c3ccb531ed0e761526a06e3867e13201d1e4",
-    "state.json": "2c903a5754d79ff522c9e4574301e02c8cbcd882298f13cc324eb36012320809",
-    "snapshot.bin": "5d4c45781ce1cb9736acd42a46445cd256b66efaae041ed62f855d3474719bd6"
+    "manifest.json": "68e728d8bc01b8b523203bb42b122ff822f071d2caee6d199c5de390e958fa35",
+    "catalog.json": "7d36a3a65bc596b9c7241412abd3f2d7372a6a91af72b5eb61e21e8174494d78",
+    "state.json": "afc34f7627d7879a5f5a78f66b7ebe4e93d047d964a75381546c679023acfec0",
+    "snapshot.bin": "e74a80368fa52cb1a77dc7a65544a9c59ea4fe810e2cd4045bfbc0f5961782ab"
   },
   "counts": {
     "physicalEntities": 33,

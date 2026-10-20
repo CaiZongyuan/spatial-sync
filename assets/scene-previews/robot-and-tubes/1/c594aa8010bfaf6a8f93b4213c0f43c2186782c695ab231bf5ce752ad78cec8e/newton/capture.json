@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-20T09:46:14.972483+00:00",
+  "capturedAt": "2026-10-20T14:25:41.881262+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -25,7 +25,7 @@
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
-      "sha256": "77384316d8ad3b23dbe2f591fd7a25d194c78ba7aaa30ce0f2c7e9cb9bafcc75"
+      "sha256": "cf4d6635be80ae8197da0c713649daba4323d55ae111c1a3dfd282dd4fbc515a"
     },
     {
       "path": "assets/registry.yaml",
@@ -168,8 +168,12 @@
       "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
     },
     {
+      "path": "packages/info/preview.py",
+      "sha256": "d2a220d901d28ed544b6b8b58640b2e448c92109e72a1464c770a63c56d09beb"
+    },
+    {
       "path": "packages/info/program.py",
-      "sha256": "b5210b7c9bbeeff4017eb69daa8c8c2f1232321cde35bdada4667c648e1cc398"
+      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -213,7 +217,11 @@
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "9233947ffea45ddf7efe8255bf2c7cf64d3462970bd22451695cc12a50bb38e8"
+      "sha256": "3ecca22fa085065e0c173d642486fdde21914d0f9a7c90ac7f39c4e82e9d2266"
+    },
+    {
+      "path": "packages/programs/robot_arm/preview.py",
+      "sha256": "dc8105fe8dcc35eac48aee705eda043abd828753898ab4db3f5cedd5c4abbe32"
     },
     {
       "path": "packages/programs/robot_arm/taught.py",
@@ -253,7 +261,7 @@
     },
     {
       "path": "packages/sim_runtime/info_host.py",
-      "sha256": "d2cefddbd3b21e94c2cfeef7442738fd2c0c0e84716502abf6cfff21aff2b322"
+      "sha256": "31fd344d5b1eddb2f4e6706787591fba6b4b60d73c3d1db516ce26e586922807"
     },
     {
       "path": "packages/sim_runtime/labels.py",
@@ -273,7 +281,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "5d2df9a9a60ad59e96fc5f2e5276f8e1fa1a009c27c4da4f219898e053d711b6"
+      "sha256": "b7e94ca8bb22357a1d5480f1f4bd4c8694ee2a76f64516685a0e4757a3bc656e"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -289,7 +297,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "7a7e47e450629b0a3c3e19c8e864294fa37895cd82b31f160fe0976197e2fffb"
+      "sha256": "a078648937bd7b7416ee485c5976e5887de80e09fa28a3d8e57f0a35a0bc3bc9"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -335,10 +343,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "ef4c2158993e6177ff23c8a5513b9f4b7353cc5640c9ac691c81a908f4590882",
-    "catalog.json": "cddf876ed4896c3113cb1076ab4c3dc0b44f0fc771ed74dd8a62279b5acf7010",
-    "state.json": "3fb71d5a2afb06b93de6bc82c99ad11fdeda4b5184fa764b621fb4af9ea6fa07",
-    "snapshot.bin": "e05f2cc6b30415c2a1a9a94a47afd4ef0be02a86202aefc5780335bdb3cfc743",
+    "manifest.json": "0f7209be3b9cf1d7bc4ede6c31bdcb57e940af78f6c0e53e1a12124e0b38b612",
+    "catalog.json": "64437724d19d75eff0031de708b7c92d95c772f935c489d9490e833ca9706b40",
+    "state.json": "cc08a3e559e28cfd4332ef6b09006c510c26fdb915df5a187ef97e5f1084d5d1",
+    "snapshot.bin": "5589990a77b06e81f4b9e1abf15a79cd650de35addb0e7a77ad6fbb099e47ced",
     "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

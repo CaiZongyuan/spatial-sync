@@ -1,10 +1,12 @@
 """Single-writer device programs, authoritative intake and ordered host events."""
 
 import hashlib
+import json
 import random
 import time
 from collections import OrderedDict
 from copy import deepcopy
+from types import MappingProxyType
 from typing import ClassVar, Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -23,6 +25,7 @@ from packages.protocol.schema import (
 
 from .conditions import UNKNOWN, evaluate_conditions
 from .diff import PropertyDiff
+from .preview import PathPreview, PreviewContext, PreviewRequest
 from .schema_subset import json_equal
 
 TERMINAL = {"succeeded", "failed", "cancelled", "rejected"}
@@ -44,6 +47,12 @@ class Program(Protocol):
     def start(self, inv, ctx): ...
     def tick(self, ctx, dt): ...
     def cancel(self, inv, ctx): ...
+
+
+class PreviewProgram(Program, Protocol):
+    """Optional extension, called with owned values rather than mutable Ctx."""
+
+    def preview(self, action: str, params: dict, ctx: PreviewContext) -> PathPreview | None: ...
 
 
 class _EntitySlot:
@@ -240,6 +249,7 @@ class HostCore:
         self._events, self._diagnostics = [], []
         self._needs_publication = False
         self._executing = None
+        self._preview_cache = OrderedDict()
         for key, binding in catalog.entities.items():
             self._states.append(
                 _EntitySlot(
@@ -266,6 +276,35 @@ class HostCore:
 
     def values(self):
         return {state.key: state.export_values() for state in self._states}
+
+    def preview(self, request: PreviewRequest):
+        index = self._entity_indices[request.entityKey]
+        callback = getattr(self._programs[index], "preview", None)
+        if callback is None:
+            return None
+        params = self.catalog.validate_params(request.entityKey, request.action, request.params)
+        namespace = (self.catalog.sceneRevision, self.epoch, request.planId, request.revision, request.stepId,
+                     request.entityKey, request.action, json.dumps(params, sort_keys=True, allow_nan=False))
+
+        def cached(fingerprint, build):
+            key = namespace, fingerprint
+            if key not in self._preview_cache:
+                value = PathPreview.model_validate(build()).model_copy(deep=True)
+                self._preview_cache[key] = value
+                if len(self._preview_cache) > 128:
+                    self._preview_cache.popitem(last=False)
+            self._preview_cache.move_to_end(key)
+            return self._preview_cache[key].model_copy(deep=True)
+
+        context = PreviewContext(
+            config=self._contexts[index].config.model_copy(deep=True),
+            values=MappingProxyType(self._states[index].export_values()),
+            kinematics=self.physics.preview_snapshot() if self.physics is not None else None,
+            _cached=cached,
+        )
+        # No _call: preview receives neither write permission nor failure counters.
+        result = callback(request.action, params, context)
+        return PathPreview.model_validate(result) if result is not None else None
 
     def metadata(self):
         return {
@@ -603,6 +642,7 @@ class HostCore:
         self._updates.clear()
         self._events.clear()
         self.epoch, self.sim_time, self.tick_index, self._next_fact = epoch, sim_time, 0, 0.0
+        self._preview_cache.clear()
         self._disabled.clear()
         for key in self._order:
             self._errors[key] = 0
