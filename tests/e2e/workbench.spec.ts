@@ -1,4 +1,4 @@
-import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type WebSocketRoute } from '@playwright/test';
 import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
@@ -13,56 +13,7 @@ async function waitConnected(page: Page) {
   await expect(page.locator('canvas')).toBeVisible();
 }
 
-test('real SyntheticSource workbench: exact poses, controls, shared state, fallback and reconnect', async ({
-  page,
-  browser,
-  request,
-}, testInfo) => {
-  const errors: string[] = [];
-  let pausedHeartbeats = 0, watchingPaused = false;
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('websocket', socket => socket.on('framereceived', ({ payload }) => {
-    if (watchingPaused && typeof payload === 'string' && JSON.parse(payload).type === 'server.heartbeat') pausedHeartbeats++;
-  }));
-  await page.goto('/scenes/lab-demo/1?source=synthetic');
-  await page.getByLabel('启动物理源', { exact: true }).selectOption('synthetic');
-  await page.getByRole('button', { name: '启动会话' }).click();
-  await waitConnected(page);
-  if ((await page.getByTestId('session-state').textContent()) === 'PAUSED') {
-    await page.getByRole('button', { name: 'Resume simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
-  }
-  const sessionId = new URL(page.url()).pathname.split('/').at(-1)!;
-  const manifestResponse = await request.get(
-    `${api}/api/v1/sessions/${sessionId}/scene`,
-  );
-  expect(manifestResponse.ok()).toBe(true);
-  const manifest = (await manifestResponse.json()) as SceneManifest;
-  const site = manifest.sites.find(
-    (site) =>
-      site.parentBodyKey === '/World/Lab/Centrifuge/Rotor' &&
-      Math.hypot(...site.localPose.p) > 0.01,
-  )!;
-  expect(site).toBeTruthy();
-  const body = manifest.nodes.find(
-    (node) => node.entityKey === site.parentBodyKey && node.kind === 'body',
-  )!;
-  if (body.kind !== 'body')
-    throw new Error('Synthetic fixture requires a streamed body');
-  await expect
-    .poll(() =>
-      page.evaluate(
-        (key) => window.__spatialDebug?.getRenderedPose(key)?.p.length ?? 0,
-        body.entityKey,
-      ),
-    )
-    .toBe(3);
-  const initialRendered = await page.evaluate(
-    (key) => window.__spatialDebug?.getRenderedPose(key),
-    body.entityKey,
-  );
-  // Device programs remain idle until called. Drive the Site's actual parent;
-  // its origin stays fixed while its quaternion rotates the offset Site.
+async function startRotor(request: APIRequestContext, sessionId: string) {
   const closed = await request.post(
     `${api}/api/v1/sessions/${sessionId}/actions`,
     {
@@ -91,21 +42,218 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
   );
   expect(started.status()).toBe(202);
   expect(['accepted', 'running']).toContain((await started.json()).status);
-  await expect
-    .poll(async () =>
-      JSON.stringify(
-        await page.evaluate(
-          (key) => window.__spatialDebug?.getRenderedPose(key),
+}
+
+test('real SyntheticSource workbench launches and compares exact Body and Site poses', async ({ page, request }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  let sessionId: string | undefined;
+  try {
+    await page.goto('/scenes/lab-demo/1?source=synthetic');
+    await page.getByLabel('启动物理源', { exact: true }).selectOption('synthetic');
+    const creating = page.waitForResponse(response => response.url().endsWith('/api/v1/sessions') && response.request().method() === 'POST');
+    await page.getByRole('button', { name: '启动会话' }).click();
+    const created = await creating;
+    expect(created.ok()).toBe(true);
+    sessionId = (await created.json() as { sessionId: string }).sessionId;
+    await waitConnected(page);
+    if ((await page.getByTestId('session-state').textContent()) === 'PAUSED') {
+      await page.getByRole('button', { name: 'Resume simulation' }).click();
+      await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
+    }
+    expect(new URL(page.url()).pathname.split('/').at(-1)).toBe(sessionId);
+    const manifestResponse = await request.get(
+      `${api}/api/v1/sessions/${sessionId}/scene`,
+    );
+    expect(manifestResponse.ok()).toBe(true);
+    const manifest = (await manifestResponse.json()) as SceneManifest;
+    const site = manifest.sites.find(
+      (site) =>
+        site.parentBodyKey === '/World/Lab/Centrifuge/Rotor' &&
+        Math.hypot(...site.localPose.p) > 0.01,
+    )!;
+    expect(site).toBeTruthy();
+    const body = manifest.nodes.find(
+      (node) => node.entityKey === site.parentBodyKey && node.kind === 'body',
+    )!;
+    if (body.kind !== 'body')
+      throw new Error('Synthetic fixture requires a streamed body');
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (key) => window.__spatialDebug?.getRenderedPose(key)?.p.length ?? 0,
           body.entityKey,
         ),
-      ),
-    )
-    .not.toBe(JSON.stringify(initialRendered));
+      )
+      .toBe(3);
+    const initialRendered = await page.evaluate(
+      (key) => window.__spatialDebug?.getRenderedPose(key),
+      body.entityKey,
+    );
+    // Device programs remain idle until called. Drive the Site's actual parent;
+    // its origin stays fixed while its quaternion rotates the offset Site.
+    await startRotor(request, sessionId);
+    await expect
+      .poll(async () =>
+        JSON.stringify(
+          await page.evaluate(
+            (key) => window.__spatialDebug?.getRenderedPose(key),
+            body.entityKey,
+          ),
+        ),
+      )
+      .not.toBe(JSON.stringify(initialRendered));
 
-  const observerContext = await browser.newContext({
-    viewport: { width: 1440, height: 960 },
+    await page.getByRole('button', { name: 'Pause simulation' }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByText('Command applied', { exact: true })).toBeVisible();
+    const snapshot = (await (
+      await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
+    ).json()) as Snapshot;
+    const expected = snapshot.poses.find((pose) => pose[0] === body.streamId)!;
+    await page.getByTestId(`entity-${body.entityKey}`).click();
+    await expect(page.getByTestId('inspector-seq')).toHaveText(
+      String(snapshot.seq),
+    );
+    await expect(page.getByTestId('inspector-sim-time')).toHaveText(
+      `${snapshot.simTime.toFixed(6)} s`,
+    );
+    for (let i = 0; i < 3; i++)
+      expect(Number(await page.getByTestId(`world-${['x', 'y', 'z'][i]}`).textContent())).toBeCloseTo(expected[i + 1], 5);
+    for (let i = 0; i < 4; i++)
+      expect(
+        Number(await page.getByTestId(`quaternion-${i}`).textContent()),
+      ).toBeCloseTo(expected[i + 4], 5);
+    await expect
+      .poll(async () => {
+        const rendered = await page.evaluate(
+          (key) => window.__spatialDebug?.getRenderedPose(key),
+          body.entityKey,
+        );
+        return rendered
+          ? Math.max(
+              ...rendered.p.map((value, i) => Math.abs(value - expected[i + 1])),
+            )
+          : 1;
+      })
+      .toBeLessThan(1e-5);
+    // Independent quaternion-vector oracle, without the viewer's Three pose helper.
+    const [vx, vy, vz] = site.localPose.p;
+    const [, px, py, pz, qx, qy, qz, qw] = expected;
+    const tx = 2 * (qy * vz - qz * vy),
+      ty = 2 * (qz * vx - qx * vz),
+      tz = 2 * (qx * vy - qy * vx);
+    const siteExpected = [
+      px + vx + qw * tx + qy * tz - qz * ty,
+      py + vy + qw * ty + qz * tx - qx * tz,
+      pz + vz + qw * tz + qx * ty - qy * tx,
+    ];
+    await page.getByTestId(`entity-${site.entityKey}`).click();
+    for (let i = 0; i < 3; i++)
+      expect(
+        Number(
+          await page.getByTestId(`world-${['x', 'y', 'z'][i]}`).textContent(),
+        ),
+      ).toBeCloseTo(siteExpected[i], 5);
+    expect(
+      Math.hypot(...siteExpected.map((value, i) => value - expected[i + 1])),
+    ).toBeGreaterThan(0.01);
+    await page.screenshot({
+      path: testInfo.outputPath('workbench-site-inspector.png'),
+    });
+
+    expect(errors).toEqual([]);
+  } finally {
+    if (sessionId) await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});
+
+test('real SyntheticSource observers share pause, heartbeat, Step, Reset and Resume', async ({ page, browser, request }) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneVersion: 'lab-demo@1', source: 'synthetic' },
   });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const observerContext = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   const observer = await observerContext.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  let pausedHeartbeats = 0, watchingPaused = false;
+  page.on('websocket', socket => socket.on('framereceived', ({ payload }) => {
+    if (watchingPaused && typeof payload === 'string' && JSON.parse(payload).type === 'server.heartbeat') pausedHeartbeats++;
+  }));
+  try {
+    await Promise.all([page.goto(`/sessions/${sessionId}`), observer.goto(`/sessions/${sessionId}`)]);
+    await Promise.all([waitConnected(page), waitConnected(observer)]);
+    await startRotor(request, sessionId);
+    await page.getByRole('button', { name: 'Pause simulation' }).click();
+    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
+    watchingPaused = true;
+    await expect(page.getByText('Command applied', { exact: true })).toBeVisible();
+    const snapshot = (await (await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)).json()) as Snapshot;
+    // Four received heartbeats span three complete periods while paused.
+    await expect.poll(() => pausedHeartbeats).toBeGreaterThanOrEqual(4);
+    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    expect(
+      (
+        (await (
+          await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
+        ).json()) as Snapshot
+      ).simTime,
+    ).toBe(snapshot.simTime);
+    await page.getByRole('button', { name: 'Step simulation' }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
+      )
+      .toBeGreaterThan(snapshot.seq);
+    const stepped = (await (
+      await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
+    ).json()) as Snapshot;
+    expect(stepped.simTime).toBeGreaterThan(snapshot.simTime);
+    await expect(observer.getByTestId('sequence')).toHaveText(
+      String(stepped.seq),
+    );
+
+    await page.getByRole('button', { name: 'Reset simulation' }).click();
+    await expect(page.getByTestId('epoch')).toHaveText(
+      String(snapshot.epoch + 1),
+    );
+    await expect(observer.getByTestId('epoch')).toHaveText(
+      String(snapshot.epoch + 1),
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__spatialDebug?.getSample()?.simTime),
+      )
+      .toBe(0);
+    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await page.getByRole('button', { name: 'Resume simulation' }).click();
+    await expect(observer.getByTestId('session-state')).toHaveText('RUNNING');
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__spatialDebug?.getSample()?.simTime ?? 0),
+      )
+      .toBeGreaterThan(0);
+
+    expect(errors).toEqual([]);
+  } finally {
+    await observerContext.close();
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
+});
+
+test('real SyntheticSource observers reconnect and expose fallback diagnostics before closing', async ({ page, browser, request }, testInfo) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneVersion: 'lab-demo@1', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const observerContext = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+  const observer = await observerContext.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
   const observerSockets: WebSocketRoute[] = [];
   let blockObserverNetwork = false;
   await observer.routeWebSocket('**/api/v1/sessions/*/ws', (route) => {
@@ -114,154 +262,50 @@ test('real SyntheticSource workbench: exact poses, controls, shared state, fallb
     route.connectToServer();
     observerSockets.push(route);
   });
-  await observer.goto(page.url());
-  await waitConnected(observer);
-  await page.getByRole('button', { name: 'Pause simulation' }).click();
-  await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
-  await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
-  watchingPaused = true;
-  await expect(
-    page.getByText('Command applied', { exact: true }),
-  ).toBeVisible();
-  const snapshot = (await (
-    await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
-  ).json()) as Snapshot;
-  const expected = snapshot.poses.find((pose) => pose[0] === body.streamId)!;
-  await page.getByTestId(`entity-${body.entityKey}`).click();
-  await expect(page.getByTestId('inspector-seq')).toHaveText(
-    String(snapshot.seq),
-  );
-  await expect(page.getByTestId('inspector-sim-time')).toHaveText(
-    `${snapshot.simTime.toFixed(6)} s`,
-  );
-  for (let i = 0; i < 3; i++)
-    expect(Number(await page.getByTestId(`world-${['x', 'y', 'z'][i]}`).textContent())).toBeCloseTo(expected[i + 1], 5);
-  for (let i = 0; i < 4; i++)
+  try {
+    await Promise.all([page.goto(`/sessions/${sessionId}`), observer.goto(`/sessions/${sessionId}`)]);
+    await Promise.all([waitConnected(page), waitConnected(observer)]);
+    // Chromium's HTTP offline emulation preserves existing WebSockets. Close the
+    // real upstream relay instead; all frames still originate from the gateway.
+    blockObserverNetwork = true;
+    await observerSockets
+      .at(-1)!
+      .close({ code: 4001, reason: 'Network-loss test' });
+    await expect(observer.getByTestId('connection-status')).not.toHaveText(
+      'connected',
+    );
+    blockObserverNetwork = false;
+    await waitConnected(observer);
+    await expect
+      .poll(async () => {
+        const current = await observer.evaluate(
+          () => window.__spatialDebug?.getSample()?.seq ?? -1,
+        );
+        const latest = await page.evaluate(
+          () => window.__spatialDebug?.getSample()?.seq ?? -1,
+        );
+        return Math.abs(current - latest);
+      })
+      .toBeLessThan(10);
+
+    await page.getByRole('button', { name: /Diagnostics/ }).click();
+    await expect(page.getByText('Compatibility & asset warnings')).toBeVisible();
+    await expect(page.getByText(/Asset unavailable:/).first()).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath('workbench-diagnostics.png'),
+    });
+    expect(errors).toEqual([]);
+    await observerContext.close();
+    await page
+      .getByRole('button', { name: 'Close session', exact: true })
+      .click();
+    await expect(page.getByRole('link', { name: '打开场景库' })).toBeVisible();
+    await expect(page.getByLabel('Session ID', { exact: true })).toBeVisible();
     expect(
-      Number(await page.getByTestId(`quaternion-${i}`).textContent()),
-    ).toBeCloseTo(expected[i + 4], 5);
-  await expect
-    .poll(async () => {
-      const rendered = await page.evaluate(
-        (key) => window.__spatialDebug?.getRenderedPose(key),
-        body.entityKey,
-      );
-      return rendered
-        ? Math.max(
-            ...rendered.p.map((value, i) => Math.abs(value - expected[i + 1])),
-          )
-        : 1;
-    })
-    .toBeLessThan(1e-5);
-  // Independent quaternion-vector oracle, without the viewer's Three pose helper.
-  const [vx, vy, vz] = site.localPose.p;
-  const [, px, py, pz, qx, qy, qz, qw] = expected;
-  const tx = 2 * (qy * vz - qz * vy),
-    ty = 2 * (qz * vx - qx * vz),
-    tz = 2 * (qx * vy - qy * vx);
-  const siteExpected = [
-    px + vx + qw * tx + qy * tz - qz * ty,
-    py + vy + qw * ty + qz * tx - qx * tz,
-    pz + vz + qw * tz + qx * ty - qy * tx,
-  ];
-  await page.getByTestId(`entity-${site.entityKey}`).click();
-  for (let i = 0; i < 3; i++)
-    expect(
-      Number(
-        await page.getByTestId(`world-${['x', 'y', 'z'][i]}`).textContent(),
-      ),
-    ).toBeCloseTo(siteExpected[i], 5);
-  expect(
-    Math.hypot(...siteExpected.map((value, i) => value - expected[i + 1])),
-  ).toBeGreaterThan(0.01);
-  await page.screenshot({
-    path: testInfo.outputPath('workbench-site-inspector.png'),
-  });
-
-  // Four received heartbeats span three complete heartbeat periods while the
-  // independent Inspector checks run above.
-  await expect.poll(() => pausedHeartbeats).toBeGreaterThanOrEqual(4);
-  await expect(page.getByTestId('connection-status')).toHaveText('connected');
-  expect(
-    (
-      (await (
-        await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
-      ).json()) as Snapshot
-    ).simTime,
-  ).toBe(snapshot.simTime);
-  await page.getByRole('button', { name: 'Step simulation' }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
-    )
-    .toBeGreaterThan(snapshot.seq);
-  const stepped = (await (
-    await request.get(`${api}/api/v1/sessions/${sessionId}/snapshot`)
-  ).json()) as Snapshot;
-  expect(stepped.simTime).toBeGreaterThan(snapshot.simTime);
-  await expect(observer.getByTestId('sequence')).toHaveText(
-    String(stepped.seq),
-  );
-
-  await page.getByRole('button', { name: 'Reset simulation' }).click();
-  await expect(page.getByTestId('epoch')).toHaveText(
-    String(snapshot.epoch + 1),
-  );
-  await expect(observer.getByTestId('epoch')).toHaveText(
-    String(snapshot.epoch + 1),
-  );
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__spatialDebug?.getSample()?.simTime),
-    )
-    .toBe(0);
-  await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
-  await page.getByRole('button', { name: 'Resume simulation' }).click();
-  await expect(observer.getByTestId('session-state')).toHaveText('RUNNING');
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__spatialDebug?.getSample()?.simTime ?? 0),
-    )
-    .toBeGreaterThan(0);
-
-  // Chromium's HTTP offline emulation preserves existing WebSockets. Close the
-  // real upstream relay instead; all frames still originate from the gateway.
-  blockObserverNetwork = true;
-  await observerSockets
-    .at(-1)!
-    .close({ code: 4001, reason: 'Network-loss test' });
-  await expect(observer.getByTestId('connection-status')).not.toHaveText(
-    'connected',
-  );
-  blockObserverNetwork = false;
-  await waitConnected(observer);
-  await expect
-    .poll(async () => {
-      const current = await observer.evaluate(
-        () => window.__spatialDebug?.getSample()?.seq ?? -1,
-      );
-      const latest = await page.evaluate(
-        () => window.__spatialDebug?.getSample()?.seq ?? -1,
-      );
-      return Math.abs(current - latest);
-    })
-    .toBeLessThan(10);
-
-  await page.getByRole('button', { name: /Diagnostics/ }).click();
-  await expect(page.getByText('Compatibility & asset warnings')).toBeVisible();
-  await expect(page.getByText(/Asset unavailable:/).first()).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath('workbench-diagnostics.png'),
-  });
-  expect(errors).toEqual([]);
-  await observerContext.close();
-  await page
-    .getByRole('button', { name: 'Close session', exact: true })
-    .click();
-  await expect(page.getByRole('link', { name: '打开场景库' })).toBeVisible();
-  await expect(page.getByLabel('Session ID', { exact: true })).toBeVisible();
-  expect(
-    (await (await request.get(`${api}/api/v1/sessions/${sessionId}`)).json())
-      .state,
-  ).toBe('STOPPED');
+      (await (await request.get(`${api}/api/v1/sessions/${sessionId}`)).json())
+        .state,
+    ).toBe('STOPPED');  } finally {
+    await observerContext.close();
+    await request.delete(`${api}/api/v1/sessions/${sessionId}`);
+  }
 });

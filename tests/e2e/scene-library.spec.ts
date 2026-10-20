@@ -70,12 +70,15 @@ test('changing theme while the next preview loads recaptures the same scene and 
 
 test('a library larger than the shared thumbnail cache keeps every completed image', async ({ page, request }) => {
   // Reuse a real small frozen frame; only library identities/revisions are fixtures.
-  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?source=newton`)).json();
-  const scene = scenes.find((value: { id: string }) => value.id === 'falling-boxes@1');
-  const documents = Object.fromEntries(await Promise.all(Object.entries(scene.preview.documents).map(async ([kind, url]) => {
-    const response = await request.get(`${api}${url}`);
-    return [kind, kind === 'spatial' ? await response.body() : await response.json()];
-  })));
+  const { scene, documents } = await test.step('Read actual capture fixture documents', async () => {
+    const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?source=newton`)).json();
+    const scene = scenes.find((value: { id: string }) => value.id === 'falling-boxes@1');
+    const documents = Object.fromEntries(await Promise.all(Object.entries(scene.preview.documents).map(async ([kind, url]) => {
+      const response = await request.get(`${api}${url}`);
+      return [kind, kind === 'spatial' ? await response.body() : await response.json()];
+    })));
+    return { scene, documents };
+  });
   await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: { scenes: Array.from({ length: 35 }, (_, index) => ({
     ...scene, id: `thumbnail-fixture@${index + 1}`, sceneId: 'thumbnail-fixture', rev: index + 1,
     preview: { ...scene.preview, documents: Object.fromEntries(Object.keys(documents).map(kind => [kind, `/api/v1/thumbnail-fixture/${index}/${kind}`])) },
@@ -85,12 +88,16 @@ test('a library larger than the shared thumbnail cache keeps every completed ima
     return kind === 'spatial' ? route.fulfill({ body: documents.spatial, contentType: 'application/octet-stream' })
       : route.fulfill({ json: { ...documents[kind], sceneRevision: `thumbnail-fixture-${index}` } });
   });
-  await page.goto('/scenes');
-  await page.waitForFunction(() => document.querySelectorAll('.scene-card .scene-thumbnail img').length === 35);
-  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(35);
-  await expect(page.getByRole('img', { name: 'thumbnail-fixture@1 的真实初始场景' })).toBeVisible();
-  await expect(page.getByText('预览加载失败', { exact: true })).toHaveCount(0);
-  await expect(page.locator('canvas')).toHaveCount(0);
+  await test.step('Navigate to the library of 35 unique captures', async () => {
+    await page.goto('/scenes');
+  });
+  await test.step('Render and retain all 35 completed thumbnails', async () => {
+    await page.waitForFunction(() => document.querySelectorAll('.scene-card .scene-thumbnail img').length === 35);
+    await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(35);
+    await expect(page.getByRole('img', { name: 'thumbnail-fixture@1 的真实初始场景' })).toBeVisible();
+    await expect(page.getByText('预览加载失败', { exact: true })).toHaveCount(0);
+    await expect(page.locator('canvas')).toHaveCount(0);
+  });
 });
 
 test('changing scene filters retires old results and queued previews before the next response', async ({ page, request }) => {
@@ -203,18 +210,22 @@ test('real scene captures render every shared thumbnail without a live session',
   page.on('request', request => { if (request.url().includes('/api/v1/sessions')) liveRequests.push(request.url()); });
   page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) sockets.push(socket.url()); });
   const before = await (await request.get(`${api}/api/v1/health`)).json();
-  await page.goto('/scenes');
-  const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
-  await expect(laboratory).toContainText('30 实体 · 22 绑定');
-  await page.waitForFunction(expected => {
-    const images = [...document.querySelectorAll<HTMLImageElement>('.scene-card .scene-thumbnail img')];
-    return images.length === expected && images.every(image => image.complete && image.naturalWidth > 0);
-  }, 7);
-  // The shared renderer captures scenes serially; check readiness for each image.
-  for (const id of ['falling-boxes@1', 'lab-demo@1', 'lab-demo@2', 'lab-demo@3', 'robot-and-tubes@1', 'robot-and-tubes@2', 'usd-lab@1'])
-    await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
-  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(7);
-  await expect(page.locator('canvas')).toHaveCount(0);
+  await test.step('Navigate to the real scene library', async () => {
+    await page.goto('/scenes');
+  });
+  await test.step('Render all seven complete real captures', async () => {
+    const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
+    await expect(laboratory).toContainText('30 实体 · 22 绑定');
+    await page.waitForFunction(expected => {
+      const images = [...document.querySelectorAll<HTMLImageElement>('.scene-card .scene-thumbnail img')];
+      return images.length === expected && images.every(image => image.complete && image.naturalWidth > 0);
+    }, 7);
+    // The shared renderer captures scenes serially; check readiness for each image.
+    for (const id of ['falling-boxes@1', 'lab-demo@1', 'lab-demo@2', 'lab-demo@3', 'robot-and-tubes@1', 'robot-and-tubes@2', 'usd-lab@1'])
+      await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
+    await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(7);
+    await expect(page.locator('canvas')).toHaveCount(0);
+  });
   expect(liveRequests).toEqual([]); expect(sockets).toEqual([]);
   const after = await (await request.get(`${api}/api/v1/health`)).json();
   expect(after.sessionCount).toBe(before.sessionCount);

@@ -41,7 +41,11 @@ jobs:
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
         if: matrix.lane == 'core'
-      - run: uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q
+      - name: Run Python suite with xdist
+        run: |
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(uv run --no-sync python -c 'import os; print(len(os.sched_getaffinity(0)))')"
+          uv run --no-sync python -c 'import json, os, psutil; print(json.dumps({"physicalCpus": psutil.cpu_count(logical=False), "affinity": sorted(os.sched_getaffinity(0)), "selectedWorkers": int(os.environ["PYTEST_XDIST_AUTO_NUM_WORKERS"])}))'
+          uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q --durations=20 --junitxml=.scratch/ci-results/${{ matrix.lane }}.xml
       - run: uv run --no-sync ruff check apps packages tools tests
         if: matrix.lane == 'core'
       - run: uv run --no-sync python tools/check_platform_skills.py
@@ -54,6 +58,11 @@ jobs:
         if: matrix.lane == 'core'
       - run: pnpm build
         if: matrix.lane == 'core'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-checks-${{ matrix.lane }}-attempt-${{ github.run_attempt }}
+          path: .scratch/ci-results/${{ matrix.lane }}.xml
 
   contracts:
     if: always()
@@ -72,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -92,7 +101,7 @@ jobs:
       - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/5
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
