@@ -125,9 +125,23 @@ the spatial authority; resolving its binding template does not certify the asset
 as a complete physical model. The centrifuge's reference geometry/sites derive
 from Synthetic; its native program requires scene-owned joint/resource overrides.
 
-`tools/package_binding_references.py --output <empty-directory>` reproduces the
-primitive extraction without starting Newton. It refuses to overwrite an existing
-reference version. Structural reports are generated separately through the same
+The reference producer identifies its exact input revision separately from its
+own file hash. Reproduce this historical extraction in an isolated checkout of
+`91c84a9380076cbdcf5a06d1a4ecbd1b67e81a9d`: that commit contains the recorded
+producer and all five input files with the exact bytes from source revision
+`882607f56e07464c14e839f2e39832d358c06062`. The current native preview cache is a
+newer derived output and is not the historical input recorded by the assets.
+
+From the primary checkout, with the frozen base/USD dependencies installed:
+
+```powershell
+git worktree add --detach .worktrees/reference-source 91c84a9380076cbdcf5a06d1a4ecbd1b67e81a9d
+uv run --no-sync python .worktrees/reference-source/tools/package_binding_references.py --output .scratch/reference-output
+```
+
+Use a fresh output directory. The producer verifies the frozen input bytes, starts
+no Newton source and refuses to overwrite an existing reference version.
+Structural reports are generated separately through the same
 CPU-only validator used by imports. Published package bytes, including reports,
 remain immutable. Template selection and scene Config overrides are documented
 in [Scene versions](SCENE_LIBRARY.md#binding-templates).
