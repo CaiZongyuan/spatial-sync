@@ -13,6 +13,7 @@ import { InfoStore } from '../info/store';
 import { PlanStore } from '../plans/store';
 
 export interface ViewState {
+  evaluationId?: string;
   manifest?: SceneManifest;
   informationOnly?: boolean;
   role: 'viewer' | 'operator';
@@ -127,6 +128,8 @@ export class SessionClient {
     document.addEventListener('visibilitychange', this.onVisibility);
     await this.loadManifest();
     if (this.stopped || generation !== this.generation) return;
+    await this.loadStats();
+    if (this.stopped || generation !== this.generation) return;
     this.connect();
     this.monitor = setInterval(() => {
       const now = performance.now();
@@ -148,7 +151,6 @@ export class SessionClient {
       });
     }, 250);
     this.statsPoll = setInterval(() => void this.loadStats(), 2000);
-    void this.loadStats();
   }
 
   stop() {
@@ -243,7 +245,8 @@ export class SessionClient {
             revision: stats.sceneRevision,
           };
         }
-        this.update({ stats, publishedRateHz });
+        this.update({ stats, publishedRateHz,
+          evaluationId: typeof stats.evaluationId === 'string' ? stats.evaluationId : undefined });
       }
     } catch {
       /* Preserve the stream if a diagnostics request is temporarily unavailable. */
@@ -434,6 +437,7 @@ export class SessionClient {
 
   private sendInfo(message: ClientMessage) {
     if (this.readOnly) throw new Error('Recorded sessions are read-only.');
+    if (this.state.evaluationId) throw new Error('评估中，会话只读。');
     if (this.ws?.readyState !== WebSocket.OPEN)
       throw new Error('Connection unavailable. Retry after reconnect.');
     if (this.state.role !== 'operator')
@@ -473,7 +477,7 @@ export class SessionClient {
     command: CommandRequest['command'],
     args: CommandRequest['args'] = {},
   ) {
-    if (this.readOnly) return;
+    if (this.readOnly || this.state.evaluationId) return;
     if (this.ws?.readyState !== WebSocket.OPEN) {
       this.update({
         commandResult: 'Connection unavailable. Retry after reconnect.',
