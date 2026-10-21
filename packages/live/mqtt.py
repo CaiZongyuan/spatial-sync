@@ -21,6 +21,7 @@ class PahoTransport:
         self._client = None
         self._pending_lock = Lock()
         self._pending_publications = 0
+        self._closing = False
 
     def start(self):
         # Disabled Live configurations never import an MQTT SDK or open a socket.
@@ -63,7 +64,7 @@ class PahoTransport:
 
     def publish(self, topic, payload):
         client = self._client
-        if client is None or not client.is_connected():
+        if self._closing or client is None or not client.is_connected():
             return False
         with self._pending_lock:
             if self._pending_publications >= 128:
@@ -81,10 +82,12 @@ class PahoTransport:
         return True
 
     def close(self):
+        self._closing = True
         self.ingress.close()
-        client, self._client = self._client, None
+        client = self._client
         if client is not None:
             try:
                 client.disconnect()
             finally:
                 client.loop_stop()
+        self._client = None

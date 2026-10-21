@@ -86,13 +86,17 @@ class DeviceHost:
         if self.transport is None:
             return
         for receipt in self.transport.ingress.drain():
+            if receipt.generation < self._generation:
+                continue
             if receipt.kind == "connected":
                 self._offline()
                 self._generation = receipt.generation
                 self._reconnect = False
                 for mailbox in self.mailboxes.values():
                     mailbox.connected, mailbox.overflowed = True, False
-            elif receipt.kind == "disconnected" and receipt.generation == self._generation:
+            elif receipt.kind == "disconnected":
+                # Overflow may have discarded this generation's initial connected receipt.
+                self._generation = receipt.generation
                 self._offline()
             elif receipt.kind == "message" and receipt.generation == self._generation:
                 try:
@@ -154,9 +158,9 @@ class DeviceHost:
             await asyncio.shield(closing)
         except asyncio.CancelledError:
             await closing
-            raise
-        finally:
             self.transport = None
+            raise
+        self.transport = None
 
     async def _connect(self):
         await self._close_transport()
@@ -189,14 +193,26 @@ class DeviceHost:
 
     async def close(self):
         self.state = "STOPPING"
-        if self._task is not None:
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
-            self._task = None
-        self._offline()
-        self.pipeline.fail_active("source_unavailable", "Live device host stopped")
-        self.pipeline.close()
+        failure = None
+        try:
+            if self._task is not None:
+                self._task.cancel()
+                await asyncio.gather(self._task, return_exceptions=True)
+                self._task = None
+        except BaseException as error:
+            failure = error
+        for cleanup in (self._offline,
+                        lambda: self.pipeline.fail_active("source_unavailable", "Live device host stopped"),
+                        self.pipeline.close):
+            try:
+                cleanup()
+            except BaseException as error:
+                failure = failure or error
         try:
             await self._close_transport()
-        finally:
-            self.source, self.state = None, "STOPPED"
+        except BaseException as error:
+            failure = failure or error
+        if failure is not None:
+            self.state, self.error = "FAILED", "Live device host cleanup did not complete"
+            raise failure
+        self.source, self.state = None, "STOPPED"

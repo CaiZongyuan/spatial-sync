@@ -5,6 +5,7 @@ from threading import Thread
 from types import SimpleNamespace
 
 import paho.mqtt.client as mqtt
+import pytest
 
 from packages.live.bindings import Broker
 from packages.live.mqtt import PahoTransport
@@ -71,3 +72,42 @@ def test_actual_adapter_callbacks_queue_owned_bytes_and_bound_unsent_publication
     assert client.closed and not transport.publish("cmd", payload)
     client.on_message(client, None, message)
     assert transport.ingress.drain() == ()
+
+
+def test_failed_sdk_worker_stop_keeps_the_same_client_until_retry_succeeds(monkeypatch):
+    class FlakyStop(ClientBoundary):
+        def loop_stop(self):
+            self.stop_calls = getattr(self, "stop_calls", 0) + 1
+            if self.stop_calls == 1:
+                raise OSError("Controlled worker join failure")
+            super().loop_stop()
+
+    monkeypatch.setattr(mqtt, "Client", FlakyStop)
+    transport = PahoTransport(Broker(url="mqtt://localhost:18827"), ["telemetry"])
+    transport.start()
+    client = transport._client
+    with pytest.raises(OSError):
+        transport.close()
+    assert transport._client is client and not client.closed
+    transport.close()
+    assert client.closed and client.stop_calls == 2 and transport._client is None
+
+
+def test_disconnect_failure_still_attempts_worker_stop_and_blocks_further_publications(monkeypatch):
+    class FlakyDisconnect(ClientBoundary):
+        def disconnect(self):
+            self.disconnect_calls = getattr(self, "disconnect_calls", 0) + 1
+            if self.disconnect_calls == 1:
+                raise OSError("Controlled disconnect failure")
+            super().disconnect()
+
+    monkeypatch.setattr(mqtt, "Client", FlakyDisconnect)
+    transport = PahoTransport(Broker(url="mqtt://localhost:18827"), ["telemetry"])
+    transport.start()
+    client = transport._client
+    with pytest.raises(OSError):
+        transport.close()
+    assert transport._client is client and client.closed and client.connected
+    assert not transport.publish("cmd", {"requestId": "new"})
+    transport.close()
+    assert client.disconnect_calls == 2 and transport._client is None and not client.connected

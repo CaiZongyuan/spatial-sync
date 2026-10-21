@@ -1,5 +1,6 @@
 """Actual Live Host/HTTP/approval integration with an injected in-process broker."""
 
+import asyncio
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -23,7 +24,7 @@ from apps.api.app.settings import Settings
 from packages.info.approvals import ApprovalStore
 from packages.info.plans import PlanStore
 from packages.live.bindings import load_bindings
-from packages.live.ingress import BrokerIngress
+from packages.live.ingress import BrokerIngress, BrokerReceipt
 
 KEY = "/Real/Incubator2"
 EXAMPLE = Path(__file__).parents[2] / "devices/live/lab.yaml"
@@ -330,3 +331,121 @@ async def test_actual_host_command_timeout_and_publish_failure_are_audited(live)
     live.host.advance()
     assert live.host.pipeline.table.get(failed["invocationId"]).error.code == "device_unavailable"
     assert len(broker.publications) == 1
+
+
+async def test_failed_transport_close_retains_the_owner_and_can_retry(live):
+    transport = live.transports[-1]
+    original_close = transport.close
+    calls = []
+
+    def flaky_close():
+        calls.append("close")
+        if len(calls) == 1:
+            raise OSError("Controlled close failure leaves the driver alive")
+        original_close()
+
+    transport.close = flaky_close
+    try:
+        with pytest.raises(OSError):
+            await live.host.close()
+        assert live.host.transport is transport and live.host.source is live.host
+        assert live.host.state == "FAILED" and not transport.closed
+        await live.host.close()
+        assert calls == ["close", "close"]
+        assert transport.closed and live.host.transport is None
+        assert live.host.state == "STOPPED" and live.host.source is None
+    finally:
+        transport.close = original_close
+        if live.host.transport is not transport and not transport.closed:
+            original_close()  # release only this test's fake if the failing candidate lost its owner
+
+
+async def test_reconnect_does_not_replace_an_owner_that_still_fails_close(live):
+    transport = live.transports[-1]
+    calls = []
+
+    def failed_close():
+        calls.append("close")
+        raise OSError("Driver has not released its worker")
+
+    original_close = transport.close
+    transport.close = failed_close
+    try:
+        for _ in range(2):
+            with pytest.raises(OSError):
+                await live.host._connect()
+        assert live.host.transport is transport and calls == ["close", "close"]
+        assert len(live.transports) == 1
+    finally:
+        transport.close = original_close
+        if live.host.transport is not transport and not transport.closed:
+            original_close()
+
+
+async def test_initial_handshake_overflow_reconnects_and_requires_new_valid_telemetry(tmp_path):
+    clock, transports = [10.0], []
+
+    def factory(broker, topics):
+        transport = FakeBrokerTransport(broker, topics, lambda: clock[0])
+        if not transports:
+            transport.ingress = BrokerIngress(capacity=1, clock=lambda: clock[0])
+        transports.append(transport)
+        return transport
+
+    approvals = ApprovalStore(tmp_path / "approvals.jsonl")
+    plans = PlanStore(tmp_path / "plans.jsonl", approvals)
+    host = DeviceHost(load_bindings(EXAMPLE), approvals, plans, transport_factory=factory,
+                      clock=lambda: clock[0])
+    try:
+        await host.start()  # connected receipt occupies the first generation's only queue slot
+        assert not transports[0].emit("lab/incubator2/telemetry", {"temp": 37})
+        host.advance()
+        assert host._reconnect and host.availability(KEY).code == "device_unavailable"
+        clock[0] += 1.1
+        await asyncio.sleep(.06)  # run the actual owned reconnect loop, without TCP or a Source
+        assert len(transports) == 2 and transports[0].closed
+        replacement = SimpleNamespace(host=host, clock=clock, transports=transports)
+        host.advance()
+        assert host.availability(KEY).code == "device_unavailable"
+        transports[-1].emit("lab/incubator2/telemetry", {"temp": 37}, retained=True)
+        clock[0] += .1
+        host.advance()
+        assert host.availability(KEY).code == "device_unavailable"
+        telemetry(replacement)
+        assert host.availability(KEY) is None
+    finally:
+        await host.close()
+        await plans.close()
+
+
+async def test_older_connection_generation_cannot_disconnect_current_fresh_device(live):
+    broker = live.transports[-1]
+    broker.ingress.connected()
+    live.host.advance()
+    telemetry(live)
+    assert live.host._generation == 2 and live.host.availability(KEY) is None
+    broker.ingress._queue.put_nowait(BrokerReceipt(1, live.clock[0], "disconnected"))
+    live.host.advance()
+    assert live.host.availability(KEY) is None and not live.host._reconnect
+
+
+async def test_other_owned_cleanup_is_attempted_even_if_host_offline_cleanup_raises(live):
+    telemetry(live)
+    invocation = (await live.http.post("/api/v1/live/actions", json=action("close-error"))).json()
+    original = live.host._offline
+
+    def failed_offline():
+        raise OSError("Controlled Host cleanup failure")
+
+    live.host._offline = failed_offline
+    try:
+        with pytest.raises(OSError):
+            await live.host.close()
+        assert live.transports[-1].closed
+        assert not live.host.pipeline._approval_timers
+        assert live.approvals.for_invocation(invocation["invocationId"]).status == "unavailable"
+        assert live.host.state == "FAILED" and live.host.source is live.host
+    finally:
+        live.host._offline = original
+    await live.host.close()
+    assert live.host.state == "STOPPED"
