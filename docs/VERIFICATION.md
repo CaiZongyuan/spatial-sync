@@ -45,6 +45,21 @@ under the same environment, workload and measurement boundary; use
 `check-benchmark` to assess the comparison. #70 tracks the Windows difference
 and does not block I5 or another ticket. Record the I5 MCP journey on Linux.
 
+The I5 runner gives Claude Code an empty working directory, no built-in tools and
+only the `lab` MCP server, against an owned Newton-capable API and web server:
+
+```powershell
+uv run --no-sync python tools/agent_journey.py --api http://127.0.0.1:8000 --web http://127.0.0.1:5184 --recordings-root <owned recordings root> --output .scratch/agent-journey
+```
+
+The agent launches `robot-and-tubes` with Newton itself. While it works, every
+settled tube Site location is checked against physics whenever the rotor is at
+rest, and a browser observer compares the viewer's locations and resting poses
+with the API. The invocation log must complete the I3 order with agent actors
+only. The output holds `receipt.json`, the transcript, checkpoint screenshots
+and the zipped recording; publish the recording and transcript as release
+assets, never in the repository.
+
 The browser suite includes real format1 and format2 recording fixtures. Format1
 retains ten pose/location/joint samples; format2 pins a selected scene version
 and compares the final paused state with independent public HTTP reads. Live
