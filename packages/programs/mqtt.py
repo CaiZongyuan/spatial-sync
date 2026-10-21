@@ -2,16 +2,24 @@
 
 from typing import Literal
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from packages.info.program import ProgramConfig, Reject
 from packages.protocol.schema import JsonValue, Model, NonEmpty, Positive
+
+
+def literal_topic(value):
+    if any(character in value for character in ("+", "#", "\x00")):
+        raise ValueError("MQTT mappings require literal topics without wildcards")
+    return value
 
 
 class Telemetry(Model):
     topic: NonEmpty
     map: dict[NonEmpty, str]
     timeoutSeconds: Positive = 3
+
+    _topic = field_validator("topic")(literal_topic)
 
     @field_validator("map")
     @classmethod
@@ -26,6 +34,8 @@ class Command(Model):
     topic: NonEmpty
     ack: NonEmpty
     timeoutSeconds: Positive = 5
+
+    _topics = field_validator("topic", "ack")(literal_topic)
 
 
 class Acknowledgement(Model):
@@ -42,6 +52,20 @@ class MqttProgram:
         telemetry: Telemetry
         commands: dict[NonEmpty, Command] = Field(default_factory=dict)
         statusTopic: NonEmpty | None = None
+
+        @field_validator("statusTopic")
+        @classmethod
+        def status_topic(cls, value):
+            return literal_topic(value) if value is not None else value
+
+        @model_validator(mode="after")
+        def distinct_inputs(self):
+            if self.statusTopic == self.telemetry.topic or any(
+                command.ack in (self.telemetry.topic, self.statusTopic)
+                for command in self.commands.values()
+            ):
+                raise ValueError("Telemetry, status and acknowledgement topics must be distinct")
+            return self
 
     def init(self, ctx):
         self.pending = {}
@@ -68,8 +92,11 @@ class MqttProgram:
             return
         self.pending[inv.id] = inv, command.ack, ctx.sim_time + command.timeoutSeconds
 
-    def _telemetry(self, payload, ctx):
+    def _telemetry(self, payload, ctx, received_at, sample_time_ms):
         if not isinstance(payload, dict):
+            return
+        if (received_at > ctx.sim_time or ctx.sim_time - received_at >= ctx.config.telemetry.timeoutSeconds
+                or (ctx.driver.last_telemetry is not None and received_at < ctx.driver.last_telemetry)):
             return
         values = {}
         for prop, path in ctx.config.telemetry.map.items():
@@ -82,18 +109,18 @@ class MqttProgram:
             except (KeyError, TypeError):
                 return
         try:
-            ctx.set(**values)
+            ctx.set_observed(received_at, sample_time_ms, **values)
         except (ValidationError, ValueError, TypeError):
             return
-        ctx.driver.mark_online(ctx.sim_time, ctx.config.telemetry.timeoutSeconds)
+        ctx.driver.mark_online(received_at, ctx.config.telemetry.timeoutSeconds)
 
     def tick(self, ctx, dt):
-        for topic, payload, retained in ctx.driver.messages():
+        for topic, payload, retained, received_at, sample_time_ms in ctx.driver.messages():
             if not ctx.driver.connected:
                 continue
             if topic == ctx.config.telemetry.topic:
                 if not retained:
-                    self._telemetry(payload, ctx)
+                    self._telemetry(payload, ctx, received_at, sample_time_ms)
             elif topic == ctx.config.statusTopic:
                 if payload == {"online": False}:
                     ctx.driver.mark_offline()
@@ -103,9 +130,11 @@ class MqttProgram:
                 except ValidationError:
                     continue
                 pending = self.pending.get(ack.requestId)
-                if pending is not None and pending[1] == topic and ctx.sim_time < pending[2]:
-                    if self.online(ctx):
+                if (pending is not None and pending[1] == topic and received_at < pending[2]
+                        and ctx.driver.accepts_ack(ack.requestId, received_at)):
+                    if ctx.driver.online(received_at):
                         inv, _, _ = self.pending.pop(ack.requestId)
+                        ctx.driver.discard_command(ack.requestId)
                         if ack.status == "succeeded":
                             inv.succeed(ack.result)
                         else:
@@ -120,7 +149,9 @@ class MqttProgram:
             else:
                 continue
             del self.pending[request_id]
+            ctx.driver.discard_command(request_id)
 
     def cancel(self, inv, ctx):
         self.pending.pop(inv.id, None)
+        ctx.driver.discard_command(inv.id)
         inv.cancelled()

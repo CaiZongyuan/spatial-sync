@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import random
 import time
 from collections import OrderedDict
@@ -151,6 +152,16 @@ class Ctx:
         if self._host._executing != self._index:
             raise RuntimeError("Programs may only write their own entity during a callback")
         self._host._set(self._index, {self._properties[name]: value for name, value in values.items()})
+
+    def set_observed(self, observed_time, sample_time_ms, **values):
+        """Nonspatial drivers retain receipt time when a later tick handles telemetry."""
+        if self._host._executing != self._index:
+            raise RuntimeError("Programs may only write their own entity during a callback")
+        if (not math.isfinite(observed_time) or not 0 <= observed_time <= self.sim_time
+                or not math.isfinite(sample_time_ms) or sample_time_ms < 0):
+            raise ValueError("Observation timestamps must identify an already received sample")
+        self._host._set(self._index, {self._properties[name]: value for name, value in values.items()},
+                        observed=(observed_time, sample_time_ms))
 
     def get(self, prop):
         return self.read(self.key, prop)
@@ -345,7 +356,7 @@ class HostCore:
 
         return read
 
-    def _set(self, key, values):
+    def _set(self, key, values, *, observed=None):
         current = self._states[key]
         parsed = {prop: current.validators[prop](value) for prop, value in values.items()}
         changed = {
@@ -355,7 +366,8 @@ class HostCore:
         fresh = [prop for prop in parsed if current.stale_after[prop] is not None]
         if not changed and not fresh:
             return
-        meta = {"simTime": self.sim_time, "sampleTimeMs": time.monotonic() * 1000, "source": self.source}
+        observed_time, sample_time_ms = observed or (self.sim_time, time.monotonic() * 1000)
+        meta = {"simTime": observed_time, "sampleTimeMs": sample_time_ms, "source": self.source}
         for prop in fresh:
             if current.meta[prop] and current.meta[prop].get("stale", False):
                 current.freshness_dirty.add(prop)
