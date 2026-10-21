@@ -312,9 +312,12 @@ def capture(args):
         response = client.get(route)
         response.raise_for_status()
         summary = response.json()
-        expected_version = selection.identity["sceneVersion"] if selection else "robot-and-tubes@1"
-        if summary.get("source") != "newton" or summary.get("sceneVersion") != expected_version:
-            raise ValueError("FR3 teaching session must match the selected exact Newton scene version")
+        expected_version = (selection.identity["sceneVersion"] if selection
+                            else summary.get("sceneVersion") or "robot-and-tubes@1")
+        matches_scene = (summary.get("sceneVersion") == expected_version if selection
+                         else summary.get("sceneId") == "robot-and-tubes")
+        if summary.get("source") != "newton" or not matches_scene:
+            raise ValueError("FR3 teaching requires a matching Newton scene")
         if selection and summary.get("sceneContentHash") != selection.identity["sceneContentHash"]:
             raise ValueError("Teaching session scene content differs from the selected immutable package")
         if selection and summary.get("state") != "PAUSED":

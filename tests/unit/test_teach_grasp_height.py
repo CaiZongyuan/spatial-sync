@@ -181,3 +181,48 @@ def test_http_capture_compares_same_paused_sample_before_writing(
         assert result["tcpErrorM"] == 0
         assert yaml.safe_load(output.read_text())["locations"]["rack.A1"]["grasp"] == joints
     assert len(reads) == 5 and all(method == "GET" for method, _ in reads)
+
+
+@pytest.mark.parametrize("version,source_kind,scene_id,accepted", [
+    pytest.param(2, "newton", "robot-and-tubes", True, id="old-v2"),
+    pytest.param(1, "newton", "robot-and-tubes", True, id="old-v1"),
+    pytest.param(2, "synthetic", "robot-and-tubes", False, id="wrong-source"),
+    pytest.param(2, "newton", "other-scene", False, id="wrong-scene"),
+])
+def test_legacy_http_capture_keeps_zero_height_supported_versions(
+    tmp_path, monkeypatch, version, source_kind, scene_id, accepted,
+):
+    """Existing Python-builder scene versions still use the legacy h0 capture path."""
+    robot, site = "/World/Lab/RobotA", "/World/Lab/Rack/A1"
+    joints = [0., -.4, 0., -2., 0., 1.6, .7]
+    original = {"locations": {"rack.A1": {"site": site, "grasp": [0.] * 7, "approach": [1.] * 7}}}
+    input_path, output = tmp_path / "input.yaml", tmp_path / "factory/locations.yaml"
+    input_path.write_text(yaml.safe_dump(original), encoding="utf-8")
+    documents = {"": {"source": source_kind, "sceneId": scene_id, "sceneVersion": f"{scene_id}@{version}",
+                       "state": "RUNNING"},
+                 "/state": {"entities": {robot: {"values": {"jointPositions": joints}, "rev": 3}}},
+                 "/scene": {"nodes": [], "sites": [{"entityKey": site,
+                            "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 1]}}]},
+                 "/snapshot": {"poses": []}}
+
+    def respond(request):
+        return httpx.Response(200, json=documents[request.url.path.removeprefix("/api/v1/sessions/old")])
+
+    client_class = httpx.Client
+    monkeypatch.setattr(teaching.httpx, "Client", lambda **kwargs: client_class(
+        base_url="http://test", transport=httpx.MockTransport(respond)))
+    args = SimpleNamespace(scene_version=None, robot=None, library_root=None, session="old", url="http://test",
+                           input=input_path, output=output, capture="rack.A1", pose="grasp")
+    if not accepted:
+        with pytest.raises(ValueError, match="matching Newton scene"):
+            teaching.capture(args)
+        assert not output.exists()
+        assert input_path.read_text() == yaml.safe_dump(original)
+        return
+    result = teaching.capture(args)
+    written = yaml.safe_load(output.read_text())
+    assert written["locations"]["rack.A1"]["grasp"] == joints
+    assert written["locations"]["rack.A1"]["approach"] == [1.] * 7
+    assert input_path.read_text() == yaml.safe_dump(original)
+    assert result["inputIdentity"] == {"sceneVersion": f"robot-and-tubes@{version}"}
+    assert result["graspHeightM"] == 0.0
