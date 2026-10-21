@@ -1,0 +1,14 @@
+name: lab-demo-pick-place
+scene: lab-demo@3
+robot: /World/Lab/RobotA
+implements: robot-arm/v1.pickPlace
+timeoutSeconds: 90
+success:
+  all:
+    - {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}
+    - {property: holding, isNull: true}
+milestones:
+  - id: grasp
+    when: {property: holding, equals: /World/Lab/Tubes/Tube01}
+  - id: place
+    when: {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}

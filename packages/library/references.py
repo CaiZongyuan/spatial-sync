@@ -38,9 +38,10 @@ def dependency_reports(version, kind):
 
 
 class ReferenceInspection:
-    def __init__(self, assets, scenes, recordings, sessions, validator):
+    def __init__(self, assets, scenes, recordings, sessions, validator, suites=None):
         self.assets, self._scenes = assets, scenes
         self.recordings, self.sessions, self.validator = recordings, sessions, validator
+        self.suites = suites
         self._inspected = {}
 
     @property
@@ -65,6 +66,19 @@ class ReferenceInspection:
                 directory.exists() and (not directory.is_dir() or any(directory.iterdir()))
             ):
                 problem("training", name, "This product store is not supported by A2 reference inspection")
+
+        if self.suites is not None:
+            try:
+                self.suites.refresh()
+                for suite in self.suites.versions.values():
+                    suite.verify()
+                    scene = self.scenes.resolve(suite.metadata["scene"])
+                    if scene.content_hash != suite.metadata["sceneContentHash"]:
+                        raise ValueError("Suite scene content changed")
+                    if kind == "scene" and target.id == scene.id:
+                        reference("suite", suite.id, "Pinned evaluation scene version")
+            except (OSError, ValueError, LibraryError):
+                problem("suite", "library", "Cannot inspect every pinned evaluation scene")
 
         collections = (("asset", self.assets), ("scene", self.scenes))
         for owner_kind, collection in collections:

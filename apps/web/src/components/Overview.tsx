@@ -79,7 +79,7 @@ function DeviceDrawer({ client, manifest, catalog, selected, select }: {
         <div><dt>素材</dt><dd>未关联素材</dd></div><div><dt>设备程序</dt><dd><code>{binding.program}</code></dd></div></dl>
       {locations.length > 0 && <section><span className="eyebrow">示教位置</span><p className="teaching-locations">{locations.map(name => <code key={name}>{name}</code>)}</p></section>}
       <EntityPanel store={client.info} binding={binding} definition={definition} compact
-        disabled={client.readOnly || state.connection !== 'connected' || state.role !== 'operator' || !client.info.getMetadata().ready || !['RUNNING', 'PAUSED'].includes(state.sessionState)}
+        disabled={client.readOnly || Boolean(state.evaluationId) || state.connection !== 'connected' || state.role !== 'operator' || !client.info.getMetadata().ready || !['RUNNING', 'PAUSED'].includes(state.sessionState)}
         onAction={(key, action, params) => client.action(key, action, params)} />
     </> : <>
       <span className="eyebrow">设备抽屉</span><h2>点击地图上的设备</h2><p className="drawer-instruction">查看它的实体类型、动作与示教位置。</p>

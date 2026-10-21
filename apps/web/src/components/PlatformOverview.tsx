@@ -73,7 +73,7 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
         <table><thead><tr><th>场景 / 会话</th><th>状态 / 观察者</th><th>物理源 / 后端</th><th title="每个逻辑核心的进程 CPU 上限为 100%" className="number">进程 CPU / 内存</th><th>打开</th></tr></thead>
           <tbody>{sessions.map(session => <tr key={session.sessionId} data-testid={`platform-session-${session.sessionId}`}>
             <td><strong>{session.sceneName}</strong><code>{session.sessionId}</code><small>{session.sceneVersion ?? session.sceneId}</small></td>
-            <td><span className={`state-pill ${session.state.toLowerCase()}`} data-state={session.state} title={session.state}>{sessionLabel(session.state)}</span><span>{session.connectedClients} 位观察者</span>
+            <td><span className={`state-pill ${session.state.toLowerCase()}`} data-state={session.state} title={session.state}>{session.evaluationId && session.state === 'RUNNING' ? '评估中 · 只读' : sessionLabel(session.state)}</span><span>{session.connectedClients} 位观察者</span>
               <small>{session.simTime == null ? unknown : `${session.simTime.toFixed(2)} s`} · RTF {session.actualRtf == null ? unknown : session.actualRtf.toFixed(2)}</small></td>
             <td><strong className="platform-source">{session.source}</strong>
               <span>{session.backend ? `${session.backend.alive ? '活动' : '已停止'} · PID ${session.backend.pid ?? unknown}` : '网关内运行'}</span>
@@ -82,8 +82,8 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
             <td className="number"><span>{percent(session.backend?.cpuPercent)} / {bytes(session.backend?.memoryBytes)}</span>
               {session.backend?.metricsReason && <small>{session.backend.metricsReason}</small>}</td>
             <td><Link className="workspace-link" aria-label="Open workspace →" to="/sessions/$sessionId" params={{ sessionId: session.sessionId }}>打开工作台 →</Link>
-              <NewtonViewerButton sessionId={session.sessionId} source={session.source} state={session.state}
-                backendPid={session.backend?.pid} backendAlive={session.backend?.alive} viewer={session.backend?.viewer} />
+              {!session.evaluationId && <NewtonViewerButton sessionId={session.sessionId} source={session.source} state={session.state}
+                backendPid={session.backend?.pid} backendAlive={session.backend?.alive} viewer={session.backend?.viewer} />}
             </td>
           </tr>)}</tbody>
         </table>}

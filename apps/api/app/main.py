@@ -26,6 +26,8 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.device_host import DeviceHost
+from apps.api.app.evaluation_recordings import EvaluationRecordingRepository
+from apps.api.app.evaluations import EvaluationService, install_evaluation_routes
 from apps.api.app.history_routes import install_history_routes
 from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
@@ -33,7 +35,7 @@ from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
-from apps.api.app.recordings import RecordingRepository, install_recording_routes
+from apps.api.app.recordings import install_recording_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -79,6 +81,7 @@ def _validation_diagnostics(value):
 
 
 class CreateSession(Model):
+    requestId: NonEmpty | None = None
     seed: SessionSeed = 42
     sceneId: NonEmpty | None = None
     sceneVersion: NonEmpty | None = None
@@ -125,7 +128,7 @@ def create_app(
     configure_gateway_logging()
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
-    recordings = RecordingRepository(settings, asset_registry)
+    recordings = EvaluationRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
     if settings.live_bindings is not None:
@@ -134,10 +137,13 @@ def create_app(
             approval_timeout=settings.approval_timeout_seconds,
             **({"transport_factory": live_transport_factory} if live_transport_factory else {}),
         )
+    evaluations = EvaluationService(manager)
+    manager.evaluations = evaluations
     library_assets = manager.library_assets
     manager.library_deletions = LibraryDeletions(
         library_assets, lambda: manager.library, manager.approvals, recordings,
         manager.platform_sessions, StructuralValidator(settings.state_root, program_schemas),
+        evaluations.suites,
     )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
@@ -150,6 +156,7 @@ def create_app(
             manager.library.refresh()
             library_assets.startup()
             await recordings.startup()
+            await evaluations.startup()
             await monitor.start()
             if manager.live:
                 await manager.live.start()
@@ -162,7 +169,10 @@ def create_app(
                     if manager.live:
                         await manager.live.close()
                 finally:
-                    await manager.close()
+                    try:
+                        await evaluations.close()
+                    finally:
+                        await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
 
@@ -197,6 +207,7 @@ def create_app(
                 "layout": live.bindings.layout,
                 "placements": {entity.key: entity.placeAt for entity in live.bindings.entities}}
 
+    install_evaluation_routes(app, evaluations, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
@@ -240,6 +251,21 @@ def create_app(
     if settings.remote:
         app.middleware("http")(access_control)
 
+    @app.middleware("http")
+    async def evaluator_ownership(request: Request, call_next):
+        if (request.method in ("POST", "DELETE", "PUT", "PATCH")
+                and _role(request.headers, settings) is not None):
+            parts = request.url.path.split("/")
+            if len(parts) >= 5 and parts[1:4] == ["api", "v1", "sessions"]:
+                session = manager.sessions.get(parts[4])
+                if session is not None:
+                    try:
+                        session.require_interactive()
+                        evaluations.require_interactive()
+                    except HTTPException as error:
+                        return JSONResponse({"detail": error.detail}, status_code=error.status_code)
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
@@ -257,9 +283,11 @@ def create_app(
             "live": {"enabled": manager.live is not None,
                      "state": manager.live.state if manager.live else "DISABLED"},
             "sessions": [
-                {"sessionId": s.session_id, "state": s.state, "source": s.kind}
+                {"sessionId": s.session_id, "state": s.state, "source": s.kind,
+                 **({"evaluationId": s.evaluation_id} if s.evaluation_id else {})}
                 for s in manager.sessions.values()
             ],
+            "evaluation": evaluations.status(),
         }
 
     @app.get("/api/v1/scenes")
@@ -315,7 +343,7 @@ def create_app(
 
     @app.post("/api/v1/sessions", status_code=201)
     async def create_session(body: CreateSession):
-        session = await manager.create(
+        result, status = await evaluations.create_session(
             body.sceneId,
             body.source if body.source is not None else ("synthetic" if body.sceneId else None),
             SessionOptions(
@@ -327,8 +355,11 @@ def create_app(
                 factHz=body.factHz,
             ),
             scene_version=body.sceneVersion,
+            request_id=body.requestId,
         )
-        return session.summary()
+        return JSONResponse(result, status_code=status, headers=(
+            {"Location": f"/api/v1/session-requests/{result['requestId']}"} if status == 202 else {}
+        ))
 
     @app.get("/api/v1/sessions/{session_id}")
     async def session_summary(session_id: str):
@@ -438,8 +469,7 @@ def create_app(
 
     @app.post("/api/v1/sessions/{session_id}/reload")
     async def reload_scene(session_id: str):
-        session = manager.get(session_id)
-        await session.reload()
+        session = await manager.reload(session_id)
         return session.summary()
 
     @app.post("/api/v1/sessions/{session_id}/restart")
@@ -447,7 +477,7 @@ def create_app(
         session = manager.get(session_id)
         if session.state != "FAILED":
             raise HTTPException(409, {"code": "invalid_state"})
-        await session.reload()
+        await manager.reload(session_id)
         return session.summary()
 
     @app.delete("/api/v1/sessions/{session_id}", status_code=204)
@@ -532,6 +562,17 @@ def create_app(
                         )
                         continue
                     commands.append(now)
+                if isinstance(message, (Command, ActionRequest, ActionCancel, ActionApprove)):
+                    try:
+                        session.require_interactive()
+                        evaluations.require_interactive()
+                    except HTTPException:
+                        connection.enqueue_reliable(encode(ServerError(
+                            code="invalid_message",
+                            message="evaluation_busy: This session is evaluator-owned and read-only",
+                            requestId=message.requestId,
+                        )))
+                        continue
                 if isinstance(message, Subscribe):
                     await session.observer_subscribe(connection, message)
                 elif isinstance(message, (ActionRequest, ActionCancel, ActionApprove)):
