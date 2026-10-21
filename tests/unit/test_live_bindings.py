@@ -63,3 +63,36 @@ def test_layout_placement_is_readonly_metadata_and_does_not_change_catalog_contr
     bindings = LiveBindings.model_validate(value)
     assert bindings.entities[0].placeAt == "/World/Lab/Incubator"
     assert "placeAt" not in live_catalog(bindings, "live-test").entities["/Real/Incubator2"]
+
+
+@pytest.mark.parametrize("other_type", ["incubator", "cabinet"])
+def test_different_devices_cannot_share_an_unaddressed_command_topic(other_type):
+    value = document()
+    first = value["entities"][0]
+    topic = first["config"]["commands"]["setSetpoint"]["topic"]
+    if other_type == "incubator":
+        other = deepcopy(first)
+        other["key"] = "/Real/Incubator3"
+        other["config"]["telemetry"]["topic"] = "lab/incubator3/telemetry"
+        other["config"]["statusTopic"] = "lab/incubator3/status"
+        other["config"]["commands"]["setSetpoint"]["ack"] = "lab/incubator3/ack"
+        value["entities"].append(other)
+    else:
+        other = value["entities"][1]
+        other["config"]["commands"]["setUv"]["topic"] = topic
+    with pytest.raises(ValueError) as error:
+        live_catalog(LiveBindings.model_validate(value), "live-test")
+    assert all(identity in str(error.value) for identity in (first["key"], other["key"], topic))
+
+
+def test_one_device_can_share_its_command_topic_across_actions():
+    catalog = live_catalog(load_bindings(EXAMPLE), "live-test")
+    commands = catalog.program_config("/Real/BiosafetyCabinet1").commands
+    assert commands["setBlower"].topic == commands["setUv"].topic == "lab/biosafety1/cmd"
+
+
+@pytest.mark.parametrize("distinct_topic", ["Lab/incubator2/cmd", "/lab/incubator2/cmd"])
+def test_command_topic_ownership_preserves_exact_mqtt_topic_semantics(distinct_topic):
+    value = document()
+    value["entities"][1]["config"]["commands"]["setUv"]["topic"] = distinct_topic
+    live_catalog(LiveBindings.model_validate(value), "live-test")

@@ -79,7 +79,7 @@ def live_catalog(bindings, revision, *, root=DEVICE_ROOT):
         if document["type"] in types:
             raise ValueError("Duplicate entity type")
         types[document["type"]] = document
-    entities, configs = {}, {}
+    entities, configs, command_owners = {}, {}, {}
     for entity in bindings.entities:
         program = REGISTRY.get(entity.program)
         if program is None or program.type != entity.type:
@@ -92,6 +92,12 @@ def live_catalog(bindings, revision, *, root=DEVICE_ROOT):
             raise ValueError("Telemetry maps an undeclared device property")
         if not set(config.commands) <= definition["actions"].keys():
             raise ValueError("MQTT command maps an undeclared action")
+        for command in config.commands.values():
+            owner = command_owners.setdefault(command.topic, entity.key)
+            if owner != entity.key:
+                raise ValueError(
+                    f"MQTT command topic {command.topic!r} is shared by {owner!r} and {entity.key!r}"
+                )
         entities[entity.key] = entity.model_dump(mode="json", exclude={"placeAt"}, exclude_none=True)
         entities[entity.key]["config"] = config.model_dump(mode="json")
         configs[entity.key] = config
