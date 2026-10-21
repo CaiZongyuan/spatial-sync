@@ -37,7 +37,10 @@ async def test_durable_pins_load_before_startup_pruning_and_ordinary_limit_stays
         "session-new",
     }
     assert not (root / "session-old").exists()
-    assert json.loads((root / ".evaluation-pins.json").read_bytes()) == ["session-pin-a", "session-pin-b"]
+    assert json.loads((settings.state_root / "evaluations/recording-pins.json").read_bytes()) == [
+        "session-pin-a", "session-pin-b",
+    ]
+    assert all(path.is_dir() for path in root.iterdir())
 
 
 async def test_plain_recording_repository_keeps_its_existing_ordinary_policy(tmp_path):

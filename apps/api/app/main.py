@@ -251,20 +251,32 @@ def create_app(
     if settings.remote:
         app.middleware("http")(access_control)
 
-    @app.middleware("http")
-    async def evaluator_ownership(request: Request, call_next):
-        if (request.method in ("POST", "DELETE", "PUT", "PATCH")
-                and _role(request.headers, settings) is not None):
-            parts = request.url.path.split("/")
-            if len(parts) >= 5 and parts[1:4] == ["api", "v1", "sessions"]:
-                session = manager.sessions.get(parts[4])
-                if session is not None:
-                    try:
-                        session.require_interactive()
-                        evaluations.require_interactive()
-                    except HTTPException as error:
-                        return JSONResponse({"detail": error.detail}, status_code=error.status_code)
-        return await call_next(request)
+    class EvaluatorOwnership:
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            # Direct ASGI delegation preserves the request's existing cancellation/cleanup semantics.
+            if scope["type"] == "http":
+                request = Request(scope)
+                if (request.method in ("POST", "DELETE", "PUT", "PATCH")
+                        and _role(request.headers, settings) is not None):
+                    parts = request.url.path.split("/")
+                    if len(parts) >= 5 and parts[1:4] == ["api", "v1", "sessions"]:
+                        session = manager.sessions.get(parts[4])
+                        if session is not None:
+                            try:
+                                session.require_interactive()
+                                evaluations.require_interactive()
+                            except HTTPException as error:
+                                response = JSONResponse(
+                                    {"detail": error.detail}, status_code=error.status_code,
+                                )
+                                await response(scope, receive, send)
+                                return
+            await self.app(scope, receive, send)
+
+    app.add_middleware(EvaluatorOwnership)
 
     app.add_middleware(
         CORSMiddleware,
