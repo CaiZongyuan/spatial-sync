@@ -1,0 +1,17 @@
+{
+  "name": "@spatial-sync/site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev --host 127.0.0.1 --port 5192",
+    "build": "vitepress build",
+    "preview": "vitepress preview --host 127.0.0.1 --port 5192"
+  },
+  "devDependencies": {
+    "@types/three": "0.183.1",
+    "three": "0.186.1",
+    "vitepress": "1.6.4",
+    "vue": "3.5.43"
+  }
+}

@@ -4,9 +4,17 @@ A local laboratory workbench where people and agents manage lab assets and scene
 
 ## Direction
 
+**Lab RSI Platform** (RSI 实验室平台):
+The product's name: the laboratory platform on which people and agents run the RSI loop, as presented to people outside the project.
+_Avoid_: spatial-sync (the repository), Lab Information Foundation (the information-plane specification), Lab World (an earlier, separate project)
+
 **RSI loop** (递归自我改进闭环):
 The cycle in which an agent, through the platform, goes from assets to scene to task to training to evaluation to a deployed device program, observes failures, and improves assets, scenes or rewards; people approve at the gates.
 _Avoid_: Reference State Initialization (a different RL term), self-play
+
+**Goal** (目标):
+A result a person asks the lab to achieve, such as finding the best culture condition for a sample; the agent derives Operation Plans and, when needed, Training Plans from it. No specification defines Goals yet.
+_Avoid_: Task (a training definition), mission, job
 
 ## Assets
 

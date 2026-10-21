@@ -271,6 +271,14 @@ actions, invocation reads/cancellation, property waits and session control.
 Approval remains a human operation in Web or CLI. The agent receives Catalog
 instructions and condition hints, and its client name is recorded as its actor.
 
+## Project site
+
+`apps/site` is the VitePress project site, published to GitHub Pages by the
+Site workflow. Run `pnpm site:dev` and open http://127.0.0.1:5192/spatial-sync/;
+`pnpm site:build` writes `apps/site/.vitepress/dist`. The display font is a
+subset of Noto Serif SC: when the build reports missing characters, run
+`pnpm site:font` and commit the result.
+
 ## Verification and assets
 
 The [verification guide](docs/VERIFICATION.md) records commands, optional Newton

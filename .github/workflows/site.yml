@@ -1,0 +1,61 @@
+name: Site
+
+# Builds apps/site on every change to it and publishes main to GitHub Pages.
+# Separate from the GPU-free checks, which stay the merge gate.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/site/**
+      - tools/subset_site_font.py
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/site.yml
+  pull_request:
+    paths:
+      - apps/site/**
+      - tools/subset_site_font.py
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/site.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile --filter @spatial-sync/site
+      - run: pnpm site:build
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: apps/site/.vitepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
