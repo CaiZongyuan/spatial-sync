@@ -194,7 +194,17 @@ def test_legacy_http_capture_keeps_zero_height_supported_versions(
 ):
     """Existing Python-builder scene versions still use the legacy h0 capture path."""
     robot, site = "/World/Lab/RobotA", "/World/Lab/Rack/A1"
-    joints = [0., -.4, 0., -2., 0., 1.6, .7]
+    joints = [.1, -.5, .2, -2.1, .3, 1.5, .6]
+    fk_inputs = []
+
+    def fixed_fk(self, coordinates):
+        fk_inputs.append(list(coordinates))
+        pose = np.eye(4)
+        pose[:3, 3] = [.1, .2, .3]
+        return pose
+
+    # This tests HTTP admission/capture, while real optional FK has its own control.
+    monkeypatch.setattr(teaching.Teacher, "fk", fixed_fk)
     original = {"locations": {"rack.A1": {"site": site, "grasp": [0.] * 7, "approach": [1.] * 7}}}
     input_path, output = tmp_path / "input.yaml", tmp_path / "factory/locations.yaml"
     input_path.write_text(yaml.safe_dump(original), encoding="utf-8")
@@ -218,6 +228,7 @@ def test_legacy_http_capture_keeps_zero_height_supported_versions(
             teaching.capture(args)
         assert not output.exists()
         assert input_path.read_text() == yaml.safe_dump(original)
+        assert fk_inputs == []
         return
     result = teaching.capture(args)
     written = yaml.safe_load(output.read_text())
@@ -226,3 +237,7 @@ def test_legacy_http_capture_keeps_zero_height_supported_versions(
     assert input_path.read_text() == yaml.safe_dump(original)
     assert result["inputIdentity"] == {"sceneVersion": f"robot-and-tubes@{version}"}
     assert result["graspHeightM"] == 0.0
+    assert fk_inputs == [joints]
+    assert result["jointPositions"] == joints
+    assert result["tcpFk"] == result["physicalTcpWorld"] == [.1, .2, .3]
+    assert result["tcpErrorM"] == pytest.approx(.37416573867739417)

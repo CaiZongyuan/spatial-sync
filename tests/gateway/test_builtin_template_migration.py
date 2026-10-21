@@ -1,7 +1,11 @@
 """New template-authored versions preserve the previous public device behavior."""
 
 import json
+import shutil
+from copy import deepcopy
+from dataclasses import replace
 
+import yaml
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -131,6 +135,25 @@ def test_native_migration_preserves_catalog_private_alerts_and_explicit_legacy_r
         binding["key"]: {k: v for k, v in binding.items() if k != "alerts"}
         for binding in report["effectiveBindings"]["newton"]
     }
+    assert "graspHeightM" not in effective[ROBOT]["config"]
+    assert after.entities[ROBOT]["config"]["graspHeightM"] == 0.0
+    # Published validation predates this approved optional default; keep its bytes.
+    effective[ROBOT]["config"]["graspHeightM"] = 0.0
     assert after.entities == effective
     assert len({key for key in effective if key.startswith("/World/Lab/Tubes/")}) == 20
     assert library.resolve("robot-and-tubes", launch=True).id == new.id
+
+    # An explicit value must survive the same real Catalog consumer, not become0.
+    custom = tmp_path / "explicit-height"
+    custom.mkdir()
+    shutil.copyfile(new.path / "locations.yaml", custom / "locations.yaml")
+    bindings = yaml.safe_load((new.path / "devices.yaml").read_text(encoding="utf-8"))
+    robot_binding = next(binding for binding in bindings["entities"] if binding["key"] == ROBOT)
+    robot_binding["config"]["graspHeightM"] = .08
+    (custom / "devices.yaml").write_text(yaml.safe_dump(bindings), encoding="utf-8")
+    configured = load_info_catalog(manifest, new.name, scene_package=replace(new, path=custom))
+    explicit = deepcopy(effective)
+    explicit[ROBOT]["config"]["graspHeightM"] = .08
+    assert configured.entities == explicit
+    assert configured.alert_rules() == after.alert_rules()
+    assert configured.conditions(CENTRIFUGE, "closeLid") == after.conditions(CENTRIFUGE, "closeLid")
