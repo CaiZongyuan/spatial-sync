@@ -5,7 +5,7 @@ from copy import deepcopy
 from functools import lru_cache
 from typing import Literal
 
-from fastapi import HTTPException, Query, Request, Response
+from fastapi import Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import Field, StrictBool
 
@@ -56,6 +56,7 @@ def invocation_response(value, *, waiting=False, timed_out=False, query=False):
         "unknown_action": 404,
         "not_permitted": 403,
         "source_unavailable": 503,
+        "device_unavailable": 503,
         "plan_not_approved": 409,
         "invalid_plan_reference": 409,
         "plan_persistence_unavailable": 503,
@@ -78,8 +79,20 @@ def _state_prefix(key, type_id):
     return encode({"key": key, "type": type_id})[:-1]
 
 
-def install_info_routes(app, manager, role_for):
-    prefix = "/api/v1/sessions/{session_id}"
+def install_info_routes(app, manager, role_for, *, prefix="/api/v1/sessions/{session_id}",
+                        resolve_target=None):
+    async def session_target(session_id: str):
+        return manager.get(session_id)
+
+    resolve_target = resolve_target or session_target
+
+    def context_for(session, plan_id, step_id, revision):
+        from apps.api.app.plan_routes import plan_context
+
+        context = plan_context(plan_id, step_id, revision)
+        if context and not getattr(session, "supports_plans", True):
+            raise HTTPException(409, {"code": "live_plan_unavailable"})
+        return context
 
     @app.exception_handler(HistoryUnavailable)
     async def history_unavailable(request: Request, exc: HistoryUnavailable):
@@ -108,8 +121,7 @@ def install_info_routes(app, manager, role_for):
         )
 
     @app.get(prefix + "/catalog")
-    async def catalog(session_id: str, request: Request):
-        session = manager.get(session_id)
+    async def catalog(request: Request, session=Depends(resolve_target)):
         etag = '"' + session.manifest.sceneRevision + '"'
         if request.headers.get("if-none-match") in (etag, session.manifest.sceneRevision):
             return Response(status_code=304, headers={"ETag": etag})
@@ -117,8 +129,7 @@ def install_info_routes(app, manager, role_for):
         return JSONResponse(document.model_dump(mode="json", exclude_none=True), headers={"ETag": etag})
 
     @app.get(prefix + "/entities")
-    async def entities(session_id: str, type: str | None = None, q: str | None = None):
-        session = manager.get(session_id)
+    async def entities(type: str | None = None, q: str | None = None, session=Depends(resolve_target)):
         result = []
         for key, binding in session.catalog.entities.items():
             type_id = binding["type"]
@@ -135,8 +146,7 @@ def install_info_routes(app, manager, role_for):
         return {"entities": result}
 
     @app.get(prefix + "/entity")
-    async def entity(session_id: str, key: str):
-        session = manager.get(session_id)
+    async def entity(key: str, session=Depends(resolve_target)):
         value = state_json(session, key)
         definition = binding(session, key)
         recent = session.pipeline.table.list(entity=key, limit=10)
@@ -153,19 +163,15 @@ def install_info_routes(app, manager, role_for):
         )
 
     @app.get(prefix + "/state")
-    async def states(session_id: str, keys: str | None = None):
-        session = manager.get(session_id)
+    async def states(keys: str | None = None, session=Depends(resolve_target)):
         selected = dict.fromkeys(keys.split(",")) if keys else session.catalog.entities.keys()
         entries = (encode(key) + ":" + state_json(session, key) for key in selected)
         return Response(content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json")
 
     @app.post(prefix + "/actions")
-    async def action(session_id: str, body: HttpAction, request: Request):
-        from apps.api.app.plan_routes import plan_context
-
-        session = manager.get(session_id)
+    async def action(body: HttpAction, request: Request, session=Depends(resolve_target)):
         pipeline = await session.action_pipeline()
-        context = plan_context(body.planId, body.stepId, body.planRevision)
+        context = context_for(session, body.planId, body.stepId, body.planRevision)
         wire_request = ActionRequest.model_validate(body.model_dump(include=set(ActionRequest.model_fields)))
         value = await pipeline.invoke(
             wire_request, role_for(request.headers), actor_from_headers(request.headers),
@@ -178,12 +184,12 @@ def install_info_routes(app, manager, role_for):
 
     @app.get(prefix + "/invocations")
     async def invocations(
-        session_id: str,
         entity: str | None = None,
         status: str | None = None,
         limit: int = Query(100, ge=1, le=1000),
+        session=Depends(resolve_target),
     ):
-        table = manager.get(session_id).pipeline.table
+        table = session.pipeline.table
         return {
             "invocations": [
                 value.model_dump(mode="json")
@@ -193,12 +199,12 @@ def install_info_routes(app, manager, role_for):
 
     @app.get(prefix + "/invocations/{invocation_id}")
     async def invocation(
-        session_id: str,
         invocation_id: str,
         wait: bool = False,
         timeoutSeconds: float = Query(120, ge=0, le=3600),
+        session=Depends(resolve_target),
     ):
-        table = manager.get(session_id).pipeline.table
+        table = session.pipeline.table
         value = await table.lookup(invocation_id)
         if value is None:
             raise HTTPException(404, {"code": "unknown_invocation"})
@@ -207,8 +213,8 @@ def install_info_routes(app, manager, role_for):
             value, timed_out = await table.wait(invocation_id, timeoutSeconds)
         return invocation_response(value, waiting=wait, timed_out=timed_out, query=True)
 
-    async def control(session_id, invocation_id, role, actor=None, decision=None, note=""):
-        pipeline = await manager.get(session_id).action_pipeline()
+    async def control(session, invocation_id, role, actor=None, decision=None, note=""):
+        pipeline = await session.action_pipeline()
         try:
             value = await (
                 pipeline.approve(invocation_id, decision, role, actor, note)
@@ -222,13 +228,13 @@ def install_info_routes(app, manager, role_for):
         return invocation_response(value)
 
     @app.post(prefix + "/invocations/{invocation_id}/cancel")
-    async def cancel(session_id: str, invocation_id: str, request: Request):
-        return await control(session_id, invocation_id, role_for(request.headers))
+    async def cancel(invocation_id: str, request: Request, session=Depends(resolve_target)):
+        return await control(session, invocation_id, role_for(request.headers))
 
     @app.post(prefix + "/invocations/{invocation_id}/approve")
-    async def approve(session_id: str, invocation_id: str, body: Approval, request: Request):
+    async def approve(invocation_id: str, body: Approval, request: Request, session=Depends(resolve_target)):
         return await control(
-            session_id,
+            session,
             invocation_id,
             role_for(request.headers),
             actor_from_headers(request.headers),
@@ -238,7 +244,6 @@ def install_info_routes(app, manager, role_for):
 
     @app.get(prefix + "/wait")
     async def wait_condition(
-        session_id: str,
         request: Request,
         key: str,
         property: str,
@@ -249,10 +254,10 @@ def install_info_routes(app, manager, role_for):
         stepId: int | None = Query(None, gt=0),
         planRevision: int | None = Query(None, gt=0),
         by: float | None = Query(None, ge=0, allow_inf_nan=False),
+        session=Depends(resolve_target),
     ):
         import json
 
-        session = manager.get(session_id)
         binding(session, key)
         try:
             session.catalog.property(key, property)
@@ -272,9 +277,7 @@ def install_info_routes(app, manager, role_for):
             evaluate_conditions([condition], key, {})
         except (ValueError, TypeError) as exc:
             raise HTTPException(422, {"code": "invalid_condition", "message": str(exc)}) from exc
-        from apps.api.app.plan_routes import plan_context
-
-        context = plan_context(planId, stepId, planRevision)
+        context = context_for(session, planId, stepId, planRevision)
         if context and role_for(request.headers) != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         planned = await session.plans.begin_condition(session, {"entity": key, **condition}, "wait", context)
@@ -318,11 +321,9 @@ def install_info_routes(app, manager, role_for):
             raise
 
     @app.post(prefix + "/check")
-    async def check(session_id: str, body: CheckRequest, request: Request):
-        from apps.api.app.plan_routes import plan_context
+    async def check(body: CheckRequest, request: Request, session=Depends(resolve_target)):
         from packages.info.conditions import validate_conditions
 
-        session = manager.get(session_id)
         binding(session, body.key)
         condition = {"entity": body.key, "property": body.property,
                      body.op: True if body.op in ("isNull", "notNull") else body.value}
@@ -333,7 +334,7 @@ def install_info_routes(app, manager, role_for):
                                 lambda entity, prop: session.catalog.property(entity, prop)["schema"])
         except (KeyError, ValueError) as exc:
             raise HTTPException(422, {"code": "invalid_condition", "message": str(exc)}) from exc
-        context = plan_context(body.planId, body.stepId, body.planRevision)
+        context = context_for(session, body.planId, body.stepId, body.planRevision)
         if context and role_for(request.headers) != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         planned = await session.plans.begin_condition(session, condition, "check", context)
@@ -346,6 +347,7 @@ def install_info_routes(app, manager, role_for):
 
     @app.get(prefix + "/events")
     async def events(
-        session_id: str, after: int = Query(0, ge=0), timeoutSeconds: float = Query(30, ge=0, le=120)
+        after: int = Query(0, ge=0), timeoutSeconds: float = Query(30, ge=0, le=120),
+        session=Depends(resolve_target),
     ):
-        return await manager.get(session_id).info.events_after(after, timeoutSeconds)
+        return await session.info.events_after(after, timeoutSeconds)

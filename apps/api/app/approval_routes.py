@@ -19,10 +19,15 @@ class ApprovalDecisionRequest(BaseModel):
 def install_approval_routes(app, manager, role_for):
     store = manager.approvals
 
+    def target(record):
+        live = getattr(manager, "live", None)
+        return (live if live is not None and live.session_id == record.sessionId
+                else manager.sessions.get(record.sessionId))
+
     def document(record):
         if record.subject == "deletion":
             record = manager.library_deletions.describe(record)
-        session = manager.sessions.get(record.sessionId)
+        session = target(record)
         invocation = (
             session.pipeline.table.get(record.subjectId)
             if session and session.pipeline and record.subject == "invocation"
@@ -107,7 +112,7 @@ def install_approval_routes(app, manager, role_for):
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
             return document(get_record(approval_id))
-        session = manager.sessions.get(record.sessionId)
+        session = target(record)
         if (record.subject not in ("invocation", "plan") or not session
                 or session.state not in ("RUNNING", "PAUSED")):
             raise HTTPException(409, {"code": "approval_unavailable"})

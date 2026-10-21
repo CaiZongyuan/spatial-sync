@@ -25,6 +25,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
+from apps.api.app.device_host import DeviceHost
 from apps.api.app.history_routes import install_history_routes
 from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
@@ -44,6 +45,7 @@ from packages.library.deletions import LibraryDeletions
 from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
 from packages.library.validation import StructuralValidator
+from packages.live.bindings import load_bindings
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import (
     PROTOCOL_MINOR_VERSION,
@@ -118,6 +120,7 @@ def create_app(
     source_factory=default_source_factory,
     asset_registry: AssetRegistry | None = None,
     platform_sampler=None,
+    live_transport_factory=None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
@@ -125,6 +128,12 @@ def create_app(
     recordings = RecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
+    if settings.live_bindings is not None:
+        manager.live = DeviceHost(
+            load_bindings(settings.live_bindings), manager.approvals, manager.plans,
+            approval_timeout=settings.approval_timeout_seconds,
+            **({"transport_factory": live_transport_factory} if live_transport_factory else {}),
+        )
     library_assets = manager.library_assets
     manager.library_deletions = LibraryDeletions(
         library_assets, lambda: manager.library, manager.approvals, recordings,
@@ -142,12 +151,18 @@ def create_app(
             library_assets.startup()
             await recordings.startup()
             await monitor.start()
+            if manager.live:
+                await manager.live.start()
             yield
         finally:
             try:
                 await monitor.close()
             finally:
-                await manager.close()
+                try:
+                    if manager.live:
+                        await manager.live.close()
+                finally:
+                    await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
 
@@ -167,6 +182,21 @@ def create_app(
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
+    async def live_target():
+        if manager.live is None:
+            raise HTTPException(503, {"code": "live_unavailable", "message": "Live is not configured"})
+        return manager.live
+
+    install_info_routes(app, manager, lambda headers: _role(headers, settings),
+                        prefix="/api/v1/live", resolve_target=live_target)
+
+    @app.get("/api/v1/live")
+    async def live_status():
+        live = await live_target()
+        return {"id": live.session_id, "name": live.bindings.live, "state": live.state,
+                "layout": live.bindings.layout,
+                "placements": {entity.key: entity.placeAt for entity in live.bindings.entities}}
+
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
@@ -224,6 +254,8 @@ def create_app(
             "protocolVersion": PROTOCOL_VERSION,
             "protocolMinorVersion": PROTOCOL_MINOR_VERSION,
             "sessionCount": len(manager.sessions),
+            "live": {"enabled": manager.live is not None,
+                     "state": manager.live.state if manager.live else "DISABLED"},
             "sessions": [
                 {"sessionId": s.session_id, "state": s.state, "source": s.kind}
                 for s in manager.sessions.values()

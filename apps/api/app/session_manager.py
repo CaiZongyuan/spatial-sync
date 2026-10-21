@@ -1066,6 +1066,7 @@ class SessionManager:
         self._library = None
         self.library_assets = AssetLibrary(settings.state_root)
         self.sessions: dict[str, Session] = {}
+        self.live = None
         self._starting_session: Session | None = None
         self._session_view: tuple[Session, ...] = ()
         self._create_lock = asyncio.Lock()

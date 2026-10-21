@@ -138,7 +138,11 @@ class ActionPipeline:
             if current is not self:
                 return await current.invoke(request, role, actor)
             return self._reject(self._new(request, actor), "not_permitted", "Operator permission is required")
-        self.session.plans.claim_request(self.session, request.requestId, plan_context)
+        supports_plans = getattr(self.session, "supports_plans", True)
+        if not supports_plans and plan_context:
+            raise PlanError("target_unavailable", "This target does not support plan association")
+        if supports_plans:
+            self.session.plans.claim_request(self.session, request.requestId, plan_context)
         # Publish the Future before yielding: concurrent duplicate request IDs share dispatch.
         pending = self._inflight.get(request.requestId)
         if pending:
@@ -152,7 +156,7 @@ class ActionPipeline:
         try:
             error = self._check(invocation)
             plan_grant, force_approval = False, False
-            if not error or error[0] in ("precondition_failed", "busy"):
+            if supports_plans and (not error or error[0] in ("precondition_failed", "busy")):
                 try:
                     plan_grant, force_approval = await self.session.plans.action(
                         self.session, invocation, plan_context,
