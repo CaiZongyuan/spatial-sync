@@ -362,6 +362,12 @@ class Run:
         observer = self.observer
         self.receipt |= {"locationEvents": observer.events, "physicalChecks": observer.checks}
         self.receipt["looseEvents"] = [event for event in observer.events if event["location"] == "loose"]
+        untouched = {"/World/Lab/Tubes/Tube03", "/World/Lab/Tubes/Tube04"}
+        if any(
+            event["key"] in untouched and event["location"] != FINAL[event["key"]]
+            for event in observer.events
+        ):
+            self.fail("a tube outside the journey left its rack slot")
         self.receipt["centrifugeSamples"] = observer.centrifuge
         stats = (await client.get(route + "/stats")).json()
         self.receipt["stats"] = stats
@@ -406,6 +412,7 @@ class Run:
                 or report["sessionId"] != self.session
                 or report["failures"]
                 or not report["locationComparisons"]
+                or not report["poseComparisons"]
             ):
                 self.fail("the browser observer did not confirm the API state")
         if not self.client:
