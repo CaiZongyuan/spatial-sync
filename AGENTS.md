@@ -39,7 +39,7 @@ These are hard to reverse. Change them deliberately, with the user.
 - Evidence lives in the PR description and CI. Repository docs describe current behavior for users and agents; process receipts, review logs and benchmark output go to `.scratch/`.
 - Add an abstraction when its second consumer exists.
 - The CI gate stays GPU-free and under 5 minutes. Newton smoke tests and benchmarks run manually.
-- Push the branch, open the PR and merge it without asking once independent `code-review` finds no open defects on the final candidate and the merge rules that follow hold. A PR that changes a contract above also needs the user's approval of that change, recorded in its issue or PR. When the user withholds merging, stop at a passing PR.
+- Push the branch, open the PR and merge it without asking once non-author `code-review` finds no open defects on the final candidate (a judgement call may stay open with its reason in the PR) and the merge rules that follow hold. A PR that changes a contract above also needs the user's approval of that change, recorded in its issue or PR. When the user withholds merging, stop at a passing PR.
 - Merge only while the latest main push CI is successful. When it is red, repair it before merging other PRs; if a repair is not ready within one hour, revert the introducing squash commit.
 - Before merging a PR that changes `packages/sim_runtime/**`, `packages/programs/**`, `library/scenes/**`, or recaptures a Newton preview under `assets/scene-previews/**`, run all four Newton CPU checks in `docs/VERIFICATION.md` under "Real physics and browser checks". Add a `Newton CPU` paragraph to the PR with commands, results and tick P95. Performance budgets use the documented Linux baseline.
 - Rebase the PR head onto current main before merging; that exact head must pass CI. Verify the integrated tree equals the reviewed and tested candidate.
@@ -53,7 +53,7 @@ These repository choices override automatic workflow defaults in installed skill
 
 - Create linked worktrees under the primary checkout's `.worktrees/<task>/`. Resolve the primary checkout from `git worktree list`; use its directory even when working inside a linked worktree.
 - Keep `.scratch/` and `.worktrees/` local and untracked. Store temporary diagnostics and validation artifacts in `.scratch/`.
-- Hand off PM work in one new GitHub issue linked from #2: current state, plan and resume steps in its body, evidence as links to issues, PRs and branches. Push unpublished candidate branches, reference specs and `AGENTS.md` by their repository paths, and keep `pr-media` for PR media.
+- Hand off PM work in one new GitHub issue linked from #2: current state, plan and resume steps in its body, evidence as links to issues, PRs and branches. Push unpublished candidate branches, reference specs and `AGENTS.md` by their repository paths, and use the `pr-media` branch only for PR screenshots and recordings.
 - Timeline reports are opt-in. Invoke `development-timeline` and create or update its journals, checkpoints, or HTML reports only when the user explicitly requests a timeline. Invoking `pm-development`, reaching a milestone, or finishing a task does not activate timeline generation. Otherwise, report results in the normal conversation.
 
 ## Agent skills
