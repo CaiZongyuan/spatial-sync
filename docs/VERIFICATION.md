@@ -31,6 +31,14 @@ The approval browser journey uses `approval_gateway:app --app-dir tests/fixtures
 with `SPATIAL_TEST_APPROVAL=1`: it declares `closeLid` high-risk in the test Catalog
 before the real Synthetic host starts. Production device definitions are unchanged.
 Set `SPATIAL_STATE_ROOT` to an owned test directory alongside recordings.
+Browser CI builds the Web app in each shard and sets `SPATIAL_E2E_WEB_MODE=preview`
+to serve that checkout's `dist` through Vite preview. Its API, WebSocket and
+recording proxies use the same configuration as the development server; the Live
+test's separately owned web process uses the same mode with its own API URL.
+Local E2E keeps Vite dev by default. After `pnpm build`, set this flag to exercise
+the built app locally; `SPATIAL_WEB_URL` still selects an existing owned server.
+CI leaves routine test video off. `SPATIAL_E2E_VIDEO=1` opts in locally; failure
+traces/screenshots and explicit captures remain enabled in either mode.
 CLI tests use the installed `lw` entrypoint, actual HTTP, official SDK clients
 and stdio; run `uv sync --frozen --group dev` before the environment serves any
 other consumer. Each test and benchmark owns its recording directory.

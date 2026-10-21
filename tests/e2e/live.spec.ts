@@ -45,7 +45,9 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
   let sessionId: string | undefined;
   try {
     start('api', python, ['-m', 'uvicorn', 'live_gateway:app', '--app-dir', 'tests/fixtures', '--host', '127.0.0.1', '--port', String(apiPort)], resolve('../..'), env);
-    start('web', process.execPath, [resolve('node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort)], process.cwd(), env);
+    start('web', process.execPath, [resolve('node_modules/vite/bin/vite.js'),
+      ...(process.env.SPATIAL_E2E_WEB_MODE === 'preview' ? ['preview'] : []),
+      '--host', '127.0.0.1', '--port', String(webPort)], process.cwd(), env);
     await expect.poll(async () => {
       for (const record of processes) if (record.error || record.child.exitCode !== null) throw record.error ?? new Error(record.output);
       try { return (await http.get(`${api}/api/v1/health`, { timeout: 500 })).ok() && (await http.get(web, { timeout: 500 })).ok(); } catch { return false; }

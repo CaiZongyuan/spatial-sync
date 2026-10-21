@@ -31,6 +31,7 @@ declare global {
   interface Window {
     __spatialDebug?: {
       sessionId: string;
+      getReplaySource: () => SessionClient | undefined;
       getRenderedPose: (key: string) => RenderedPose | undefined;
       getAuthoritativePose: SessionClient['buffer']['readLatest'];
       getSample: () => SessionClient['buffer']['latestSample'];
@@ -95,6 +96,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
     });
     window.__spatialDebug = {
       sessionId,
+      getReplaySource: () => client.readOnly ? client : undefined,
       getRenderedPose: (key) => rendered.current.get(key),
       getAuthoritativePose: (key) => client.buffer.readLatest(key),
       getSample: () => client.buffer.latestSample,

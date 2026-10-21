@@ -106,6 +106,7 @@ jobs:
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --require-hashes -r "$RUNNER_TEMP/spatial-requirements.txt"
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
         env:
@@ -113,6 +114,7 @@ jobs:
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
+          SPATIAL_E2E_WEB_MODE: preview
         run: |
           uv run --no-sync python -m uvicorn approval_gateway:app --app-dir tests/fixtures --host 127.0.0.1 --port 8000 > /tmp/spatial-api.log 2>&1 &
           SPATIAL_API_PID=$!
@@ -123,7 +125,7 @@ jobs:
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
           # Split individual cases between shards; each gateway still runs one test worker.
-          SPATIAL_E2E_VIDEO=1 pnpm test:e2e --fully-parallel --workers=1 --shard="$PLAYWRIGHT_SHARD"
+          SPATIAL_E2E_VIDEO=0 pnpm test:e2e --fully-parallel --workers=1 --shard="$PLAYWRIGHT_SHARD"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
