@@ -57,7 +57,7 @@ test('actual USD library PBR and dressing remain portable in offline replay', as
     const response = await creating;
     expect(response.status(), await response.text()).toBe(201);
     sid = (await response.json()).sessionId;
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     const route = `${api}/api/v1/sessions/${sid}`;
     const manifest = await (await request.get(`${route}/scene`)).json() as SceneManifest;
     const bodies = manifest.nodes.filter(node => node.kind === 'body');
@@ -85,7 +85,7 @@ test('actual USD library PBR and dressing remain portable in offline replay', as
     }
     expect(loaded.size).toBe(3);
     await page.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     await page.getByRole('button', { name: 'Step simulation' }).click();
     await page.getByRole('button', { name: 'Reset simulation' }).click();
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.simTime)).toBe(0);

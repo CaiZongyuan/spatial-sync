@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
 import {
   InstancedPrimitives,
@@ -33,6 +33,8 @@ import { DeviceAnnotations, DeviceAnnotationLayer, type DeviceAnnotation } from 
 import type { PlacedLabel } from '../../lib/scene/label-layout';
 import type { SessionClient } from '../../lib/stream/client';
 import type { FrameRecorder } from '../../lib/performance/frame-recorder';
+import { PlatformRuntimeContext } from '../../lib/platform-runtime';
+import { PhysicalAxes, PhysicalAxesProjection } from './PhysicalAxes';
 
 export interface DebugLayers {
   colliders: boolean;
@@ -55,6 +57,7 @@ export interface VisualGeometryInfo {
   visualCount: number;
   meshCount: number;
   normalsComplete: boolean;
+  materials?: { type: string; opacity: number; depthWrite: boolean; castShadow: boolean; receiveShadow: boolean }[];
   min: number[];
   max: number[];
 }
@@ -138,8 +141,8 @@ function PrimitiveMesh({
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
-    <mesh geometry={geometry} castShadow receiveShadow>
-      <meshStandardMaterial
+    <mesh geometry={geometry} castShadow={visual.geometry.type !== 'plane'} receiveShadow>
+      {!collider && visual.geometry.type === 'plane' ? <shadowMaterial opacity={theme.ao} depthWrite={false} /> : <meshStandardMaterial
         color={
           collider
             ? theme.accent
@@ -153,7 +156,7 @@ function PrimitiveMesh({
         wireframe={collider}
         transparent={collider || visual.geometry.type === 'plane'}
         opacity={collider ? 0.8 : visual.geometry.type === 'plane' ? theme.ao : 1}
-      />
+      />}
       {!collider && visual.geometry.type !== 'plane' && <Edges threshold={35} color={selected ? theme.accent : theme.edge} opacity={selected ? 1 : theme.edgeOpacity} transparent raycast={skipPicking} />}
     </mesh>
   );
@@ -436,8 +439,8 @@ function SceneContents({
   inspectVisuals,
   recorder,
   renderContinuously = true,
-  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture,
-}: ViewportProps) {
+  cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact, axesElement,
+}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null> }) {
   const invalidate = useThree((state) => state.invalidate);
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
@@ -459,6 +462,7 @@ function SceneContents({
     manifest.joints.find((joint) => joint.entityKey === selected)
       ?.anchorSiteKey ?? selected;
   const bodies = useRef(new Map<number, Group>());
+  const physicsRoot = useRef<Group>(null);
   const physicalNodes = useRef(new Map<string, Group>());
   const instances = useRef<InstanceController | undefined>(undefined);
   const [boundsRevision, setBoundsRevision] = useState(0);
@@ -555,10 +559,15 @@ function SceneContents({
       const bounds = new Box3().setFromObject(group);
       let meshCount = 0;
       let normalsComplete = true;
+      const materials: NonNullable<VisualGeometryInfo['materials']> = [];
       group.traverse((object) => {
         if (object instanceof Mesh) {
           meshCount++;
           normalsComplete &&= Boolean(object.geometry.getAttribute('normal'));
+          for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.push({
+            type: material.type, opacity: material.opacity, depthWrite: material.depthWrite,
+            castShadow: object.castShadow, receiveShadow: object.receiveShadow,
+          });
         }
       });
       return {
@@ -566,6 +575,7 @@ function SceneContents({
         visualCount: group.children.length,
         meshCount,
         normalsComplete,
+        materials,
         min: bounds.min.toArray(),
         max: bounds.max.toArray(),
       };
@@ -620,6 +630,7 @@ function SceneContents({
       metrics.current.objects = objects;
       elapsed.current = { time: 0, frames: 0 };
     }
+    // Three resets before its shadow and world passes, so samples include both.
     if (capture && !captured.current && readyNodes.current.size === manifest.nodes.filter(node => node.kind !== 'group').length
       && client.buffer.latestSample) {
       // The next frame lets CameraRig fit the fully loaded, posed geometry.
@@ -640,7 +651,6 @@ function SceneContents({
         inspectVisuals={inspectGeometry}
       />
       <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} />
-      <color attach="background" args={[theme.ground]} />
       {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
       <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
       <directionalLight position={[3, 6, 3]} intensity={theme.key * Math.PI} color={theme.sun} castShadow
@@ -649,7 +659,7 @@ function SceneContents({
       {layers.grid && <Grid position={[0, -.004, 0]} args={[20, 20]} cellSize={.25}
         cellThickness={.5} cellColor={theme.grid} sectionSize={1} sectionThickness={.5}
         sectionColor={theme.grid} fadeDistance={6} fadeStrength={1.5} infiniteGrid raycast={skipPicking} />}
-      <group name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
+      <group ref={physicsRoot} name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
         {useInstances && (
           <InstancedPrimitives
             nodes={instancedNodes}
@@ -707,6 +717,7 @@ function SceneContents({
         target={[0, 0.65, 0]}
         minDistance={0.3}
       />
+      {!compact && !capture && <PhysicalAxesProjection element={axesElement} root={physicsRoot} />}
     </>
   );
 }
@@ -734,6 +745,13 @@ interface ViewportProps {
 }
 
 export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
+  const reportSource = useContext(PlatformRuntimeContext), runtimeOwner = useId();
+  const sourceVersion = props.client.readOnly ? undefined : props.manifest.source.newtonVersion ?? undefined;
+  useEffect(() => {
+    if (!sourceVersion) return;
+    reportSource(runtimeOwner, sourceVersion);
+    return () => reportSource(runtimeOwner);
+  }, [reportSource, runtimeOwner, sourceVersion]);
   const running = useSyncExternalStore(props.client.subscribe, () => {
     const view = props.client.getSnapshot();
     return view.connection === 'connected' && view.sessionState === 'RUNNING';
@@ -742,6 +760,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   const theme = useViewerTheme();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
   const element = useRef<HTMLDivElement>(null);
+  const axesElement = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
   const receivedState = useRef(false);
   if (hasPose) receivedState.current = true;
@@ -761,19 +780,19 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
         dpr={[1, 1.75]}
-        gl={{ antialias: true, preserveDrawingBuffer: Boolean(props.capture) }}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} axesElement={axesElement} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
+      {displayScene && !props.compact && !props.capture && <PhysicalAxes element={axesElement} theme={theme} />}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">
-        <span className="live-dot" /> {props.client.readOnly ? 'RECORDED SPATIAL VIEW' : 'LIVE SPATIAL VIEW'}{' '}
-        <small>METERS · Z-UP</small>
+        <span className="live-dot" /> {props.client.readOnly ? '录制空间视图' : '实时空间视图'}{' '}
+        <small>米 · Z 向上</small>
       </div>
       <div className="viewport-hint">
-        Drag to orbit <span>·</span> Scroll to zoom <span>·</span> Click to
-        inspect
+        拖动旋转 <span>·</span> 滚动缩放 <span>·</span> 点击查看
       </div></>}
     </div>
   );

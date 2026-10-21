@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
+import { Icon } from './Icon';
 import type { SceneManifest } from '../lib/protocol';
 import type { InfoStore } from '../lib/info/store';
 import { terminal } from '../lib/info/store';
@@ -34,19 +35,19 @@ export function InvocationsPanel({
   if (!metadata.catalog || !Object.keys(metadata.catalog.entities).length)
     return null;
   return (
-    <section className="invocations-panel" aria-label="Invocations">
+    <section className={`invocations-panel${!invocations.length && !error ? ' is-empty' : ''}`} aria-label="Invocations">
       <div className="invocations-heading">
         <h2>
-          Invocations <span>{invocations.length}</span>
+          关联调用 <span>{invocations.length}</span>
         </h2>
         <select
           aria-label="Filter invocations"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         >
-          <option value="">All devices</option>
+          <option value="">全部设备</option>
           <option value="selected" disabled={!key}>
-            Selected device
+            所选设备
           </option>
         </select>
       </div>
@@ -64,7 +65,7 @@ export function InvocationsPanel({
               data-testid={`invocation-${invocation.invocationId}`}
             >
               <summary>
-                <strong>{invocation.action}</strong>
+                <strong><Icon name="chevron" />{invocation.action}</strong>
                 <span title={invocation.entityKey}>
                   {invocation.entityKey.split('/').at(-1)}
                 </span>
@@ -107,6 +108,7 @@ export function InvocationsPanel({
                 </pre>
                 {!terminal(invocation) && (
                   <button
+                    aria-label={`Cancel ${invocation.action}`}
                     disabled={disabled}
                     onClick={() => {
                       try {
@@ -116,7 +118,7 @@ export function InvocationsPanel({
                       }
                     }}
                   >
-                    Cancel {invocation.action}
+                    取消 {invocation.action}
                   </button>
                 )}
               </div>
@@ -124,7 +126,7 @@ export function InvocationsPanel({
           ))
         ) : (
           <p className="field-note">
-            Run a device action to see its progress and outcome here.
+            执行设备动作后，在这里查看进度与结果。
           </p>
         )}
       </div>
@@ -152,12 +154,13 @@ export function ApprovalBanner({
       {pending.map((invocation) => (
         <div key={invocation.invocationId}>
           <span>
-            <strong>Approval required</strong> · {invocation.action} on{' '}
+            <strong>需要审批</strong> · {invocation.action} ·{' '}
             {invocation.entityKey.split('/').at(-1)} · {invocation.actor.name}
           </span>
           {(['approve', 'deny'] as const).map((decision) => (
             <button
               key={decision}
+              aria-label={`${decision === 'approve' ? 'Approve' : 'Deny'} ${invocation.action}`}
               disabled={disabled}
               onClick={() => {
                 try {
@@ -167,7 +170,7 @@ export function ApprovalBanner({
                 }
               }}
             >
-              {decision === 'approve' ? 'Approve' : 'Deny'} {invocation.action}
+              {decision === 'approve' ? '批准' : '拒绝'} {invocation.action}
             </button>
           ))}
         </div>

@@ -89,7 +89,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -109,7 +109,7 @@ jobs:
       - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/3
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'

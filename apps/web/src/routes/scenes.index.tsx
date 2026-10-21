@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getSceneLibrary, sourceLabel, rootLabel, type SceneSource, type SceneVersion } from '../lib/library';
 import { SceneThumbnails } from '../components/SceneThumbnails';
 import { LaunchStatus } from '../components/SceneStatus';
+import { Icon } from '../components/Icon';
 
 type Search = { q?: string; source?: SceneSource; launchable?: boolean; view?: 'card' | 'list' };
 const viewKey = 'lab.scenes.view';
@@ -42,14 +43,14 @@ function SceneLibrary() {
     <header className="scene-page-heading"><div><h1>场景库</h1><p>选择一个不可变版本，检查场景后启动会话。</p></div>
       <span className="scene-result-count">{scenes ? `${scenes.length} 个版本` : '读取中…'}</span></header>
     <section className="scene-toolbar" aria-label="场景筛选">
-      <label className="scene-search"><span aria-hidden="true">⌕</span><input aria-label="搜索场景" type="search" placeholder="搜索场景…" value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
+      <label className="scene-search"><Icon name="search" /><input aria-label="搜索场景" type="search" placeholder="搜索场景…" value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
       <label>物理源<select aria-label="物理源筛选" value={search.source ?? ''} onChange={event => change({ source: event.target.value as SceneSource || undefined })}>
         <option value="">全部物理源</option><option value="synthetic">Synthetic</option><option value="newton">Newton</option></select></label>
       <label>验证<select aria-label="可启动筛选" value={search.launchable === undefined ? '' : String(search.launchable)} onChange={event => change({ launchable: event.target.value === '' ? undefined : event.target.value === 'true' })}>
         <option value="">全部版本</option><option value="true">可启动</option><option value="false">不可启动</option></select></label>
       <div className="scene-view-toggle" role="group" aria-label="视图">{(['card', 'list'] as const).map(kind => <button key={kind} aria-pressed={view === kind} onClick={() => {
         setPreferred(kind); try { localStorage.setItem(viewKey, kind); } catch { /* optional preference */ } change({ view: kind });
-      }}>{kind === 'card' ? '▦ 卡片' : '☷ 列表'}</button>)}</div>
+      }}><Icon name={kind === 'card' ? 'overview' : 'list'} />{kind === 'card' ? '卡片' : '列表'}</button>)}</div>
     </section>
     {error ? <div role="alert" className="platform-error">{error} <button onClick={() => setAttempt(attempt + 1)}>重试</button></div> : !scenes ? <div role="status" className="scene-empty">正在读取场景库…</div> : scenes.length === 0 ? <div className="scene-empty"><h2>没有匹配的场景</h2><p>调整搜索或筛选条件。</p><button onClick={() => void navigate({ search: { view }, replace: true })}>清除筛选</button></div> :
       <SceneThumbnails scenes={scenes}>{thumbnails => view === 'card' ? <div className="scene-card-grid">{scenes.map((scene, index) =>

@@ -37,7 +37,7 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
     const created = await creating;
     expect(created.ok(), await created.text()).toBe(true);
     await expect(page.getByTestId('connection-status')).toHaveText(
-      'connected',
+      '已连接',
       { timeout: 70_000 },
     );
     await expect
@@ -54,14 +54,14 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
     const observer = await observerContext.newPage();
     await observer.goto(page.url());
     await expect(observer.getByTestId('connection-status')).toHaveText(
-      'connected',
+      '已连接',
     );
     expect((await (await request.get(statsUrl)).json()).runnerPID).toBe(
       firstPID,
     );
     await page.getByRole('button', { name: 'Pause simulation' }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
-    await expect(observer.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
+    await expect(observer.getByTestId('session-state')).toHaveText('已暂停');
     const manifest = (await (
       await request.get(`${api}/api/v1/sessions/${sessionId}/scene`)
     ).json()) as SceneManifest;
@@ -106,6 +106,7 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
       )
     ).json();
     expect(expectedSite.seq).toBe(snapshot.seq);
+    await page.getByTestId(`entity-${body.entityKey}`).press('ArrowRight');
     await page.getByTestId(`entity-${site.entityKey}`).click();
     for (let i = 0; i < 3; i++)
       expect(
@@ -126,8 +127,8 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
 
     // This PID came from the Session created above on an isolated API. Never kill a shared Runner.
     process.kill(firstPID, 'SIGKILL');
-    await expect(page.getByTestId('session-state')).toHaveText('FAILED');
-    await expect(observer.getByTestId('session-state')).toHaveText('FAILED');
+    await expect(page.getByTestId('session-state')).toHaveText('失败');
+    await expect(observer.getByTestId('session-state')).toHaveText('失败');
     expect((await request.get(`${api}/api/v1/health`)).ok()).toBe(true);
     expect((await (await request.get(statsUrl)).json()).runnerAlive).toBe(
       false,
@@ -138,13 +139,13 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
     await page
       .getByRole('button', { name: 'Restart source', exact: true })
       .click();
-    await expect(page.getByTestId('session-state')).toHaveText('RUNNING', {
+    await expect(page.getByTestId('session-state')).toHaveText('运行中', {
       timeout: 70_000,
     });
     await expect(page.locator('.revision-label')).not.toHaveText(
       manifest.sceneRevision,
     );
-    await expect(observer.getByTestId('session-state')).toHaveText('RUNNING');
+    await expect(observer.getByTestId('session-state')).toHaveText('运行中');
     await expect
       .poll(() =>
         page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
@@ -167,7 +168,7 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
     await expect(page.locator('.revision-label')).not.toHaveText(
       restarted.sceneRevision,
     );
-    await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
+    await expect(page.getByTestId('session-state')).toHaveText('运行中');
     const reloaded = await (await request.get(statsUrl)).json();
     expect(reloaded.runnerPID).not.toBe(restarted.runnerPID);
     expect(reloaded.sceneRevision).not.toBe(restarted.sceneRevision);
@@ -177,10 +178,10 @@ test('Newton survives observer loss, Runner crash, restart, scene reload and pag
       )
       .toBeGreaterThan(restarted.seq);
     await expect(
-      page.getByText('Explore a world coordinate', { exact: true }),
+      page.getByRole('heading', { name: '查看世界坐标', exact: true }),
     ).toBeVisible();
     await page.reload();
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect
       .poll(() =>
         page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),

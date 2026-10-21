@@ -240,9 +240,7 @@ async function main() {
           throw new Error(
             'Production measurements require vite preview or a production static server; use --allow-development only for harness diagnosis',
           );
-        await expect(page.getByTestId('connection-status')).toHaveText(
-          'connected',
-        );
+        await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
         const bodies = manifest.nodes.filter((node) => node.kind === 'body');
         if (!bodies.length)
           throw new Error(
@@ -284,9 +282,7 @@ async function main() {
             ),
           )
           .toBe(true);
-        await expect(page.getByTestId('connection-status')).toHaveText(
-          'connected',
-        );
+        await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
         await expect(
           page.getByRole('button', { name: 'Pause simulation' }),
         ).toBeEnabled();
@@ -298,7 +294,7 @@ async function main() {
           )
           .toBe(1);
         await page.getByRole('button', { name: 'Pause simulation' }).click();
-        await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+        await expect(page.getByTestId('session-state')).toHaveAttribute('data-state', 'PAUSED');
         const snapshot = await api<Snapshot>(`/sessions/${sid}/snapshot`);
         const wireRows = new Map(snapshot.poses.map((row) => [row[0], row]));
         const references = bodies.map((node) => ({
@@ -365,7 +361,7 @@ async function main() {
             'The rendered workload failed its authoritative-pose/count precondition',
           );
         await page.getByRole('button', { name: 'Resume simulation' }).click();
-        await expect(page.getByTestId('session-state')).toHaveText('RUNNING');
+        await expect(page.getByTestId('session-state')).toHaveAttribute('data-state', 'RUNNING');
         await sleep(warmupMs);
         const browserEnvironment = await page.evaluate(() => {
           const canvas = document.querySelector('canvas')!;

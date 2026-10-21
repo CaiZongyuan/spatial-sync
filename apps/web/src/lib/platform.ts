@@ -56,10 +56,10 @@ export const openNewtonViewer = (sessionId: string, signal: AbortSignal) => requ
 );
 
 export const percent = (value: number | null | undefined) =>
-  value == null || !Number.isFinite(value) ? 'Not available' : `${value.toFixed(1)}%`;
+  value == null || !Number.isFinite(value) ? '未知' : `${value.toFixed(1)}%`;
 
 export function bytes(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return 'Not available';
+  if (value == null || !Number.isFinite(value)) return '未知';
   if (value < 1024) return `${value.toFixed(0)} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KiB`;
   if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MiB`;

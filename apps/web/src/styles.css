@@ -832,6 +832,7 @@ pre {
 .viewport {
   position: absolute;
   inset: 0;
+  background: radial-gradient(120% 95% at 50% 36%, var(--stage-1), var(--stage-2));
 }
 .viewport > div:first-child {
   position: absolute !important;
@@ -840,6 +841,25 @@ pre {
 .viewport canvas {
   display: block;
 }
+.physical-axes-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.physical-axes {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 80px;
+  height: 80px;
+  overflow: visible;
+  pointer-events: none;
+  user-select: none;
+  visibility: hidden;
+}
+.physical-axes[data-ready='true'] { visibility: visible; }
+.physical-axes text { font: 9px Arial, sans-serif; }
 .viewport-label {
   position: absolute;
   top: 21px;
@@ -1536,12 +1556,18 @@ pre {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.invocation-row summary > strong::before {
-  content: '› ';
+.invocation-row summary > strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.invocation-row summary > strong .nav-icon {
+  width: 12px;
+  height: 12px;
   color: var(--muted);
 }
-.invocation-row[open] summary > strong::before {
-  content: '⌄ ';
+.invocation-row[open] summary > strong .nav-icon {
+  transform: rotate(90deg);
 }
 .invocation-row progress {
   width: 60px;

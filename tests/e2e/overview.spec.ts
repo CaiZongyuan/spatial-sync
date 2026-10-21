@@ -1,20 +1,27 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 const centrifuge = '/World/Lab/Centrifuge';
 
+async function waitMaterialTheme(page: Page) {
+  await expect.poll(() => page.evaluate(() => {
+    const body = getComputedStyle(document.documentElement).getPropertyValue('--m-body').trim().replace('#', '');
+    return window.__spatialRenderDebug?.appearance().materialColors.includes(body);
+  })).toBe(true);
+}
+
 test('a paused live viewport draws on changes and wakes for Step, theme and projection', async ({ page, request }, testInfo) => {
   const response = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', source: 'synthetic' } });
   const { sessionId } = await response.json();
   try {
     await page.goto(`/sessions/${sessionId}`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1)).toBeGreaterThanOrEqual(0);
     await expect(page.locator('canvas')).toBeVisible();
     await page.getByRole('button', { name: 'Pause simulation', exact: true }).click();
-    await expect(page.getByTestId('session-state')).toHaveText('PAUSED');
+    await expect(page.getByTestId('session-state')).toHaveText('已暂停');
     const receipt = await page.evaluate(async () => {
       const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       await frame(); await frame();
@@ -32,9 +39,63 @@ test('a paused live viewport draws on changes and wakes for Step, theme and proj
       return JSON.stringify(window.__spatialDebug!.getRenderedPose(key)) === JSON.stringify(window.__spatialDebug!.getAuthoritativePose(key));
     })).toBe(true);
     await page.getByLabel('Color theme').selectOption('light');
-    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.appearance().background)).toBe('f4f3ef');
+    await waitMaterialTheme(page);
+    expect(await page.evaluate(() => window.__spatialRenderDebug!.appearance())).toMatchObject({ background: '', alpha: true, clearAlpha: 0 });
+    const axes = page.getByRole('img', { name: 'Physical coordinate axes', exact: true });
+    await expect(axes).toHaveAttribute('data-ready', 'true');
+    await expect(axes).toHaveCSS('pointer-events', 'none');
+    const pausedSample = await page.evaluate(() => {
+      const sample = window.__spatialDebug!.getSample()!;
+      return { seq: sample.seq, simTime: sample.simTime };
+    });
+    const readAxes = () => axes.locator('[data-axis]').evaluateAll(groups => Object.fromEntries(groups.map(group => {
+      const line = group.querySelector('line')!;
+      return [group.getAttribute('data-axis'), [Number(line.getAttribute('x2')) || 0, Number(line.getAttribute('y2')) || 0]];
+    })));
+    const perspectiveAxes = await readAxes();
     await page.getByRole('button', { name: 'Isometric camera', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug!.camera().projection)).toBe('OrthographicCamera');
+    await expect.poll(readAxes).not.toEqual(perspectiveAxes);
+    for (const axis of ['X', 'Y', 'Z']) await expect(axes.getByText(axis, { exact: true })).toBeVisible();
+    await expect.poll(() => axes.evaluate(svg => {
+      const css = getComputedStyle(document.documentElement);
+      return ['X', 'Y', 'Z'].every((axis, index) => svg.querySelector(`[data-axis="${axis}"] line`)!.getAttribute('stroke')
+        === css.getPropertyValue(['--c2', '--c3', '--c1'][index]).trim());
+    })).toBe(true);
+    const corner = await axes.boundingBox(), viewport = await page.getByTestId('scene-viewport').boundingBox();
+    expect(corner!.x + corner!.width / 2 - viewport!.x).toBeCloseTo(40, 1);
+    expect(viewport!.y + viewport!.height - corner!.y - corner!.height / 2).toBeCloseTo(40, 1);
+    // Independent physical-basis oracle: viewed from Three +Z, Newton X is right and Z is up;
+    // viewed from Three +X, Newton Y is right and Z remains up. Neither view runs a live frame loop.
+    for (const [position, expected, end, axis] of [
+      [[0, 0, 4], { X: [24, 0], Y: [0, 0], Z: [0, -24] }, 'first', 'Y'],
+      [[0, 0, -4], { X: [-24, 0], Y: [0, 0], Z: [0, -24] }, 'last', 'Y'],
+      [[4, 0, 0], { X: [0, 0], Y: [24, 0], Z: [0, -24] }, 'last', 'X'],
+    ] as const) {
+      await page.evaluate(position => {
+        const debug = window.__spatialRenderDebug!;
+        debug.setCamera({ ...debug.camera(), position: [...position], target: [0, 0, 0] });
+      }, position);
+      await expect.poll(readAxes).toEqual(expected);
+      await expect.poll(() => axes.locator('[data-axis]')[end]().getAttribute('data-axis')).toBe(axis);
+      expect(await axes.evaluate(svg => {
+        const bounds = svg.closest('[data-testid="scene-viewport"]')!.getBoundingClientRect();
+        return [...svg.querySelectorAll('circle')].every(head => {
+          const box = head.getBoundingClientRect();
+          return box.left >= bounds.left - .05 && box.right <= bounds.right + .05
+            && box.top >= bounds.top - .05 && box.bottom <= bounds.bottom + .05;
+        });
+      })).toBe(true);
+    }
+    await page.evaluate(() => {
+      const debug = window.__spatialRenderDebug!;
+      debug.setCamera({ ...debug.camera(), position: [5, 2, 3], target: [1, 2, 3] });
+    });
+    await expect.poll(readAxes).toEqual({ X: [0, 0], Y: [24, 0], Z: [0, -24] });
+    expect(await page.evaluate(() => {
+      const sample = window.__spatialDebug!.getSample()!;
+      return { seq: sample.seq, simTime: sample.simTime };
+    })).toEqual(pausedSample);
     await testInfo.attach('paused-render-receipt', { body: Buffer.from(JSON.stringify(receipt)), contentType: 'application/json' });
   } finally { await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' }); }
 });
@@ -83,13 +144,16 @@ test('the real overview connects an isometric scene, readouts, device actions, a
     await page.getByRole('button', { name: '关闭设备抽屉', exact: true }).click();
     await expect(label).toHaveAttribute('aria-pressed', 'false');
     await page.getByLabel('Color theme').selectOption('dark');
-    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.appearance().background)).toBe('121211');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await waitMaterialTheme(page);
     const dark = await page.evaluate(() => window.__spatialRenderDebug?.appearance());
     await page.screenshot({ path: testInfo.outputPath('overview-dark-1440.png'), fullPage: true });
     await page.getByLabel('Color theme').selectOption('light');
-    await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.appearance().background)).toBe('f4f3ef');
+    await waitMaterialTheme(page);
     const light = await page.evaluate(() => window.__spatialRenderDebug?.appearance());
     expect(light?.materialColors).not.toEqual(dark?.materialColors);
+    expect(dark).toMatchObject({ background: '', alpha: true, clearAlpha: 0 });
+    expect(light).toMatchObject({ background: '', alpha: true, clearAlpha: 0 });
     expect(scenes).toBe(initialSceneRequests); expect(sockets).toBe(initialSockets);
     await label.click();
     await page.screenshot({ path: testInfo.outputPath('overview-selected-light-1440.png'), fullPage: true });
@@ -252,7 +316,7 @@ test('session projection is shareable and preserves a single real scene connecti
   const { sessionId } = await response.json();
   try {
     await page.goto(`/sessions/${sessionId}?camera=isometric`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await expect(page.getByRole('button', { name: 'Isometric camera', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
     await page.getByRole('button', { name: 'Perspective camera', exact: true }).click();
@@ -261,7 +325,7 @@ test('session projection is shareable and preserves a single real scene connecti
     await page.getByRole('button', { name: 'Isometric camera', exact: true }).click();
     await page.reload();
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveText('已连接');
   } finally {
     await fetch(`${api}/api/v1/sessions/${sessionId}`, { method: 'DELETE' });
   }
@@ -276,7 +340,6 @@ test('overview annotations keep working with packed instanced geometry', async (
     await expect(page.getByRole('complementary', { name: '设备抽屉' })).toHaveAttribute('data-read-only', 'false');
     await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.frameStats().mode)).toBe('instanced');
     await expect(page.getByTestId(`device-label-${centrifuge}`)).toBeVisible();
-    await page.locator('.device-legend summary').click();
     const tube = '/World/Lab/Tubes/Tube01';
     await page.getByTestId(`legend-${tube}`).click();
     await expect(page.getByTestId(`device-label-${tube}`)).toBeVisible();

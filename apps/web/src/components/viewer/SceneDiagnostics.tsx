@@ -45,7 +45,7 @@ declare global {
         submittedTriangles: number;
         mode: string;
       };
-      appearance: () => { background: string; materialColors: string[] };
+      appearance: () => { background: string; alpha: boolean; clearAlpha: number; materialColors: string[] };
     };
   }
 }
@@ -117,6 +117,8 @@ export function SceneDiagnostics({
       camera: readCamera,
       appearance: () => ({
         background: state.scene.background && 'getHexString' in state.scene.background ? (state.scene.background as { getHexString: () => string }).getHexString() : '',
+        clearAlpha: state.gl.getClearAlpha(),
+        alpha: state.gl.getContext().getContextAttributes()?.alpha ?? false,
         materialColors: visibleMeshes().flatMap(mesh => (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
           .flatMap(material => 'color' in material && material.color && typeof material.color === 'object' && 'getHexString' in material.color ? [(material.color as { getHexString: () => string }).getHexString()] : [])),
       }),

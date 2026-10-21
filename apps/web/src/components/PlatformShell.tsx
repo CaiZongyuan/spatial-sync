@@ -1,9 +1,11 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ApprovalInboxContext, useApprovalInbox } from '../lib/approvals';
 import '../approvals.css';
 import { AlertContext, useAlerts } from '../lib/live';
 import '../live.css';
+import { Icon } from './Icon';
+import { PlatformRuntimeContext } from '../lib/platform-runtime';
 
 type Theme = 'system' | 'light' | 'dark';
 const themeKey = 'lab.theme';
@@ -28,21 +30,6 @@ const pages = [
   { to: '/recordings', label: 'Recordings', text: '录制', icon: 'recordings' },
 ] as const;
 
-function Icon({ name }: { name: string }) {
-  const paths: Record<string, string> = {
-    overview: 'M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z',
-    live: 'M3 12h4l3-7 4 14 3-7h4',
-    resources: 'M5 6h14v12H5z M9 2v4 M15 2v4 M9 18v4 M15 18v4 M1 10h4 M1 14h4 M19 10h4 M19 14h4 M9 10h6v4H9z',
-    sessions: 'M4 4h16v16H4z M4 9h16 M9 9v11',
-    scenes: 'M12 3l9 5-9 5-9-5z M3 8v9l9 5 9-5V8 M12 13v9',
-    assets: 'M12 3l9 5v9l-9 5-9-5V8z M3 8l9 5 9-5 M12 13v9',
-    recordings: 'M4 4h16v16H4z M10 8l6 4-6 4z',
-    approvals: 'M8 4h12v17H4V4h4 M8 2h8v4H8z M8 13l3 3 6-6',
-    collapse: 'M14 6l-6 6 6 6',
-  };
-  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={paths[name]} /></svg>;
-}
-
 export function PlatformShell() {
   const pathname = useRouterState({ select: state => state.location.pathname });
   const replay = pathname.startsWith('/replay/');
@@ -52,6 +39,14 @@ export function PlatformShell() {
   const alertCount = alertState.activeCapped ? '≥1000' : activeAlerts;
   const pendingCount = replay || approvals.error ? undefined : approvals.inbox?.pendingCount;
   const [collapsed, setCollapsed] = useState(() => preference(sidebarKey) === 'true');
+  const [sourceVersions, setSourceVersions] = useState(new Map<string, string>());
+  const reportSource = useCallback((owner: string, version?: string) => setSourceVersions(current => {
+    if (current.get(owner) === version) return current;
+    const next = new Map(current);
+    if (version) next.set(owner, version); else next.delete(owner);
+    return next;
+  }), []);
+  const versions = [...new Set(sourceVersions.values())];
   const [theme, setTheme] = useState<Theme>(() => {
     const value = preference(themeKey);
     return value === 'light' || value === 'dark' ? value : 'system';
@@ -84,8 +79,11 @@ export function PlatformShell() {
         </Link>)}
       </nav>
       <div className="sidebar-footer">
+        <dl className="sidebar-runtime sidebar-label"><div title="平台未提供 GPU 租约信息"><dt>GPU 租约</dt><dd>未知</dd></div>
+          <div title={versions.length ? '来自当前活动视口的实际 Newton 源' : '当前页面没有活动 Newton 源的版本元数据'}>
+            <dt>Newton</dt><dd>{versions.length === 1 ? versions[0] : versions.length ? '多个版本' : '未知'}</dd></div></dl>
         <label className="theme-picker" title="Color theme">
-          <span aria-hidden="true">◐</span><span className="sidebar-label">Theme</span>
+          <Icon name="theme" /><span className="sidebar-label">主题</span>
           <select aria-label="Color theme" value={theme} onChange={event => setTheme(event.target.value as Theme)}>
             <option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option>
           </select>
@@ -109,7 +107,7 @@ export function PlatformShell() {
         {!replay && activeAlerts !== undefined && activeAlerts > 0 && <Link to="/live" className="live-topbar-chip">告警 {alertCount}</Link>}
         {!replay && alertState.error && <span className="approval-topbar-chip" role="status">告警暂不可用</span>}
       </header>
-      <div id="page-content" tabIndex={-1}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><Outlet /></ApprovalInboxContext.Provider></AlertContext.Provider></div>
+      <div id="page-content" tabIndex={-1}><PlatformRuntimeContext.Provider value={reportSource}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><Outlet /></ApprovalInboxContext.Provider></AlertContext.Provider></PlatformRuntimeContext.Provider></div>
     </div>
   </div>;
 }
