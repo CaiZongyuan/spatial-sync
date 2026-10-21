@@ -88,7 +88,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     const steps = [close, { id: 2, wait: condition, timeoutSeconds: 2 }, { id: 3, check: condition }, move(4)];
     const plan = await submit(request, 'Browser: close, verify and move', steps);
     await page.goto(`/sessions/${sessionId}?camera=isometric&plan=${plan.id}&step=4`);
-    await expect(page.getByTestId('connection-status')).toHaveText('connected');
+    await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
     const panel = page.getByTestId('plan-panel');
     await expect(panel).toContainText('agent · issue26-e2e');
     await expect(panel).toContainText(plan.approvalMode === 'auto' ? '自动批准' : '人工审批');
@@ -97,7 +97,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     const firstGeometry = await geometry(page, preview);
     await info.attach('initial-rendered-preview.json', { body: JSON.stringify({ preview, rendered: firstGeometry }), contentType: 'application/json' });
     const liveMaterials = await page.evaluate(keys => Object.fromEntries(keys.map(key =>
-      [key, window.__spatialDebug?.inspectVisuals(key)?.materialOpacity])), Object.keys(preview.targetBodyPoses));
+      [key, window.__spatialDebug?.inspectVisuals(key)?.materials?.map(material => material.opacity)])), Object.keys(preview.targetBodyPoses));
     for (const values of Object.values(liveMaterials)) {
       expect(values?.length).toBeGreaterThan(0);
       expect(values).not.toContain(.24);
@@ -131,7 +131,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     await expect(page.getByTestId('plan-preview-status')).toContainText('等待与检查步骤不产生机械臂路径');
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.getPreviewGeometry())).toBeUndefined();
     expect(await page.evaluate(keys => Object.fromEntries(keys.map(key =>
-      [key, window.__spatialDebug?.inspectVisuals(key)?.materialOpacity])), Object.keys(preview.targetBodyPoses))).toEqual(liveMaterials);
+      [key, window.__spatialDebug?.inspectVisuals(key)?.materials?.map(material => material.opacity)])), Object.keys(preview.targetBodyPoses))).toEqual(liveMaterials);
     await page.getByTestId('plan-step-1').getByRole('button').click();
     await expect(page.getByTestId('plan-preview-status')).toContainText('此动作未提供机械臂路径预览');
     // Original scene tree / Inspector interaction remains available beside the checklist.

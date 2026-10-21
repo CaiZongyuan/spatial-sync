@@ -90,7 +90,7 @@
 .plan-list-panel > .plan-inline-error { padding: 0 20px; }
 .plan-empty { display: grid; place-content: center; text-align: center; padding: 32px 20px; color: var(--muted); font-size: 12.5px; min-height: 120px; overflow-wrap: anywhere; }
 .plan-empty button { margin: 12px auto 0; }.plan-loading { padding: 20px; color: var(--muted); font-size: 12px; display: grid; gap: 12px; }.plan-loading i { display: block; height: 12px; background: var(--surface-2); width: 80%; border-radius: 4px; }.plan-loading i:last-child { width: 55%; }
-.workbench-plan-rail { width: 340px; min-width: 300px; flex: 0 0 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--line); background: var(--ground-2); }
+.workbench .workbench-plan-rail { width: 304px; min-width: 304px; flex: 0 0 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface); }
 .workbench-plan-rail > .session-plans { flex: none; border-bottom: 1px solid var(--line); }
 .session-plan-heading { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .session-plan-heading h2 { margin: 0; font: 400 17px var(--serif); }.session-plan-heading select { min-width: 0; max-width: 185px; font-size: 11px; }
@@ -101,6 +101,7 @@
 .workbench-plan-rail .inspector-content { overflow: visible; }.session-plans > .plan-empty { min-height: 0; padding: 0 16px 18px; text-align: left; place-content: start; font-size: 11.5px; }
 @keyframes plan-spin { to { transform: rotate(360deg); } } @keyframes plan-pulse { 50% { opacity: .35; } }
 @media (max-width: 1100px) { .plan-detail-grid { grid-template-columns: minmax(0, 1fr); }.plan-scene { height: 450px; } }
-@media (max-width: 900px) { .workbench-plan-rail { width: auto; min-width: 0; overflow: visible; border: 0; }.session-plans .plan-steps { max-height: none; }.workbench-main .workbench-plan-rail .inspector-panel { width: auto; min-width: 0; }.plan-list-toolbar { align-items: start; flex-direction: column; }.plans-heading { align-items: start; }.plans-heading > .plan-tag { margin-top: 14px; } }
+@media (max-width: 1100px) and (min-width: 901px) { .workbench .workbench-plan-rail { width: 270px; min-width: 270px; } }
+@media (max-width: 900px) { .workbench .workbench-plan-rail { width: auto; min-width: 0; overflow: visible; border: 0; }.session-plans .plan-steps { max-height: none; }.workbench-main .workbench-plan-rail .inspector-panel { width: auto; min-width: 0; }.plan-list-toolbar { align-items: start; flex-direction: column; }.plans-heading { align-items: start; }.plans-heading > .plan-tag { margin-top: 14px; } }
 @media (max-width: 560px) { .plans-heading { gap: 8px; }.plans-heading h1 { font-size: 32px; }.plans-heading p { font-size: 12px; }.plan-list-toolbar, .plan-checklist { padding: 14px 12px; }.plan-list-toolbar label { flex-wrap: wrap; }.plan-list-toolbar input { width: 145px; }.plan-scene { height: 360px; }.plan-checklist-heading h2 { font-size: 18px; }.plan-command { flex-wrap: wrap; }.plan-command code { flex-basis: calc(100% - 22px); }.plan-command button { margin-left: auto; } }
 @media (prefers-reduced-motion: reduce) { .step-spinner, .plan-chip.run i { animation: none; } }
