@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - lane: core
-            tests: tests/contract tests/unit
+            tests: tests/contract tests/unit tests/gateway/test_evaluation_api.py
           - lane: gateway
             tests: >-
               tests/gateway
@@ -27,6 +27,7 @@ jobs:
               --ignore=tests/gateway/test_library_deletions.py
               --ignore=tests/gateway/test_asset_imports.py
               --ignore=tests/gateway/test_structure_validation.py
+              --ignore=tests/gateway/test_evaluation_api.py
           - lane: library-templates
             tests: >-
               tests/gateway/test_binding_templates.py

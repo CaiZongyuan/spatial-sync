@@ -443,3 +443,54 @@ async def test_dequeued_ticket_reserves_real_manager_reload_during_starting_writ
         old.source = None
         await service.close()
         await manager.close()
+
+
+async def test_public_cancellation_wins_fifo_handoff_before_starting_write(tmp_path):
+    manager = Manager(tmp_path)
+    service = EvaluationService(manager)
+    worker_waiting, cancel_waiting = asyncio.Event(), asyncio.Event()
+
+    class ObservedAdmission(asyncio.Lock):
+        async def acquire(self):
+            if self.locked():
+                if asyncio.current_task() is service._worker:
+                    worker_waiting.set()
+                elif asyncio.current_task().get_name() == "cancel-before-intake":
+                    cancel_waiting.set()
+            return await super().acquire()
+
+    service._admission = ObservedAdmission()
+    await service.startup()
+    service._active_evaluation = "eval-held"
+    queued, status = await service.create_session(
+        None, "synthetic", SessionOptions(seed=77), scene_version="lab-demo@3",
+        request_id="request-cancel-before-intake",
+    )
+    assert status == 202 and queued["status"] == "queued"
+    service._active_evaluation = None
+    # Put the real coordinator, then public canceller, behind the same lock in FIFO order.
+    await service._admission.acquire()
+    cancellation = None
+    try:
+        await asyncio.wait_for(worker_waiting.wait(), 2)
+        cancellation = asyncio.create_task(
+            service.cancel_request(queued["requestId"]), name="cancel-before-intake",
+        )
+        await asyncio.wait_for(cancel_waiting.wait(), 2)
+        service._admission.release()
+        response = await asyncio.wait_for(cancellation, 2)
+        assert response["status"] == "cancelled"
+        for _ in range(200):
+            if service._starting_request is None:
+                break
+            await asyncio.sleep(0.005)
+        assert service._starting_request is None
+        assert service.request(queued["requestId"])["status"] == "cancelled"
+        assert manager.created.empty() and manager.sessions == {}
+        assert not service._options and not service._queue
+    finally:
+        if service._admission.locked():
+            service._admission.release()
+        if cancellation is not None and not cancellation.done():
+            cancellation.cancel()
+        await service.close()
