@@ -80,10 +80,14 @@ class Session:
         plans,
         scene_version=None,
         inbox=None,
+        evaluation_id=None,
+        on_closed=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.scene_version = scene_version
+        self.evaluation_id = evaluation_id
+        self.on_closed = on_closed
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
         self.plans = plans
@@ -93,6 +97,7 @@ class Session:
         self._starting_source: SpatialSource | None = None
         self.manifest: SceneManifest | None = None
         self.state = "CREATED"
+        self.cleanup_complete = False
         self.epoch, self.seq, self.sim_time = 0, 0, 0.0
         self._seq_high_water = 0
         self.actual_rtf = 0.0
@@ -122,6 +127,7 @@ class Session:
         self._alerts_ready = False
 
     async def start(self):
+        self.cleanup_complete = False
         previous_manifest = self.manifest
         recording_was_ready = self._recording_revision_ready
         self._recording_revision_ready = False
@@ -258,7 +264,8 @@ class Session:
     async def _record_revision(self):
         if self.recording is None:
             self.recording = self.recordings.create(
-                self.session_id, self.scene_id, self.scene_version, seed=self.options.seed
+                self.session_id, self.scene_id, self.scene_version,
+                seed=None if self.evaluation_id else self.options.seed,
             )
         if self.recording is None:
             return
@@ -414,7 +421,7 @@ class Session:
             else {},
             "error": self.error,
             "continueWithoutObservers": self.options.continueWithoutObservers,
-            "seed": self.options.seed,
+            **({"evaluationId": self.evaluation_id} if self.evaluation_id else {"seed": self.options.seed}),
             "autoPaused": self._auto_paused,
         }
 
@@ -976,11 +983,15 @@ class Session:
 
     async def reload(self):
         async with self.command_lock:
+            if self.state == "STOPPED" and not self.cleanup_complete:
+                raise HTTPException(409, {"code": "session_cleanup_pending",
+                                          "message": "Retry session close before reloading"})
             if self.manifest is None or self.pipeline is None:
                 raise HTTPException(409, {"code": "invalid_state",
                                           "message": "Stop this incomplete session before starting another"})
             if self.scene_version:
                 self.scene_version.require_launchable()
+            self.cleanup_complete = False
             self._cache_frame(self.latest_frame())
             self.state = "STOPPING"
             if self.alerts:
@@ -1017,6 +1028,7 @@ class Session:
 
     async def close(self):
         async with self.command_lock:
+            self.cleanup_complete = False
             self._auto_paused = False
             self._alerts_ready = False
             if self.alerts:
@@ -1051,6 +1063,19 @@ class Session:
                 await self.plans.flush()
             except PlanError:
                 self._log_event("plan.persistence_failed", level=logging.ERROR)
+            self.cleanup_complete = True
+            if self.on_closed is not None:
+                self.on_closed()
+
+    def require_interactive(self):
+        if self.evaluation_id:
+            raise HTTPException(409, {
+                "code": "evaluation_busy", "message": "This session is evaluator-owned",
+            })
+
+    @property
+    def holds_resources(self):
+        return not self.cleanup_complete or self.source is not None or self._starting_source is not None
 
 
 I_WORLD = {"p": [0, 0, 0], "q": [0, 0, 0, 1]}
@@ -1071,6 +1096,7 @@ class SessionManager:
         self._create_lock = asyncio.Lock()
         self._startup_lock = asyncio.Lock()
         self._information_started = False
+        self.evaluations = None
 
     async def startup(self):
         async with self._startup_lock:
@@ -1090,11 +1116,11 @@ class SessionManager:
             self._library = SceneLibrary(state_root=self.settings.state_root)
         return self._library
 
-    async def create(self, scene_id, source, options, *, scene_version=None):
+    async def create(self, scene_id, source, options, *, scene_version=None, evaluation_id=None):
         await self.startup()
         async with self._create_lock:
             for session in self.sessions.values():
-                if session.state == "FAILED":
+                if session.state == "FAILED" or (session.state == "STOPPED" and not session.cleanup_complete):
                     # A failed control stream may leave its runner alive; release it before replacement.
                     await session.close()
             def register_starting():
@@ -1107,9 +1133,11 @@ class SessionManager:
                         raise HTTPException(503, {"code": "source_unavailable",
                                                   "message": "This source does not load USD scene packages"})
                     for session in self.sessions.values():
-                        if session.state in ("STOPPED", "FAILED"):
+                        if not session.holds_resources:
                             continue
-                        if session.scene_version.id == selected.id and session.kind == selected_source:
+                        if (not evaluation_id and not session.evaluation_id
+                                and session.scene_version.id == selected.id
+                                and session.kind == selected_source):
                             return session
                         raise HTTPException(409, {
                             "code": "session_exists",
@@ -1119,7 +1147,11 @@ class SessionManager:
                         selected.name, selected_source, options, self.settings, self.factory,
                         self.recordings, self.approvals, self.plans, scene_version=selected,
                         inbox=self.inbox,
+                        evaluation_id=evaluation_id,
+                        on_closed=lambda: self.evaluations and self.evaluations.wake(),
                     )
+                    if evaluation_id:
+                        self.recordings.pin(session.session_id)
                     self._starting_session = session
                     self._session_view = (*self.sessions.values(), session)
                     return session
@@ -1161,7 +1193,8 @@ class SessionManager:
                 raise HTTPException(503, detail) from exc
             finally:
                 # Initial failure is still discoverable/stoppable if cleanup has not succeeded.
-                if session.source is not None or session._starting_source is not None:
+                if (session.source is not None or session._starting_source is not None
+                        or (not session.cleanup_complete and session.recording is not None)):
                     self.sessions[session.session_id] = session
                 self._starting_session = None
                 self._session_view = tuple(self.sessions.values())
@@ -1171,6 +1204,18 @@ class SessionManager:
         # Worker readers must copy one immutable membership view. Reading the mapping and
         # starting slot separately can lose a session while its creator moves between them.
         return list(self._session_view)
+
+    async def reload(self, session_id):
+        async with self._create_lock:
+            session = self.get(session_id)
+            session.require_interactive()
+            if self.evaluations is not None:
+                self.evaluations.require_interactive()
+            if any(other is not session and other.holds_resources for other in self.sessions.values()):
+                raise HTTPException(409, {"code": "session_exists",
+                                          "message": "Close the active session before reloading another"})
+            await session.reload()
+            return session
 
     def get(self, session_id):
         if session_id not in self.sessions:

@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { getSceneDetail, launchScene, rootLabel, sourceLabel, type SceneDetail, type SceneSource } from '../lib/library';
+import { getSceneDetail, rootLabel, sourceLabel, type SceneDetail, type SceneSource } from '../lib/library';
 import { FrozenViewport, useScenePreview } from '../components/ScenePreview';
 import { LaunchStatus } from '../components/SceneStatus';
 import { ValidationReport, ValidationStatus } from '../components/ValidationReport';
 import { deviceKey } from '../lib/info/binding';
 import { LibraryDeletionRequest } from '../components/LibraryDeletion';
+import { SessionLaunchButton } from '../components/SessionLaunchButton';
 
 export const Route = createFileRoute('/scenes/$name/$rev')({
   validateSearch: (value: Record<string, unknown>): { source?: SceneSource } => ({ source: value.source === 'synthetic' || value.source === 'newton' ? value.source : undefined }),
@@ -35,8 +36,6 @@ function SceneDetails() {
 function Detail({ scene }: { scene: SceneDetail }) {
   const { client, state, catalog, error } = useScenePreview(scene.preview);
   const [readouts, setReadouts] = useState(true);
-  const [launching, setLaunching] = useState(false);
-  const [launchError, setLaunchError] = useState<string>();
   const navigate = useNavigate();
   const manifest = state.manifest;
   const source = scene.preview.source;
@@ -67,12 +66,8 @@ function Detail({ scene }: { scene: SceneDetail }) {
     </div><aside className="scene-detail-stack">
       <section className="reference-panel"><header><h2>操作</h2><LaunchStatus scene={scene} /></header><div className="scene-panel-body scene-launch">
         <label>物理源<select aria-label="启动物理源" value={source} onChange={event => void navigate({ to: '/scenes/$name/$rev', params: { name: scene.sceneId, rev: String(scene.rev) }, search: { source: event.target.value as SceneSource }, replace: true })}>{scene.sources.map(kind => <option key={kind} value={kind}>{sourceLabel(kind)}</option>)}</select></label>
-        <button className="primary" disabled={!scene.launchable || launching} onClick={async () => {
-          setLaunching(true); setLaunchError(undefined);
-          try { const session = await launchScene(scene.id, source); await navigate({ to: '/sessions/$sessionId', params: { sessionId: session.sessionId } }); }
-          catch (error) { setLaunchError((error as Error).message); setLaunching(false); }
-        }}>{launching ? '正在启动…' : '启动会话'} <span aria-hidden="true">↗</span></button>
-        <p className="scene-note">启动固定版本 <code>{scene.id}</code></p>{!scene.launchable && <p className="scene-failure">{scene.launchReason}</p>}{launchError && <p className="scene-failure" role="alert">{launchError}</p>}
+        <SessionLaunchButton sceneVersion={scene.id} source={source} disabled={!scene.launchable} />
+        <p className="scene-note">启动固定版本 <code>{scene.id}</code></p>{!scene.launchable && <p className="scene-failure">{scene.launchReason}</p>}
       </div></section>
       <section className="reference-panel"><header><h2>验证报告</h2><ValidationStatus status={scene.validationStatus} /></header>
         <ValidationReport report={scene.validation} />

@@ -86,6 +86,7 @@ class GatewayClient:
             health = await self.request("GET", "/api/v1/health")
             active = [
                 item for item in health["sessions"] if item["state"] in ("RUNNING", "PAUSED", "LOADING")
+                and not item.get("evaluationId")
             ]
             if len(active) != 1:
                 raise GatewayError(f"Set LW_SESSION: expected one active session, found {len(active)}")
@@ -192,8 +193,46 @@ class GatewayClient:
         if seed is not None:
             body["seed"] = seed
         result = await self.request("POST", "/api/v1/sessions", json=body, actor=actor, timeout=190)
-        self._session_id, self._session_explicit = result["sessionId"], False
+        if "sessionId" in result:
+            self._session_id, self._session_explicit = result["sessionId"], False
         return result
+
+    @staticmethod
+    def _suite_path(suite):
+        match = re.fullmatch(r"suite/([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)", suite)
+        if not match:
+            raise ValueError("Select an exact suite/name@revision")
+        return "/api/v1/suites/" + match[1] + "/" + match[2]
+
+    async def suites_list(self):
+        return (await self.request("GET", "/api/v1/suites"))["suites"]
+
+    async def suite_show(self, suite):
+        return await self.request("GET", self._suite_path(suite))
+
+    async def score_list(self, suite, subject=None):
+        return (await self.request("GET", self._suite_path(suite) + "/scoreboard",
+                                   params={"subject": subject} if subject else {}))["rows"]
+
+    async def evaluation_run(self, subject, suite, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/evaluations",
+                                  json={"subject": subject, "suite": suite, "split": "train"}, actor=actor)
+
+    async def evaluation_show(self, id):
+        return await self.request("GET", "/api/v1/evaluations/" + quote(id, safe=""))
+
+    async def evaluations_list(self):
+        return (await self.request("GET", "/api/v1/evaluations"))["evaluations"]
+
+    async def evaluation_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/evaluations/" + quote(id, safe="") + "/cancel",
+                                  actor=actor)
+
+    async def session_request_show(self, id):
+        return await self.request("GET", "/api/v1/session-requests/" + quote(id, safe=""))
+
+    async def session_request_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("DELETE", "/api/v1/session-requests/" + quote(id, safe=""), actor=actor)
 
     async def alerts_list(self, active=False, state=None, severity=None):
         params = {"active": "true"} if active else {}

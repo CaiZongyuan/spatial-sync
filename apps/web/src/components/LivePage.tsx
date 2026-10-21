@@ -161,7 +161,7 @@ function LiveSession({ session }: { session: SessionSummary }) {
           <h2>{binding.key.split('/').at(-1)}</h2><code className="drawer-key">{binding.key}</code><span className="reference-tag">{binding.type}</span>
           <DeviceReadings {...{ client, catalog, binding, rules }} trends={false} />
           <EntityPanel store={client.info} binding={binding} definition={catalog.types[binding.type]} compact
-            disabled={state.connection !== 'connected' || state.role !== 'operator' || !metadata.ready || !['RUNNING', 'PAUSED'].includes(state.sessionState)}
+            disabled={Boolean(state.evaluationId) || state.connection !== 'connected' || state.role !== 'operator' || !metadata.ready || !['RUNNING', 'PAUSED'].includes(state.sessionState)}
             onAction={(key, action, params) => client.action(key, action, params)} /></> : <><span className="eyebrow">设备抽屉</span><h2>点击地图上的设备</h2><p className="drawer-instruction">查看实时读数与下方的 1 小时历史。红点表示活动告警，空心点表示已确认。</p>
             <div className="device-legend">{devices.map(binding => <button key={binding.key} onClick={() => choose(binding.key)}><i className={alertKeys.has(binding.key) ? 'has-alert' : ''} /><span>{binding.key.split('/').at(-1)}</span><code>{binding.type}</code></button>)}</div>
             {metadata.ready && !devices.length && <p className="live-muted">此场景未绑定遥测设备。可从场景库启动 Synthetic Laboratory。</p>}</>}

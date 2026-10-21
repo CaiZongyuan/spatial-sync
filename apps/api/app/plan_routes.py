@@ -42,6 +42,7 @@ def install_plan_routes(app, manager, role_for):
             if len(candidates) != 1:
                 raise PlanError("target_unavailable", "Select an active session", status=409)
             session = candidates[0]
+        session.require_interactive()
         if session.state not in ("RUNNING", "PAUSED") or not session.source:
             raise PlanError("target_unavailable", "The plan target is unavailable", status=409)
         return payload, session
