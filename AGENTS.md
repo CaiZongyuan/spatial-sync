@@ -33,7 +33,7 @@ These are hard to reverse. Change them deliberately, with the user.
 
 ## Working style
 
-- One agent carries an issue end to end. Follow the user's session authorization for publishing and merging. Use `pm-development`, parallel agents or independent reviewers when requested.
+- One agent carries an issue end to end, then merges its own PR without asking once a non-author `code-review` (Standards and Spec) passes on the final candidate and the merge rules below hold. The user can withhold merging for a session or a PR. Use `pm-development` or parallel agents when requested.
 - Use `grilling` for decisions that touch the contracts above or the device model. Settle everything else with sensible defaults and state them in the reply.
 - A milestone is done when it demos: one local command starts it, or it is visible in the browser.
 - Evidence lives in the PR description and CI. Repository docs describe current behavior for users and agents; process receipts, review logs and benchmark output go to `.scratch/`.
@@ -52,6 +52,7 @@ These repository choices override automatic workflow defaults in installed skill
 
 - Create linked worktrees under the primary checkout's `.worktrees/<task>/`. Resolve the primary checkout from `git worktree list`; use its directory even when working inside a linked worktree.
 - Keep `.scratch/` and `.worktrees/` local and untracked. Store temporary diagnostics and validation artifacts in `.scratch/`.
+- A PM handoff is one GitHub issue: current state, plan and resume steps in its body, with evidence linked from issues and PRs. Unpublished branches go to the remote; `.scratch/` receipts, specs and `AGENTS.md` stay where they are instead of being copied into the repository.
 - Timeline reports are opt-in. Invoke `development-timeline` and create or update its journals, checkpoints, or HTML reports only when the user explicitly requests a timeline. Invoking `pm-development`, reaching a milestone, or finishing a task does not activate timeline generation. Otherwise, report results in the normal conversation.
 
 ## Agent skills
