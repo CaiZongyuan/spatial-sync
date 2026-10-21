@@ -1,0 +1,70 @@
+[
+  {
+    "file": "replay.spec.ts",
+    "title": "plays the v2 Synthetic fixture with read-only Inspector and independent state comparisons"
+  },
+  {
+    "file": "replay.spec.ts",
+    "title": "recordings list attributes versions and sources from frozen manifests, preserving unknowns (contract)"
+  },
+  {
+    "file": "replay.spec.ts",
+    "title": "paused replay draws on asset, view and camera changes while idle frames stop"
+  },
+  {
+    "file": "replay.spec.ts",
+    "title": "native End applies the final reliable record at a fractional millisecond duration"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "a failed preview does not transfer its error to the next healthy capture"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "changing theme while the next preview loads recaptures the same scene and finishes its queue"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "a library larger than the shared thumbnail cache keeps every completed image"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "changing scene filters retires old results and queued previews before the next response"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "real scene capture, shared thumbnails, filters, URL preferences and exact launch"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "bundled FR3 preview loads its real GLBs and initial frame without a live session"
+  },
+  {
+    "file": "scene-library.spec.ts",
+    "title": "unlaunchable and missing previews show real reasons and unknown counts"
+  },
+  {
+    "file": "source-diagnostics.spec.ts",
+    "title": "synthetic diagnostics keep unmeasured shape count and Runner heartbeat unknown"
+  },
+  {
+    "file": "source-diagnostics.spec.ts",
+    "title": "real Newton diagnostics show measured shapes, full readback and live paused heartbeat"
+  },
+  {
+    "file": "ui-polish.spec.ts",
+    "title": "workbench preserves public controls, tree navigation, exact Inspector and a transparent shadow stage"
+  },
+  {
+    "file": "workbench.spec.ts",
+    "title": "real SyntheticSource workbench launches and compares exact Body and Site poses"
+  },
+  {
+    "file": "workbench.spec.ts",
+    "title": "real SyntheticSource observers share pause, heartbeat, Step, Reset and Resume"
+  },
+  {
+    "file": "workbench.spec.ts",
+    "title": "real SyntheticSource observers reconnect after Reset and expose fallback diagnostics before closing"
+  }
+]

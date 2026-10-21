@@ -1,0 +1,79 @@
+diff --git a/apps/web/src/lib/stream/client.ts b/apps/web/src/lib/stream/client.ts
+index 0b2c28b..38b2b20 100644
+--- a/apps/web/src/lib/stream/client.ts
++++ b/apps/web/src/lib/stream/client.ts
+@@ -1,3 +1,4 @@
++import { diagnosticMark } from './observer-diagnostic';
+ import type {
+   SceneManifest,
+   ServerMessage,
+@@ -265,10 +266,13 @@ export class SessionClient {
+     ws.binaryType = 'arraybuffer';
+     this.ws = ws;
+     let messages = Promise.resolve();
++    let diagnosticFrames = 0;
+     ws.onopen = () => {
+       this.lastMessageAt = performance.now();
+     };
+     ws.onmessage = (event) => {
++      const diagnostic = ++diagnosticFrames <= 3 || diagnosticFrames % 15 === 0;
++      if (diagnostic) diagnosticMark('ws-enter', { binary: event.data instanceof ArrayBuffer, pending: Boolean(this.pendingSubscription) });
+       this.lastMessageAt = performance.now();
+       this.payloadBytes +=
+         typeof event.data === 'string'
+@@ -278,10 +282,11 @@ export class SessionClient {
+         .then(async () => {
+           if (this.stopped || this.ws !== ws) return;
+           if (event.data instanceof ArrayBuffer) {
+-            if (
+-              !this.pendingSubscription &&
+-              this.buffer.pushBinary(event.data, performance.now())
+-            ) {
++            const pending = Boolean(this.pendingSubscription);
++            const accepted = !pending && this.buffer.pushBinary(event.data, performance.now());
++            if (diagnostic) diagnosticMark('decision', { accepted, pending, seq: this.buffer.lastSeq, invalid: this.buffer.invalidBinaryFrames, discarded: this.buffer.discardedFrames });
++            if (accepted) {
++              if (diagnostic) diagnosticMark('accepted', { seq: this.buffer.lastSeq, epoch: this.buffer.epoch });
+               this.receivedFrames++;
+               this.plans.advanceEpoch(this.buffer.epoch);
+               this.rates.push(performance.now());
+@@ -339,6 +344,7 @@ export class SessionClient {
+     if (this.applyGlobalMessage(message)) return;
+     switch (message.type) {
+       case 'server.ready':
++        diagnosticMark('ready', { state: message.sessionState });
+         if (this.buffer.revision !== message.sceneRevision)
+           await this.loadManifest();
+         if (this.stopped || generation !== this.generation) return;
+@@ -356,6 +362,7 @@ export class SessionClient {
+         this.subscribeStream();
+         break;
+       case 'subscription.ack':
++        diagnosticMark('ack', { matches: message.requestId === this.pendingSubscription });
+         if (message.requestId !== this.pendingSubscription) break;
+         this.pendingSubscription = undefined;
+         this.buffer.grantedRateHz = message.grantedRateHz;
+diff --git a/tests/e2e/workbench.spec.ts b/tests/e2e/workbench.spec.ts
+index b46218f..1a65c4a 100644
+--- a/tests/e2e/workbench.spec.ts
++++ b/tests/e2e/workbench.spec.ts
+@@ -1,4 +1,5 @@
+-import { expect, test, type APIRequestContext, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
++import { test, diagnosticEvaluate } from './observer-diagnostic';
++import { expect, type APIRequestContext, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
+ import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
+ import { cleanupObserver } from './cleanup-observer';
+ 
+@@ -8,7 +9,11 @@ async function waitConnected(page: Page) {
+   await expect(page.getByTestId('connection-status')).toHaveText('已连接');
+   await expect
+     .poll(() =>
+-      page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
++      diagnosticEvaluate(page, () => {
++        const value = window.__spatialDebug?.getSample()?.seq ?? -1;
++        (window as Window & { __observerDiagnostic?: (kind: string, value: unknown) => void }).__observerDiagnostic?.('getter', { seq: value });
++        return value;
++      }),
+     )
+     .toBeGreaterThanOrEqual(0);
+   await expect(page.locator('canvas')).toBeVisible();

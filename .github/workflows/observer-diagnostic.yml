@@ -1,0 +1,66 @@
+name: Isolated observer diagnostic
+on:
+  push:
+    branches: [diag/issue34-observer]
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Immutable source revision (base only after a qualifying candidate signal)
+        required: true
+        default: ea837af2159fa037f63c93400cc58fd84765158e
+jobs:
+  observer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || 'ea837af2159fa037f63c93400cc58fd84765158e' }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: packet
+          sparse-checkout: tools/observer-diagnostic
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - name: Install identical frozen base dependencies
+        run: |
+          uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/spatial-requirements.txt" > /dev/null
+          uv venv --python 3.13
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --require-hashes -r "$RUNNER_TEMP/spatial-requirements.txt"
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
+      - name: Apply bounded instrumentation only
+        run: uv run --no-sync python packet/tools/observer-diagnostic/prepare.py apply
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
+      - name: Exact worker, fixed predecessor sequence and original assertions
+        env:
+          SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
+          SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
+          SPATIAL_TEST_APPROVAL: '1'
+          SPATIAL_E2E_WEB_MODE: preview
+        run: |
+          if [ "${{ inputs.revision || 'ea837af2159fa037f63c93400cc58fd84765158e' }}" = ea837af2159fa037f63c93400cc58fd84765158e ]; then
+            SELECTION=(--shard=4/4)
+          else
+            SELECTION=(--test-list "$GITHUB_WORKSPACE/packet/tools/observer-diagnostic/fixed17.txt")
+          fi
+          pnpm --filter @spatial-sync/web exec playwright test --fully-parallel --workers=1 "${SELECTION[@]}" --list --reporter=json > "$RUNNER_TEMP/selected.json"
+          uv run --no-sync python packet/tools/observer-diagnostic/prepare.py verify "$RUNNER_TEMP/selected.json"
+          uv run --no-sync python packet/tools/observer-diagnostic/run.py "${SELECTION[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observer-diagnostic-evidence
+          include-hidden-files: true
+          path: |
+            /tmp/spatial-api.log
+            .scratch/viewer-e2e/report
+            .scratch/viewer-e2e/results
+            .scratch/viewer-e2e/diagnostic-owned.json

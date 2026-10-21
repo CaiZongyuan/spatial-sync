@@ -1,3 +1,4 @@
+import { diagnosticMark } from './observer-diagnostic';
 import type {
   SceneManifest,
   ServerMessage,
@@ -265,10 +266,13 @@ export class SessionClient {
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     let messages = Promise.resolve();
+    let diagnosticFrames = 0;
     ws.onopen = () => {
       this.lastMessageAt = performance.now();
     };
     ws.onmessage = (event) => {
+      const diagnostic = ++diagnosticFrames <= 3 || diagnosticFrames % 15 === 0;
+      if (diagnostic) diagnosticMark('ws-enter', { binary: event.data instanceof ArrayBuffer, pending: Boolean(this.pendingSubscription) });
       this.lastMessageAt = performance.now();
       this.payloadBytes +=
         typeof event.data === 'string'
@@ -278,10 +282,11 @@ export class SessionClient {
         .then(async () => {
           if (this.stopped || this.ws !== ws) return;
           if (event.data instanceof ArrayBuffer) {
-            if (
-              !this.pendingSubscription &&
-              this.buffer.pushBinary(event.data, performance.now())
-            ) {
+            const pending = Boolean(this.pendingSubscription);
+            const accepted = !pending && this.buffer.pushBinary(event.data, performance.now());
+            if (diagnostic) diagnosticMark('decision', { accepted, pending, seq: this.buffer.lastSeq, invalid: this.buffer.invalidBinaryFrames, discarded: this.buffer.discardedFrames });
+            if (accepted) {
+              if (diagnostic) diagnosticMark('accepted', { seq: this.buffer.lastSeq, epoch: this.buffer.epoch });
               this.receivedFrames++;
               this.plans.advanceEpoch(this.buffer.epoch);
               this.rates.push(performance.now());
@@ -339,6 +344,7 @@ export class SessionClient {
     if (this.applyGlobalMessage(message)) return;
     switch (message.type) {
       case 'server.ready':
+        diagnosticMark('ready', { state: message.sessionState });
         if (this.buffer.revision !== message.sceneRevision)
           await this.loadManifest();
         if (this.stopped || generation !== this.generation) return;
@@ -356,6 +362,7 @@ export class SessionClient {
         this.subscribeStream();
         break;
       case 'subscription.ack':
+        diagnosticMark('ack', { matches: message.requestId === this.pendingSubscription });
         if (message.requestId !== this.pendingSubscription) break;
         this.pendingSubscription = undefined;
         this.buffer.grantedRateHz = message.grantedRateHz;
