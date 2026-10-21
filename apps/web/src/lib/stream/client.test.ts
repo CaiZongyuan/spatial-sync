@@ -174,6 +174,25 @@ describe('WebSocket lifecycle and authoritative control', () => {
     expect(client.buffer.readLatest('/World/Arm')!.p).toEqual([1, 2, 3]);
   });
 
+  it('uses the shared plan FIFO for full/step updates and clears it on an accepted epoch boundary', async () => {
+    const ws = Socket.instances[0];
+    const scope = { sceneRevision: fixture.sceneRevision, epoch: 0, simTime: .5, sampleTimeMs: 110 };
+    ws.emit({ type: 'plan.update', update: 'full', ...scope, plan: { id: 'p', kind: 'operation',
+      title: 'Actual reliable messages', revision: 1, target: 'session', status: 'approved',
+      steps: [{ id: 1, status: 'pending', check: { entity: '/World/Arm', property: 'phase', equals: 'idle' } }] } });
+    ws.emit({ type: 'plan.update', update: 'step', ...scope, sampleTimeMs: 120,
+      planId: 'p', revision: 1, stepId: 1, status: 'done' });
+    await flush();
+    expect(client.plans.getSnapshot().entries[0].plan.steps[0].status).toBe('done');
+    ws.emit({ ...snapshot, epoch: 1, seq: 6, sampleTimeMs: 200 });
+    await flush();
+    expect(client.plans.getSnapshot().entries).toEqual([]);
+    ws.emit({ type: 'plan.update', update: 'step', ...scope, sampleTimeMs: 250,
+      planId: 'p', revision: 1, stepId: 1, status: 'running' });
+    await flush();
+    expect(client.plans.getSnapshot().entries).toEqual([]);
+  });
+
   it('wakes pose consumers on accepted frames without replacing the React metadata snapshot', async () => {
     const metadata = client.getSnapshot();
     const listener = vi.fn();

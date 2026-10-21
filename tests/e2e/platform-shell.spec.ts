@@ -10,9 +10,9 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(8);
+  await expect(navigation.getByRole('link')).toHaveCount(9);
   expect(await navigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))))
-    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
   await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(243, 242, 238)');

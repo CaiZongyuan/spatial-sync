@@ -19,12 +19,14 @@ import { NewtonViewerButton } from './NewtonViewerButton';
 import { Icon } from './Icon';
 import { connectionLabel, sessionLabel } from '../lib/ui-labels';
 import '../workbench.css';
+import { SessionPlans, useSessionPlan } from './SessionPlans';
 import {
   SceneViewport,
   type DebugLayers,
   type RenderMetrics,
   type RenderedPose,
   type InspectVisuals,
+  type InspectPreview,
 } from './viewer/SceneViewport';
 
 declare global {
@@ -42,6 +44,7 @@ declare global {
       startProfile: () => ReturnType<SessionClient['getStreamMetrics']>;
       stopProfile: FrameRecorder['stop'];
       getStreamMetrics: SessionClient['getStreamMetrics'];
+      getPreviewGeometry: () => ReturnType<InspectPreview> | undefined;
     };
   }
 }
@@ -59,6 +62,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
   const [operationPending, setOperationPending] = useState(false);
   const [selected, setSelected] = useState('');
   const search = useSearch({ strict: false });
+  const planSelection = useSessionPlan(client, search.plan, search.step);
   const cameraPreset = search.camera ?? 'perspective';
   const setCameraPreset = (camera: 'perspective' | 'isometric') => void navigate({
     to: '.', search: previous => ({ ...previous, camera: camera === 'isometric' ? camera : undefined }),
@@ -80,6 +84,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
   });
   const rendered = useRef(new Map<string, RenderedPose>());
   const inspectVisuals = useRef<InspectVisuals | undefined>(undefined);
+  const inspectPreview = useRef<InspectPreview | undefined>(undefined);
   const recorder = useMemo(() => new FrameRecorder(), []);
   const warn = useCallback(
     (message: string) =>
@@ -110,6 +115,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
       },
       stopProfile: () => recorder.stop(),
       getStreamMetrics: client.getStreamMetrics,
+      getPreviewGeometry: () => inspectPreview.current?.(),
     };
     return () => {
       active = false;
@@ -384,10 +390,12 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                   metrics,
                   rendered,
                   inspectVisuals,
+                  inspectPreview,
                   recorder,
                   renderContinuously,
                   cameraPreset,
                 }}
+                preview={planSelection.preview.value}
               />
               {tab === 'diagnostics' && (
                 <Diagnostics
@@ -402,7 +410,10 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
               onCancel={(id) => client.cancelInvocation(id)}
             />
           </section>
-          <Inspector {...{ manifest, selected, client, state }} />
+          <div className="workbench-plan-rail"><SessionPlans client={client} selection={planSelection}
+            selectPlan={plan => void navigate({ to: '.', search: prior => ({ ...prior, plan, step: undefined }) })}
+            selectStep={step => void navigate({ to: '.', search: prior => ({ ...prior, step }) })} />
+            <Inspector {...{ manifest, selected, client, state }} /></div>
         </div>
       )}
       <footer className="status-bar">

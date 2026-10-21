@@ -6,27 +6,20 @@ import {
   type InstanceController,
 } from './InstancedPrimitives';
 import { Canvas, events, useFrame, useThree } from '@react-three/fiber';
-import { Edges, Grid, OrbitControls } from '@react-three/drei';
+import { Grid, OrbitControls } from '@react-three/drei';
 import {
-  DoubleSide,
   Box3,
-  Color,
   Group,
   Mesh,
-  MeshStandardMaterial,
   Vector3,
-  type Material,
   type Object3D,
 } from 'three';
-import {
-  resolveVisuals,
-  type LoadedVisual,
-  type ResolvedVisuals,
-  type VisualGroup,
-} from '../../lib/scene/visual-assets';
-import type { SceneManifest, Visual, Pose } from '../../lib/protocol';
+import { NodeVisuals, type PhysicalNode } from './NodeVisuals';
+import { MotionPreviewLayer, useReducedMotion, type InspectPreview } from './MotionPreviewLayer';
+import type { AvailablePreview } from '../../lib/plans/model';
+export type { InspectPreview, PreviewInspection } from './MotionPreviewLayer';
+import type { SceneManifest, Pose } from '../../lib/protocol';
 import { IDENTITY } from '../../lib/scene/pose';
-import { createPrimitiveGeometry } from '../../lib/geometry/primitives';
 import { ViewerThemeContext, useViewerTheme } from '../../lib/scene/viewer-theme';
 import { CameraRig, type CameraPreset } from './CameraRig';
 import { DeviceAnnotations, DeviceAnnotationLayer, type DeviceAnnotation } from './DeviceAnnotations';
@@ -76,230 +69,6 @@ const visibleEvents: typeof events = (state) => ({
 
 // Axes guide orientation; body meshes and Site marker spheres own picking.
 const skipPicking = () => {};
-
-function Asset({
-  visual,
-  object,
-  selected,
-  collider,
-}: {
-  visual: Exclude<Visual, { kind: 'primitive' }>;
-  object: Group;
-  selected: boolean;
-  collider: boolean;
-}) {
-  const theme = useContext(ViewerThemeContext);
-  useEffect(() => {
-    object?.traverse((child) => {
-      if (!(child instanceof Mesh)) return;
-      child.castShadow = true; child.receiveShadow = true;
-      const materials: Material[] = Array.isArray(child.material)
-        ? child.material
-        : [child.material];
-      materials.forEach((material) => {
-        if (!material.userData.authoredAppearance) material.userData.authoredAppearance = {
-          transparent: material.transparent, opacity: material.opacity,
-          wireframe: 'wireframe' in material ? material.wireframe : false,
-        };
-        const authored = material.userData.authoredAppearance;
-        if ('wireframe' in material) material.wireframe = collider || authored.wireframe;
-        material.transparent = collider || authored.transparent;
-        material.opacity = collider ? 0.7 : authored.opacity;
-        if (material instanceof MeshStandardMaterial) {
-          material.emissive.set(selected ? theme.accent : '#000000');
-          if (!material.userData.authoredColor) material.userData.authoredColor = material.color.clone();
-          material.color.copy(material.userData.authoredColor);
-          if (!material.map) material.color.lerp(new Color(authored.transparent ? theme.glass : material.metalness > .5 ? theme.steel : theme.body), .35);
-          material.emissiveIntensity = selected ? 0.4 : 0;
-        }
-      });
-    });
-  }, [object, selected, collider, theme]);
-  return (
-    <group
-      rotation={visual.assetUpAxis === 'Y' ? [Math.PI / 2, 0, 0] : [0, 0, 0]}
-      scale={visual.scale ?? [1, 1, 1]}
-    >
-      <primitive object={object} dispose={null} />
-    </group>
-  );
-}
-
-function PrimitiveMesh({
-  visual,
-  selected,
-  collider,
-}: {
-  visual: Extract<Visual, { kind: 'primitive' }>;
-  selected: boolean;
-  collider: boolean;
-}) {
-  const theme = useContext(ViewerThemeContext);
-  const geometry = useMemo(
-    () => createPrimitiveGeometry(visual.geometry),
-    [visual.geometry],
-  );
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <mesh geometry={geometry} castShadow={visual.geometry.type !== 'plane'} receiveShadow>
-      {!collider && visual.geometry.type === 'plane' ? <shadowMaterial opacity={theme.ao} depthWrite={false} /> : <meshStandardMaterial
-        color={
-          collider
-            ? theme.accent
-            : visual.geometry.type === 'plane'
-                ? theme.floor
-                : theme.body
-        }
-        roughness={0.7}
-        metalness={0.12}
-        side={DoubleSide}
-        wireframe={collider}
-        transparent={collider || visual.geometry.type === 'plane'}
-        opacity={collider ? 0.8 : visual.geometry.type === 'plane' ? theme.ao : 1}
-      />}
-      {!collider && visual.geometry.type !== 'plane' && <Edges threshold={35} color={selected ? theme.accent : theme.edge} opacity={selected ? 1 : theme.edgeOpacity} transparent raycast={skipPicking} />}
-    </mesh>
-  );
-}
-
-function VisualObject({
-  loaded,
-  selected,
-  collider = false,
-}: {
-  loaded: LoadedVisual;
-  selected: boolean;
-  collider?: boolean;
-}) {
-  const { visual, object } = loaded;
-  const pose = visual.localPose ?? IDENTITY;
-  return (
-    <group position={pose.p} quaternion={pose.q}>
-      {visual.kind === 'primitive' ? (
-        <PrimitiveMesh
-          visual={visual}
-          selected={selected}
-          collider={collider}
-        />
-      ) : (
-        object && (
-          <Asset
-            visual={visual}
-            object={object}
-            selected={selected}
-            collider={collider}
-          />
-        )
-      )}
-    </group>
-  );
-}
-
-function Placeholder({ selected }: { selected: boolean }) {
-  return (
-    <mesh>
-      <boxGeometry args={[0.2, 0.2, 0.2]} />
-      <meshStandardMaterial
-        color={selected ? '#ffc56b' : '#d977b8'}
-        wireframe
-      />
-    </mesh>
-  );
-}
-
-type PhysicalNode = Exclude<SceneManifest['nodes'][number], { kind: 'group' }>;
-
-function useVisuals(groups: VisualGroup[], warn: (message: string) => void) {
-  const [resolved, setResolved] = useState<ResolvedVisuals>();
-  const invalidate = useThree((state) => state.invalidate);
-  useEffect(() => { invalidate(); }, [resolved, invalidate]);
-  useEffect(() => {
-    const controller = new AbortController();
-    let owned: ResolvedVisuals | undefined;
-    setResolved(undefined);
-    void resolveVisuals(groups, controller.signal, warn).then((result) => {
-      owned = result;
-      if (result) setResolved(result);
-    });
-    return () => {
-      controller.abort();
-      owned?.dispose();
-    };
-  }, [groups, warn]);
-  return resolved;
-}
-
-function CollisionVisuals({
-  visuals,
-  warn,
-}: {
-  visuals: Visual[];
-  warn: (message: string) => void;
-}) {
-  const groups = useMemo<VisualGroup[]>(
-    () => [{ name: 'colliders', visuals }],
-    [visuals],
-  );
-  const resolved = useVisuals(groups, warn);
-  return (
-    <group name="collider-debug-group">
-      {resolved?.visuals.map((loaded, i) => (
-        <VisualObject key={i} loaded={loaded} selected={false} collider />
-      ))}
-    </group>
-  );
-}
-
-function NodeVisuals({
-  node,
-  selected,
-  colliders,
-  warn,
-  ready,
-}: {
-  node: PhysicalNode;
-  selected: boolean;
-  colliders: boolean;
-  warn: (message: string) => void;
-  ready: (key: string) => void;
-}) {
-  const groups = useMemo<VisualGroup[]>(
-    () => [
-      { name: 'visuals', visuals: node.visuals },
-      { name: 'fallbackVisuals', visuals: node.fallbackVisuals ?? [] },
-      { name: 'colliders', visuals: node.colliders },
-    ],
-    [node],
-  );
-  const report = useMemo(
-    () => (message: string) => warn(`${node.entityKey}: ${message}`),
-    [node.entityKey, warn],
-  );
-  const resolved = useVisuals(groups, report);
-  useEffect(() => { if (resolved) ready(node.entityKey); }, [resolved, ready, node.entityKey]);
-  return (
-    <>
-      <group
-        name="visual-group"
-        userData={{ source: resolved?.source ?? 'loading' }}
-      >
-        {resolved?.source === 'placeholder' ? (
-          <Placeholder selected={selected} />
-        ) : (
-          resolved?.visuals.map((loaded, i) => (
-            <VisualObject key={i} loaded={loaded} selected={selected} />
-          ))
-        )}
-      </group>
-      {colliders &&
-        resolved &&
-        resolved.source !== 'colliders' &&
-        node.colliders.length > 0 && (
-          <CollisionVisuals visuals={node.colliders} warn={report} />
-        )}
-    </>
-  );
-}
 
 function Body({
   node,
@@ -440,7 +209,8 @@ function SceneContents({
   recorder,
   renderContinuously = true,
   cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact, axesElement,
-}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null> }) {
+  preview, previewFocus = false, inspectPreview, reducedMotion,
+}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null>; reducedMotion: boolean }) {
   const invalidate = useThree((state) => state.invalidate);
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
@@ -464,8 +234,11 @@ function SceneContents({
   const bodies = useRef(new Map<number, Group>());
   const physicsRoot = useRef<Group>(null);
   const physicalNodes = useRef(new Map<string, Group>());
+  const previewRoot = useRef<Group>(null);
   const instances = useRef<InstanceController | undefined>(undefined);
   const [boundsRevision, setBoundsRevision] = useState(0);
+  const previewReady = useCallback(() => setBoundsRevision(value => value + 1), []);
+  useEffect(previewReady, [preview?.planId, preview?.revision, preview?.stepId, preview?.policyDriven, previewReady]);
   const readyNodes = useRef(new Set<string>());
   const ready = useCallback((key?: string) => {
     if (key) readyNodes.current.add(key);
@@ -512,13 +285,15 @@ function SceneContents({
   const inspectGeometry = useCallback((key: string) => inspectVisuals.current?.(key), [inspectVisuals]);
   const frameBounds = useCallback(() => {
     const box = new Box3();
-    for (const object of physicalNodes.current.values()) {
-      if (object.visible && !object.userData.frameExcluded) box.expandByObject(object);
+    const focused = previewFocus && preview && !preview.policyDriven ? new Set(Object.keys(preview.targetBodyPoses)) : undefined;
+    for (const [key, object] of physicalNodes.current) {
+      if (object.visible && !object.userData.frameExcluded && (!focused || focused.has(key))) box.expandByObject(object);
     }
     const instanced = instances.current?.bounds();
     if (instanced) box.union(instanced);
+    if (previewRoot.current) { previewRoot.current.updateWorldMatrix(true, true); box.expandByObject(previewRoot.current); }
     return box;
-  }, []);
+  }, [previewFocus, preview]);
   const deviceBounds = useCallback((keys: string[]) => {
     const bounds = new Box3();
     for (const key of keys) {
@@ -660,6 +435,8 @@ function SceneContents({
         cellThickness={.5} cellColor={theme.grid} sectionSize={1} sectionThickness={.5}
         sectionColor={theme.grid} fadeDistance={6} fadeStrength={1.5} infiniteGrid raycast={skipPicking} />}
       <group ref={physicsRoot} name="physicsRoot" rotation={[-Math.PI / 2, 0, 0]}>
+        {preview && <MotionPreviewLayer key={`${preview.planId}:${preview.revision}:${preview.stepId}:${preview.policyDriven}`}
+          {...{ manifest, preview, hidden, warn }} root={previewRoot} ready={previewReady} inspect={inspectPreview} reduced={reducedMotion} />}
         {useInstances && (
           <InstancedPrimitives
             nodes={instancedNodes}
@@ -742,6 +519,9 @@ interface ViewportProps {
   onLabelLayout?: (labels: PlacedLabel[]) => void;
   capture?: (png: string) => void;
   captureKey?: string;
+  preview?: AvailablePreview;
+  previewFocus?: boolean;
+  inspectPreview?: React.RefObject<InspectPreview | undefined>;
 }
 
 export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
@@ -758,6 +538,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   });
   const hasPose = useSyncExternalStore(props.client.subscribe, () => Boolean(props.client.buffer.latestSample));
   const theme = useViewerTheme();
+  const reducedMotion = useReducedMotion();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
   const element = useRef<HTMLDivElement>(null);
   const axesElement = useRef<SVGSVGElement>(null);
@@ -765,7 +546,8 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   const receivedState = useRef(false);
   if (hasPose) receivedState.current = true;
   const displayScene = props.client.readOnly || receivedState.current;
-  const continuous = props.renderContinuously !== false && (props.client.readOnly || running);
+  const continuous = props.renderContinuously !== false && (props.client.readOnly || running
+    || Boolean(props.preview && !props.preview.policyDriven && props.preview.points.length > 1 && !reducedMotion));
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
     if (element.current) observer.observe(element.current);
@@ -783,7 +565,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} axesElement={axesElement} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} axesElement={axesElement} reducedMotion={reducedMotion} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {displayScene && !props.compact && !props.capture && <PhysicalAxes element={axesElement} theme={theme} />}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}

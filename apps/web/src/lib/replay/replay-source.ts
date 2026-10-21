@@ -178,7 +178,9 @@ export class ReplaySource extends SessionClient {
       (this.cursor === 2 && this.records[this.cursor].message?.type === 'session.state')
     )) {
       const record = this.records[this.cursor++];
-      if (record.kind === 1) this.buffer.pushBinary(record.payload, record.atMs);
+      if (record.kind === 1) {
+        if (this.buffer.pushBinary(record.payload, record.atMs)) this.plans.advanceEpoch(this.buffer.epoch);
+      }
       else if (record.kind === 2) this.applyGlobalMessage(record.message!);
       else this.updatePlayback({ droppedFrames: this.playback.droppedFrames + (record.gap?.count ?? 0) });
     }

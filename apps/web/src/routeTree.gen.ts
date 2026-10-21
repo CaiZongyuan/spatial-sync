@@ -13,10 +13,13 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as AssetsRouteImport } from './routes/assets'
 import { Route as LiveRouteImport } from './routes/live'
+import { Route as PlansRouteImport } from './routes/plans'
 import { Route as RecordingsRouteImport } from './routes/recordings'
 import { Route as ScenesRouteImport } from './routes/scenes'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as AssetsIndexRouteImport } from './routes/assets.index'
+import { Route as PlansIndexRouteImport } from './routes/plans.index'
+import { Route as PlansPlanIdRouteImport } from './routes/plans.$planId'
 import { Route as ReplayRecordingIdRouteImport } from './routes/replay.$recordingId'
 import { Route as ResourcesGpuRouteImport } from './routes/resources.gpu'
 import { Route as ScenesIndexRouteImport } from './routes/scenes.index'
@@ -45,6 +48,11 @@ const LiveRoute = LiveRouteImport.update({
   path: '/live',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlansRoute = PlansRouteImport.update({
+  id: '/plans',
+  path: '/plans',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecordingsRoute = RecordingsRouteImport.update({
   id: '/recordings',
   path: '/recordings',
@@ -64,6 +72,16 @@ const AssetsIndexRoute = AssetsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AssetsRoute,
+} as any)
+const PlansIndexRoute = PlansIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PlansRoute,
+} as any)
+const PlansPlanIdRoute = PlansPlanIdRouteImport.update({
+  id: '/$planId',
+  path: '/$planId',
+  getParentRoute: () => PlansRoute,
 } as any)
 const ReplayRecordingIdRoute = ReplayRecordingIdRouteImport.update({
   id: '/replay/$recordingId',
@@ -106,13 +124,16 @@ export interface FileRoutesByFullPath {
   '/approvals': typeof ApprovalsRoute
   '/assets': typeof AssetsRouteWithChildren
   '/live': typeof LiveRoute
+  '/plans': typeof PlansRouteWithChildren
   '/recordings': typeof RecordingsRoute
   '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
+  '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets/': typeof AssetsIndexRoute
+  '/plans/': typeof PlansIndexRoute
   '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
@@ -123,10 +144,12 @@ export interface FileRoutesByTo {
   '/approvals': typeof ApprovalsRoute
   '/live': typeof LiveRoute
   '/recordings': typeof RecordingsRoute
+  '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets': typeof AssetsIndexRoute
+  '/plans': typeof PlansIndexRoute
   '/scenes': typeof ScenesIndexRoute
   '/sessions': typeof SessionsIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
@@ -138,13 +161,16 @@ export interface FileRoutesById {
   '/approvals': typeof ApprovalsRoute
   '/assets': typeof AssetsRouteWithChildren
   '/live': typeof LiveRoute
+  '/plans': typeof PlansRouteWithChildren
   '/recordings': typeof RecordingsRoute
   '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
+  '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets/': typeof AssetsIndexRoute
+  '/plans/': typeof PlansIndexRoute
   '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
@@ -157,13 +183,16 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/assets'
     | '/live'
+    | '/plans'
     | '/recordings'
     | '/scenes'
     | '/sessions'
+    | '/plans/$planId'
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/sessions/$sessionId'
     | '/assets/'
+    | '/plans/'
     | '/scenes/'
     | '/sessions/'
     | '/scenes/$name/$rev'
@@ -174,10 +203,12 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/live'
     | '/recordings'
+    | '/plans/$planId'
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/sessions/$sessionId'
     | '/assets'
+    | '/plans'
     | '/scenes'
     | '/sessions'
     | '/scenes/$name/$rev'
@@ -188,13 +219,16 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/assets'
     | '/live'
+    | '/plans'
     | '/recordings'
     | '/scenes'
     | '/sessions'
+    | '/plans/$planId'
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/sessions/$sessionId'
     | '/assets/'
+    | '/plans/'
     | '/scenes/'
     | '/sessions/'
     | '/scenes/$name/$rev'
@@ -206,6 +240,7 @@ export interface RootRouteChildren {
   ApprovalsRoute: typeof ApprovalsRoute
   AssetsRoute: typeof AssetsRouteWithChildren
   LiveRoute: typeof LiveRoute
+  PlansRoute: typeof PlansRouteWithChildren
   RecordingsRoute: typeof RecordingsRoute
   ScenesRoute: typeof ScenesRouteWithChildren
   SessionsRoute: typeof SessionsRouteWithChildren
@@ -243,6 +278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LiveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plans': {
+      id: '/plans'
+      path: '/plans'
+      fullPath: '/plans'
+      preLoaderRoute: typeof PlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recordings': {
       id: '/recordings'
       path: '/recordings'
@@ -270,6 +312,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/assets/'
       preLoaderRoute: typeof AssetsIndexRouteImport
       parentRoute: typeof AssetsRoute
+    }
+    '/plans/': {
+      id: '/plans/'
+      path: '/'
+      fullPath: '/plans/'
+      preLoaderRoute: typeof PlansIndexRouteImport
+      parentRoute: typeof PlansRoute
+    }
+    '/plans/$planId': {
+      id: '/plans/$planId'
+      path: '/$planId'
+      fullPath: '/plans/$planId'
+      preLoaderRoute: typeof PlansPlanIdRouteImport
+      parentRoute: typeof PlansRoute
     }
     '/replay/$recordingId': {
       id: '/replay/$recordingId'
@@ -336,6 +392,18 @@ const AssetsRouteChildren: AssetsRouteChildren = {
 const AssetsRouteWithChildren =
   AssetsRoute._addFileChildren(AssetsRouteChildren)
 
+interface PlansRouteChildren {
+  PlansPlanIdRoute: typeof PlansPlanIdRoute
+  PlansIndexRoute: typeof PlansIndexRoute
+}
+
+const PlansRouteChildren: PlansRouteChildren = {
+  PlansPlanIdRoute: PlansPlanIdRoute,
+  PlansIndexRoute: PlansIndexRoute,
+}
+
+const PlansRouteWithChildren = PlansRoute._addFileChildren(PlansRouteChildren)
+
 interface ScenesRouteChildren {
   ScenesIndexRoute: typeof ScenesIndexRoute
   ScenesNameRevRoute: typeof ScenesNameRevRoute
@@ -368,6 +436,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApprovalsRoute: ApprovalsRoute,
   AssetsRoute: AssetsRouteWithChildren,
   LiveRoute: LiveRoute,
+  PlansRoute: PlansRouteWithChildren,
   RecordingsRoute: RecordingsRoute,
   ScenesRoute: ScenesRouteWithChildren,
   SessionsRoute: SessionsRouteWithChildren,

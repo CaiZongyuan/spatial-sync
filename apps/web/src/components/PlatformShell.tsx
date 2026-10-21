@@ -24,6 +24,7 @@ const pages = [
   { to: '/live', label: 'Live', text: '实况', icon: 'live' },
   { to: '/assets', label: 'Assets', text: '素材库', icon: 'assets' },
   { to: '/scenes', label: 'Scenes', text: '场景库', icon: 'scenes' },
+  { to: '/plans', label: 'Plans', text: '计划', icon: 'plans' },
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
   { to: '/approvals', label: 'Approvals', text: '待审批', icon: 'approvals' },
   { to: '/sessions', label: 'Sessions', text: '会话', icon: 'sessions' },
@@ -58,7 +59,7 @@ export function PlatformShell() {
   }, [theme]);
   const current = replay ? pages.find(page => page.to === '/recordings')! :
     pages.find(page => page.to !== '/' && pathname.startsWith(page.to === '/resources/gpu' ? '/resources' : page.to)) ?? pages[0];
-  const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/') || /^\/scenes\/[^/]+\/[^/]+/.test(pathname) || /^\/assets\/[^/]+\/[^/]+\/[^/]+/.test(pathname);
+  const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/') || pathname.startsWith('/plans/') || /^\/scenes\/[^/]+\/[^/]+/.test(pathname) || /^\/assets\/[^/]+\/[^/]+\/[^/]+/.test(pathname);
   const detailId = pathname.startsWith('/assets/') ? `${pathname.split('/').slice(-3, -1).join('/')}@${pathname.split('/').at(-1)}` : pathname.startsWith('/scenes/') ? pathname.split('/').slice(-2).join('@') : pathname.split('/').at(-1) ?? '';
   return <div className={`platform-shell ${collapsed ? 'is-collapsed' : ''}`}>
     <a className="skip-link" href="#page-content">Skip to content</a>

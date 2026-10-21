@@ -4,6 +4,7 @@ const paths = {
   resources: 'M5 6h14v12H5z M9 2v4 M15 2v4 M9 18v4 M15 18v4 M1 10h4 M1 14h4 M19 10h4 M19 14h4 M9 10h6v4H9z',
   sessions: 'M4 4h16v16H4z M4 9h16 M9 9v11',
   scenes: 'M12 3l9 5-9 5-9-5z M3 8v9l9 5 9-5V8 M12 13v9',
+  plans: 'M10 5h11 M10 12h11 M10 19h11 M3 5l2 2 3-4 M3 12l2 2 3-4 M3 19h4',
   assets: 'M12 3l9 5v9l-9 5-9-5V8z M3 8l9 5 9-5 M12 13v9',
   recordings: 'M4 4h16v16H4z M10 8l6 4-6 4z',
   approvals: 'M8 4h12v17H4V4h4 M8 2h8v4H8z M8 13l3 3 6-6',
