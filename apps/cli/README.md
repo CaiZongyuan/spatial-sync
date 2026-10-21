@@ -46,6 +46,15 @@ launchable version when no revision is supplied, while show reads the latest
 version, including validation failures. Launch defaults to a supported package
 source and switches subsequent MCP device calls to the new active session.
 
+Fixed embodied evaluations use `lw eval run <program> --suite suite/name@revision`.
+The command returns an evaluation ID; inspect it with `lw eval show <id>` and read
+the platform-written results with `lw score ls --suite <suite>`. `lw suite ls`
+and `lw suite show` expose public train metadata only. During an evaluation,
+`scene launch` can return a queued `requestId`; use `lw session-request show|cancel`
+to inspect or cancel it. It does not become the active CLI session until it starts.
+See [embodied evaluations](../../docs/EVALUATIONS.md) for package format, privacy,
+queue behavior and the GPU-free example.
+
 The migrated legacy commands are `ls`, `show`, `cancel`, `approve` and `rec ls`. Other
 existing commands retain their adapters, including CLI property extraction,
 action parameters, waits and simulation subcommands. The eight published MCP

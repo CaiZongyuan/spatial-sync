@@ -1,4 +1,4 @@
-import { request, type SessionSummary } from './api';
+import { request, type SessionLaunch } from './api';
 import { readRecording, type Recording } from './replay/reader';
 
 export type SceneSource = 'synthetic' | 'newton';
@@ -69,7 +69,7 @@ export const getSceneDetail = async (name: string, rev: string, source?: SceneSo
   const value = await request<SceneDetail>(`/library/scenes/${encodeURIComponent(name)}/${encodeURIComponent(rev)}${source ? `?source=${source}` : ''}`, { signal });
   return { ...value, recordings: value.recordings.map(readRecording) };
 };
-export const launchScene = (sceneVersion: string, source: SceneSource) => request<SessionSummary>('/sessions', {
+export const launchScene = (sceneVersion: string, source: SceneSource) => request<SessionLaunch>('/sessions', {
   method: 'POST', body: JSON.stringify({ sceneVersion, source }),
 });
 export const sourceLabel = (source: SceneSource) => source === 'synthetic' ? 'Synthetic · 无需 GPU' : 'Newton';

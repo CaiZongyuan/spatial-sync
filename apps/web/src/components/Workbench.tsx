@@ -156,7 +156,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
   }, [hidden, manifest]);
   const pending = state.pending.length > 0 || operationPending;
   const connected = state.connection === 'connected';
-  const canControl = !client.readOnly && connected && state.role === 'operator';
+  const canControl = !client.readOnly && !state.evaluationId && connected && state.role === 'operator';
   const info = useSyncExternalStore(
     client.info.subscribeMetadata,
     client.info.getMetadata,
@@ -198,11 +198,12 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <span className="source-pill">
             {manifest?.source.kind ?? (state.informationOnly ? 'live' : 'source')}
           </span>
+          {state.evaluationId && <span className="source-pill" role="status">{active ? '评估中' : '评估回合'} · 只读</span>}
           <span className="observer-count">{Array.isArray(state.stats?.clients) ? state.stats.clients.length : '—'} 位观察者</span>
             <Link to={client.readOnly ? '/recordings' : '/sessions'} className="subtle-link" aria-label={client.readOnly ? 'Recordings' : 'Sessions'}>
             {client.readOnly ? '录制列表' : '会话列表'}<Icon name="external" />
           </Link>
-          {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
+          {!client.readOnly && !state.evaluationId && <NewtonViewerButton sessionId={sessionId}
             source={manifest?.source.kind ?? ''} state={state.sessionState} sceneRevision={manifest?.sceneRevision} />}
           {!client.readOnly && <button aria-label="Session device telemetry" aria-pressed={search.view === 'devices'}
             onClick={() => void navigate({ to: '/sessions/$sessionId', params: { sessionId },
@@ -211,7 +212,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           </button>}
           <button
             aria-label="Close session"
-            disabled={client.readOnly || pending || state.role !== 'operator'}
+            disabled={client.readOnly || Boolean(state.evaluationId) || pending || state.role !== 'operator'}
             onClick={async () => {
               try {
                 await request<void>(
@@ -261,7 +262,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           </button>
           <button
             aria-label="Reload scene"
-            disabled={pending || !active || state.role !== 'operator'}
+            disabled={Boolean(state.evaluationId) || pending || !active || state.role !== 'operator'}
             onClick={() => void lifecycle('reload')}
           >
             <Icon name="reload" />重新载入场景
@@ -269,7 +270,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           {state.sessionState === 'FAILED' && (
             <button
               aria-label="Restart source"
-              disabled={pending || state.role !== 'operator'}
+              disabled={Boolean(state.evaluationId) || pending || state.role !== 'operator'}
               onClick={() => void lifecycle('restart')}
             >
               <Icon name="reload" />重启物理源

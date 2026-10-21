@@ -104,6 +104,55 @@ def description_arguments(default, metavar="id"):
 
 COMMANDS = (
     Command(
+        path=("suite", "ls"), help="List public train metadata for pinned embodied suites.",
+        method="suites_list", output_type=list[dict[str, Any]], mcp_name="suite_list",
+    ),
+    Command(
+        path=("suite", "show"), help="Describe a pinned suite without private seeds or grading.",
+        method="suite_show", arguments=(
+            Argument("suite", ("suite/name@revision",), str, "Exact suite version"),
+        ),
+        mcp_name="suite_show",
+    ),
+    Command(
+        path=("eval", "run"), help="Queue a fixed train suite for an existing scene-bound program.",
+        method="evaluation_run", arguments=(
+            Argument("subject", ("program",), str, "Existing program ID, such as robot_arm.virtual"),
+            Argument("suite", ("--suite",), str, "Exact suite/name@revision"),
+        ), mcp_name="evaluation_run", actor=True,
+    ),
+    Command(
+        path=("eval", "show"), help="Read evaluation progress, recording IDs and its final score.",
+        method="evaluation_show", arguments=(Argument("id", ("id",), str, "Evaluation ID"),),
+        mcp_name="evaluation_show",
+    ),
+    Command(
+        path=("eval", "ls"), help="List public train evaluations.", method="evaluations_list",
+        output_type=list[dict[str, Any]], mcp_name="evaluation_list",
+    ),
+    Command(
+        path=("eval", "cancel"), help="Cancel a queued or running evaluation and close its owned session.",
+        method="evaluation_cancel", arguments=(Argument("id", ("id",), str, "Evaluation ID"),),
+        mcp_name="evaluation_cancel", actor=True,
+    ),
+    Command(
+        path=("score", "ls"), help="Read the platform-written train scoreboard for an exact suite.",
+        method="score_list", arguments=(
+            Argument("suite", ("--suite",), str, "Exact suite/name@revision"),
+            Argument("subject", ("--subject",), str | None, "Program ID filter", None),
+        ), output_type=list[dict[str, Any]], mcp_name="score_list",
+    ),
+    Command(
+        path=("session-request", "show"), help="Read an explicitly queued interactive launch request.",
+        method="session_request_show", arguments=(Argument("id", ("id",), str, "Launch request ID"),),
+        mcp_name="session_request_show",
+    ),
+    Command(
+        path=("session-request", "cancel"), help="Cancel an interactive launch that has not started.",
+        method="session_request_cancel", arguments=(Argument("id", ("id",), str, "Launch request ID"),),
+        mcp_name="session_request_cancel", actor=True,
+    ),
+    Command(
         path=("inbox",), help="Read attention messages and continue with a persistent opaque cursor.",
         method="inbox_poll", mcp_name="inbox_poll", arguments=(
             Argument("after", ("--since",), str | None, "Cursor from the previous inbox response", None),

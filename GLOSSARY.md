@@ -146,8 +146,12 @@ A versioned, trained controller produced by a training Job for one Task, which a
 _Avoid_: Model, checkpoint (a training-time snapshot), weights
 
 **Evaluation** (评估):
-A recorded series of episodes that runs a Policy on the platform against its Task's success condition; the platform's result is the one that counts.
+A recorded series of episodes that runs a Policy or Device Program on the platform against its Task's success condition; the platform's result is the one that counts.
 _Avoid_: Benchmark, play, test
+
+**Session Request** (会话启动请求):
+An accepted intent to start an interactive Session when the platform's single session slot becomes available. It can wait or be cancelled before a Session is handed over.
+_Avoid_: Session (the running or historical laboratory context)
 
 ## Agents and people
 

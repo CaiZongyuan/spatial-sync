@@ -1,0 +1,16 @@
+id: suite/lab-demo-pick-place
+title: Synthetic taught pick and place
+layer: embodied
+scene: lab-demo@3
+sceneContentHash: 224e5a762fb296e3f97468debdcde106e797274100547f2dd88cb17678b83b9a
+source: synthetic
+episodes:
+  - id: train-one
+    split: train
+    params: {from: rack.A1, to: centrifuge.slot1}
+  - id: train-two
+    split: train
+    params: {from: rack.A1, to: centrifuge.slot1}
+  - id: held-out-example
+    split: test
+    params: {from: rack.A1, to: centrifuge.slot1}
