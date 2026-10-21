@@ -1,3 +1,5 @@
 packages:
   - apps/*
   - packages/*
+  # The project site keeps its own lockfile so its dependencies never touch the platform's graph.
+  - '!apps/site'

@@ -147,8 +147,9 @@ Foundation integration reserves API8009/web5189. Operations integration reserves
 API8010/web5190 while the older user session remains active and protected.
 Developer ports8011/8012/8013
 and web5191 are separate. The project site uses 5192 for `pnpm site:dev` and
-5193 for its build preview; `pnpm site:build` is checked by the Site workflow,
-not the GPU-free gate. Local evidence lives in `.scratch/lab-foundation`;
+5193 for its build preview. It has its own lockfile outside the workspace:
+`pnpm site:install`, then `pnpm site:build`, which the Site workflow checks
+outside the GPU-free gate. Local evidence lives in `.scratch/lab-foundation`;
 prior process evidence is retained in Git history.
 
 Close owned sessions, stop owned processes and verify listeners and Runner

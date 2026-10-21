@@ -274,7 +274,8 @@ instructions and condition hints, and its client name is recorded as its actor.
 ## Project site
 
 `apps/site` is the VitePress site for Lab World, published to GitHub Pages by
-the Site workflow. Run `pnpm site:dev` and open http://127.0.0.1:5192/spatial-sync/;
+the Site workflow. It keeps its own lockfile outside the pnpm workspace, so run
+`pnpm site:install` once, then `pnpm site:dev`, and open http://127.0.0.1:5192/spatial-sync/;
 `pnpm site:build` writes `apps/site/.vitepress/dist`. A blog post is a Markdown
 file in `apps/site/blog/` whose frontmatter sets `title`, `date`, `description`
 and, optionally, `author` and `cover`; the blog index and the home page list it.
