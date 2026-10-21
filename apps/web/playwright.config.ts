@@ -27,7 +27,9 @@ export default defineConfig({
   webServer: process.env.SPATIAL_WEB_URL
     ? undefined
     : {
-        command: 'pnpm exec vite --host 127.0.0.1 --port 5184',
+        command: process.env.SPATIAL_E2E_WEB_MODE === 'preview'
+          ? 'pnpm exec vite preview --host 127.0.0.1 --port 5184'
+          : 'pnpm exec vite --host 127.0.0.1 --port 5184',
         url: 'http://127.0.0.1:5184',
         reuseExistingServer: false,
         timeout: 30_000,

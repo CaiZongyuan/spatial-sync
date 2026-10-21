@@ -322,13 +322,15 @@ test('native End applies the final reliable record at a fractional millisecond d
   const src = new URL('/fixture/fractional/recording.json', baseURL).href;
   await page.goto(`/replay/fractional?src=${encodeURIComponent(src)}`);
   await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
-  await page.evaluate(async () => {
-    const moduleUrl = performance.getEntriesByType('resource').map(entry => entry.name)
-      .find(url => url.includes('/src/lib/replay/replay-source.ts'))!;
-    const { ReplaySource } = await import(/* @vite-ignore */ moduleUrl);
-    const original = ReplaySource.prototype.seek;
+  await page.evaluate(() => {
+    const source = window.__spatialDebug!.getReplaySource() as ReplaySource | undefined;
+    if (!source?.readOnly || typeof source.getPlayback !== 'function'
+      || !source.documentUrl.endsWith('/fixture/fractional/recording.json'))
+      throw new Error('Expected the active read-only fractional ReplaySource');
+    const prototype = Object.getPrototypeOf(source) as ReplaySource;
+    const original = prototype.seek;
     (window as unknown as { __tailReceipt?: unknown }).__tailReceipt = undefined;
-    ReplaySource.prototype.seek = async function(this: ReplaySource, position: number) {
+    prototype.seek = async function(this: ReplaySource, position: number) {
       (window as unknown as { __clearReplayCache: () => void }).__clearReplayCache = () => {
         (this as unknown as { segments: Map<number, unknown> }).segments.clear();
       };
