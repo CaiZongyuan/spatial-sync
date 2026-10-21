@@ -1,6 +1,7 @@
 """Public recording identity survives writing, discovery and recovery across formats."""
 
 import json
+import shutil
 from hashlib import sha256
 
 import pytest
@@ -12,6 +13,7 @@ from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.info.log import read_segment
 from packages.info.recording import recording_metadata
+from packages.transport import FrameCodec
 
 
 def package_digest(directory):
@@ -164,6 +166,48 @@ def test_v1_projection_does_not_rewrite_original_bytes(tmp_path):
         assert listed["sceneVersion"] == "lab-demo@1" and listed["sceneContentHash"] is None
         assert client.get("/recordings/session-format/recording.json").content == original
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("fixture_name", ["v1", "v2", "v2-grasp-height"])
+def test_public_reads_preserve_archived_config_and_separate_tcp_from_body_bottom(tmp_path, fixture_name):
+    fixture = ROOT / "tests/fixtures/recordings" / fixture_name
+    metadata = json.loads((fixture / "recording.json").read_bytes())
+    directory = tmp_path / metadata["sessionId"]
+    shutil.copytree(fixture, directory)
+    original = {path.name: path.read_bytes() for path in directory.iterdir() if path.is_file()}
+    with TestClient(create_app(Settings(recordings_root=tmp_path))) as client:
+        listed = client.get("/api/v1/recordings").json()
+        assert [row["sessionId"] for row in listed] == [metadata["sessionId"]]
+        base = "/recordings/" + metadata["sessionId"] + "/"
+        assert client.get(base + "recording.json").content == original["recording.json"]
+        catalog = client.get(base + "catalog.json").json()
+        golden = json.loads(original["expected.json"])
+        config = catalog["entities"][golden["robotKey"]]["config"]
+        if fixture_name == "v2-grasp-height":
+            assert config["graspHeightM"] == .020
+        else:
+            assert "graspHeightM" not in config  # Never backfill old recordings with current defaults.
+        manifest = client.get(base + "manifest.json").json()
+        segment = client.get(base + metadata["segments"][0]["file"]).content
+        assert segment == original[metadata["segments"][0]["file"]]
+        records = read_segment(segment)
+        assert not records.truncated
+        if fixture_name == "v2-grasp-height":
+            codec = FrameCodec(metadata["sessionId"], manifest["sceneRevision"],
+                               manifest["revisionNumericId"])
+            tube_stream = next(node["streamId"] for node in manifest["nodes"]
+                               if node["entityKey"] == golden["tubeKey"])
+            frames = [codec.decode(record.payload) for record in records.records if record.kind == 1]
+            states = [json.loads(record.payload) for record in records.records if record.kind == 2
+                      and json.loads(record.payload).get("type") == "entity.snapshot"]
+            assert len(frames) == len(states) == len(golden["samples"]) == 2
+            for frame, state, expected in zip(frames, states, golden["samples"], strict=True):
+                tube = next(row for row in frame.poses if row[0] == tube_stream)
+                robot = next(row for row in state["entities"] if row["key"] == golden["robotKey"])
+                assert list(tube[1:4]) == expected["tubePose"]["p"]
+                assert robot["values"]["tcpPose"] == expected["tcpPose"]
+                assert robot["values"]["tcpPose"][2] - tube[3] == pytest.approx(.020, abs=1e-6)
+    assert {path.name: path.read_bytes() for path in directory.iterdir() if path.is_file()} == original
 
 
 def test_live_v2_keeps_explicit_null_identity_and_optional_index_reference(tmp_path):

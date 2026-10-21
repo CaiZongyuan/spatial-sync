@@ -4,6 +4,8 @@ After lw moveJoints, use --capture rack.A1 --pose grasp --output locations.yaml.
 The runtime never uses IK. Write results outside published library packages.
 For another layout, select --scene-version name@rev and optionally --robot key;
 the tool reads its pinned FR3, base, effective height and existing bottom Sites.
+Selected offline teaching keeps each existing grasp orientation. Selected live
+capture requires a paused sample and compares its physical TCP with offline FK.
 """
 
 import argparse
@@ -69,11 +71,12 @@ class Teacher:
                 index += 1
         return transform
 
-    def solve(self, position, initial=HOME):
+    def solve(self, position, initial=HOME, *, orientation=None):
         from scipy.optimize import least_squares
         from scipy.spatial.transform import Rotation
 
-        target = Rotation.from_euler("xyz", [np.pi, 0, 0]).as_matrix()
+        target = (Rotation.from_euler("xyz", [np.pi, 0, 0]).as_matrix()
+                  if orientation is None else np.asarray(orientation))
 
         def error(q):
             actual = self.fk(q)
@@ -102,6 +105,7 @@ class TeachingScene:
     bottom_sites: dict
     identity: dict
     protected_roots: tuple[Path, ...]
+    calibration: dict | None = None
 
 
 def select_scene(selector, robot=None, library_root=None):
@@ -161,7 +165,62 @@ def select_scene(selector, robot=None, library_root=None):
                           "robot": binding["key"], "assetId": calibration["assetId"],
                           "assetContentHash": calibration["assetContentHash"],
                           "physicalTcpSite": calibration["tcpSite"], "baseWorldMatrix": base.tolist()},
-                         tuple(library.roots.values()))
+                         tuple(library.roots.values()), calibration)
+
+
+def measured_grasp(selection, location, joints, manifest, snapshot):
+    """Compare offline FK to the real model's calibrated TCP in one spatial sample."""
+    from packages.library.posture import PostureEndpoint, require_calibration
+
+    poses = {row[0]: {"p": row[1:4], "q": row[4:]} for row in snapshot["poses"]}
+    bodies = {node["entityKey"]: node["streamId"] for node in manifest["nodes"] if node["kind"] == "body"}
+
+    def site_pose(key):
+        sites = [site for site in manifest["sites"] if site["entityKey"] == key]
+        if len(sites) != 1:
+            raise ValueError("Measured Site is missing or ambiguous: " + key)
+        site = sites[0]
+        return (site, compose_pose(poses[bodies[site["parentBodyKey"]]], site["localPose"])
+                if site.get("parentBodyKey") else site["localPose"])
+
+    tcp_site, physical = site_pose(selection.identity["physicalTcpSite"])
+    expected = selection.calibration
+    if not expected:
+        raise ValueError("Teaching has no pinned physical calibration")
+    observed = expected | {"siteOwner": tcp_site.get("parentBodyKey"),
+                           "handToTcpPose": [*tcp_site["localPose"]["p"], *tcp_site["localPose"]["q"]]}
+    height = selection.config.get("graspHeightM", 0.0)
+    endpoint = PostureEndpoint("tcpSite", selection.identity["physicalTcpSite"], height, True)
+    # Manifest Site transforms are extracted from the model's float32 storage.
+    require_calibration(endpoint, expected, observed, pose_storage="float32")
+    _, bottom = site_pose(location["site"])
+    nominal = nominal_grasp_target(bottom["p"], height)
+    offline = selection.teacher.fk(joints)[:3, 3]
+    difference = float(np.linalg.norm(offline - physical["p"]))
+    # PoseMessage serializes body positions to six decimal places and quaternion
+    # components to seven. If quaternion component error has norm e, normalizing
+    # changes its norm by at most 2e/(|q|-e); rotating a point adds <=2|point| times
+    # that error. TCP local position has one separately measured float32 rounding.
+    # This bounds representation only, not unknown Newton FK-chain arithmetic.
+    body = poses[bodies[tcp_site["parentBodyKey"]]]
+    quaternion_error = np.sqrt(4) * .5e-7
+    quaternion_norm = np.linalg.norm(body["q"])
+    local = np.asarray(expected["handToTcpPose"][:3])
+    representation = (np.sqrt(3) * .5e-6
+                      + 4 * quaternion_error * np.linalg.norm(local)
+                      / (quaternion_norm - quaternion_error)
+                      + np.linalg.norm(local - local.astype(np.float32).astype(float)))
+    if difference > representation:
+        raise ValueError(f"Offline teaching FK differs from actual model TCP by {difference:.9f}m; "
+                         f"known representation bound is {representation:.9f}m; "
+                         "actual model/FK control required before capture")
+    return {"bottomSiteWorld": bottom["p"], "graspHeightM": height,
+            "graspTargetWorld": list(nominal), "physicalTcpWorld": physical["p"],
+            "tcpFk": offline.tolist(), "teacherModelErrorM": difference,
+            "snapshotRepresentationBoundM": float(representation),
+            "teacherModelComparison": "within-snapshot-representation",
+            "tcpErrorM": float(np.linalg.norm(np.asarray(physical["p"]) - nominal)),
+            "targetDefinition": "tube-grasp-height/1"}
 
 
 def teach_selected(selection):
@@ -171,8 +230,10 @@ def teach_selected(selection):
     for name, location in document["locations"].items():
         bottom = selection.bottom_sites[name]
         target = nominal_grasp_target(bottom, height)
-        grasp = selection.teacher.solve(np.array(target), location.get("grasp", HOME))
-        approach = selection.teacher.solve(np.array(target) + [0, 0, .15], grasp)
+        seed = location.get("grasp", HOME)
+        orientation = selection.teacher.fk(seed)[:3, :3]
+        grasp = selection.teacher.solve(np.array(target), seed, orientation=orientation)
+        approach = selection.teacher.solve(np.array(target) + [0, 0, .15], grasp, orientation=orientation)
         location.update(grasp=grasp, approach=approach)
         tcp = selection.teacher.fk(grasp)[:3, 3]
         evidence.append(selection.identity | {"location": name, "bottomSiteWorld": bottom,
@@ -256,6 +317,8 @@ def capture(args):
             raise ValueError("FR3 teaching session must match the selected exact Newton scene version")
         if selection and summary.get("sceneContentHash") != selection.identity["sceneContentHash"]:
             raise ValueError("Teaching session scene content differs from the selected immutable package")
+        if selection and summary.get("state") != "PAUSED":
+            raise ValueError("Pause the selected teaching session before measuring joints and model TCP")
         response = client.get(route + "/state", params={"keys": robot})
         response.raise_for_status()
         state = response.json()["entities"][robot]
@@ -274,18 +337,32 @@ def capture(args):
         manifest = manifest.json()
         snapshot = client.get(route + "/snapshot")
         snapshot.raise_for_status()
-        poses = {row[0]: {"p": row[1:4], "q": row[4:]} for row in snapshot.json()["poses"]}
-        bodies = {node["entityKey"]: node["streamId"] for node in manifest["nodes"] if node["kind"] == "body"}
-        site = next(site for site in manifest["sites"] if site["entityKey"] == location["site"])
-        world = (
-            compose_pose(poses[bodies[site["parentBodyKey"]]], site["localPose"])
-            if site.get("parentBodyKey")
-            else site["localPose"]
-        )
-        height = selection.config.get("graspHeightM", 0.0) if selection else 0.0
-        nominal = nominal_grasp_target(world["p"], height)
-        tcp = (selection.teacher if selection else Teacher()).fk(joints)[:3, 3]
-        distance = float(np.linalg.norm(tcp - nominal))
+        snapshot = snapshot.json()
+        if selection:
+            final = client.get(route)
+            final.raise_for_status()
+            final = final.json()
+            clocks = ("epoch", "simTime", "sceneRevision")
+            if (final.get("state") != "PAUSED"
+                    or any(summary.get(field) != snapshot.get(field)
+                           or final.get(field) != snapshot.get(field)
+                           for field in clocks)
+                    or manifest["sceneRevision"] != snapshot["sceneRevision"]):
+                raise ValueError("Teaching sample changed while reading; pause and capture again")
+            measurement = measured_grasp(selection, location, joints, manifest, snapshot)
+        else:
+            poses = {row[0]: {"p": row[1:4], "q": row[4:]} for row in snapshot["poses"]}
+            bodies = {node["entityKey"]: node["streamId"] for node in manifest["nodes"]
+                      if node["kind"] == "body"}
+            site = next(site for site in manifest["sites"] if site["entityKey"] == location["site"])
+            world = (compose_pose(poses[bodies[site["parentBodyKey"]]], site["localPose"])
+                     if site.get("parentBodyKey") else site["localPose"])
+            tcp = Teacher().fk(joints)[:3, 3]
+            measurement = {"tcpFk": tcp.tolist(), "bottomSiteWorld": world["p"], "graspHeightM": 0.0,
+                           "graspTargetWorld": world["p"], "physicalTcpWorld": tcp.tolist(),
+                           "tcpErrorM": float(np.linalg.norm(tcp - world["p"])),
+                           "targetDefinition": "tube-grasp-height/1"}
+        distance = measurement["tcpErrorM"]
         location[args.pose] = list(joints)
         write_locations(target, document, selection.protected_roots if selection else ())
         warning = args.pose == "grasp" and distance > 0.01
@@ -299,18 +376,11 @@ def capture(args):
             "sourceRev": state["rev"],
             "sourceMeta": state.get("meta", {}).get("jointPositions"),
             "output": str(target.resolve()),
-            "tcpFk": tcp.tolist(),
-            "siteWorld": world["p"],
-            "bottomSiteWorld": world["p"],
-            "graspHeightM": height,
-            "graspTargetWorld": list(nominal),
-            "physicalTcpWorld": tcp.tolist(),
-            "targetDefinition": "tube-grasp-height/1",
+            "siteWorld": measurement["bottomSiteWorld"],
             "inputIdentity": selection.identity if selection else {"sceneVersion": expected_version},
-            "tcpErrorM": distance,
             "graspDistanceWarning": warning,
             "physicsImported": "newton" in sys.modules or "warp" in sys.modules,
-        }
+        } | measurement
 
 
 if __name__ == "__main__":

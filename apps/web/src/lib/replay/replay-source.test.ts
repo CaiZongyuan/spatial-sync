@@ -65,6 +65,35 @@ it.each([1, 2])('reconstructs independent states and poses from the published v%
   expect(() => source.action(golden.robotKey, 'home', {})).toThrow(/read-only/);
 });
 
+it('preserves nonzero height, physical TCP and tube bottom from the public writer archive', async () => {
+  const directory = fileURLToPath(new URL('../../../../../tests/fixtures/recordings/v2-grasp-height/', import.meta.url));
+  const golden = JSON.parse(readFileSync(directory + '/expected.json', 'utf8'));
+  const urls: string[] = [];
+  vi.stubGlobal('location', { href: 'https://example.org/replay/grasp-height' });
+  const webSocket = vi.fn();
+  vi.stubGlobal('WebSocket', webSocket);
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    urls.push(url);
+    const name = new URL(url).pathname.split('/grasp-height/')[1];
+    return new Response(new Uint8Array(readFileSync(directory + '/' + name)));
+  }));
+  source = new ReplaySource('grasp-height', 'https://example.org/files/grasp-height/recording.json');
+  await source.start();
+  expect(source.info.getMetadata().catalog?.entities[golden.robotKey].config.graspHeightM).toBe(.020);
+  for (const sample of golden.samples) {
+    await source.seek(sample.timeMs);
+    expect(source.buffer.latestSample?.seq).toBe(sample.seq);
+    expect(source.buffer.readLatest(golden.tubeKey)).toEqual(sample.tubePose);
+    const values = source.info.getEntity(golden.robotKey)?.values;
+    expect(values?.tcpPose).toEqual(sample.tcpPose);
+    expect(values?.jointPositions).toEqual(sample.robotJoints);
+    expect((values?.tcpPose as number[])[2] - sample.tubePose.p[2]).toBeCloseTo(.020, 6);
+  }
+  expect(webSocket).not.toHaveBeenCalled();
+  expect(urls.every(url => url.startsWith('https://example.org/files/grasp-height/'))).toBe(true);
+  expect(() => source.action(golden.robotKey, 'pick', { location: 'rack.A1' })).toThrow(/read-only/);
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
