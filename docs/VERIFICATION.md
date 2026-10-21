@@ -45,11 +45,14 @@ under the same environment, workload and measurement boundary; use
 `check-benchmark` to assess the comparison. #70 tracks the Windows difference
 and does not block I5 or another ticket. Record the I5 MCP journey on Linux.
 
-The I5 runner is one command. It starts its own Newton-capable API and web
+Run the I5 runner on Linux/WSL2 with the frozen simulation/USD extras, installed
+web dependencies and Playwright Chromium, and an authenticated Claude Code CLI
+on `PATH`. Its process-group cleanup requires POSIX. The runner is one command.
+It starts its own Newton-capable API and web
 server on fresh roots under a timestamped output directory, then gives Claude
 Code an empty working directory, no built-in tools and only the `lab` MCP server:
 
-```powershell
+```bash
 uv run --no-sync python tools/agent_journey.py
 ```
 
