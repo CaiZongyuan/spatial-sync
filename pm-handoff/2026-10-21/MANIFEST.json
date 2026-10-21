@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "snapshotMain": "500d9ed8ff9bf37df385e7bde83c679dd1270baa",
+  "purpose": "Complete PM handoff documents, supporting reports and committed frozen source candidates",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1142,
+      "sha256": "67f7d06bcd5de543feb5eb27ba8aa55f43d5b7aa5410339589162a9c5c533528"
+    },
+    {
+      "path": "source/branches.json",
+      "bytes": 1184,
+      "sha256": "2ff272e84585a9ee688ffa0e7d0c07b4ee8031920ee4fabfe92b65e59499cb9a"
+    },
+    {
+      "path": "source/bundle-verify.txt",
+      "bytes": 683,
+      "sha256": "350ff52acb581e160686b8989371d59027ec9852df4fd84f6090bf8fda86c25b"
+    },
+    {
+      "path": "source/frozen-candidates.bundle",
+      "bytes": 100965,
+      "sha256": "0aa127816b8c45b2d238a4510c8c280c825fa73cd030a5718542c8c22041888c"
+    },
+    {
+      "path": "source/issue91.json",
+      "bytes": 2265,
+      "sha256": "3512532828c9a122104e1d2d976b636c7767f731208c5774f9c53d4b0816ed14"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/HANDOFF-RECEIPT.json",
+      "bytes": 845,
+      "sha256": "ea2dbc81a5540caff02332676994c88eea83be0caeaf122b943cc2520e8196da"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/HANDOFF.md",
+      "bytes": 20732,
+      "sha256": "6eca3e4914df8ebde2742ce56b989ca1cef52b438f033d36cc9ccc02348653ae"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/NEXT_SESSION.md",
+      "bytes": 1581,
+      "sha256": "3357ce21aac8722d8ae9423982f699511f954bbf76f5ab2acf8865edc7f2bd32"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/archive-receipt.json",
+      "bytes": 841,
+      "sha256": "476223faf00b0e859047544b223e6fbe18268ff19c6e45bda028de003683c038"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/handoff-publication.json",
+      "bytes": 517,
+      "sha256": "0ed37fb3ed1ead7c0068b9fddd4b7ed6502abdcaa971a493f46298f2096c0a40"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/issue2-body-corrected.md",
+      "bytes": 4031,
+      "sha256": "afdfc39dc6c74767871b6956061f3687ef81004afb1f907864a6122c93bb570e"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/issue2-handoff-comment.md",
+      "bytes": 2952,
+      "sha256": "564c0496f642dfc1d30838bf1993b2e636afeaa72d183673ed3a9e67d70a949e"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/issue2-handoff-comment.md.posting.json",
+      "bytes": 167,
+      "sha256": "2199ea718a48434f4b6e7b8d34b1d61914a4168426d4ec5bb81b7b183b5e056c"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/issue83-handoff-comment.md",
+      "bytes": 1269,
+      "sha256": "ede51afde20feec735d0dbd9a7f2c129dc3e4f5ffdd975fed51f522aaa5a7ea1"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/issue83-handoff-comment.md.posting.json",
+      "bytes": 171,
+      "sha256": "f82e9319e1477ea52b0ef94007faa220b730731292ba728404496f6dc501f698"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/legacy/_checkpoint_next.md",
+      "bytes": 531,
+      "sha256": "d1842224978d6f23934505dd88037bc73505bf37c3822800c331416555afe9ac"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/legacy/checkpoint.md",
+      "bytes": 26510,
+      "sha256": "901b71712e67bd257a93218a963933371f02aa3afc71c3d3b8325a42e571c8d8"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/legacy/continuation.md",
+      "bytes": 104834,
+      "sha256": "febd0f0b2cd13998ab2ad4b2e595250cfebc57599dbcd901e8ac1eaa1bb5f9df"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/open-dependencies.json",
+      "bytes": 10262,
+      "sha256": "ba0c86903c8d33c6ad62bff407f298751bacaa096bae5c83a90b13f72eefcee7"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/prd-subissues.json",
+      "bytes": 525043,
+      "sha256": "90a9ca7dbcc11285ff66d341de5bd4a0afff5a823934be641358ebb8aa782855"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/handoff-2026-10-21/worktrees.json",
+      "bytes": 1940,
+      "sha256": "b041ed6cb0648d87e8aca1ac5204a49923ed8d6def372b1a389ae74a340ebf32"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-18-grasp-height/progress-source-20261020.md",
+      "bytes": 902,
+      "sha256": "d35476440f37c86afaaa98d5dfc471136e0dbff2394a89e882d1671d6a4e088f"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-18/GEOMETRY_DECISION.md",
+      "bytes": 12869,
+      "sha256": "26a0078d56540d98210a0dccfe46beaedc3298e0bd7ab4a04cfa0d1898a08322"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-18/GRASP_FRAME_PROPOSAL.md",
+      "bytes": 15149,
+      "sha256": "5b52b39439ba2b09dfc63a9436382a648f8a7fb5da2de1227fcb7c543f57966f"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-18/MECHANICAL_PROPOSAL.md",
+      "bytes": 16600,
+      "sha256": "07efca6b29fcda39f51d8f14e4618547cb0e9e0cb790508640a19280ae94270a"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-18/NEXT_PROBES.md",
+      "bytes": 7047,
+      "sha256": "a022dfd8cfbfc127aab67603bdafde85cf04ca058c83e2348a7255d429afd004"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-18/PREP.md",
+      "bytes": 16740,
+      "sha256": "ee34adc5f7d7122190c65d492c8b360d50527dccd33e46c9de2fc00406c3638e"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-26/CHECKPOINT.md",
+      "bytes": 3271,
+      "sha256": "aa251431b2428bc93325211cce16f9fcf40e04cba3d0398dd8a347491a184f8a"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-26/REVIEW-REPAIRS.md",
+      "bytes": 2039,
+      "sha256": "9231fb432cae1400096412b9b34dff787964a000e79c03a515d102a2ec6db154"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-26/review-spec-final.md",
+      "bytes": 2033,
+      "sha256": "0db6abce8147f2df02f06d44053b522e726ee8fa8314a440501fda38b8af4baf"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-26/review-standards-final.md",
+      "bytes": 1805,
+      "sha256": "5c831fb9b0be47e4a5e25bb1ca6710f0eb65820bf8fcf6bd5ac421cf935cd1e5"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-27/CHECKPOINT.md",
+      "bytes": 4690,
+      "sha256": "45dc4e24be04b6af009a8635d69e66b48e85c41506e51fc45944ef64f1442712"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-27/IMPACT.md",
+      "bytes": 5615,
+      "sha256": "6b7da682f9dee44a4c908b23e2151b7890065b91f2822a2f788a6e960255a879"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-29-round2/EXECUTION_REQUEST.json",
+      "bytes": 7098,
+      "sha256": "5f6e3f274c8fd672e29684e8df108dedca9d585182f17bf25d3657ea03f02ac5"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-29-round2/FIRST_PREP.md",
+      "bytes": 10172,
+      "sha256": "dd534a7b5d267cb197ac8b0d29795b87b174e9458556e02e67f1b9cf05a89f7e"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-29-round2/budget-ledger.live.json",
+      "bytes": 1328,
+      "sha256": "498637281434de21fd421d6af612c7471e69bfb537b86dbc6540cc95f5901d0a"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-29-round2/frozen-home-all-first-20261020-164027701/RESULT.md",
+      "bytes": 3238,
+      "sha256": "0e72f478a5c6351c45c10be7a7674637855e482869e667048551ce059f76a02c"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-29-round2/frozen-home-all-first-20261020-164027701/budget-settlement.json",
+      "bytes": 9826,
+      "sha256": "e5b7b0a15b5662de7a8748b717926c3f1fd26106c5903bf971b37a9f5e88a531"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-85/ADVISOR.md",
+      "bytes": 2935,
+      "sha256": "715d09fa312261dc1158d9d521bc31debdda4eadab06a40256ed1ad6280bea43"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-85/CURRENT_CHECKPOINT.md",
+      "bytes": 3747,
+      "sha256": "8783f9896278ee2cd9cb3b19df2e06c85f6285c82c34ec3e3d843a063a3dccfc"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-85/HANDOFF.md",
+      "bytes": 8439,
+      "sha256": "f7f7c41ac442171c2d150189946e8a4ede16dafabb7bb18f4b6883a2d71dc412"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-85/ci-diagnostic-3/diagnosis.md",
+      "bytes": 2206,
+      "sha256": "fca56af601588c3ad4f2da03eeafea297ed99b59e6c16517196feeaaa3b031a1"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-85/ci-diagnostic-3/summary.json",
+      "bytes": 180450,
+      "sha256": "4bf2c38d4c1ece3312076cb8cb0a028ce1b71cc4b1bc268d86da7259582c613b"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-86/DELIVERY-FINAL.json",
+      "bytes": 1265,
+      "sha256": "fd9bdb7be635d69529ef9bf7a3faf588e77d6ffbd0e8e0cd0c72717464465628"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-86/ci-success-d59303b.json",
+      "bytes": 3726,
+      "sha256": "741d4ef3b9d721a574610410596c6bd02862af0100d019c89864ec487730d1ab"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-86/media/media-publication.json",
+      "bytes": 12526,
+      "sha256": "35d4f4060d6fa6a1bf0f092f540c57e7dae88967d397b3dd0c7a5baac9b65a4e"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-86/repair-integration-receipt.json",
+      "bytes": 893,
+      "sha256": "2d2154461b5b4119ad331c8b8fc9f9752f7a75470b5b72d8889cb74ed8e556fc"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-86/workbench-B-d59303b9/completion.json",
+      "bytes": 5997,
+      "sha256": "3df26630f2a834d4af79a4674990d068386e2edb7674caf3ca9fbef5321ff635"
+    },
+    {
+      "path": "workspace/.scratch/rsi-platform/issue-86/workbench-B-d59303b9/run_original_B_linux.py",
+      "bytes": 17859,
+      "sha256": "f0f72d5294965f223af43711fb50695fdce74618cc004e5061531c88428c9fb8"
+    },
+    {
+      "path": "workspace/AGENTS.md",
+      "bytes": 7081,
+      "sha256": "4880c2bd9f6eeaa86cd134f386dbd5eaa2819be5c4ffeb39346419875e2de375"
+    },
+    {
+      "path": "workspace/GLOSSARY.md",
+      "bytes": 8803,
+      "sha256": "1553f9e5441265e856dd0f105cb911f14e8f3c84be1e07ac6be819783241fa26"
+    },
+    {
+      "path": "workspace/docs/VERIFICATION.md",
+      "bytes": 8914,
+      "sha256": "244a972386580911fb01d777a157dd316b16ccd7a62af814d2e8fbfdb770ec8b"
+    },
+    {
+      "path": "workspace/docs/adr/0001-usd-canonical-scene-format.md",
+      "bytes": 1063,
+      "sha256": "cd0c9b94edfcc467da555cdecd3216cd62247eb5d5de504ce1da1a89bf1861f8"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md",
+      "bytes": 27726,
+      "sha256": "4e7463234b8598600df37b5b3b9421b54901dd98d908e26f80931356c10e86c2"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_INFORMATION_FOUNDATION_SPEC_V1.md",
+      "bytes": 59892,
+      "sha256": "0e6171691cf6c7dcc7d602fe77f5fe6dcd7adccf22b7b045fa13029832a0c953"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_LIVE_OPERATIONS_SPEC_V1.md",
+      "bytes": 23703,
+      "sha256": "9a643f5dd3aa32a5d6d50a403f195992001a964e3e52839992a8f75c5028f627"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_RSI_PLATFORM_PRD_V1.md",
+      "bytes": 42887,
+      "sha256": "beeb800c013734d8e148accc2bc3239d0ca7c0679edb3fd74ddf960fec68c59f"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_RSI_SPEC_V1.md",
+      "bytes": 19973,
+      "sha256": "6de755a2baf0048eff2d47bee075224eaf434eaa4db44f833220c6b4a2b31577"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_TRAINING_SPEC_V1.md",
+      "bytes": 29565,
+      "sha256": "036b5508713d2773cfadc413e45b09aa0bcdbd1b4532de44aedc338ae972c11d"
+    },
+    {
+      "path": "workspace/docs/spec/LAB_WEB_UI_SPEC_V1.md",
+      "bytes": 27851,
+      "sha256": "6096350f6d13726cca3fd6aca81d0549a2fd896ffc02b7405a85dca6002a648c"
+    },
+    {
+      "path": "workspace/docs/spec/NEWTON_SPATIAL_SYNC_SPEC_V1.2.md",
+      "bytes": 80907,
+      "sha256": "0554daea3f91986965b2963a077e80d3918b251d31bc5220c965d53332e7d62d"
+    }
+  ],
+  "note": "MANIFEST itself is excluded from its own file list; old receipts describe historical versions."
+}

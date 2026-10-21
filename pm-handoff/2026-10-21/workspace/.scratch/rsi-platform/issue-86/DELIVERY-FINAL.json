@@ -1,0 +1,30 @@
+{
+  "deliveredIssue": 86,
+  "mergedPRs": [
+    89,
+    90
+  ],
+  "mainHead": "500d9ed8ff9bf37df385e7bde83c679dd1270baa",
+  "integratedTree": "dde110417b9464287104de49837189e4b5a75a31",
+  "mainCI": {
+    "conclusion": "success",
+    "databaseId": 39524938791,
+    "headSha": "500d9ed8ff9bf37df385e7bde83c679dd1270baa",
+    "status": "completed",
+    "url": "https://github.com/CaiZongyuan/spatial-sync/actions/runs/39524938791"
+  },
+  "allTenMainJobsPassed": true,
+  "maximumMainJobSeconds": 287,
+  "candidateHead": "d59303b9dc608a75a113f927a4283ea91dccf13b",
+  "candidateCI": 39523787906,
+  "candidateMaximumJobSeconds": 284,
+  "nineAcceptanceItemsChecked": true,
+  "issueClosed": true,
+  "activeLabelsRemoved": true,
+  "protectedUserHashesAndStagedBlobUnchanged": true,
+  "featureWorktreeClean": true,
+  "mainStatus": "M apps/web/src/routeTree.gen.ts\nA  \"docs/ui/Lab Platform Redesign.html\"",
+  "completeMovieComment": "https://github.com/CaiZongyuan/spatial-sync/pull/89#issuecomment-6304684885",
+  "progressComment": "https://github.com/CaiZongyuan/spatial-sync/issues/2#issuecomment-6305494719",
+  "outstandingIssue86Concerns": "Long-run framing shrink and earlier overview blank symptom remain unconfirmed; not claimed fixed."
+}
