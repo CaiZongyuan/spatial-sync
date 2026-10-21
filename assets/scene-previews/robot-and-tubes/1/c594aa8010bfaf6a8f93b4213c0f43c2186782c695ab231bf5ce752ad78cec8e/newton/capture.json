@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-21T09:59:44.291733+00:00",
+  "capturedAt": "2026-10-21T20:35:26.503810+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -157,7 +157,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "850b0963be604eb730b3fe66d82efecd3398e27d314f7fec562a008be487630b"
+      "sha256": "9cc847a1e823ce8a479414f33f93a57c850f31476389e8b6ab6d30f26203fa85"
     },
     {
       "path": "packages/info/conditions.py",
@@ -173,7 +173,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
+      "sha256": "c2c501bcb2af658f97dac801fc1898abac8415de3fa4757cb70943763c9829e4"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -337,7 +337,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
+      "sha256": "53929f4115155166b16e9fd86dde5a8b4fa7a005124725d81cceed46e0e0aa98"
     }
   ],
   "documents": {
@@ -347,10 +347,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "1f489a05fb78b43bc0654c4f0700d57363d3ad81e179b855cd551dfd4064698c",
-    "catalog.json": "53ebdcf444206692bdb1522f2bf96171c374e67f7ffe153ee6ae1b77f42b403a",
-    "state.json": "43f233c32119ee2fef84472f92ad43b8adea0b6e4b5809e3dc106d444e4b14a6",
-    "snapshot.bin": "ca2f0c14d2f3a68cbef870017a692c6b78e39e00df2eda994791b36c1f18efd2",
+    "manifest.json": "fdb2692133f5a42abdb5e0379ee37e261507da95ce01c43c9af518c8164dec4d",
+    "catalog.json": "9ef2ec244fae5b11e28b1c0c01acd4d2b1d07f002e24e069b7829d1feffbfe17",
+    "state.json": "f42cd6384c574da02937fbf68c20ca2b43b56c81f8622b19088d3ae1becfce2d",
+    "snapshot.bin": "6c97a6722df78fc31fa0093fd2ef008a49f76af2ab92a6207aa135bf780c2bd5",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

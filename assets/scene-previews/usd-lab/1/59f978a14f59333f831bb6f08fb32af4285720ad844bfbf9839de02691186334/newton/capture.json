@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-21T10:00:17.075615+00:00",
+  "capturedAt": "2026-10-21T20:35:55.957761+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -57,7 +57,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "850b0963be604eb730b3fe66d82efecd3398e27d314f7fec562a008be487630b"
+      "sha256": "9cc847a1e823ce8a479414f33f93a57c850f31476389e8b6ab6d30f26203fa85"
     },
     {
       "path": "packages/info/conditions.py",
@@ -73,7 +73,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
+      "sha256": "c2c501bcb2af658f97dac801fc1898abac8415de3fa4757cb70943763c9829e4"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -237,7 +237,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
+      "sha256": "53929f4115155166b16e9fd86dde5a8b4fa7a005124725d81cceed46e0e0aa98"
     }
   ],
   "documents": {
@@ -247,10 +247,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "c2a9a25a9e654bb31688304b1d3f0374ee4e93f88e2c2bc6d1034085572cbe35",
-    "catalog.json": "782ba6809c72891c16579d4076f13f0168ad4b2ff2f4647a1d89b1a79d287b57",
-    "state.json": "afed82c3e0e76d4794a035d5e00dc601c1a87b155fd7d07f14849e1aa78655b8",
-    "snapshot.bin": "6231ad7b235ac360eeb3f038c3b8b007c0c01ba4dec68155250f1927949a6dce",
+    "manifest.json": "5a9a11391d11e62fd5709730bb3510d1544e664bdbd10694061cc0130fdad601",
+    "catalog.json": "1520be992bddb1ce9221c0b85db3fbdb00f2b4431e377138379f0e2e92717d8a",
+    "state.json": "cf75bbb79a4cd67e3b228a4d930cdb4268e6344fb6e804065df4a88584531908",
+    "snapshot.bin": "4c167440972df61e0636213158151975c691f3950bcd3a0d3ede8a74b5b07a14",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"

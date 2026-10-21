@@ -1,0 +1,41 @@
+live: main-lab
+broker: {url: mqtt://127.0.0.1:1883}
+entities:
+  - key: /Real/Incubator2
+    type: incubator/v1
+    program: incubator.mqtt
+    config:
+      telemetry:
+        topic: lab/incubator2/telemetry
+        map:
+          temperatureC: $.temp
+          co2Percent: $.co2
+          humidityPercent: $.humidity
+          doorOpen: $.doorOpen
+          setpointC: $.setpoint
+      statusTopic: lab/incubator2/status
+      commands:
+        setSetpoint: {topic: lab/incubator2/cmd, ack: lab/incubator2/ack, timeoutSeconds: 5}
+  - key: /Real/BiosafetyCabinet1
+    type: biosafety-cabinet/v1
+    program: biosafety_cabinet.mqtt
+    config:
+      telemetry:
+        topic: lab/biosafety1/telemetry
+        map:
+          inflowMs: $.inflow
+          sashHeightCm: $.sashHeight
+          uvOn: $.uvOn
+          blowerOn: $.blowerOn
+      statusTopic: lab/biosafety1/status
+      commands:
+        setBlower: {topic: lab/biosafety1/cmd, ack: lab/biosafety1/ack, timeoutSeconds: 5}
+        setUv: {topic: lab/biosafety1/cmd, ack: lab/biosafety1/ack, timeoutSeconds: 5}
+  - key: /Real/Environment1
+    type: env-sensor/v1
+    program: env_sensor.mqtt
+    config:
+      telemetry:
+        topic: lab/environment1/telemetry
+        map: {temperatureC: $.temp, humidityPercent: $.humidity}
+      statusTopic: lab/environment1/status

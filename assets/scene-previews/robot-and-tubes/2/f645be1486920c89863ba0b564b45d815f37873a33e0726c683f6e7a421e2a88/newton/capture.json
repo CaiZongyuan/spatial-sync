@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-21T10:00:00.338206+00:00",
+  "capturedAt": "2026-10-21T20:35:44.076853+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -270,7 +270,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "850b0963be604eb730b3fe66d82efecd3398e27d314f7fec562a008be487630b"
+      "sha256": "9cc847a1e823ce8a479414f33f93a57c850f31476389e8b6ab6d30f26203fa85"
     },
     {
       "path": "packages/info/conditions.py",
@@ -286,7 +286,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
+      "sha256": "c2c501bcb2af658f97dac801fc1898abac8415de3fa4757cb70943763c9829e4"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -450,7 +450,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
+      "sha256": "53929f4115155166b16e9fd86dde5a8b4fa7a005124725d81cceed46e0e0aa98"
     }
   ],
   "documents": {
@@ -460,10 +460,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "4998e0d615654eab05a455eefb4cb5e8ae11f4de106f8772175447abfacd10d9",
-    "catalog.json": "e171464955d85c6bfc5ac8e2daf036af3d1e5040bb38ec89ce6f17516f4ab55a",
-    "state.json": "ab199eafac430a496df3dcb0c3b51652b5ef7d3c17bfb7da3a0162d0807ebb39",
-    "snapshot.bin": "28f72bd43df9f39b271f5a3bc6c6e50bfb062d1cf264f62ea254baae67174c21",
+    "manifest.json": "f20ab0b8c23a8e1cf4565172fd6776a09cf65a486552c9a3755bc9e05213908e",
+    "catalog.json": "a93678cbcf5e58a74b667e36d4b06d6a9436a70b3b283205a0c37a6ee4f85380",
+    "state.json": "ae5be0b61d213e462ba4a846637a28957b052c13b49dcc65f9bc2ad644888964",
+    "snapshot.bin": "4328bb70f90afd0d26354f697ac0a4f00a172bcea0fc4d1762503806ca9cf529",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

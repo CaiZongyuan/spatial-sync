@@ -15,6 +15,7 @@ dependencies = [
   "mcp==2.3.0",
   "psutil>=7.2,<8",
   "usd-core==26.8",
+  "paho-mqtt==2.1.0",
 ]
 
 [project.scripts]

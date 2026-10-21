@@ -126,12 +126,17 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
         configs[key] = parsed
         binding["config"] = parsed.model_dump(mode="json")
         entities[key] = binding
+    return compile_catalog(manifest.sceneRevision, types, entities, configs, sites=sites)
+
+
+def compile_catalog(scene_revision, types, entities, configs, *, sites=()):
+    """Compile the same declarations for scene and nonspatial device hosts."""
     type_declarations = {key: EntityTypeDeclaration.model_validate(value) for key, value in types.items()}
     binding_declarations = {
         key: EntityBindingDeclaration.model_validate(value) for key, value in entities.items()
     }
     document = CatalogDocument(
-        sceneRevision=manifest.sceneRevision,
+        sceneRevision=scene_revision,
         types={
             key: value.model_dump(mode="json", exclude={"alerts"}, exclude_none=True)
             for key, value in type_declarations.items()

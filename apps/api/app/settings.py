@@ -38,6 +38,9 @@ class Settings:
             "SPATIAL_SCENE_PREVIEWS_ROOT", "~/.spatial-sync/cache/scene-previews"
         )).expanduser()
     )
+    live_bindings: Path | None = field(default_factory=lambda: (
+        Path(os.environ["SPATIAL_LIVE_BINDINGS"]) if os.getenv("SPATIAL_LIVE_BINDINGS") else None
+    ))
 
     def __post_init__(self):
         if self.recordings_keep < 1:

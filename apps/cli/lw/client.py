@@ -44,6 +44,7 @@ class GatewayClient:
         self.token = token if token is not None else os.getenv("LW_TOKEN")
         self._session_id = session or os.getenv("LW_SESSION")
         self._session_explicit = self._session_id is not None
+        self._invocation_targets = {}
         try:
             self.http = http or httpx.AsyncClient(base_url=self.url, timeout=30, trust_env=False)
         except httpx.InvalidURL as exc:
@@ -81,7 +82,9 @@ class GatewayClient:
             raise GatewayError("Gateway request failed", detail=detail, status_code=response.status_code)
         return document
 
-    async def route(self):
+    async def route(self, key=None):
+        if key is not None and key.startswith("/Real/"):
+            return "/api/v1/live"
         if not self._session_explicit:
             health = await self.request("GET", "/api/v1/health")
             active = [
@@ -102,6 +105,8 @@ class GatewayClient:
         health = await self.request("GET", "/api/v1/health")
         if any(session["state"] in ("RUNNING", "PAUSED") for session in health["sessions"]):
             return await self.catalog()
+        if health.get("live", {}).get("enabled"):
+            return await self.request("GET", "/api/v1/live/catalog")
         return None
 
     async def scene_search(self, query=None, launchable=False):
@@ -237,19 +242,30 @@ class GatewayClient:
 
     async def list_entities(self, type=None, query=None):
         params = {key: value for key, value in {"type": type, "q": query}.items() if value is not None}
-        return (await self.request("GET", await self.route() + "/entities", params=params))["entities"]
+        return (await self.request("GET", await self.route(query) + "/entities", params=params))["entities"]
 
     async def describe_entity(self, key):
-        return await self.request("GET", await self.route() + "/entity", params={"key": key})
+        return await self.request("GET", await self.route(key) + "/entity", params={"key": key})
 
     async def get_state(self, keys):
-        return await self.request("GET", await self.route() + "/state", params={"keys": ",".join(keys)})
+        groups = {}
+        for key in keys:
+            groups.setdefault(key.startswith("/Real/"), []).append(key)
+        if not groups:
+            return await self.request("GET", await self.route() + "/state")
+        entities = {}
+        for selected in groups.values():
+            document = await self.request("GET", await self.route(selected[0]) + "/state",
+                                          params={"keys": ",".join(selected)})
+            entities.update(document["entities"])
+        return {"entities": entities}
 
     async def invoke_action(self, key, action, params=None, *, wait=True, timeout=120, actor="cli:lw",
                             planId=None, stepId=None, planRevision=None):
-        return await self.request(
+        route = await self.route(key)
+        result = await self.request(
             "POST",
-            await self.route() + "/actions",
+            route + "/actions",
             actor=actor,
             timeout=timeout + 10,
             json={
@@ -262,11 +278,29 @@ class GatewayClient:
                 **plan_fields(planId, stepId, planRevision),
             },
         )
+        self._invocation_targets[result["invocationId"]] = route
+        return result
+
+    async def invocation_route(self, invocation_id):
+        if invocation_id in self._invocation_targets:
+            return self._invocation_targets[invocation_id]
+        path = "/api/v1/live/invocations/" + quote(invocation_id, safe="")
+        try:
+            await self.request("GET", path)
+        except GatewayError as error:
+            if error.status_code != 404 and not (
+                error.status_code == 503 and isinstance(error.detail, dict)
+                and error.detail.get("code") == "live_unavailable"
+            ):
+                raise
+            return await self.route()
+        self._invocation_targets[invocation_id] = "/api/v1/live"
+        return "/api/v1/live"
 
     async def get_invocation(self, invocation_id, *, wait=False, timeout=120):
         return await self.request(
             "GET",
-            await self.route() + "/invocations/" + quote(invocation_id, safe=""),
+            await self.invocation_route(invocation_id) + "/invocations/" + quote(invocation_id, safe=""),
             params={"wait": wait, "timeoutSeconds": timeout},
             timeout=timeout + 10,
         )
@@ -274,7 +308,8 @@ class GatewayClient:
     async def cancel_invocation(self, invocation_id, *, actor="cli:lw"):
         return await self.request(
             "POST",
-            await self.route() + "/invocations/" + quote(invocation_id, safe="") + "/cancel",
+            await self.invocation_route(invocation_id) + "/invocations/" + quote(invocation_id, safe="")
+            + "/cancel",
             actor=actor,
         )
 
@@ -287,7 +322,8 @@ class GatewayClient:
         path = (
             "/api/v1/approvals/" + quote(invocation_id, safe="") + "/decision"
             if invocation_id.startswith("approval-")
-            else await self.route() + "/invocations/" + quote(invocation_id, safe="") + "/approve"
+            else await self.invocation_route(invocation_id) + "/invocations/" + quote(invocation_id, safe="")
+            + "/approve"
         )
         return await self.request(
             "POST",
@@ -299,7 +335,7 @@ class GatewayClient:
                          planId=None, stepId=None, planRevision=None, by=None):
         return await self.request(
             "GET",
-            await self.route() + "/wait",
+            await self.route(key) + "/wait",
             actor=actor,
             timeout=timeout + 10,
             params={
@@ -315,7 +351,7 @@ class GatewayClient:
 
     async def check_condition(self, key, prop, op, value, *, actor="cli:lw",
                               planId=None, stepId=None, planRevision=None, by=None):
-        return await self.request("POST", await self.route() + "/check", actor=actor, json={
+        return await self.request("POST", await self.route(key) + "/check", actor=actor, json={
             "key": key, "property": prop, "op": op, "value": value,
             **({"by": by} if by is not None else {}),
             **plan_fields(planId, stepId, planRevision),
@@ -355,7 +391,7 @@ class GatewayClient:
         return await self.request("GET", "/api/v1/recordings")
 
     async def watch(self, key=None) -> AsyncIterator[dict]:
-        path = await self.route() + "/events"
+        path = await self.route(key) + "/events"
         initial = await self.request("GET", path, params={"after": 0, "timeoutSeconds": 0})
         cursor = initial["lastSeq"]
         while True:

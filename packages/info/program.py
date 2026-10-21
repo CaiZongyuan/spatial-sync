@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import random
 import time
 from collections import OrderedDict
@@ -142,10 +143,25 @@ class Ctx:
     def physics(self):
         return self._host.physics
 
+    @property
+    def driver(self):
+        """Owned nonblocking device mailbox; transport I/O stays outside callbacks."""
+        return self._host.drivers[self.key]
+
     def set(self, **values):
         if self._host._executing != self._index:
             raise RuntimeError("Programs may only write their own entity during a callback")
         self._host._set(self._index, {self._properties[name]: value for name, value in values.items()})
+
+    def set_observed(self, observed_time, sample_time_ms, **values):
+        """Nonspatial drivers retain receipt time when a later tick handles telemetry."""
+        if self._host._executing != self._index:
+            raise RuntimeError("Programs may only write their own entity during a callback")
+        if (not math.isfinite(observed_time) or not 0 <= observed_time <= self.sim_time
+                or not math.isfinite(sample_time_ms) or sample_time_ms < 0):
+            raise ValueError("Observation timestamps must identify an already received sample")
+        self._host._set(self._index, {self._properties[name]: value for name, value in values.items()},
+                        observed=(observed_time, sample_time_ms))
 
     def get(self, prop):
         return self.read(self.key, prop)
@@ -233,12 +249,16 @@ class HostCore:
         epoch=0,
         source="virtual",
         physics=None,
+        drivers=None,
+        availability=None,
         fact_hz=10,
         publication_clock=None,
         seed=42,
     ):
         self.seed = seed
         self.catalog, self.epoch, self.source, self.physics = catalog, epoch, source, physics
+        self.drivers = drivers or {}
+        self._availability = availability
         self.sim_time, self.tick_index, self.fact_due = 0.0, 0, True
         self.fact_hz, self._next_fact = fact_hz, 0.0
         self._publication_clock = publication_clock or time.monotonic
@@ -276,6 +296,10 @@ class HostCore:
 
     def values(self):
         return {state.key: state.export_values() for state in self._states}
+
+    def availability(self, entity_key):
+        """An optional driver check shared by fast and authoritative admission."""
+        return self._availability(entity_key) if self._availability is not None else None
 
     def preview(self, request: PreviewRequest):
         index = self._entity_indices[request.entityKey]
@@ -332,7 +356,7 @@ class HostCore:
 
         return read
 
-    def _set(self, key, values):
+    def _set(self, key, values, *, observed=None):
         current = self._states[key]
         parsed = {prop: current.validators[prop](value) for prop, value in values.items()}
         changed = {
@@ -342,7 +366,8 @@ class HostCore:
         fresh = [prop for prop in parsed if current.stale_after[prop] is not None]
         if not changed and not fresh:
             return
-        meta = {"simTime": self.sim_time, "sampleTimeMs": time.monotonic() * 1000, "source": self.source}
+        observed_time, sample_time_ms = observed or (self.sim_time, time.monotonic() * 1000)
+        meta = {"simTime": observed_time, "sampleTimeMs": sample_time_ms, "source": self.source}
         for prop in fresh:
             if current.meta[prop] and current.meta[prop].get("stale", False):
                 current.freshness_dirty.add(prop)
@@ -436,6 +461,8 @@ class HostCore:
                     message="Action parameters do not match schema",
                     details={"errors": exc.errors(include_url=False, include_context=False)},
                 )
+            if error is None:
+                error = self.availability(key)
             if error is None and not action["concurrent"]:
                 busy = next(
                     (
