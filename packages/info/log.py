@@ -381,7 +381,7 @@ class SessionLog:
             payload = self._pending.get(invocation_id)
             location = self._index.get(invocation_id)
         if payload is None and location is not None:
-            payload = await asyncio.to_thread(self._read_payload, location)
+            payload = await self._read_archived_payload(location)
         if payload is None:
             return None
         value = json.loads(payload)
@@ -390,6 +390,9 @@ class SessionLog:
         return Invocation.model_validate(
             {key: item for key, item in value.items() if key not in ("type", "sceneRevision")}
         )
+
+    async def _read_archived_payload(self, location):
+        return await asyncio.to_thread(self._read_payload, location)
 
     @staticmethod
     def _read_payload(location):

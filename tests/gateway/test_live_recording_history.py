@@ -157,15 +157,18 @@ async def test_cancelled_http_history_keeps_pin_until_actual_disk_read_finishes(
     metadata = await host.recording.checkpoint()
     first_path = host.recording.directory / metadata["segments"][0]["file"]
     original = history_routes.read_samples
-    entered, release = threading.Event(), threading.Event()
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
     actual_rows = []
 
     def blocked_read(*args):
         entered.set()
         assert release.wait(5)
-        rows = original(*args)
-        actual_rows.extend((row.t_ms, row.value) for row in rows)
-        return rows
+        try:
+            rows = original(*args)
+            actual_rows.extend((row.t_ms, row.value) for row in rows)
+            return rows
+        finally:
+            finished.set()
 
     monkeypatch.setattr(history_routes, "read_samples", blocked_read)
     async with api(host, setup.repository) as http:
@@ -176,6 +179,9 @@ async def test_cancelled_http_history_keeps_pin_until_actual_disk_read_finishes(
         try:
             reading.cancel()
             await asyncio.sleep(0)
+            reading.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await reading
             assert host.recording._readers == 1
             setup.clock.advance(10 * 86400)
             host.advance()
@@ -183,8 +189,11 @@ async def test_cancelled_http_history_keeps_pin_until_actual_disk_read_finishes(
             assert first_path.is_file()
         finally:
             release.set()
-            with pytest.raises(asyncio.CancelledError):
-                await reading
+            assert await asyncio.to_thread(finished.wait, 5)
+        def unpinned():
+            with host.recording._condition:
+                return host.recording._condition.wait_for(lambda: host.recording._readers == 0, 5)
+        assert await asyncio.to_thread(unpinned)
         assert actual_rows == [(500_100, 37)]
         assert host.recording._readers == 0
         setup.clock.advance(60)

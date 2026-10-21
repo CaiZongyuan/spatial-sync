@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from contextlib import nullcontext, suppress
+from contextlib import nullcontext
 from typing import Literal
 
 from fastapi import HTTPException, Query, Response
@@ -79,15 +79,8 @@ def install_history_routes(app, manager, repository):
             except ValueError as error:
                 raise HTTPException(422, {"code": "invalid_history_query", "message": str(error)}) from error
             try:
-                reading = asyncio.create_task(asyncio.to_thread(
-                    read_samples, directory, metadata, key, property, lower, upper))
-                try:
-                    samples = await asyncio.shield(reading)
-                except asyncio.CancelledError:
-                    # Cancelling a to_thread await does not stop the file reader.
-                    with suppress(Exception):
-                        await reading
-                    raise
+                read = log.read_pinned if hasattr(log, "read_pinned") else asyncio.to_thread
+                samples = await read(read_samples, directory, metadata, key, property, lower, upper)
             except (OSError, ValueError, KeyError, TypeError) as error:
                 raise HTTPException(503, {"code": "history_unavailable",
                                           "message": "Recording cannot be read"}) from error

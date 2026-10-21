@@ -225,3 +225,128 @@ def test_public_mapping_owns_copies_and_never_restamps_old_property_measurements
     assert public.entities[0].meta["temperatureC"].sampleTimeMs == 11_000
     assert original.sampleTimeMs == 3000
     assert original.entities[0].meta["temperatureC"].sampleTimeMs == 1000
+
+
+def invocation():
+    return {
+        "type": "invocation.update", "sceneRevision": "live-first", "invocationId": "inv-old",
+        "requestId": "request-old", "entityKey": "/Real/Incubator2", "action": "inspect", "params": {},
+        "actor": {"kind": "user", "name": "test"}, "epoch": 0, "status": "succeeded",
+        "createdSimTime": 0, "createdAtMs": 1,
+    }
+
+
+async def test_actual_archived_invocation_read_survives_retention(tmp_path):
+    clock = Clock()
+    clock.utc = datetime(2026, 10, 21, 12, tzinfo=UTC)
+    log = writer(tmp_path, clock)
+    await log.ready()
+    start_revision(log)
+    log.append_json(json.dumps(invocation()), 1001, invocation_id="inv-old")
+    metadata = await log.checkpoint()
+    path = log.directory / metadata["segments"][0]["file"]
+    entered, release = threading.Event(), threading.Event()
+    original = log._read_payload
+
+    def blocked(location):
+        entered.set()
+        assert release.wait(5)
+        return original(location)
+
+    log._read_payload = blocked
+    lookup = asyncio.create_task(log.lookup_invocation("inv-old"))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        clock.advance(10 * 86400)
+        log.maintain()
+        await log.checkpoint()
+        assert path.exists()
+        release.set()
+        assert (await lookup).status == "succeeded"
+    finally:
+        release.set()
+        await log.close()
+
+
+async def test_executor_submission_failure_releases_io_pin(tmp_path, monkeypatch):
+    clock = Clock()
+    log = writer(tmp_path, clock)
+    await log.ready()
+
+    def failed_submission(*_args):
+        raise RuntimeError("Injected executor submission failure")
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(asyncio.get_running_loop(), "run_in_executor", failed_submission)
+            with pytest.raises(RuntimeError, match="submission failure"):
+                await log.read_pinned(lambda: None)
+        assert log._readers == 0
+    finally:
+        await log.close()
+
+
+async def test_close_holds_owner_until_cancelled_read_job_finishes(tmp_path):
+    clock = Clock()
+    log = writer(tmp_path, clock)
+    await log.ready()
+    start_revision(log)
+    await log.checkpoint()
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked():
+        entered.set()
+        assert release.wait(5)
+
+    reading = asyncio.create_task(log.read_pinned(blocked))
+    assert await asyncio.to_thread(entered.wait, 5)
+    reading.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await reading
+    closing = asyncio.create_task(log.close())
+    competitor = writer(tmp_path, clock)
+    try:
+        with pytest.raises(OSError, match="active owner"):
+            await competitor.ready()
+        await competitor.close()
+        assert not closing.done()
+        assert log._readers == 1
+    finally:
+        release.set()
+        await closing
+    assert log._readers == 0
+    reopened = writer(tmp_path, clock)
+    await reopened.ready()
+    await reopened.close()
+
+
+async def test_catalog_attribution_is_published_before_segment_can_reach_disk(tmp_path):
+    clock = Clock()
+    first = writer(tmp_path, clock)
+    await first.ready()
+    start_revision(first)
+    await first.close()
+    observed = []
+
+    def boundary_open(path):
+        observed.append(json.loads((path.parent / "recording.json").read_bytes()))
+        return path.open("xb")
+
+    second = writer(tmp_path, clock, open_segment=boundary_open)
+    await second.ready()
+    start_revision(second, "live-second")
+    await second.close()
+    assert set(observed[0]["revisions"]) == {"live-first", "live-second"}
+    # Simulate interruption after the valid second prefix reached disk but
+    # before its segment entry was published. Keep the real allocation state.
+    (second.directory / "recording.json").write_text(json.dumps(observed[0]))
+    reopened = writer(tmp_path, clock)
+    await reopened.ready()
+    try:
+        metadata = await reopened.checkpoint()
+        assert [segment["sceneRevision"] for segment in metadata["segments"]] == ["live-first", "live-second"]
+        assert all(segment["sceneRevision"] in metadata["revisions"] for segment in metadata["segments"])
+        assert all((reopened.directory / item["catalog"]).is_file()
+                   for item in metadata["revisions"].values())
+    finally:
+        await reopened.close()

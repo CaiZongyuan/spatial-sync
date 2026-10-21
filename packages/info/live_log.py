@@ -1,5 +1,6 @@
 """A continuously reopened information recording with one bounded disk owner."""
 
+import asyncio
 import json
 import os
 import re
@@ -67,8 +68,6 @@ class LiveLog(SessionLog):
                          scene_content_hash=None, kind="live", **kwargs)
 
     async def ready(self):
-        import asyncio
-
         await asyncio.shield(asyncio.wrap_future(self._ready))
 
     def map_time(self, raw_ms):
@@ -165,6 +164,10 @@ class LiveLog(SessionLog):
         if not self._ready.done():
             self._ready.set_exception(OSError(self.error or "Live recording did not start"))
         if self._owner is not None:
+            # A cancelled HTTP task can leave an actual disk reader running.
+            # Keep exclusive ownership until that reader releases its own pin.
+            with self._condition:
+                self._condition.wait_for(lambda: self._readers == 0)
             self._owner.close()
             self._owner = None
 
@@ -185,6 +188,9 @@ class LiveLog(SessionLog):
         self.metadata.setdefault("sceneRevision", key)
         self._projection = _LiveProjection(key)
         self._clock = max(self._clock, snapshot.sampleTimeMs)
+        # A valid segment prefix must never reach disk before its catalog
+        # attribution is durable in the public recording document.
+        self._metadata()
         self._open_new_segment(key, [Record(2, snapshot.sampleTimeMs, snapshot.model_dump_json().encode())])
         self._metadata()
         self._prune()
@@ -225,6 +231,36 @@ class LiveLog(SessionLog):
         finally:
             with self._condition:
                 self._readers -= 1
+                self._condition.notify_all()
+
+    async def read_pinned(self, callback, *args):
+        """The executor job owns its pin, even when its requester is cancelled."""
+        pin = self.reader()
+        pin.__enter__()
+
+        def read():
+            try:
+                return callback(*args)
+            finally:
+                pin.__exit__(None, None, None)
+
+        try:
+            # Submit synchronously: there is no cancellable coroutine between
+            # acquiring the pin and starting the independent executor job.
+            reading = asyncio.get_running_loop().run_in_executor(None, read)
+        except BaseException:
+            pin.__exit__(None, None, None)
+            raise
+        # Retrieve background failures if the request has already gone away.
+        reading.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        return await asyncio.shield(reading)
+
+    async def lookup_invocation(self, invocation_id):
+        with self.reader():
+            return await super().lookup_invocation(invocation_id)
+
+    async def _read_archived_payload(self, location):
+        return await self.read_pinned(self._read_payload, location)
 
     def _prune(self):
         cutoff = (self._utc_clock().astimezone(UTC).date()
