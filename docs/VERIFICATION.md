@@ -63,6 +63,11 @@ with the API. The run fails unless the invocation log completes the I3 order
 with `agent:claude-code` only and the recording completes. The output holds
 `receipt.json`, the transcript, checkpoint screenshots and the zipped recording;
 publish the recording and transcript as release assets, never in the repository.
+Each tube must have a finite resting-pose comparison; a missing or non-finite
+rendered pose persisting for two samples fails. Sample rounds wait 400 ms plus
+HTTP, browser and screenshot work; they do not prove frame-by-frame agreement.
+Cleanup failures retain owned process identities in the failure receipt and do
+not stop cleanup attempts for other owned groups.
 
 The browser suite includes real format1 and format2 recording fixtures. Format1
 retains ten pose/location/joint samples; format2 pins a selected scene version

@@ -144,32 +144,43 @@ class Owned:
 
     async def stop(self, name, grace=15, leader_first=False):
         """Terminate the group, or the leader first when it must finish its own shutdown."""
-        process = self.processes.pop(name)
+        process = self.processes[name]
         if leader_first and process.returncode is None:
             process.send_signal(signal.SIGTERM)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(process.wait(), grace)
+        gone = False
         for sent in (signal.SIGTERM, signal.SIGKILL):
             try:
                 os.killpg(process.pid, sent)
             except ProcessLookupError:
+                gone = True
                 break
             deadline = time.monotonic() + grace
             while time.monotonic() < deadline:
                 try:
                     os.killpg(process.pid, 0)
                 except ProcessLookupError:
+                    gone = True
                     break
                 await asyncio.sleep(0.1)
             else:
                 continue
             break
+        if not gone:
+            raise RuntimeError(f"owned process group {name} (PID {process.pid}) did not stop")
         await process.wait()
+        del self.processes[name]
         return process.returncode
 
     async def stop_all(self):
-        for name in list(self.processes):
-            await self.stop(name)
+        errors = []
+        for name, process in list(self.processes.items()):
+            try:
+                await self.stop(name)
+            except Exception as error:
+                errors.append({"name": name, "pid": process.pid, "error": repr(error)})
+        return errors
 
 
 def free_port():
@@ -190,6 +201,16 @@ async def wait_for_session(client, agent):
         if agent.done():
             return None
         await asyncio.sleep(0.25)
+
+
+def viewer_confirmed(report, session):
+    return bool(
+        report
+        and report["sessionId"] == session
+        and not report["failures"]
+        and report["locationComparisons"]
+        and all(report.get("poseComparisonsByTube", {}).get(key, 0) > 0 for key in TUBES)
+    )
 
 
 async def run_agent(owned, command, cwd, output, timeout):
@@ -252,10 +273,26 @@ class Run:
                 await self.cleanup()
             except Exception as error:
                 self.fail(f"cleanup error: {error!r}")
-            finally:
-                await self.owned.stop_all()
+            try:
+                errors = await self.owned.stop_all()
+                if errors:
+                    self.receipt["cleanupErrors"] = errors
+                    for error in errors:
+                        self.fail(f"stopping {error['name']} (PID {error['pid']}): {error['error']}")
+            except Exception as error:
+                self.fail(f"process cleanup error: {error!r}")
+            try:
                 if self.client:
                     await self.client.aclose()
+            except Exception as error:
+                self.fail(f"HTTP cleanup error: {error!r}")
+            finally:
+                if self.owned.processes:
+                    self.receipt["remainingProcesses"] = [
+                        {"name": name, "pid": process.pid} for name, process in self.owned.processes.items()
+                    ]
+                    self.fail("owned process groups remain; see remainingProcesses")
+                self.output.mkdir(parents=True, exist_ok=True)
                 (self.output / "receipt.json").write_text(
                     json.dumps(self.receipt, indent=2, ensure_ascii=False)
                 )
@@ -406,14 +443,7 @@ class Run:
             path = self.output / "viewer/viewer.json"
             report = json.loads(path.read_text()) if path.exists() else None
             self.receipt["viewer"] = report
-            if (
-                code != 0
-                or not report
-                or report["sessionId"] != self.session
-                or report["failures"]
-                or not report["locationComparisons"]
-                or not report["poseComparisons"]
-            ):
+            if code != 0 or not viewer_confirmed(report, self.session):
                 self.fail("the browser observer did not confirm the API state")
         if not self.client:
             return
