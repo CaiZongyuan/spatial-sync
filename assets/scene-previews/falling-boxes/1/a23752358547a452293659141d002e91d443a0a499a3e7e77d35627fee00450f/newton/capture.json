@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-21T09:59:11.617184+00:00",
+  "capturedAt": "2026-10-21T20:35:05.807624+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -45,7 +45,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "850b0963be604eb730b3fe66d82efecd3398e27d314f7fec562a008be487630b"
+      "sha256": "9cc847a1e823ce8a479414f33f93a57c850f31476389e8b6ab6d30f26203fa85"
     },
     {
       "path": "packages/info/conditions.py",
@@ -61,7 +61,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "328bfbc4b5506d4a08b4f5b4381398618d27fc29c8facec4a798b9d31ee7f15e"
+      "sha256": "c2c501bcb2af658f97dac801fc1898abac8415de3fa4757cb70943763c9829e4"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -217,7 +217,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984"
+      "sha256": "53929f4115155166b16e9fd86dde5a8b4fa7a005124725d81cceed46e0e0aa98"
     }
   ],
   "documents": {
@@ -227,10 +227,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "fadbee3b1b89b8ab2a4c0df908b17e73b080a84c5d52302ad83ce77b12eab023",
-    "catalog.json": "0a4289d875eaad978a8a82131c16196b8fc874b902870b63f5889c1d88ad8261",
-    "state.json": "33d8a7525331adb0fb79c481bb6efac025fd03074e3eeb4fb02e3210adcea79c",
-    "snapshot.bin": "8b2b1152eb8171edd911dca3a7d49f1ffc5533b91c3d03c7cfcb735740b0dd1e"
+    "manifest.json": "98dbc8922c77d36612530623735ee6507617c2b8c30a39f857fa60c2e02eaa33",
+    "catalog.json": "8de6683a1f435a1b4fcbe8f14fd26e625589db85203933ce42589bff98aa1ba1",
+    "state.json": "d435a99284ab1f00fc37099638deba00155b750aa9e4d2e031306af834df31e2",
+    "snapshot.bin": "741933cfdc61e563db881255b519738e523a98f32ebd05ee866b91c93ce11096"
   },
   "counts": {
     "physicalEntities": 3,
