@@ -11,6 +11,65 @@ const v1Expected = JSON.parse(readFileSync(join(fixture, 'expected.json'), 'utf8
     tubeLocation: string; robotJoints: number[] }[];
 };
 
+test('plays a JSON-only Live information recording with original measurement and invocation clocks', async ({ page, baseURL }, info) => {
+  const directory = resolve('../../tests/fixtures/recordings/v2-live');
+  const expected = JSON.parse(readFileSync(join(directory, 'expected.json'), 'utf8')) as {
+    entityKey: string; invocationId: string; createdAtMs: number;
+    samples: { timeMs: number; temperatureC: number; measurementMs: number }[];
+  };
+  const liveRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/')) liveRequests.push(request.url());
+  });
+  page.on('websocket', socket => liveRequests.push(socket.url()));
+  await page.route('**/fixture/live-information/**', async route => {
+    const relative = new URL(route.request().url()).pathname.split('/fixture/live-information/')[1];
+    const file = join(directory, relative);
+    if (!existsSync(file)) await route.fulfill({ status: 404 });
+    else await route.fulfill({ path: file, contentType: relative.endsWith('.json')
+      ? 'application/json' : 'application/octet-stream' });
+  });
+  const src = new URL('/fixture/live-information/recording.json', baseURL).href;
+  await page.goto(`/replay/live-information?src=${encodeURIComponent(src)}`);
+  await expect(page.getByRole('button', { name: 'Play replay' })).toBeEnabled();
+  await expect(page.getByRole('heading', { name: '实验室设备', exact: true })).toBeVisible();
+  await expect(page.locator('canvas')).toHaveCount(0);
+  const card = page.getByTestId(`replay-device-${expected.entityKey}`);
+  await expect(card).toContainText('incubator/v1');
+  const seek = async (timeMs: number) => {
+    await page.getByLabel('Replay position').evaluate((element, value) => {
+      (element as HTMLInputElement).value = String(value > 0 ? value - 1 : 1);
+    }, timeMs);
+    await page.getByLabel('Replay position').press(timeMs > 0 ? 'ArrowRight' : 'ArrowLeft');
+    await expect(page.getByTestId('replay-time')).toContainText(`${(timeMs / 1000).toFixed(2)} s /`);
+  };
+  for (const sample of expected.samples) {
+    await seek(sample.timeMs);
+    await expect(card.getByTestId('property-temperatureC').locator('output')).toHaveText(String(sample.temperatureC));
+    await expect.poll(() => page.evaluate(key =>
+      window.__spatialDebug?.getEntityState(key)?.meta.temperatureC.sampleTimeMs, expected.entityKey))
+      .toBe(sample.measurementMs);
+  }
+  await seek(1000);
+  const invocation = page.getByTestId(`invocation-${expected.invocationId}`);
+  await expect(invocation).toContainText('running');
+  await expect(invocation.locator('time')).toContainText('0.80');
+  await invocation.locator('summary').click();
+  await expect(page.getByRole('button', { name: 'Cancel setSetpoint', exact: true })).toBeDisabled();
+  await card.getByTestId('action-setSetpoint').locator('summary').click();
+  await expect(card.getByRole('button', { name: 'Run setSetpoint', exact: true })).toBeDisabled();
+  await seek(1300);
+  await expect(invocation).toContainText('succeeded');
+  await expect(invocation.locator('time')).toContainText('1.10');
+  expect(await page.evaluate(key => window.__spatialDebug?.getReplaySource()?.info.getInvocations(key)[0].createdAtMs,
+    expected.entityKey)).toBe(expected.createdAtMs);
+  await page.getByLabel('Color theme').selectOption('light');
+  await page.setViewportSize({ width: 900, height: 960 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(900);
+  await page.screenshot({ path: info.outputPath('live-information-replay-900.png'), fullPage: true });
+  expect(liveRequests).toEqual([]);
+});
+
 test('a delayed visual reframes the paused camera after the former five second cutoff', async ({ page, baseURL }) => {
   const manifest = JSON.parse(readFileSync(join(fixture, 'manifest.json'), 'utf8'));
   const delayed = manifest.nodes.find((node: { entityKey: string }) => node.entityKey === '/World/Lab/FallbackBox');

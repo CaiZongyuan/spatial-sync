@@ -32,6 +32,70 @@ it('replays sequentially when an optional property index attachment is unavailab
   expect(requested).not.toContain('seg-000001.index.json');
 });
 
+it('replays the genuine JSON-only Live writer clip without spatial or live connections', async () => {
+  const directory = fileURLToPath(new URL('../../../../../tests/fixtures/recordings/v2-live/', import.meta.url));
+  const expected = JSON.parse(readFileSync(directory + '/expected.json', 'utf8'));
+  const urls: string[] = [];
+  const socket = vi.fn();
+  vi.stubGlobal('WebSocket', socket);
+  vi.stubGlobal('location', { href: 'https://example.org/replay/live' });
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    urls.push(url);
+    const name = new URL(url).pathname.split('/live/')[1];
+    return new Response(new Uint8Array(readFileSync(directory + '/' + name)));
+  }));
+  source = new ReplaySource('live-fixture', 'https://example.org/files/live/recording.json');
+  await source.start();
+  expect(source.getPlayback()).toMatchObject({ ready: true, kind: 'live', sceneVersion: null,
+    sceneContentHash: null, durationMs: expected.durationMs });
+  expect(source.getSnapshot()).toMatchObject({ informationOnly: true, role: 'viewer', connection: 'connected' });
+  expect(source.getSnapshot().manifest).toBeUndefined();
+  expect(source.buffer.latestSample).toBeUndefined();
+  for (const sample of expected.samples) {
+    await source.seek(sample.timeMs);
+    expect(source.info.getEntity(expected.entityKey)?.values.temperatureC).toBe(sample.temperatureC);
+    expect(source.info.getEntity(expected.entityKey)?.meta.temperatureC.sampleTimeMs).toBe(sample.measurementMs);
+  }
+  for (const sample of expected.invocations) {
+    await source.seek(sample.timeMs);
+    const invocation = source.info.getInvocations(expected.entityKey)[0];
+    expect(invocation.invocationId).toBe(expected.invocationId);
+    expect(invocation.status).toBe(sample.status);
+    expect(invocation.createdAtMs).toBe(expected.createdAtMs);
+    if (sample.startedSimTime !== undefined) expect(invocation.startedSimTime).toBe(sample.startedSimTime);
+    if (sample.durationSeconds !== undefined) expect(
+      (invocation.endedSimTime ?? source.getSnapshot().simTime) - (invocation.startedSimTime ?? invocation.createdSimTime),
+    ).toBeCloseTo(sample.durationSeconds);
+  }
+  expect(socket).not.toHaveBeenCalled();
+  expect(urls.every(url => url.startsWith('https://example.org/files/live/'))).toBe(true);
+  expect(urls.some(url => url.endsWith('manifest.json'))).toBe(false);
+  expect(() => source.action(expected.entityKey, 'setSetpoint', { temperatureC: 38 })).toThrow(/read-only/);
+  expect(() => source.approveInvocation(expected.invocationId, 'approve')).toThrow(/read-only/);
+  expect(() => source.cancelInvocation(expected.invocationId)).toThrow(/read-only/);
+});
+
+it('keeps an external Live segment at its advertised byte prefix while that file grows', async () => {
+  const directory = fileURLToPath(new URL('../../../../../tests/fixtures/recordings/v2-live/', import.meta.url));
+  const metadata = JSON.parse(readFileSync(directory + '/recording.json', 'utf8'));
+  const extra = Buffer.from(JSON.stringify({ type: 'entity.observations', sceneRevision: metadata.sceneRevision,
+    epoch: 0, simTime: 1.3, sampleTimeMs: 2300, source: 'device',
+    changes: [{ key: '/Real/Incubator2', rev: 999, values: { temperatureC: 999 } }] }));
+  const header = Buffer.alloc(13);
+  header.writeUInt32LE(extra.length + 9, 0); header.writeUInt8(2, 4); header.writeDoubleLE(2300, 5);
+  vi.stubGlobal('location', { href: 'https://example.org/replay/live' });
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    const name = new URL(url).pathname.split('/live/')[1];
+    const original = readFileSync(directory + '/' + name);
+    return new Response(new Uint8Array(name === metadata.segments[0].file
+      ? Buffer.concat([original, header, extra]) : original));
+  }));
+  source = new ReplaySource('live-fixture', 'https://example.org/files/live/recording.json');
+  await source.start();
+  await source.seek(1400);
+  expect(source.info.getEntity('/Real/Incubator2')?.values.temperatureC).toBe(38);
+});
+
 it.each([1, 2])('reconstructs independent states and poses from the published v%i fixture', async (version) => {
   const fixture = fileURLToPath(new URL(`../../../../../tests/fixtures/recordings/v${version}/`, import.meta.url));
   const golden = JSON.parse(readFileSync(fixture + '/expected.json', 'utf8')) as {

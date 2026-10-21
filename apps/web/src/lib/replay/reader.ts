@@ -26,7 +26,7 @@ export interface Recording {
   status: 'recording' | 'complete' | 'incomplete';
   durationMs?: number;
   segments: RecordingSegment[];
-  revisions?: Record<string, { manifest: string; catalog: string; revisionNumericId: number }>;
+  revisions?: Record<string, { manifest?: string; catalog: string; revisionNumericId: number }>;
 }
 
 /** Normalize metadata only. The LWLG segment codec remains binary version 1. */

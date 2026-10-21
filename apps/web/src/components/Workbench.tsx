@@ -13,6 +13,7 @@ import { request } from '../lib/api';
 import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { SceneTree } from './SceneTree';
 import { Inspector } from './Inspector';
+import { InformationReplay } from './InformationReplay';
 import { ApprovalBanner, InvocationsPanel } from './InvocationsPanel';
 import { Diagnostics } from './Diagnostics';
 import { NewtonViewerButton } from './NewtonViewerButton';
@@ -187,14 +188,14 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           <span className="eyebrow">会话工作台</span>
         </Link>
         <div className="workspace-title">
-          <strong>{manifest?.sceneName ?? '正在打开会话…'}</strong>
+          <strong>{manifest?.sceneName ?? (state.informationOnly ? '实验室实况回放' : '正在打开会话…')}</strong>
           <span>{sessionId}</span>
         </div>
         <div className="header-status">
           <span className={`connection-dot ${connected ? 'connected' : ''}`} />
           <span data-testid="connection-status" data-connection={state.connection} title={state.connection}>{connectionLabel(state.connection)}</span>
           <span className="source-pill">
-            {manifest?.source.kind ?? 'source'}
+            {manifest?.source.kind ?? (state.informationOnly ? 'live' : 'source')}
           </span>
           <span className="observer-count">{Array.isArray(state.stats?.clients) ? state.stats.clients.length : '—'} 位观察者</span>
             <Link to={client.readOnly ? '/recordings' : '/sessions'} className="subtle-link" aria-label={client.readOnly ? 'Recordings' : 'Sessions'}>
@@ -300,7 +301,11 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             : state.commandResult === 'Command applied' ? '命令已应用' : state.commandResult}
         </div>
       )}
-      {!manifest ? (
+      {state.informationOnly ? <InformationReplay client={client} simTime={state.simTime}>
+        <SessionPlans client={client} selection={planSelection}
+          selectPlan={plan => void navigate({ to: '.', search: prior => ({ ...prior, plan, step: undefined }) })}
+          selectStep={step => void navigate({ to: '.', search: prior => ({ ...prior, step }) })} />
+      </InformationReplay> : !manifest ? (
         <div className="loading-workspace">
           <div className="loading-orbit" />
           <h2>
@@ -416,6 +421,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             <Inspector {...{ manifest, selected, client, state }} /></div>
         </div>
       )}
+      {state.informationOnly ? <footer className="status-bar"><span>设备信息 · 只读录制</span></footer> :
       <footer className="status-bar">
         <div>
           <span className="live-dot" />
@@ -463,7 +469,7 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
         <span className="revision-label">
           {manifest?.sceneRevision ?? '等待读取场景'}
         </span>
-      </footer>
+      </footer>}
     </main>
   );
 }
