@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import type { SceneManifest, Snapshot } from '../packages/protocol/types';
+import { observeTube } from './agent_journey_checks';
 
 type Debug = {
   getRenderedPose: (key: string) => { p: number[] } | undefined;
@@ -22,12 +23,11 @@ const { values } = parseArgs({
 const output = values.output!;
 const route = `${values.api}/api/v1/sessions/${values.session}`;
 const tubes = [1, 2, 3, 4].map((index) => `/World/Lab/Tubes/Tube${String(index).padStart(2, '0')}`);
-// A disagreement counts only if it persists for this many samples; the two sides are read ~ms apart.
-const STRIKES = 2;
 const report = {
   sessionId: values.session,
   locationComparisons: 0,
   poseComparisons: 0,
+  poseComparisonsByTube: Object.fromEntries(tubes.map((key) => [key, 0])),
   maxPoseDelta: 0,
   failures: [] as unknown[],
   checkpoints: [] as { file: string; reason: string; at: string }[],
@@ -79,20 +79,9 @@ async function main() {
       for (const [index, key] of tubes.entries()) {
         const location = state.entities[key].values.location;
         const { location: shown, rendered } = browserView[index];
-        report.locationComparisons += 1;
-        const pose = snapshot.poses.find((row) => row[0] === streams.get(key))!.slice(1, 4);
+        const pose = snapshot.poses.find((row) => row[0] === streams.get(key))?.slice(1, 4);
         const before = previous?.poses.find((row) => row[0] === streams.get(key))?.slice(1, 4);
-        const still = before && Math.max(...pose.map((value, axis) => Math.abs(value - before[axis]))) < 1e-5;
-        let delta = 0;
-        if (still && rendered) {
-          delta = Math.max(...pose.map((value, axis) => Math.abs(value - rendered[axis])));
-          report.poseComparisons += 1;
-          report.maxPoseDelta = Math.max(report.maxPoseDelta, delta);
-        }
-        const disagrees = shown !== location || delta > 1e-4;
-        strikes.set(key, disagrees ? (strikes.get(key) ?? 0) + 1 : 0);
-        if (strikes.get(key) === STRIKES)
-          report.failures.push({ key, simTime: snapshot.simTime, apiLocation: location, browserLocation: shown, delta });
+        observeTube(report, strikes, { key, simTime: snapshot.simTime, location, shown, pose, before, rendered });
         if (location !== seen.get(key)) {
           const initial = !seen.has(key);
           seen.set(key, location);
