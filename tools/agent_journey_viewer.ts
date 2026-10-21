@@ -1,5 +1,5 @@
 /** I5 browser observer started by tools/agent_journey.py: the live viewer must agree with the public API. */
-import { chromium } from '@playwright/test';
+import { chromium, type Browser } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -23,8 +23,9 @@ const output = values.output!;
 const route = `${values.api}/api/v1/sessions/${values.session}`;
 const tubes = [1, 2, 3, 4].map((index) => `/World/Lab/Tubes/Tube${String(index).padStart(2, '0')}`);
 // A disagreement counts only if it persists for this many samples; the two sides are read ~ms apart.
-const STRIKES = 3;
+const STRIKES = 2;
 const report = {
+  sessionId: values.session,
   locationComparisons: 0,
   poseComparisons: 0,
   maxPoseDelta: 0,
@@ -44,18 +45,19 @@ async function get<T>(suffix: string): Promise<T> {
 }
 
 async function main() {
-  // The runner's SIGTERM asks for a final screenshot, so Playwright must not close the browser on it.
-  const browser = await chromium.launch({
-    args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'],
-    handleSIGTERM: false,
-  });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  async function checkpoint(reason: string) {
-    const file = `${String(report.checkpoints.length).padStart(2, '0')}-${reason.replace(/[^a-zA-Z0-9.-]+/g, '_')}.png`;
-    await page.screenshot({ path: path.join(output, file) });
-    report.checkpoints.push({ file, reason, at: new Date().toISOString() });
-  }
+  let browser: Browser | undefined;
   try {
+    // The runner's SIGTERM asks for a final screenshot, so Playwright must not close the browser on it.
+    browser = await chromium.launch({
+      args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader'],
+      handleSIGTERM: false,
+    });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const checkpoint = async (reason: string) => {
+      const file = `${String(report.checkpoints.length).padStart(2, '0')}-${reason.replace(/[^a-zA-Z0-9.-]+/g, '_')}.png`;
+      await page.screenshot({ path: path.join(output, file) });
+      report.checkpoints.push({ file, reason, at: new Date().toISOString() });
+    };
     await page.goto(`${values.web}/sessions/${values.session}`);
     await page.getByTestId('connection-status').filter({ hasText: '已连接' }).waitFor({ timeout: 60_000 });
     const manifest = await get<SceneManifest>('/scene');
@@ -111,7 +113,7 @@ async function main() {
     report.failures.push({ error: String(error) });
   } finally {
     writeFileSync(path.join(output, 'viewer.json'), JSON.stringify(report, null, 2));
-    await browser.close();
+    await browser?.close();
   }
 }
 
