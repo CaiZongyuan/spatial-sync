@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The home page. A sticky 3D lab plays the storyboard as the reader scrolls;
-// below it come every chapter as a still, the real delivery status, and how to start.
+// below it come every chapter as a still, what the platform is built from, the real
+// delivery status, and how to start.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { withBase } from 'vitepress'
 import StageCanvas from './StageCanvas.vue'
@@ -10,6 +11,7 @@ import HudStrip from './HudStrip.vue'
 import GateToast from './GateToast.vue'
 import StatusChip from './StatusChip.vue'
 import ChapterIndex from './ChapterIndex.vue'
+import PlatformParts from './PlatformParts.vue'
 import StatusLedger from './StatusLedger.vue'
 import StartBlock from './StartBlock.vue'
 import { CHAPTERS, DURATION, HERO, chapterAt, chapterIndex, clamp, lerp, smooth } from './story'
@@ -184,6 +186,7 @@ onBeforeUnmount(() => {
     </section>
 
     <ChapterIndex ref="index" :stills="stills" @play="jump" />
+    <PlatformParts />
     <StatusLedger />
     <StartBlock />
   </div>

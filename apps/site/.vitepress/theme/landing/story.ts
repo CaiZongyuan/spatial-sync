@@ -31,8 +31,8 @@ export const CHAPTERS: Chapter[] = [
   { id: 'find', n: '04', kicker: '发现', title: '从失败里找到瓶颈', body: 'agent 回看录制：「把试管插进离心机」这一步只有 62% 成功率，失败集中在对位阶段。', status: 'planned', start: 26, end: 31, key: 29.6 },
   { id: 'evolve', n: '05', kicker: '进化', title: '自己训练，\n再接回流程', body: 'agent 起草训练计划；人批准后，在 256 个并行环境里训练。评估达到 94/100、人再次批准，新策略接回设备程序，agent 同时记下一条新技能。', status: 'planned', start: 31, end: 42, key: 37.2 },
   { id: 'result', n: '06', kicker: '结果', title: '拿到实验结果', body: '流程恢复，样本全部完成检测：37 °C 组生长最快。', status: 'vision', start: 42, end: 48, key: 47.4 },
-  { id: 'loop', n: '07', kicker: '闭环', title: '每一轮，\n都让下一轮更好', body: '目标、规划、执行、发现、进化、结果。每次改进都经过评估、可以追溯；人只在两处关口点一下批准。', status: 'planned', start: 48, end: 52, key: 51.6 },
-  { id: 'scale', n: '08', kicker: '规模', title: '然后，\n是一千座实验室', body: '每座实验室有自己的 agent 和目标。任何一处学到的策略和技能，都会流向所有实验室。科学发现，不再受限于人手。', status: 'vision', start: 52, end: 62, key: 61.4 },
+  { id: 'loop', n: '07', kicker: '闭环', title: '每一轮，\n都让下一轮更好', body: '目标、规划、执行、发现、进化、结果，再回到目标：这就是 RSI（Recursive Self-Improvement，递归自我改进）。每次改进都经过评估、可以追溯；人只在两处关口点一下批准。', status: 'planned', start: 48, end: 52, key: 51.6 },
+  { id: 'scale', n: '08', kicker: '规模', title: '然后，\n是一千座实验室', body: '每座实验室有自己的 agent 和目标。任何一处学到的策略和技能，都会流向所有实验室。让科学发现的速度，不再受限于人手。', status: 'vision', start: 52, end: 62, key: 61.4 },
 ]
 
 export const DURATION = 62
@@ -40,7 +40,7 @@ export const DURATION = 62
 export const HERO = {
   eyebrow: 'Lab RSI Platform · 早期预览',
   title: '会自我改进的实验室',
-  lede: '你只给一个目标。Agent 自己设计实验流程、操控机器人与设备、发现问题、训练新策略、沉淀技能，直到拿到结果，再把学到的一切带到下一座实验室。',
+  lede: '你给一个目标。agent 自己设计流程、操控设备，从失败里训练新策略，直到拿到结果，再把学到的带到下一座实验室。',
   note: '动画为示意，其中的数字不是实测结果。',
 }
 
