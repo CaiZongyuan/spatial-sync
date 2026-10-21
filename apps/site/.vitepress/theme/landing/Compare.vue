@@ -8,7 +8,7 @@ const ROWS: { topic: string; today: string; world: string; status: Status }[] = 
   { topic: '设备', today: '每台设备一套软件和协议，agent 读不懂。', world: '统一的设备类型与动作：能做什么、此刻怎样、缺什么，一查便知。', status: 'delivered' },
   { topic: '流程', today: '人写脚本，人盯着跑。', world: 'agent 把目标拆成操作计划；机械臂的路径，动手之前先预演。', status: 'delivered' },
   { topic: '安全', today: '靠操作员的经验和记性。', world: '前置条件与互锁写进设备定义，危险动作会被拦下，高风险动作要人批准。', status: 'delivered' },
-  { topic: '失败', today: '靠人发现，靠人记录。', world: '每一步都有录制和历史读数，agent 回看录制，定位是哪一步出了问题。', status: 'delivered' },
+  { topic: '失败', today: '靠人发现，靠人记录。', world: '每一步都有录制和历史读数，agent 可以用 lw 回看任意一次运行。', status: 'delivered' },
   { topic: '改进', today: '请专家重新调参、重新示教。', world: 'agent 起草训练计划，在并行仿真里训练；评估过线、人批准后接回流程。', status: 'planned' },
   { topic: '规模', today: '每座实验室从头再来。', world: '一处学到的策略和技能进入共享能力库，所有实验室一起变好。', status: 'vision' },
 ]

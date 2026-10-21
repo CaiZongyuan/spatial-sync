@@ -2,11 +2,11 @@
 // Above a post's title: the way back to the index, the date and the author.
 import { useData, withBase } from 'vitepress'
 import { computed } from 'vue'
-import { formatDate } from './date'
+import { formatDate, isoDate } from './date'
 
 const { frontmatter, page } = useData()
 const isPost = computed(() => page.value.relativePath.startsWith('blog/') && Boolean(frontmatter.value.date))
-const date = computed(() => (isPost.value ? new Date(frontmatter.value.date).toISOString().slice(0, 10) : ''))
+const date = computed(() => (isPost.value ? isoDate(frontmatter.value.date) : ''))
 </script>
 
 <template>

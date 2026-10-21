@@ -9,6 +9,7 @@ on:
     paths:
       - apps/site/**
       - apps/web/public/textures/paper/**
+      - apps/web/public/fonts/**
       - tools/subset_site_font.py
       - package.json
       - .github/workflows/site.yml
@@ -16,6 +17,7 @@ on:
     paths:
       - apps/site/**
       - apps/web/public/textures/paper/**
+      - apps/web/public/fonts/**
       - tools/subset_site_font.py
       - package.json
       - .github/workflows/site.yml

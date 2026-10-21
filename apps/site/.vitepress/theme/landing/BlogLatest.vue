@@ -32,7 +32,7 @@ const latest = posts.slice(0, 3)
 .all:hover { color: var(--ink); border-color: var(--ink); }
 .posts { margin-top: 40px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
 .post { display: flex; flex-direction: column; }
-.post img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); background: #141413; transition: transform .35s var(--ease), border-color .25s var(--ease); }
+.post img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); background: var(--figure-ground); transition: transform .35s var(--ease), border-color .25s var(--ease); }
 .post:hover img { transform: translateY(-2px); border-color: var(--line-2); }
 .meta { margin-top: 16px; font-size: 11.5px; color: var(--faint); }
 .title { margin-top: 8px; font-family: var(--font-display); font-weight: 600; font-size: 21px; line-height: 1.4; color: var(--ink); }

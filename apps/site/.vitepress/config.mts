@@ -1,16 +1,16 @@
 import { defineConfig, type HeadConfig } from 'vitepress'
 import { assertDisplayFontCovers } from './display-font'
+import { HERO } from './theme/landing/story'
 
 const base = '/spatial-sync/'
 const origin = 'https://caizongyuan.github.io'
-const description = '你给一个目标。agent 自己设计流程、操控设备，从失败里训练新策略，直到拿到结果，再把学到的带到下一座实验室。'
 
 // Chinese is the root locale. English joins later under /en/; the language
 // menu stays hidden until a second locale exists.
 export default defineConfig({
   base,
   title: 'Lab World',
-  description,
+  description: HERO.lede,
   appearance: 'dark',
   cleanUrls: true,
   lastUpdated: false,

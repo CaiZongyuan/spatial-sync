@@ -1215,7 +1215,6 @@ export class LabStage {
     const on = t > 52.8
     this.cityGroup.visible = on
     if (!on) return
-    const m = this.mats
     const counters = [0, 0, 0]
     const d = this.dummy
     const glowPos = this.glow.geometry.getAttribute('position') as THREE.BufferAttribute
@@ -1267,7 +1266,6 @@ export class LabStage {
       w.scale.setScalar(2 + k * 70)
       ;(w.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.65
     })
-    void m
   }
 
   render() {

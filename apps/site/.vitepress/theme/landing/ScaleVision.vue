@@ -24,7 +24,7 @@ import StatusChip from './StatusChip.vue'
 <style scoped>
 .sv-copy :deep(.pl-chip) { margin-top: 18px; }
 .sv-figure { margin: 56px 0 0; position: relative; }
-.sv-figure img { display: block; width: 100%; height: min(70vh, 720px); object-fit: cover; background: #141413;
+.sv-figure img { display: block; width: 100%; height: min(70vh, 720px); object-fit: cover; background: var(--figure-ground);
   -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 80%, transparent);
   mask-image: linear-gradient(180deg, transparent, #000 14%, #000 80%, transparent); }
 .pl .sv-line { margin: 40px auto 0; max-width: 1160px; padding: 0 24px; text-align: center; font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 4.2vw, 56px); line-height: 1.3; color: var(--ink); }

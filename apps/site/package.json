@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vitepress dev --host 127.0.0.1 --port 5192",
     "build": "vitepress build",
-    "preview": "vitepress preview --host 127.0.0.1 --port 5192"
+    "preview": "vitepress preview --host 127.0.0.1 --port 5193"
   },
   "devDependencies": {
     "@types/three": "0.183.1",

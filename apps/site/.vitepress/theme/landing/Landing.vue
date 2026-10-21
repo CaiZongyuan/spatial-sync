@@ -199,7 +199,7 @@ onBeforeUnmount(() => {
         <StageCanvas ref="stage" class="stage" :t="t" :offset-x="offsetX" :offset-y="offsetY" :reduced="reduced" @ready="watchIndex" />
         <div class="veil" :style="{ opacity: 0.8 + 0.2 * heroO }" />
 
-        <header class="hero" :style="{ opacity: heroO, transform: `translateY(${-28 * (1 - heroO)}px)`, pointerEvents: heroO > 0.5 ? 'auto' : 'none' }">
+        <header class="hero" :inert="heroO <= 0.5 || undefined" :style="{ opacity: heroO, transform: `translateY(${-28 * (1 - heroO)}px)`, pointerEvents: heroO > 0.5 ? 'auto' : 'none' }">
           <p class="pl-eyebrow">{{ HERO.eyebrow }}</p>
           <h1><span class="nb">会自我改进的</span><span class="nb">实验室</span></h1>
           <p class="lede">{{ HERO.lede }}</p>
@@ -230,12 +230,12 @@ onBeforeUnmount(() => {
 
         <HudStrip v-if="!narrow" class="hud" :t="t" :style="{ opacity: 1 - heroO }" />
 
-        <div class="controls" data-film-control :style="{ opacity: 1 - heroO, pointerEvents: heroO < 0.5 ? 'auto' : 'none' }">
+        <div class="controls" data-film-control :inert="heroO >= 0.5 || undefined" :style="{ opacity: 1 - heroO, pointerEvents: heroO < 0.5 ? 'auto' : 'none' }">
           <button class="ctl" :aria-label="playing ? '暂停' : '自动播放'" :aria-pressed="playing" @click="toggle">
             <template v-if="playing"><svg viewBox="0 0 16 16"><path d="M5 3.5v9M11 3.5v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></template><template v-else><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg></template>
           </button>
           <nav class="rail" aria-label="章节">
-            <button v-for="(c, i) in CHAPTERS" :key="c.id" :class="{ on: i === ci, past: i < ci }" :style="{ flexGrow: c.end - c.start }" @click="jump(i)">
+            <button v-for="(c, i) in CHAPTERS" :key="c.id" :class="{ on: i === ci, past: i < ci }" :style="{ flexGrow: c.end - c.start }" :aria-label="`第 ${c.n} 章：${c.kicker}`" :aria-current="i === ci ? 'step' : undefined" @click="jump(i)">
               <i /><span>{{ c.kicker }}</span>
             </button>
           </nav>

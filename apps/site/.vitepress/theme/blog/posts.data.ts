@@ -1,4 +1,5 @@
 import { createContentLoader } from 'vitepress'
+import { isoDate } from './date'
 
 // Every post is a Markdown file in blog/ whose frontmatter has a date.
 export interface Post {
@@ -20,7 +21,7 @@ export default createContentLoader('blog/*.md', {
       .map((page) => ({
         url: page.url,
         title: page.frontmatter.title,
-        date: new Date(page.frontmatter.date).toISOString().slice(0, 10),
+        date: isoDate(page.frontmatter.date),
         description: page.frontmatter.description ?? '',
         cover: page.frontmatter.cover,
         author: page.frontmatter.author,

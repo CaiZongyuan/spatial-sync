@@ -18,10 +18,10 @@ const flat = (s: string) => s.replace('\n', '')
     <ol class="grid">
       <li v-for="(c, i) in CHAPTERS" :key="c.id">
         <button class="card" :aria-label="`在动画中播放第 ${c.n} 章：${flat(c.title)}`" @click="emit('play', i)">
-          <figure>
+          <span class="fig">
             <span class="frame" :class="c.id"><img v-if="stills[i]" :src="stills[i]" alt="" /></span>
-            <figcaption class="mono">图 {{ i }} · {{ c.kicker }} · {{ STATUS_LABEL[c.status] }}</figcaption>
-          </figure>
+            <span class="cap mono">图 {{ i }} · {{ c.kicker }} · {{ STATUS_LABEL[c.status] }}</span>
+          </span>
           <span class="kick"><span class="mono">{{ c.n }}</span>{{ c.kicker }}<StatusChip :status="c.status" /></span>
           <span class="title">{{ flat(c.title) }}</span>
           <span class="body">{{ c.body }}</span>
@@ -34,7 +34,7 @@ const flat = (s: string) => s.replace('\n', '')
 <style scoped>
 .grid { list-style: none; margin: 56px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px 32px; }
 .card { display: flex; flex-direction: column; align-items: flex-start; gap: 0; width: 100%; padding: 0; background: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
-figure { margin: 0; width: 100%; }
+.fig { display: block; width: 100%; }
 .frame { display: block; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); background:
   radial-gradient(ellipse 70% 60% at 50% 45%, color-mix(in srgb, var(--surface-2) 75%, transparent), transparent 75%), var(--surface);
   transition: border-color .25s var(--ease), transform .35s var(--ease), box-shadow .35s var(--ease); }
@@ -42,7 +42,7 @@ figure { margin: 0; width: 100%; }
 /* The live film dissolves the city's edge; the still does the same. */
 .frame.scale img { -webkit-mask-image: radial-gradient(ellipse 62% 64% at 50% 50%, #000 35%, transparent 100%); mask-image: radial-gradient(ellipse 62% 64% at 50% 50%, #000 35%, transparent 100%); }
 .card:hover .frame, .card:focus-visible .frame { border-color: var(--line-2); transform: translateY(-2px); box-shadow: var(--shadow-1); }
-figcaption { margin-top: 10px; display: flex; justify-content: space-between; font-size: 10.5px; letter-spacing: .04em; color: var(--faint); }
+.cap { margin-top: 10px; display: flex; justify-content: space-between; font-size: 10.5px; letter-spacing: .04em; color: var(--faint); }
 .kick { margin-top: 18px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .kick .mono { font-size: 12px; color: var(--faint); }
 .title { margin-top: 10px; font-family: var(--font-display); font-weight: 600; font-size: 22px; line-height: 1.35; color: var(--ink); }
