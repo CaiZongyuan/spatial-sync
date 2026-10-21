@@ -104,7 +104,8 @@ class GatewayClient:
 
     async def catalog_if_active(self):
         health = await self.request("GET", "/api/v1/health")
-        if any(session["state"] in ("RUNNING", "PAUSED") for session in health["sessions"]):
+        if any(session["state"] in ("RUNNING", "PAUSED") and not session.get("evaluationId")
+               for session in health["sessions"]):
             return await self.catalog()
         if health.get("live", {}).get("enabled"):
             return await self.request("GET", "/api/v1/live/catalog")
