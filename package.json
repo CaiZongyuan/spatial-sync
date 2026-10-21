@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "pnpm --filter @spatial-sync/web dev",
     "build": "pnpm --filter @spatial-sync/web build",
+    "site:install": "pnpm --dir apps/site install --frozen-lockfile --ignore-workspace",
+    "site:dev": "pnpm --dir apps/site dev",
+    "site:build": "pnpm --dir apps/site build",
+    "site:font": "uv run --no-project --with fonttools==4.67.0 --with brotli==1.2.0 python tools/subset_site_font.py",
     "test:web": "pnpm --filter @spatial-sync/web test",
     "test:e2e": "pnpm --filter @spatial-sync/web test:e2e",
     "protocol:generate": "uv run --no-project --python 3.13 --with pydantic==2.12.4 python packages/protocol/scripts/export_schema.py && node packages/protocol/scripts/generate_types.mjs",

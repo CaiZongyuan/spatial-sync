@@ -1,0 +1,80 @@
+/* Shared surfaces for the home page. `pl-` prefixes its classes so they never
+   collide with VitePress. The page runs full-bleed under the transparent nav. */
+
+.landing .VPContent { padding-top: 0 !important; }
+.landing .VPHome { margin-bottom: 0 !important; padding-bottom: 0 !important; }
+.landing .VPFooter { display: none; }
+
+.pl { color: var(--ink); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
+.pl *, .pl *::before, .pl *::after { box-sizing: border-box; }
+.pl h1, .pl h2, .pl h3 { white-space: pre-line; margin: 0; font-family: var(--font-display); font-weight: 600; color: var(--ink); letter-spacing: 0; text-wrap: balance; }
+.pl p { margin: 0; }
+.pl a { color: inherit; text-decoration: none; }
+.pl .nb { display: inline-block; }
+.pl .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pl .num { font-variant-numeric: tabular-nums; }
+
+.pl-eyebrow { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+
+/* Editorial sections after the film: a ruled eyebrow, then a large serif title. */
+.pl-section { max-width: 1160px; margin: 0 auto; padding: 136px 24px 0; }
+.pl-section:focus { outline: none; }
+.pl-rule { display: flex; align-items: center; gap: 16px; }
+.pl-rule::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.pl-section-head { max-width: 720px; }
+.pl-figure { margin: 0; }
+.pl-figure img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); background: var(--figure-ground); box-shadow: var(--shadow-1); }
+.pl-figure figcaption { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.pl-figure figcaption .mono { font-size: 11px; letter-spacing: .04em; color: var(--faint); }
+.pl-section-head h2 { margin-top: 32px; font-size: clamp(34px, 4.4vw, 56px); line-height: 1.16; }
+.pl .pl-section-lede { margin-top: 20px; font-size: 17px; line-height: 1.8; color: var(--ink-2); }
+@media (max-width: 620px) {
+  .pl-section { padding: 88px 16px 0; }
+  .pl-section-head h2 { margin-top: 24px; font-size: 32px; }
+  .pl .pl-section-lede { font-size: 15px; }
+}
+
+.pl-panel {
+  position: relative; border: 1px solid var(--line); border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(16px) saturate(1.1); -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+.pl-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px 0; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--faint); text-transform: uppercase; }
+.pl-panel-body { padding: 10px 14px 14px; }
+
+.pl-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 9px; font-size: 14px; font-weight: 500; border: 1px solid var(--line-2); color: var(--ink); background: color-mix(in srgb, var(--surface) 70%, transparent); transition: background .2s var(--ease), border-color .2s var(--ease), transform .2s var(--ease); cursor: pointer; }
+.pl-btn:hover { border-color: var(--ghost); background: var(--surface-2); }
+.pl .pl-btn--primary { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.pl .pl-btn--primary:hover { background: var(--ink-2); border-color: var(--ink-2); }
+.pl-btn svg { width: 15px; height: 15px; }
+
+.pl-chip { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }
+.pl-chip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pl-chip--delivered { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line-2)); }
+.pl-chip--progress { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line-2)); }
+.pl-chip--planned { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 38%, var(--line-2)); }
+.pl-chip--vision { color: var(--muted); border-style: dashed; }
+.pl-chip--vision i { background: transparent; border: 1px solid currentColor; }
+
+/* Scene labels */
+.pl-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.pl-label { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; will-change: transform, opacity; }
+.pl-label span { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 7px; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); background: color-mix(in srgb, var(--surface) 84%, transparent); border: 1px solid var(--line-2); box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.pl-label span::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+.pl-label b { width: 1px; height: 16px; background: linear-gradient(var(--line-2), transparent); }
+.pl-label em { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-2); margin-top: -1px; }
+.pl-label.accent span { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 45%, var(--line-2)); }
+.pl-label.accent span::before, .pl-label.accent em { background: var(--accent); }
+.pl-label.warn span { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line-2)); }
+.pl-label.warn span::before, .pl-label.warn em { background: var(--warn); }
+.pl-label.bad span { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line-2)); }
+.pl-label.bad span::before, .pl-label.bad em { background: var(--bad); }
+.pl-label.good span { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line-2)); }
+.pl-label.good span::before, .pl-label.good em { background: var(--ok); }
+
+@keyframes pl-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@keyframes pl-caret { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .pl *, .pl *::before, .pl *::after { animation: none !important; transition: none !important; }
+}

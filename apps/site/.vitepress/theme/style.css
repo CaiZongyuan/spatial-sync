@@ -1,0 +1,111 @@
+/* Design tokens follow docs/spec/LAB_WEB_UI_SPEC_V1.md §1 (v1.1). VitePress
+   toggles `.dark` on <html>; light values live on :root and dark values on .dark.
+   Light pages sit on the warm paper tiles the Web app ships; dark keeps the grain. */
+
+@font-face { font-family: 'IBM Plex Sans'; src: url('../../../web/public/fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'IBM Plex Sans'; src: url('../../../web/public/fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'IBM Plex Sans'; src: url('../../../web/public/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+/* IBM Plex comes from the Web app's own files, like the paper tiles below. Noto Serif SC is
+   a subset cut to the site's characters; regenerate it with `pnpm site:font`. */
+@font-face { font-family: 'Noto Serif SC'; src: url('/fonts/noto-serif-sc-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('../../../web/public/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+
+:root {
+  --ground: #f3f2ee; --ground-2: #ecebe6; --surface: #fdfdfb; --surface-2: #f0efea;
+  --line: #e2dfd7; --line-2: #cdc9bf; --ghost: #b3b0a7;
+  --ink: #181713; --ink-2: #36342f; --muted: #5f5c55; --faint: #6f6c65;
+  --accent: #4c50c4; --accent-ink: #3c41b5; --on-accent: #ffffff;
+  --ok: #2f7b4f; --warn: #94620b; --bad: #c63d2f;
+  --c1: #4a50d4; --c2: #d0662c; --c3: #1a9a74;
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, .8);
+  --shadow-1: inset 0 1px 0 #fff, 0 0 0 .5px rgb(48 38 18 / 3%), 0 1px 2px rgb(48 38 18 / 7%), 0 20px 40px -26px rgb(48 38 18 / 36%);
+  --shadow-2: 0 24px 60px -24px rgba(46, 36, 22, .28), 0 2px 8px rgba(46, 36, 22, .06);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .6 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --grain-o: 0;
+  --paper: radial-gradient(1100px 620px at 18% -8%, rgba(255, 255, 255, .75), rgba(255, 255, 255, 0) 72%),
+    radial-gradient(140% 120% at 50% 30%, rgba(0, 0, 0, 0) 55%, rgba(110, 85, 50, .07) 100%),
+    url('../../../web/public/textures/paper/warm-grain.png'), url('../../../web/public/textures/paper/white-grain.png'),
+    url('../../../web/public/textures/paper/cloud.png');
+  --paper-size: auto, auto, 260px 260px, 260px 260px, 900px 900px;
+  --paper-att: fixed, fixed, scroll, scroll, scroll;
+
+  --m-floor: #e2ded4; --m-floor-side: #c4c0b6; --m-wall: #e3e0d9; --m-grid: #bab6ab; --m-edge: #4f4c45; --m-edge-o: .74;
+  --m-body: #f2f1ec; --m-body-2: #d3d1ca; --m-dark: #47453f; --m-steel: #cfcec8; --m-alu: #b8b6af; --m-plate: #6d6b65;
+  --m-glass: #a9c6d8; --m-medium: #e2a198; --m-cap: #6c84c6; --m-leaf: #8cad87; --m-shadow: #2e2416;
+  --m-sky: #f4f6ff; --m-gnd: #b9ae9c; --m-sun: #fff6ea; --m-hemi: .54; --m-key: .70; --m-ao: .50;
+
+  /* Generated pictures and the terminal are dark in both themes. */
+  --figure-ground: #141413;
+  --term-bg: #0f0f0e; --term-line: #262522; --term-dim: #8d8a82; --term-dot: #34332f; --term-ink: #d3d0c8; --term-ok: #88c49c; --term-bad: #f2766a;
+
+  --font-display: 'Noto Serif SC', 'Songti SC', 'STSong', 'Source Han Serif SC', serif;
+  --font-ui: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  --vp-font-family-base: var(--font-ui);
+  --vp-font-family-mono: var(--font-mono);
+}
+
+.dark {
+  --ground: #121211; --ground-2: #0d0d0c; --surface: #181816; --surface-2: #201f1d;
+  --line: #292825; --line-2: #383632; --ghost: #4f4d47;
+  --ink: #efede7; --ink-2: #d3d0c8; --muted: #a3a097; --faint: #827f76;
+  --accent: #9ca4ff; --accent-ink: #bcc1ff; --on-accent: #14152c;
+  --ok: #88c49c; --warn: #e2b25d; --bad: #f2766a;
+  --c1: #7078e8; --c2: #d0703a; --c3: #1f9e80;
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, .05);
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, .035), 0 1px 2px rgba(0, 0, 0, .3), 0 16px 36px -20px rgba(0, 0, 0, .65);
+  --shadow-2: 0 18px 44px -12px rgba(0, 0, 0, .7), 0 2px 8px rgba(0, 0, 0, .35);
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --grain-o: .16;
+  --paper: none; --paper-size: auto; --paper-att: scroll;
+
+  --m-floor: #2a2926; --m-floor-side: #1a1917; --m-wall: #363531; --m-grid: #46443f; --m-edge: #c9c5bb; --m-edge-o: .26;
+  --m-body: #9a978f; --m-body-2: #68665f; --m-dark: #262523; --m-steel: #8c8b85; --m-alu: #6a6964; --m-plate: #34332f;
+  --m-glass: #aabdcc; --m-medium: #c38c85; --m-cap: #8494bf; --m-leaf: #728e6f; --m-shadow: #000000;
+  --m-sky: #eef0ff; --m-gnd: #8c8374; --m-sun: #fff4e4; --m-hemi: .95; --m-key: 1.05; --m-ao: .66;
+}
+
+/* VitePress variables mapped onto the platform tokens. */
+:root, .dark {
+  --vp-c-bg: var(--ground);
+  --vp-c-bg-alt: var(--ground-2);
+  --vp-c-bg-elv: var(--surface);
+  --vp-c-bg-soft: var(--surface-2);
+  --vp-c-text-1: var(--ink);
+  --vp-c-text-2: var(--muted);
+  --vp-c-text-3: var(--faint);
+  --vp-c-divider: var(--line);
+  --vp-c-border: var(--line-2);
+  --vp-c-gutter: var(--line);
+  --vp-c-brand-1: var(--accent-ink);
+  --vp-c-brand-2: var(--accent);
+  --vp-c-brand-3: var(--accent);
+  --vp-c-brand-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --vp-nav-bg-color: color-mix(in srgb, var(--ground) 76%, transparent);
+  --vp-code-block-bg: var(--ground-2);
+  --vp-button-brand-bg: var(--ink);
+  --vp-button-brand-text: var(--ground);
+  --vp-button-brand-border: var(--ink);
+  --vp-button-brand-hover-bg: var(--ink-2);
+  --vp-button-brand-hover-text: var(--ground);
+  --vp-button-brand-hover-border: var(--ink-2);
+}
+
+body { background-color: var(--ground); background-image: var(--paper); background-size: var(--paper-size); background-attachment: var(--paper-att); }
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: 90; pointer-events: none;
+  background-image: var(--grain); background-size: 220px 220px; opacity: var(--grain-o);
+}
+
+.VPNavBar .content-body, .VPNavBar.has-sidebar .content-body { backdrop-filter: saturate(1.2) blur(14px); -webkit-backdrop-filter: saturate(1.2) blur(14px); }
+.VPNavBar.home.top .content-body { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.VPNavBarTitle .title { font-family: var(--font-mono); font-size: 13px; letter-spacing: .04em; font-weight: 400; }
+.VPNavBarTitle .logo { height: 22px; }
+
+.vp-doc h1, .vp-doc h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: 0; }
+.vp-doc h2 { border-top-color: var(--line); }
+.vp-doc img { border-radius: 12px; border: 1px solid var(--line); background: var(--figure-ground); }
+.vp-doc blockquote { border-left-color: var(--accent); }
+.vp-doc blockquote > p { font-family: var(--font-display); font-weight: 600; font-size: 20px; line-height: 1.6; color: var(--ink); }

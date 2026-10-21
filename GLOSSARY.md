@@ -4,9 +4,17 @@ A local laboratory workbench where people and agents manage lab assets and scene
 
 ## Direction
 
+**Lab World**:
+The product's name: the laboratory platform on which people and agents run the RSI loop, as presented to people outside the project.
+_Avoid_: spatial-sync (the repository), Lab Information Foundation (the information-plane specification), Lab RSI Platform (an earlier working name that the PRD keeps as its title)
+
 **RSI loop** (递归自我改进闭环):
 The cycle in which an agent, through the platform, goes from assets to scene to task to training to evaluation to a deployed device program, observes failures, and improves assets, scenes or rewards; people approve at the gates.
 _Avoid_: Reference State Initialization (a different RL term), self-play
+
+**Goal** (目标):
+A result a person asks the lab to achieve, such as finding the best culture condition for a sample.
+_Avoid_: Task (a training definition), mission
 
 ## Assets
 
@@ -138,6 +146,10 @@ _Avoid_: Permission, confirmation (when meaning a conversational check)
 **Platform Skill** (平台 skill):
 Instructions shipped with the platform that teach an agent how to operate the lab through `lw`, including when to interview a person and which Approval Gates it must not pass itself.
 _Avoid_: Development skill (instructions for building this repository), prompt
+
+**Capability Library** (能力库):
+The shared collection of Policies and agent-written skills that agents in many labs draw from and add to, so that an improvement made in one lab reaches the others.
+_Avoid_: Platform Skill (instructions shipped with the platform), skill store, model zoo
 
 ## Behavior
 
