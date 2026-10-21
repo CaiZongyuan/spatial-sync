@@ -55,6 +55,30 @@ under the same environment, workload and measurement boundary; use
 `check-benchmark` to assess the comparison. #70 tracks the Windows difference
 and does not block I5 or another ticket. Record the I5 MCP journey on Linux.
 
+Run the I5 runner on Linux/WSL2 with the frozen simulation/USD extras, installed
+web dependencies and Playwright Chromium, and an authenticated Claude Code CLI
+on `PATH`. Its process-group cleanup requires POSIX. The runner is one command.
+It starts its own Newton-capable API and web
+server on fresh roots under a timestamped output directory, then gives Claude
+Code an empty working directory, no built-in tools and only the `lab` MCP server:
+
+```bash
+uv run --no-sync python tools/agent_journey.py
+```
+
+The agent launches `robot-and-tubes` with Newton itself. While it works, every
+settled tube Site location is checked against physics whenever the rotor is at
+rest, and a browser observer compares the viewer's locations and resting poses
+with the API. The run fails unless the invocation log completes the I3 order
+with `agent:claude-code` only and the recording completes. The output holds
+`receipt.json`, the transcript, checkpoint screenshots and the zipped recording;
+publish the recording and transcript as release assets, never in the repository.
+Each tube must have a finite resting-pose comparison; a missing or non-finite
+rendered pose persisting for two samples fails. Sample rounds wait 400 ms plus
+HTTP, browser and screenshot work; they do not prove frame-by-frame agreement.
+Cleanup failures retain owned process identities in the failure receipt and do
+not stop cleanup attempts for other owned groups.
+
 The browser suite includes real format1 and format2 recording fixtures. Format1
 retains ten pose/location/joint samples; format2 pins a selected scene version
 and compares the final paused state with independent public HTTP reads. Live

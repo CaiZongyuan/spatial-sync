@@ -513,6 +513,9 @@ async def probe_newton_info(
         if output_dir:
             directory.mkdir(parents=True, exist_ok=False)
         with socket.socket() as reservation:
+            if os.name != "nt":
+                # Match Uvicorn's reuse policy for the preceding Synthetic server's TIME_WAIT.
+                reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             reservation.bind(("127.0.0.1", port))
         log_path = directory / "gateway.log"
         with log_path.open("w", encoding="utf-8") as log:
