@@ -31,9 +31,10 @@ from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
+from apps.api.app.live_recordings import LiveRecordingRepository
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
-from apps.api.app.recordings import RecordingRepository, install_recording_routes
+from apps.api.app.recordings import install_recording_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -125,13 +126,14 @@ def create_app(
     configure_gateway_logging()
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
-    recordings = RecordingRepository(settings, asset_registry)
+    recordings = LiveRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
     if settings.live_bindings is not None:
         manager.live = DeviceHost(
             load_bindings(settings.live_bindings), manager.approvals, manager.plans,
             approval_timeout=settings.approval_timeout_seconds,
+            recordings=recordings,
             **({"transport_factory": live_transport_factory} if live_transport_factory else {}),
         )
     library_assets = manager.library_assets

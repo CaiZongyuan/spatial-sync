@@ -17,6 +17,9 @@ class Settings:
     recordings_enabled: bool = field(
         default_factory=lambda: os.getenv("SPATIAL_RECORDINGS_ENABLED", "1") != "0"
     )
+    live_retention_days: int = field(
+        default_factory=lambda: int(os.getenv("SPATIAL_LIVE_RETENTION_DAYS", "7"))
+    )
     approval_timeout_seconds: float = 600
     heartbeat_interval_seconds: float = 1.0
     send_timeout_seconds: float = 2.0
@@ -45,6 +48,8 @@ class Settings:
     def __post_init__(self):
         if self.recordings_keep < 1:
             raise ValueError("recordings_keep must be positive")
+        if self.live_retention_days < 1:
+            raise ValueError("live_retention_days must be positive")
         if self.remote and (not self.operator_token or not self.allowed_origins):
             raise ValueError("remote mode requires an operator token and explicit allowed origins")
         if min(self.heartbeat_interval_seconds, self.send_timeout_seconds, self.reliable_queue_size) <= 0:

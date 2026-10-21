@@ -6,10 +6,12 @@ import time
 import uuid
 from types import SimpleNamespace
 
+from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.program import HostCore, Reject
 from packages.info.store import StateStore
 from packages.live.bindings import REGISTRY, live_catalog
+from packages.live.clock import public_message
 from packages.live.mailbox import DeviceMailbox
 from packages.live.mqtt import PahoTransport
 from packages.protocol.schema import EntityObservations, EntitySnapshot, InvocationUpdate, SessionOptions
@@ -19,13 +21,15 @@ class DeviceHost:
     supports_plans = False
 
     def __init__(self, bindings, approvals, plans, *, transport_factory=PahoTransport,
-                 clock=time.monotonic, approval_timeout=600):
+                 clock=time.monotonic, approval_timeout=600, recordings=None):
         self.bindings, self.approvals, self.plans = bindings, approvals, plans
         self._clock, self._origin = clock, clock()
         self._transport_factory, self.transport = transport_factory, None
         self._generation, self._next_connect = 0, 0
         self._reconnect = True
         self._task = None
+        self.recordings, self.recording = recordings, None
+        self._recording_ready = False
         self.state, self.error = "CREATED", None
         self.session_id = "live-" + uuid.uuid4().hex
         self.catalog = live_catalog(bindings, self.session_id)
@@ -41,6 +45,7 @@ class DeviceHost:
         self.source = self
         self.pipeline = ActionPipeline(self, self.catalog, self.info, self.broadcast_info,
                                        approval_timeout=approval_timeout)
+        self.pipeline.table = InvocationTable(evicted_lookup=self._recorded_invocation)
         self.topics = {}
         for key in self.catalog.entities:
             config = self.catalog.program_config(key)
@@ -51,6 +56,10 @@ class DeviceHost:
     def now(self):
         return max(0.0, self._clock() - self._origin)
 
+    def sample_time_ms(self):
+        raw_ms = self._clock() * 1000
+        return self.recording.map_time(raw_ms) if self.recording else raw_ms
+
     def availability(self, key):
         mailbox = self.mailboxes.get(key)
         if mailbox is not None and not mailbox.online(self.now()):
@@ -59,10 +68,19 @@ class DeviceHost:
     async def action_pipeline(self):
         return self.pipeline
 
+    async def _recorded_invocation(self, invocation_id):
+        value = await self.recording.lookup_invocation(invocation_id) if self.recording else None
+        return value if value is not None and value.status in TERMINAL else None
+
     def broadcast_info(self, message):
+        if self._recording_ready:
+            message = public_message(message, self.recording.map_time)
         if isinstance(message, (EntitySnapshot, EntityObservations)):
             self.info.apply(message)
-        self.info.record(message)
+        payload = self.info.record(message)
+        if self._recording_ready:
+            self.recording.append_json(payload, getattr(message, "sampleTimeMs", self.sample_time_ms()),
+                                       invocation_id=getattr(message, "invocationId", None))
 
     def _messages(self, messages):
         for message in messages:
@@ -115,6 +133,8 @@ class DeviceHost:
     def advance(self):
         """Synchronous event-loop step; transport take and publish cannot yield to cancel."""
         self._receive()
+        if self._recording_ready:
+            self.recording.maintain()
         now = self.now()
         if now > self.sim_time:
             self._messages(self.host.tick(now, now - self.sim_time))
@@ -172,6 +192,16 @@ class DeviceHost:
     async def start(self):
         if self.state != "CREATED":
             return
+        if self.recordings is not None:
+            self.recording = self.recordings.create_live(self.bindings.live, clock=self._clock)
+            if self.recording is not None:
+                await self.recording.ready()
+                initial = public_message(self.host.snapshot(), self.recording.map_time)
+                self.info.configure(self.catalog.sceneRevision)
+                self.info.apply(initial)
+                self.recording.add_revision(self.catalog.model_dump(mode="json"), initial.model_dump_json())
+                await self.recording.checkpoint()
+                self._recording_ready = True
         await self._connect()
         self.state = "RUNNING"
         self._task = asyncio.create_task(self._run(), name=self.session_id)
@@ -210,6 +240,12 @@ class DeviceHost:
                 failure = failure or error
         try:
             await self._close_transport()
+        except BaseException as error:
+            failure = failure or error
+        try:
+            if self.recording is not None:
+                await self.recording.close()
+                self._recording_ready = False
         except BaseException as error:
             failure = failure or error
         if failure is not None:
