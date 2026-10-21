@@ -99,6 +99,10 @@ test('changing scene filters retires old results and queued previews before the 
   page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) live.push(socket.url()); });
   page.on('requestfailed', request => aborted.add(request));
   const before = await (await request.get(`${api}/api/v1/health`)).json();
+  // Other cases can import versions into the same API; expect its library at test start.
+  const versions = async (query: string) => (await (await request.get(`${api}/api/v1/library/scenes?${query}`)).json()).scenes.length;
+  const [all, synthetic, searched] = [await versions(''), await versions('source=synthetic'), await versions('source=synthetic&q=lab-demo')];
+  expect(all).toBeGreaterThan(synthetic);
   await page.addInitScript(() => {
     const fetch = window.fetch.bind(window);
     const gate: SceneListGate = { ready: false, delivered: false, release: () => {} };
@@ -152,7 +156,7 @@ test('changing scene filters retires old results and queued previews before the 
   });
   try {
     await page.goto('/scenes');
-    await expect(page.locator('.scene-card')).toHaveCount(7);
+    await expect(page.locator('.scene-card')).toHaveCount(all);
     await oldReady;
     await expect.poll(() => held.some(request => !request.failure())).toBe(true);
     const activeOld = held.filter(request => !request.failure());
@@ -164,18 +168,18 @@ test('changing scene filters retires old results and queued previews before the 
     await expect.poll(() => activeOld.every(request => aborted.has(request)), { timeout: 1000 }).toBe(true);
     blockOld = false;
     releaseNext();
-    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await expect(page.locator('.scene-card')).toHaveCount(synthetic);
     await page.getByLabel('物理源筛选').selectOption('newton');
     await page.waitForFunction(() => (window as SceneListGateWindow).__sceneListSuccessGate.ready);
     await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible();
     await expect(page.locator('.scene-card')).toHaveCount(0);
     await page.getByLabel('物理源筛选').selectOption('synthetic');
-    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await expect(page.locator('.scene-card')).toHaveCount(synthetic);
     await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate.release());
     await page.waitForFunction(() => (window as SceneListGateWindow).__sceneListSuccessGate.delivered);
     // Let the late continuation and React commit before checking the visible result.
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await expect(page.locator('.scene-card')).toHaveCount(synthetic);
     await expect(page.locator('.scene-card-grid')).not.toContainText('robot-and-tubes');
     await page.getByLabel('搜索场景').fill('lab-demo');
     await expect(page.getByRole('alert')).toContainText('Controlled scene library retry');
@@ -186,7 +190,7 @@ test('changing scene filters retires old results and queued previews before the 
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.locator('.scene-card')).toHaveCount(0);
     releaseRetry();
-    await expect(page.locator('.scene-card')).toHaveCount(3);
+    await expect(page.locator('.scene-card')).toHaveCount(searched);
     expect(live).toEqual([]);
     const after = await (await request.get(`${api}/api/v1/health`)).json();
     expect(after.sessionCount).toBe(before.sessionCount);

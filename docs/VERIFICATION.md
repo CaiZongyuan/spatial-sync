@@ -23,14 +23,16 @@ pnpm --filter @spatial-sync/web exec playwright install chromium
 pnpm test:e2e
 ```
 
-Start an owned API first. E2E defaults to API8000 and isolated web5184.
-`SPATIAL_API_URL` selects another API; `SPATIAL_WEB_URL` selects an existing web
-server. Both must serve the candidate checkout. Include custom browser origins
-in `SPATIAL_ALLOWED_ORIGINS`. CI installs base Python dependencies and Chromium.
-The approval browser journey uses `approval_gateway:app --app-dir tests/fixtures`
-with `SPATIAL_TEST_APPROVAL=1`: it declares `closeLid` high-risk in the test Catalog
-before the real Synthetic host starts. Production device definitions are unchanged.
-Set `SPATIAL_STATE_ROOT` to an owned test directory alongside recordings.
+Start an owned `approval_gateway:app --app-dir tests/fixtures` API first. E2E
+defaults to API8000 and isolated web5184. `SPATIAL_API_URL` selects another API;
+`SPATIAL_WEB_URL` selects an existing web server. Both must serve the candidate
+checkout. Include custom browser origins in `SPATIAL_ALLOWED_ORIGINS`. CI installs
+base Python dependencies and Chromium. The gateway declares `closeLid` high-risk
+in the test Catalog before the real Synthetic host starts; the approval journey
+also needs `SPATIAL_TEST_APPROVAL=1`. Production device definitions are unchanged.
+`LW_LIBRARY`, `SPATIAL_STATE_ROOT` and `SPATIAL_RECORDINGS_ROOT` must be owned
+directories under `.scratch/`; unset, the gateway uses `.scratch/viewer-e2e`.
+E2E refuses an API that does not report such roots.
 Browser CI builds the Web app in each shard and sets `SPATIAL_E2E_WEB_MODE=preview`
 to serve that checkout's `dist` through Vite preview. Its API, WebSocket and
 recording proxies use the same configuration as the development server; the Live
