@@ -117,13 +117,19 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     }));
     expect(checked.satisfied).toBe(true);
     for (const id of [2, 3]) await expect(page.getByTestId(`plan-step-${id}`)).toHaveAttribute('data-status', 'done');
+    const added = await approve(request, await json<PlanDocument>(await request.post(`${api}/api/v1/plans/${plan.id}/revisions`, {
+      headers, data: { title: plan.title, target: 'session', steps: [...steps, { id: 5, check: condition }] },
+    })));
+    await expect(panel).toContainText('3 / 5 步已完成');
+    await expect(page.getByTestId('plan-revision-diff')).toHaveText('↳r1 → r2：新增步骤 5');
+    await expect(page.getByTestId('plan-step-5')).toContainText('r2 新增');
     const revised = await approve(request, await json<PlanDocument>(await request.post(`${api}/api/v1/plans/${plan.id}/revisions`, {
       headers, data: { title: plan.title, target: 'session', steps: [...steps.slice(0, 3), move(4, [.2, .4, -.5, 0, 0, 0, 0]), { id: 5, check: condition }] },
     })));
+    expect(revised.revision).toBe(added.revision + 1);
     await expect(panel).toContainText('3 / 5 步已完成');
-    await expect(page.getByTestId('plan-revision-diff')).toContainText('修改步骤 4；新增步骤 5');
-    await expect(page.getByTestId('plan-step-5')).toContainText('r2 新增');
-    const updated = await json<AvailablePreview>(await request.get(`${api}/api/v1/plans/${plan.id}/steps/4/preview?revision=2`));
+    await expect(page.getByTestId('plan-revision-diff')).toHaveText('↳r2 → r3：修改步骤 4');
+    const updated = await json<AvailablePreview>(await request.get(`${api}/api/v1/plans/${plan.id}/steps/4/preview?revision=3`));
     await geometry(page, updated);
     await page.getByTestId('plan-step-5').getByRole('button').focus();
     await page.keyboard.press('Enter');

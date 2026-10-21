@@ -58,7 +58,11 @@ export function previewBodies(manifest: SceneManifest, preview: AvailablePreview
 const canonical = (value: unknown): string => JSON.stringify(value, (_key, item) =>
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
-const content = ({ status: _status, ...step }: PlanStep) => canonical(step);
+const content = ({ status: _status, ...step }: PlanStep) => {
+  if ('do' in step && step.expect === null) delete step.expect;
+  if ('wait' in step && step.timeoutSeconds === null) delete step.timeoutSeconds;
+  return canonical(step);
+};
 
 export function planChanges(before: OperationPlan, after: OperationPlan): PlanChange[] {
   const changes: PlanChange[] = before.title === after.title ? [] : [{ change: 'title' }];

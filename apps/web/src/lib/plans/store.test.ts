@@ -100,6 +100,42 @@ it('formats real correlated CLI action/wait/check arguments and shell-specific q
   expect(stepCommand(plan, quoted, 'bash')).toContain(`'"O'\\''Brien lab"'`);
 });
 
+it('compares HTTP null optional step fields with their omitted reliable-message form', () => {
+  const robotStep = { id: 1, status: 'done' as const, do: { entity: '/arm', action: 'moveJoints', params: { positions: [1, .2] } } };
+  const http: OperationPlan = { ...plan, steps: [
+    { ...robotStep, expect: null },
+    { id: 2, status: 'done', wait: { entity: '/device', property: 'lidOpen', equals: false }, timeoutSeconds: null },
+  ] };
+  const reliable: OperationPlan = { ...http, revision: 2, steps: [
+    robotStep,
+    { id: 2, status: 'done', wait: { entity: '/device', property: 'lidOpen', equals: false } },
+    { id: 5, status: 'pending', check: { entity: '/device', property: 'lidOpen', equals: false } },
+  ] };
+  expect(planChanges(http, reliable)).toEqual([{ stepId: 5, change: 'added' }]);
+  expect(planChanges({ ...http, steps: [http.steps[1]] }, { ...http, steps: [reliable.steps[1]] })).toEqual([]);
+  expect(planChanges(reliable, { ...reliable, steps: [
+    { ...robotStep, expect: { entity: '/device', property: 'lidOpen', equals: false } },
+    { id: 2, status: 'done', wait: { entity: '/device', property: 'lidOpen', equals: false }, timeoutSeconds: 3 },
+    reliable.steps[2],
+  ] })).toEqual([{ stepId: 1, change: 'changed' }, { stepId: 2, change: 'changed' }]);
+});
+
+it('keeps meaningful JSON null in action parameters and conditions when comparing steps', () => {
+  const withNull: OperationPlan = { ...plan, steps: [
+    { id: 1, status: 'pending', do: { entity: '/arm', action: 'configure', params: { value: null, nested: { value: null } } } },
+    { id: 2, status: 'pending', check: { entity: '/device', property: 'payload', equals: { value: null } } },
+    { id: 3, status: 'pending', wait: { entity: '/device', property: 'payload', equals: { value: null } } },
+  ] };
+  const withoutNull: OperationPlan = { ...withNull, steps: [
+    { id: 1, status: 'pending', do: { entity: '/arm', action: 'configure', params: { nested: {} } } },
+    { id: 2, status: 'pending', check: { entity: '/device', property: 'payload', equals: {} } },
+    { id: 3, status: 'pending', wait: { entity: '/device', property: 'payload', equals: {} } },
+  ] };
+  expect(planChanges(withNull, withoutNull)).toEqual([
+    { stepId: 1, change: 'changed' }, { stepId: 2, change: 'changed' }, { stepId: 3, change: 'changed' },
+  ]);
+});
+
 it('keeps JSON-looking condition strings distinct from scalar values in copied commands', () => {
   for (const [value, argument] of [['false', `'"false"'`], ['null', `'"null"'`], ['12', `'"12"'`],
     [false, 'false'], [null, 'null'], [12, '12']] as const) {
