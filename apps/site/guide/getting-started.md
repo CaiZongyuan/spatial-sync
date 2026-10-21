@@ -6,9 +6,9 @@ Synthetic 模式不需要 Newton、Warp、CUDA 或 GPU，几分钟内就能在�
 
 需要 Python 3.13、[uv](https://docs.astral.sh/uv/)、Node.js 22 及以上版本和 pnpm。
 
+在项目仓库的根目录安装依赖：
+
 ```sh
-git clone https://github.com/CaiZongyuan/spatial-sync.git
-cd spatial-sync
 uv sync --frozen --group dev
 pnpm install --frozen-lockfile
 ```

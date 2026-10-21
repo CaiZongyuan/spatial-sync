@@ -24,7 +24,7 @@ const series = computed(() => {
 
 <template>
   <div class="rc pl-panel">
-    <div class="pl-panel-head"><span>样本生长 · OD600 · 72 h</span><span class="pl-demo">示意</span></div>
+    <div class="pl-panel-head"><span>样本生长 · OD600 · 72 h</span></div>
     <div class="pl-panel-body">
       <svg :viewBox="`0 0 ${W} ${H}`" role="img" aria-label="四个温度的生长曲线，37 °C 组最高">
         <g class="grid">

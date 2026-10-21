@@ -30,7 +30,7 @@ const accept = y(0.85)
 
 <template>
   <div class="tc pl-panel">
-    <div class="pl-panel-head"><span>训练 · 插管策略 · 3 个 seed</span><span class="pl-demo">示意</span></div>
+    <div class="pl-panel-head"><span>训练 · 插管策略 · 3 个 seed</span></div>
     <div class="pl-panel-body">
       <svg :viewBox="`0 0 ${W} ${H}`" role="img" aria-label="训练成功率随步数上升，三个 seed 的均值从约 15% 升到 95%">
         <g class="grid">

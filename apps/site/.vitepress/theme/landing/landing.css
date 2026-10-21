@@ -21,6 +21,10 @@
 .pl-rule { display: flex; align-items: center; gap: 16px; }
 .pl-rule::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .pl-section-head { max-width: 720px; }
+.pl-figure { margin: 0; }
+.pl-figure img { display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); background: #141413; box-shadow: var(--shadow-1); }
+.pl-figure figcaption { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.pl-figure figcaption .mono { font-size: 11px; letter-spacing: .04em; color: var(--faint); }
 .pl-section-head h2 { margin-top: 32px; font-size: clamp(34px, 4.4vw, 56px); line-height: 1.16; }
 .pl .pl-section-lede { margin-top: 20px; font-size: 17px; line-height: 1.8; color: var(--ink-2); }
 @media (max-width: 620px) {
@@ -28,7 +32,6 @@
   .pl-section-head h2 { margin-top: 24px; font-size: 32px; }
   .pl .pl-section-lede { font-size: 15px; }
 }
-.pl-demo { display: inline-flex; align-items: center; height: 17px; padding: 0 6px; border-radius: 4px; border: 1px dashed var(--line-2); color: var(--faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em; vertical-align: middle; }
 
 .pl-panel {
   position: relative; border: 1px solid var(--line); border-radius: 12px;

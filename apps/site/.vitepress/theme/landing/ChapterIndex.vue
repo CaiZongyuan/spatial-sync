@@ -20,7 +20,7 @@ const flat = (s: string) => s.replace('\n', '')
         <button class="card" :aria-label="`在动画中播放第 ${c.n} 章：${flat(c.title)}`" @click="emit('play', i)">
           <figure>
             <span class="frame" :class="c.id"><img v-if="stills[i]" :src="stills[i]" alt="" /></span>
-            <figcaption class="mono">图 {{ i }} · {{ c.kicker }} · {{ STATUS_LABEL[c.status] }}<span>示意</span></figcaption>
+            <figcaption class="mono">图 {{ i }} · {{ c.kicker }} · {{ STATUS_LABEL[c.status] }}</figcaption>
           </figure>
           <span class="kick"><span class="mono">{{ c.n }}</span>{{ c.kicker }}<StatusChip :status="c.status" /></span>
           <span class="title">{{ flat(c.title) }}</span>

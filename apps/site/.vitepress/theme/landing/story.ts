@@ -38,10 +38,9 @@ export const CHAPTERS: Chapter[] = [
 export const DURATION = 62
 
 export const HERO = {
-  eyebrow: 'Lab RSI Platform · 早期预览',
+  eyebrow: 'Lab World',
   title: '会自我改进的实验室',
   lede: '你给一个目标。agent 自己设计流程、操控设备，从失败里训练新策略，直到拿到结果，再把学到的带到下一座实验室。',
-  note: '动画为示意，其中的数字不是实测结果。',
 }
 
 export function chapterAt(t: number): Chapter {

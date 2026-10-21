@@ -1,22 +1,39 @@
-import { defineConfig } from 'vitepress'
+import { defineConfig, type HeadConfig } from 'vitepress'
 import { assertDisplayFontCovers } from './display-font'
 
-const repo = 'https://github.com/CaiZongyuan/spatial-sync'
+const base = '/spatial-sync/'
+const origin = 'https://caizongyuan.github.io'
+const description = '你给一个目标。agent 自己设计流程、操控设备，从失败里训练新策略，直到拿到结果，再把学到的带到下一座实验室。'
 
 // Chinese is the root locale. English joins later under /en/; the language
 // menu stays hidden until a second locale exists.
 export default defineConfig({
-  base: '/spatial-sync/',
-  title: 'Lab RSI Platform',
-  description: '会自我改进的实验室：agent 自己设计流程、操控设备、训练机器人，并在可度量的闭环里变得更好。',
+  base,
+  title: 'Lab World',
+  description,
   appearance: 'dark',
   cleanUrls: true,
   lastUpdated: false,
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/spatial-sync/mark.svg' }],
-    ['link', { rel: 'preload', href: '/spatial-sync/fonts/noto-serif-sc-600.woff2', as: 'font', type: 'font/woff2', crossorigin: '' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}mark.svg` }],
+    ['link', { rel: 'preload', href: `${base}fonts/noto-serif-sc-600.woff2`, as: 'font', type: 'font/woff2', crossorigin: '' }],
     ['meta', { name: 'theme-color', content: '#121211' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { property: 'og:site_name', content: 'Lab World' }],
   ],
+  // Link previews: every page gets its own title and summary; a post shows its cover.
+  transformHead({ pageData, title, description: pageDescription }): HeadConfig[] {
+    const fm = pageData.frontmatter
+    const path = pageData.relativePath.replace(/(^|\/)index\.md$/, '$1').replace(/\.md$/, '')
+    const image = `${origin}${base}${(fm.cover ?? '/og.jpg').replace(/^\//, '')}`
+    return [
+      ['meta', { property: 'og:type', content: fm.date ? 'article' : 'website' }],
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: pageDescription }],
+      ['meta', { property: 'og:url', content: `${origin}${base}${path}` }],
+      ['meta', { property: 'og:image', content: image }],
+    ]
+  },
   locales: {
     root: { label: '简体中文', lang: 'zh-CN' },
   },
@@ -25,8 +42,9 @@ export default defineConfig({
   vite: { build: { chunkSizeWarningLimit: 600 } },
   themeConfig: {
     logo: '/mark.svg',
-    siteTitle: 'Lab RSI Platform',
+    siteTitle: 'Lab World',
     nav: [
+      { text: '博客', link: '/blog/', activeMatch: '/blog/' },
       { text: '文档', link: '/guide/getting-started', activeMatch: '/guide/' },
     ],
     sidebar: {
@@ -37,7 +55,6 @@ export default defineConfig({
         },
       ],
     },
-    socialLinks: [{ icon: 'github', link: repo }],
     outline: { label: '本页目录' },
     docFooter: { prev: '上一页', next: '下一页' },
     darkModeSwitchLabel: '外观',

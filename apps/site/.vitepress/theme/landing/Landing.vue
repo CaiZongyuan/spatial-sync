@@ -1,18 +1,25 @@
 <script setup lang="ts">
-// The home page. A sticky 3D lab plays the storyboard as the reader scrolls;
-// below it come every chapter as a still, what the platform is built from, the real
-// delivery status, and how to start.
+// The home page. A sticky 3D lab plays the storyboard as the reader scrolls, or
+// by itself on autoplay; one click skips it. Long-form sections follow: why now,
+// the bottleneck, how the loop turns, a real run, use cases and scale, then every
+// chapter as a still, the real delivery status, the blog and how to start.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { withBase } from 'vitepress'
 import StageCanvas from './StageCanvas.vue'
 import AgentConsole from './AgentConsole.vue'
 import InsightPanel from './InsightPanel.vue'
 import HudStrip from './HudStrip.vue'
 import GateToast from './GateToast.vue'
 import StatusChip from './StatusChip.vue'
-import ChapterIndex from './ChapterIndex.vue'
+import WhyNow from './WhyNow.vue'
+import Compare from './Compare.vue'
+import HowLoop from './HowLoop.vue'
 import PlatformParts from './PlatformParts.vue'
+import RealRun from './RealRun.vue'
+import Scenarios from './Scenarios.vue'
+import ScaleVision from './ScaleVision.vue'
+import ChapterIndex from './ChapterIndex.vue'
 import StatusLedger from './StatusLedger.vue'
+import BlogLatest from './BlogLatest.vue'
 import StartBlock from './StartBlock.vue'
 import { CHAPTERS, DURATION, HERO, chapterAt, chapterIndex, clamp, lerp, smooth } from './story'
 import './landing.css'
@@ -23,6 +30,9 @@ const PER_SECOND = 0.15
 const END_SCREENS = 0.6
 const STILL_W = 960
 const STILL_H = 600
+// Autoplay runs the film in real time; the hero fades out four times faster.
+const HERO_SPEED = 4
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '])
 
 const track = ref<HTMLElement>()
 const stage = ref<InstanceType<typeof StageCanvas>>()
@@ -33,7 +43,10 @@ const t = ref(0)
 const heroP = ref(0)
 const reduced = ref(false)
 const stills = shallowRef<string[]>([])
+const playing = ref(false)
 let target = 0
+// Film time while autoplaying, negative while the hero is still fading out.
+let playT = 0
 let raf = 0
 let last = 0
 let shot = 0
@@ -48,6 +61,7 @@ const narrow = computed(() => vw.value < 900)
 const offsetX = computed(() => (narrow.value ? 0 : lerp(0.07, 0.22, heroO.value)))
 const offsetY = computed(() => (narrow.value ? lerp(-0.02, -0.16, heroO.value) : 0))
 const local = computed(() => clamp((t.value - chapter.value.start) / (chapter.value.end - chapter.value.start)))
+const ended = computed(() => t.value >= DURATION - 0.05)
 
 function measure() {
   vh.value = window.innerHeight
@@ -68,11 +82,45 @@ function onResize() {
   read()
 }
 
+// The page scroll is the one film clock: autoplay and chapter jumps both move it.
+function filmTop() {
+  return track.value!.getBoundingClientRect().top + window.scrollY
+}
+
+function scrollFor(time: number) {
+  return filmTop() + (HERO_SCREENS + time * PER_SECOND) * vh.value
+}
+
 function jump(i: number) {
   if (!track.value) return
-  const top = track.value.getBoundingClientRect().top + window.scrollY
-  const at = HERO_SCREENS * vh.value + (i === 0 ? 0 : (CHAPTERS[i].start + 0.2) * PER_SECOND * vh.value)
-  window.scrollTo({ top: top + at, behavior: reduced.value ? 'auto' : 'smooth' })
+  const time = i === 0 ? 0 : CHAPTERS[i].start + 0.2
+  if (playing.value) playT = time
+  else window.scrollTo({ top: scrollFor(time), behavior: reduced.value ? 'auto' : 'smooth' })
+}
+
+function play() {
+  if (!track.value) return
+  const now = (window.scrollY - filmTop()) / (PER_SECOND * vh.value) - HERO_SCREENS / PER_SECOND
+  playT = now >= DURATION - 0.05 ? 0 : Math.max(now, -HERO_SCREENS / PER_SECOND)
+  playing.value = true
+}
+
+function toggle() {
+  if (playing.value) playing.value = false
+  else play()
+}
+
+function skip() {
+  playing.value = false
+  const el = document.getElementById('why-now')
+  if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: reduced.value ? 'auto' : 'smooth' })
+}
+
+// Any scroll input from the reader takes the film back from autoplay.
+function interrupt(e: Event) {
+  if (!playing.value || (e.target as Element | null)?.closest?.('[data-film-control]')) return
+  if (e instanceof KeyboardEvent && !SCROLL_KEYS.has(e.key)) return
+  playing.value = false
 }
 
 const idle = () => new Promise<void>((resolve) => {
@@ -112,12 +160,18 @@ onMounted(() => {
   t.value = target
   window.addEventListener('scroll', read, { passive: true })
   window.addEventListener('resize', onResize)
+  for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) window.addEventListener(type, interrupt, { passive: true })
   mo = new MutationObserver(() => { if (stills.value.length) setTimeout(shoot, 50) })
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
   last = performance.now()
   const tick = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000)
     last = now
+    if (playing.value) {
+      playT = Math.min(DURATION, playT + dt * (playT < 0 ? HERO_SPEED : 1))
+      window.scrollTo(0, scrollFor(playT))
+      if (playT >= DURATION) playing.value = false
+    }
     // Ease toward the scroll position so wheel steps read as camera moves.
     const k = reduced.value ? 1 : 1 - Math.exp(-dt * 6)
     t.value += (target - t.value) * k
@@ -134,6 +188,7 @@ onBeforeUnmount(() => {
   mo?.disconnect()
   window.removeEventListener('scroll', read)
   window.removeEventListener('resize', onResize)
+  for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) window.removeEventListener(type, interrupt)
 })
 </script>
 
@@ -148,11 +203,11 @@ onBeforeUnmount(() => {
           <p class="pl-eyebrow">{{ HERO.eyebrow }}</p>
           <h1><span class="nb">会自我改进的</span><span class="nb">实验室</span></h1>
           <p class="lede">{{ HERO.lede }}</p>
-          <div class="actions">
-            <button class="pl-btn pl-btn--primary" @click="jump(0)">看它怎么做到<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
-            <a class="pl-btn" :href="withBase('/guide/getting-started')">快速开始</a>
+          <div class="actions" data-film-control>
+            <button class="pl-btn pl-btn--primary" @click="play"><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg>自动播放</button>
+            <button class="pl-btn" @click="skip">跳过动画<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
           </div>
-          <p class="note">{{ HERO.note }}<a href="#chapters">不想滚动？逐章速览 →</a></p>
+          <p class="note">也可以向下滚动，按自己的节奏看。</p>
         </header>
 
         <div class="copy" :style="{ opacity: 1 - heroO }">
@@ -175,19 +230,32 @@ onBeforeUnmount(() => {
 
         <HudStrip v-if="!narrow" class="hud" :t="t" :style="{ opacity: 1 - heroO }" />
 
-        <nav class="rail" :style="{ opacity: 1 - heroO }" aria-label="章节">
-          <button v-for="(c, i) in CHAPTERS" :key="c.id" :class="{ on: i === ci, past: i < ci }" :style="{ flexGrow: c.end - c.start }" @click="jump(i)">
-            <i /><span>{{ c.kicker }}</span>
+        <div class="controls" data-film-control :style="{ opacity: 1 - heroO, pointerEvents: heroO < 0.5 ? 'auto' : 'none' }">
+          <button class="ctl" :aria-label="playing ? '暂停' : '自动播放'" :aria-pressed="playing" @click="toggle">
+            <template v-if="playing"><svg viewBox="0 0 16 16"><path d="M5 3.5v9M11 3.5v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></template><template v-else><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg></template>
           </button>
-        </nav>
+          <nav class="rail" aria-label="章节">
+            <button v-for="(c, i) in CHAPTERS" :key="c.id" :class="{ on: i === ci, past: i < ci }" :style="{ flexGrow: c.end - c.start }" @click="jump(i)">
+              <i /><span>{{ c.kicker }}</span>
+            </button>
+          </nav>
+          <button class="skip" @click="skip">{{ ended ? '继续阅读' : '跳过动画' }}<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
+        </div>
 
         <div class="cue" :style="{ opacity: heroO }"><span>向下滚动</span><i /></div>
       </div>
     </section>
 
-    <ChapterIndex ref="index" :stills="stills" @play="jump" />
+    <WhyNow />
+    <Compare />
+    <HowLoop />
     <PlatformParts />
+    <RealRun />
+    <Scenarios />
+    <ScaleVision />
+    <ChapterIndex ref="index" :stills="stills" @play="jump" />
     <StatusLedger />
+    <BlogLatest />
     <StartBlock />
   </div>
 </template>
@@ -205,9 +273,7 @@ onBeforeUnmount(() => {
 .hero h1 { margin-top: 18px; font-size: clamp(44px, 6.2vw, 84px); line-height: 1.08; }
 .lede { margin-top: 22px; font-size: 17px; line-height: 1.75; color: var(--ink-2); max-width: 520px; }
 .actions { margin-top: 30px; display: flex; gap: 10px; flex-wrap: wrap; }
-.note { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--faint); }
-.note a { color: var(--muted); border-bottom: 1px solid var(--line-2); }
-.note a:hover { color: var(--ink); border-color: var(--ink); }
+.note { margin-top: 18px; font-size: 12.5px; color: var(--faint); }
 
 .copy { position: absolute; left: max(32px, 5vw); top: 50%; translate: 0 -50%; width: min(380px, 30vw); }
 .kicker { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
@@ -223,7 +289,14 @@ onBeforeUnmount(() => {
 .instruments { position: absolute; right: 24px; top: 84px; bottom: 112px; width: 330px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .gate { position: absolute; left: 50%; top: 92px; translate: -50% 0; z-index: 3; }
 .hud { position: absolute; left: max(32px, 5vw); bottom: 28px; }
-.rail { position: absolute; left: calc(max(32px, 5vw) + 420px); right: 378px; bottom: 36px; display: flex; gap: 4px; }
+.controls { position: absolute; left: calc(max(32px, 5vw) + 420px); right: 24px; bottom: 28px; display: flex; align-items: center; gap: 14px; z-index: 2; }
+.ctl { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--ink); cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: border-color .2s var(--ease); }
+.ctl:hover { border-color: var(--ghost); }
+.ctl svg { width: 14px; height: 14px; }
+.skip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: border-color .2s var(--ease), color .2s var(--ease); }
+.skip:hover { border-color: var(--ghost); color: var(--ink); }
+.skip svg { width: 13px; height: 13px; }
+.rail { flex: 1; min-width: 0; display: flex; gap: 4px; }
 .rail button { flex-basis: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px 0; background: none; border: 0; cursor: pointer; text-align: left; }
 .rail i { display: block; height: 2px; border-radius: 1px; background: var(--line-2); transition: background .3s var(--ease); }
 .rail span { font-size: 11px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .3s var(--ease); }
@@ -236,7 +309,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1180px) {
   .instruments { width: 290px; }
-  .rail { left: max(32px, 5vw); right: 338px; bottom: 96px; }
+  .controls { left: max(32px, 5vw); right: 338px; bottom: 96px; }
 }
 @media (max-width: 900px) {
   .veil { background: linear-gradient(180deg, color-mix(in srgb, var(--ground) 92%, transparent) 0%, color-mix(in srgb, var(--ground) 40%, transparent) 34%, transparent 52%, transparent 66%, color-mix(in srgb, var(--ground) 92%, transparent) 88%); }
@@ -248,9 +321,10 @@ onBeforeUnmount(() => {
   .copy h2 { font-size: 24px; margin-top: 10px; }
   .body { font-size: 13.5px; line-height: 1.7; margin-top: 8px; }
   .local { margin-top: 12px; }
-  .instruments { left: 16px; right: 16px; top: auto; bottom: 34px; width: auto; }
-  .gate { top: auto; bottom: 150px; }
-  .rail { left: 16px; right: 16px; bottom: 14px; }
+  .instruments { left: 16px; right: 16px; top: auto; bottom: 60px; width: auto; }
+  .gate { top: auto; bottom: 176px; }
+  .controls { left: 16px; right: 16px; bottom: 12px; gap: 10px; }
+  .ctl { width: 32px; height: 32px; }
   .rail span { display: none; }
   .rail button { padding: 4px 0; }
   .cue { display: none; }

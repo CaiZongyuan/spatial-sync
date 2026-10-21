@@ -10,7 +10,7 @@ const rate = Math.floor((ATTEMPTS.filter(Boolean).length / ATTEMPTS.length) * 10
 
 <template>
   <div class="ag pl-panel">
-    <div class="pl-panel-head"><span>插入离心机 · 近 40 次</span><span class="pl-demo">示意</span></div>
+    <div class="pl-panel-head"><span>插入离心机 · 近 40 次</span></div>
     <div class="pl-panel-body">
       <div class="big"><span class="v">{{ rate }}</span><span class="u">%</span><span class="cap">成功率</span></div>
       <div class="dots" role="img" :aria-label="`近 40 次插入中成功 25 次`">

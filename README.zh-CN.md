@@ -127,10 +127,12 @@ Claude Code。Agent 可读定义、查询、执行、取消、等待和
 
 库根、场景包与版本解析规则见[场景版本指南](docs/SCENE_LIBRARY.md)。
 
-项目网站在 `apps/site`（VitePress），由 Site workflow 发布到 GitHub Pages。
+Lab World 的网站在 `apps/site`（VitePress），由 Site workflow 发布到 GitHub Pages。
 运行 `pnpm site:dev` 后打开 http://127.0.0.1:5192/spatial-sync/；`pnpm site:build`
-输出到 `apps/site/.vitepress/dist`。标题字体是 Noto Serif SC 的子集，构建提示
-缺字时运行 `pnpm site:font` 并提交结果。
+输出到 `apps/site/.vitepress/dist`。博客文章是 `apps/site/blog/` 下的 Markdown，
+frontmatter 写 `title`、`date`、`description`，可选 `author` 和 `cover`；博客页
+和首页会自动列出。标题字体是 Noto Serif SC 的子集，构建提示缺字时运行
+`pnpm site:font` 并提交结果。
 
 测试、端口隔离及清理步骤见 [验证指南](docs/VERIFICATION.md)。基础检查不依赖
 Newton 或 GPU；实际物理另以 CPU/CUDA 检查验证。本地结果不代表外部 CI。
