@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - apps/site/**
+      - apps/web/public/textures/paper/**
       - tools/subset_site_font.py
       - package.json
       - pnpm-lock.yaml
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - apps/site/**
+      - apps/web/public/textures/paper/**
       - tools/subset_site_font.py
       - package.json
       - pnpm-lock.yaml

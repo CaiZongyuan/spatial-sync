@@ -190,9 +190,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.pl { background: var(--ground); }
 .film { position: relative; }
-.sticky { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+/* The film is a viewport, so it stays smooth; the paper shows in the sections below. */
+.sticky { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; background: var(--ground); }
 .stage { position: absolute; inset: 0; }
 .veil { position: absolute; inset: 0; pointer-events: none; background:
   radial-gradient(ellipse 46% 80% at 0% 50%, color-mix(in srgb, var(--ground) 94%, transparent), color-mix(in srgb, var(--ground) 55%, transparent) 55%, transparent 100%),
