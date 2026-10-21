@@ -18,6 +18,7 @@
 
 /* Editorial sections after the film: a ruled eyebrow, then a large serif title. */
 .pl-section { max-width: 1160px; margin: 0 auto; padding: 136px 24px 0; }
+.pl-section:focus { outline: none; }
 .pl-rule { display: flex; align-items: center; gap: 16px; }
 .pl-rule::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .pl-section-head { max-width: 720px; }

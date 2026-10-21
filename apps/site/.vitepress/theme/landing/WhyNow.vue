@@ -10,7 +10,7 @@ const NOW = [
 </script>
 
 <template>
-  <section id="why-now" class="pl-section">
+  <section id="why-now" class="pl-section" tabindex="-1">
     <p class="pl-eyebrow pl-rule"><span>为什么是现在</span></p>
     <div class="grid">
       <div class="essay">

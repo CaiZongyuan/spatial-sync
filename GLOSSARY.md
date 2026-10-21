@@ -13,7 +13,7 @@ The cycle in which an agent, through the platform, goes from assets to scene to 
 _Avoid_: Reference State Initialization (a different RL term), self-play
 
 **Goal** (目标):
-A result a person asks the lab to achieve, such as finding the best culture condition for a sample; Operation Plans and Training Plans serve a Goal.
+A result a person asks the lab to achieve, such as finding the best culture condition for a sample.
 _Avoid_: Task (a training definition), mission
 
 ## Assets
@@ -148,8 +148,8 @@ Instructions shipped with the platform that teach an agent how to operate the la
 _Avoid_: Development skill (instructions for building this repository), prompt
 
 **Capability Library** (能力库):
-The shared collection of Policies and Platform Skills that agents in many labs draw from and add to, so that an improvement made in one lab reaches the others.
-_Avoid_: Skill store, model zoo
+The shared collection of Policies and agent-written skills that agents in many labs draw from and add to, so that an improvement made in one lab reaches the others.
+_Avoid_: Platform Skill (instructions shipped with the platform), skill store, model zoo
 
 ## Behavior
 

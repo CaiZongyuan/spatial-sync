@@ -37,6 +37,7 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
 const track = ref<HTMLElement>()
 const stage = ref<InstanceType<typeof StageCanvas>>()
 const index = ref<InstanceType<typeof ChapterIndex>>()
+const ctl = ref<HTMLButtonElement>()
 const vh = ref(900)
 const vw = ref(1440)
 const t = ref(0)
@@ -47,6 +48,8 @@ const playing = ref(false)
 let target = 0
 // Film time while autoplaying, negative while the hero is still fading out.
 let playT = 0
+// Focus moves into the film controls once the hero (which held it) fades and turns inert.
+let focusControls = false
 let raf = 0
 let last = 0
 let shot = 0
@@ -103,6 +106,7 @@ function play() {
   const now = (window.scrollY - filmTop()) / (PER_SECOND * vh.value) - HERO_SCREENS / PER_SECOND
   playT = now >= DURATION - 0.05 ? 0 : Math.max(now, -HERO_SCREENS / PER_SECOND)
   playing.value = true
+  focusControls = Boolean(document.activeElement?.closest('.hero'))
 }
 
 function toggle() {
@@ -113,7 +117,9 @@ function toggle() {
 function skip() {
   playing.value = false
   const el = document.getElementById('why-now')
-  if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: reduced.value ? 'auto' : 'smooth' })
+  if (!el) return
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: reduced.value ? 'auto' : 'smooth' })
+  el.focus({ preventScroll: true })
 }
 
 // Any scroll input from the reader takes the film back from autoplay.
@@ -171,6 +177,10 @@ onMounted(() => {
       playT = Math.min(DURATION, playT + dt * (playT < 0 ? HERO_SPEED : 1))
       window.scrollTo(0, scrollFor(playT))
       if (playT >= DURATION) playing.value = false
+    }
+    if (focusControls && heroO.value < 0.5) {
+      focusControls = false
+      ctl.value?.focus({ preventScroll: true })
     }
     // Ease toward the scroll position so wheel steps read as camera moves.
     const k = reduced.value ? 1 : 1 - Math.exp(-dt * 6)
@@ -231,7 +241,7 @@ onBeforeUnmount(() => {
         <HudStrip v-if="!narrow" class="hud" :t="t" :style="{ opacity: 1 - heroO }" />
 
         <div class="controls" data-film-control :inert="heroO >= 0.5 || undefined" :style="{ opacity: 1 - heroO, pointerEvents: heroO < 0.5 ? 'auto' : 'none' }">
-          <button class="ctl" :aria-label="playing ? '暂停' : '自动播放'" :aria-pressed="playing" @click="toggle">
+          <button ref="ctl" class="ctl" :aria-label="playing ? '暂停' : '自动播放'" :aria-pressed="playing" @click="toggle">
             <template v-if="playing"><svg viewBox="0 0 16 16"><path d="M5 3.5v9M11 3.5v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></template><template v-else><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg></template>
           </button>
           <nav class="rail" aria-label="章节">

@@ -81,7 +81,7 @@ export const CONSOLE: Line[] = [
   { t: 5.6, kind: 'cmd', text: 'lw ls --json' },
   { t: 6.2, kind: 'out', text: '1 台机器人 · 5 台设备 · 3 个环境传感器' },
   { t: 7.2, kind: 'cmd', text: 'lw show /World/Lab/Incubator' },
-  { t: 7.8, kind: 'out', text: '4 个温区 · temperatureC · setpointC · setSetpoint' },
+  { t: 7.8, kind: 'out', text: '培养箱 · 4 个温区 · 每个温区可单独设定温度' },
   { t: 8.8, kind: 'cmd', text: 'lw inbox --since c-118' },
   { t: 9.3, kind: 'alert', text: '检测仪缺少校准记录，先补校准' },
   { t: 11.4, kind: 'agent', text: '把目标拆成操作计划。' },
