@@ -51,6 +51,18 @@ _Avoid_: Scene list, scene registry
 A named place in a Scene that a robot can reach, recorded as joint configurations; it belongs to the Scene because it depends on where the robot stands.
 _Avoid_: Waypoint, registered location
 
+**Physical TCP** (物理工具中心框):
+The calibrated frame of a robot's actual hand used to describe tool motion and the region between its fingers.
+_Avoid_: Object bottom frame, virtual task TCP
+
+**Tube grasp point** (管上抓取点):
+A point on a tube's centerline, measured upward from its bottom and moving with the tube's position and orientation.
+_Avoid_: TCP, bottom Site
+
+**Bottom Site** (管底站点):
+A named place for the bottom of an upright, seated tube; it identifies occupancy independently of where the hand grasps that tube.
+_Avoid_: Grasp point, tool frame
+
 **Validation Report** (验证报告):
 The recorded outcome of structural and physics checks on an Asset or Scene Version; it decides whether a Scene Version can be launched and what is missing.
 _Avoid_: Audit, test results

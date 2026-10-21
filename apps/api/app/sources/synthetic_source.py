@@ -7,6 +7,7 @@ import contextlib
 import math
 import time
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
 from packages.info.catalog import load_catalog
 from packages.info.preview import PreviewRequest, SourcePreview
@@ -15,6 +16,7 @@ from packages.programs.biosafety_cabinet.virtual import BiosafetyCabinetProgram
 from packages.programs.centrifuge.virtual import CentrifugeProgram
 from packages.programs.env_sensor.virtual import EnvSensorProgram
 from packages.programs.incubator.virtual import IncubatorProgram
+from packages.programs.robot_arm.grasp import upright_tube_bottom
 from packages.programs.robot_arm.virtual import RobotArmProgram, kinematics
 from packages.programs.tube.virtual import TubeProgram
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
@@ -27,11 +29,14 @@ from packages.protocol.schema import (
     TransformFrame,
     validate_command_args,
 )
+from packages.sim_runtime.synthetic_geometry import tube_height, world_site_pose, world_site_poses
 from packages.sim_runtime.synthetic_lab import (
     BASE,
     CENTRIFUGE,
     JOINT1,
     JOINT2,
+    LINK1,
+    LINK2,
     ROBOT,
     build_manifest,
 )
@@ -91,6 +96,9 @@ class SyntheticSource:
             fact_hz=options.factHz,
             publication_clock=self._publication_clock,
             seed=options.seed,
+            physics=SimpleNamespace(site_pose=self._location_pose,
+                                    tube_height=lambda key: tube_height(self.manifest, key),
+                                    preview_snapshot=lambda: None),
         )
         self._centrifuge_phase = self.host.reader(CENTRIFUGE, "phase")
         self._centrifuge_rpm = self.host.reader(CENTRIFUGE, "rpm")
@@ -232,24 +240,42 @@ class SyntheticSource:
     def _arm_poses(joints):
         return dict(zip((1, 2, 3), kinematics(joints), strict=True))
 
-    def _poses(self):
-        arm = self._arm_poses(self._joint_positions())
-        hand = arm[3]
-        poses = [(stream_id, *pose["p"], *pose["q"]) for stream_id, pose in arm.items()]
-        rotor = {
+    def _rotor_pose(self):
+        return {
             "p": [-0.5, 0.4, 0.85],
             "q": [0, 0, math.sin(self._rotor_angle / 2), math.cos(self._rotor_angle / 2)],
         }
-        locations = self.catalog.entities[ROBOT]["config"]["locations"]["locations"]
-        site_poses = {value["site"]: {"p": value["p"], "q": [0, 0, 0, 1]} for value in locations.values()}
-        for i, local in enumerate(((0.1, 0, 0.1), (0, 0.1, 0.1), (-0.1, 0, 0.1), (0, -0.1, 0.1))):
-            site_poses[CENTRIFUGE + f"/Rotor/Slot{i + 1}"] = compose_pose(
-                rotor, {"p": local, "q": [0, 0, 0, 1]}
+
+    def _location_pose(self, key):
+        matches = [site for site in self.manifest.sites if site.entityKey == key]
+        if len(matches) != 1:
+            raise ValueError("Actual Synthetic bottom Site is missing or ambiguous: " + key)
+        pose = world_site_pose(matches[0], {CENTRIFUGE + "/Rotor": self._rotor_pose()})
+        return pose["p"], pose["q"]
+
+    def _poses(self):
+        arm = self._arm_poses(self._joint_positions())
+        first, second, hand = arm.values()
+        poses = [(stream_id, *pose["p"], *pose["q"]) for stream_id, pose in arm.items()]
+        rotor = self._rotor_pose()
+        height = self.catalog.entities[ROBOT]["config"].get("graspHeightM", 0.0)
+        if height:
+            site_poses = world_site_poses(
+                self.manifest.sites,
+                {CENTRIFUGE + "/Rotor": rotor, LINK1: first, LINK2: second, ROBOT + "/Hand": hand},
             )
+        else:
+            # Preserve the pre-height source's placement behavior for old packages.
+            locations = self.catalog.entities[ROBOT]["config"]["locations"]["locations"]
+            site_poses = {value["site"]: {"p": value["p"], "q": [0, 0, 0, 1]} for value in locations.values()}
+            for i, local in enumerate(((0.1, 0, 0.1), (0, 0.1, 0.1), (-0.1, 0, 0.1), (0, -0.1, 0.1))):
+                site_poses[CENTRIFUGE + f"/Rotor/Slot{i + 1}"] = compose_pose(
+                    rotor, {"p": local, "q": [0, 0, 0, 1]}
+                )
         for index, read_location in enumerate(self._tube_locations):
             location = read_location()
             pose = (
-                {"p": hand["p"], "q": [0, 0, 0, 1]}
+                {"p": upright_tube_bottom(hand["p"], height), "q": [0, 0, 0, 1]}
                 if location == "held"
                 else site_poses.get(
                     location,

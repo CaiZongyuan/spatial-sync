@@ -7,6 +7,7 @@ from pydantic import Field, model_validator
 from packages.info.program import ProgramConfig, Reject
 from packages.protocol.math import compose_pose
 
+from .grasp import nominal_grasp_target, upright_tube_bottom
 from .preview import joint_targets, path_preview, taught_waypoints
 from .taught import require_postures
 from .trajectory import plan_trajectory
@@ -40,6 +41,7 @@ class RobotArmProgram:
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
         tubes: list[str]
         speedScale: float = Field(default=1.0, gt=0, le=1)
+        graspHeightM: float = Field(default=0.0, ge=0, allow_inf_nan=False, strict=True)
 
         @model_validator(mode="after")
         def taught_poses(self):
@@ -51,9 +53,45 @@ class RobotArmProgram:
         self.elapsed = 0.0
         self._set_joints(ctx, HOME)
         ctx.set(phase="idle", gripperWidth=0.08, holding=None, atLocation=None, zone=None)
+        if ctx.config.graspHeightM:
+            if ctx.physics is None or not hasattr(ctx.physics, "tube_height"):
+                raise ValueError("Nonzero grasp height requires actual Synthetic tube geometry")
+            for tube in ctx.config.tubes:
+                if ctx.config.graspHeightM > ctx.physics.tube_height(tube):
+                    raise ValueError("Grasp height exceeds actual Synthetic tube height")
+            for location in self._locations(ctx).values():
+                actual = self._bottom_site(ctx, location)
+                declared = location.get("p")
+                if (
+                    not isinstance(declared, list)
+                    or len(declared) != 3
+                    or any(type(value) not in (int, float) or not math.isfinite(value) for value in declared)
+                    or math.dist(declared, actual) > 1e-9
+                ):
+                    raise ValueError("Taught position differs from the actual Synthetic bottom Site")
 
     def _locations(self, ctx):
         return ctx.config.locations["locations"]
+
+    def _bottom_site(self, ctx, location):
+        if ctx.physics is None:
+            raise ValueError("Nonzero grasp height requires actual Synthetic Site geometry")
+        return ctx.physics.site_pose(location["site"])[0]
+
+    def _grasp_matches(self, ctx, name):
+        hand = kinematics(ctx.get("jointPositions"))[2]["p"]
+        target = nominal_grasp_target(
+            self._bottom_site(ctx, self._locations(ctx)[name]), ctx.config.graspHeightM
+        )
+        return math.dist(hand, target) <= 0.010
+
+    def _release_matches(self, ctx, name):
+        hand = kinematics(ctx.get("jointPositions"))[2]["p"]
+        bottom = upright_tube_bottom(hand, ctx.config.graspHeightM)
+        site = self._bottom_site(ctx, self._locations(ctx)[name])
+        return (
+            math.hypot(bottom[0] - site[0], bottom[1] - site[1]) < 0.015 and abs(bottom[2] - site[2]) < 0.02
+        )
 
     def _set_joints(self, ctx, joints):
         hand = kinematics(joints)[2]
@@ -183,13 +221,18 @@ class RobotArmProgram:
         elif kind == "pick":
             site = self._locations(ctx)[name]["site"]
             tube = next((tube for tube in ctx.config.tubes if ctx.read(tube, "location") == site), None)
-            if tube is None:
+            if tube is None or ctx.config.graspHeightM and not self._grasp_matches(ctx, name):
                 inv.fail("grasp_failed", "Tube is no longer at the taught position")
                 self.handle = None
                 ctx.set(phase="idle")
                 return
             ctx.set(holding=tube, gripperWidth=0.016)
         elif kind == "place":
+            if ctx.config.graspHeightM and not self._release_matches(ctx, name):
+                inv.fail("place_failed", "Actual held tube bottom is outside the destination Site")
+                self.handle, self.plan, self.segment = None, [], None
+                ctx.set(phase="idle")
+                return
             ctx.set(holding=None, gripperWidth=0.08, atLocation=name)
         self.completed += 1
         self.segment = None

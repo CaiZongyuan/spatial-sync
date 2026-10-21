@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from packages.info.binding_validation import compile_alert_rules, validate_binding_semantics
 from packages.info.declarations import EntityBindingDeclaration
 from packages.library.common import content_hash, document
+from packages.library.grasp_calibration import grasp_checks
 from packages.library.metadata import Locations
 from packages.library.python_stages import resources as python_resources
 from packages.library.reports import parse_report
@@ -490,6 +491,12 @@ def validate(payload):
                 )
             except (ValueError, KeyError, TypeError) as exc:
                 reference_problems.append(f"Invalid binding semantics on {key}: {exc}")
+    grasp_calibrations = {}
+    if kind == "scene":
+        grasp_problems, grasp_calibrations = grasp_checks(
+            stage, list(semantic_bindings.values()), payload["programs"], authored, graph, resources
+        )
+        reference_problems.extend(grasp_problems)
     checks["S5"] = check(
         "S5",
         "fail" if reference_problems else "warn" if resources is None else "pass",
@@ -658,6 +665,8 @@ def validate(payload):
     }
     if items:
         result["completeness"] = items
+    if grasp_calibrations:
+        result["graspCalibrations"] = grasp_calibrations
     if kind == "scene" and scene_source is not None and checks["S5"]["status"] == "pass":
         result["effectiveBindings"] = {scene_source: list(normalised_bindings.values())}
     if stage and kind == "scene":

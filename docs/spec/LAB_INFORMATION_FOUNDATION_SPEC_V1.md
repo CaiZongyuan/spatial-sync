@@ -191,6 +191,7 @@ entities:
       fingerJoints: [/World/Lab/RobotA/fr3/fr3_finger_joint1, /World/Lab/RobotA/fr3/fr3_finger_joint2]
       handBody: /World/Lab/RobotA/fr3/fr3_hand
       tcpSite: /World/Lab/RobotA/fr3/fr3_hand/tcp
+      graspHeightM: 0.0                  # 可选，米；所有配置管共用的局部 +Z 抓取高度
       speedScale: 0.5
       grasp: {mode: contact}            # contact | weld（§6.4，D-01）
       locations: robot-and-tubes.locations.yaml
@@ -511,6 +512,20 @@ PhysicsPort 是程序访问物理的唯一入口，所有读取都来自每个 t
 
 ### 6.3 机械臂：`robot-arm/v1` 与 `robot_arm.newton`
 
+**管上抓取点与真实 TCP**（ADR-0002）
+
+`robot_arm.newton` 与 `robot_arm.virtual` 只有一个新增可选 Config 字段 `graspHeightM`：有限、非负的严格 number，缺省 `0.0`；拒绝 bool、数字字符串、NaN/Inf。一个 arm binding 的全部 `tubes` 共用同一高度 h，不支持逐管 map、横向偏移、任意 Site、自动选点或运行中切换。h 是场景对所用管的操作声明，不修改不可变机器人素材；非零模式必须核实全部管的底部/局部 +Z 约定及实际几何高度，超界或未知为 S5 fail。同一管的两个 arm binding 若高度不同且至少一个非零，也为 S5 fail。
+
+令 B 是实际管底 body 框、F 是实际校准的 physical TCP、L 是名义落座的 Bottom Site：
+
+```text
+actualGraspPoint = bodyPosition + bodyRotation · [0, 0, h]
+pointInFingers   = inverse(tcpRotation) · (actualGraspPoint - tcpPosition)
+nominalTarget    = bottomSiteWorld + [0, 0, h]
+```
+
+`tcpSite`、`handBody`、`fingerKeys`、公开 `tcpPose` 和手指区域始终描述真实手，不能新建或移动一个管底框来冒充 TCP。实际点随管的旋转变化；名义点假定管竖直落座，使用世界 +Z，不跟随手或任意倾斜 Site 的轴。P6 以真实物理 FK 对名义点测量，规则见《Assets and Scenes》§7.2.1；P6 仅检验名义位置，不证明方向、接触或路径安全。默认 0 保留旧动作、旧绑定与旧录制的含义。
+
 **属性**
 
 | 属性 | 类型 | 说明 |
@@ -539,6 +554,10 @@ PhysicsPort 是程序访问物理的唯一入口，所有读取都来自每个 t
 **pick 流程**：受理时找出 `location == 该位置 site` 的试管，没有则以 `location_empty` 拒绝。执行顺序：移到 approach → 张开夹爪 → 再次检查 `requires` → 移到 grasp → 闭合夹爪（宽度 0.2 s 内不再变化即视为夹紧）→ 抬回 approach → 检查 `holding` 是否为该试管（试管抬升 ≥ 2 cm 且位于手指区域内）。检查失败时以 `grasp_failed` 结束，张开夹爪，停在 approach。
 
 **place 流程**：移到 approach → 检查 `requires` → 移到 grasp → 张开 → 抬回 approach → 1 s 内检查该试管的 `location` 是否等于目标 site，否则以 `place_failed` 结束。
+
+非零 h 只改变真实手指框中检查的管上点。手指区域的 ±16/20/25 mm、原指速、`17 mm + 2|pointInFingers.y|` 的焊接捕获/释焊条件保持；contact holding 仍是原有宽度/区域启发式，不代表接触力证明。weld holding 读取实际约束状态，hand↔tube 约束从当前相对位姿启用/解除，不传送管或 Site；既有 1 mm 相对漂移验证门槛不变。实际闭合达不到条件就沿用 `grasp_failed` 等既有失败码，不额外放宽开口阈值。
+
+选管和 place 继续使用管底 occupancy，pick 抬升仍检查实际 body 底部 Z 增加至少 20 mm。h 不参与管底距离、相对速度或 upright 判断。采用非零高度必须发布新的 Scene Version 并重新示教；给旧底部向量加上 h 并不算重新示教。80 mm 仅可作为未验证示例，不是本规格选定的可用值。
 
 **轨迹**：每段在关节空间内按梯形速度规划。速度上限 = URDF 关节速度限 × `speedScale` × `speed`，加速度上限 2 rad/s²。最大关节误差 < 0.01 rad 且最大关节速度 < 0.05 rad/s 时该段完成。超过（2 × 规划时长 + 1 s）以 `motion_timeout` 失败。轨迹规划写成纯函数（`trajectory.py`），在 CI 中单测。
 
@@ -593,6 +612,8 @@ PhysicsPort 是程序访问物理的唯一入口，所有读取都来自每个 t
 
 ### 6.6 试管：`tube.newton`
 
+- 本节的试管原点始终是管底 body 原点；机械臂的 `graspHeightM` 不改变它和 Bottom Site，也不改变本节判定。
+
 - `tick_priority`：机械臂 10、试管 20、离心机 30。试管读取机械臂的 `holding`，离心机读取试管的 `location`，按此顺序同一 tick 内就能读到最新值。
 - `location` 在 `fact_due` 时计算（`factHz` 默认 10）：
   - 若某机械臂的 `holding` 等于本试管，取值为 `held`；
@@ -611,6 +632,8 @@ PhysicsPort 是程序访问物理的唯一入口，所有读取都来自每个 t
 - 试管读取机械臂的 `holding` 和最近一次 place 的目标位置，更新自己的 `location`。
 - 离心机的盖子与转速按时间变化。
 - SyntheticSource 同步移动对应 Body 的位姿：夹持时试管跟随 TCP，放下后对齐到目标 Site，让浏览器画面与属性一致。
+
+`graspHeightM=0` 保留原有 Synthetic 行为。非零模式仍使用 `kinematics()` 的实际虚拟手框，保持管竖直，因此持管 body 底部为 `handPosition - [0,0,h]`、管旋转为 identity；公开 TCP 不向下移动。pick 必须用实际关节 FK 与同一实际 Synthetic Bottom Site 上方的名义点检查，错误向量不能先写 `holding` 再移动画面补成成功。place 释放前的预测管底必须满足原位置条件；仅凭 `atLocation` 不能在非零模式把错误位置改写为成功。源与程序共用实际 Site 位姿计算，并核对 `locations.p` 与该 Site 一致。Synthetic 仍无接触求解器，不宣称 FR3 物理效果，也不新增 USD 场景的 Synthetic 加载能力。
 
 `lab-demo` 场景的绑定文件与 Newton 场景使用相同的类型和位置名，只是程序换成 `*.virtual`。这样 MCP、CLI 和 E2E 测试都能在没有 Newton 的环境中跑通完整流程。
 

@@ -31,6 +31,16 @@ def prepare_scene_config(payload, *, include_visuals=False):
     root = "/Asset" if asset else "/World/Lab"
     if not stage.GetPrimAtPath(root):
         raise ValueError("USD physics root is missing: " + root)
+    calibrations = {}
+    if not asset:
+        from packages.library.grasp_calibration import grasp_checks
+
+        problems, calibrations = grasp_checks(
+            stage, payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []),
+            payload["programs"], payload.get("bindings", {"entities": []}), graph,
+        )
+        if problems:
+            raise ValueError("Physical grasp calibration failed: " + "; ".join(problems))
     offset = 0.
     if asset:
         cache = UsdGeom.BBoxCache(0, ["default", "render", "proxy"])
@@ -52,7 +62,8 @@ def prepare_scene_config(payload, *, include_visuals=False):
         paths = import_usd(result, stage, root_path=root, hide_collision_shapes=False,
                            xform=wp.transform((0, 0, offset), wp.quat_identity()))
         if not asset:
-            add_taught_sites(result, stage, paths, payload)
+            add_taught_sites(result, stage, paths, payload, calibrations=calibrations)
+            result.spatial_grasp_calibrations = calibrations
             bindings = payload.get("structure", {}).get("effectiveBindings", {}).get("newton", [])
             pairs = configured_weld_pairs(
                 bindings, {str(path): index for path, index in paths["path_body_map"].items()},
@@ -104,7 +115,7 @@ def configured_weld_pairs(bindings, bodies, sites):
     return sorted(pairs)
 
 
-def add_taught_sites(builder, stage, paths, payload):
+def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
     """Materialize verified Config Sites without altering their authored visual shapes."""
     import newton
     import warp as wp
@@ -140,6 +151,8 @@ def add_taught_sites(builder, stage, paths, payload):
              if int(builder.shape_flags[index]) & int(newton.ShapeFlags.SITE)}
     bodies = {str(path): index for path, index in paths["path_body_map"].items()}
     cache = UsdGeom.XformCache()
+    physical_tcp = {row["expected"]["tcpSite"]: row["expected"]
+                    for row in (calibrations or {}).values()}
     added = {}
     for key in sorted(requested - sites):
         prim = stage.GetPrimAtPath(key)
@@ -151,7 +164,19 @@ def add_taught_sites(builder, stage, paths, payload):
                             wp.quat(*quaternion.GetImaginary(), quaternion.GetReal()))
         owners = [path for path in bodies if key.startswith(path + "/")]
         body = bodies[max(owners, key=len)] if owners else -1
-        if body >= 0:
+        if key in physical_tcp:
+            owner = physical_tcp[key]["siteOwner"]
+            if owner not in bodies or bodies[owner] != body:
+                raise ValueError("Physical TCP imported body owner differs from calibrated USD")
+            # Compute local pose in USD doubles, then round once into the model.
+            # World-space float32 cancellation must not redefine calibration.
+            local, reset = cache.ComputeRelativeTransform(prim, stage.GetPrimAtPath(owner))
+            if reset:
+                raise ValueError("Physical TCP resets its calibrated owner transform")
+            rotation = local.ExtractRotationQuat()
+            pose = wp.transform(tuple(local.ExtractTranslation()),
+                                wp.quat(*rotation.GetImaginary(), rotation.GetReal()))
+        elif body >= 0:
             pose = wp.transform_multiply(wp.transform_inverse(builder.body_q[body]), pose)
         site = builder.add_site(body, xform=pose, label=key)
         original = shape_paths.get(key)

@@ -206,6 +206,16 @@ entities:
 
 格式与现有 `robot-and-tubes.locations.yaml` 相同。示教位置依赖机械臂摆在哪里，所以属于场景，不属于素材。场景布局变化时，示教位置要重新示教（`tools/teach.py`），并由物理检查 P6 验证。
 
+### 6.5.1 管上抓取高度（ADR-0002）
+
+Newton / Virtual arm Config 可声明 `graspHeightM`，严格有限 number、非负、默认 0；同一 arm 对全部配置管使用一个共同高度。它是距管底 body 原点沿管局部 +Z 的抓取点，不是新 Site、TCP 或位置文档字段。真实手的 TCP 校准及原管底 Site 不变。实际抓取点随 body 旋转；示教的名义竖直目标是 `bottomSiteWorld + [0,0,h]`，使用世界 +Z，不能把手的旋转或倾斜 Site 的轴当作名义管轴。
+
+非零模式先由 S5 核对每根实际配置管的 body、可检查的碰撞几何局部轴向范围及底部原点约定；未知或超界拒绝，不能猜一个最大高度。同管若被多个 arm 配置为不同高度且至少一个非零，也拒绝。h 本身是标量，不做路径 rebase 或 glob 展开；既有 plain-Config glob 行为不因此扩展。
+
+非零 Newton 模式还必须有精确固定版本/内容哈希的机器人 Binding Template。模板展开后，实际 `tcpSite`、`handBody` 与模板 rebase 结果一致，Site 归真实手 body 所有，组合后的 hand→TCP 校准、指关节轴/锚点及夹爪碰撞几何与固定资产一致。场景只允许已有的整机 base pose、初始关节和驱动意见影响这些运动；不能用强意见挪 TCP、手或指垫来保住零距离。无法核实校准的非模板非零模式为 S5 fail。旧 h=0 的模板/非模板包继续原有检查，不追写旧资产。
+
+第一次采用 h 或更改 h 都要导入显式新 Scene Version，重新示教并运行新的 S/P 报告；旧版本、旧向量、原素材和旧报告不覆盖。工具从所选版本/机器人读取有效 h、真实模型和 base，输出 bottom/height/nominal target/physical FK TCP/误差及输入版本；不能用硬编码旧 base 的教点工具声称支持新布局。新版本能力依赖运行时支持该字段；旧运行时应拒绝未知 Config，不能静默按 0 执行。
+
 ### 6.6 内置场景迁移
 
 | 场景版本 | `stage` | `sources` |
@@ -249,9 +259,32 @@ Python builder 场景跳过 USD 相关的结构检查（S2、S3、S7），其余
 | P3 | 素材、场景 | 静止时穿插深度 ≤ 2 mm |
 | P4 | 素材 | 质量 > 0；由碰撞体积估算的密度在 50–20,000 kg/m³ 之间 |
 | P5 | 场景 | 初始状态下所有关节都在限位内 |
-| P6 | 场景 | 机械臂到达每个示教位置的 `grasp` 构型后，TCP 与对应站点的距离 ≤ 10 mm |
+| P6 | 场景 | 每个 `grasp` 构型的真实物理 TCP FK 与对应管底 Site 上方 `graspHeightM` 名义点的距离 ≤ 10 mm；旧零高度等于原站点规则，见 §7.2.1 |
 
 每项结论为 `pass / warn / fail`。`massSource: estimated` 之类的情况给 `warn`。
+
+### 7.2.1 P6 的真实物理端点与名义抓取点
+
+程序声明中以恰好一个 Site 字段的 `postureEndpoint` 元数据选择物理端点；arm 的 `tcpSite` 声明：
+
+```yaml
+spatialReference: site
+postureEndpoint:
+  offsetField: graspHeightM
+  offsetAxis: worldZ
+```
+
+这是程序注册的字段元数据，不是用户可随意填入 Config 的新字段。其它普通 Site 不会争抢显式端点；重复端点、未知 offsetField、非标量/非有限/负的偏移或非 `worldZ` 轴为 S5 fail，直接调用 P6 时也必须 fail，不能记为不适用。offsetField 要指向真实已定义的 Config 标量，消费者必须转发并校验同一声明。
+
+旧程序/SDK fixture 没有该角色时，只允许缺省或零高度且恰好一个 Site 的原回退规则；多个未标记 Site 仍有歧义，非零高度没有显式角色必须失败。不能悄悄忽略 h。
+
+P6 不仅相信元数据名字。非零模式必须先通过 §6.5.1 的固定资产校准；测量时还核实模型中实际端点的手 body owner 和 hand→TCP 局部 pose。校准未知或不符时，即便某虚拟点到目标的距离为 0，也报告失败，不能伪造测量值。
+
+令 `target = bottomSiteWorld + [0,0,h]`，测量真实模型 FK 的 `physicalTcpWorld`，误差仍为两点欧氏距离，门槛仍 10 mm。每条报告保留原 `bottomSiteWorld`、`graspHeightM`、`graspTargetWorld`、`physicalTcpWorld`、误差和 `targetDefinition: tube-grasp-height/1`；旧零高度的数值和含义不变，扩展放在已有 check measurements 中。所有原示教位置逐一测量，不删失败位置。沿用旧底部向量却声明 h=80 mm，应得到约 80 mm 误差。
+
+该 P6 检查假定管名义竖直落座，只检验点的位置可达，不增加方向通过条件，不代表实际管姿态、接触、整段轨迹或完整负载通过。动作预览同样必须保持真实 physical TCP 与实际目标 body pose：非零 h 时，真实 TCP/名义抓取点可高于原底部目标；下游不能沿用二者应重合的零高度假设，更不能把预览点改成虚拟 TCP 来显示绿灯。
+
+此新增语义仍使用已有 Config 与测量扩展容器，不改空间协议或录制段布局。v1/v2 录制按原 Catalog/pose/属性回放，不通过新程序重新模拟、补写 h 或重新解释旧 `tcpPose`。采用非零模式的新录制照常固定新场景版本/内容哈希；旧录制必须继续可读。
 
 ### 7.3 报告格式与判定
 

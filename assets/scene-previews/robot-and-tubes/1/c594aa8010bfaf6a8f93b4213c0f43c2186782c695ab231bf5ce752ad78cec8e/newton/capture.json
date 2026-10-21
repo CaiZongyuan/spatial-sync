@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-20T18:42:34.549030+00:00",
+  "capturedAt": "2026-10-21T09:59:44.291733+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -157,7 +157,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "649b0fcaeb7194769dcb4d60e069a5d7d5c48a748619763dfec00ee6fae09a6f"
+      "sha256": "850b0963be604eb730b3fe66d82efecd3398e27d314f7fec562a008be487630b"
     },
     {
       "path": "packages/info/conditions.py",
@@ -201,11 +201,11 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "12e4a3c50c03073e8606ccdc6a6ad22e6c2a533757fe2327d81b403941a4b0c5"
+      "sha256": "7aa8d18d2d81ad6d2b0470d3bd10cec45d803cd6be07c6ed10751300bbcbe320"
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "81f561e7b9a32385c9fa7e516f9726d1a70dea3575c6ef9e265c30f1df24d013"
+      "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
     },
     {
       "path": "packages/programs/centrifuge/newton.py",
@@ -216,8 +216,12 @@
       "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
     },
     {
+      "path": "packages/programs/robot_arm/grasp.py",
+      "sha256": "de6f1642f223b6b5b99b179c5faa75734fe87faf45b0846d53ab3292b9b78076"
+    },
+    {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "3ecca22fa085065e0c173d642486fdde21914d0f9a7c90ac7f39c4e82e9d2266"
+      "sha256": "474686dccb3b4d166a2ee9e3af28333e8cd66beeabe1bd605a3b9ad5c238e1bf"
     },
     {
       "path": "packages/programs/robot_arm/preview.py",
@@ -343,10 +347,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "4f758c7f5d0ac56fe374c86d060852a0571562e5045ed2e26241802315af194c",
-    "catalog.json": "7c6b2107bceffab414b502b66dad63a51f4dda086e6b55bbae42582cbb81b3ef",
-    "state.json": "fcbb883a37bb950f793f25a9ca92c1c2ad2d699b8786499061c88f7755a85cdb",
-    "snapshot.bin": "1228114f7431473812ec150ff5072a126789e373c35d7af6664865a761213f68",
+    "manifest.json": "1f489a05fb78b43bc0654c4f0700d57363d3ad81e179b855cd551dfd4064698c",
+    "catalog.json": "53ebdcf444206692bdb1522f2bf96171c374e67f7ffe153ee6ae1b77f42b403a",
+    "state.json": "43f233c32119ee2fef84472f92ad43b8adea0b6e4b5809e3dc106d444e4b14a6",
+    "snapshot.bin": "ca2f0c14d2f3a68cbef870017a692c6b78e39e00df2eda994791b36c1f18efd2",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
