@@ -7,6 +7,7 @@ import re
 import time
 from concurrent.futures import Future
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -58,10 +59,12 @@ class LiveLog(SessionLog):
         self.state_directory = Path(state_directory)
         self._raw_clock, self._offset_ms = clock, 0
         self._ready = Future()
+        self._sealed = Future()
         self._owner, self._prepared = None, False
         self._live_state = {"version": 1, "nextSegment": 1, "nextRevision": 1, "days": {}}
         self._day = None
         self._readers = 0
+        self._reader_admission_closed = False
         self._maintenance_at = None
         kwargs.setdefault("open_segment", lambda path: path.open("xb"))
         super().__init__(directory, recording_id, live_name, scene_version=None,
@@ -160,16 +163,26 @@ class LiveLog(SessionLog):
         self._metadata()
         self._ready.set_result(None)
 
-    def _finished(self):
+    def _finished(self, *, prefix_closed, metadata_published):
         if not self._ready.done():
             self._ready.set_exception(OSError(self.error or "Live recording did not start"))
-        if self._owner is not None:
+        with self._condition:
+            if self._prepared and prefix_closed and metadata_published:
+                self._sealed.set_result(deepcopy(self.metadata))
+            else:
+                self._sealed.set_exception(OSError(
+                    self.error or "Live recording prefix could not be sealed and published"))
             # A cancelled HTTP task can leave an actual disk reader running.
-            # Keep exclusive ownership until that reader releases its own pin.
-            with self._condition:
-                self._condition.wait_for(lambda: self._readers == 0)
+            # Publish the sealed prefix before waiting, so a closing history
+            # reader never waits for a writer that is waiting for its lease.
+            self._condition.wait_for(lambda: self._readers == 0)
+            self._reader_admission_closed = True
+        if self._owner is not None:
             self._owner.close()
             self._owner = None
+
+    async def _closed_checkpoint(self):
+        return deepcopy(await asyncio.shield(asyncio.wrap_future(self._sealed)))
 
     def _revision(self, revision):
         catalog, snapshot, day = revision
@@ -225,6 +238,8 @@ class LiveLog(SessionLog):
     def reader(self):
         """Pin before requesting a checkpoint, through completion of its actual file reads."""
         with self._condition:
+            if self._reader_admission_closed:
+                raise OSError("Live recording owner has closed")
             self._readers += 1
         try:
             yield

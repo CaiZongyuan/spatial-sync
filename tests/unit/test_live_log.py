@@ -350,3 +350,35 @@ async def test_catalog_attribution_is_published_before_segment_can_reach_disk(tm
                    for item in metadata["revisions"].values())
     finally:
         await reopened.close()
+
+
+async def test_cancelling_one_closing_checkpoint_cannot_cancel_shared_sealed_prefix(tmp_path):
+    clock = Clock()
+    log = writer(tmp_path, clock)
+    await log.ready()
+    start_revision(log)
+    await log.checkpoint()
+    cancelled = asyncio.create_task(log._closed_checkpoint())
+    surviving = asyncio.create_task(log._closed_checkpoint())
+    await asyncio.sleep(0)
+    cancelled.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled
+    assert not log._sealed.cancelled()
+    await log.close()
+    result = await asyncio.wait_for(surviving, 2)
+    assert len(result["segments"]) == 1
+
+
+async def test_incomplete_log_can_seal_its_valid_flushed_prefix(tmp_path):
+    clock = Clock()
+    log = writer(tmp_path, clock)
+    await log.ready()
+    start_revision(log)
+    await log.checkpoint()
+    log.stop_incomplete("Reliable admission stopped")
+    await log.close()
+    metadata = await log.checkpoint()
+    assert metadata["status"] == "incomplete"
+    rows = read_samples(log.directory, metadata, "/Real/Incubator2", "temperatureC", 0, 2000)
+    assert [(row.t_ms, row.value) for row in rows] == [(1000, 37)]

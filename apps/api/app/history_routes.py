@@ -2,13 +2,23 @@
 
 import asyncio
 import json
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Literal
 
 from fastapi import HTTPException, Query, Response
 
 from packages.info.history import LIMIT, aggregate, query_window, read_samples
 from packages.info.recording import recording_metadata
+
+
+@contextmanager
+def _history_reader(log):
+    try:
+        with log.reader() if hasattr(log, "reader") else nullcontext():
+            yield
+    except OSError as error:
+        raise HTTPException(503, {"code": "history_unavailable",
+                                  "message": "Recording is unavailable"}) from error
 
 
 def install_history_routes(app, manager, repository):
@@ -55,7 +65,7 @@ def install_history_routes(app, manager, repository):
                 session = live
         log = session.recording if session is not None else None
         # A Live reader pins before its checkpoint, through actual threaded I/O.
-        with log.reader() if hasattr(log, "reader") else nullcontext():
+        with _history_reader(log):
             try:
                 if log is not None:
                     metadata = await log.checkpoint()

@@ -423,9 +423,12 @@ class SessionLog:
                 self._checkpoint_queued += 1
                 self._condition.notify()
         if closing:
-            await asyncio.to_thread(self.thread.join)
-            return deepcopy(self.metadata)
+            return await self._closed_checkpoint()
         return await asyncio.shield(asyncio.wrap_future(future))
+
+    async def _closed_checkpoint(self):
+        await asyncio.to_thread(self.thread.join)
+        return deepcopy(self.metadata)
 
     def stop_incomplete(self, reason):
         with self._condition:
@@ -434,6 +437,7 @@ class SessionLog:
             self._condition.notify()
 
     def _run(self):
+        prefix_closed = False
         try:
             self._prepare()
             while True:
@@ -461,6 +465,7 @@ class SessionLog:
             if self._gap and self._file:
                 self._write(Record(3, self._clock, _json_bytes(self._gap)))
             self._close_segment()
+            prefix_closed = True
         except Exception as exc:
             with self._condition:
                 self._failure = str(exc) or type(exc).__name__
@@ -483,18 +488,20 @@ class SessionLog:
             self.metadata["status"] = "incomplete" if self._failure else "complete"
             if self._failure:
                 self.metadata["error"] = self._failure
+            metadata_published = False
             try:
                 self._metadata()
+                metadata_published = True
             except OSError:
                 pass  # Startup recovers the last atomic 'recording' metadata.
             finally:
-                self._finished()
+                self._finished(prefix_closed=prefix_closed, metadata_published=metadata_published)
 
     def _prepare(self):
         self.directory.mkdir(parents=True, exist_ok=False)
         self._metadata()
 
-    def _finished(self):
+    def _finished(self, *, prefix_closed, metadata_published):
         pass
 
     def _revision(self, revision):

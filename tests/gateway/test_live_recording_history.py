@@ -200,3 +200,70 @@ async def test_cancelled_http_history_keeps_pin_until_actual_disk_read_finishes(
         host.advance()
         await host.recording.checkpoint()
         assert not first_path.exists()
+
+
+@pytest.mark.parametrize("close_failure", [None, "metadata", "flush"])
+async def test_history_admitted_during_close_reads_sealed_prefix_without_waiting_for_its_own_lease(
+    tmp_path, monkeypatch, close_failure,
+):
+    clock = Clock()
+    log = LiveLog(tmp_path / "recordings/live-closing", "live-closing", "closing-lab",
+                  state_directory=tmp_path / "state/live-closing",
+                  utc_clock=lambda: clock.utc, clock=lambda: clock.raw)
+    await log.ready()
+    initial = {
+        "type": "entity.snapshot", "sceneRevision": "live-closing-revision", "epoch": 0,
+        "sampleTimeMs": 500_000, "simTime": 0, "invocations": [],
+        "entities": [{"key": KEY, "rev": 1, "values": {"temperatureC": 37}, "meta": {
+            "temperatureC": {"sampleTimeMs": 500_000, "simTime": 0, "source": "device"},
+        }}],
+    }
+    log.add_revision({"sceneRevision": initial["sceneRevision"]}, json.dumps(initial))
+    await log.checkpoint()
+    if close_failure == "metadata":
+        original_save, attempts = log._save_state, []
+        def failed_save():
+            attempts.append(True)
+            if len(attempts) == 2:
+                raise OSError("Injected final metadata failure")
+            original_save()
+        monkeypatch.setattr(log, "_save_state", failed_save)
+    elif close_failure == "flush":
+        def failed_flush():
+            raise OSError("Injected final flush failure")
+        monkeypatch.setattr(log, "_flush", failed_flush)
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked():
+        entered.set()
+        assert release.wait(5)
+
+    reading = asyncio.create_task(log.read_pinned(blocked))
+    assert await asyncio.to_thread(entered.wait, 5)
+    closing = asyncio.create_task(log.close())
+    await asyncio.sleep(0)
+    target = SimpleNamespace(recording=log, session_id="live-closing-target", state="STOPPING")
+    app = FastAPI()
+    install_history_routes(app, SimpleNamespace(sessions={}, live=target), None)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local") as http:
+        history = asyncio.create_task(http.get("/api/v1/history", params={
+            "recording": "live-closing", "key": KEY, "property": "temperatureC", "since": "0",
+        }))
+        await asyncio.sleep(0)
+        release.set()
+        try:
+            response = await asyncio.wait_for(history, 2)
+            if close_failure:
+                assert response.status_code == 503, response.text
+                assert response.json()["detail"]["code"] == "history_unavailable"
+            else:
+                assert response.status_code == 200, response.text
+                assert response.json() == [[500_000, 37]]
+        finally:
+            release.set()
+            await reading
+            await asyncio.wait_for(closing, 2)
+        after_close = await http.get("/api/v1/history", params={
+            "recording": "live-closing", "key": KEY, "property": "temperatureC", "since": "0",
+        })
+        assert after_close.status_code == 503
