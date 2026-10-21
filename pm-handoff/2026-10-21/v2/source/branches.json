@@ -1,0 +1,43 @@
+{
+  "refs": [
+    {
+      "branch": "feat/issue-26-plan-ui",
+      "head": "26c6e8f998d4c0d316ce73b4fc4992709c303fd9",
+      "restoreNamespace": "refs/remotes/pm-handoff/feat/issue-26-plan-ui",
+      "storage": "bundle"
+    },
+    {
+      "branch": "feat/issue-18-fr3-lab-import",
+      "head": "f7a480f6a588de2a3186fe166214954112083194",
+      "restoreNamespace": "refs/remotes/pm-handoff/feat/issue-18-fr3-lab-import",
+      "storage": "public-main-ancestor",
+      "restoreCommand": "git update-ref refs/remotes/pm-handoff/feat/issue-18-fr3-lab-import f7a480f6a588de2a3186fe166214954112083194 0000000000000000000000000000000000000000",
+      "restoreCondition": "Create only if the namespaced handoff ref does not exist; otherwise inspect its current SHA."
+    },
+    {
+      "branch": "feat/issue-18-grasp-height",
+      "head": "f6b2e765ac8734d8464a66f8e6f00a8e524e4f92",
+      "restoreNamespace": "refs/remotes/pm-handoff/feat/issue-18-grasp-height",
+      "storage": "bundle"
+    },
+    {
+      "branch": "feat/issue-27-device-host",
+      "head": "266d7b337bcccf333603636158521611d53350b3",
+      "restoreNamespace": "refs/remotes/pm-handoff/feat/issue-27-device-host",
+      "storage": "bundle"
+    },
+    {
+      "branch": "spike/issue-29-round2",
+      "head": "29938219e7554419c73f905493dcde8d6cf76f4a",
+      "restoreNamespace": "refs/remotes/pm-handoff/spike/issue-29-round2",
+      "storage": "bundle"
+    }
+  ],
+  "prerequisites": [
+    "origin/main",
+    "origin/spike/issue-29-fr3-contact"
+  ],
+  "bundleSha256": "0aa127816b8c45b2d238a4510c8c280c825fa73cd030a5718542c8c22041888c",
+  "bundleRefCount": 4,
+  "publicMainCandidateCount": 1
+}

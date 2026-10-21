@@ -1,0 +1,29 @@
+﻿{
+    "round":  2,
+    "owner":  "issue29_round2",
+    "state":  "D1_complete_settled_no_further_execution_authorized",
+    "root_go":  "D1v4 only; source2993821/manifest6261b8/request7ebc218; no retry or training",
+    "reserved_utc":  "2026-10-20T16:40:15.5608650+00:00",
+    "diagnostics_limit_seconds":  7200,
+    "full_training_limit_seconds":  14400,
+    "total_limit_seconds":  21600,
+    "actual_prior_diagnostics_seconds":  0,
+    "actual_full_training_seconds":  0,
+    "actual_audit_seconds":  0,
+    "active_reservation":  null,
+    "new_gpu_execution_count":  1,
+    "unknown_or_unresolved_usage":  [
+
+                                    ],
+    "remaining_final_audit_reservation_seconds":  1200,
+    "actual_diagnostics_seconds":  92,
+    "observed_diagnostics_window_seconds":  91.55313800000295,
+    "completed_runs":  [
+                           {
+                               "phase":  "frozen-home-all-first-20261020-164027701",
+                               "charged_seconds":  92,
+                               "settlement":  "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-29-round2\\frozen-home-all-first-20261020-164027701\\budget-settlement.json"
+                           }
+                       ],
+    "remaining_diagnostics_seconds":  7108
+}
