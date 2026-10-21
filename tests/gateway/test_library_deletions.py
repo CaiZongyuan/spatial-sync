@@ -29,6 +29,28 @@ def decision(client, approval_id, **kwargs):
     )
 
 
+def test_evaluation_pin_does_not_block_unrelated_unused_scene_deletion(tmp_path):
+    from scene_support import user_version
+
+    user_version(tmp_path / "user-library", 4)
+    user_version(tmp_path / "user-library", 5)
+    app = create_app(Settings(recordings_enabled=False))
+    with TestClient(app) as client:
+        app.state.manager.recordings.pin("session-pinned-evaluation")
+        target = "/api/v1/library/scenes/lab-demo/4"
+        requested = client.delete(target)
+        assert requested.status_code == 202, requested.text
+        approved = decision(client, requested.json()["approvalId"])
+        assert approved.status_code == 200, approved.text
+        assert client.get(target).status_code == 404
+        # Unknown recording entries must still fail closed after the metadata separation.
+        app.state.manager.recordings.root.mkdir(parents=True, exist_ok=True)
+        (app.state.manager.recordings.root / "unknown.json").write_text("{}")
+        blocked = client.delete("/api/v1/library/scenes/lab-demo/5")
+        assert blocked.status_code == 409, blocked.text
+        assert blocked.json()["detail"]["code"] == "reference_inspection_incomplete"
+
+
 def test_delete_exact_version_approval_restart_and_never_reuse_revision():
     original = package_files()
     second = original | {"NOTICE": b"Second revision\n"}
