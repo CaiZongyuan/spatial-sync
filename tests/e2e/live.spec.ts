@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Frame, type Request } from '@playwright/test';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { createConnection, createServer } from 'node:net';
@@ -101,7 +101,32 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
     await page.screenshot({ path: info.outputPath('live-dark-1440.png'), fullPage: true });
     await page.getByLabel('Color theme').selectOption('light');
     await page.screenshot({ path: info.outputPath('live-light-1440.png'), fullPage: true });
-    await page.reload(); await expect(alertRow).toContainText('已核对设定值');
+    // HTML load can precede lazy SPA initialization. Wait for this document's
+    // completed read before checking its retained acknowledgement in the UI.
+    let committed = false;
+    const requestsAfterCommit = new WeakSet<Request>();
+    const onCommit = (frame: Frame) => { if (frame === page.mainFrame()) committed = true; };
+    const onRequest = (request: Request) => {
+      if (!committed || request.frame() !== page.mainFrame() || request.method() !== 'GET') return;
+      const url = new URL(request.url());
+      if (url.origin === web && url.pathname === '/api/v1/alerts' && url.search === '?limit=100') requestsAfterCommit.add(request);
+    };
+    page.on('framenavigated', onCommit);
+    page.on('request', onRequest);
+    try {
+      const [request] = await Promise.all([
+        page.waitForEvent('requestfinished', { predicate: request => requestsAfterCommit.has(request) }),
+        page.reload(),
+      ]);
+      const response = await request.response();
+      expect(response?.status()).toBe(200);
+      const refreshed = (await response!.json()).alerts.find((value: { alertId: string }) => value.alertId === alert.alertId);
+      expect(refreshed).toMatchObject({ sessionId, acknowledgement: acknowledged.acknowledgement });
+    } finally {
+      page.off('framenavigated', onCommit);
+      page.off('request', onRequest);
+    }
+    await expect(alertRow).toContainText('已核对设定值');
     const commands = page.locator('.live-command'); await expect(commands).toContainText(`lw history ${incubator} temperatureC --since 1h --every 1m`);
     await page.setViewportSize({ width: 900, height: 960 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(900);

@@ -240,11 +240,10 @@ test('real SyntheticSource observers share pause, heartbeat, Step, Reset and Res
       )
       .not.toBe(JSON.stringify(initialRendered));
 
-    // Join while the primary is running the real rotor program, through the same relay boundary.
+    // Join through the native transport while the primary runs the real rotor program.
     observerContext = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     const observer = await observerContext.newPage();
     observer.on('pageerror', error => errors.push(error.message));
-    await observer.routeWebSocket('**/api/v1/sessions/*/ws', route => { route.connectToServer(); });
     await observer.goto(`/sessions/${sessionId}`);
     await waitConnected(observer);
     await page.getByRole('button', { name: 'Pause simulation' }).click();
