@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-20T18:41:52.704183+00:00",
+  "capturedAt": "2026-10-21T09:59:13.454186+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -21,7 +21,7 @@
     },
     {
       "path": "apps/api/app/sources/synthetic_source.py",
-      "sha256": "2ed365ddd94964ce81f685027d2c577491abd2e67d01290af32aa80f3fabe73d"
+      "sha256": "5e24154c4e0bc5219848fdf73861d134443fc9fd05e7aa6a8e36bf8f696ad203"
     },
     {
       "path": "assets/registry.yaml",
@@ -69,7 +69,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "649b0fcaeb7194769dcb4d60e069a5d7d5c48a748619763dfec00ee6fae09a6f"
+      "sha256": "850b0963be604eb730b3fe66d82efecd3398e27d314f7fec562a008be487630b"
     },
     {
       "path": "packages/info/conditions.py",
@@ -113,11 +113,11 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "12e4a3c50c03073e8606ccdc6a6ad22e6c2a533757fe2327d81b403941a4b0c5"
+      "sha256": "7aa8d18d2d81ad6d2b0470d3bd10cec45d803cd6be07c6ed10751300bbcbe320"
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "81f561e7b9a32385c9fa7e516f9726d1a70dea3575c6ef9e265c30f1df24d013"
+      "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -136,6 +136,10 @@
       "sha256": "d49d5c0b7de6c1bd4fce82df31b1dcc7b810e993d82ed7871c9811cf91caf7b6"
     },
     {
+      "path": "packages/programs/robot_arm/grasp.py",
+      "sha256": "de6f1642f223b6b5b99b179c5faa75734fe87faf45b0846d53ab3292b9b78076"
+    },
+    {
       "path": "packages/programs/robot_arm/preview.py",
       "sha256": "dc8105fe8dcc35eac48aee705eda043abd828753898ab4db3f5cedd5c4abbe32"
     },
@@ -149,7 +153,7 @@
     },
     {
       "path": "packages/programs/robot_arm/virtual.py",
-      "sha256": "746c52df533816e61cc2fad86153ff561362e15325cf535e3522814483426ac8"
+      "sha256": "63655cf001d053032d80cd99bc2af4c56cdd15037a2290c8bf435637066c4d51"
     },
     {
       "path": "packages/programs/signals.py",
@@ -170,6 +174,10 @@
     {
       "path": "packages/protocol/schema/__init__.py",
       "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
+    },
+    {
+      "path": "packages/sim_runtime/synthetic_geometry.py",
+      "sha256": "06596c55335dd700fa345d4af4eb129145079d230626f71212e62bc00343ea45"
     },
     {
       "path": "packages/sim_runtime/synthetic_lab.py",
@@ -195,10 +203,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "02e2e92e15bffeabb46504915ae9fe4e98d6d5787e2f39e335ac7c269bf59f60",
-    "catalog.json": "79851a78a20cc786dfda4decbe9253d5a1f47aaf8c6b5a1ed9c0cc4d58beb175",
-    "state.json": "5fe1b43c12d3c36d84c7387083d05bcd7860ea5a42e5c41eb46f1c3e3bda750c",
-    "snapshot.bin": "16d1c01646281204f6c26f9bbc52152a6b33b09c0d916abe69de0d2affef323a"
+    "manifest.json": "44d27de18e2a584a78f2ad8e282b6804cbcb69b350dd5d9a2f0775d6dd543245",
+    "catalog.json": "1a06661d2c8ac307adb1509cbca7c9a62be0ad65d3039a9e86e8da388c9561a9",
+    "state.json": "8170afc995319f54918f82eba9c14614b31c8fe85d22ebca2574b49b8d7c89e9",
+    "snapshot.bin": "bed92f3ba1e0753c8b92be911e9d0c613aefbb83e412c05478e512cbeca8d7a6"
   },
   "counts": {
     "physicalEntities": 33,
