@@ -1,4 +1,5 @@
 import asyncio
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -6,6 +7,7 @@ from fastapi import HTTPException
 
 from apps.api.app.evaluations import EvaluationRequest, EvaluationService
 from apps.api.app.session_manager import Session as ManagedSession
+from apps.api.app.session_manager import SessionManager
 from apps.api.app.settings import Settings
 from packages.library.common import BUILTIN_ROOT
 from packages.protocol.internal import SessionOptions
@@ -358,3 +360,86 @@ async def test_immediate_create_waiting_for_manager_lock_keeps_later_evaluation_
         if not ordinary.done():
             ordinary.cancel()
         await service.close()
+
+
+@pytest.mark.parametrize("outcome", ["started", "failed", "cancelled"])
+async def test_dequeued_ticket_reserves_real_manager_reload_during_starting_write(tmp_path, outcome):
+    manager = SessionManager(Settings(
+        state_root=tmp_path / "state", recordings_root=tmp_path / "recordings", recordings_enabled=False,
+    ))
+    intake = Manager(tmp_path)
+    manager._library = intake.library
+    intake.sessions = manager.sessions
+    service = EvaluationService(manager)
+    manager.evaluations = service
+    old = ManagedSession(
+        "lab-demo", "synthetic", SessionOptions(seed=10), manager.settings, None,
+        manager.recordings, manager.approvals, manager.plans,
+    )
+    old.state, old.cleanup_complete = "STOPPED", True
+    manager.sessions[old.session_id] = old
+    reloads = []
+
+    async def reload_old():
+        reloads.append(old.session_id)
+        old.state, old.source, old.cleanup_complete = "RUNNING", True, False
+
+    async def create(*args, **kwargs):
+        # Reproduce the Manager intake's reuse when a later reload steals the slot.
+        if old.holds_resources:
+            return old
+        return await intake.create(*args, **kwargs)
+
+    old.reload, manager.create = reload_old, create
+    entered, release = asyncio.Event(), Event()
+    loop = asyncio.get_running_loop()
+    save = service._save_request
+
+    def blocked_save(value):
+        if value["status"] == "starting":
+            loop.call_soon_threadsafe(entered.set)
+            assert release.wait(5), "Starting persistence was not released"
+            if outcome == "failed":
+                raise OSError("Injected starting persistence failure")
+        save(value)
+
+    service._save_request = blocked_save
+    await service.startup()
+    service._active_evaluation = "eval-held"
+    await service.create_session(
+        None, "synthetic", SessionOptions(seed=77), scene_version="lab-demo@3", request_id="request-gap",
+    )
+    service._active_evaluation = None
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        assert not service._queue and not manager._create_lock.locked()
+        with pytest.raises(HTTPException) as blocked:
+            await manager.reload(old.session_id)
+        assert blocked.value.detail["code"] == "evaluation_busy"
+        if outcome == "cancelled":
+            service._worker.cancel()
+            await asyncio.sleep(0)
+            assert not service._worker.done()
+            with pytest.raises(HTTPException):
+                await manager.reload(old.session_id)
+        release.set()
+        for _ in range(200):
+            if service.request("request-gap")["status"] == outcome and service._starting_request is None:
+                break
+            await asyncio.sleep(0.005)
+        assert service.request("request-gap")["status"] == outcome
+        assert service._starting_request is None and not reloads and not service._options
+        if outcome == "started":
+            assert service.request("request-gap")["sessionId"] == "session-77"
+            assert manager.sessions["session-77"].summary()["seed"] == 77
+        else:
+            assert set(manager.sessions) == {old.session_id}
+        if outcome == "cancelled":
+            with pytest.raises(asyncio.CancelledError):
+                await service._worker
+        service.require_interactive()
+    finally:
+        release.set()
+        old.source = None
+        await service.close()
+        await manager.close()

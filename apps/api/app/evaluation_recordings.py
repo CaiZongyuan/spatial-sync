@@ -12,9 +12,10 @@ class EvaluationRecordingRepository(RecordingRepository):
     def __init__(self, settings, asset_registry):
         super().__init__(settings, asset_registry)
         self.pinned = set()
+        self.pins_path = settings.state_root / "evaluations" / "recording-pins.json"
 
     async def startup(self):
-        path = self.root / ".evaluation-pins.json"
+        path = self.pins_path
         if path.exists():
             pins = json.loads(await asyncio.to_thread(path.read_bytes))
             if not isinstance(pins, list) or any(
@@ -27,7 +28,7 @@ class EvaluationRecordingRepository(RecordingRepository):
 
     def pin(self, session_id):
         self.pinned.add(session_id)
-        durable_json(self.root / ".evaluation-pins.json", sorted(self.pinned))
+        durable_json(self.pins_path, sorted(self.pinned))
 
     def retain(self):
         values = [
