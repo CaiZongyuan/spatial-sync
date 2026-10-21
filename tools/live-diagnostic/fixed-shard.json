@@ -1,0 +1,78 @@
+[
+  {
+    "file": "information.spec.ts",
+    "title": "an operator can cancel a running invocation from its details"
+  },
+  {
+    "file": "information.spec.ts",
+    "title": "an operator can deny and approve a declared high risk action"
+  },
+  {
+    "file": "information.spec.ts",
+    "title": "schema string fields preserve JSON Schema Unicode and pattern semantics"
+  },
+  {
+    "file": "instanced.spec.ts",
+    "title": "full binary frames retain instanced poses, picking and object visibility"
+  },
+  {
+    "file": "library-deletions.spec.ts",
+    "title": "exact user asset requests a human decision, then disappears from the library"
+  },
+  {
+    "file": "library-usd.spec.ts",
+    "title": "actual USD library PBR and dressing remain portable in offline replay"
+  },
+  {
+    "file": "live.spec.ts",
+    "title": "real simulated devices raise, acknowledge, retain actual history and expose stale readings in both themes"
+  },
+  {
+    "file": "newton-reliability.spec.ts",
+    "title": "Newton survives observer loss, Runner crash, restart, scene reload and page refresh"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "a paused live viewport draws on changes and wakes for Step, theme and projection"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "the real overview connects an isometric scene, readouts, device actions, activity and theme"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "overview previews the v1 recorded version with disabled actions and no live transport"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "overview previews the v2 recorded version with disabled actions and no live transport"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "overview does not admit a stopped session from the platform cache into a recording preview"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "overview waits for authoritative session status and recovers after a failed confirmation"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "overview rejects malformed v2 identity before opening a replay transport"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "session projection is shareable and preserves a single real scene connection"
+  },
+  {
+    "file": "overview.spec.ts",
+    "title": "overview annotations keep working with packed instanced geometry"
+  },
+  {
+    "file": "plans.spec.ts",
+    "title": "real operation plan tracks calls and revisions beside an actual TCP path and ghost bodies"
+  },
+  {
+    "file": "plans.spec.ts",
+    "title": "actual recorded plans rebuild on backward seek and scene rollover without any live API or socket"
+  }
+]

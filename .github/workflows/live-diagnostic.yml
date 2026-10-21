@@ -1,0 +1,66 @@
+name: Isolated Live resize diagnostic
+on:
+  push:
+    branches: [diag/issue34-live-resize]
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Immutable source revision (base only after a qualifying candidate signal)
+        required: true
+        default: cac287231e4e9733f2d95beaa1c729d8b871ba62
+jobs:
+  observer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || 'cac287231e4e9733f2d95beaa1c729d8b871ba62' }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: packet
+          sparse-checkout: tools/live-diagnostic
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - name: Install identical frozen base dependencies
+        run: |
+          uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/spatial-requirements.txt" > /dev/null
+          uv venv --python 3.13
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --require-hashes -r "$RUNNER_TEMP/spatial-requirements.txt"
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
+      - name: Apply bounded instrumentation only
+        run: uv run --no-sync python packet/tools/live-diagnostic/prepare.py apply
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
+      - name: Exact worker, fixed predecessor sequence and original assertions
+        env:
+          SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
+          SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
+          SPATIAL_TEST_APPROVAL: '1'
+          SPATIAL_E2E_WEB_MODE: preview
+        run: |
+          if [ "${{ inputs.revision || 'cac287231e4e9733f2d95beaa1c729d8b871ba62' }}" = cac287231e4e9733f2d95beaa1c729d8b871ba62 ]; then
+            SELECTION=(--shard=2/4)
+          else
+            SELECTION=(--test-list "$GITHUB_WORKSPACE/packet/tools/live-diagnostic/fixed-shard.txt")
+          fi
+          pnpm --filter @spatial-sync/web exec playwright test --fully-parallel --workers=1 "${SELECTION[@]}" --list --reporter=json > "$RUNNER_TEMP/selected.json"
+          uv run --no-sync python packet/tools/live-diagnostic/prepare.py verify "$RUNNER_TEMP/selected.json"
+          uv run --no-sync python packet/tools/live-diagnostic/run.py "${SELECTION[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-diagnostic-evidence
+          include-hidden-files: true
+          path: |
+            /tmp/spatial-api.log
+            .scratch/viewer-e2e/report
+            .scratch/viewer-e2e/results
+            .scratch/viewer-e2e/diagnostic-owned.json

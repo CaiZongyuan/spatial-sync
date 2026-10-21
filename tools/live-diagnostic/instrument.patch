@@ -1,0 +1,30 @@
+diff --git a/tests/e2e/live.spec.ts b/tests/e2e/live.spec.ts
+index e0e961a..01ca3e9 100644
+--- a/tests/e2e/live.spec.ts
++++ b/tests/e2e/live.spec.ts
+@@ -1,4 +1,5 @@
+-import { expect, test, type Frame, type Request } from '@playwright/test';
++import { test, diagnosticResize, diagnosticWidth, diagnosticBeforeBlank } from './live-diagnostic';
++import { expect, type Frame, type Request } from '@playwright/test';
+ import { execFile, spawn, type ChildProcess } from 'node:child_process';
+ import { writeFile } from 'node:fs/promises';
+ import { createConnection, createServer } from 'node:net';
+@@ -130,8 +131,8 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
+     }
+     await expect(alertRow).toContainText('已核对设定值');
+     const commands = page.locator('.live-command'); await expect(commands).toContainText(`lw history ${incubator} temperatureC --since 1h --every 1m`);
+-    await page.setViewportSize({ width: 900, height: 960 });
+-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(900);
++    await diagnosticResize(page, { width: 900, height: 960 });
++    await expect.poll(() => diagnosticWidth(page)).toBeLessThanOrEqual(900);
+     await page.screenshot({ path: info.outputPath('live-light-900.png'), fullPage: true });
+     await page.goto(web); await expect(page.getByTestId('critical-alert-banner')).toContainText('已核对设定值');
+     const evidence = JSON.stringify({ version, sessionId, alertId: alert.alertId, canvas, drawer, hit, ackRequests, acknowledgement: acknowledged.acknowledgement });
+@@ -145,6 +146,7 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
+         expect((await health.json()).sessions.find((value: { sessionId: string }) => value.sessionId === sessionId).state).toBe('STOPPED');
+       }
+     }
++    await diagnosticBeforeBlank();
+     await page.goto('about:blank').catch(() => {}); await http.dispose();
+     for (const record of processes.reverse()) {
+       if (record.child.exitCode === null && record.child.signalCode === null) record.child.kill('SIGTERM');

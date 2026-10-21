@@ -1,0 +1,19 @@
+information.spec.ts › an operator can cancel a running invocation from its details
+information.spec.ts › an operator can deny and approve a declared high risk action
+information.spec.ts › schema string fields preserve JSON Schema Unicode and pattern semantics
+instanced.spec.ts › full binary frames retain instanced poses, picking and object visibility
+library-deletions.spec.ts › exact user asset requests a human decision, then disappears from the library
+library-usd.spec.ts › actual USD library PBR and dressing remain portable in offline replay
+live.spec.ts › real simulated devices raise, acknowledge, retain actual history and expose stale readings in both themes
+newton-reliability.spec.ts › Newton survives observer loss, Runner crash, restart, scene reload and page refresh
+overview.spec.ts › a paused live viewport draws on changes and wakes for Step, theme and projection
+overview.spec.ts › the real overview connects an isometric scene, readouts, device actions, activity and theme
+overview.spec.ts › overview previews the v1 recorded version with disabled actions and no live transport
+overview.spec.ts › overview previews the v2 recorded version with disabled actions and no live transport
+overview.spec.ts › overview does not admit a stopped session from the platform cache into a recording preview
+overview.spec.ts › overview waits for authoritative session status and recovers after a failed confirmation
+overview.spec.ts › overview rejects malformed v2 identity before opening a replay transport
+overview.spec.ts › session projection is shareable and preserves a single real scene connection
+overview.spec.ts › overview annotations keep working with packed instanced geometry
+plans.spec.ts › real operation plan tracks calls and revisions beside an actual TCP path and ghost bodies
+plans.spec.ts › actual recorded plans rebuild on backward seek and scene rollover without any live API or socket
