@@ -300,7 +300,6 @@ class EvaluationService:
                         value = self.requests[identifier]
                         if value["status"] != "queued":
                             continue
-                        value = value | {"status": "starting"}
                         self._starting_request = identifier
                         launch = (value, self._options.pop(identifier))
                     else:
@@ -342,6 +341,13 @@ class EvaluationService:
         try:
             # The reservation already covers this disk await and its failure/cancellation cleanup.
             async with self._admission:
+                current = self.request(identifier)
+                if current["status"] == "cancelling":
+                    await persist(self._save_request, current | {"status": "cancelled"})
+                    return
+                if current["status"] != "queued":
+                    return
+                value = current | {"status": "starting"}
                 await persist(self._save_request, value)
             session = await self.manager.create(
                 None, value["source"], options, scene_version=value["sceneVersion"]
