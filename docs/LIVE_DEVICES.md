@@ -78,3 +78,8 @@ operation-plan enablement belong to #28; Live plan associations explicitly rejec
 Existing shared approval audit remains durable. Physical hardware and actual
 broker behavior require separate validation; injected-broker tests establish only
 gateway semantics.
+
+Live and a Synthetic session have independent lifecycles: selecting a session in
+`LW_SESSION` still routes `/Real/` keys to Live, and closing either host leaves the
+other host's work intact. The GPU-free regression is in
+`tests/gateway/test_live_devices.py`.

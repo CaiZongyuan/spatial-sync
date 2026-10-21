@@ -21,6 +21,7 @@ from apps.api.app.main import create_app
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from apps.api.app.settings import Settings
+from apps.api.app.sources.synthetic_source import SyntheticSource
 from packages.info.approvals import ApprovalStore
 from packages.info.plans import PlanStore
 from packages.live.bindings import load_bindings
@@ -449,3 +450,100 @@ async def test_other_owned_cleanup_is_attempted_even_if_host_offline_cleanup_rai
         live.host._offline = original
     await live.host.close()
     assert live.host.state == "STOPPED"
+
+
+@pytest.mark.parametrize("close_target", ["simulation", "live"])
+async def test_real_synthetic_session_and_live_have_independent_actions_and_lifecycles(
+    tmp_path, close_target,
+):
+    import time
+
+    transports = []
+
+    def factory(broker, topics):
+        transport = FakeBrokerTransport(broker, topics, time.monotonic)
+        transports.append(transport)
+        return transport
+
+    class Sampler:
+        def sample(self, rows):
+            return platform_snapshot(rows, unavailable_system("Coexistence test sampler"))
+
+    async def until(read):
+        deadline = asyncio.get_running_loop().time() + 5
+        while asyncio.get_running_loop().time() < deadline:
+            value = await read()
+            if value:
+                return value
+            await asyncio.sleep(.02)
+        raise AssertionError("Public coexistence observation did not converge")
+
+    app = create_app(Settings(live_bindings=EXAMPLE, state_root=tmp_path / "state",
+                               recordings_root=tmp_path / "recordings", recordings_enabled=False),
+                     live_transport_factory=factory, platform_sampler=Sampler())
+    source = None
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                      base_url="http://coexist") as http:
+            created = await http.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3",
+                                                               "source": "synthetic"})
+            assert created.status_code == 201, created.text
+            session_id = created.json()["sessionId"]
+            source = app.state.manager.sessions[session_id].source
+            assert isinstance(source, SyntheticSource)
+            try:
+                health = (await http.get("/api/v1/health")).json()
+                assert health["sessionCount"] == 1 and health["live"]["state"] == "RUNNING"
+                second = await http.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@1",
+                                                                  "source": "synthetic"})
+                assert second.status_code == 409 and second.json()["detail"]["code"] == "session_exists"
+                transport = transports[0]
+                transport.emit("lab/incubator2/telemetry", {"temp": 37, "co2": 5, "humidity": 60,
+                                                           "doorOpen": False, "setpoint": 37})
+                async with GatewayClient(http=http, session=session_id) as client:
+                    async def live_fresh():
+                        state = await client.get_state([KEY])
+                        return state if state["entities"][KEY]["values"].get("temperatureC") == 37 else None
+
+                    await until(live_fresh)
+                    assert (await client.describe_entity(KEY))["key"] == KEY
+                    value = await client.invoke_action(KEY, "setSetpoint", {"temperatureC": 38}, wait=False)
+                    assert value["status"] == "pending_approval" and not transport.publications
+                    approval = app.state.manager.approvals.for_invocation(value["invocationId"])
+                    decided = await http.post(f"/api/v1/approvals/{approval.approvalId}/decision",
+                                              json={"decision": "approve"}, headers={"X-Actor": "user:test"})
+                    assert decided.status_code == 200
+
+                    async def published():
+                        return transport.publications
+
+                    await until(published)
+                    assert transport.publications[0][1]["requestId"] == value["invocationId"]
+                    transport.emit("lab/incubator2/ack", {"requestId": value["invocationId"],
+                                                         "status": "succeeded"})
+
+                    async def completed():
+                        current = await client.get_invocation(value["invocationId"])
+                        return current if current["status"] == "succeeded" else None
+
+                    await until(completed)
+                    if close_target == "simulation":
+                        assert (await http.delete("/api/v1/sessions/" + session_id)).status_code == 204
+                        assert app.state.manager.live.state == "RUNNING" and not transport.closed
+                        current = await client.get_state([KEY])
+                        assert current["entities"][KEY]["values"]["temperatureC"] == 37
+                    else:
+                        before = (await http.get("/api/v1/sessions/" + session_id)).json()["simTime"]
+                        await app.state.manager.live.close()
+
+                        async def simulation_advanced():
+                            state = (await http.get("/api/v1/sessions/" + session_id)).json()
+                            advancing = state["state"] == "RUNNING" and state["simTime"] > before
+                            return state if advancing else None
+
+                        await until(simulation_advanced)
+                        assert source._task is not None and not source._task.done() and transport.closed
+            finally:
+                assert (await http.delete("/api/v1/sessions/" + session_id)).status_code == 204
+    assert source is not None and source._task.done()
+    assert app.state.manager.live._task is None and transports[0].closed
