@@ -181,7 +181,7 @@ async def test_scene_cli_and_mcp_bootstrap_inspection_launch_and_replacement(gat
             ) as mcp:
                 assert {tool.name for tool in (await mcp.list_tools()).tools} == TOOLS
                 assert await result(mcp, "library_search") == scenes
-                assert await result(mcp, "library_describe", id="robot-and-tubes") == robot
+                assert await result(mcp, "library_describe", id="robot-and-tubes", view="full") == robot
                 launched = await result(mcp, "scene_launch", sceneVersion="lab-demo")
                 owned.append(launched["sessionId"])
                 assert launched["sceneId"] == "lab-demo" and launched["sceneVersion"] == "lab-demo@3"

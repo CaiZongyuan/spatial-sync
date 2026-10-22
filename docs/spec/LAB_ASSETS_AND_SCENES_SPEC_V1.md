@@ -374,6 +374,56 @@ lw skills ls
 - 工具保持通用，不按设备或素材生成专用工具。本规格新增 `library_search`（素材和场景）、`library_describe`、`library_import`、`library_validate`、`scene_launch`。
 - 不提供审批工具。
 
+#### 10.2.1 有界库详情（`lw.library-description/1`）
+
+`lw library describe <id>` 与 `library_describe` 共享参数 `id`、`view`
+（`summary | page | full`，默认 `summary`）、`section`（默认 null）、
+`offset`（默认 0）和 `documentDigest`（默认 null）。CLI 对应
+`--view`、`--section`、`--offset`、`--document-digest`。这会改变原先
+CLI-library/MCP 默认返回完整详情的语义；需要旧结果的调用者显式使用
+`view=full`。`lw scene show`、`lw asset show` 保持默认 `full`。
+两个 HTTP 详情路由共享相同查询参数，省略 `view` 时仍返回原来的完整对象，
+Web 与旧 HTTP 调用不需要迁移。`full` 不加 envelope，也不删减字段。
+
+`summary` 与 `page` 的完整 JSON 各不超过 4096 个 UTF-8 字节；经官方
+MCP SDK 返回的整个 CallToolResult（包括 text 和 structuredContent）不超过
+16384 个 UTF-8 字节。这是项目传输预算，不是外部模型的 token 上限。
+详情读取不启动会话或物理源，不增加 MCP 专用适配器或工具。
+
+`summary` 返回 `schema`、`view`、`resource`（`scene | asset`）、解析后的精确
+`id`、`title`、`description`、`contentHash`、`documentDigest`、`launchable`、
+`sources`、`launchReason`、`countsReason`、`validation`（status/reportId/gapCount）、
+`counts`（entities/devices/types/locations/assets/files）、`typesPreview`
+（type/actions 名称）、`devicesPreview`（entityKey/type）、`locationsPreview`、
+`gapsPreview`、`sections`、`previewTruncated` 和 `details`。
+`details` 给出 `{view: page, id, documentDigest, section: null, offset: 0}`。
+不适用或未知的物理实体/设备数保持 null 和原因，不能用 authored bindings
+数量冒充观测数量。预览和说明可确定性缩减以满足预算，并设置
+`previewTruncated=true`；完整标识符和动作名称只能保留或省略，不能截成另一个
+可操作标识符。启动失败、计数未知和验证缺口的说明必须可发现，完整内容经分页访问。
+
+`page` 要求调用者使用精确 `@rev` 及 summary 提供的 `documentDigest`。
+digest 是整个完整详情的规范 JSON 的 SHA-256，包括 preview、验证报告、引用检查
+和相关录制；它不是不可变包的 `contentHash`。规范 JSON 使用排序键、紧凑分隔符、
+原样 Unicode 和拒绝非有限数值（Python `sort_keys=True, separators=(',', ':'),
+ensure_ascii=False, allow_nan=False`）。同一版本的报告、录制或引用状态变化也会改变
+digest；服务端不缓存快照。过期 digest 返回 HTTP 409 `description_changed`，
+调用者在元数据稳定后重新获取 summary 并从第一页开始。
+
+`section` 仅可选完整对象的一个顶层字段，null 选择整个完整对象。
+`page` 返回 `{schema, view, resource, id, documentDigest, section, offset,
+nextOffset, totalChars, content}`。`content` 是所选规范 JSON 的连续子串；
+offset/nextOffset 按 Unicode 码点计数，服务端选满足完整 envelope 字节预算的
+最长前缀。顺序拼接所有 content 必须逐字重建规范 JSON，包含大字符串和空容器。
+末页 `nextOffset=null`；offset 等于 totalChars 时返回空 content 的末页。
+每页 content 是文本片段，可跨规范 JSON 的转义序列；顺序拼接全部片段后再解析。
+每个响应的 content 自身是合法 JSON 字符串，切分保留完整 Unicode 码点。
+
+无精确版本、缺 digest、未知 section、负数/超出末尾的 offset、错误 view，
+以及把 section/offset/digest 用于非 page，均返回有界 HTTP 400
+`invalid_description_view`。错误不回显无界用户输入。现有资源不存在错误不变。
+这些发现接口不改变空间协议、entityKey、设备动作管线或录制格式。
+
 ### 10.3 平台 skill
 
 平台 skill 教 agent 如何通过 `lw` 操作实验室。它们放在仓库 `skills/lab-*/SKILL.md`，与 `.claude/skills/` 下的开发 skill 分开，随平台版本发布，用 `lw skills install` 复制到使用者的 agent 目录。

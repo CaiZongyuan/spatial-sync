@@ -131,8 +131,13 @@ class GatewayClient:
             params["gaps"] = True
         return (await self.request("GET", "/api/v1/library/" + resource, params=params))[resource]
 
-    async def library_describe(self, id):
-        return await self.request("GET", self._library_path(id))
+    async def library_describe(self, id, view="summary", section=None, offset=0, documentDigest=None):
+        params = {"view": view, "offset": offset}
+        if section is not None:
+            params["section"] = section
+        if documentDigest is not None:
+            params["documentDigest"] = documentDigest
+        return await self.request("GET", self._library_path(id), params=params)
 
     @staticmethod
     def _library_path(id):

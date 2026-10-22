@@ -214,3 +214,13 @@ The command table also exposes generic `library_search`, `library_describe` and
 `kind`, `query` or `gaps` for assets. `library_import.directory` names a directory
 on the MCP client's filesystem. CLI equivalents include `lw library search`
 and `lw library describe`.
+
+`library_describe` and `lw library describe` default to a bounded summary for
+assets as well as scenes. `lw asset show` and HTTP detail GETs without `view`
+retain full output; explicit `view="full"` preserves the former MCP result.
+Use summary `id` and `documentDigest` with `view="page"` to read the whole
+document or one top-level `section` such as `types`, `provenance` or `validation`.
+Follow `nextOffset` until null and concatenate `content` before parsing JSON.
+Reports and reference inspections participate in the digest; stale pages return
+`409 description_changed` and require a fresh summary/restart. The shared
+[scene discovery guide](SCENE_LIBRARY.md) describes the CLI flags and byte budgets.

@@ -78,7 +78,7 @@ async def test_asset_cli_mcp_upload_filters_description_and_export_dedup(gateway
         tools = (await mcp.list_tools()).tools
         assert {tool.name for tool in tools} == TOOLS
         assert not any("approv" in tool.name for tool in tools)
-        assert await result(mcp, "library_describe", id=first["assetVersion"]) == inspected
+        assert await result(mcp, "library_describe", id=first["assetVersion"], view="full") == inspected
         assert await result(
             mcp, "library_search", resource="assets", kind="device", query="centrifuge", gaps=True
         ) == cli("asset", "ls", "--kind", "device", "-q", "centrifuge", "--gaps")
