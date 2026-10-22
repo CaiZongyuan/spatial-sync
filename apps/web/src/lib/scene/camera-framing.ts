@@ -59,18 +59,21 @@ export function updateProjection(camera: PerspectiveCamera | OrthographicCamera,
   camera.updateProjectionMatrix();
 }
 
+export interface CameraFitPolicy { maxRadius?: number; maxDistance?: number; relativeScale?: boolean }
+
 export function fitCamera(camera: PerspectiveCamera | OrthographicCamera, box: Box3, aspect: number,
-  maxRadius = Infinity, maxDistance = Infinity) {
+  { maxRadius = Infinity, maxDistance = Infinity, relativeScale = false }: CameraFitPolicy = {}) {
   const safe = finiteBounds(box) ? box : defaultFraming();
   const center = safe.getCenter(new Vector3());
-  const radius = Math.min(maxRadius, Math.max(.5, safe.getSize(new Vector3()).length() / 2));
+  const radius = Math.min(maxRadius, Math.max(relativeScale ? Number.EPSILON : .5,
+    safe.getSize(new Vector3()).length() / 2));
   const direction = camera instanceof OrthographicCamera ? new Vector3(1, .8, 1) : new Vector3(1, .85, 1.2);
   const distance = Math.min(maxDistance, radius * (camera instanceof OrthographicCamera ? 4 :
     1.15 / Math.sin(Math.atan(Math.tan(camera.fov * Math.PI / 360) * Math.min(1, aspect)))));
   camera.position.copy(center).add(direction.normalize().multiplyScalar(distance));
   camera.zoom = 1;
-  camera.near = Math.max(.001, Math.min(.01, radius / 100));
-  camera.far = Math.max(1000, distance + radius * 4);
+  camera.near = relativeScale ? radius / 1000 : Math.max(.001, Math.min(.01, radius / 100));
+  camera.far = relativeScale ? distance + radius * 4 : Math.max(1000, distance + radius * 4);
   camera.lookAt(center);
   const half = radius * 1.15;
   updateProjection(camera, aspect, half);

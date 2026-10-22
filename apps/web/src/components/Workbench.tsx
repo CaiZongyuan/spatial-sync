@@ -409,7 +409,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
                   cameraPreset,
                 }}
                 preview={planSelection.preview.value}
-                framingPending={Boolean(planSelection.metadata.loading || planSelection.preview.loading)}
+                framingPending={Boolean(planSelection.metadata.loading
+                  || (!planSelection.metadata.error && planSelection.preview.framingPending))}
               />
               {tab === 'diagnostics' && (
                 <Diagnostics

@@ -15,7 +15,7 @@ for (const projection of ['perspective', 'isometric']) test(`${projection} fits 
   const expected = healthy.reduce((all, item) => all.union(item), new Box3());
   expect(bounds).toEqual(expected);
   const camera = projection === 'perspective' ? new PerspectiveCamera(44) : new OrthographicCamera();
-  const result = fitCamera(camera, bounds, 1.5, 20, 100);
+  const result = fitCamera(camera, bounds, 1.5, { maxRadius: 20, maxDistance: 100 });
   expect(result.center).toEqual(expected.getCenter(new Vector3()));
   expect(camera.position.distanceTo(result.center)).toBeLessThanOrEqual(100);
   camera.updateMatrixWorld(true);
@@ -48,7 +48,7 @@ test('equal remote clusters have a deterministic view policy, not a physical cla
 for (const projection of ['perspective', 'isometric']) test(`${projection} preserves a large far-translated static asset's full bounds`, () => {
   const asset = new Box3(new Vector3(1e6, -100, -100), new Vector3(1e6 + 500, 100, 100));
   const camera = projection === 'perspective' ? new PerspectiveCamera(44) : new OrthographicCamera();
-  const fitted = fitCamera(camera, asset, .5);
+  const fitted = fitCamera(camera, asset, .5, { relativeScale: true });
   expect(fitted.center).toEqual(asset.getCenter(new Vector3()));
   expect(camera.position.distanceTo(fitted.center)).toBeGreaterThan(100);
   camera.updateMatrixWorld(true);
@@ -91,7 +91,7 @@ for (const projection of ['perspective', 'isometric']) test(`${projection} stati
   const occupancy = (size: number) => {
     const asset = new Box3(new Vector3(-size / 2, -size / 2, -size / 2), new Vector3(size / 2, size / 2, size / 2));
     const camera = projection === 'perspective' ? new PerspectiveCamera(44) : new OrthographicCamera();
-    const fitted = fitCamera(camera, asset, 1.5);
+    const fitted = fitCamera(camera, asset, 1.5, { relativeScale: true });
     expect(fitted.center.toArray()).toEqual([0, 0, 0]);
     camera.updateMatrixWorld(true);
     const projected = corners(asset).map(point => point.project(camera));

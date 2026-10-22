@@ -34,7 +34,7 @@ function Model({ object, theme, capture, fitRequest }: {
     return box;
   }, [object]);
   const center = bounds.getCenter(new Vector3());
-  const diameter = Math.max(1, bounds.getSize(new Vector3()).length());
+  const diameter = Math.max(Number.EPSILON, bounds.getSize(new Vector3()).length());
   const frames = useRef(0);
   const captured = useRef(false);
   const fitted = useRef(false);
@@ -47,16 +47,16 @@ function Model({ object, theme, capture, fitRequest }: {
     capture(gl.domElement.toDataURL('image/png'));
   });
   return <>
-    <CameraRig preset="isometric" bounds={() => bounds} revision={1} fitRequest={fitRequest}
+    <CameraRig preset="isometric" bounds={() => bounds} revision={1} fitRequest={fitRequest} relativeScale
       onFit={() => { fitted.current = true; }} />
     <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
     <directionalLight position={[3, 6, 3]} intensity={theme.key * Math.PI} color={theme.sun} castShadow
       shadow-mapSize={[1024, 1024]} shadow-camera-left={-2} shadow-camera-right={2} shadow-camera-top={2} shadow-camera-bottom={-2} shadow-bias={-.0005} shadow-radius={4} />
     <group rotation={[-Math.PI / 2, 0, 0]}><primitive object={object} dispose={null} /></group>
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[center.x, bounds.min.y - .003, center.z]} receiveShadow>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[center.x, bounds.min.y - diameter * .003, center.z]} receiveShadow>
       <planeGeometry args={[diameter * 2, diameter * 2]} /><shadowMaterial transparent opacity={theme.ao * .45} />
     </mesh>
-    {!capture && <OrbitControls makeDefault enableDamping={false} maxDistance={diameter * 20}
+    {!capture && <OrbitControls makeDefault enableDamping={false} minDistance={diameter / 1000} maxDistance={diameter * 20}
       minZoom={.1} maxZoom={50} />}
   </>;
 }

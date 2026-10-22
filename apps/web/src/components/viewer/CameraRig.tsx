@@ -13,8 +13,9 @@ interface CameraControls {
 }
 
 export function CameraRig({ preset, bounds, revision, ready = alwaysReady, fitRequest = 0, onFit,
-  maxRadius, maxDistance }: { preset: CameraPreset; bounds: () => Box3; revision: number;
-    ready?: () => boolean; fitRequest?: number; onFit?: () => void; maxRadius?: number; maxDistance?: number }) {
+  maxRadius, maxDistance, relativeScale }: { preset: CameraPreset; bounds: () => Box3; revision: number;
+    ready?: () => boolean; fitRequest?: number; onFit?: () => void; maxRadius?: number; maxDistance?: number;
+    relativeScale?: boolean }) {
   const { set, size, invalidate, controls } = useThree();
   const navigation = controls as unknown as CameraControls | null;
   const camera = useMemo(() => {
@@ -48,7 +49,8 @@ export function CameraRig({ preset, bounds, revision, ready = alwaysReady, fitRe
   }, [navigation, framing]);
   useFrame(state => {
     if (!framing.takeFit(ready)) return;
-    const fitted = fitCamera(camera, bounds(), Math.max(.1, size.width / Math.max(1, size.height)), maxRadius, maxDistance);
+    const fitted = fitCamera(camera, bounds(), Math.max(.1, size.width / Math.max(1, size.height)),
+      { maxRadius, maxDistance, relativeScale });
     half.current = fitted.half;
     const controls = state.controls as unknown as CameraControls | null;
     controls?.target?.copy(fitted.center); controls?.update?.();

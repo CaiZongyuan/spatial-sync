@@ -87,7 +87,8 @@ function PlanConnection({ id }: { id: string }) {
     {connectionError && <span role="status">会话暂不可用：{connectionError}</span>}</div>
     <div className={`plan-detail-grid${live ? ' is-live' : ''}`}>{live ?
       <div className="plan-empty">实况计划通过设备回执确认结果。设备布局与读数可在实况中查看。</div> :
-      <PlanScene client={client} preview={preview.value} framingPending={Boolean(metadata.loading || preview.loading)} />}
+      <PlanScene client={client} preview={preview.value}
+        framingPending={Boolean(metadata.loading || (!metadata.error && preview.framingPending))} />}
       <PlanChecklist {...{ client, plan, entry, document, previous: metadata.previous }} fullPage selected={step?.id}
         metadataError={metadata.error} metadataRetry={metadata.refresh} historyError={metadata.historyError}
         select={step => void navigate({ to: '/plans/$planId', params: { planId: id }, search: prior => ({ ...prior, step }) })}

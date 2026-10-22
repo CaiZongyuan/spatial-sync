@@ -17,9 +17,13 @@ test('a first pose before parent context refresh cannot consume the requested pr
   const view = { connection: 'connected', sessionState: 'RUNNING', manifest: { sceneRevision: 'rev-preview' } };
   const client = { sessionId: 'preview-session', readOnly: false, buffer,
     subscribe: vi.fn(), getSnapshot: () => view } as unknown as SessionClient;
-  const step = { id: 1, status: 'pending', do: { entity: '/Robot', action: 'moveJoints', params: {} } };
-  const plan = { id: 'plan-preview', revision: 1, target: 'session', steps: [step],
-    sessionId: client.sessionId, sceneRevision: view.manifest.sceneRevision, epoch: 0 } as PlanDocument;
+  const step: PlanDocument['steps'][number] = { id: 1, status: 'pending',
+    do: { entity: '/Robot', action: 'moveJoints', params: {} } };
+  const plan: PlanDocument = { id: 'plan-preview', kind: 'operation', title: 'Framing prerequisite fixture',
+    status: 'approved', revision: 1, target: 'session', steps: [step],
+    sessionId: client.sessionId, sceneRevision: view.manifest.sceneRevision, epoch: 0,
+    requestedBy: { kind: 'agent', name: 'framing-test' }, createdAtMs: 1,
+    approvalId: null, approvalStatus: null, approvalMode: 'auto', stepResults: {}, changes: [], persistence: { status: 'stored' } };
   const scope = { planId: plan.id, revision: 1, stepId: 1, sessionId: client.sessionId,
     sceneRevision: plan.sceneRevision, epoch: 0 };
   const read = () => useMotionPreview(client, plan, plan, plan.steps[0]);

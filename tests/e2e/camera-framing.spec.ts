@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {} from '../../apps/web/src/components/Workbench';
 import type { CameraState } from '../../apps/web/src/components/viewer/SceneDiagnostics';
+import type { AvailablePreview, PlanDocument } from '../../apps/web/src/lib/plans/model';
+import type {} from '../../apps/web/src/components/PlansPage';
 
 const fixture = resolve('../../tests/fixtures/recordings/v1');
 const outlierKey = '/World/TestFramingBody';
@@ -10,7 +12,7 @@ const camera = (page: Page) => page.evaluate(() => window.__spatialRenderDebug?.
 const distance = (a: number[], b: number[]) => Math.hypot(...a.map((value, index) => value - b[index]));
 
 /** Real renderer + recorded binary sample, without creating a Session or Source. */
-async function viewerFixture(page: Page, delayVisual = false) {
+async function viewerFixture(page: Page, delayVisual = false, previewOrder = false) {
   const manifest = JSON.parse(readFileSync(join(fixture, 'manifest.json'), 'utf8'));
   const catalog = JSON.parse(readFileSync(join(fixture, 'catalog.json'), 'utf8'));
   const primitive = manifest.nodes.find((node: { kind: string; visuals: { kind: string; geometry: { type: string } }[] }) =>
@@ -18,12 +20,17 @@ async function viewerFixture(page: Page, delayVisual = false) {
   const id = Math.max(...manifest.nodes.filter((node: { kind: string }) => node.kind === 'body')
     .map((node: { streamId: number }) => node.streamId)) + 1;
   manifest.nodes.push({ ...primitive, entityKey: outlierKey, name: 'Framing fixture body', streamId: id });
+  if (previewOrder) {
+    manifest.nodes = manifest.nodes.filter((node: { kind: string; entityKey: string }) => node.kind === 'group' || node.entityKey === outlierKey);
+    manifest.sites = []; manifest.joints = [];
+  }
   const segment = readFileSync(join(fixture, 'seg-000001.bin'));
   const original = segment.subarray(19, 10 + segment.readUInt32LE(6));
-  const spatial = Buffer.alloc(original.length + 32);
+  const spatial = Buffer.alloc(previewOrder ? 76 : original.length + 32);
   original.copy(spatial);
-  const count = original.readUInt32LE(40);
+  const count = previewOrder ? 0 : original.readUInt32LE(40);
   spatial.writeUInt32LE(count + 1, 40);
+  if (previewOrder) spatial.writeUInt32LE(1, 12);
   const offset = 44 + count * 32;
   spatial.writeUInt32LE(id, offset);
   [1, 0, 1, 0, 0, 0, 1].forEach((value, index) => spatial.writeFloatLE(value, offset + 4 + index * 4));
@@ -43,14 +50,15 @@ async function viewerFixture(page: Page, delayVisual = false) {
       const request = JSON.parse(String(message));
       if (request.type === 'client.subscribe') {
         route.send(JSON.stringify({ type: 'subscription.ack', requestId: request.requestId, grantedRateHz: 30 }));
-        route.send(spatial);
+        if (!previewOrder) route.send(spatial);
       }
     });
     route.send(JSON.stringify({ type: 'server.ready', sessionId: 'framing-fixture', role: 'viewer',
       sceneRevision: manifest.sceneRevision, sessionState: 'PAUSED', epoch: 0, seq: sequence,
       simTime: 0, realtimeFactor: 1, heartbeatIntervalMs: 30000 }));
   });
-  return { release, remotePose() {
+  return { release, sceneRevision: manifest.sceneRevision as string,
+    firstPose() { socket!.send(spatial); }, remotePose() {
     const next = Buffer.from(spatial);
     next.writeBigUInt64LE(BigInt(++sequence), 16);
     next.writeFloatLE(1e9, offset + 4);
@@ -97,6 +105,62 @@ for (const render of ['individual', 'instanced']) test(`${render} view survives 
     expect(await page.evaluate(key => window.__spatialDebug?.getRenderedPose(key)?.p[0], outlierKey)).toBe(1e9);
     await page.screenshot({ path: info.outputPath(`framing-${render}-recovered.png`) });
   } finally { fixture.release(); }
+});
+
+for (const userOwns of [false, true]) test(`initial plan waits for pose/context/preview settlement; user takeover ${userOwns}`, async ({ page }) => {
+  const fixture = await viewerFixture(page, false, true);
+  const plan: PlanDocument = {
+    id: 'plan-framing-order', kind: 'operation', title: 'Disclosed framing-order fixture', target: 'session',
+    revision: 1, status: 'approved', steps: [{ id: 1, status: 'pending',
+      do: { entity: outlierKey, action: 'moveJoints', params: {} } }],
+    sessionId: 'framing-fixture', sceneRevision: fixture.sceneRevision, epoch: 1,
+    requestedBy: { kind: 'agent', name: 'framing-fixture' }, createdAtMs: 1,
+    approvalId: null, approvalStatus: null, approvalMode: 'auto', stepResults: {}, changes: [],
+    persistence: { status: 'stored' },
+  };
+  const preview: AvailablePreview = {
+    planId: plan.id, revision: 1, stepId: 1, sessionId: plan.sessionId, sceneRevision: plan.sceneRevision,
+    epoch: 1, available: true, entityKey: outlierKey, simTime: 0, sampleTimeMs: 0,
+    points: [[1, 0, 1], [8, 0, 1]], startJointPositions: [], targetJointPositions: [],
+    targetPose: { p: [8, 0, 1], q: [0, 0, 0, 1] },
+    targetBodyPoses: { [outlierKey]: { p: [8, 0, 1], q: [0, 0, 0, 1] } }, policyDriven: false,
+  };
+  let releasePreview!: () => void;
+  const heldPreview = new Promise<void>(resolve => { releasePreview = resolve; });
+  await page.route('**/api/v1/plans?*', route => route.fulfill({ json: { plans: [plan] } }));
+  await page.route(`**/api/v1/plans/${plan.id}`, route => route.fulfill({ json: plan }));
+  await page.route(`**/api/v1/plans/${plan.id}/steps/1/preview?*`, async route => {
+    await heldPreview; await route.fulfill({ json: preview });
+  });
+  try {
+    await page.goto(`/plans/${plan.id}?step=1`);
+    const viewport = page.getByTestId('scene-viewport');
+    await expect(viewport).toBeVisible();
+    await expect(viewport.locator('canvas')).toHaveCount(0);
+    const requested = page.waitForRequest(request => request.url().includes(`/${plan.id}/steps/1/preview`));
+    fixture.firstPose(); // Authoritative epoch1 sample arrives before the parent's cached context catches up.
+    await requested;
+    await expect(viewport.locator('canvas')).toBeVisible();
+    await expect(viewport).toHaveAttribute('data-camera-fitted', 'false');
+    let user: CameraState | undefined;
+    if (userOwns) {
+      await viewport.locator('canvas').hover();
+      const initial = (await camera(page))!;
+      await page.mouse.wheel(0, -400);
+      await expect.poll(async () => (await camera(page))?.zoom).not.toBe(initial.zoom);
+      user = (await camera(page))!;
+    }
+    releasePreview();
+    await expect.poll(() => page.evaluate(key => window.__planViewDebug?.()?.ghosts[key]?.meshes, outlierKey)).toBeGreaterThan(0);
+    if (user) {
+      await assertViewRetained(page, user);
+      await expect(viewport).toHaveAttribute('data-camera-fitted', 'false');
+      await page.getByRole('button', { name: 'Fit scene', exact: true }).click();
+    }
+    await expect(viewport).toHaveAttribute('data-camera-fitted', 'true');
+    expect((await page.evaluate(() => window.__planViewDebug?.()))?.targetInView,
+      'Actual target projects inside the rendered viewport').toBe(true);
+  } finally { releasePreview(); fixture.release(); }
 });
 
 test('user navigation during visual loading survives late readiness and explicit fit remains available', async ({ page }) => {

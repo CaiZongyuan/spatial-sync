@@ -210,8 +210,9 @@ function SceneContents({
   recorder,
   renderContinuously = true,
   cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact, axesElement,
-  preview, previewFocus = false, inspectPreview, reducedMotion, framingPending = false, fitRequest,
-}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null>; reducedMotion: boolean; fitRequest: number }) {
+  preview, previewFocus = false, inspectPreview, reducedMotion, framingPending = false, fitRequest, onFramed,
+}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null>; reducedMotion: boolean;
+  fitRequest: number; onFramed: () => void }) {
   const invalidate = useThree((state) => state.invalidate);
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
@@ -457,7 +458,7 @@ function SceneContents({
         inspectVisuals={inspectGeometry}
       />
       <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} ready={framingReady}
-        fitRequest={fitRequest} onFit={() => { fitted.current = true; }}
+        fitRequest={fitRequest} onFit={() => { fitted.current = true; onFramed(); }}
         maxRadius={SCENE_FRAMING_RADIUS} maxDistance={SCENE_CAMERA_DISTANCE} />
       {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
       <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
@@ -576,6 +577,8 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   const reducedMotion = useReducedMotion();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
   const [fitRequest, setFitRequest] = useState(0);
+  const framingKey = `${props.manifest.sceneRevision}:${props.captureKey ?? ''}:${props.cameraPreset ?? 'perspective'}`;
+  const [fittedKey, setFittedKey] = useState<string>();
   const element = useRef<HTMLDivElement>(null);
   const axesElement = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
@@ -590,7 +593,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
     return () => observer.disconnect();
   }, []);
   return (
-    <div ref={element} className="viewport" data-testid="scene-viewport">
+    <div ref={element} className="viewport" data-testid="scene-viewport" data-camera-fitted={fittedKey === framingKey}>
       {displayScene ? <Canvas
         flat
         shadows
@@ -601,7 +604,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} fitRequest={fitRequest} axesElement={axesElement} reducedMotion={reducedMotion} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} fitRequest={fitRequest} onFramed={() => setFittedKey(framingKey)} axesElement={axesElement} reducedMotion={reducedMotion} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {displayScene && !props.compact && !props.capture && <PhysicalAxes element={axesElement} theme={theme} />}
       {displayScene && !props.capture && <button type="button" className="viewport-fit" aria-label="Fit scene"
