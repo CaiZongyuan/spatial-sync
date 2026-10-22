@@ -159,7 +159,9 @@ class StateStore:
             try:
                 await asyncio.wait_for(changed.wait(), timeout)
             except TimeoutError:
-                return {"events": [], "lastSeq": self.event_seq, "timedOut": True, "gap": False}
+                # A writer may publish while timeout cancellation is completing.
+                if after >= self.event_seq:
+                    return {"events": [], "lastSeq": self.event_seq, "timedOut": True, "gap": False}
         first_seq = self.event_seq - len(self._events) + 1
         return {
             "events": [
