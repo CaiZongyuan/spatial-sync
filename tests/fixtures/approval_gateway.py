@@ -46,9 +46,27 @@ async def storage_roots():
 @app.post("/e2e/evaluation-alert-suite")
 async def evaluation_alert_suite():
     from tests.fixtures.evaluation_alerts import prepare_suite
+    from tests.fixtures.evaluation_barrier import EvaluationAlertBarriers
 
     manager = app.state.manager
     scene = manager.library.resolve("evaluation-alerts", launch=True, source="synthetic")
     suite = await asyncio.to_thread(prepare_suite, manager.library.roots["user"], scene)
     await asyncio.to_thread(manager.evaluations.suites.refresh)
-    return {"suite": suite, "sceneVersion": scene.id, "sceneContentHash": scene.content_hash}
+    if not hasattr(app.state, "evaluation_alert_barriers"):
+        app.state.evaluation_alert_barriers = EvaluationAlertBarriers(manager.evaluations)
+    return app.state.evaluation_alert_barriers.register(manager.evaluations.suites.resolve(suite))
+
+
+@app.post("/e2e/evaluation-alert-barriers/{token}/bind")
+async def bind_evaluation_alert_barrier(token: str, payload: dict):
+    return app.state.evaluation_alert_barriers.bind(token, payload.get("evaluationId"))
+
+
+@app.get("/e2e/evaluation-alert-barriers/{token}")
+async def evaluation_alert_barrier(token: str):
+    return app.state.evaluation_alert_barriers.snapshot(token)
+
+
+@app.post("/e2e/evaluation-alert-barriers/{token}/release")
+async def release_evaluation_alert_barrier(token: str):
+    return app.state.evaluation_alert_barriers.release(token)
