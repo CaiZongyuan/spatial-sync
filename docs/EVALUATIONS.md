@@ -69,6 +69,13 @@ outside evaluation retain their immediate HTTP 201 behavior, same-scene reuse an
 different-scene conflict. CLI/MCP default device targeting excludes evaluator-owned
 sessions.
 
+The session's device view uses the same authoritative client and stays read-only
+during evaluation. Real devices at `/live` remain independent of that session
+slot: their actions, plans, alerts, history and continuous recording continue to
+work, including when the CLI explicitly selects an evaluation session. Live
+plans and high-risk actions still require human approval. Evaluation recording
+pins and Live recording reader/retention ownership are preserved together.
+
 Cleanup failures, including ordinary recording close after the source stops,
 block subsequent queue work. Retry closing an ordinary session after resolving
 its failure. For an evaluation, an

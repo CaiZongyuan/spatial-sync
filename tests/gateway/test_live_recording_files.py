@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 
+from apps.api.app.evaluation_recordings import EvaluationRecordingRepository
 from apps.api.app.live_recordings import LiveRecordingRepository
 from apps.api.app.recordings import install_recording_routes
 from apps.api.app.settings import Settings
@@ -16,12 +18,13 @@ from packages.info.log import read_segment
 from packages.live.bindings import live_catalog, load_bindings
 
 
+@pytest.mark.parametrize("repository_type", [LiveRecordingRepository, EvaluationRecordingRepository])
 async def test_live_file_body_is_the_checkpoint_prefix_even_when_writer_grows_after_headers(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, repository_type,
 ):
     monkeypatch.setattr("apps.api.app.live_recordings.LiveLog", partial(
         LiveLog, utc_clock=lambda: datetime(2026, 10, 21, 12, tzinfo=UTC)))
-    repository = LiveRecordingRepository(Settings(
+    repository = repository_type(Settings(
         state_root=tmp_path / "state", recordings_root=tmp_path / "recordings"), None)
     log = repository.create_live("file-lab", clock=lambda: 1)
     await log.ready()

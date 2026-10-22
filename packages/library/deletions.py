@@ -18,7 +18,8 @@ class LibraryDeletions:
     def __init__(self, assets, scenes, approvals, recordings, sessions, validator, suites=None, *, live=None):
         self.assets, self._scenes, self.approvals = assets, scenes, approvals
         self.root = assets.roots["user"]
-        self.inspection = ReferenceInspection(assets, scenes, recordings, sessions, validator, suites, live=live)
+        self.inspection = ReferenceInspection(assets, scenes, recordings, sessions, validator,
+                                              suites=suites, live=live)
 
     @property
     def scenes(self):

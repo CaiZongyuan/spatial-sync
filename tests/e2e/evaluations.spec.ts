@@ -48,6 +48,13 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await expect(observer.getByRole('button', { name: 'Open Newton viewer', exact: true })).toHaveCount(0);
     await expect.poll(() => observer.evaluate(() => Boolean(window.__spatialDebug?.getRenderedPose('/World/Lab/Tubes/Tube01')))).toBe(true);
     await info.attach('evaluation-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
+    await observer.getByRole('button', { name: 'Session device telemetry', exact: true }).click();
+    const drawer = observer.getByRole('complementary', { name: '设备抽屉' });
+    await drawer.getByRole('button', { name: /Incubator/ }).click();
+    await drawer.getByTestId('action-setSetpoint').locator('summary').click();
+    await expect(drawer.getByRole('button', { name: 'Run setSetpoint', exact: true })).toBeDisabled();
+    await info.attach('evaluation-devices-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
+    await observer.getByRole('button', { name: 'Session device telemetry', exact: true }).click();
     await expect.poll(async () => (await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json()).status, { timeout: 35_000 }).toBe('completed');
     await expect(page).toHaveURL(/\/sessions\/session-/);
     const ticket = await (await request.get(`${api}/api/v1/session-requests/${keptRequest}`)).json();
