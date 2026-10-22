@@ -86,3 +86,20 @@ test('resize changes projection without moving the user camera, target or zoom',
   expect(camera.zoom).toBe(3);
   expect(camera.left).toBe(-fitted.half);
 });
+
+for (const projection of ['perspective', 'isometric']) test(`${projection} static model occupancy is scale covariant at 1m and 1mm`, () => {
+  const occupancy = (size: number) => {
+    const asset = new Box3(new Vector3(-size / 2, -size / 2, -size / 2), new Vector3(size / 2, size / 2, size / 2));
+    const camera = projection === 'perspective' ? new PerspectiveCamera(44) : new OrthographicCamera();
+    const fitted = fitCamera(camera, asset, 1.5);
+    expect(fitted.center.toArray()).toEqual([0, 0, 0]);
+    camera.updateMatrixWorld(true);
+    const projected = corners(asset).map(point => point.project(camera));
+    for (const point of projected) expect(Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z))).toBeLessThanOrEqual(1);
+    return [Math.max(...projected.map(point => point.x)) - Math.min(...projected.map(point => point.x)),
+      Math.max(...projected.map(point => point.y)) - Math.min(...projected.map(point => point.y))];
+  };
+  const normal = occupancy(1), tiny = occupancy(.001);
+  expect(tiny[0]).toBeCloseTo(normal[0], 8);
+  expect(tiny[1]).toBeCloseTo(normal[1], 8);
+});
