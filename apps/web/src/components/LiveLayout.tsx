@@ -44,7 +44,7 @@ export function LiveLayout({ client, catalog, status, selected, readouts, active
     const alert = active.find(alert => alert.entityKey === binding.key), entity = values[index];
     return { key: binding.key, label: binding.key.split('/').at(-1)!, bodyKeys: mapped.get(binding.key) ?? [],
       detail: readouts ? Object.entries(entity?.values ?? {}).filter(([, value]) => typeof value === 'number')
-        .slice(0, 2).map(([name, value]) => `${reading(value)} ${catalog?.types[binding.type].properties[name]?.unit ?? name}`).join(' · ') : '',
+        .map(([name, value]) => `${reading(value)} ${catalog?.types[binding.type].properties[name]?.unit ?? name}`).join(' · ') : '',
       stale: Object.values(entity?.meta ?? {}).some(meta => meta.stale),
       alert: alert ? (alert.acknowledgement ? 'acknowledged' : 'raised') as 'acknowledged' | 'raised' : undefined };
   });
@@ -53,7 +53,8 @@ export function LiveLayout({ client, catalog, status, selected, readouts, active
   const recorder = useMemo(() => new FrameRecorder(), []), hidden = useMemo(() => new Set<string>(), []);
   const warn = useCallback(() => {}, []);
   const highlightedKeys = useMemo(() => new Set(mapped.get(selected) ?? []), [mapped, selected]);
-  const pick = (key: string) => select(bindings.find(binding => mapped.get(binding.key)?.includes(key))?.key ?? '');
+  const pick = (key: string) => select(catalog?.entities[key] ? key :
+    bindings.find(binding => mapped.get(binding.key)?.includes(key))?.key ?? '');
   const missing = bindings.filter(binding => !mapped.get(binding.key)?.length).length;
   return <figure className="overview-figure"><div className="overview-stage">
     {manifest ? <SceneViewport client={preview.client} {...{ manifest, selected, hidden, warn, metrics, rendered,

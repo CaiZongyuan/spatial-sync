@@ -79,11 +79,26 @@ test('real Live layout uses the verified capture and maps floating labels and ge
     expect(projected).toBeTruthy();
     const hits = await page.evaluate(point => window.__spatialRenderDebug?.pick(point.x, point.y), projected!);
     expect(hits?.some(hit => hit.key === '/World/Lab/Incubator')).toBe(true);
+    const geometryKey = Object.keys(live.placements).find(real => live.placements[real] === hits?.[0]?.key);
+    expect(geometryKey, 'The nearest visible geometry belongs to a configured real device').toBeTruthy();
     await page.mouse.click(projected!.x, projected!.y);
-    await expect(drawer).toContainText(key);
+    await expect(drawer).toContainText(geometryKey!);
+    if (geometryKey !== key) await label.click();
     await http.post(`${api}/e2e/live/fault`, { data: { mode: 'heat' } });
     await expect(drawer.getByTestId(`reading-${key}-temperatureC`)).toContainText('41');
     await expect(label).toContainText('41');
+    const measurement = await label.locator('span').evaluate(element => {
+      const text = element.textContent ?? '', index = text.lastIndexOf('41');
+      const range = document.createRange(); range.setStart(element.firstChild!, index); range.setEnd(element.firstChild!, index + 2);
+      const value = range.getBoundingClientRect(), span = element.getBoundingClientRect(), button = element.parentElement!.getBoundingClientRect();
+      return { text, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+        value: { left: value.left, right: value.right, width: value.width },
+        clip: { left: Math.max(span.left, button.left), right: Math.min(span.right, button.right) },
+        visible: value.width > 0 && value.left >= Math.max(span.left, button.left) - 1 && value.right <= Math.min(span.right, button.right) + 1 };
+    });
+    await writeFile(info.outputPath('layout-readout-measurement.json'), JSON.stringify(measurement));
+    await page.screenshot({ path: info.outputPath('real-live-layout-readouts-1440.png'), fullPage: true });
+    expect(measurement.visible, 'The live temperature fits inside its visible floating-label clip').toBe(true);
     await page.getByRole('button', { name: '读数', exact: true }).click();
     await expect(label.locator('span')).toHaveCount(0);
     await expect(drawer.getByTestId(`reading-${key}-temperatureC`)).toContainText('41');
