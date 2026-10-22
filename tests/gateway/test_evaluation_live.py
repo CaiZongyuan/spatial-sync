@@ -12,6 +12,7 @@ from test_live_devices import EXAMPLE, KEY, FakeBrokerTransport
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.api.app.sources.synthetic_source import SyntheticSource
+from tests.fixtures.evaluation_alerts import prepare_suite, scene_archive
 
 
 async def until(read, predicate):
@@ -24,9 +25,10 @@ async def until(read, predicate):
     raise AssertionError("Evaluation/Live public observation did not converge")
 
 
-async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(tmp_path):
+async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(tmp_path, monkeypatch):
     transports = []
     episode_entered = asyncio.Event()
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
 
     def factory(broker, topics):
         transport = FakeBrokerTransport(broker, topics, time.monotonic)
@@ -54,8 +56,15 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app),
                                       base_url="http://evaluation-live") as http:
+            imported = await http.post("/api/v1/library/imports", content=scene_archive(),
+                                       headers={"Content-Type": "application/x-tar"})
+            assert imported.status_code == 200, imported.text
+            assert imported.json()["validation"]["launchable"]
+            scene = app.state.manager.library.resolve(imported.json()["sceneVersion"], launch=True)
+            suite = await asyncio.to_thread(prepare_suite, app.state.manager.library.roots["user"], scene)
+            app.state.manager.evaluations.suites.refresh()
             submitted = await http.post("/api/v1/evaluations", json={
-                "subject": "robot_arm.virtual", "suite": "suite/lab-demo-pick-place@1",
+                "subject": "robot_arm.virtual", "suite": suite,
             })
             assert submitted.status_code == 202, submitted.text
             evaluation = submitted.json()["evaluationId"]
@@ -68,6 +77,17 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
                 session_id = owned["sessionId"]
                 source = app.state.manager.sessions[session_id].source
                 assert isinstance(source, SyntheticSource)
+
+                async def simulation_alerts():
+                    return (await http.get("/api/v1/alerts", params={
+                        "sessionId": session_id, "active": "true",
+                    })).json()["alerts"]
+
+                [simulation_alert] = await until(simulation_alerts, lambda values: len(values) == 1)
+                assert simulation_alert["readOnly"] is True
+                assert simulation_alert["acknowledgement"] is None
+                refused = await http.post(f"/api/v1/alerts/{simulation_alert['alertId']}/ack", json={})
+                assert refused.status_code == 409 and refused.json()["detail"]["code"] == "evaluation_busy"
                 assert app.state.manager.live.manifest is None
                 selected = app.state.manager.library.resolve("lab-demo@3")
                 references = await asyncio.to_thread(app.state.manager.library_deletions.inspection.scan,
@@ -133,15 +153,19 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
                     })
 
                     async def live_alerts():
-                        return (await http.get("/api/v1/alerts", params={"active": "true"})).json()["alerts"]
+                        return (await http.get("/api/v1/alerts", params={
+                            "sessionId": app.state.manager.live.session_id, "active": "true",
+                        })).json()["alerts"]
 
                     [alert] = await until(live_alerts, lambda values: len(values) == 1)
                     assert alert["sessionId"] == app.state.manager.live.session_id
+                    assert alert["readOnly"] is False
                     inbox = await client.inbox_poll()
                     assert any(item["alertId"] == alert["alertId"] for item in inbox["alerts"])
                     acknowledged = await http.post(f"/api/v1/alerts/{alert['alertId']}/ack",
                                                    json={"note": "Live remains independent"})
                     assert acknowledged.status_code == 200, acknowledged.text
+                    assert acknowledged.json()["readOnly"] is False
                     history = await client.history_query(KEY, "temperatureC", "1h")
                     assert any(point[1] == 50 for point in history["points"])
                     live_log = app.state.manager.live.recording

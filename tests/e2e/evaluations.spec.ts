@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { execFile } from 'node:child_process';
+import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import type {} from '../../apps/web/src/components/Workbench';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
@@ -12,11 +15,23 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
   let startedSession: string | undefined;
   const observer = await context.newPage();
   observer.on('pageerror', error => errors.push(error.message));
+  const acknowledgements: string[] = [];
+  for (const browser of [page, observer]) browser.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/ack')) acknowledgements.push(request.url());
+  });
   try {
+    const python = process.env.SPATIAL_PYTHON ?? resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
+    const { stdout } = await promisify(execFile)(python, [resolve('../../tests/fixtures/evaluation_alerts.py')], { encoding: 'buffer' });
+    const imported = await request.post(`${api}/api/v1/library/imports`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
+    expect(imported.ok(), await imported.text()).toBe(true);
+    expect((await imported.json()).validation.launchable).toBe(true);
+    const fixture = await request.post(`${api}/e2e/evaluation-alert-suite`);
+    expect(fixture.ok(), await fixture.text()).toBe(true);
+    const { suite } = await fixture.json();
     const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneVersion: 'lab-demo@3', source: 'synthetic' } });
     expect(created.status(), await created.text()).toBe(201);
     manual = (await created.json()).sessionId;
-    const submitted = await request.post(`${api}/api/v1/evaluations`, { data: { subject: 'robot_arm.virtual', suite: 'suite/lab-demo-pick-place@1' } });
+    const submitted = await request.post(`${api}/api/v1/evaluations`, { data: { subject: 'robot_arm.virtual', suite } });
     expect(submitted.status(), await submitted.text()).toBe(202);
     evaluation = (await submitted.json()).evaluationId;
     await page.goto('/scenes/lab-demo/3');
@@ -53,8 +68,28 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await drawer.getByRole('button', { name: /Incubator/ }).click();
     await drawer.getByTestId('action-setSetpoint').locator('summary').click();
     await expect(drawer.getByRole('button', { name: 'Run setSetpoint', exact: true })).toBeDisabled();
+    const [alert] = (await (await request.get(`${api}/api/v1/alerts?sessionId=${episodeSession}&active=true`)).json()).alerts;
+    expect(alert).toMatchObject({ readOnly: true, active: true, acknowledgement: null });
+    const refused = await request.post(`${api}/api/v1/alerts/${alert.alertId}/ack`, { data: {} });
+    expect(refused.status()).toBe(409);
+    expect((await refused.json()).detail.code).toBe('evaluation_busy');
+    const episode = observer.locator(`[data-alert-id="${alert.alertId}"]`);
+    await expect(episode).toContainText('活动 · 待确认');
+    await expect(episode).toContainText('评估会话只读');
+    await expect(episode.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
+    await expect(episode.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
+    expect(acknowledgements).toEqual([]);
     await info.attach('evaluation-devices-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
     await observer.getByRole('button', { name: 'Session device telemetry', exact: true }).click();
+    await observer.goto('/');
+    const banner = observer.getByTestId('critical-alert-banner');
+    await expect(banner).toContainText('Evaluation temperature is positive');
+    await expect(banner).toContainText('评估会话只读');
+    await expect(banner.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
+    expect(acknowledgements).toEqual([]);
+    await info.attach('evaluation-alert-banner-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
+    await observer.goto(`/sessions/${episodeSession}`);
     await expect.poll(async () => (await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json()).status, { timeout: 35_000 }).toBe('completed');
     await expect(page).toHaveURL(/\/sessions\/session-/);
     const ticket = await (await request.get(`${api}/api/v1/session-requests/${keptRequest}`)).json();
