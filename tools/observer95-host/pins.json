@@ -1,0 +1,7 @@
+{
+  "version": "1.64.1",
+  "coreSha256": "829521b67ed7be90c7d6d6098ff39f2241562d47e4ad7ccab13710924a56001d",
+  "loggerFunctionSha256": "76fbf46836b4c359087164e35d881acc23f63eb5bfe81681e3c963ea9e712c8e",
+  "sendFunctionSha256": "9fb4aff5f5e25b6199e4b28a7be9e16dc862d313b7c3cc5b3718913c11a25dc1",
+  "sampleExpressionSha256": "7849f6619ae35e86a5dcc2bca33565166f05b800495bf3bc4176adf1849f06f2"
+}

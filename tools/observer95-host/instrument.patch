@@ -1,0 +1,9 @@
+--- a/tests/e2e/workbench.spec.ts
++++ b/tests/e2e/workbench.spec.ts
+@@ -1,4 +1,5 @@
+-import { expect, test, type APIRequestContext, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
++import { test } from './observer95-host';
++import { expect, type APIRequestContext, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
+ import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
+ import { cleanupObserver } from './cleanup-observer';
+ 
