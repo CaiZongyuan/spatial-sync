@@ -22,6 +22,7 @@ import type { SceneManifest, Pose } from '../../lib/protocol';
 import { IDENTITY } from '../../lib/scene/pose';
 import { ViewerThemeContext, useViewerTheme } from '../../lib/scene/viewer-theme';
 import { CameraRig, type CameraPreset } from './CameraRig';
+import { sceneFramingBounds, SCENE_CAMERA_DISTANCE, SCENE_FRAMING_RADIUS } from '../../lib/scene/camera-framing';
 import { DeviceAnnotations, DeviceAnnotationLayer, type DeviceAnnotation } from './DeviceAnnotations';
 import type { PlacedLabel } from '../../lib/scene/label-layout';
 import type { SessionClient } from '../../lib/stream/client';
@@ -209,8 +210,8 @@ function SceneContents({
   recorder,
   renderContinuously = true,
   cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact, axesElement,
-  preview, previewFocus = false, inspectPreview, reducedMotion,
-}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null>; reducedMotion: boolean }) {
+  preview, previewFocus = false, inspectPreview, reducedMotion, framingPending = false, fitRequest,
+}: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null>; reducedMotion: boolean; fitRequest: number }) {
   const invalidate = useThree((state) => state.invalidate);
   const theme = useContext(ViewerThemeContext);
   useEffect(() => { invalidate(); }, [theme, invalidate]);
@@ -246,6 +247,8 @@ function SceneContents({
   }, []);
   const firstPose = useRef(false);
   const firstInstance = useRef(false);
+  const fitted = useRef(false);
+  const previousFraming = useRef<Box3 | undefined>(undefined);
   const captureFrames = useRef(0);
   const captured = useRef(false);
   const renderMode =
@@ -284,16 +287,44 @@ function SceneContents({
   const extraBounds = useCallback(() => instances.current?.bounds(), []);
   const inspectGeometry = useCallback((key: string) => inspectVisuals.current?.(key), [inspectVisuals]);
   const frameBounds = useCallback(() => {
-    const box = new Box3();
+    physicsRoot.current?.updateWorldMatrix(true, true);
+    const boxes = new Map<string, Box3>();
     const focused = previewFocus && preview && !preview.policyDriven ? new Set(Object.keys(preview.targetBodyPoses)) : undefined;
     for (const [key, object] of physicalNodes.current) {
-      if (object.visible && !object.userData.frameExcluded && (!focused || focused.has(key))) box.expandByObject(object);
+      if (object.visible && !object.userData.frameExcluded && (!focused || focused.has(key)))
+        boxes.set(key, new Box3().expandByObject(object));
     }
-    const instanced = instances.current?.bounds();
-    if (instanced) box.union(instanced);
-    if (previewRoot.current) { previewRoot.current.updateWorldMatrix(true, true); box.expandByObject(previewRoot.current); }
+    for (const node of instancedNodes) {
+      if (focused && !focused.has(node.entityKey)) continue;
+      const instance = instances.current?.inspect(node.entityKey);
+      if (instance) boxes.set(node.entityKey, new Box3(new Vector3(...instance.min), new Vector3(...instance.max)));
+    }
+    if (previewRoot.current) {
+      previewRoot.current.updateWorldMatrix(true, true);
+      const decorations = new Box3();
+      for (const object of previewRoot.current.children) {
+        const key = object.userData.ghostEntityKey as string | undefined;
+        if (key) {
+          if (object.visible && (!focused || focused.has(key))) {
+            const box = boxes.get(key) ?? new Box3();
+            box.expandByObject(object); boxes.set(key, box);
+          }
+        } else decorations.expandByObject(object);
+      }
+      boxes.set('preview-decoration', decorations);
+    }
+    const box = sceneFramingBounds([...boxes.values()], previousFraming.current);
+    previousFraming.current = box.clone();
     return box;
-  }, [previewFocus, preview]);
+  }, [previewFocus, preview, instancedNodes]);
+  const framingReady = useCallback(() => {
+    if (framingPending || !firstPose.current || (useInstances && !firstInstance.current)) return false;
+    if (readyNodes.current.size < manifest.nodes.filter(node => node.kind !== 'group').length - instancedNodes.length)
+      return false;
+    if (preview && !previewRoot.current) return false;
+    return !previewRoot.current?.children.some(object => object.userData.ghostEntityKey
+      && (!object.getObjectByName('visual-group') || object.getObjectByName('visual-group')!.userData.source === 'loading'));
+  }, [framingPending, manifest, instancedNodes, useInstances, preview]);
   const deviceBounds = useCallback((keys: string[]) => {
     const bounds = new Box3();
     for (const key of keys) {
@@ -406,7 +437,7 @@ function SceneContents({
       elapsed.current = { time: 0, frames: 0 };
     }
     // Three resets before its shadow and world passes, so samples include both.
-    if (capture && !captured.current && readyNodes.current.size === manifest.nodes.filter(node => node.kind !== 'group').length
+    if (capture && fitted.current && !captured.current && readyNodes.current.size === manifest.nodes.filter(node => node.kind !== 'group').length
       && client.buffer.latestSample) {
       // The next frame lets CameraRig fit the fully loaded, posed geometry.
       if (++captureFrames.current < 3) invalidate();
@@ -425,7 +456,9 @@ function SceneContents({
         extraBounds={extraBounds}
         inspectVisuals={inspectGeometry}
       />
-      <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} />
+      <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} ready={framingReady}
+        fitRequest={fitRequest} onFit={() => { fitted.current = true; }}
+        maxRadius={SCENE_FRAMING_RADIUS} maxDistance={SCENE_CAMERA_DISTANCE} />
       {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
       <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
       <directionalLight position={[3, 6, 3]} intensity={theme.key * Math.PI} color={theme.sun} castShadow
@@ -493,6 +526,7 @@ function SceneContents({
         makeDefault
         target={[0, 0.65, 0]}
         minDistance={0.3}
+        maxDistance={SCENE_CAMERA_DISTANCE} minZoom={.1} maxZoom={50}
       />
       {!compact && !capture && <PhysicalAxesProjection element={axesElement} root={physicsRoot} />}
     </>
@@ -522,6 +556,7 @@ interface ViewportProps {
   preview?: AvailablePreview;
   previewFocus?: boolean;
   inspectPreview?: React.RefObject<InspectPreview | undefined>;
+  framingPending?: boolean;
 }
 
 export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
@@ -540,6 +575,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   const theme = useViewerTheme();
   const reducedMotion = useReducedMotion();
   const [labels, setLabels] = useState<PlacedLabel[]>([]);
+  const [fitRequest, setFitRequest] = useState(0);
   const element = useRef<HTMLDivElement>(null);
   const axesElement = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
@@ -565,9 +601,11 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >
-        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} axesElement={axesElement} reducedMotion={reducedMotion} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
+        <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} fitRequest={fitRequest} axesElement={axesElement} reducedMotion={reducedMotion} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {displayScene && !props.compact && !props.capture && <PhysicalAxes element={axesElement} theme={theme} />}
+      {displayScene && !props.capture && <button type="button" className="viewport-fit" aria-label="Fit scene"
+        onClick={() => setFitRequest(value => value + 1)}>重新取景</button>}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">
         <span className="live-dot" /> {props.client.readOnly ? '录制空间视图' : '实时空间视图'}{' '}

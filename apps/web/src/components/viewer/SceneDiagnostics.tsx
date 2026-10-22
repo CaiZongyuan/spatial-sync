@@ -22,6 +22,7 @@ export interface CameraState {
   projection?: string;
   near: number;
   far: number;
+  zoom?: number;
 }
 declare global {
   interface Window {
@@ -80,12 +81,14 @@ export function SceneDiagnostics({
       projection: camera.type,
       near: camera.near,
       far: camera.far,
+      zoom: camera.zoom,
     });
     const setCamera = (value: CameraState) => {
       camera.position.fromArray(value.position);
       if (camera instanceof PerspectiveCamera) camera.fov = value.fov;
       camera.near = value.near;
       camera.far = value.far;
+      if (value.zoom !== undefined) camera.zoom = value.zoom;
       controls()?.target?.fromArray(value.target);
       camera.lookAt(new Vector3().fromArray(value.target));
       camera.updateProjectionMatrix();

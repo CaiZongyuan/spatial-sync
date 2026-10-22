@@ -7,9 +7,9 @@ export function useSessionPlan(client: SessionClient, id?: string, stepId?: numb
   const state = useClientPlans(client);
   const entry = id ? state.entries.find(value => value.plan.id === id) :
     state.entries.find(value => !['completed', 'abandoned'].includes(value.plan.status)) ?? state.entries[0];
-  const plan = entry?.plan;
-  const metadata = usePlanDocument(plan?.id, plan?.revision, !client.readOnly,
+  const metadata = usePlanDocument(entry?.plan.id ?? id, entry?.plan.revision, !client.readOnly,
     `${entry?.sceneRevision}:${entry?.epoch}:${entry?.sampleTimeMs}`);
+  const plan = entry?.plan ?? metadata.document;
   const selected = plan?.steps.find(step => step.id === stepId) ?? (plan ? defaultStep(plan) : undefined);
   const preview = useMotionPreview(client, plan, metadata.document, selected, String(entry?.sampleTimeMs ?? ''));
   return { ...state, entry, plan, metadata, selected, preview };
