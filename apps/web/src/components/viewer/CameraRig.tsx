@@ -54,6 +54,7 @@ export function CameraRig({ preset, bounds, revision, ready = alwaysReady, fitRe
     half.current = fitted.half;
     const controls = state.controls as unknown as CameraControls | null;
     controls?.target?.copy(fitted.center); controls?.update?.();
+    camera.updateMatrixWorld(true);
     onFit?.();
     state.invalidate();
   });

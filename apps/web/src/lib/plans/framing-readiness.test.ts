@@ -27,8 +27,7 @@ test('a first pose before parent context refresh cannot consume the requested pr
   const scope = { planId: plan.id, revision: 1, stepId: 1, sessionId: client.sessionId,
     sceneRevision: plan.sceneRevision, epoch: 0 };
   const read = () => useMotionPreview(client, plan, plan, plan.steps[0]);
-  const pending = (preview: ReturnType<typeof read>) =>
-    'framingPending' in preview ? Boolean(preview.framingPending) : preview.loading;
+  const pending = (preview: ReturnType<typeof read>) => Boolean(preview.framingPending);
   const framing = new FramingState();
   harness.response = {};
   const beforeParentRefresh = read();
