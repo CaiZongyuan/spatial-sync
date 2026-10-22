@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python-checks:
     name: python-checks (${{ matrix.lane }})
@@ -15,32 +19,9 @@ jobs:
       matrix:
         include:
           - lane: core
-            tests: tests/contract tests/unit tests/gateway/test_evaluation_api.py tests/gateway/test_info.py tests/gateway/test_agent_grading_http.py
+            tests: tests/contract tests/unit tests/cli
           - lane: gateway
-            tests: >-
-              tests/gateway
-              --ignore=tests/gateway/test_binding_templates.py
-              --ignore=tests/gateway/test_template_pin_history.py
-              --ignore=tests/gateway/test_template_previews.py
-              --ignore=tests/gateway/test_builtin_template_migration.py
-              --ignore=tests/gateway/test_template_asset_references.py
-              --ignore=tests/gateway/test_library_deletions.py
-              --ignore=tests/gateway/test_asset_imports.py
-              --ignore=tests/gateway/test_structure_validation.py
-              --ignore=tests/gateway/test_evaluation_api.py
-              --ignore=tests/gateway/test_info.py
-              --ignore=tests/gateway/test_agent_grading_http.py
-          - lane: library-templates
-            tests: >-
-              tests/gateway/test_binding_templates.py
-              tests/gateway/test_template_pin_history.py
-              tests/gateway/test_template_previews.py
-              tests/gateway/test_builtin_template_migration.py
-              tests/gateway/test_template_asset_references.py
-              tests/gateway/test_asset_imports.py
-              tests/gateway/test_structure_validation.py
-          - lane: cli
-            tests: tests/cli tests/gateway/test_library_deletions.py
+            tests: tests/gateway
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -60,7 +41,11 @@ jobs:
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
         if: matrix.lane == 'core'
-      - run: uv run --no-sync python -m pytest ${{ matrix.tests }} -q
+      - name: Run Python suite with xdist
+        run: |
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(uv run --no-sync python -c 'import os; print(len(os.sched_getaffinity(0)))')"
+          uv run --no-sync python -c 'import json, os, psutil; print(json.dumps({"physicalCpus": psutil.cpu_count(logical=False), "affinity": sorted(os.sched_getaffinity(0)), "selectedWorkers": int(os.environ["PYTEST_XDIST_AUTO_NUM_WORKERS"])}))'
+          uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q --durations=20 --junitxml=.scratch/ci-results/${{ matrix.lane }}.xml
       - run: uv run --no-sync ruff check apps packages tools tests
         if: matrix.lane == 'core'
       - run: uv run --no-sync python tools/check_platform_skills.py
@@ -73,6 +58,11 @@ jobs:
         if: matrix.lane == 'core'
       - run: pnpm build
         if: matrix.lane == 'core'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-checks-${{ matrix.lane }}-attempt-${{ github.run_attempt }}
+          path: .scratch/ci-results/${{ matrix.lane }}.xml
 
   contracts:
     if: always()
@@ -133,11 +123,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-acceptance-evidence-${{ matrix.shard }}
+          name: browser-acceptance-evidence-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: |
             /tmp/spatial-api.log
             .scratch/viewer-e2e/report
             .scratch/viewer-e2e/results
+            .scratch/viewer-e2e/results.json
 
   contract-gateway-viewer:
     if: always()

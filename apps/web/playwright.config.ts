@@ -5,10 +5,11 @@ export default defineConfig({
   globalSetup: '../../tests/e2e/global-setup.ts',
   timeout: 45_000,
   expect: { timeout: 10_000 },
-  fullyParallel: false,
+  fullyParallel: true,
   workers: 1,
   reporter: [
     ['list'],
+    ['json', { outputFile: '../../.scratch/viewer-e2e/results.json' }],
     [
       'html',
       { outputFolder: '../../.scratch/viewer-e2e/report', open: 'never' },

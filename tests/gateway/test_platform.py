@@ -164,13 +164,15 @@ async def test_http_platform_exposes_loading_while_existing_health_and_session_r
         settings=Settings(recordings_enabled=False), source_factory=lambda kind, sid: DelayedNewton(sid)
     )
     monitor, manager = app.state.platform_monitor, app.state.manager
+    # The barrier below controls Source loading after library preparation.
+    await asyncio.to_thread(lambda: manager.library)
     await monitor.start()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         creation = asyncio.create_task(client.post(
             "/api/v1/sessions", json={"sceneId": "falling-boxes", "source": "newton"}
         ))
-        await asyncio.wait_for(started.wait(), 5)
         try:
+            await asyncio.wait_for(started.wait(), 5)
             for _ in range(100):
                 response = (await client.get("/api/v1/platform")).json()
                 if response["sessions"]:
