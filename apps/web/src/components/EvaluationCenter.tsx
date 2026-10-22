@@ -57,7 +57,7 @@ function RecentEvaluations({ evaluations }: { evaluations: EvaluationRecord[] })
   return <section className="eval-panel"><header><div><span className="eyebrow">RECENT RUNS</span><h2>最近评估</h2></div><span>{evaluations.length} 次</span></header>
     {!evaluations.length ? <p className="eval-empty">尚无 train 评估。完成一次固定评估集运行后，结果会出现在这里。</p> :
       <div className="eval-table-scroll"><table aria-label="最近评估"><thead><tr><th>评估 / 评估集</th><th>被测程序</th><th>状态</th><th>成功率</th><th>日期</th></tr></thead><tbody>
-        {[...evaluations].reverse().slice(0, 12).map(value => <tr key={value.evaluationId}><td><Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(value.suite) }}>{value.evaluationId}</Link><small>{value.suite}</small></td>
+        {[...evaluations].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12).map(value => <tr key={value.evaluationId}><td><Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(value.suite) }}>{value.evaluationId}</Link><small>{value.suite}</small></td>
           <td><code>{value.subject}</code></td><td>{statusLabels[value.status] ?? value.status}{value.error && <small>{value.error.code}</small>}</td>
           <td className="numeric">{value.result ? successRate(value.result.score) : '—'}</td><td>{evaluationDate(value.at)}</td></tr>)}</tbody></table></div>}
   </section>;

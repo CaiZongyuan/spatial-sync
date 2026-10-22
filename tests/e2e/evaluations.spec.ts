@@ -150,7 +150,7 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     expect((await (await request.get(`${api}/api/v1/session-requests/${cancelledRequest}`)).json()).status).toBe('cancelled');
     await info.attach('started-interactive-workspace.png', { body: await page.screenshot(), contentType: 'image/png' });
     // Reuse this completed real evaluation to verify the center's results and episode projection.
-    await observer.goto('/eval/lab-demo-pick-place@1');
+    await observer.goto(`/eval/${suite.replace(/^suite\//, '')}`);
     const scoreRow = observer.locator(`[data-evaluation-id="${evaluation}"]`);
     await expect(scoreRow).toContainText('100.0%');
     await scoreRow.getByRole('button', { name: `查看回合 ${evaluation}`, exact: true }).click();

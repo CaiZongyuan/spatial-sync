@@ -5,8 +5,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 const score = (id: string, conditionsGroup?: string, decision: EvaluationScore['decision'] = 'baseline') => ({
   evaluationId: id, suite: 'suite/real@1', subject: 'robot_arm.virtual', version: 'runtime', key: { source: 'synthetic' },
-  conditionsGroup, split: 'train', score: .5, decision,
-} as EvaluationScore);
+  conditionsGroup, split: 'train', score: .5, decision, reference: null, successes: 1, episodes: 2,
+  ci95: [.09, .91], durationSeconds: 5, recordings: [], phases: {}, at: '2026-10-23T00:00:00Z',
+} satisfies EvaluationScore);
 
 it('keeps complete server condition groups and subjects separate even when public tags are identical', () => {
   const original = score('first', 'first');
@@ -43,4 +44,29 @@ it('uses canonical Suite REST paths, public reads and the caller cancellation si
     '/api/v1/suites/real/1/scoreboard', '/api/v1/suites/real/1/scoreboard?compare=one&against=two']);
   expect(calls.every(value => value.signal === controller.signal)).toBe(true);
   expect(() => suitePath('suite/../../private@1')).toThrow('无效的评估集版本');
+});
+
+it('lists pending and failed evaluations without inventing scores or fetching extra scoreboards', async () => {
+  const row = score('completed', 'completed');
+  const later = { ...score('later', 'completed', 'accepted'), at: '2026-10-23T01:00:00Z' };
+  const fetch = vi.fn(async (path: string) => new Response(JSON.stringify(path.endsWith('/suites')
+    ? { suites: [{ id: 'suite/real@1', layer: 'embodied' }] }
+    : { evaluations: [{ evaluationId: 'later', status: 'completed', result: later }, { evaluationId: 'queued', status: 'queued' },
+      { evaluationId: 'failed', status: 'failed', error: { code: 'source_unavailable' } },
+      { evaluationId: 'completed', status: 'completed', result: row }] })));
+  vi.stubGlobal('fetch', fetch);
+  const data = await readEvaluationCenter(undefined, new AbortController().signal);
+  expect(data.rows).toEqual([row, later]);
+  expect(currentReference(data.rows)).toEqual(later);
+  expect(data.evaluations.map(value => value.evaluationId)).toEqual(['later', 'queued', 'failed', 'completed']);
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(['/api/v1/suites', '/api/v1/evaluations']);
+});
+
+it('keeps a partial API failure visible instead of turning it into an empty scoreboard', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => path.endsWith('/scoreboard')
+    ? new Response(JSON.stringify({ detail: { code: 'suite_changed' } }), { status: 409 })
+    : new Response(JSON.stringify(path.endsWith('/evaluations') ? { evaluations: [] } : { id: 'suite/real@1' }))));
+  await expect(readEvaluationCenter('suite/real@1', new AbortController().signal)).rejects.toMatchObject({
+    message: 'suite_changed', detail: { code: 'suite_changed' },
+  });
 });

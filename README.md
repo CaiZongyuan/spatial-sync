@@ -64,6 +64,11 @@ initial scene, entity bindings, teaching and recorded validation, then launch
 that exact version into its connected workspace.
 **Sessions (会话)**
 (`/sessions`) lists managed sessions and lets another observer join by ID.
+**Evaluation (评估)** (`/eval`) lists pinned embodied suites and their public train
+results. Open a suite for comparable conditions, the confidence scoreboard,
+separate curves for each condition group, stage observations and episode replays.
+The held-out test row stays locked. Agent evaluation, registered Controller
+versions and training costs are not yet available. See [evaluations](docs/EVALUATIONS.md).
 **Resources · Compute** (`/resources/gpu`) shows host resources and
 managed Newton backends. These pages refresh every two seconds. **Recordings**
 (`/recordings`) links to read-only replay at `/replay/{id}`.

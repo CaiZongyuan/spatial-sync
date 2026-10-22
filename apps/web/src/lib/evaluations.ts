@@ -69,7 +69,7 @@ export async function readEvaluationCenter(suiteId: string | undefined, signal: 
       : Promise.resolve(undefined),
   ]);
   return { suites, evaluations: evaluations.filter(value => !suiteId || value.suite === suiteId),
-    rows: scores ?? evaluations.flatMap(value => value.result ? [value.result] : []) };
+    rows: scores ?? evaluations.flatMap(value => value.result ? [value.result] : []).sort((a, b) => a.at.localeCompare(b.at)) };
 }
 
 export const compareEvaluations = (suite: string, compare: string, against: string, signal: AbortSignal) =>
