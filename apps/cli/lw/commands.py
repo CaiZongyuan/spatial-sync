@@ -9,7 +9,7 @@ Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
 from dataclasses import dataclass
 from inspect import Parameter
 from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import Any, Literal, get_args, get_origin
 
 import yaml
 
@@ -51,6 +51,9 @@ class Argument:
             options["default"] = self.default
         if self.annotation is bool:
             options["action"] = "store_false" if self.default is True else "store_true"
+        elif get_origin(self.annotation) is Literal:
+            options["choices"] = get_args(self.annotation)
+            options["type"] = type(get_args(self.annotation)[0])
         else:
             # Omitted nullable options stay None; supplied values use their concrete type.
             kinds = get_args(self.annotation)
@@ -84,6 +87,19 @@ class Command:
         if actor is not None:
             values["actor"] = actor
         return await getattr(client, self.method)(**values)
+
+
+def description_arguments(default, metavar="id"):
+    return (
+        Argument("id", (metavar,), str, "Scene or asset ID; page requires an exact @rev"),
+        Argument("view", ("--view",), Literal["summary", "page", "full"],
+                 "Bounded summary, lossless page, or complete legacy object", default),
+        Argument("section", ("--section",), str | None,
+                 "Page one top-level field; omit for whole document", None),
+        Argument("offset", ("--offset",), int, "Page offset in Unicode codepoints", 0),
+        Argument("documentDigest", ("--document-digest",), str | None,
+                 "Whole-description digest from summary; restart on description_changed", None),
+    )
 
 
 COMMANDS = (
@@ -161,9 +177,9 @@ COMMANDS = (
     ),
     Command(
         path=("library", "describe"),
-        help="Describe a scene name[@rev] or asset kind/name[@rev], including validation and provenance.",
+        help="Read a bounded scene/asset summary; page details with exact id and documentDigest.",
         method="library_describe",
-        arguments=(Argument("id", ("id",), str, "Scene or asset ID; reads latest when rev is omitted"),),
+        arguments=description_arguments("summary"),
         mcp_name="library_describe",
     ),
     Command(
@@ -181,7 +197,7 @@ COMMANDS = (
         path=("asset", "show"),
         help="Describe an asset's metadata, types, validation, provenance and indexed files.",
         method="library_describe",
-        arguments=(Argument("id", ("kind/name[@rev]",), str, "Asset ID; reads latest when rev is omitted"),),
+        arguments=description_arguments("full", "kind/name[@rev]"),
     ),
     Command(
         path=("asset", "import"),
@@ -241,7 +257,7 @@ COMMANDS = (
         path=("scene", "show"),
         help="Describe a scene version's entities, devices, actions, teach locations and validation.",
         method="library_describe",
-        arguments=(Argument("id", ("name[@rev]",), str, "Scene name or name@rev; reads latest if omitted"),),
+        arguments=description_arguments("full", "name[@rev]"),
     ),
     Command(
         path=("scene", "launch"),

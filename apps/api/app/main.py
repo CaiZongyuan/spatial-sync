@@ -44,6 +44,7 @@ from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
 from packages.info.plans import PlanError
 from packages.library.deletions import LibraryDeletions
+from packages.library.description_views import description_view
 from packages.library.previews import PreviewRepository
 from packages.library.scenes import LibraryError
 from packages.library.validation import StructuralValidator
@@ -279,8 +280,11 @@ def create_app(
     @app.get("/api/v1/library/scenes/{name}/{rev}")
     async def library_scene(
         name: str, rev: str | None = None, source: Literal["synthetic", "newton"] | None = None,
+        view: str = "full", section: str | None = None, offset: int = 0,
+        documentDigest: str | None = None,
     ):
-        detail = manager.library.describe(f"{name}@{rev}" if rev is not None else name)
+        selector = f"{name}@{rev}" if rev is not None else name
+        detail = manager.library.describe(selector)
         version = manager.library.resolve(detail["id"])
         preview = await asyncio.to_thread(previews.describe, version, source or detail["sources"][0])
         detail.update(
@@ -289,7 +293,8 @@ def create_app(
         )
         related = await asyncio.to_thread(recordings.list)
         detail["recordings"] = [item for item in related if item.get("sceneVersion") == detail["id"]]
-        return detail
+        return description_view(detail, "scene", selector, view=view, section=section, offset=offset,
+                                document_digest=documentDigest)
 
     @app.get("/api/v1/library/scenes/{name}/{rev}/preview/{source}/{relative:path}")
     async def library_preview_file(name: str, rev: str, source: str, relative: str):

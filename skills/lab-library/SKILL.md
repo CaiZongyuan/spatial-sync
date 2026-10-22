@@ -79,3 +79,14 @@ The generic MCP equivalents are `library_search`, `library_describe`,
 `library_import`, `library_validate` and `scene_launch`. They share the CLI's
 gateway behavior and human boundaries. Complete the task with the actual
 version, content hash and relevant checks, or the precise remaining blocker.
+
+`library_describe` defaults to a bounded summary. To inspect complete action
+schemas, Config, reports or provenance, use its exact `id` and `documentDigest`
+with `view="page"`, optionally selecting a top-level `section` such as `types`
+or `validation`. Start at `offset=0`, pass each `nextOffset` until null, then
+concatenate `content` and parse the JSON. `previewTruncated` means more details
+are available through pages. On `description_changed`, fetch a fresh summary
+and restart when reports/recordings/reference metadata is stable. `view="full"`
+returns the legacy complete object and can exceed tool output limits. CLI
+`lw library describe` shares these options; `scene show` and `asset show`
+keep their full default.

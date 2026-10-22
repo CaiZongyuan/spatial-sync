@@ -63,6 +63,28 @@ supported sources; omitted source uses its first source. MCP provides the same
 operations as `library_search`, `library_describe` and `scene_launch`, including
 when there is no active session.
 
+`lw library describe robot-and-tubes@2 --json` and MCP `library_describe` now
+default to a bounded summary (`lw.library-description/1`). It includes action
+names, representative entity keys, locations, validation gaps and honest physical
+counts; `previewTruncated` marks omitted preview data. `lw scene show` and HTTP
+detail GETs without a view still return the complete legacy object. Existing
+CLI-library/MCP callers needing that object can select `--view full` / `view="full"`.
+
+For complete details within bounded tool responses, use the summary's exact `id`
+and `documentDigest` with `view="page"`, starting at `offset=0`. Omit `section`
+for the whole document, or select one top-level field such as `types`, `locations`
+or `validation`. Pass each `nextOffset` until it is null, concatenate `content`
+in order, then parse the reconstructed JSON. The CLI exposes `--view page`,
+`--section`, `--offset` and `--document-digest`; HTTP uses the same parameter
+names as MCP. Summary/page JSON is at most 4096 UTF-8 bytes; the complete MCP
+SDK result is at most 16384 bytes. Explicit full responses can exceed these budgets.
+
+The digest covers all detail fields, including related recordings and current
+reports, rather than only immutable package bytes. `409 description_changed`
+means fetch a new summary and restart pages when metadata is stable. Active
+recording durations can change the description between reads. Discovery creates
+no Session or Source.
+
 `GET /api/v1/scenes` preserves `sceneId`, `name`, `sources` and description and
 adds version metadata. It returns all versions. The Web app's `/scenes` page
 lists every version, supports search, source and launchability filters, and

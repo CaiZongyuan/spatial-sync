@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from apps.api.app.info_routes import actor_from_headers
 from apps.api.app.library_validation import program_schemas
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
+from packages.library.description_views import description_view
 from packages.library.imports import LibraryImports
 from packages.library.validation import StructuralValidator
 
@@ -38,9 +39,15 @@ def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for)
 
     @app.get("/api/v1/library/assets/{kind}/{name}")
     @app.get("/api/v1/library/assets/{kind}/{name}/{rev}")
-    async def describe_asset(kind: str, name: str, rev: str | None = None):
+    async def describe_asset(
+        kind: str, name: str, rev: str | None = None,
+        view: str = "full", section: str | None = None, offset: int = 0,
+        documentDigest: str | None = None,
+    ):
         selector = f"{kind}/{name}@{rev}" if rev is not None else f"{kind}/{name}"
-        return await anyio.to_thread.run_sync(assets.describe, selector, scenes())
+        detail = await anyio.to_thread.run_sync(assets.describe, selector, scenes())
+        return description_view(detail, "asset", selector, view=view, section=section, offset=offset,
+                                document_digest=documentDigest)
 
     @app.post("/api/v1/library/assets/{kind}/{name}/{rev}/validate")
     async def validate_asset(kind: str, name: str, rev: str):
