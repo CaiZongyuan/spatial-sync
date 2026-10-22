@@ -28,3 +28,11 @@ app = create_app(source_factory=no_source, platform_sampler=FakeHostSampler())
 async def origins():
     return {"agentLibrary": str(Path(agents.__file__).resolve()), "sourceStarts": source_starts,
             "roots": {name: str(root) for name, root in app.state.manager.library_assets.roots.items()}}
+
+
+@app.get("/e2e/storage-roots")
+async def storage_roots():
+    return {"sceneLibrary": str(app.state.manager.library.roots["user"]),
+            "assetLibrary": str(app.state.library_assets.roots["user"]),
+            "state": str(app.state.settings.state_root.resolve()),
+            "recordings": str(app.state.settings.recordings_root.resolve())}
