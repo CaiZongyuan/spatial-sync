@@ -1,0 +1,22 @@
+--- a/tests/e2e/workbench.spec.ts
++++ b/tests/e2e/workbench.spec.ts
+@@ -1,4 +1,5 @@
+-import { expect, test, type APIRequestContext, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
++import { test, diagnosticEvaluate } from './observer95-diagnostic';
++import { expect, type APIRequestContext, type BrowserContext, type Page, type WebSocketRoute } from '@playwright/test';
+ import type { SceneManifest, Snapshot } from '../../packages/protocol/types';
+ import { cleanupObserver } from './cleanup-observer';
+ 
+@@ -8,7 +9,11 @@
+   await expect(page.getByTestId('connection-status')).toHaveText('已连接');
+   await expect
+     .poll(() =>
+-      page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
++      diagnosticEvaluate(page, () => {
++        const value = window.__spatialDebug?.getSample()?.seq ?? -1;
++        (window as Window & { __observer95?: (kind: string, value: unknown) => void }).__observer95?.('sample-getter', { value });
++        return value;
++      }),
+     )
+     .toBeGreaterThanOrEqual(0);
+   await expect(page.locator('canvas')).toBeVisible();

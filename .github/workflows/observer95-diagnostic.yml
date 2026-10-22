@@ -1,0 +1,82 @@
+name: Issue 95 bounded observer diagnostic
+on:
+  push:
+    branches: [diag/issue95-observer]
+jobs:
+  observer95:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record actual start and preserve cleanup/upload budget
+        run: |
+          python - <<'PY'
+          import json, os, time
+          start = time.time()
+          value = {'startedUtc': start, 'deadlineUtc': start + 300, 'cleanupReserve': 15, 'uploadGuard': 35, 'outerKillEscalationReserve': 5}
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write(f"OBSERVER95_JOB_DEADLINE={value['deadlineUtc']}\n")
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'observer95-job-budget.json'), 'w') as out:
+              json.dump(value, out, indent=2)
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: 1ded8b0a5ef39f5978f808f54eb6bcae177ed9c6
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: packet95
+          sparse-checkout: tools/observer95-diagnostic
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - name: Prepare and execute original shard once within remaining budget
+        env:
+          LW_LIBRARY: .scratch/observer95/library
+          SPATIAL_STATE_ROOT: .scratch/observer95/state
+          SPATIAL_RECORDINGS_ROOT: .scratch/observer95/recordings
+          SPATIAL_TEST_APPROVAL: '1'
+          SPATIAL_E2E_WEB_MODE: preview
+        run: |
+          OBS95_LEFT=$(python -c 'import os,time; print(max(1,int(float(os.environ["OBSERVER95_JOB_DEADLINE"])-35-time.time())))')
+          set +e
+          timeout --signal=TERM --kill-after=5 "${OBS95_LEFT}s" bash -e <<'OBS95_PREPARE'
+          uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/observer95-requirements.txt" > /dev/null
+          uv venv --python 3.13
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --require-hashes -r "$RUNNER_TEMP/observer95-requirements.txt"
+          uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
+          uv run --no-sync python packet95/tools/observer95-diagnostic/prepare.py apply
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
+          pnpm --filter @spatial-sync/web exec playwright test --fully-parallel --workers=1 --shard=4/4 --list --reporter=json > "$RUNNER_TEMP/observer95-selected.json"
+          uv run --no-sync python packet95/tools/observer95-diagnostic/prepare.py verify "$RUNNER_TEMP/observer95-selected.json"
+          uv run --no-sync python packet95/tools/observer95-diagnostic/run.py --shard=4/4
+          OBS95_PREPARE
+          OBS95_STATUS=$?
+          set -e
+          python - "$OBS95_STATUS" <<'PY'
+          import json, os, sys, time
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'observer95-job-budget.json')
+          with open(path) as source:
+              value = json.load(source)
+          value.update(stepExitCode=int(sys.argv[1]), observedUtc=time.time())
+          if int(sys.argv[1]) == 124:
+              value['outcome'] = 'budget-exhausted-no-business-verdict'
+          with open(path, 'w') as out:
+              json.dump(value, out, indent=2)
+          PY
+          exit "$OBS95_STATUS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observer95-evidence
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/observer95-job-budget.json
+            .scratch/observer95
+            .scratch/viewer-e2e/report
+            .scratch/viewer-e2e/results
