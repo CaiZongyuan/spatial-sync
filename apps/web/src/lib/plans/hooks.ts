@@ -78,7 +78,8 @@ export function useMotionPreview(client: SessionClient | undefined, plan: Operat
     planId: document.id, revision: document.revision, stepId: selected.id, sessionId: document.sessionId,
     sceneRevision: document.sceneRevision, epoch: document.epoch,
   } : undefined;
-  const enabled = Boolean(client && !client.readOnly && connected && sameContext && selected && 'do' in selected);
+  const enabled = Boolean(client && !client.readOnly && plan?.target !== 'live'
+    && connected && sameContext && selected && 'do' in selected);
   const identity = `${enabled}:${JSON.stringify(scope)}`;
   const [state, setState] = useState<{ identity?: string; value?: MotionPreview; error?: string }>({});
   const [retry, setRetry] = useState(0);
@@ -102,6 +103,7 @@ export function useMotionPreview(client: SessionClient | undefined, plan: Operat
   }, [enabled, identity, refreshKey, retry]); // Identity contains every immutable scope field.
   const response = state.identity === identity && enabled ? state : {};
   const explanation = client?.readOnly ? '录制未包含路径预览，回放仅重现已记录的计划状态。' :
+    plan?.target === 'live' ? '实况设备动作不提供仿真路径预览。' :
     !selected ? '选择步骤以查看预览。' : !('do' in selected) ? '等待与检查步骤不产生机械臂路径。' :
       !current ? '正在读取当前计划修订…' : !sameContext ? '计划所属的会话上下文已改变，无法读取路径预览。' :
         !connected ? '会话未连接，路径预览暂不可用。' : response.value && !response.value.available

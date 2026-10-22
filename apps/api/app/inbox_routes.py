@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException
 
+from apps.api.app.information_targets import alert_documents, information_targets
 from packages.info.inbox import InboxUnavailable, InvalidCursor, selected_kinds
 
 
@@ -14,9 +15,9 @@ def install_inbox_routes(app, manager):
             raise HTTPException(422, {"code": "invalid_inbox_kinds", "message": str(error)}) from error
         alerts = [
             value | {"sessionId": session.session_id}
-            for session in manager.sessions.values()
+            for session in information_targets(manager)
             if session.alerts
-            for value in session.alerts.documents()
+            for value in alert_documents(session)
             if value["active"]
         ]
         try:

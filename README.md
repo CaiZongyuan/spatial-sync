@@ -68,8 +68,8 @@ managed Newton backends. These pages refresh every two seconds. **Recordings**
 The sidebar collapses and remembers your preference; below 900 px it becomes
 top navigation. The theme follows your system until you choose Light or Dark.
 Latin IBM Plex fonts and navigation icons ship locally.
-**Live (实况)** (`/live`) shows the active simulation's telemetry devices in the
-same isometric scene, with device actions, declared alert rules, acknowledgement
+**Live (实况)** (`/live`) shows the configured MQTT laboratory independently of
+simulation sessions, with device actions, declared alert rules, acknowledgement
 notes and per-property history (one-hour query, one-minute means). Charts label
 only the available data span; stale readings and trends turn gray and dashed.
 Static single-property alert thresholds appear as dashed guides inside the
@@ -80,9 +80,12 @@ counts active episodes, including acknowledged ones. The active query is capped
 at 1,000 and explicitly shows `≥1000` at that boundary; recent history and the
 critical-banner query are separate so newer warnings cannot hide a critical alert.
 Acknowledgement preserves its first actor and note; Cancel closes an unsubmitted
-form. The page identifies simulation sources; physical Device Host/MQTT support
-is delivered separately. History comes from session recordings and can be queried
-with the page's copyable `lw history` command.
+form. Live continuously records seven UTC days of information, supports read-only
+replay and tracks human-approved operation plans. Optional exact-version layouts
+use captured static geometry. [LIVE_DEVICES.md](docs/LIVE_DEVICES.md) describes
+startup with a local broker and three mock devices. Simulation telemetry remains
+in each session's **设备** view, using that session's source and recording. Both
+views provide copyable `lw history` commands.
 Session workspaces can switch between perspective and isometric cameras;
 `?camera=isometric` shares that view. Light/dark themes update viewport materials
 and lighting without restarting the source or reloading its scene.

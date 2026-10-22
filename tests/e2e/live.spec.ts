@@ -29,10 +29,13 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
   const [apiPort, webPort] = await Promise.all([port(), port()]);
   const api = `http://127.0.0.1:${apiPort}`, web = `http://127.0.0.1:${webPort}`;
   const python = process.env.SPATIAL_PYTHON ?? resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
-  const processes: { child: ChildProcess; output: string; exited: Promise<void>; label: string; error?: Error }[] = [];
+  const owned = resolve('../../tests/fixtures/owned_processes.py');
+  const execute = promisify(execFile);
+  const processes: { child: ChildProcess; output: string; exited: Promise<void>; label: string; error?: Error; identity: Promise<string> }[] = [];
   const start = (label: string, executable: string, args: string[], cwd: string, environment: NodeJS.ProcessEnv) => {
     const child = spawn(executable, args, { cwd, env: environment, windowsHide: true });
-    const record = { child, output: '', exited: new Promise<void>(resolve => child.once('exit', () => resolve())), label, error: undefined as Error | undefined };
+    const record = { child, output: '', exited: new Promise<void>(resolve => child.once('exit', () => resolve())), label, error: undefined as Error | undefined,
+      identity: execute(python, [owned, 'snapshot', String(child.pid)]).then(value => value.stdout) };
     child.stdout?.on('data', data => { record.output += data; }); child.stderr?.on('data', data => { record.output += data; });
     child.once('error', error => { record.error = error; }); processes.push(record); return record;
   };
@@ -67,8 +70,9 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
     await page.goto(web);
     await expect(page.getByTestId('critical-alert-banner')).toContainText('培养箱温度偏离设定值');
     await expect(page.getByTestId('live-alert-badge')).toHaveText('1');
-    await page.getByRole('link', { name: '查看实况 →' }).click();
-    await expect(page.getByRole('heading', { name: '实况 · 仿真设备' })).toBeVisible();
+    await page.getByRole('link', { name: '查看会话设备 →' }).click();
+    await expect(page).toHaveURL(new RegExp(`/sessions/${sessionId}\\?`));
+    await expect(page.getByRole('heading', { name: '会话 · 仿真设备' })).toBeVisible();
     await expect(page.getByRole('complementary', { name: '设备抽屉' })).toHaveAttribute('data-connection', 'connected');
     const label = page.getByTestId(`device-label-${incubator}`);
     await expect(label).toBeVisible();
@@ -147,11 +151,12 @@ test('real simulated devices raise, acknowledge, retain actual history and expos
     }
     await page.goto('about:blank').catch(() => {}); await http.dispose();
     for (const record of processes.reverse()) {
-      if (record.child.exitCode === null && record.child.signalCode === null) record.child.kill('SIGTERM');
+      const identity = await record.identity;
+      const cleanup = await execute(python, [owned, 'stop', identity]);
       let stopped = await Promise.race([record.exited.then(() => true), delay(3000).then(() => false)]);
       if (!stopped) { record.child.kill('SIGKILL'); stopped = await Promise.race([record.exited.then(() => true), delay(3000).then(() => false)]); }
       await writeFile(info.outputPath(`${record.label}.log`), record.output);
-      await writeFile(info.outputPath(`${record.label}-receipt.json`), JSON.stringify({ pid: record.child.pid, source: resolve('../..'), api, web, stopped, exitCode: record.child.exitCode, signalCode: record.child.signalCode }));
+      await writeFile(info.outputPath(`${record.label}-receipt.json`), JSON.stringify({ pid: record.child.pid, source: resolve('../..'), api, web, stopped, cleanup: JSON.parse(cleanup.stdout), exitCode: record.child.exitCode, signalCode: record.child.signalCode }));
       expect(stopped, `${record.label} owned process exited`).toBe(true);
     }
     expect(await closed(apiPort), 'Owned API listener gone').toBe(true);

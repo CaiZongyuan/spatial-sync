@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from packages.info.approvals import ApprovalConflict
 from packages.info.conditions import evaluate_conditions, validate_conditions
+from packages.info.context import information_revision
 from packages.info.invocations import TERMINAL
 from packages.info.journal import AppendJournal, JournalError
 from packages.info.schema_subset import json_equal
@@ -61,10 +62,13 @@ def validate_plan(document, session, *, plan_id=None, revision=1):
         raise PlanError("invalid_plan", "Invalid operation plan", status=422, errors=errors) from exc
     if plan_id and plan.id != plan_id:
         raise PlanError("invalid_plan", "Plan ID does not match the revision target", status=422)
-    if plan.target != "session":
-        raise PlanError("target_unavailable", "A live device host is not connected", status=503)
-    if any(hasattr(step, "do") and step.do.entity.startswith("/Real/") for step in plan.steps):
-        raise PlanError("target_unavailable", "A live device host is not connected", status=503)
+    if plan.target != getattr(session, "plan_target", "session"):
+        raise PlanError("target_unavailable", "Plan target does not match the selected device host",
+                        status=503)
+    if plan.target == "session" and any(
+        hasattr(step, "do") and step.do.entity.startswith("/Real/") for step in plan.steps
+    ):
+        raise PlanError("target_unavailable", "Real devices require a Live plan target", status=503)
 
     def property_schema(entity, prop):
         for name, identifier in (("entity", entity), ("property", prop)):
@@ -212,10 +216,10 @@ class PlanStore:
     @staticmethod
     def _envelope(session):
         return {
-            "sceneRevision": session.manifest.sceneRevision,
+            "sceneRevision": information_revision(session),
             "epoch": session.epoch,
             "simTime": session.sim_time,
-            "sampleTimeMs": time.monotonic() * 1000,
+            "sampleTimeMs": getattr(session, "raw_sample_time_ms", lambda: time.monotonic() * 1000)(),
         }
 
     def _full(self, record, session):
@@ -224,7 +228,7 @@ class PlanStore:
     def require_target(self, record, session):
         if (record.sessionId, record.sceneRevision, record.epoch) != (
             session.session_id,
-            session.manifest.sceneRevision,
+            information_revision(session),
             session.epoch,
         ):
             raise PlanError(
@@ -271,7 +275,7 @@ class PlanStore:
                 approval = self.approvals.records[previous.approvalId]
                 if approval.status == "pending":
                     self.approvals.set_status(approval.approvalId, "unavailable")
-        human = any(
+        human = plan.target == "live" or any(
             hasattr(step, "do")
             and (
                 step.do.entity.startswith("/Real/")
@@ -283,7 +287,7 @@ class PlanStore:
         record = StoredPlan(
             plan=plan,
             sessionId=session.session_id,
-            sceneRevision=session.manifest.sceneRevision,
+            sceneRevision=information_revision(session),
             epoch=session.epoch,
             requestedBy=actor,
             createdAtMs=time.time() * 1000,
@@ -351,7 +355,7 @@ class PlanStore:
             item
             for item in self.records.values()
             if item.sessionId == session.session_id
-            and item.sceneRevision == session.manifest.sceneRevision
+            and item.sceneRevision == information_revision(session)
             and item.epoch == session.epoch
         ]
         outside = not exact and bool(context or active)
@@ -497,7 +501,7 @@ class PlanStore:
             PlanFullUpdate(**self._envelope(session), plan=record.plan)
             for record in self.records.values()
             if (record.sessionId, record.sceneRevision, record.epoch)
-            == (session.session_id, session.manifest.sceneRevision, session.epoch)
+            == (session.session_id, information_revision(session), session.epoch)
         ]
 
     def invalidate(self, session, reason):

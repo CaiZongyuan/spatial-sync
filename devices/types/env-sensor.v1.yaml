@@ -6,7 +6,7 @@ alerts:
     forSeconds: 600
     severity: warning
     message: 环境湿度超过 70% 持续 600 s
-description: Seeded virtual ambient temperature and humidity readings.
+description: Ambient temperature and humidity readings.
 properties:
   temperatureC: {schema: {type: number, minimum: -40, maximum: 80}, unit: °C, deadband: 0.02, maxRateHz: 5, staleAfterSeconds: 3}
   humidityPercent: {schema: {type: number, minimum: 0, maximum: 100}, unit: '%', deadband: 0.03, maxRateHz: 5, staleAfterSeconds: 3}

@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SessionClient } from '../lib/stream/client';
+import { LiveClient } from '../lib/live-client';
 import { FrameRecorder } from '../lib/performance/frame-recorder';
 import { useClientPlans, useClientView, useMotionPreview, usePlanDocument, usePlansList } from '../lib/plans/hooks';
 import { previewBodies, type AvailablePreview, type PlanDocument } from '../lib/plans/model';
@@ -56,12 +57,15 @@ function PlanConnection({ id }: { id: string }) {
   const [refreshKey, setRefreshKey] = useState('');
   const metadata = usePlanDocument(id, undefined, true, refreshKey);
   const sessionId = metadata.document?.sessionId;
-  const client = useMemo(() => sessionId ? new SessionClient(sessionId) : undefined, [sessionId]);
+  const live = metadata.document?.target === 'live';
+  const client = useMemo(() => sessionId ? live ? new LiveClient() : new SessionClient(sessionId) : undefined,
+    [sessionId, live]);
   const state = useClientView(client);
   const entries = useClientPlans(client);
   const entry = entries.entries.find(value => value.plan.id === id);
   const stamp = `${state?.manifest?.sceneRevision}:${client?.buffer.epoch}:${state?.sessionState}:${entry?.sampleTimeMs}`;
-  useEffect(() => { if (state?.manifest) setRefreshKey(stamp); }, [stamp, state?.manifest]);
+  useEffect(() => { if (state?.manifest || live && state?.connection === 'connected') setRefreshKey(stamp); },
+    [stamp, state?.manifest, live, state?.connection]);
   const [connectionError, setConnectionError] = useState<string>();
   useEffect(() => {
     if (!client) return;
@@ -76,13 +80,16 @@ function PlanConnection({ id }: { id: string }) {
   const preview = useMotionPreview(client, plan, document, step, String(entry?.sampleTimeMs ?? ''));
   if (!plan || !client) return <section className="plan-empty" aria-busy={metadata.loading} role="status">{metadata.error ? <>
     无法读取此计划：{metadata.error} <button onClick={metadata.refresh}>重试</button></> : '正在读取计划…'}</section>;
-  return <><div className="plan-context"><span>计划所属会话 <code>{sessionId}</code></span><Link to="/sessions/$sessionId" params={{ sessionId: sessionId! }}>打开工作台 ↗</Link>
+  return <><div className="plan-context"><span>{live ? '实况设备计划' : '计划所属会话'} <code>{sessionId}</code></span>
+    {live ? <Link to="/live">打开实况 ↗</Link> : <Link to="/sessions/$sessionId" params={{ sessionId: sessionId! }}>打开工作台 ↗</Link>}
     {connectionError && <span role="status">会话暂不可用：{connectionError}</span>}</div>
-    <div className="plan-detail-grid"><PlanScene client={client} preview={preview.value} />
+    <div className={`plan-detail-grid${live ? ' is-live' : ''}`}>{live ?
+      <div className="plan-empty">实况计划通过设备回执确认结果。设备布局与读数可在实况中查看。</div> :
+      <PlanScene client={client} preview={preview.value} />}
       <PlanChecklist {...{ client, plan, entry, document, previous: metadata.previous }} fullPage selected={step?.id}
         metadataError={metadata.error} metadataRetry={metadata.refresh} historyError={metadata.historyError}
         select={step => void navigate({ to: '/plans/$planId', params: { planId: id }, search: prior => ({ ...prior, step }) })}
-        previewControls={<PreviewNotice preview={preview} />} /></div></>;
+        previewControls={live ? undefined : <PreviewNotice preview={preview} />} /></div></>;
 }
 
 function StageStrip({ count }: { count?: number }) {

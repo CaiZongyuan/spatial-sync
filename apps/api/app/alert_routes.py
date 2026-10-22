@@ -7,6 +7,7 @@ from fastapi import HTTPException, Query, Request
 from pydantic import Field, StrictStr
 
 from apps.api.app.info_routes import actor_from_headers
+from apps.api.app.information_targets import alert_documents, information_target, information_targets
 from packages.info.alerts import AlertUnavailable
 from packages.protocol.schema import Model
 
@@ -24,12 +25,13 @@ def install_alert_routes(app, manager, role_for):
         active: bool | None = None,
         limit: int = Query(100, ge=1, le=1000),
     ):
-        sessions = [manager.get(sessionId)] if sessionId else manager.sessions.values()
+        sessions = ([information_target(manager, sessionId) or manager.get(sessionId)] if sessionId
+                    else information_targets(manager))
         documents = [
             value | {"sessionId": session.session_id}
             for session in sessions
             if session.alerts
-            for value in session.alerts.documents()
+            for value in alert_documents(session)
             if (state is None or value["state"] == state)
             and (severity is None or value["severity"] == severity)
             and (active is None or value["active"] is active)
@@ -45,7 +47,7 @@ def install_alert_routes(app, manager, role_for):
         session = next(
             (
                 session
-                for session in manager.sessions.values()
+                for session in information_targets(manager)
                 if session.alerts and session.alerts.get(alert_id)
             ),
             None,
@@ -57,10 +59,12 @@ def install_alert_routes(app, manager, role_for):
                 raise HTTPException(409, {"code": "alert_unavailable"})
             try:
                 document, messages = session.alerts.acknowledge(
-                    alert_id, actor, body.note, time.monotonic() * 1000
+                    alert_id, actor, body.note,
+                    getattr(session, "raw_sample_time_ms", lambda: time.monotonic() * 1000)(),
                 )
             except AlertUnavailable as error:
                 raise HTTPException(409, {"code": "alert_unavailable", "message": str(error)}) from error
             for message in messages:
                 session.broadcast_info(message)
-            return document | {"sessionId": session.session_id}
+            project = getattr(session, "public_alert_document", lambda value: value)
+            return project(document) | {"sessionId": session.session_id}

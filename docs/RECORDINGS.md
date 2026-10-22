@@ -24,8 +24,8 @@ A format 2 segment entry may include
 `"propertyIndex": "seg-NNNNNN.index.json"`. It names a sibling attachment;
 recording replay continues to scan the binary segment in FIFO order. An absent
 or unavailable index requires sequential scanning and does not invalidate the
-recording. The telemetry history writer and indexed lookup arrive with #21.
-Current session writers do not emit sidecars.
+recording. Current session and Live writers emit these sidecars for indexed
+history reads.
 
 The sidecar contract is:
 
@@ -51,3 +51,33 @@ the binary file to the record's uint32 length header, in FIFO order. The index
 is a lookup hint: readers still decode the referenced records and filter the
 property and time range. Recovery may discard stale index references while
 rebuilding segment metadata; it preserves independently playable samples.
+
+## Continuous Live recordings
+
+A configured Live laboratory owns one stable recording across gateway restarts.
+Each Host lifetime adds a new Catalog revision; Live segments contain information
+snapshots, observations, invocations, alerts and plans. They have no spatial
+manifest or frame stream. Replay recognizes `kind: live` and shows read-only device
+and plan panels. Published format 1/2 session recordings retain their spatial
+replay behavior and original bytes.
+
+Segments rotate on UTC day boundaries and the normal size limit. Admission time
+selects the UTC partition even when the disk writer is delayed. The current UTC
+day and previous six days are retained; active, queued and reading segments remain
+protected until their work finishes. Live recordings do not consume the session
+recording count limit. A download of an active segment returns the exact byte
+prefix advertised by its checkpoint, so concurrent writes cannot change the body
+after its headers have been sent.
+
+`sampleTimeMs` is an arbitrary-origin gateway receive clock in milliseconds.
+Reopening a Live recording uses private UTC correlation to preserve that logical
+axis, including gateway downtime. It does not turn sample times into Unix times.
+Property metadata retains the actual measurement time at segment rolls;
+`simTime` stays in seconds and invocation `createdAtMs` stays UTC. History and
+replay consume these clocks without remapping event payloads.
+
+Exclusive ownership, allocation counters, partition dates and clock correlation
+live under the state root's `lives/` directory, outside downloadable recordings.
+Recovery keeps independently readable information prefixes and marks interrupted
+recordings incomplete. The retained-file allowlist prevents a deleted expired
+segment from reappearing after an interrupted cleanup.

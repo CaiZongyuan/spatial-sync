@@ -37,6 +37,12 @@ Browser CI builds the Web app in each shard and sets `SPATIAL_E2E_WEB_MODE=previ
 to serve that checkout's `dist` through Vite preview. Its API, WebSocket and
 recording proxies use the same configuration as the development server; the Live
 test's separately owned web process uses the same mode with its own API URL.
+The `live-operations.spec.ts` case owns a `live_operations_gateway` and its roots;
+it exercises the real DeviceHost, programs, recording and HTTP pipeline with
+socket-free in-process device peers. It asserts no Session or spatial Source is
+created. This case is separate from `live.spec.ts`, which retains the Synthetic
+session telemetry journey. Actual broker wire behavior uses the local broker and
+mock-device launch in `docs/LIVE_DEVICES.md`.
 Local E2E keeps Vite dev by default. After `pnpm build`, set this flag to exercise
 the built app locally; `SPATIAL_WEB_URL` still selects an existing owned server.
 CI leaves routine test video off. `SPATIAL_E2E_VIDEO=1` opts in locally; failure

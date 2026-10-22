@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import Path, Query, Request
 
 from apps.api.app.info_routes import actor_from_headers
+from apps.api.app.information_targets import information_target
 from packages.info.plans import PlanError
 from packages.info.preview import PreviewRequest, SourcePreview
 
@@ -34,8 +35,12 @@ def install_plan_routes(app, manager, role_for):
         payload = dict(document)
         session_id = payload.pop("sessionId", None)
         if payload.get("target") == "live":
-            raise PlanError("target_unavailable", "A live device host is not connected", status=503)
-        if session_id:
+            session = getattr(manager, "live", None)
+            if session is None:
+                raise PlanError("target_unavailable", "A live device host is not connected", status=503)
+            if session_id is not None and session_id != session.session_id:
+                raise PlanError("target_unavailable", "The selected target is not this Live Host")
+        elif session_id:
             session = manager.get(session_id)
         else:
             candidates = [item for item in manager.sessions.values() if item.state in ("RUNNING", "PAUSED")]
@@ -87,7 +92,7 @@ def install_plan_routes(app, manager, role_for):
     async def preview(plan_id: str, step_id: int = Path(ge=1), revision: int | None = Query(None, ge=1)):
         await store.flush()
         record = store.get(plan_id, revision)
-        session = manager.sessions.get(record.sessionId)
+        session = information_target(manager, record.sessionId)
         if session is None:
             raise PlanError("target_unavailable", "The plan session is unavailable")
         source = session.source

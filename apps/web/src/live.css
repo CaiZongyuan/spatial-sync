@@ -91,3 +91,5 @@
 @keyframes alert-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb,var(--bad) 15%,transparent); } }
 @media (prefers-reduced-motion: reduce) { .alert-pulse, .device-alert-dot, .live-skeleton i { animation: none; } }
 @media (max-width: 900px) { .live-device-grid, .live-source-history { grid-template-columns: minmax(0,1fr); }.is-collapsed .live-nav-count { position: static; }.live-table { min-width: 620px; }.critical-alert-banner { padding: 16px; } }
+.live-layout-empty { min-height: 360px; width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; padding: 24px; }
+.live-layout-empty .device-legend { width: min(100%, 480px); }

@@ -4,12 +4,13 @@ import asyncio
 import json
 import time
 import uuid
-from types import SimpleNamespace
 
+from packages.info.alerts import AlertEngine
 from packages.info.invocations import TERMINAL, InvocationTable
 from packages.info.pipeline import ActionPipeline
 from packages.info.program import HostCore, Reject
 from packages.info.store import StateStore
+from packages.library.common import LibraryError
 from packages.live.bindings import REGISTRY, live_catalog
 from packages.live.clock import public_message
 from packages.live.mailbox import DeviceMailbox
@@ -18,10 +19,12 @@ from packages.protocol.schema import EntityObservations, EntitySnapshot, Invocat
 
 
 class DeviceHost:
-    supports_plans = False
+    supports_plans = True
+    plan_target = "live"
 
     def __init__(self, bindings, approvals, plans, *, transport_factory=PahoTransport,
-                 clock=time.monotonic, approval_timeout=600, recordings=None):
+                 clock=time.monotonic, approval_timeout=600, recordings=None, inbox=None,
+                 layout_resolver=None):
         self.bindings, self.approvals, self.plans = bindings, approvals, plans
         self._clock, self._origin = clock, clock()
         self._transport_factory, self.transport = transport_factory, None
@@ -29,11 +32,14 @@ class DeviceHost:
         self._reconnect = True
         self._task = None
         self.recordings, self.recording = recordings, None
+        self.inbox = inbox
+        self._layout_resolver = layout_resolver
+        self.layout_version, self.layout_error = None, None
         self._recording_ready = False
         self.state, self.error = "CREATED", None
         self.session_id = "live-" + uuid.uuid4().hex
         self.catalog = live_catalog(bindings, self.session_id)
-        self.manifest = SimpleNamespace(sceneRevision=self.catalog.sceneRevision)
+        self.manifest = None
         self.epoch, self.sim_time = 0, 0.0
         self.options = SessionOptions(approval={"high": "require"})
         self.command_lock = asyncio.Lock()
@@ -42,6 +48,7 @@ class DeviceHost:
                              availability=self.availability, publication_clock=self._clock)
         self.info = StateStore(self.catalog.sceneRevision)
         self.info.apply(self.host.snapshot())
+        self.alerts = AlertEngine(self.catalog)
         self.source = self
         self.pipeline = ActionPipeline(self, self.catalog, self.info, self.broadcast_info,
                                        approval_timeout=approval_timeout)
@@ -57,8 +64,37 @@ class DeviceHost:
         return max(0.0, self._clock() - self._origin)
 
     def sample_time_ms(self):
-        raw_ms = self._clock() * 1000
+        raw_ms = self.raw_sample_time_ms()
         return self.recording.map_time(raw_ms) if self.recording else raw_ms
+
+    def raw_sample_time_ms(self):
+        return self._clock() * 1000
+
+    def public_alert_document(self, document):
+        if self.recording is None:
+            return document
+        value = document | {"sampleTimeMs": self.recording.map_time(document["sampleTimeMs"])}
+        if document.get("acknowledgement"):
+            acknowledgement = document["acknowledgement"]
+            value["acknowledgement"] = acknowledgement | {
+                "sampleTimeMs": self.recording.map_time(acknowledgement["sampleTimeMs"]),
+            }
+        return value
+
+    def alert_documents(self):
+        return [self.public_alert_document(document) for document in self.alerts.documents()]
+
+    def information_snapshot(self):
+        """One event-loop turn owns state, plans and the subsequent event cursor."""
+        snapshot = EntitySnapshot(
+            sceneRevision=self.catalog.sceneRevision, epoch=self.info.epoch, simTime=self.sim_time,
+            sampleTimeMs=self.sample_time_ms(), entities=list(self.info.entities.values()),
+            invocations=self.pipeline.table.snapshot(),
+        )
+        mapping = self.recording.map_time if self.recording else lambda value: value
+        plans = [public_message(message, mapping).model_dump(mode="json")
+                 for message in self.plans.snapshots(self)]
+        return {"snapshot": snapshot.model_dump(mode="json"), "plans": plans, "cursor": self.info.event_seq}
 
     def availability(self, key):
         mailbox = self.mailboxes.get(key)
@@ -77,6 +113,8 @@ class DeviceHost:
             message = public_message(message, self.recording.map_time)
         if isinstance(message, (EntitySnapshot, EntityObservations)):
             self.info.apply(message)
+        if self.inbox is not None:
+            self.inbox.session_message(self.session_id, message)
         payload = self.info.record(message)
         if self._recording_ready:
             self.recording.append_json(payload, getattr(message, "sampleTimeMs", self.sample_time_ms()),
@@ -86,7 +124,17 @@ class DeviceHost:
         for message in messages:
             if isinstance(message, InvocationUpdate):
                 self.pipeline.update(message)
-            elif message.type != "information.clock":
+            elif message.type == "information.clock":
+                self._advance_alerts(message)
+            else:
+                self.broadcast_info(message)
+                if isinstance(message, (EntitySnapshot, EntityObservations)):
+                    self._advance_alerts(message)
+
+    def _advance_alerts(self, clock):
+        if self.state == "RUNNING":
+            for message in self.alerts.advance(clock.epoch, clock.simTime, clock.sampleTimeMs,
+                                               self.info.values(), self.info.metadata()):
                 self.broadcast_info(message)
 
     def _offline(self):
@@ -137,8 +185,9 @@ class DeviceHost:
             self.recording.maintain()
         now = self.now()
         if now > self.sim_time:
-            self._messages(self.host.tick(now, now - self.sim_time))
+            messages = self.host.tick(now, now - self.sim_time)
             self.sim_time = now
+            self._messages(messages)
         if self.transport is None:
             return
         for mailbox in self.mailboxes.values():
@@ -192,6 +241,13 @@ class DeviceHost:
     async def start(self):
         if self.state != "CREATED":
             return
+        if self.bindings.layout is not None:
+            try:
+                if self._layout_resolver is None:
+                    raise ValueError("No layout library is available")
+                self.layout_version = self._layout_resolver(self.bindings.layout)
+            except (LibraryError, OSError, ValueError):
+                self.layout_error = "布局版本暂不可用。"
         if self.recordings is not None:
             self.recording = self.recordings.create_live(self.bindings.live, clock=self._clock)
             if self.recording is not None:
@@ -219,6 +275,8 @@ class DeviceHost:
         except Exception:
             self.state, self.error = "FAILED", "Live device host failed"
             self._offline()
+            self.plans.invalidate(self, "live_failed")
+            self.alerts.close_context("live_failed")
             await self._close_transport()
 
     async def close(self):
@@ -233,6 +291,8 @@ class DeviceHost:
             failure = error
         for cleanup in (self._offline,
                         lambda: self.pipeline.fail_active("source_unavailable", "Live device host stopped"),
+                        lambda: self.plans.invalidate(self, "live_stopped"),
+                        lambda: self.alerts.close_context("live_stopped"),
                         self.pipeline.close):
             try:
                 cleanup()

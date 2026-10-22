@@ -12,7 +12,7 @@ alerts:
     forSeconds: 0
     severity: critical
     message: 前窗打开时紫外灯处于开启状态
-description: Seeded virtual airflow with blower and UV controls.
+description: Airflow, sash state, blower and UV controls.
 properties:
   inflowMs: {schema: {type: number, minimum: 0, maximum: 2}, unit: m/s, deadband: 0.002, maxRateHz: 5, staleAfterSeconds: 3}
   sashHeightCm: {schema: {type: number, minimum: 0, maximum: 60}, unit: cm, staleAfterSeconds: 3}

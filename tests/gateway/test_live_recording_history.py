@@ -12,6 +12,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.device_host import DeviceHost
 from apps.api.app.history_routes import install_history_routes
 from apps.api.app.info_routes import install_info_routes
@@ -91,6 +92,7 @@ def api(host, repository):
     install_info_routes(app, manager, lambda _headers: "operator",
                         prefix="/api/v1/live", resolve_target=target)
     install_history_routes(app, manager, repository)
+    install_alert_routes(app, manager, lambda _headers: "operator")
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local")
 
 
@@ -267,3 +269,35 @@ async def test_history_admitted_during_close_reads_sealed_prefix_without_waiting
             "recording": "live-closing", "key": KEY, "property": "temperatureC", "since": "0",
         })
         assert after_close.status_code == 503
+
+
+async def test_rebooted_live_alert_http_ack_and_log_share_logical_clock_without_mutating_raw_episode(setup):
+    first = await setup.make_host()
+    await first.close()
+    setup.clock.advance(120)
+    setup.clock.raw = 1
+    host = await setup.make_host()
+    for _ in range(62):
+        setup.clock.advance(1)
+        telemetry(host, 40)
+    async with api(host, setup.repository) as http:
+        listed = await http.get("/api/v1/alerts", params={"active": "true"})
+        [alert] = listed.json()["alerts"]
+        raw = host.alerts.documents()[0]
+        assert alert["sampleTimeMs"] == host.recording.map_time(raw["sampleTimeMs"])
+        assert alert["sampleTimeMs"] > raw["sampleTimeMs"]
+        acknowledged = await http.post(f"/api/v1/alerts/{alert['alertId']}/ack", json={"note": "clock check"})
+        assert acknowledged.status_code == 200, acknowledged.text
+        document = acknowledged.json()
+        assert document["sampleTimeMs"] == host.sample_time_ms()
+        assert document["acknowledgement"]["sampleTimeMs"] == host.sample_time_ms()
+        assert host.alerts.documents()[0]["sampleTimeMs"] == setup.clock.raw * 1000
+        metadata = await host.recording.checkpoint()
+        messages = [json.loads(record.payload)
+                    for segment in metadata["segments"]
+                    for record in read_segment(
+                        (host.recording.directory / segment["file"]).read_bytes()).records
+                    if record.kind == 2]
+        recorded = [message for message in messages if message["type"] == "entity.alert"]
+        assert recorded[-1]["sampleTimeMs"] == document["sampleTimeMs"]
+        assert recorded[-1]["state"] == "acknowledged"

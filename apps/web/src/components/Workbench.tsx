@@ -21,6 +21,7 @@ import { Icon } from './Icon';
 import { connectionLabel, sessionLabel } from '../lib/ui-labels';
 import '../workbench.css';
 import { SessionPlans, useSessionPlan } from './SessionPlans';
+import { SessionTelemetry } from './SessionTelemetry';
 import {
   SceneViewport,
   type DebugLayers,
@@ -203,6 +204,11 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           </Link>
           {!client.readOnly && <NewtonViewerButton sessionId={sessionId}
             source={manifest?.source.kind ?? ''} state={state.sessionState} sceneRevision={manifest?.sceneRevision} />}
+          {!client.readOnly && <button aria-label="Session device telemetry" aria-pressed={search.view === 'devices'}
+            onClick={() => void navigate({ to: '/sessions/$sessionId', params: { sessionId },
+              search: previous => ({ ...previous, view: search.view === 'devices' ? undefined : 'devices' }) })}>
+            设备
+          </button>}
           <button
             aria-label="Close session"
             disabled={client.readOnly || pending || state.role !== 'operator'}
@@ -319,7 +325,8 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           </p>
           <Link to="/sessions">Back to sessions</Link>
         </div>
-      ) : (
+      ) : !client.readOnly && search.view === 'devices' ?
+        <SessionTelemetry client={client} viewer={{ metrics, rendered, inspectVisuals, recorder }} /> : (
         <div className="workbench-main">
           <SceneTree
             info={client.info}

@@ -38,10 +38,11 @@ def dependency_reports(version, kind):
 
 
 class ReferenceInspection:
-    def __init__(self, assets, scenes, recordings, sessions, validator):
+    def __init__(self, assets, scenes, recordings, sessions, validator, *, live=None):
         self.assets, self._scenes = assets, scenes
         self.recordings, self.sessions, self.validator = recordings, sessions, validator
         self._inspected = {}
+        self.live = live or (lambda: None)
 
     @property
     def scenes(self):
@@ -177,9 +178,19 @@ class ReferenceInspection:
                         raise ValueError("Held scene version is no longer indexed unchanged: " + held.id)
                 except (OSError, ValueError, LibraryError) as exc:
                     problem("session", session.session_id, exc)
+        live = self.live()
+        if live is not None and live.bindings.layout:
+            layout = live.bindings.layout
+            if kind == "scene" and target.id == layout:
+                reference("live", live.bindings.live, "Configured exact Live layout scene version")
+            if kind == "asset":
+                indexed = self.scenes.versions.get(layout)
+                held = live.layout_version
+                if indexed is None or (held is not None and held.content_hash != indexed.content_hash):
+                    problem("live", live.bindings.live, "Live layout asset dependencies cannot be inspected")
         return {
             "references": found, "complete": not unknown, "uninspected": unknown,
             "coverage": ["all scene and asset versions", "all bound validation history",
-                         "all recording entries", "starting and retained sessions"],
+                         "all recording entries", "starting and retained sessions", "configured Live layout"],
             "training": "No A2 training store reader; nonempty reserved stores block deletion",
         }
