@@ -6,11 +6,7 @@ const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
 async function waitConnected(page: Page) {
   await expect(page.getByTestId('connection-status')).toHaveText('已连接');
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.__spatialDebug?.getSample()?.seq ?? -1),
-    )
-    .toBeGreaterThanOrEqual(0);
+  await expect(page.getByTestId('sequence')).toHaveText(/^\d+$/);
   await expect(page.locator('canvas')).toBeVisible();
 }
 
