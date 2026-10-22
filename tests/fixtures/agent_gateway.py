@@ -27,7 +27,12 @@ app = create_app(source_factory=no_source, platform_sampler=FakeHostSampler())
 @app.get("/e2e/agent-origins")
 async def origins():
     return {"agentLibrary": str(Path(agents.__file__).resolve()), "sourceStarts": source_starts,
-            "roots": {name: str(root) for name, root in app.state.manager.library_assets.roots.items()}}
+            "roots": {name: str(root) for name, root in app.state.manager.library_assets.roots.items()},
+            "resourcePaths": {
+                "vault": str(app.state.settings.state_root / "vault"),
+                "models": str(app.state.settings.state_root / "models.yaml"),
+                "prices": str(app.state.settings.state_root / "prices.yaml"),
+            }}
 
 
 @app.get("/e2e/storage-roots")

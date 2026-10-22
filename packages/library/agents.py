@@ -12,13 +12,16 @@ import tempfile
 from pathlib import Path
 
 import yaml
+from pydantic import TypeAdapter
 
 from packages.library.archive import destination_parent, extract_package, import_lock, package_files
 from packages.library.common import NAME, LibraryError, content_hash, document
 from packages.library.transactions import durable_json
+from packages.models import ModelConfig, Thinking
 
 MAX_HARNESS_BYTES = 2 * 1024 * 1024
 REQUIRED = {"AGENTS.md", "skills.lock", "mcp.yaml"}
+THINKING = TypeAdapter(Thinking)
 ENV_REF = re.compile(r"\$\{[A-Z][A-Z0-9_]*\}")
 SECRET = re.compile(
     r"(?i)(?:-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:sk|ghp|github_pat|xox[baprs])-[_a-z0-9-]{12,}"
@@ -160,12 +163,16 @@ class AgentLibrary:
             # Model configuration arrives separately from the model catalog; no invented default.
             for key in ("model", "thinking"):
                 if data[key] is not None and (
-                    not isinstance(data[key], str) or not re.fullmatch(r"[a-zA-Z0-9/._-]{1,128}", data[key])
-                    or SECRET.search(data[key])
+                    not isinstance(data[key], str) or SECRET.search(data[key])
                 ):
                     raise ValueError
-            if data["model"] is not None and not re.fullmatch(r"[a-z0-9-]+/[a-zA-Z0-9._-]+", data["model"]):
-                raise ValueError
+            if data["thinking"] is not None:
+                THINKING.validate_python(data["thinking"])
+            if data["model"] is not None:
+                provider, separator, model_id = data["model"].partition("/")
+                if not separator:
+                    raise ValueError
+                ModelConfig(provider=provider, modelId=model_id)
             if any(type(data[key]) is not int or data[key] < 1
                    for key in ("referenceVersion", "currentVersion")):
                 raise ValueError

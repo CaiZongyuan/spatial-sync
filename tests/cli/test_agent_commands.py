@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 import psutil
 import pytest
-from cli_support import LW, ROOT, result, stop
+from cli_support import LW, ROOT, TOOLS, result, stop
 from mcp import Client, StdioServerParameters
 
 
@@ -57,7 +57,9 @@ def agent_gateway_url(tmp_path, record_property):
 async def test_agent_snapshot_commands_share_http_and_mcp_without_active_session(
     agent_gateway_url, tmp_path, record_property
 ):
-    environment = os.environ | {"LW_URL": agent_gateway_url, "PYTHONIOENCODING": "utf-8"}
+    state = tmp_path / "agent-gateway/state"
+    environment = os.environ | {"LW_URL": agent_gateway_url, "PYTHONIOENCODING": "utf-8",
+                                "SPATIAL_STATE_ROOT": str(state)}
     environment.pop("LW_SESSION", None)
 
     def lw(*arguments, code=0):
@@ -77,6 +79,10 @@ async def test_agent_snapshot_commands_share_http_and_mcp_without_active_session
         gateway_origin = http.get("/e2e/agent-origins").json()
         assert Path(gateway_origin["agentLibrary"]) == ROOT / "packages/library/agents.py"
         assert gateway_origin["sourceStarts"] == 0
+        assert gateway_origin["resourcePaths"] == {
+            "vault": str(state / "vault"), "models": str(state / "models.yaml"),
+            "prices": str(state / "prices.yaml"),
+        }
         record_property("gatewayOrigin", json.dumps(gateway_origin))
         assert http.get("/api/v1/health").json()["sessions"] == []
         async with Client(transport, mode="legacy") as mcp:
@@ -105,7 +111,19 @@ async def test_agent_snapshot_commands_share_http_and_mcp_without_active_session
             assert lw("harness", "diff", "cli-fork", "1", "1")["changes"] == []
             assert (await result(mcp, "harness_diff", id="mcp-fork", before=1, after=1))["changes"] == []
             tools = {tool.name for tool in (await mcp.list_tools()).tools}
+            assert tools == TOOLS
             assert not any("vault" in name or "approv" in name for name in tools)
+            models = http.get("/api/v1/models").json()["models"]
+            assert lw("model", "ls") == await result(mcp, "model_ls") == models == []
+            model = lw("model", "add", "fixture.local/org/model:stable@1", "--thinking", "high")
+            assert lw("model", "default", model["ref"]) == {"defaultRef": model["ref"]}
+            expected_models = http.get("/api/v1/models?q=fixture.local").json()["models"]
+            assert lw("model", "ls", "--query", "fixture.local") == await result(
+                mcp, "model_ls", query="fixture.local"
+            ) == expected_models
+            assert lw("agent", "show", "lab-operator")["model"] is None
+            assert lw("vault", "ls") == []
+            assert http.get("/api/v1/prices").json()["models"] == []
             assert lw("agent", "show", "unknown-agent", code=1)["error"]["statusCode"] == 404
         assert http.get("/api/v1/health").json()["sessions"] == []
         assert http.get("/e2e/agent-origins").json()["sourceStarts"] == 0

@@ -11,6 +11,7 @@ from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from apps.api.app.settings import Settings
 from apps.cli.lw.client import GatewayClient
 from apps.cli.lw.commands import COMMANDS
+from packages.library.common import BUILTIN_ROOT, content_hash
 
 SUITE = "suite/lab-demo-pick-place@1"
 ROUTE = "/api/v1/suites/lab-demo-pick-place/1"
@@ -128,7 +129,32 @@ def test_every_public_evaluation_read_keeps_normal_dto_and_excludes_nested_priva
             assert value == expected_record
         suite = client.get(ROUTE).json()
         assert [case["id"] for case in suite["episodes"]] == ["train-one", "train-two"]
-        assert client.get("/api/v1/suites").json() == {"suites": [suite]}
+        inventory = client.get("/api/v1/suites").json()
+        assert set(inventory) == {"suites"}
+        assert sorted(value["id"] for value in inventory["suites"]) == [
+            SUITE, "suite/lab-ops-basic@1"
+        ]
+        by_id = {value["id"]: value for value in inventory["suites"]}
+        assert by_id[SUITE] == suite
+        case_ids = ["centrifuge-two", "pause-reset", "incubator-alert", "correct-rejection", "transfer-tube",
+                    "return-sample", "close-lid-safe", "stop-cycle", "cabinet-blower",
+                    "preserve-high-risk-gate"]
+        package = BUILTIN_ROOT / "suites/lab-ops-basic/1"
+        expected_agent = {
+            "id": "suite/lab-ops-basic@1", "layer": "agent", "title": "Basic laboratory operations",
+            "contentHash": content_hash(package), "scene": suite["scene"],
+            "sceneContentHash": suite["sceneContentHash"], "source": "synthetic",
+            "target": "agent/lab-operator", "split": "train", "runsPerCase": 3,
+            "cases": [{"id": identifier, "statement": (package / f"statements/{identifier}.md").read_text(
+                encoding="utf-8"
+            )} for identifier in case_ids],
+            "gradingDimensions": ["finalState", "rejectedHighRisk", "steps", "elapsed", "planFirst"],
+        }
+        assert by_id[expected_agent["id"]] == expected_agent
+        assert client.get("/api/v1/suites/lab-ops-basic/1").json() == expected_agent
+        assert all(value not in json.dumps(inventory) for value in [
+            CANARY, "held-out-safe-sensor", "grading/", "private/", '"weight"', '"when"', '"threshold"'
+        ])
         assert all(value not in json.dumps(suite) for value in ["held-out-example", "4101", "4102", "9101"])
         for method, suffix in [("get", ""), ("post", "/cancel"), ("post", "/cleanup")]:
             response = getattr(client, method)("/api/v1/evaluations/eval-held-out" + suffix)

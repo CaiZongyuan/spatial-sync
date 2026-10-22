@@ -12,6 +12,8 @@ import pytest
 
 from packages.library.agents import AgentLibrary, harness_files, pack_harness
 from packages.library.common import BUILTIN_ROOT, LibraryError
+from packages.library.transactions import durable_json
+from packages.models import ModelConfig
 
 
 def library(tmp_path):
@@ -43,6 +45,24 @@ def tar_entries(entries):
 def test_bundled_editable_harness_matches_its_frozen_reference_on_this_checkout(tmp_path):
     agents = library(tmp_path)
     assert pack_harness(BUILTIN_ROOT / "agents/lab-operator/harness") == agents.export("lab-operator", 1)
+
+
+@pytest.mark.parametrize("provider,model_id", [
+    ("provider.local", "org/model:stable@2026"), ("provider_test", "model-v1"),
+])
+def test_agent_configuration_accepts_registered_model_syntax_without_putting_it_in_harness(
+    tmp_path, provider, model_id
+):
+    agents = library(tmp_path)
+    original = agents.export("lab-operator", 1)
+    agents.create("configured", original)
+    reference = ModelConfig(provider=provider, modelId=model_id).ref
+    metadata = agents.show("configured") | {"model": reference, "thinking": "xhigh"}
+    durable_json(agents.user_root / "agents/configured/agent.yaml", metadata)
+    assert agents.show("configured") == metadata
+    assert agents.snapshot("configured")["version"] == 1
+    assert agents.export("configured", 1) == original
+    assert agents.create("fork", original)["model"] is None
 
 
 def test_forking_a_builtin_never_reads_or_copies_unrelated_credential_files(tmp_path, monkeypatch):

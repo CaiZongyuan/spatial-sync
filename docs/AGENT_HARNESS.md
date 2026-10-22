@@ -4,6 +4,9 @@ An Agent keeps its model and thinking level outside its editable Harness.
 `lab-operator` is bundled with both fields unconfigured (`null`). Agent SDK
 execution and model configuration are separate capabilities; creating a snapshot
 does not start a model request, a job or a simulation.
+Explicit Agent model references and thinking levels use the model catalog's
+syntax. Selecting a platform default model leaves existing Agent definitions
+unchanged.
 
 The user library stores `agents/<name>/agent.yaml`, an editable `harness/`,
 immutable `snapshots/vN.tar`, and `versions/vN.json`. The bundled Agent becomes a
