@@ -13,6 +13,8 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
   let evaluation: string | undefined;
   let keptRequest: string | undefined;
   let startedSession: string | undefined;
+  let barrierToken: string | undefined;
+  let failed = false;
   const observer = await context.newPage();
   observer.on('pageerror', error => errors.push(error.message));
   const acknowledgements: string[] = [];
@@ -27,13 +29,17 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     expect((await imported.json()).validation.launchable).toBe(true);
     const fixture = await request.post(`${api}/e2e/evaluation-alert-suite`);
     expect(fixture.ok(), await fixture.text()).toBe(true);
-    const { suite } = await fixture.json();
+    const { suite, token, suiteContentHash, sceneVersion, sceneContentHash } = await fixture.json();
+    barrierToken = token;
+    const barrierUrl = `${api}/e2e/evaluation-alert-barriers/${token}`;
     const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneVersion: 'lab-demo@3', source: 'synthetic' } });
     expect(created.status(), await created.text()).toBe(201);
     manual = (await created.json()).sessionId;
     const submitted = await request.post(`${api}/api/v1/evaluations`, { data: { subject: 'robot_arm.virtual', suite } });
     expect(submitted.status(), await submitted.text()).toBe(202);
     evaluation = (await submitted.json()).evaluationId;
+    const bound = await request.post(`${barrierUrl}/bind`, { data: { evaluationId: evaluation } });
+    expect(bound.ok(), await bound.text()).toBe(true);
     await page.goto('/scenes/lab-demo/3');
     const firstTicket = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/sessions' && response.status() === 202);
     await page.getByRole('button', { name: '启动会话' }).click();
@@ -68,8 +74,21 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await drawer.getByRole('button', { name: /Incubator/ }).click();
     await drawer.getByTestId('action-setSetpoint').locator('summary').click();
     await expect(drawer.getByRole('button', { name: 'Run setSetpoint', exact: true })).toBeDisabled();
+    // UI work overlaps the real action; hold only its graded first episode before close.
+    await expect.poll(async () => (await (await request.get(barrierUrl)).json()).state).toBe('held');
+    const held = await (await request.get(barrierUrl)).json();
+    expect(held).toMatchObject({
+      suite, suiteContentHash, sceneVersion, sceneContentHash, caseId: 'train-one',
+      evaluationId: evaluation, state: 'held',
+      witness: { evaluationId: evaluation, sessionId: episodeSession, outcome: {
+        caseId: 'train-one', success: true, invocationStatus: 'succeeded',
+      } },
+    });
+    expect(held.witness.outcome.milestones).toEqual({ grasp: expect.any(Boolean), place: expect.any(Boolean) });
+    const session = await (await request.get(`${api}/api/v1/sessions/${episodeSession}`)).json();
+    expect(session).toMatchObject({ state: 'RUNNING', epoch: held.witness.epoch });
     const [alert] = (await (await request.get(`${api}/api/v1/alerts?sessionId=${episodeSession}&active=true`)).json()).alerts;
-    expect(alert).toMatchObject({ readOnly: true, active: true, acknowledgement: null });
+    expect(alert).toMatchObject({ sessionId: episodeSession, epoch: held.witness.epoch, readOnly: true, active: true, acknowledgement: null });
     const refused = await request.post(`${api}/api/v1/alerts/${alert.alertId}/ack`, { data: {} });
     expect(refused.status()).toBe(409);
     expect((await refused.json()).detail.code).toBe('evaluation_busy');
@@ -87,10 +106,39 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await expect(banner).toContainText('评估会话只读');
     await expect(banner.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
     await expect(banner.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
+    expect(new URL((await banner.getByRole('link').getAttribute('href'))!, api).pathname).toBe(`/sessions/${episodeSession}`);
     expect(acknowledgements).toEqual([]);
     await info.attach('evaluation-alert-banner-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
     await observer.goto(`/sessions/${episodeSession}`);
+    expect(await (await request.get(barrierUrl)).json()).toEqual(held);
+    const retained = (await (await request.get(`${api}/api/v1/alerts?sessionId=${episodeSession}&active=true`)).json()).alerts;
+    expect(retained.find((value: { alertId: string }) => value.alertId === alert.alertId)).toMatchObject({
+      alertId: alert.alertId, sessionId: episodeSession, epoch: held.witness.epoch,
+      active: true, readOnly: true, acknowledgement: null, closedContext: null,
+    });
+    const released = await request.post(`${barrierUrl}/release`);
+    expect(released.ok(), await released.text()).toBe(true);
+    expect((await released.json()).state).toBe('released');
     await expect.poll(async () => (await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json()).status, { timeout: 35_000 }).toBe('completed');
+    const completed = await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json();
+    expect(completed.episodes.map((value: { caseId: string }) => value.caseId)).toEqual(['train-one', 'train-two']);
+    expect(completed.result).toMatchObject({ successes: 2, episodes: 2, score: 1 });
+    expect(completed.result.key).toMatchObject({ suite, suiteContentHash, scene: sceneVersion, sceneContentHash });
+    expect(new Set(completed.result.recordings).size).toBe(2);
+    expect(completed.episodes[0].recordingId).toBe(episodeSession);
+    expect(completed.episodes[0]).toMatchObject(held.witness.outcome);
+    expect(new Set(completed.episodes.map((value: { invocationId: string }) => value.invocationId)).size).toBe(2);
+    for (const result of completed.episodes) {
+      expect(result).toMatchObject({ success: true, invocationStatus: 'succeeded' });
+      expect(result.milestones).toEqual({ grasp: expect.any(Boolean), place: expect.any(Boolean) });
+      const metadata = await request.get(`${api}/recordings/${result.recordingId}/recording.json`);
+      expect(metadata.ok(), await metadata.text()).toBe(true);
+      expect((await metadata.json()).status).toBe('complete');
+    }
+    for (const stage of ['grasp', 'place']) {
+      const passed = completed.episodes.filter((result: { milestones: Record<string, boolean> }) => result.milestones[stage]).length;
+      expect(completed.result.phases[stage]).toEqual({ passed, episodes: 2, rate: passed / 2 });
+    }
     await expect(page).toHaveURL(/\/sessions\/session-/);
     const ticket = await (await request.get(`${api}/api/v1/session-requests/${keptRequest}`)).json();
     expect(ticket.status).toBe('started');
@@ -101,15 +149,35 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     expect((await (await request.get(`${api}/api/v1/session-requests/${cancelledRequest}`)).json()).status).toBe('cancelled');
     await info.attach('started-interactive-workspace.png', { body: await page.screenshot(), contentType: 'image/png' });
     expect(errors).toEqual([]);
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await observer.close();
-    if (keptRequest) {
-      const ticket = await (await request.delete(`${api}/api/v1/session-requests/${keptRequest}`)).json();
-      startedSession ??= ticket.sessionId;
+    const cleanupErrors: string[] = [];
+    const cleanup = async (name: string, operation: () => Promise<unknown>) => {
+      try { await operation(); } catch (error) { cleanupErrors.push(`${name}: ${String(error)}`); }
+    };
+    if (barrierToken) await cleanup('release barrier', async () => {
+      const response = await request.post(`${api}/e2e/evaluation-alert-barriers/${barrierToken}/release`, { timeout: 5_000 });
+      expect(response.ok(), await response.text()).toBe(true);
+    });
+    if (evaluation) await cleanup('cancel evaluation', async () => {
+      const response = await request.post(`${api}/api/v1/evaluations/${evaluation}/cancel`, { timeout: 5_000 });
+      expect(response.ok(), await response.text()).toBe(true);
+    });
+    await cleanup('close observer', () => observer.close());
+    if (keptRequest) await cleanup('cancel queued launch', async () => {
+      const response = await request.delete(`${api}/api/v1/session-requests/${keptRequest}`, { timeout: 5_000 });
+      expect(response.ok(), await response.text()).toBe(true);
+      startedSession ??= (await response.json()).sessionId;
+    });
+    for (const sessionId of [manual, startedSession].filter(Boolean)) await cleanup(`close ${sessionId}`, async () => {
+      expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`, { timeout: 5_000 })).status()).toBe(204);
+    });
+    if (cleanupErrors.length) {
+      await cleanup('attach cleanup errors', () => info.attach('cleanup-errors', { body: cleanupErrors.join('\n'), contentType: 'text/plain' }));
+      if (!failed) throw new Error(cleanupErrors.join('\n'));
     }
-    if (evaluation) await request.post(`${api}/api/v1/evaluations/${evaluation}/cancel`);
-    for (const sessionId of [manual, startedSession].filter(Boolean))
-      expect((await request.delete(`${api}/api/v1/sessions/${sessionId}`)).status()).toBe(204);
   }
 });
 
