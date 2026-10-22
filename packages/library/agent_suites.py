@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 
@@ -15,7 +16,7 @@ DIMENSIONS = ("finalState", "rejectedHighRisk", "steps", "elapsed", "planFirst")
 @dataclass(frozen=True)
 class AgentSuiteVersion:
     id: str
-    path: object
+    path: Path
     root: str
     content_hash: str
     metadata: dict

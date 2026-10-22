@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { useEvaluationCenter } from '../lib/evaluation-hooks';
 import { compareEvaluations, currentReference, evaluationDate, scoreGroups, shortVersion, successRate, suiteSegment,
-  type EvaluationConditions, type EvaluationRecord, type EvaluationScore, type EvaluationSuite } from '../lib/evaluations';
+  type AgentEvaluationSuite, type EmbodiedEvaluationSuite, type EvaluationConditions, type EvaluationRecord,
+  type EvaluationScore, type EvaluationSuite } from '../lib/evaluations';
 import { Icon } from './Icon';
 import '../evaluations.css';
 
@@ -24,31 +25,36 @@ function RoleVisibility() {
   </section>;
 }
 
-function AcceptanceRules() {
+function AcceptanceRules({ layer }: { layer?: EvaluationSuite['layer'] }) {
   return <section className="eval-panel eval-rules"><span className="eyebrow">ACCEPTANCE</span><h2>接受规则</h2>
-    <p>具身 Candidate 的 Wilson 95% 置信区间下界，必须严格高于同条件 Reference 的成功率点估计。</p>
+    {layer !== 'agent' && <p>具身 Candidate 的 Wilson 95% 置信区间下界，必须严格高于同条件 Reference 的成功率点估计。</p>}
+    {layer !== 'embodied' && <p>Agent Candidate 的 train 均分必须严格高于同条件 Reference，且每题至少运行 3 次。可比较条件包括评估集版本、模型与思考等级。</p>}
     <p>首次完整评估成为正式基线。后续已接受版本成为新的参照；未接受的候选仍保留在计分板。</p>
-    <div className="eval-rule-formula">CI<sub>95%, lower</sub>(Candidate) &gt; score(Reference)</div>
+    <div className="eval-rule-formula">{layer === 'agent' ? <>mean(Candidate) &gt; mean(Reference)</> : <>CI<sub>95%, lower</sub>(Candidate) &gt; score(Reference)</>}</div>
     <small>held-out test 仅在申请提升时运行并揭示。本页只读取 train；提升流程尚未接入。</small>
   </section>;
 }
 
 function SuiteCard({ suite, rows }: { suite: EvaluationSuite; rows: EvaluationScore[] }) {
-  const supported = suite.layer === 'embodied';
   const groups = scoreGroups(rows);
   const references = groups.map(currentReference).filter((row): row is EvaluationScore => Boolean(row));
   const candidate = [...rows].reverse().find(row => row.decision === 'accepted' || row.decision === 'rejected');
   return <article className="eval-suite-card" data-suite-id={suite.id}>
-    <div className="eval-card-top"><span className="eval-tag accent">{supported ? '具身 · EMBODIED' : 'Agent · 尚未接入'}</span><span className="eval-tag">train</span></div>
+    <div className="eval-card-top"><span className="eval-tag accent">{suite.layer === 'embodied' ? '具身 · EMBODIED' : 'Agent · AGENT'}</span><span className="eval-tag">train</span></div>
     <h2>{suite.title}</h2><code className="eval-suite-id">{suite.id}</code>
-    {supported ? <><p>目标：在固定场景中完成 <code>{suite.implements}</code>，以任务成功率评估。</p>
+    {suite.layer === 'embodied' ? <><p>目标：在固定场景中完成 <code>{suite.implements}</code>，以任务成功率评估。</p>
       <dl className="eval-metadata"><div><dt>被测对象</dt><dd>{suite.target}</dd></div><div><dt>环境</dt><dd>{suite.scene} · {suite.source}</dd></div>
         <div><dt>公开划分</dt><dd>{suite.episodes.length} 个 train 回合 · test 锁定</dd></div>
         <div><dt>当前参照</dt><dd>{references.length === 1 ? `${shortVersion(references[0].version)} · ${successRate(references[0].score)}` : references.length ? `${references.length} 组条件各自保留参照` : '尚无正式基线'}</dd></div>
         <div><dt>最近候选</dt><dd>{candidate ? `${shortVersion(candidate.version)} · ${decisionLabels[candidate.decision]}` : '尚无候选记录'}</dd></div></dl>
       <div className="eval-version-trail" aria-label="版本轨迹">{rows.length ? rows.slice(-6).map(row => <span key={row.evaluationId} title={`${row.evaluationId} · ${row.version} · ${decisionLabels[row.decision]}`}
         className={`eval-decision ${row.decision}`}>{shortVersion(row.version)}</span>) : <span>版本轨迹等待首次完整评估</span>}</div></> :
-      <p>此层的题目与运行器尚未接入，暂无可展示的评估明细。</p>}
+      <><p>实验室操作任务，依据最终状态与过程指标加权评分，满分 100。</p>
+        <dl className="eval-metadata"><div><dt>被测对象</dt><dd>{suite.target}</dd></div><div><dt>环境</dt><dd>{suite.scene} · {suite.source}</dd></div>
+          <div><dt>公开划分</dt><dd>{suite.cases.length} 个 train 题目 · test 锁定</dd></div>
+          <div><dt>运行要求</dt><dd>每题 {suite.runsPerCase} 次</dd></div><div><dt>当前参照</dt><dd>尚无正式基线</dd></div>
+          <div><dt>执行状态</dt><dd>Agent 运行器尚未接入</dd></div></dl>
+        <div className="eval-version-trail">版本轨迹等待首次完整评估</div></>}
     <Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(suite.id) }} className="eval-open">打开计分板 <Icon name="chevron" /></Link>
   </article>;
 }
@@ -71,7 +77,7 @@ function Conditions({ suite, row }: { suite: EvaluationSuite; row?: EvaluationSc
   return <section className="eval-conditions" aria-label="可比较条件"><div><span className="eyebrow">COMPARABLE CONDITIONS</span><h2>可比较条件</h2></div>
     <div className="eval-condition-tags">{Object.entries(conditions).map(([name, value]) => <span key={name} className={`eval-tag ${['model', 'thinking'].includes(name) ? 'accent' : ''}`} title={`${conditionNames[name] ?? name}: ${value ?? '未声明'}`}>
       {conditionNames[name] ?? name} <b>{value == null ? name === 'newtonVersion' && suite.source === 'synthetic' ? '不适用（Synthetic）' : '未声明' : name.endsWith('Hash') ? shortVersion(value) : value}</b></span>)}</div>
-    <p>{row ? `当前条件组 ${row.conditionsGroup ?? row.evaluationId}` : '尚无运行条件；以上为评估集固定配置。'} · 只有完整条件相同的记录才可比较，并绘制在同一条曲线上。Embodiment 未注册时以实际目标与绑定记录为准。</p>
+    <p>{row ? `当前条件组 ${row.conditionsGroup ?? row.evaluationId}` : '尚无运行条件；以上为评估集固定配置。'} · {suite.layer === 'agent' ? 'Agent 分数仅在评估集版本、模型与思考等级相同时可比较。模型与思考等级随实际运行记录。' : '只有完整条件相同的记录才可比较，并绘制在同一条曲线上。Embodiment 未注册时以实际目标与绑定记录为准。'}</p>
   </section>;
 }
 
@@ -145,7 +151,7 @@ function Scoreboard({ suite, rows, selected, select }: { suite: EvaluationSuite;
   </section>;
 }
 
-function EpisodeDetails({ suite, row, record }: { suite: EvaluationSuite; row?: EvaluationScore; record?: EvaluationRecord }) {
+function EpisodeDetails({ suite, row, record }: { suite: EmbodiedEvaluationSuite; row?: EvaluationScore; record?: EvaluationRecord }) {
   return <section className="eval-panel"><header><div><span className="eyebrow">EMBODIED BREAKDOWN</span><h2>分阶段通过率与评估回合</h2></div><span>{row ? shortVersion(row.version) : '等待评估'}</span></header>
     {row ? <><code className="eval-selected-id">{row.evaluationId}</code><div className="eval-phases">{suite.milestones.map(stage => {
       const phase = row.phases[stage];
@@ -163,9 +169,32 @@ function EpisodeDetails({ suite, row, record }: { suite: EvaluationSuite; row?: 
   </section>;
 }
 
+const gradingLabels: Record<string, string> = { finalState: '最终状态', rejectedHighRisk: '被拒的高风险动作',
+  steps: '步数', elapsed: '用时', planFirst: '先提交相关操作计划' };
+
+function AgentSuiteDetails({ suite }: { suite: AgentEvaluationSuite }) {
+  return <><Conditions suite={suite} />
+    <section className="eval-panel"><header><div><span className="eyebrow">AGENT · TRAIN</span><h2>Agent 计分板</h2></div><span>尚无正式基线</span></header>
+      <p className="eval-empty">Agent 运行器尚未接入，暂无评估分数、Trace 或成本。正式基线需由首次完整评估建立。</p>
+      <div className="eval-table-scroll"><table aria-label="Agent 评估计分板"><thead><tr><th>Harness 版本</th><th>模型 / 思考等级</th><th>均分</th><th>运行范围</th><th>成本</th><th>时长</th><th>日期</th><th>判定</th></tr></thead><tbody>
+        <tr><td colSpan={8} className="eval-empty">尚无 Agent train 运行记录。</td></tr>
+        <tr className="eval-locked" data-testid="held-out-test-row"><th scope="row"><Icon name="lock" /> held-out test</th><td colSpan={7}>锁定 · 仅在申请提升时运行并揭示；题目与结果不公开。</td></tr>
+      </tbody></table></div>
+      <p className="eval-footnote">Harness 版本独立记录。评估基线、分数曲线与逐题得分等待真实运行结果。</p>
+    </section>
+    <section className="eval-panel"><header><div><span className="eyebrow">PUBLIC STATEMENTS</span><h2>公开 train 题目</h2></div><span>{suite.cases.length} 题 · 每题 {suite.runsPerCase} 次</span></header>
+      <div className="eval-agent-cases">{suite.cases.map(item => <details key={item.id}><summary><code>{item.id}</code></summary><p>{item.statement}</p></details>)}</div>
+    </section>
+    <div className="eval-bottom-grid"><section className="eval-panel eval-scoring"><span className="eyebrow">SCORING</span><h2>评分方式</h2>
+      <p>满分 100，按最终实验室状态与受信运行过程加权评分。不同题目使用各自适用的维度。</p>
+      <p>{suite.gradingDimensions.map(name => gradingLabels[name] ?? name).join(' · ')}</p>
+      <p><Icon name="lock" /> 评分条件、权重与阈值由 Evaluator 私有读取。公共页面只展示题面和维度名称。</p></section><AcceptanceRules layer="agent" /></div><RoleVisibility />
+  </>;
+}
+
 function SuiteDetails({ suite, rows, evaluations }: { suite: EvaluationSuite; rows: EvaluationScore[]; evaluations: EvaluationRecord[] }) {
   const [subject, setSubject] = useState(''), [selected, select] = useState('');
-  if (suite.layer !== 'embodied') return <><p className="eval-empty">Agent 层题目与运行器尚未接入，暂无可展示的计分板。</p><RoleVisibility /></>;
+  if (suite.layer === 'agent') return <AgentSuiteDetails suite={suite} />;
   const subjects = [...new Set(rows.map(row => row.subject))];
   const filtered = rows.filter(row => !subject || row.subject === subject);
   const row = filtered.find(value => value.evaluationId === selected) ?? filtered.at(-1);
@@ -175,7 +204,7 @@ function SuiteDetails({ suite, rows, evaluations }: { suite: EvaluationSuite; ro
     <Scoreboard suite={suite} rows={filtered} selected={row?.evaluationId} select={select} /><ScoreCurve rows={filtered} />
     <EpisodeDetails suite={suite} row={row} record={record} /><div className="eval-bottom-grid"><section className="eval-panel eval-scoring"><span className="eyebrow">SCORING</span><h2>评分方式</h2>
       <p>分数为固定评估集的任务成功率。任务成功依据本次状态判定，与动作调用是否成功分别记录。</p>
-      <p>阶段通过率来自运行中的实际观测，阶段通过与最终任务成功分别展示。</p><p><Icon name="lock" /> 私有成功条件、阶段判定条件与初始种子由 Evaluator 读取。</p></section><AcceptanceRules /></div><RoleVisibility />
+      <p>阶段通过率来自运行中的实际观测，阶段通过与最终任务成功分别展示。</p><p><Icon name="lock" /> 私有成功条件、阶段判定条件与初始种子由 Evaluator 读取。</p></section><AcceptanceRules layer="embodied" /></div><RoleVisibility />
   </>;
 }
 
@@ -193,7 +222,7 @@ export function EvaluationCenter({ suiteId }: { suiteId?: string }) {
       <section className="eval-list-toolbar" aria-label="评估集筛选"><div role="group" aria-label="评估层">{[['all', '全部'], ['embodied', '具身'], ['agent', 'Agent']].map(([value, label]) =>
         <button key={value} aria-pressed={layer === value} onClick={() => setLayer(value)}>{label}</button>)}</div><span>{suites?.length ?? 0} 个评估集</span></section>
       {suites?.length ? <div className="eval-suite-grid">{suites.map(value => <SuiteCard key={value.id} suite={value} rows={query.data!.rows.filter(row => row.suite === value.id)} />)}</div> :
-        <p className="eval-empty">{layer === 'agent' ? 'Agent 层评估集与运行器尚未接入。' : '暂无此层评估集。'}</p>}
+        <p className="eval-empty">{layer === 'agent' ? '暂无 Agent 评估集。' : '暂无此层评估集。'}</p>}
       <RoleVisibility /><div className="eval-bottom-grid"><RecentEvaluations evaluations={query.data.evaluations} /><AcceptanceRules /></div>
     </>}
   </main>;

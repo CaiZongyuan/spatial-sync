@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import shutil
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -42,6 +43,23 @@ def tar_entries(entries):
 def test_bundled_editable_harness_matches_its_frozen_reference_on_this_checkout(tmp_path):
     agents = library(tmp_path)
     assert pack_harness(BUILTIN_ROOT / "agents/lab-operator/harness") == agents.export("lab-operator", 1)
+
+
+def test_forking_a_builtin_never_reads_or_copies_unrelated_credential_files(tmp_path, monkeypatch):
+    builtin = tmp_path / "builtin"
+    source = builtin / "agents/lab-operator"
+    shutil.copytree(BUILTIN_ROOT / "agents/lab-operator", source)
+    (source / ".env").write_text("API_KEY=private-canary-864209", encoding="utf-8")
+    original = Path.open
+
+    def guarded(path, *args, **kwargs):
+        assert path.name != ".env", "Fork must not open unrelated credentials"
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded)
+    agents = AgentLibrary({"builtin": builtin, "user": tmp_path / "user"})
+    assert agents.snapshot("lab-operator")["version"] == 1
+    assert not (agents.user_root / "agents/lab-operator/.env").exists()
 
 
 def test_snapshot_export_import_fork_diff_and_reference_do_not_promote(tmp_path):

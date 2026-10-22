@@ -58,6 +58,8 @@ def harness_files(path):
             raise ValueError
         size = 0
         for name in files:
+            if SECRET.search(name):
+                raise ValueError
             if name not in REQUIRED and not (
                 name.startswith("hooks/") and not any(part.startswith(".") for part in name.split("/"))
             ):
@@ -259,14 +261,23 @@ class AgentLibrary:
         source = self._path(identifier)
         target = confined(self.user_root, ("agents", agent_name(identifier)), create=True)
         if source != target:
-            # The built-in is a read-only template. Publish the complete fork in one rename.
+            # Copy verified inputs only; unrelated files beside agent.yaml are never opened.
             target.rmdir()
-            self._metadata(source)
-            for record in self.versions(identifier):
-                self.version(identifier, record["version"])
+            metadata = self._metadata(source)
+            harness = pack_harness(confined(source, ("harness",)))
             with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
                 staged = Path(temporary) / "agent"
-                shutil.copytree(source, staged)
+                (staged / "harness").mkdir(parents=True)
+                unpack_harness(harness, staged / "harness")
+                (staged / "snapshots").mkdir()
+                for record in self.versions(identifier):
+                    data = self.export(identifier, record["version"])
+                    with (staged / f"snapshots/v{record['version']}.tar").open("xb") as stream:
+                        stream.write(data)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    durable_json(staged / f"versions/v{record['version']}.json", record)
+                durable_json(staged / "agent.yaml", metadata)
                 os.rename(staged, target)
         return target
 

@@ -72,6 +72,11 @@ preserving a human approval gate. The package also contains private grading and
 held-out inputs; public API, CLI, MCP and library-file routes do not return them.
 The shared suite list retains the existing embodied suite projection.
 
+The Web evaluation center lists the Agent suite, its ten public train statements,
+fixed environment and three-runs-per-case requirement. Its held-out row stays
+locked. Until the Agent runner produces real results, the page shows no formal
+baseline, score curve, Trace or cost.
+
 The internal evaluator uses weighted final-state conditions and trusted process
 evidence: tool steps, monotonic elapsed time, rejected high-risk actions and
 whether a relevant operation Plan preceded the first action or command. Plan

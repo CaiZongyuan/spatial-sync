@@ -1,20 +1,32 @@
 import { request } from './api';
 
-export interface EvaluationSuite {
+interface SuiteMetadata {
   id: string;
-  layer: 'embodied' | 'agent';
   title: string;
   contentHash: string;
   scene: string;
   sceneContentHash: string;
   source: string;
   target: string;
-  implements: string;
   split: 'train';
+}
+
+export interface EmbodiedEvaluationSuite extends SuiteMetadata {
+  layer: 'embodied';
+  implements: string;
   episodes: { id: string; params: Record<string, unknown> }[];
   coverage: Record<string, unknown[]>;
   milestones: string[];
 }
+
+export interface AgentEvaluationSuite extends SuiteMetadata {
+  layer: 'agent';
+  runsPerCase: number;
+  cases: { id: string; statement: string }[];
+  gradingDimensions: string[];
+}
+
+export type EvaluationSuite = EmbodiedEvaluationSuite | AgentEvaluationSuite;
 
 export type EvaluationConditions = Record<string, string | null>;
 export interface EvaluationScore {

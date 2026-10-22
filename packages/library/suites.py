@@ -1,4 +1,4 @@
-"""Pinned embodied suite packages. Public projections never include private inputs."""
+"""Pinned evaluation suite packages. Public projections never include private inputs."""
 
 import json
 import re
