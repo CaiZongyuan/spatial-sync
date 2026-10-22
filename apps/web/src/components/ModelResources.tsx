@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { request } from '../lib/api';
 import { dollars, priceFields, priceLabels } from '../lib/model-resources';
 import type { LlmModel, PriceTable } from '../lib/model-resources';
@@ -64,16 +64,35 @@ export function ModelResources() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState('');
+  const pending = useRef<{ controller: AbortController; timer?: ReturnType<typeof setTimeout> } | undefined>(undefined);
+  const cancelRead = useCallback(() => {
+    const read = pending.current;
+    pending.current = undefined;
+    if (read) { clearTimeout(read.timer); read.controller.abort(); }
+  }, []);
   const load = useCallback(async () => {
+    cancelRead();
+    const read: NonNullable<typeof pending.current> = { controller: new AbortController() };
+    pending.current = read;
+    read.timer = setTimeout(() => {
+      if (pending.current !== read) return;
+      cancelRead(); setError('读取模型与价格超时，请重试');
+    }, 8000);
     setError('');
     try {
+      const options = { signal: read.controller.signal };
       const [models, vault, prices] = await Promise.all([
-        request<{ models: LlmModel[] }>('/models'), request<{ names: string[] }>('/vault'), request<PriceTable>('/prices'),
+        request<{ models: LlmModel[] }>('/models', options), request<{ names: string[] }>('/vault', options), request<PriceTable>('/prices', options),
       ]);
-      setData({ models: models.models, names: vault.names, prices });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+      if (pending.current === read) setData({ models: models.models, names: vault.names, prices });
+    } catch (cause) {
+      if (pending.current === read) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      clearTimeout(read.timer); read.controller.abort();
+      if (pending.current === read) pending.current = undefined;
+    }
+  }, [cancelRead]);
+  useEffect(() => { void load(); return cancelRead; }, [load, cancelRead]);
   const prices = new Map(data?.prices.models.map(price => [`${price.provider}/${price.modelId}`, price]));
   return <main className="model-resources">
     <header className="page-heading"><div><h1>资源</h1><p>算力节点、LLM 与机器人模型、机器人本体及其控制器</p></div>
@@ -85,7 +104,7 @@ export function ModelResources() {
     <div className="resource-panels">
       <section className="resource-panel" aria-labelledby="llm-models-title">
         <header><h2 id="llm-models-title">LLM 模型</h2><div><span className="resource-note">价格表由人配置</span>
-          {data && <button type="button" disabled={!data.prices.canEdit || editing} onClick={() => { setEditing(true); setNotice(''); }}>编辑价格表</button>}</div></header>
+          {data && <button type="button" disabled={!data.prices.canEdit || editing} onClick={() => { cancelRead(); setEditing(true); setNotice(''); }}>编辑价格表</button>}</div></header>
         <div className="resource-panel-body">
           <div className="resource-table-scroll"><table data-testid="llm-models-table">
             <caption className="sr-only">已登记的 LLM 模型</caption>
@@ -110,6 +129,7 @@ export function ModelResources() {
           <p className="resource-note">* 未配置价格，不估算金额。健康与延迟来自实际请求记录，尚无记录时显示未知。</p>
           {data?.prices.gpus.length ? <p className="resource-note">GPU 价格：{data.prices.gpus.map(price => `${price.nodeId} ${dollars(price.usdPerHour)}/小时`).join(' · ')}</p> : null}
           {editing && data && <PriceEditor models={data.models} table={data.prices} cancel={() => setEditing(false)} saved={table => {
+            cancelRead();
             setData(current => current && { ...current, prices: table }); setEditing(false); setNotice('价格表已保存，修改已记录操作者与时间。');
           }} />}
           {!!data?.prices.audit.length && <details className="resource-price-audit"><summary>价格修改记录 · {data.prices.audit.length}</summary>
