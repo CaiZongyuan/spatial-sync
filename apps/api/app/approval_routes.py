@@ -114,6 +114,9 @@ def install_approval_routes(app, manager, role_for):
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
             return document(get_record(approval_id))
         session = target(record)
+        simulation = manager.sessions.get(record.sessionId)
+        if simulation is not None:
+            simulation.require_interactive()
         if (record.subject not in ("invocation", "plan") or not session
                 or session.state not in ("RUNNING", "PAUSED")):
             raise HTTPException(409, {"code": "approval_unavailable"})

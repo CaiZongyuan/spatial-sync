@@ -52,6 +52,7 @@ def session_rows(manager):
             }
         rows.append({
             "sessionId": session.session_id, "sceneId": session.scene_id,
+            **({"evaluationId": session.evaluation_id} if getattr(session, "evaluation_id", None) else {}),
             "sceneVersion": session.scene_version.id if getattr(session, "scene_version", None)
             else f"{session.scene_id}@1",
             "sceneName": session.scene_version.metadata["title"] if getattr(session, "scene_version", None)

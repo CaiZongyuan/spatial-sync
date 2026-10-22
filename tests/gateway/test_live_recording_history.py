@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.device_host import DeviceHost
+from apps.api.app.evaluation_recordings import EvaluationRecordingRepository
 from apps.api.app.history_routes import install_history_routes
 from apps.api.app.info_routes import install_info_routes
 from apps.api.app.live_recordings import LiveRecordingRepository
@@ -53,13 +54,13 @@ class LocalTransport:
         self.ingress.close()
 
 
-@pytest.fixture
-async def setup(tmp_path, monkeypatch):
+@pytest.fixture(params=[LiveRecordingRepository, EvaluationRecordingRepository])
+async def setup(tmp_path, monkeypatch, request):
     clock = Clock()
     monkeypatch.setattr("packages.info.program.time", SimpleNamespace(monotonic=lambda: clock.raw))
     monkeypatch.setattr("apps.api.app.live_recordings.LiveLog", partial(LiveLog, utc_clock=lambda: clock.utc))
     settings = Settings(recordings_root=tmp_path / "recordings", state_root=tmp_path / "state")
-    repository = LiveRecordingRepository(settings, None)
+    repository = request.param(settings, None)
     approvals = ApprovalStore(tmp_path / "approvals.jsonl")
     plans = PlanStore(tmp_path / "plans.jsonl", approvals)
     hosts = []

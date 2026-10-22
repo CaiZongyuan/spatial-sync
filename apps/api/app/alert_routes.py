@@ -28,7 +28,8 @@ def install_alert_routes(app, manager, role_for):
         sessions = ([information_target(manager, sessionId) or manager.get(sessionId)] if sessionId
                     else information_targets(manager))
         documents = [
-            value | {"sessionId": session.session_id}
+            value | {"sessionId": session.session_id,
+                     "readOnly": bool(getattr(session, "evaluation_id", None))}
             for session in sessions
             if session.alerts
             for value in alert_documents(session)
@@ -54,6 +55,9 @@ def install_alert_routes(app, manager, role_for):
         )
         if session is None:
             raise HTTPException(404, {"code": "unknown_alert"})
+        simulation = manager.sessions.get(session.session_id)
+        if simulation is not None:
+            simulation.require_interactive()
         async with session.command_lock:
             if session.state not in ("RUNNING", "PAUSED"):
                 raise HTTPException(409, {"code": "alert_unavailable"})
@@ -67,4 +71,4 @@ def install_alert_routes(app, manager, role_for):
             for message in messages:
                 session.broadcast_info(message)
             project = getattr(session, "public_alert_document", lambda value: value)
-            return project(document) | {"sessionId": session.session_id}
+            return project(document) | {"sessionId": session.session_id, "readOnly": False}

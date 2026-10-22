@@ -9,6 +9,7 @@ export interface NewtonViewer {
 }
 
 export interface PlatformSession {
+  evaluationId?: string;
   sessionId: string;
   sceneId: string;
   sceneVersion?: string;

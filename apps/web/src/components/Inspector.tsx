@@ -122,9 +122,10 @@ export function Inspector({
           store={client.info}
           binding={device}
           definition={definition}
-          disabledReason={client.readOnly ? 'Recorded sessions are read-only.' : undefined}
+          disabledReason={state.evaluationId ? '评估中，会话只读。' :
+            client.readOnly ? 'Recorded sessions are read-only.' : undefined}
           disabled={
-            client.readOnly ||
+            client.readOnly || Boolean(state.evaluationId) ||
             state.connection !== 'connected' ||
             state.role !== 'operator' ||
             !metadata.ready ||

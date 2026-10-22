@@ -5,6 +5,7 @@ Unless the caller selects them, its library, state and recordings roots default 
 checkout's `.scratch/viewer-e2e` instead of the operator's own defaults.
 """
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -40,3 +41,14 @@ async def storage_roots():
         "state": str(settings.state_root.resolve()),
         "recordings": str(settings.recordings_root.resolve()),
     }
+
+
+@app.post("/e2e/evaluation-alert-suite")
+async def evaluation_alert_suite():
+    from tests.fixtures.evaluation_alerts import prepare_suite
+
+    manager = app.state.manager
+    scene = manager.library.resolve("evaluation-alerts", launch=True, source="synthetic")
+    suite = await asyncio.to_thread(prepare_suite, manager.library.roots["user"], scene)
+    await asyncio.to_thread(manager.evaluations.suites.refresh)
+    return {"suite": suite, "sceneVersion": scene.id, "sceneContentHash": scene.content_hash}

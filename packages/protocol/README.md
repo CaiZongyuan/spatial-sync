@@ -10,6 +10,8 @@ Session recordings may also include optional JSON-safe integer `seed` (0 through
 9,007,199,254,740,991), the
 actual session seed accepted by the host. Old recordings with no known seed
 keep it absent; readers never infer a default or rewrite historical metadata.
+Evaluation recordings also omit this optional field to keep private suite seeds
+outside public metadata. Ordinary interactive recordings retain their actual seed.
 
 Format 1 and 2 recording files remain readable without rewriting their bytes.
 The metadata format remains 2, the LWLG segment codec remains 1, and the NSYN

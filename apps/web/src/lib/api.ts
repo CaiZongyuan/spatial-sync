@@ -41,6 +41,7 @@ export interface SceneSummary {
   launchable?: boolean;
 }
 export interface SessionSummary {
+  evaluationId?: string;
   sessionId: string;
   sceneId: string;
   sceneVersion?: string;
@@ -53,6 +54,21 @@ export interface SessionSummary {
   simTime: number;
   actualRtf?: number;
 }
+
+export interface SessionRequest {
+  requestId: string;
+  status: 'queued' | 'starting' | 'cancelling' | 'started' | 'cancelled' | 'expired' | 'failed';
+  sceneVersion: string;
+  source: string;
+  expiresAt: number;
+  sessionId?: string;
+  error?: { code: string };
+}
+export type SessionLaunch = SessionSummary | SessionRequest;
+export const getSessionRequest = (id: string, signal?: AbortSignal) =>
+  request<SessionRequest>(`/session-requests/${encodeURIComponent(id)}`, { signal });
+export const cancelSessionRequest = (id: string) =>
+  request<SessionRequest>(`/session-requests/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true });
 
 // The temporary legacy form launches a bare name; explicit version selection belongs to the library UI.
 export const getScenes = async () => {
@@ -70,7 +86,7 @@ export const createSession = (
   source: string,
   continueWithoutObservers = true,
 ) =>
-  request<SessionSummary>('/sessions', {
+  request<SessionLaunch>('/sessions', {
     method: 'POST',
     body: JSON.stringify({
       sceneId,
