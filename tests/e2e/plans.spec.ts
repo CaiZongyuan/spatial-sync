@@ -57,6 +57,7 @@ async function geometry(page: Page, preview: AvailablePreview, detail = false) {
     return value && value.points.length === preview.points.length &&
       Object.values(value.ghosts).every(body => body.meshes > 0 && body.source !== 'loading');
   }).toBe(true);
+  await expect(page.getByTestId('scene-viewport')).toHaveAttribute('data-camera-fitted', 'true');
   const actual = (await inspect())!;
   expect(actual.policyDriven).toBe(false);
   expect(actual.target).toEqual(preview.targetPose.p);

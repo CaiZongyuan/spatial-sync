@@ -25,7 +25,9 @@ export function PreviewNotice({ preview }: { preview: ReturnType<typeof useMotio
   </div>;
 }
 
-export function PlanScene({ client, preview }: { client: SessionClient; preview?: AvailablePreview }) {
+export function PlanScene({ client, preview, framingPending }: {
+  client: SessionClient; preview?: AvailablePreview; framingPending?: boolean;
+}) {
   const state = useClientView(client)!;
   const metrics = useRef<RenderMetrics>({ fps: 0, drawCalls: 0, objects: 0, applyMs: 0 });
   const rendered = useRef(new Map<string, RenderedPose>());
@@ -44,7 +46,7 @@ export function PlanScene({ client, preview }: { client: SessionClient; preview?
   return <figure className="plan-figure" data-testid="plan-preview-figure"><header><div><span className="eyebrow">空间视口</span><h2>路径预览</h2></div><span className="plan-tag">Z-UP · m</span></header>
     <div className="plan-scene">{state.manifest ? <SceneViewport manifest={state.manifest} client={client}
       selected={selected} select={setSelected} layers={planLayers}
-      {...{ hidden, warn, metrics, rendered, inspectVisuals, inspectPreview, recorder, preview }} previewFocus cameraPreset="isometric" compact /> :
+      {...{ hidden, warn, metrics, rendered, inspectVisuals, inspectPreview, recorder, preview, framingPending }} previewFocus cameraPreset="isometric" compact /> :
       <div className="plan-empty" role="status">正在连接计划所属的空间会话…</div>}</div>
     <figcaption><span><b>图 1</b> · {preview ? preview.policyDriven ? '由策略执行 · 仅显示目标' : '预览 · 示教轨迹' : '选择机械臂步骤以查看路径'}</span>
       {preview && <span>{preview.policyDriven ? '目标位姿' : `${preview.points.length} 个 TCP 采样点 · ${state.manifest ? previewBodies(state.manifest, preview).length : 0} 个目标部件`} · sim {preview.simTime.toFixed(2)}s</span>}</figcaption>
@@ -85,7 +87,8 @@ function PlanConnection({ id }: { id: string }) {
     {connectionError && <span role="status">会话暂不可用：{connectionError}</span>}</div>
     <div className={`plan-detail-grid${live ? ' is-live' : ''}`}>{live ?
       <div className="plan-empty">实况计划通过设备回执确认结果。设备布局与读数可在实况中查看。</div> :
-      <PlanScene client={client} preview={preview.value} />}
+      <PlanScene client={client} preview={preview.value}
+        framingPending={Boolean(metadata.loading || (!metadata.error && preview.framingPending))} />}
       <PlanChecklist {...{ client, plan, entry, document, previous: metadata.previous }} fullPage selected={step?.id}
         metadataError={metadata.error} metadataRetry={metadata.refresh} historyError={metadata.historyError}
         select={step => void navigate({ to: '/plans/$planId', params: { planId: id }, search: prior => ({ ...prior, step }) })}

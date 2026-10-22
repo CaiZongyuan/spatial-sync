@@ -78,8 +78,9 @@ export function useMotionPreview(client: SessionClient | undefined, plan: Operat
     planId: document.id, revision: document.revision, stepId: selected.id, sessionId: document.sessionId,
     sceneRevision: document.sceneRevision, epoch: document.epoch,
   } : undefined;
-  const enabled = Boolean(client && !client.readOnly && plan?.target !== 'live'
-    && connected && sameContext && selected && 'do' in selected);
+  const wantsPreview = Boolean(client && !client.readOnly && plan?.target !== 'live'
+    && selected && 'do' in selected);
+  const enabled = Boolean(wantsPreview && connected && sameContext);
   const identity = `${enabled}:${JSON.stringify(scope)}`;
   const [state, setState] = useState<{ identity?: string; value?: MotionPreview; error?: string }>({});
   const [retry, setRetry] = useState(0);
@@ -102,6 +103,9 @@ export function useMotionPreview(client: SessionClient | undefined, plan: Operat
     return () => { disposed = true; clearInterval(timer); pending?.abort(); };
   }, [enabled, identity, refreshKey, retry]); // Identity contains every immutable scope field.
   const response = state.identity === identity && enabled ? state : {};
+  // A binary sample can render before the parent's cached connection/context view refreshes.
+  const unavailableContext = Boolean(current && view?.manifest && client?.buffer.latestSample && !sameContext);
+  const framingPending = wantsPreview && !unavailableContext && !response.value && !response.error;
   const explanation = client?.readOnly ? '录制未包含路径预览，回放仅重现已记录的计划状态。' :
     plan?.target === 'live' ? '实况设备动作不提供仿真路径预览。' :
     !selected ? '选择步骤以查看预览。' : !('do' in selected) ? '等待与检查步骤不产生机械臂路径。' :
@@ -109,5 +113,6 @@ export function useMotionPreview(client: SessionClient | undefined, plan: Operat
         !connected ? '会话未连接，路径预览暂不可用。' : response.value && !response.value.available
           ? '此动作未提供机械臂路径预览。' : undefined;
   return { value: response.value?.available ? response.value : undefined, error: response.error,
-    explanation, loading: enabled && !response.value && !response.error, retry: () => setRetry(value => value + 1) };
+    explanation, framingPending, loading: enabled && !response.value && !response.error,
+    retry: () => setRetry(value => value + 1) };
 }
