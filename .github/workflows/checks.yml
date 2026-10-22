@@ -86,6 +86,9 @@ jobs:
   browser-acceptance:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -107,7 +110,6 @@ jobs:
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm --filter @spatial-sync/web exec playwright install --with-deps chromium
       - name: Browser acceptance against SyntheticSource
         env:
           PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
