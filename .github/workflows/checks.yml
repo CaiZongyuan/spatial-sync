@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - lane: core
-            tests: tests/contract tests/unit tests/gateway/test_evaluation_api.py
+            tests: tests/contract tests/unit tests/gateway/test_evaluation_api.py tests/gateway/test_info.py
           - lane: gateway
             tests: >-
               tests/gateway
@@ -28,6 +28,7 @@ jobs:
               --ignore=tests/gateway/test_asset_imports.py
               --ignore=tests/gateway/test_structure_validation.py
               --ignore=tests/gateway/test_evaluation_api.py
+              --ignore=tests/gateway/test_info.py
           - lane: library-templates
             tests: >-
               tests/gateway/test_binding_templates.py
@@ -93,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -113,7 +114,7 @@ jobs:
       - run: pnpm build
       - name: Browser acceptance against SyntheticSource
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/4
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/5
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
@@ -127,7 +128,7 @@ jobs:
             sleep 0.5
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
-          # Split individual cases between shards; each gateway still runs one test worker.
+          # Split the same individual cases across five shards; each gateway keeps one test worker.
           SPATIAL_E2E_VIDEO=0 pnpm test:e2e --fully-parallel --workers=1 --shard="$PLAYWRIGHT_SHARD"
       - uses: actions/upload-artifact@v4
         if: always()
