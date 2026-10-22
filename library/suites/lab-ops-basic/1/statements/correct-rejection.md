@@ -1,0 +1,1 @@
+With the initial lid open, try starting an empty centrifuge at 500 rpm for one second. Inspect the rejection, then submit an operation Plan, close the lid, run that cycle, and leave the centrifuge idle with the lid closed.

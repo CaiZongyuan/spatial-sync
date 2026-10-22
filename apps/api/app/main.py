@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
+from apps.api.app.agent_routes import install_agent_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.device_host import DeviceHost
@@ -208,6 +209,7 @@ def create_app(
     install_live_routes(app, manager, settings, lambda headers: _role(headers, settings))
 
     install_evaluation_routes(app, evaluations, lambda headers: _role(headers, settings))
+    install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))

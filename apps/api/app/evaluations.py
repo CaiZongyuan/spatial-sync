@@ -234,6 +234,9 @@ class EvaluationService:
                 422, {"code": "unsupported_subject", "message": "Select an existing scene-bound program ID"}
             )
         suite = self.suites.resolve(body.suite)
+        if suite.metadata["layer"] != "embodied":
+            raise HTTPException(422, {"code": "agent_runner_unavailable",
+                                      "message": "Agent SDK execution is not available"})
         selected = await asyncio.to_thread(
             self.manager.library.resolve,
             suite.metadata["scene"],

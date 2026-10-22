@@ -1,0 +1,29 @@
+dimensions:
+- id: finalState
+  weight: 60
+  when:
+    all:
+    - entity: $session
+      property: state
+      equals: PAUSED
+    - entity: $session
+      property: epoch
+      equals: 1
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 12
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60

@@ -58,7 +58,8 @@ class GatewayClient:
         if self._owns_http:
             await self.http.aclose()
 
-    async def request(self, method, path, *, actor="cli:lw", timeout=30, response_headers=None, **kwargs):
+    async def request(self, method, path, *, actor="cli:lw", timeout=30, response_headers=None,
+                      response_bytes=False, **kwargs):
         headers = kwargs.pop("headers", {}) | {"X-Actor": actor}
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
@@ -69,6 +70,8 @@ class GatewayClient:
             raise GatewayError(f"Gateway connection failed ({type(exc).__name__})") from exc
         if response_headers is not None:
             response_headers.update(response.headers)
+        if response_bytes and not response.is_error:
+            return response.content
         try:
             document = response.json()
         except ValueError as exc:
@@ -235,6 +238,63 @@ class GatewayClient:
 
     async def suites_list(self):
         return (await self.request("GET", "/api/v1/suites"))["suites"]
+
+    @staticmethod
+    def _agent_path(id):
+        name = id.removeprefix("agent/")
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name):
+            raise ValueError("Select an Agent name or agent/name")
+        return "/api/v1/agents/" + name
+
+    async def agents_list(self):
+        return (await self.request("GET", "/api/v1/agents"))["agents"]
+
+    async def agent_show(self, id):
+        return await self.request("GET", self._agent_path(id))
+
+    async def agent_versions(self, id):
+        return (await self.request("GET", self._agent_path(id) + "/versions"))["versions"]
+
+    async def agent_snapshot(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._agent_path(id) + "/snapshots", actor=actor)
+
+    async def harness_diff(self, id, before, after):
+        result = await self.request("GET", self._agent_path(id) + f"/versions/{after}",
+                                    params={"against": before})
+        return result["diff"]
+
+    async def agent_export(self, id, version, output):
+        data = await self.request("GET", self._agent_path(id) + f"/versions/{version}/snapshot",
+                                  response_bytes=True)
+        try:
+            with Path(output).open("xb") as stream:
+                stream.write(data)
+        except OSError as exc:
+            raise ValueError("Snapshot output must be a new writable file") from exc
+        return {"agent": "agent/" + id.removeprefix("agent/"), "version": version, "output": output}
+
+    @staticmethod
+    def _snapshot_bytes(archive):
+        try:
+            path = Path(archive)
+            if (path.suffix != ".tar" or path.is_symlink() or path.is_junction()
+                or path.stat().st_size > 3 * 1024 * 1024):
+                raise ValueError("Select a portable Harness .tar archive of at most 3 MiB")
+            return path.read_bytes()
+        except OSError as exc:
+            raise ValueError("Cannot read Harness tar archive") from exc
+
+    async def agent_import(self, id, archive, *, actor="cli:lw"):
+        return await self.request("POST", self._agent_path(id) + "/snapshots",
+                                  content=self._snapshot_bytes(archive),
+                                  headers={"Content-Type": "application/x-tar"}, actor=actor)
+
+    async def agent_create(self, id, archive, title=None, *, actor="cli:lw"):
+        self._agent_path(id)
+        params = {"id": id, **({"title": title} if title else {})}
+        return await self.request("POST", "/api/v1/agents", params=params,
+                                  content=self._snapshot_bytes(archive),
+                                  headers={"Content-Type": "application/x-tar"}, actor=actor)
 
     async def suite_show(self, suite):
         return await self.request("GET", self._suite_path(suite))

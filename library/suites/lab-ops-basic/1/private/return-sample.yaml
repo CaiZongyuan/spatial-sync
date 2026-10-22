@@ -1,0 +1,45 @@
+dimensions:
+- id: finalState
+  weight: 50
+  when:
+    all:
+    - entity: /World/Lab/Tubes/Tube01
+      property: location
+      equals: /World/Lab/Rack/A1
+    - entity: /World/Lab/Centrifuge
+      property: slots
+      equals:
+      - null
+      - null
+      - null
+      - null
+    - entity: $process
+      property: succeeded:/World/Lab/RobotA.pickPlace
+      gte: 2
+    - entity: $process
+      property: succeeded:/World/Lab/RobotA.home
+      gte: 1
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 12
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60
+- id: planFirst
+  weight: 10
+  when:
+    entity: $process
+    property: planFirst
+    equals: true

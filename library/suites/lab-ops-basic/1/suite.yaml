@@ -1,0 +1,53 @@
+id: suite/lab-ops-basic
+title: Basic laboratory operations
+layer: agent
+scene: lab-demo@3
+sceneContentHash: 224e5a762fb296e3f97468debdcde106e797274100547f2dd88cb17678b83b9a
+source: synthetic
+target: agent/lab-operator
+runsPerCase: 3
+cases:
+- id: centrifuge-two
+  statement: statements/centrifuge-two.md
+  grading: private/centrifuge-two.yaml
+  split: train
+- id: pause-reset
+  statement: statements/pause-reset.md
+  grading: private/pause-reset.yaml
+  split: train
+- id: incubator-alert
+  statement: statements/incubator-alert.md
+  grading: private/incubator-alert.yaml
+  split: train
+- id: correct-rejection
+  statement: statements/correct-rejection.md
+  grading: private/correct-rejection.yaml
+  split: train
+- id: transfer-tube
+  statement: statements/transfer-tube.md
+  grading: private/transfer-tube.yaml
+  split: train
+- id: return-sample
+  statement: statements/return-sample.md
+  grading: private/return-sample.yaml
+  split: train
+- id: close-lid-safe
+  statement: statements/close-lid-safe.md
+  grading: private/close-lid-safe.yaml
+  split: train
+- id: stop-cycle
+  statement: statements/stop-cycle.md
+  grading: private/stop-cycle.yaml
+  split: train
+- id: cabinet-blower
+  statement: statements/cabinet-blower.md
+  grading: private/cabinet-blower.yaml
+  split: train
+- id: preserve-high-risk-gate
+  statement: statements/preserve-high-risk-gate.md
+  grading: private/preserve-high-risk-gate.yaml
+  split: train
+- id: held-out-safe-sensor
+  statement: statements/held-out-safe-sensor.md
+  grading: private/held-out-safe-sensor.yaml
+  split: test

@@ -104,7 +104,55 @@ def description_arguments(default, metavar="id"):
 
 COMMANDS = (
     Command(
-        path=("suite", "ls"), help="List public train metadata for pinned embodied suites.",
+        path=("agent", "ls"), help="List Agents and their configured model and Reference version.",
+        method="agents_list", output_type=list[dict[str, Any]], mcp_name="agent_list",
+    ),
+    Command(
+        path=("agent", "show"), help="Describe an Agent; null model fields mean unconfigured.",
+        method="agent_show", arguments=(Argument("id", ("id",), str, "Agent name or agent/name"),),
+        mcp_name="agent_show",
+    ),
+    Command(
+        path=("agent", "versions"), help="List immutable Harness versions.", method="agent_versions",
+        arguments=(Argument("id", ("id",), str, "Agent name or agent/name"),),
+        output_type=list[dict[str, Any]], mcp_name="agent_versions",
+    ),
+    Command(
+        path=("agent", "snapshot"), help="Snapshot the editable Harness without promoting its Reference.",
+        method="agent_snapshot", arguments=(Argument("id", ("id",), str, "Agent name or agent/name"),),
+        mcp_name="agent_snapshot", actor=True,
+    ),
+    Command(
+        path=("agent", "export"), help="Export a credential-free Harness tar to a new local file.",
+        method="agent_export", arguments=(
+            Argument("id", ("id",), str, "Agent name or agent/name"),
+            Argument("version", ("version",), int, "Immutable Harness version"),
+            Argument("output", ("--output",), str, "New output .tar path on this client's filesystem"),
+        ), mcp_name="agent_export",
+    ),
+    Command(
+        path=("agent", "import"), help="Import and restore a Harness tar as a new immutable Candidate.",
+        method="agent_import", arguments=(
+            Argument("id", ("id",), str, "Agent name or agent/name"),
+            Argument("archive", ("archive",), str, "Harness .tar on this client's filesystem"),
+        ), mcp_name="agent_import", actor=True,
+    ),
+    Command(
+        path=("agent", "create"), help="Create a new Agent from a credential-free Harness tar.",
+        method="agent_create", arguments=(
+            Argument("id", ("id",), str, "New Agent name or agent/name"),
+            Argument("archive", ("archive",), str, "Harness .tar on this client's filesystem"),
+            Argument("title", ("--title",), str | None, "Agent title", None),
+        ), mcp_name="agent_create", actor=True,
+    ),
+    Command(
+        path=("harness", "diff"), help="Compare two immutable Harness versions.", method="harness_diff",
+        arguments=(Argument("id", ("id",), str, "Agent name or agent/name"),
+                   Argument("before", ("vA",), int, "Earlier Harness version"),
+                   Argument("after", ("vB",), int, "Later Harness version")), mcp_name="harness_diff",
+    ),
+    Command(
+        path=("suite", "ls"), help="List public train metadata for pinned Agent and embodied suites.",
         method="suites_list", output_type=list[dict[str, Any]], mcp_name="suite_list",
     ),
     Command(

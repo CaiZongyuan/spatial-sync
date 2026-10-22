@@ -14,3 +14,6 @@ packages/protocol/fixtures/*.json text eol=lf
 library/scenes/**/validation.json linguist-generated=true
 library/assets/**/validation.json linguist-generated=true
 assets/scene-previews/** linguist-generated=true
+# Immutable Harness snapshots and Agent evaluation packages keep identical bytes.
+library/agents/** -text
+library/suites/lab-ops-basic/** -text
