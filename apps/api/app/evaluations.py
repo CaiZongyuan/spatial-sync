@@ -683,8 +683,10 @@ def install_evaluation_routes(app, service, role_for):
         rows = [row for row in service.store.rows if row["suite"] == version.id and row["split"] == "train"
                 and (subject is None or row["subject"] == subject)]
         if (compare is None) != (against is None):
-            raise HTTPException(422, {"code": "invalid_comparison", "message": "Provide compare and against together"})
-        result = {"rows": [public_score(row) for row in rows]}
+            raise HTTPException(
+                422, {"code": "invalid_comparison", "message": "Provide compare and against together"}
+            )
+        result = {"rows": [public_score(row, rows) for row in rows]}
         if compare is not None:
             selected = [next((row for row in rows if row["evaluationId"] == identifier), None)
                         for identifier in (compare, against)]
@@ -692,7 +694,9 @@ def install_evaluation_routes(app, service, role_for):
                 raise HTTPException(404, {"code": "unknown_evaluation"})
             first, second = selected
             if first["key"] != second["key"]:
-                raise HTTPException(409, {"code": "not_comparable", "message": "Evaluation conditions differ"})
+                raise HTTPException(
+                    409, {"code": "not_comparable", "message": "Evaluation conditions differ"}
+                )
             result["comparison"] = {"compare": compare, "against": against,
                                     "scoreDelta": first["score"] - second["score"]}
         return result
@@ -700,13 +704,14 @@ def install_evaluation_routes(app, service, role_for):
     @app.post("/api/v1/evaluations", status_code=202)
     async def create_evaluation(body: EvaluationRequest, request: Request):
         operator(request)
-        return public_evaluation(await service.submit(body))
+        return public_evaluation(await service.submit(body), service.store.rows)
 
     @app.get("/api/v1/evaluations")
     async def evaluations():
         return {
             "evaluations": [
-                public_evaluation(value) for value in service.store.records.values() if value["split"] == "train"
+                public_evaluation(value, service.store.rows)
+                for value in service.store.records.values() if value["split"] == "train"
             ]
         }
 
@@ -715,7 +720,7 @@ def install_evaluation_routes(app, service, role_for):
         record = service.store.records.get(identifier)
         if record is None or record["split"] != "train":
             raise HTTPException(404, {"code": "unknown_evaluation"})
-        return public_evaluation(record)
+        return public_evaluation(record, service.store.rows)
 
     @app.post("/api/v1/evaluations/{identifier}/cancel")
     async def cancel(identifier: str, request: Request):
@@ -731,7 +736,7 @@ def install_evaluation_routes(app, service, role_for):
             service._queue = deque(item for item in service._queue if item != ("evaluation", identifier))
             await persist(service.store.save, record | {"status": "cancelled", "endedAt": now()})
         service.wake()
-        return public_evaluation(service.store.records[identifier])
+        return public_evaluation(service.store.records[identifier], service.store.rows)
 
     @app.post("/api/v1/evaluations/{identifier}/cleanup")
     async def cleanup(identifier: str, request: Request):
