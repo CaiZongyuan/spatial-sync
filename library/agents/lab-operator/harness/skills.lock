@@ -1,5 +1,5 @@
 skills:
 - name: lab
-  version: 6d11e47ab5e80b681d385223d9bab64ec941deb9bcf584909f91ba74a159d6c4
+  version: 5fea203445c6aeee93b5cdfe8cb00f49a3488cdb03f3c4b03f2c2c4ac3ba540d
 - name: lab-operate
-  version: d1bd66d754545262d2332561c015db5aaaf44c37fd21073e37edff1ba415902d
+  version: 4416eb336558802d2b000778aa69b29705f5cd94dc5ef9f9d796bb800bb676be

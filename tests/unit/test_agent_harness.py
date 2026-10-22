@@ -39,6 +39,11 @@ def tar_entries(entries):
     return stream.getvalue()
 
 
+def test_bundled_editable_harness_matches_its_frozen_reference_on_this_checkout(tmp_path):
+    agents = library(tmp_path)
+    assert pack_harness(BUILTIN_ROOT / "agents/lab-operator/harness") == agents.export("lab-operator", 1)
+
+
 def test_snapshot_export_import_fork_diff_and_reference_do_not_promote(tmp_path):
     agents = library(tmp_path)
     original = agents.export("lab-operator", 1)
