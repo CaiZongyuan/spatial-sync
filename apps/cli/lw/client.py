@@ -99,6 +99,24 @@ class GatewayClient:
     async def status(self):
         return await self.request("GET", await self.route())
 
+    async def vault_names(self):
+        return (await self.request("GET", "/api/v1/vault"))["names"]
+
+    async def models(self, query=None):
+        return (await self.request("GET", "/api/v1/models", params={"q": query} if query else {}))["models"]
+
+    async def add_model(self, ref, default_thinking="default", credential_name=None):
+        provider, separator, model_id = ref.partition("/")
+        if not separator or not provider or not model_id:
+            raise GatewayError("Use a model reference provider/model_id")
+        return await self.request("POST", "/api/v1/models", json={
+            "provider": provider, "modelId": model_id, "defaultThinking": default_thinking,
+            "credentialName": credential_name,
+        })
+
+    async def default_model(self, ref):
+        return await self.request("PUT", "/api/v1/models/default", json={"ref": ref})
+
     async def catalog(self):
         return await self.request("GET", await self.route() + "/catalog")
 

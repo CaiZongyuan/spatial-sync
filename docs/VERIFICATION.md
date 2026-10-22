@@ -50,6 +50,9 @@ traces/screenshots and explicit captures remain enabled in either mode.
 CLI tests use the installed `lw` entrypoint, actual HTTP, official SDK clients
 and stdio; run `uv sync --frozen --group dev` before the environment serves any
 other consumer. Each test and benchmark owns its recording directory.
+Set `SPATIAL_STATE_ROOT` to the same isolated directory for the owned API and E2E
+process (for example `.scratch/viewer-e2e/state`). The model-page journey seeds
+only a generated fake credential locally, never through HTTP or in the user's Vault.
 
 ## Information and recording checks
 

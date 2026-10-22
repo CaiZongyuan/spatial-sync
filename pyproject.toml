@@ -25,10 +25,12 @@ lw = "lw.__main__:main"
 requires = ["setuptools>=80,<83"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["apps/cli"]
-include = ["lw*"]
-namespaces = false
+[tool.setuptools]
+packages = ["lw", "packages.vault"]
+
+[tool.setuptools.package-dir]
+lw = "apps/cli/lw"
+"packages.vault" = "packages/vault"
 
 [tool.setuptools.data-files]
 "share/spatial-sync/skills/lab" = ["skills/lab/SKILL.md"]

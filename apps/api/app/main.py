@@ -37,6 +37,7 @@ from apps.api.app.live_routes import install_live_routes
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import install_recording_routes
+from apps.api.app.resource_routes import install_resource_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -188,6 +189,12 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
+        if request.url.path.startswith(("/api/v1/models", "/api/v1/prices", "/api/v1/vault")):
+            # These endpoints never echo rejected input (including accidental credential fields).
+            return JSONResponse(
+                {"detail": {"code": "invalid_resource", "message": "Resource metadata is invalid"}},
+                status_code=422,
+            )
         # A valid JSON numeric literal can overflow the parser's float range.
         # Its diagnostic input must itself remain valid JSON in the 422 response.
         return JSONResponse(
@@ -205,6 +212,7 @@ def create_app(
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
+    install_resource_routes(app, settings, lambda headers: _role(headers, settings))
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
@@ -274,7 +282,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "If-None-Match", "X-Actor"],
     )
 

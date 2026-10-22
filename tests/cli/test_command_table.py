@@ -16,7 +16,7 @@ async def test_generated_inspections_match_http_cli_and_mcp_and_preserve_all_too
     transport = StdioServerParameters(command=str(LW), args=["mcp"], env=lab[2])
     async with Client(transport, mode="legacy") as mcp:
         tools = (await mcp.list_tools()).tools
-        # Public input/output schemas captured from the unmodified baseline, 63abf03.
+        # Original eight schemas remain unchanged; model_ls is an additive metadata tool.
         expected = json.loads((Path(__file__).parent / "fixtures/mcp_tools.json").read_text(encoding="utf-8"))
         schemas = {tool.name: {"input": tool.input_schema, "output": tool.output_schema} for tool in tools}
         # The operation-plan feature adds optional HTTP correlation, leaving legacy calls unchanged.
