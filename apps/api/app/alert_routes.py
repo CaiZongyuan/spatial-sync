@@ -54,7 +54,9 @@ def install_alert_routes(app, manager, role_for):
         )
         if session is None:
             raise HTTPException(404, {"code": "unknown_alert"})
-        session.require_interactive()
+        simulation = manager.sessions.get(session.session_id)
+        if simulation is not None:
+            simulation.require_interactive()
         async with session.command_lock:
             if session.state not in ("RUNNING", "PAUSED"):
                 raise HTTPException(409, {"code": "alert_unavailable"})

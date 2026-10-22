@@ -5,6 +5,7 @@ import time
 
 import httpx
 import pytest
+import yaml
 from lw.client import GatewayClient, GatewayError
 from test_live_devices import EXAMPLE, KEY, FakeBrokerTransport
 
@@ -37,8 +38,18 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
         episode_entered.set()
         await asyncio.Event().wait()
 
-    app = create_app(Settings(live_bindings=EXAMPLE, state_root=tmp_path / "state",
-                               recordings_root=tmp_path / "recordings"), live_transport_factory=factory)
+    configuration = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    configuration["layout"] = "lab-demo@3"
+    configuration["entities"][0]["placeAt"] = "/World/Lab/Incubator"
+    configuration["entities"][0]["alerts"] = {"leaseHot": {
+        "when": {"all": [{"property": "temperatureC", "gt": 40}]}, "forSeconds": .01,
+        "severity": "critical", "message": "Combined consumer fixture",
+    }}
+    bindings = tmp_path / "live.yaml"
+    bindings.write_text(yaml.safe_dump(configuration), encoding="utf-8")
+    app = create_app(Settings(live_bindings=bindings, state_root=tmp_path / "state",
+                               recordings_root=tmp_path / "recordings", recordings_keep=1),
+                     live_transport_factory=factory)
     app.state.manager.evaluations._episode = hold_episode
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app),
@@ -57,6 +68,11 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
                 session_id = owned["sessionId"]
                 source = app.state.manager.sessions[session_id].source
                 assert isinstance(source, SyntheticSource)
+                assert app.state.manager.live.manifest is None
+                selected = app.state.manager.library.resolve("lab-demo@3")
+                references = await asyncio.to_thread(app.state.manager.library_deletions.inspection.scan,
+                                                     selected, "scene")
+                assert {"suite", "live"} <= {item["kind"] for item in references["references"]}
                 broker = transports[0]
                 broker.emit("lab/incubator2/telemetry", {
                     "temp": 37, "co2": 5, "humidity": 60, "doorOpen": False, "setpoint": 37,
@@ -85,6 +101,54 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
                                                        "status": "succeeded"})
                     await until(lambda: client.get_invocation(live["invocationId"]),
                                 lambda value: value["status"] == "succeeded")
+                    plan_response = await http.post("/api/v1/plans", json={
+                        "title": "Live plan during evaluation", "target": "live", "steps": [{
+                            "id": 1, "do": {"entity": KEY, "action": "setSetpoint",
+                                               "params": {"temperatureC": 39}},
+                        }],
+                    })
+                    assert plan_response.status_code == 201, plan_response.text
+                    plan = plan_response.json()
+                    assert plan["approvalMode"] == "human" and len(broker.publications) == 1
+                    early = await client.invoke_action(KEY, "setSetpoint", {"temperatureC": 39}, wait=False,
+                                                        planId=plan["id"], stepId=1,
+                                                        planRevision=plan["revision"])
+                    assert early["error"]["code"] == "plan_not_approved" and len(broker.publications) == 1
+                    approved = await http.post(f"/api/v1/approvals/{plan['approvalId']}/decision",
+                                               json={"decision": "approve"}, headers={"X-Actor": "user:plan"})
+                    assert approved.status_code == 200, approved.text
+                    exact = await client.invoke_action(KEY, "setSetpoint", {"temperatureC": 39}, wait=False,
+                                                        planId=plan["id"], stepId=1,
+                                                        planRevision=plan["revision"])
+                    await until(lambda: client.get_invocation(exact["invocationId"]),
+                                lambda value: value["status"] == "running")
+                    assert len(broker.publications) == 2
+                    assert broker.publications[-1][1]["params"] == {"temperatureC": 39}
+                    broker.emit("lab/incubator2/ack", {"requestId": exact["invocationId"],
+                                                       "status": "succeeded"})
+                    await until(lambda: client.get_invocation(exact["invocationId"]),
+                                lambda value: value["status"] == "succeeded")
+                    broker.emit("lab/incubator2/telemetry", {
+                        "temp": 50, "co2": 5, "humidity": 60, "doorOpen": False, "setpoint": 37,
+                    })
+
+                    async def live_alerts():
+                        return (await http.get("/api/v1/alerts", params={"active": "true"})).json()["alerts"]
+
+                    [alert] = await until(live_alerts, lambda values: len(values) == 1)
+                    assert alert["sessionId"] == app.state.manager.live.session_id
+                    inbox = await client.inbox_poll()
+                    assert any(item["alertId"] == alert["alertId"] for item in inbox["alerts"])
+                    acknowledged = await http.post(f"/api/v1/alerts/{alert['alertId']}/ack",
+                                                   json={"note": "Live remains independent"})
+                    assert acknowledged.status_code == 200, acknowledged.text
+                    history = await client.history_query(KEY, "temperatureC", "1h")
+                    assert any(point[1] == 50 for point in history["points"])
+                    live_log = app.state.manager.live.recording
+                    assert history["recordingId"] == live_log.metadata["sessionId"]
+                    metadata = await http.get(f"/recordings/{history['recordingId']}/recording.json")
+                    assert metadata.status_code == 200 and metadata.json()["kind"] == "live"
+                    assert metadata.json()["sceneVersion"] is None
                 # MCP startup uses this public client discovery with no interactive simulation selected.
                 async with GatewayClient(http=http) as discovery:
                     catalog = await discovery.catalog_if_active()

@@ -4,11 +4,12 @@ import asyncio
 import json
 import shutil
 
-from apps.api.app.recordings import RECORDING_ID, RecordingRepository
+from apps.api.app.live_recordings import LiveRecordingRepository
+from apps.api.app.recordings import RECORDING_ID
 from packages.library.transactions import durable_json
 
 
-class EvaluationRecordingRepository(RecordingRepository):
+class EvaluationRecordingRepository(LiveRecordingRepository):
     def __init__(self, settings, asset_registry):
         super().__init__(settings, asset_registry)
         self.pinned = set()
@@ -34,7 +35,8 @@ class EvaluationRecordingRepository(RecordingRepository):
         values = [
             item
             for item in self.list()
-            if item.get("status") in ("complete", "incomplete") and item["sessionId"] not in self.pinned
+            if item["kind"] == "session" and item.get("status") in ("complete", "incomplete")
+            and item["sessionId"] not in self.pinned
         ]
         for value in values[self.keep :]:
             directory = self.root / value["sessionId"]
