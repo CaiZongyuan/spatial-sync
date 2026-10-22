@@ -2,12 +2,23 @@
 
 import asyncio
 import json
+from contextlib import contextmanager, nullcontext
 from typing import Literal
 
 from fastapi import HTTPException, Query, Response
 
 from packages.info.history import LIMIT, aggregate, query_window, read_samples
 from packages.info.recording import recording_metadata
+
+
+@contextmanager
+def _history_reader(log):
+    try:
+        with log.reader() if hasattr(log, "reader") else nullcontext():
+            yield
+    except OSError as error:
+        raise HTTPException(503, {"code": "history_unavailable",
+                                  "message": "Recording is unavailable"}) from error
 
 
 def install_history_routes(app, manager, repository):
@@ -26,45 +37,63 @@ def install_history_routes(app, manager, repository):
         if recording is not None and sessionId is not None:
             raise HTTPException(422, {"code": "invalid_history_query",
                                       "message": "Choose recording or sessionId"})
+        live_query = False
         if recording is None:
             if key.startswith("/Real/"):
-                raise HTTPException(503, {"code": "live_unavailable", "message": "Live Lab is not available"})
-            sessions = [manager.get(sessionId)] if sessionId else manager.sessions.values()
-            session = next((session for session in sessions if session.state in ("RUNNING", "PAUSED")), None)
+                session = getattr(manager, "live", None)
+                if session is None or session.state not in ("RUNNING", "PAUSED"):
+                    raise HTTPException(503, {"code": "live_unavailable",
+                                              "message": "Live Lab is not available"})
+                if sessionId is not None and sessionId != session.session_id:
+                    raise HTTPException(422, {"code": "invalid_history_query",
+                                              "message": "The selected session is not this Live Lab"})
+                live_query = True
+            else:
+                sessions = [manager.get(sessionId)] if sessionId else manager.sessions.values()
+                session = next((item for item in sessions if item.state in ("RUNNING", "PAUSED")), None)
             if session is None:
                 raise HTTPException(409, {"code": "history_unavailable",
                                           "message": "No active session recording"})
-            recording = session.session_id
             if session.recording is None:
                 raise HTTPException(409, {"code": "history_unavailable", "message": "Recording is disabled"})
+            recording = session.recording.metadata["sessionId"] if live_query else session.session_id
         else:
             session = manager.sessions.get(recording)
-        try:
-            if session is not None and session.recording is not None:
-                metadata = await session.recording.checkpoint()
-                directory = session.recording.directory
-            else:
-                path = await asyncio.to_thread(repository.resolve, recording, "recording.json")
-                directory = path.parent
-                metadata = recording_metadata(json.loads(await asyncio.to_thread(path.read_bytes)))
-            if metadata.get("sessionId") != recording:
-                raise ValueError("Recording identity does not match")
-            if not metadata["segments"]:
-                raise HTTPException(409, {"code": "history_unavailable",
-                                          "message": "Recording has no samples"})
-            end = max(segment["endSampleTimeMs"] for segment in metadata["segments"])
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            raise HTTPException(503, {"code": "history_unavailable",
-                                      "message": "Recording is unavailable"}) from error
-        try:
-            lower, upper, interval = query_window(since, until, every, end)
-        except ValueError as error:
-            raise HTTPException(422, {"code": "invalid_history_query", "message": str(error)}) from error
-        try:
-            samples = await asyncio.to_thread(read_samples, directory, metadata, key, property, lower, upper)
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            raise HTTPException(503, {"code": "history_unavailable",
-                                      "message": "Recording cannot be read"}) from error
+            live = getattr(manager, "live", None)
+            if (live is not None and live.recording is not None
+                    and live.recording.metadata["sessionId"] == recording):
+                session = live
+        log = session.recording if session is not None else None
+        # A Live reader pins before its checkpoint, through actual threaded I/O.
+        with _history_reader(log):
+            try:
+                if log is not None:
+                    metadata = await log.checkpoint()
+                    directory = log.directory
+                else:
+                    path = await asyncio.to_thread(repository.resolve, recording, "recording.json")
+                    directory = path.parent
+                    metadata = recording_metadata(json.loads(await asyncio.to_thread(path.read_bytes)))
+                if metadata.get("sessionId") != recording:
+                    raise ValueError("Recording identity does not match")
+                if not metadata["segments"]:
+                    raise HTTPException(409, {"code": "history_unavailable",
+                                              "message": "Recording has no samples"})
+                end = (session.sample_time_ms() if live_query
+                       else max(segment["endSampleTimeMs"] for segment in metadata["segments"]))
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise HTTPException(503, {"code": "history_unavailable",
+                                          "message": "Recording is unavailable"}) from error
+            try:
+                lower, upper, interval = query_window(since, until, every, end)
+            except ValueError as error:
+                raise HTTPException(422, {"code": "invalid_history_query", "message": str(error)}) from error
+            try:
+                read = log.read_pinned if hasattr(log, "read_pinned") else asyncio.to_thread
+                samples = await read(read_samples, directory, metadata, key, property, lower, upper)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise HTTPException(503, {"code": "history_unavailable",
+                                          "message": "Recording cannot be read"}) from error
         try:
             points, truncated = await asyncio.to_thread(aggregate, samples, lower, upper, interval, agg)
         except ValueError as error:

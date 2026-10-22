@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-21T20:35:44.076853+00:00",
+  "capturedAt": "2026-10-22T00:18:01.561710+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -38,7 +38,7 @@
   "dependencies": [
     {
       "path": "apps/api/app/recordings.py",
-      "sha256": "37de051a7726d7eddb867e361d3843c160d601d156907850c425cef35a565687"
+      "sha256": "75227ba0371c3dc77e9d5ef8c7c530d14594078734d99fbf9dc2f9e2a918d80f"
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
@@ -130,7 +130,7 @@
     },
     {
       "path": "devices/types/biosafety-cabinet.v1.yaml",
-      "sha256": "6662cfe473845cc0bc911956c24204a6332d44a9be3a0c81c6d3c561a2ced995"
+      "sha256": "f0fbee554aaa946d06aaa625c5c3c907f7b74b98adcd79a8a3b015e7b0c401c5"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -138,11 +138,11 @@
     },
     {
       "path": "devices/types/env-sensor.v1.yaml",
-      "sha256": "95ac04b69c84f27b4fd0d079d0a91607422188b9a8898c77499d9785c9aba4b4"
+      "sha256": "15669b8f623d6b6fb33d3175403aee200ba2cc4bfd1ac5e8e590ab2726ef4e06"
     },
     {
       "path": "devices/types/incubator.v1.yaml",
-      "sha256": "f1665f610193c4d85d6e76213db68cc138e1f846851b72ac3c4d34de69bff41a"
+      "sha256": "0ab8ba44bc824750fe9a9ca992b3cad0298a3681001a9e78eaa62f4fdd9bee1c"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -460,10 +460,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "f20ab0b8c23a8e1cf4565172fd6776a09cf65a486552c9a3755bc9e05213908e",
-    "catalog.json": "a93678cbcf5e58a74b667e36d4b06d6a9436a70b3b283205a0c37a6ee4f85380",
-    "state.json": "ae5be0b61d213e462ba4a846637a28957b052c13b49dcc65f9bc2ad644888964",
-    "snapshot.bin": "4328bb70f90afd0d26354f697ac0a4f00a172bcea0fc4d1762503806ca9cf529",
+    "manifest.json": "1314bd9dae40e045b848b192976893bb3d8babca2c1d9ef9bf89142ba293c61e",
+    "catalog.json": "7fe14b5073a0b79b3594d6cd222d6d9af46ef982058ad47111a6e099575950c7",
+    "state.json": "607d272be3febf0b1d97c3213a6911ddc00d39acceb2d7f6f51790ce835a01a0",
+    "snapshot.bin": "5cdb40d268403e1c91f48116254d94c8312639cec0e65d880c638906c55e53de",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

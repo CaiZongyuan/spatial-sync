@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.approvals import ApprovalConflict, Subject
+from packages.info.context import information_revision
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -36,8 +37,8 @@ def install_approval_routes(app, manager, role_for):
         available = bool(session and session.state in ("RUNNING", "PAUSED") and session.source)
         plan = manager.plans.records.get(record.subjectId) if record.subject == "plan" else None
         plan_current = bool(
-            plan and session and session.manifest and plan.approvalId == record.approvalId
-            and (plan.sceneRevision, plan.epoch) == (session.manifest.sceneRevision, session.epoch)
+            plan and session and plan.approvalId == record.approvalId
+            and (plan.sceneRevision, plan.epoch) == (information_revision(session), session.epoch)
         )
         plan_can_revoke = bool(plan_current
                                and all(step.status == "pending" for step in plan.plan.steps))

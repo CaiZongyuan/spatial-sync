@@ -1,0 +1,1 @@
+{"version":1,"segmentSha256":"8a43b4ece8fa79ec8d7bdcdc27e8ac1496c7c35c1c93bbcbc99932d35e779f92","bytes":1845,"properties":[{"key":"/Real/Incubator2","property":"temperatureC","startSampleTimeMs":1000.0,"endSampleTimeMs":2000.0,"records":[[1000.0,6,0,0],[2000.0,1183,0,0]]}],"checksum":"b7a85c78d081b18d5fc2923c9d26ba0f09f1aecb64ea0a339a1ef2c89b61b9ec"}

@@ -122,8 +122,10 @@ def install_info_routes(app, manager, role_for, *, prefix="/api/v1/sessions/{ses
 
     @app.get(prefix + "/catalog")
     async def catalog(request: Request, session=Depends(resolve_target)):
-        etag = '"' + session.manifest.sceneRevision + '"'
-        if request.headers.get("if-none-match") in (etag, session.manifest.sceneRevision):
+        if session.catalog is None:
+            raise HTTPException(409, {"code": "information_unavailable"})
+        etag = '"' + session.catalog.sceneRevision + '"'
+        if request.headers.get("if-none-match") in (etag, session.catalog.sceneRevision):
             return Response(status_code=304, headers={"ETag": etag})
         document = Catalog.model_validate(session.catalog.model_dump())
         return JSONResponse(document.model_dump(mode="json", exclude_none=True), headers={"ETag": etag})

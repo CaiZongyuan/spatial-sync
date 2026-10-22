@@ -1,6 +1,7 @@
 .platform-shell:has(.workbench) { padding-bottom: 24px; }
 .platform-page.is-detail .workbench { height: calc(100dvh - 111px); min-height: 650px; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .workbench .invocations-panel { background: var(--surface); }
+.workbench .session-telemetry { flex: 1; min-height: 0; max-width: 100%; overflow: auto; padding: 24px 0; }
 .workbench .invocations-panel.is-empty { height: 80px; min-height: 80px; }
 .workbench .invocations-panel.is-empty .invocations-list { display: flex; align-items: center; padding-block: 4px; }
 .workbench .invocations-panel.is-empty .field-note { margin: 0; padding: 0; }

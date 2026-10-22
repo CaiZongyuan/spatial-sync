@@ -14,15 +14,19 @@ from lw.client import GatewayClient
 from lw.mcp_server import create_server
 from mcp import Client, Implementation
 
+from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.device_host import DeviceHost
+from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import install_info_routes
+from apps.api.app.live_routes import install_live_routes
 from apps.api.app.main import create_app
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from apps.api.app.settings import Settings
 from apps.api.app.sources.synthetic_source import SyntheticSource
 from packages.info.approvals import ApprovalStore
+from packages.info.inbox import InboxStore
 from packages.info.plans import PlanStore
 from packages.live.bindings import load_bindings
 from packages.live.ingress import BrokerIngress, BrokerReceipt
@@ -65,11 +69,15 @@ async def live(tmp_path):
         transports.append(transport)
         return transport
 
-    approvals = ApprovalStore(tmp_path / "approvals.jsonl")
-    plans = PlanStore(tmp_path / "plans.jsonl", approvals)
+    inbox = InboxStore(tmp_path / "inbox.jsonl")
+    inbox.startup()
+    approvals = ApprovalStore(tmp_path / "approvals.jsonl", on_change=inbox.approval)
+    approvals.startup()
+    plans = PlanStore(tmp_path / "plans.jsonl", approvals, on_change=inbox.plan)
+    plans.startup()
     host = DeviceHost(load_bindings(EXAMPLE), approvals, plans, transport_factory=factory,
-                      clock=lambda: clock[0])
-    manager = SimpleNamespace(sessions={}, live=host, approvals=approvals, plans=plans)
+                      clock=lambda: clock[0], inbox=inbox)
+    manager = SimpleNamespace(sessions={}, live=host, approvals=approvals, plans=plans, inbox=inbox)
 
     def missing_session(_identity):
         raise HTTPException(404, {"code": "unknown_session"})
@@ -81,24 +89,24 @@ async def live(tmp_path):
     async def health():
         return {"sessions": [], "live": {"enabled": True}}
 
-    async def target():
-        return host
-
     def role(headers):
         return "viewer" if headers.get("authorization") == "viewer" else "operator"
     install_info_routes(app, manager, role)
-    install_info_routes(app, manager, role, prefix="/api/v1/live", resolve_target=target)
+    install_live_routes(app, manager, Settings(), role)
     install_approval_routes(app, manager, role)
     install_plan_routes(app, manager, role)
+    install_alert_routes(app, manager, role)
+    install_inbox_routes(app, manager)
     await host.start()
     host.advance()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://live") as http:
         try:
             yield SimpleNamespace(host=host, http=http, approvals=approvals, clock=clock,
-                                  transports=transports, manager=manager)
+                                  transports=transports, manager=manager, inbox=inbox)
         finally:
             await host.close()
             await plans.close()
+            await inbox.close()
     assert all(transport.closed for transport in transports)
     assert host._task is None
 
@@ -225,15 +233,166 @@ async def test_callback_thread_does_not_mutate_host_and_queue_pressure_fails_clo
     assert live.host.info.values()["/Real/Environment1"]["temperatureC"] == 22
 
 
-async def test_viewer_and_unsupported_live_plan_cannot_enter_transport(live):
+async def test_viewer_and_unknown_live_plan_cannot_enter_transport(live):
     telemetry(live)
     response = await live.http.post("/api/v1/live/actions", json=action(),
                                     headers={"Authorization": "viewer"})
     assert response.status_code == 403 and response.json()["error"]["code"] == "not_permitted"
     response = await live.http.post("/api/v1/live/actions",
                                     json=action("planned") | {"planId": "x", "stepId": 1})
-    assert response.status_code == 409 and response.json()["detail"]["code"] == "live_plan_unavailable"
+    assert response.status_code == 409 and response.json()["error"]["code"] == "unknown_plan"
     assert not live.transports[-1].publications and not live.approvals.records
+
+
+async def test_live_alerts_acknowledgement_and_inbox_cursor_survive_reopening_the_durable_store(live):
+    for _ in range(62):
+        live.clock[0] += 1
+        telemetry(live, temperature=40)
+    listed = await live.http.get("/api/v1/alerts", params={"active": "true"})
+    assert listed.status_code == 200, listed.text
+    [alert] = listed.json()["alerts"]
+    assert alert["entityKey"] == KEY and alert["sessionId"] == live.host.session_id
+    assert alert["state"] == "raised"
+    inbox = (await live.http.get("/api/v1/inbox", params={"kinds": "alert"})).json()
+    assert inbox["alerts"][0]["alertId"] == alert["alertId"]
+    assert any(message["kind"] == "alert" and message["event"] == "raised" for message in inbox["messages"])
+    cursor = inbox["cursor"]
+    ack = await live.http.post(f"/api/v1/alerts/{alert['alertId']}/ack", json={"note": "checked"},
+                               headers={"X-Actor": "user:operator"})
+    assert ack.status_code == 200, ack.text
+    assert ack.json()["acknowledgement"]["actor"] == {"kind": "user", "name": "operator"}
+    assert ack.json()["acknowledgement"]["sampleTimeMs"] == live.clock[0] * 1000
+    retry = await live.http.post(f"/api/v1/alerts/{alert['alertId']}/ack", json={"note": "replacement"},
+                                 headers={"X-Actor": "user:second"})
+    assert retry.json()["acknowledgement"] == ack.json()["acknowledgement"]
+    telemetry(live, temperature=37)
+    assert (await live.http.get("/api/v1/alerts", params={"active": "true"})).json()["alerts"] == []
+    await live.inbox.flush()
+    recovered = InboxStore(live.inbox.path)
+    recovered.startup()
+    live.manager.inbox = recovered
+    try:
+        continued = await live.http.get("/api/v1/inbox", params={"after": cursor, "kinds": "alert"})
+        assert continued.status_code == 200, continued.text
+        assert [message["event"] for message in continued.json()["messages"]] == ["cleared"]
+        assert continued.json()["messages"][0]["data"]["entityKey"] == KEY
+    finally:
+        live.manager.inbox = live.inbox
+        await recovered.close()
+
+
+async def test_live_plan_requires_human_and_grants_only_its_exact_unconsumed_step(live):
+    telemetry(live)
+    document = {"title": "Set real temperature", "target": "live", "steps": [
+        {"id": 1, "do": {"entity": KEY, "action": "setSetpoint", "params": {"temperatureC": 38}}},
+    ]}
+    response = await live.http.post("/api/v1/plans", json=document, headers={"X-Actor": "agent:test"})
+    assert response.status_code == 201, response.text
+    plan = response.json()
+    assert plan["status"] == "submitted" and plan["approvalMode"] == "human"
+    context = {"planId": plan["id"], "stepId": 1, "planRevision": plan["revision"]}
+    early = await live.http.post("/api/v1/live/actions", json=action("early-plan") | context)
+    assert early.status_code == 409 and early.json()["error"]["code"] == "plan_not_approved"
+    approval_path = f"/api/v1/approvals/{plan['approvalId']}/decision"
+    agent = await live.http.post(approval_path, json={"decision": "approve"},
+                                 headers={"X-Actor": "agent:test"})
+    assert agent.status_code == 403 and not live.transports[-1].publications
+    approved = await live.http.post(approval_path, json={"decision": "approve"},
+                                    headers={"X-Actor": "user:test"})
+    assert approved.status_code == 200, approved.text
+    exact_body = action("exact-plan") | context
+    exact = await live.http.post("/api/v1/live/actions", json=exact_body)
+    assert exact.status_code == 202 and exact.json()["status"] == "accepted", exact.text
+    assert len(live.approvals.records) == 1
+    live.clock[0] += .1
+    live.host.advance()
+    [(topic, command)] = live.transports[-1].publications
+    assert topic == "lab/incubator2/cmd" and command["params"] == {"temperatureC": 38}
+    live.transports[-1].emit("lab/incubator2/ack", {"requestId": command["requestId"], "status": "succeeded"})
+    live.clock[0] += .1
+    live.host.advance()
+    completed = (await live.http.get(f"/api/v1/plans/{plan['id']}")).json()
+    assert completed["status"] == "completed" and completed["steps"][0]["status"] == "done"
+    duplicate = await live.http.post("/api/v1/live/actions", json=exact_body)
+    assert duplicate.json()["invocationId"] == exact.json()["invocationId"]
+    mismatch = await live.http.post("/api/v1/live/actions", json=action("mismatched-plan", params={
+        "temperatureC": 39}) | context)
+    assert mismatch.json()["status"] == "pending_approval", mismatch.text
+    live.clock[0] += .1
+    live.host.advance()
+    assert len(live.transports[-1].publications) == 1
+    preview = await live.http.get(f"/api/v1/plans/{plan['id']}/steps/1/preview")
+    assert preview.status_code == 200 and preview.json()["reason"] == "source_preview_unavailable"
+
+
+async def test_read_only_live_plan_still_needs_human_and_shutdown_invalidates_unfinished_plans(live):
+    telemetry(live)
+    document = {"title": "Check real temperature", "target": "live", "steps": [
+        {"id": 1, "check": {"entity": KEY, "property": "temperatureC", "equals": 37}},
+    ]}
+    response = await live.http.post("/api/v1/plans", json=document)
+    assert response.status_code == 201, response.text
+    plan = response.json()
+    assert plan["approvalMode"] == "human" and plan["status"] == "submitted"
+    await live.host.close()
+    closed = (await live.http.get(f"/api/v1/plans/{plan['id']}")).json()
+    assert closed["status"] == "abandoned"
+    assert live.approvals.records[plan["approvalId"]].status == "unavailable"
+    assert live.transports[0].publications == []
+
+
+async def test_live_snapshot_restores_preexisting_plans_and_resumes_exact_cursor_without_dispatch(live):
+    telemetry(live)
+    body = {"title": "Existing before bootstrap", "target": "live", "steps": [
+        {"id": 1, "check": {"entity": KEY, "property": "temperatureC", "equals": 37}},
+    ]}
+    plan = (await live.http.post("/api/v1/plans", json=body)).json()
+    snapshot = await live.http.get("/api/v1/live/snapshot")
+    assert snapshot.status_code == 200, snapshot.text
+    data = snapshot.json()
+    assert data["snapshot"]["sceneRevision"] == live.host.catalog.sceneRevision
+    assert data["snapshot"]["epoch"] == live.host.epoch
+    assert data["snapshot"]["entities"][0]["values"]
+    [stored] = data["plans"]
+    assert stored["plan"]["id"] == plan["id"] and stored["plan"]["status"] == "submitted"
+    assert stored["sceneRevision"] == data["snapshot"]["sceneRevision"]
+    assert stored["epoch"] == data["snapshot"]["epoch"]
+    assert data["cursor"] == live.host.info.event_seq
+    second = (await live.http.post("/api/v1/plans", json=body | {"title": "Created after snapshot"})).json()
+    tail = (await live.http.get("/api/v1/live/events",
+                                params={"after": data["cursor"], "timeoutSeconds": 0})).json()
+    assert not tail["gap"]
+    assert [event["message"]["plan"]["id"] for event in tail["events"]] == [second["id"]]
+    assert not live.transports[-1].publications
+    live.host.bindings.broker.url = "mqtt://operator:fixture-password@127.0.0.1:1883"
+    status = (await live.http.get("/api/v1/live")).json()
+    assert status["broker"] == "mqtt://127.0.0.1:1883"
+
+
+async def test_approved_unexecuted_live_plan_can_be_revoked_without_a_spatial_manifest(live):
+    assert live.host.manifest is None
+    telemetry(live)
+    response = await live.http.post("/api/v1/plans", json={
+        "title": "Review before real action", "target": "live",
+        "steps": [{"id": 1, "do": {"entity": KEY, "action": "setSetpoint", "params": {"temperatureC": 38}}}]})
+    assert response.status_code == 201, response.text
+    plan = response.json()
+    path = f"/api/v1/approvals/{plan['approvalId']}"
+    approved = await live.http.post(path + "/decision", json={"decision": "approve"},
+                                    headers={"X-Actor": "user:operator"})
+    assert approved.status_code == 200, approved.text
+    assert (await live.http.get(path)).json()["canRevoke"]
+    revoked = await live.http.post(path + "/decision", json={"decision": "revoke"},
+                                   headers={"X-Actor": "user:operator"})
+    assert revoked.status_code == 200 and revoked.json()["status"] == "revoked", revoked.text
+    assert (await live.http.get(f"/api/v1/plans/{plan['id']}")).json()["status"] == "abandoned"
+    exact = await live.http.post("/api/v1/live/actions", json=action("revoked-exact-plan") | {
+        "planId": plan["id"], "stepId": 1, "planRevision": plan["revision"],
+    })
+    assert exact.status_code == 409 and exact.json()["error"]["code"] == "plan_not_approved", exact.text
+    live.clock[0] += .1
+    live.host.advance()
+    assert not live.transports[-1].publications
 
 
 async def test_real_gateway_lifespan_owns_live_without_creating_any_spatial_source(tmp_path):

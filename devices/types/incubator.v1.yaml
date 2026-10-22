@@ -12,7 +12,7 @@ alerts:
     forSeconds: 120
     severity: warning
     message: 培养箱门打开超过 120 s
-description: Seeded virtual temperature, CO2 and humidity; opening the door relaxes toward ambient air.
+description: Temperature, CO2, humidity, door state and temperature setpoint.
 properties:
   temperatureC: {schema: {type: number, minimum: 0, maximum: 80}, unit: °C, deadband: 0.02, maxRateHz: 5, staleAfterSeconds: 3}
   co2Percent: {schema: {type: number, minimum: 0, maximum: 20}, unit: '%', deadband: 0.002, maxRateHz: 5, staleAfterSeconds: 3}

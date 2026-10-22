@@ -31,6 +31,10 @@ export function CriticalAlertBanner() {
     <i className={`alert-pulse ${alert.acknowledgement ? 'is-acknowledged' : ''}`} aria-hidden="true" />
     <div className="critical-alert-copy"><div><code>{alert.entityKey}</code><strong>触发值 {reading(alert.value)}</strong><Severity severity="critical" /></div>
       <p>{alert.message} · {alert.rule} · 自 {reading(alert.since)} s 起</p></div>
-    <AlertAcknowledgement key={alert.alertId} alert={alert} /><Link to="/live" className="reference-link">查看实况 →</Link>
+    <AlertAcknowledgement key={alert.alertId} alert={alert} />
+    {alert.entityKey.startsWith('/Real/') ? <Link to="/live" search={{ entity: alert.entityKey }}
+      className="reference-link">查看实况 →</Link> :
+      <Link to="/sessions/$sessionId" params={{ sessionId: alert.sessionId }}
+        search={{ view: 'devices', entity: alert.entityKey }} className="reference-link">查看会话设备 →</Link>}
   </section>;
 }

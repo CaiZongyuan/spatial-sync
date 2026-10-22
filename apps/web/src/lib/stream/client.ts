@@ -14,6 +14,7 @@ import { PlanStore } from '../plans/store';
 
 export interface ViewState {
   manifest?: SceneManifest;
+  informationOnly?: boolean;
   role: 'viewer' | 'operator';
   infoError?: string;
   connection: 'connecting' | 'connected' | 'disconnected';

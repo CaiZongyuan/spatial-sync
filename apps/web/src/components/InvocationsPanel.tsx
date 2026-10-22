@@ -15,7 +15,7 @@ export function InvocationsPanel({
   onCancel,
 }: {
   store: InfoStore;
-  manifest: SceneManifest;
+  manifest?: SceneManifest;
   selected: string;
   simTime: number;
   disabled: boolean;
@@ -27,7 +27,8 @@ export function InvocationsPanel({
     store.subscribeMetadata,
     store.getMetadata,
   );
-  const key = deviceKey(manifest, metadata.catalog, selected);
+  const key = manifest ? deviceKey(manifest, metadata.catalog, selected)
+    : metadata.catalog?.entities[selected] ? selected : undefined;
   const invocations = useInvocations(
     store,
     filter === 'selected' && key ? key : '',

@@ -1,0 +1,44 @@
+{
+  "entityKey": "/Real/Incubator2",
+  "invocationId": "inv-live-fixture",
+  "createdAtMs": 1700000000000,
+  "durationMs": 1500,
+  "samples": [
+    {
+      "timeMs": 0,
+      "temperatureC": 37,
+      "measurementMs": 1000
+    },
+    {
+      "timeMs": 1000,
+      "temperatureC": 38,
+      "measurementMs": 2000
+    },
+    {
+      "timeMs": 1400,
+      "temperatureC": 38,
+      "measurementMs": 2000
+    },
+    {
+      "timeMs": 1500,
+      "temperatureC": 39,
+      "measurementMs": 2500
+    }
+  ],
+  "invocations": [
+    {
+      "timeMs": 150,
+      "status": "accepted"
+    },
+    {
+      "timeMs": 1000,
+      "status": "running",
+      "startedSimTime": 0.2
+    },
+    {
+      "timeMs": 1300,
+      "status": "succeeded",
+      "durationSeconds": 1.1
+    }
+  ]
+}

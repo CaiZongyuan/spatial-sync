@@ -1,0 +1,11 @@
+.information-replay { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 20px; padding: 24px; overflow: auto; min-height: 0; }
+.information-replay-devices { min-width: 0; }
+.information-replay-devices > header { margin-bottom: 20px; }
+.information-replay-devices h1 { font-size: 24px; margin: 8px 0; }
+.information-replay-devices > header p { color: var(--muted); }
+.information-replay-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.information-replay-grid > article { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.information-replay-grid .entity-key { overflow-wrap: anywhere; }
+.information-replay-plans { min-width: 0; }
+@media (max-width: 1000px) { .information-replay { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 620px) { .information-replay { padding: 16px; } .information-replay-grid { grid-template-columns: minmax(0, 1fr); } }

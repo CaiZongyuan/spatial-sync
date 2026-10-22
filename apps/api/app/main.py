@@ -31,9 +31,11 @@ from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
+from apps.api.app.live_recordings import LiveRecordingRepository
+from apps.api.app.live_routes import install_live_routes
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
-from apps.api.app.recordings import RecordingRepository, install_recording_routes
+from apps.api.app.recordings import install_recording_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -125,19 +127,23 @@ def create_app(
     configure_gateway_logging()
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
-    recordings = RecordingRepository(settings, asset_registry)
+    recordings = LiveRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
     if settings.live_bindings is not None:
         manager.live = DeviceHost(
             load_bindings(settings.live_bindings), manager.approvals, manager.plans,
             approval_timeout=settings.approval_timeout_seconds,
+            recordings=recordings,
+            inbox=manager.inbox,
+            layout_resolver=manager.library.resolve,
             **({"transport_factory": live_transport_factory} if live_transport_factory else {}),
         )
     library_assets = manager.library_assets
     manager.library_deletions = LibraryDeletions(
         library_assets, lambda: manager.library, manager.approvals, recordings,
         manager.platform_sessions, StructuralValidator(settings.state_root, program_schemas),
+        live=lambda: manager.live,
     )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
@@ -182,20 +188,7 @@ def create_app(
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
-    async def live_target():
-        if manager.live is None:
-            raise HTTPException(503, {"code": "live_unavailable", "message": "Live is not configured"})
-        return manager.live
-
-    install_info_routes(app, manager, lambda headers: _role(headers, settings),
-                        prefix="/api/v1/live", resolve_target=live_target)
-
-    @app.get("/api/v1/live")
-    async def live_status():
-        live = await live_target()
-        return {"id": live.session_id, "name": live.bindings.live, "state": live.state,
-                "layout": live.bindings.layout,
-                "placements": {entity.key: entity.placeAt for entity in live.bindings.entities}}
+    install_live_routes(app, manager, settings, lambda headers: _role(headers, settings))
 
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))

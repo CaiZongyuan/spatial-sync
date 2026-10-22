@@ -28,7 +28,7 @@ export class ReplaySource extends SessionClient {
   private playbackListeners = new Set<() => void>();
   private recording?: Recording;
   private segments = new Map<number, Promise<ReturnType<typeof readSegment>>>();
-  private documents = new Map<string, Promise<{ manifest: SceneManifest; catalog: Catalog }>>();
+  private documents = new Map<string, Promise<{ manifest?: SceneManifest; catalog: Catalog }>>();
   private records: LogRecord[] = [];
   private cursor = 0;
   private segmentIndex = 0;
@@ -38,6 +38,7 @@ export class ReplaySource extends SessionClient {
   private timer?: ReturnType<typeof setTimeout>;
   private abort = new AbortController();
   private lastViewUpdate = 0;
+  private informationTime = 0;
   readonly documentUrl: string;
 
   constructor(recordingId: string, src?: string) {
@@ -65,6 +66,7 @@ export class ReplaySource extends SessionClient {
     const recording = readRecording(raw);
     if (!recording.segments.length) throw new Error('This recording has no playable samples');
     this.recording = recording;
+    this.update({ informationOnly: recording.kind === 'live' });
     const durationMs = Math.max(0, recording.segments.at(-1)!.endSampleTimeMs - recording.segments[0].startSampleTimeMs);
     this.updatePlayback({ durationMs, status: recording.status, sceneVersion: recording.sceneVersion,
       sceneContentHash: recording.sceneContentHash, kind: recording.kind });
@@ -101,8 +103,11 @@ export class ReplaySource extends SessionClient {
         const segment = this.recording!.segments[index];
         const response = await fetch(recordingUrl(segment.file, this.documentUrl), { signal: this.abort.signal });
         if (!response.ok) throw new Error(`Recording segment unavailable (${response.status})`);
-        const result = readSegment(await response.arrayBuffer());
-        if (result.records[0]?.kind !== 1 || result.records[1]?.message?.type !== 'entity.snapshot')
+        const result = readSegment((await response.arrayBuffer()).slice(0, segment.bytes));
+        if (this.recording!.kind === 'live') {
+          if (result.records[0]?.message?.type !== 'entity.snapshot' || result.records.some(record => record.kind === 1))
+            throw new Error('Live recording segment requires an information snapshot without spatial frames');
+        } else if (result.records[0]?.kind !== 1 || result.records[1]?.message?.type !== 'entity.snapshot')
           throw new Error('Recording segment requires spatial and entity snapshots');
         return result;
       })();
@@ -118,7 +123,12 @@ export class ReplaySource extends SessionClient {
     let pending = this.documents.get(revision);
     if (!pending) {
       const entry = this.recording!.revisions?.[revision];
-      pending = Promise.all([
+      pending = this.recording!.kind === 'live' ? this.fetchJson<Catalog>(
+        recordingUrl(entry?.catalog ?? 'catalog.json', this.documentUrl),
+      ).then(catalog => {
+        if (catalog.sceneRevision !== revision) throw new Error('Recording catalog does not match segment revision');
+        return { catalog };
+      }) : Promise.all([
         this.fetchJson<unknown>(recordingUrl(entry?.manifest ?? 'manifest.json', this.documentUrl)),
         this.fetchJson<Catalog>(recordingUrl(entry?.catalog ?? 'catalog.json', this.documentUrl)),
       ]).then(([raw, catalog]) => {
@@ -152,7 +162,15 @@ export class ReplaySource extends SessionClient {
     try {
       const [segment, documents] = await Promise.all([this.loadSegment(index), this.loadDocuments(revision)]);
       if (version !== this.seekVersion) return;
-      this.configureManifest(documents.manifest);
+      if (documents.manifest) this.configureManifest(documents.manifest);
+      else {
+        const initial = segment.records[0].message;
+        if (initial?.type !== 'entity.snapshot') throw new Error('Live recording is missing its initial state');
+        this.info.configure(revision, initial.epoch);
+        this.plans.configure(revision, initial.epoch);
+        this.informationTime = initial.simTime;
+        this.update({ manifest: undefined, sessionState: 'REPLAY' });
+      }
       this.info.setCatalog(documents.catalog);
       this.records = segment.records;
       this.segmentIndex = index;
@@ -173,15 +191,25 @@ export class ReplaySource extends SessionClient {
   }
 
   private applyThrough(target: number) {
+    const informationOnly = this.recording?.kind === 'live';
     while (this.cursor < this.records.length && (
-      this.cursor < 2 || this.records[this.cursor].atMs <= target ||
-      (this.cursor === 2 && this.records[this.cursor].message?.type === 'session.state')
+      this.cursor < (informationOnly ? 1 : 2) || this.records[this.cursor].atMs <= target ||
+      (!informationOnly && this.cursor === 2 && this.records[this.cursor].message?.type === 'session.state')
     )) {
       const record = this.records[this.cursor++];
       if (record.kind === 1) {
         if (this.buffer.pushBinary(record.payload, record.atMs)) this.plans.advanceEpoch(this.buffer.epoch);
       }
-      else if (record.kind === 2) this.applyGlobalMessage(record.message!);
+      else if (record.kind === 2) {
+        const message = record.message!;
+        this.applyGlobalMessage(message);
+        if (informationOnly && 'epoch' in message) {
+          this.plans.advanceEpoch(message.epoch);
+          if ('simTime' in message) this.informationTime = Math.max(this.informationTime, message.simTime);
+          else if (message.type === 'invocation.update') this.informationTime = Math.max(this.informationTime,
+            message.endedSimTime ?? message.startedSimTime ?? message.createdSimTime);
+        }
+      }
       else this.updatePlayback({ droppedFrames: this.playback.droppedFrames + (record.gap?.count ?? 0) });
     }
     this.buffer.applyLatest();
@@ -189,7 +217,7 @@ export class ReplaySource extends SessionClient {
 
   private refreshView() {
     this.lastViewUpdate = performance.now();
-    this.update({ simTime: this.buffer.displayedSimTime });
+    this.update({ simTime: this.recording?.kind === 'live' ? this.informationTime : this.buffer.displayedSimTime });
   }
 
   play() {

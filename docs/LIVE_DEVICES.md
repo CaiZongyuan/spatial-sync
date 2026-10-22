@@ -10,10 +10,19 @@ uv run --no-sync uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000
 The gateway owns one monotonic DeviceHost and MQTT client independently of spatial
 sessions. `/api/v1/live/entities`, `/entity?key=`, `/state?keys=` and `/actions`
 share the session information handlers and ActionPipeline. `/api/v1/live` returns
-the configured name and optional layout/placements. These layout references are
-unresolved display metadata in this version: the host does not load, pin or hold a
-scene package. No spatial stream is fabricated. An absent configuration returns
+the configured name, recording status, rules and optional layout/placements.
+`/live/catalog`, `/live/snapshot` and `/live/events` provide a coherent information
+bootstrap and bounded event continuation. An absent configuration returns
 `live_unavailable`; ordinary gateway startup creates no MQTT connection.
+
+Open the Web app's **实况** page at `/live` to see the three devices, actions,
+one-hour history, alert acknowledgement and operation plans without starting a
+simulation. Simulation telemetry is available from a session's **设备** view.
+With a configured `layout: scene-name@version`, the host resolves the exact scene
+hash and holds a deletion reference. The browser uses that version's captured
+static preview and `placeAt` bindings; it never starts a physics Source. Missing,
+changed or uncaptured layouts leave the device cards usable and show the layout
+as unavailable. Recordings keep their independent Live identity.
 
 The example expects a broker at `mqtt://127.0.0.1:1883`. For an isolated development
 broker, create a local Mosquitto configuration with `listener 1883 0.0.0.0`,
@@ -40,6 +49,9 @@ Read and act through the same generic commands and MCP tools:
 lw ls --query /Real/
 lw get /Real/Incubator2
 lw do /Real/Incubator2 setSetpoint temperatureC=38 --no-wait
+lw history /Real/Incubator2 temperatureC --since 1h --every 1m
+lw alerts --active
+lw inbox
 ```
 
 Keys beginning `/Real/` automatically select Live, even without an active session.
@@ -71,13 +83,21 @@ fresh non-retained telemetry. A status payload `{"online":false}` makes that dev
 immediately unavailable. Silent readings expire by `staleAfterSeconds`; actions
 return `device_unavailable` before evaluating stale preconditions.
 
-This ticket supplies the DeviceHost, MQTT/action boundary and generic clients.
-Live observations/events currently reside in the bounded in-memory information
-store. Daily recording, cross-day history, Live inbox/alert/UI integration and Live
-operation-plan enablement belong to #28; Live plan associations explicitly reject.
-Existing shared approval audit remains durable. Physical hardware and actual
-broker behavior require separate validation; injected-broker tests establish only
-gateway semantics.
+Live continuously records information in UTC daily segments, retains seven UTC
+days and supports cross-segment history and read-only replay. See
+[RECORDINGS.md](RECORDINGS.md) for clocks, retention and recovery. Alerts and their
+first acknowledgement use the existing shared alert API; the durable inbox cursor
+continues across gateway restarts.
+
+Submit an operation plan with `target: live` through `lw plan create` or the generic
+MCP tool. All Live plans require a human decision in **待审批**, including check-only
+plans. Approval covers only the declared action, parameters, revision and step;
+the agent still executes each step. Matching retries are idempotent. Plan changes,
+revocation and Host shutdown invalidate the old grant. Live plans display their
+results on `/live` and `/plans/{id}`; they have no simulated motion preview.
+
+Physical hardware and actual broker behavior require separate validation;
+injected-broker tests establish gateway semantics only.
 
 Live and a Synthetic session have independent lifecycles: selecting a session in
 `LW_SESSION` still routes `/Real/` keys to Live, and closing either host leaves the

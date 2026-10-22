@@ -130,6 +130,15 @@ class RecordingRepository:
             raise HTTPException(404, {"code": "recording_missing"})
         return path
 
+    async def read_response(self, recording_id, relative):
+        path = await asyncio.to_thread(self.resolve, recording_id, relative)
+        if path.suffix == ".json":
+            # Close metadata read handles before the network send, allowing the
+            # writer's atomic replacement while clients browse active recordings.
+            payload = await asyncio.to_thread(path.read_bytes)
+            return Response(payload, media_type="application/json", headers={"Cache-Control": "no-cache"})
+        return FileResponse(path, headers={"Cache-Control": "no-cache"})
+
 
 def install_recording_routes(app, repository):
     @app.get("/api/v1/recordings")
@@ -138,10 +147,4 @@ def install_recording_routes(app, repository):
 
     @app.get("/recordings/{recording_id}/{relative:path}")
     async def recording_file(recording_id: str, relative: str):
-        path = await asyncio.to_thread(repository.resolve, recording_id, relative)
-        if path.suffix == ".json":
-            # Close metadata read handles before the network send, allowing the
-            # writer's atomic replacement while clients browse active recordings.
-            payload = await asyncio.to_thread(path.read_bytes)
-            return Response(payload, media_type="application/json", headers={"Cache-Control": "no-cache"})
-        return FileResponse(path, headers={"Cache-Control": "no-cache"})
+        return await repository.read_response(recording_id, relative)

@@ -90,16 +90,23 @@ def _sim_time(record):
     return json.loads(record.payload).get("simTime") if record.kind == 2 else None
 
 
-def segment_metadata(file, result, scene_revision=None):
+def segment_metadata(file, result, scene_revision=None, *, kind="session"):
     records = result.records
-    if len(records) < 2 or records[0].kind != 1 or records[1].kind != 2:
-        raise ValueError("Segment must begin with spatial and entity snapshots")
-    if json.loads(records[1].payload).get("type") != "entity.snapshot":
+    if kind == "live":
+        if not records or records[0].kind != 2:
+            raise ValueError("Live segment must begin with an entity snapshot")
+        snapshot = json.loads(records[0].payload)
+        EntitySnapshot.model_validate(snapshot)
+    else:
+        if len(records) < 2 or records[0].kind != 1 or records[1].kind != 2:
+            raise ValueError("Segment must begin with spatial and entity snapshots")
+        snapshot = json.loads(records[1].payload)
+    if snapshot.get("type") != "entity.snapshot":
         raise ValueError("Segment is missing its entity snapshot")
     sim_times = [value for record in records if (value := _sim_time(record)) is not None]
     return {
         "file": file,
-        "sceneRevision": scene_revision or json.loads(records[1].payload)["sceneRevision"],
+        "sceneRevision": scene_revision or snapshot["sceneRevision"],
         "startSampleTimeMs": records[0].t_ms,
         "endSampleTimeMs": max(record.t_ms for record in records),
         "startSimTime": sim_times[0] if sim_times else 0,
@@ -116,31 +123,38 @@ def recover_recordings(root: Path):
     for directory in root.iterdir():
         if not directory.is_dir() or directory.is_symlink():
             continue
-        metadata_file = directory / "recording.json"
-        try:
-            metadata = json.loads(metadata_file.read_bytes())
-            recording_metadata(metadata)
-            if metadata.get("status") != "recording":
+        recover_recording(directory)
+
+
+def recover_recording(directory: Path, *, allowed_segments=None):
+    """Recover one owned recording without touching another writer's directory."""
+    metadata_file = directory / "recording.json"
+    try:
+        metadata = json.loads(metadata_file.read_bytes())
+        recording_metadata(metadata)
+        if metadata.get("status") != "recording":
+            return
+        metadata["status"] = "incomplete"
+        metadata["segments"] = []
+        for path in sorted(directory.glob("seg-*.bin")):
+            if path.is_symlink() or (allowed_segments is not None and path.name not in allowed_segments):
                 continue
-            metadata["status"] = "incomplete"
-            metadata["segments"] = []
-            for path in sorted(directory.glob("seg-*.bin")):
-                if path.is_symlink():
-                    continue
-                try:
-                    result = read_segment(path.read_bytes())
-                    if len(result.records) >= 2:
-                        metadata["segments"].append(segment_metadata(path.name, result))
-                except (OSError, ValueError, KeyError, struct.error):
-                    # A crash can precede even the first buffered header flush.
-                    # Keep every independently playable segment and still close
-                    # the known recording when this segment has no valid prefix.
-                    continue
-            _duration(metadata)
-            _atomic_json(metadata_file, metadata)
-        except (OSError, ValueError, KeyError, struct.error):
-            # A foreign/corrupt directory must not prevent gateway startup.
-            continue
+            try:
+                result = read_segment(path.read_bytes())
+                if result.records:
+                    metadata["segments"].append(
+                        segment_metadata(path.name, result, kind=metadata.get("kind", "session"))
+                    )
+            except (OSError, ValueError, KeyError, struct.error):
+                # A crash can precede even the first buffered header flush.
+                # Keep every independently playable segment and still close
+                # the known recording when this segment has no valid prefix.
+                continue
+        _duration(metadata)
+        _atomic_json(metadata_file, metadata)
+    except (OSError, ValueError, KeyError, struct.error):
+        # A foreign/corrupt directory must not prevent gateway startup.
+        return
 
 
 def _duration(metadata):
@@ -243,6 +257,7 @@ class _Entry:
     revision: tuple | None = None
     gap: dict | None = None
     checkpoint: Future | None = None
+    admitted_day: str | None = None
 
 
 class SessionLog:
@@ -366,7 +381,7 @@ class SessionLog:
             payload = self._pending.get(invocation_id)
             location = self._index.get(invocation_id)
         if payload is None and location is not None:
-            payload = await asyncio.to_thread(self._read_payload, location)
+            payload = await self._read_archived_payload(location)
         if payload is None:
             return None
         value = json.loads(payload)
@@ -375,6 +390,9 @@ class SessionLog:
         return Invocation.model_validate(
             {key: item for key, item in value.items() if key not in ("type", "sceneRevision")}
         )
+
+    async def _read_archived_payload(self, location):
+        return await asyncio.to_thread(self._read_payload, location)
 
     @staticmethod
     def _read_payload(location):
@@ -405,9 +423,12 @@ class SessionLog:
                 self._checkpoint_queued += 1
                 self._condition.notify()
         if closing:
-            await asyncio.to_thread(self.thread.join)
-            return deepcopy(self.metadata)
+            return await self._closed_checkpoint()
         return await asyncio.shield(asyncio.wrap_future(future))
+
+    async def _closed_checkpoint(self):
+        await asyncio.to_thread(self.thread.join)
+        return deepcopy(self.metadata)
 
     def stop_incomplete(self, reason):
         with self._condition:
@@ -416,9 +437,9 @@ class SessionLog:
             self._condition.notify()
 
     def _run(self):
+        prefix_closed = False
         try:
-            self.directory.mkdir(parents=True, exist_ok=False)
-            self._metadata()
+            self._prepare()
             while True:
                 with self._condition:
                     self._condition.wait_for(lambda: self._queue or self._closing, timeout=1)
@@ -444,6 +465,7 @@ class SessionLog:
             if self._gap and self._file:
                 self._write(Record(3, self._clock, _json_bytes(self._gap)))
             self._close_segment()
+            prefix_closed = True
         except Exception as exc:
             with self._condition:
                 self._failure = str(exc) or type(exc).__name__
@@ -466,10 +488,21 @@ class SessionLog:
             self.metadata["status"] = "incomplete" if self._failure else "complete"
             if self._failure:
                 self.metadata["error"] = self._failure
+            metadata_published = False
             try:
                 self._metadata()
+                metadata_published = True
             except OSError:
                 pass  # Startup recovers the last atomic 'recording' metadata.
+            finally:
+                self._finished(prefix_closed=prefix_closed, metadata_published=metadata_published)
+
+    def _prepare(self):
+        self.directory.mkdir(parents=True, exist_ok=False)
+        self._metadata()
+
+    def _finished(self, *, prefix_closed, metadata_published):
+        pass
 
     def _revision(self, revision):
         manifest, catalog, frame, snapshot, state, assets = revision
@@ -517,7 +550,7 @@ class SessionLog:
         self._write(record, entry.invocation_id)
 
     def _open_new_segment(self, revision, records):
-        name = f"seg-{len(self.metadata['segments']) + 1:06d}.bin"
+        name = self._next_segment_name()
         self._file = self._open_segment(self.directory / name)
         self._file.write(FILE_HEADER)
         self._segment = {
@@ -532,6 +565,9 @@ class SessionLog:
         self.metadata["segments"].append(self._segment)
         for record in records:
             self._write(record)
+
+    def _next_segment_name(self):
+        return f"seg-{len(self.metadata['segments']) + 1:06d}.bin"
 
     def _write(self, record, invocation_id=None):
         offset = self._file.tell()
