@@ -41,6 +41,36 @@ seeds drive existing virtual-program random streams, including sensor noise;
 they do not randomize tube placements or taught arm motion. These runs demonstrate
 evaluation plumbing and do not establish contact-physics performance.
 
+## Evaluation center
+
+Open **Evaluation (评估)** at `/eval`, then **打开计分板** on a suite card.
+`/eval/lab-demo-pick-place@1` opens the shipped embodied suite directly. The page
+reads the actual public Suite, evaluation and scoreboard APIs every five seconds;
+opening it does not start an evaluation or acquire the session slot.
+
+The scoreboard shows the runtime code fingerprint, bound Device Program, success
+rate, Wilson 95% interval, elapsed time and decision. Select a row for its actual
+stage observations and episode replay links. Registered Controller versions and
+training costs display as unknown. Each complete condition group has its own
+curve and current baseline/accepted Reference; rejected candidates remain visible.
+Agent evaluation is not yet available.
+
+Use the comparison selectors to compare two public train evaluations. The HTTP
+equivalent is `GET /api/v1/suites/{name}/{revision}/scoreboard?compare=<id>&against=<id>`.
+Both parameters are required together. Records must belong to the requested suite
+and optional `subject` filter. Unequal complete recorded keys return HTTP409
+`not_comparable`; missing, hidden test or filtered-out IDs uniformly return404.
+The default response remains `{ "rows": [...] }`. Each public row additionally
+has `conditionsGroup`, the first public evaluation ID with the same suite,
+subject and complete conditions; the UI uses this marker to separate curves.
+It contains no digest of private inputs.
+
+The held-out test row is always locked, with no revealed question, seed, count or
+score. The role panel explains Builder, Optimizer, Evaluator and Target access;
+it does not switch API roles. Builder edits the local package directly. Public
+evaluation responses include only the defined DTO fields, including nested
+conditions, results, episodes and error codes.
+
 ## The single session slot
 
 A whole evaluation owns the session slot across its episodes. A pre-existing
@@ -87,9 +117,8 @@ succeeds. Gateway restart does not resume interrupted evaluations or queued laun
 
 The gateway discovers version directories under `library/suites/<name>/<rev>/`
 and the operator-configured user library (`LW_LIBRARY`). Restart after adding a
-new version. This delivery supports discovery and execution; suite upload/import,
-full Isaac Lab Task ingestion, policy promotion and the evaluation-center page
-belong to their later features.
+new version. Suite upload/import, full Isaac Lab Task ingestion and policy
+promotion belong to their later features.
 
 Each package contains exactly three files:
 

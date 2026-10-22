@@ -14,6 +14,7 @@ from fnmatch import fnmatchcase
 from fastapi import HTTPException, Request
 from pydantic import Field, StrictStr
 
+from apps.api.app.evaluation_views import public_evaluation, public_score
 from packages.info.conditions import condition_state, validate_conditions
 from packages.info.evaluations import EvaluationStore, evaluation_decision, wilson_interval
 from packages.info.invocations import TERMINAL
@@ -676,28 +677,41 @@ def install_evaluation_routes(app, service, role_for):
         return service.suites.resolve(f"suite/{name}@{revision}").public()
 
     @app.get("/api/v1/suites/{name}/{revision}/scoreboard")
-    async def scoreboard(name: str, revision: str, subject: str | None = None):
+    async def scoreboard(name: str, revision: str, subject: str | None = None,
+                         compare: str | None = None, against: str | None = None):
         version = service.suites.resolve(f"suite/{name}@{revision}")
-        return {
-            "rows": [
-                deepcopy(row)
-                for row in service.store.rows
-                if row["suite"] == version.id
-                and row["split"] == "train"
-                and (subject is None or row["subject"] == subject)
-            ]
-        }
+        rows = [row for row in service.store.rows if row["suite"] == version.id and row["split"] == "train"
+                and (subject is None or row["subject"] == subject)]
+        if (compare is None) != (against is None):
+            raise HTTPException(
+                422, {"code": "invalid_comparison", "message": "Provide compare and against together"}
+            )
+        result = {"rows": [public_score(row, rows) for row in rows]}
+        if compare is not None:
+            selected = [next((row for row in rows if row["evaluationId"] == identifier), None)
+                        for identifier in (compare, against)]
+            if any(row is None for row in selected):
+                raise HTTPException(404, {"code": "unknown_evaluation"})
+            first, second = selected
+            if first["key"] != second["key"]:
+                raise HTTPException(
+                    409, {"code": "not_comparable", "message": "Evaluation conditions differ"}
+                )
+            result["comparison"] = {"compare": compare, "against": against,
+                                    "scoreDelta": first["score"] - second["score"]}
+        return result
 
     @app.post("/api/v1/evaluations", status_code=202)
     async def create_evaluation(body: EvaluationRequest, request: Request):
         operator(request)
-        return await service.submit(body)
+        return public_evaluation(await service.submit(body), service.store.rows)
 
     @app.get("/api/v1/evaluations")
     async def evaluations():
         return {
             "evaluations": [
-                deepcopy(value) for value in service.store.records.values() if value["split"] == "train"
+                public_evaluation(value, service.store.rows)
+                for value in service.store.records.values() if value["split"] == "train"
             ]
         }
 
@@ -706,7 +720,7 @@ def install_evaluation_routes(app, service, role_for):
         record = service.store.records.get(identifier)
         if record is None or record["split"] != "train":
             raise HTTPException(404, {"code": "unknown_evaluation"})
-        return deepcopy(record)
+        return public_evaluation(record, service.store.rows)
 
     @app.post("/api/v1/evaluations/{identifier}/cancel")
     async def cancel(identifier: str, request: Request):
@@ -722,7 +736,7 @@ def install_evaluation_routes(app, service, role_for):
             service._queue = deque(item for item in service._queue if item != ("evaluation", identifier))
             await persist(service.store.save, record | {"status": "cancelled", "endedAt": now()})
         service.wake()
-        return deepcopy(service.store.records[identifier])
+        return public_evaluation(service.store.records[identifier], service.store.rows)
 
     @app.post("/api/v1/evaluations/{identifier}/cleanup")
     async def cleanup(identifier: str, request: Request):

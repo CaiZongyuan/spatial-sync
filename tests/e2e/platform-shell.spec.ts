@@ -10,10 +10,11 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(9);
+  await expect(navigation.getByRole('link')).toHaveCount(10);
   expect(await navigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))))
-    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Evaluation', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
   await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
+  await expect(navigation.getByRole('link', { name: 'Evaluation', exact: true })).toHaveAttribute('href', '/eval');
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(243, 242, 238)');
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -27,6 +28,9 @@ test('platform navigation, persistent preferences, system theme and local assets
   await navigation.getByRole('link', { name: 'Sessions', exact: true }).focus();
   await expect(page.getByRole('tooltip', { name: '会话', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+  await navigation.getByRole('link', { name: 'Evaluation', exact: true }).click();
+  await expect(page).toHaveURL(/\/eval$/);
+  await expect(navigation.getByRole('link', { name: 'Evaluation', exact: true })).toHaveAttribute('aria-current', 'page');
   await navigation.getByRole('link', { name: 'Resources', exact: true }).click();
   await expect(page).toHaveURL(/\/resources\/gpu$/);
   await page.reload();

@@ -149,6 +149,23 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await expect.poll(() => page.evaluate(() => Boolean(window.__spatialDebug?.getRenderedPose('/World/Lab/Tubes/Tube01')))).toBe(true);
     expect((await (await request.get(`${api}/api/v1/session-requests/${cancelledRequest}`)).json()).status).toBe('cancelled');
     await info.attach('started-interactive-workspace.png', { body: await page.screenshot(), contentType: 'image/png' });
+    // Reuse this completed real evaluation to verify the center's results and episode projection.
+    await observer.goto(`/eval/${suite.replace(/^suite\//, '')}`);
+    const scoreRow = observer.locator(`[data-evaluation-id="${evaluation}"]`);
+    await expect(scoreRow).toContainText('100.0%');
+    await scoreRow.getByRole('button', { name: `查看回合 ${evaluation}`, exact: true }).click();
+    const episodes = observer.getByRole('table', { name: '评估回合', exact: true });
+    await expect(episodes.getByRole('row')).toHaveCount(3);
+    for (const episode of completed.episodes) {
+      const episodeRow = episodes.getByRole('row').filter({ has: observer.getByRole('rowheader', { name: episode.caseId, exact: true }) });
+      await expect(episodeRow).toContainText('成功');
+      await expect(episodeRow.getByRole('link', { name: '查看回放' })).toHaveAttribute('href', `/replay/${episode.recordingId}`);
+    }
+    for (const stage of ['grasp', 'place']) {
+      await expect(observer.locator(`#phase-${stage}`)).toHaveAttribute('value', String(completed.result.phases[stage].rate));
+    }
+    await expect(observer.getByTestId('held-out-test-row')).toContainText('锁定');
+    await info.attach('completed-real-evaluation-center.png', { body: await observer.screenshot({ fullPage: true }), contentType: 'image/png' });
     expect(errors).toEqual([]);
   } catch (error) {
     failed = true;
