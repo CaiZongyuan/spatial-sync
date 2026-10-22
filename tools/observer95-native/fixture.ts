@@ -99,7 +99,7 @@ export const test = base.extend<{ observer95Native: void }>({
       await bounded(cdp.send('Tracing.start', {
         transferMode: 'ReturnAsStream', streamFormat: 'json', streamCompression: 'gzip',
         bufferUsageReportingInterval: 1000,
-        traceConfig: { recordMode: 'recordContinuously', traceBufferSizeInKb: 8192,
+        traceConfig: { recordMode: 'recordContinuously', traceBufferSizeInKb: 32768,
           enableSampling: false, enableSystrace: false, includedCategories: state.categories },
       }), Math.max(1, Math.min(2000, setupUntil - performance.now())));
       readiness.start = true;
