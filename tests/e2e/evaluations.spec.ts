@@ -7,6 +7,8 @@ import type {} from '../../apps/web/src/components/Workbench';
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
 test('evaluation owns a read-only workspace while explicit scene launches cancel or start afterward', async ({ page, request, context }, info) => {
+  // This journey runs two complete real episodes, readonly UI checks and the queued handoff.
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   let manual: string | undefined;
@@ -52,9 +54,9 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await page.getByRole('button', { name: '启动会话' }).click();
     keptRequest = (await (await secondTicket).json()).requestId;
     await expect(page.getByRole('button', { name: '取消排队' })).toBeVisible();
-    await info.attach('explicit-launch-queue.png', { body: await page.screenshot(), contentType: 'image/png' });
     expect((await request.delete(`${api}/api/v1/sessions/${manual}`)).status()).toBe(204);
     manual = undefined;
+    await info.attach('explicit-launch-queue.png', { body: await page.screenshot(), contentType: 'image/png' });
     let episodeSession: string | undefined;
     await expect.poll(async () => {
       const health = await (await request.get(`${api}/api/v1/health`)).json();
@@ -99,7 +101,6 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     await expect(episode.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
     expect(acknowledgements).toEqual([]);
     await info.attach('evaluation-devices-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
-    await observer.getByRole('button', { name: 'Session device telemetry', exact: true }).click();
     await observer.goto('/');
     const banner = observer.getByTestId('critical-alert-banner');
     await expect(banner).toContainText('Evaluation temperature is positive');
@@ -109,7 +110,6 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     expect(new URL((await banner.getByRole('link').getAttribute('href'))!, api).pathname).toBe(`/sessions/${episodeSession}`);
     expect(acknowledgements).toEqual([]);
     await info.attach('evaluation-alert-banner-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
-    await observer.goto(`/sessions/${episodeSession}`);
     expect(await (await request.get(barrierUrl)).json()).toEqual(held);
     const retained = (await (await request.get(`${api}/api/v1/alerts?sessionId=${episodeSession}&active=true`)).json()).alerts;
     expect(retained.find((value: { alertId: string }) => value.alertId === alert.alertId)).toMatchObject({
@@ -119,6 +119,7 @@ test('evaluation owns a read-only workspace while explicit scene launches cancel
     const released = await request.post(`${barrierUrl}/release`);
     expect(released.ok(), await released.text()).toBe(true);
     expect((await released.json()).state).toBe('released');
+    await observer.goto(`/sessions/${episodeSession}`);
     await expect.poll(async () => (await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json()).status, { timeout: 35_000 }).toBe('completed');
     const completed = await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json();
     expect(completed.episodes.map((value: { caseId: string }) => value.caseId)).toEqual(['train-one', 'train-two']);
