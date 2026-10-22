@@ -88,5 +88,5 @@ concatenate `content` and parse the JSON. `previewTruncated` means more details
 are available through pages. On `description_changed`, fetch a fresh summary
 and restart when reports/recordings/reference metadata is stable. `view="full"`
 returns the legacy complete object and can exceed tool output limits. CLI
-`lw library describe` shares these options; `scene show` and `asset show`
+`lw library describe <name@rev>` shares these options; `scene show` and `asset show`
 keep their full default.

@@ -41,7 +41,7 @@ def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for)
     @app.get("/api/v1/library/assets/{kind}/{name}/{rev}")
     async def describe_asset(
         kind: str, name: str, rev: str | None = None,
-        view: str = "full", section: str | None = None, offset: int = 0,
+        view: str = "full", section: str | None = None, offset: str = "0",
         documentDigest: str | None = None,
     ):
         selector = f"{kind}/{name}@{rev}" if rev is not None else f"{kind}/{name}"

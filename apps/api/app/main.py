@@ -280,7 +280,7 @@ def create_app(
     @app.get("/api/v1/library/scenes/{name}/{rev}")
     async def library_scene(
         name: str, rev: str | None = None, source: Literal["synthetic", "newton"] | None = None,
-        view: str = "full", section: str | None = None, offset: int = 0,
+        view: str = "full", section: str | None = None, offset: str = "0",
         documentDigest: str | None = None,
     ):
         selector = f"{name}@{rev}" if rev is not None else name

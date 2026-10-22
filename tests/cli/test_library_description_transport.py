@@ -14,6 +14,27 @@ from packages.library.description_views import canonical_json
 from packages.library.reports import ReportStore
 
 
+def test_malformed_description_offsets_use_bounded_shared_http_errors(gateway_url, gateway_directory):
+    rows = []
+    with httpx.Client(base_url=gateway_url, trust_env=False, timeout=20) as http:
+        assert http.get("/api/v1/health").json()["sessions"] == []
+        for route in ("/api/v1/library/scenes/robot-and-tubes/2", "/api/v1/library/assets/robot/fr3/1"):
+            summary = http.get(route, params={"view": "summary"}).json()
+            for offset in ("bad-offset", "x" * 5000):
+                response = http.get(route, params={"view": "page", "offset": offset,
+                                                   "documentDigest": summary["documentDigest"]})
+                detail = response.json()["detail"]
+                rows.append({"route": route, "inputChars": len(offset), "status": response.status_code,
+                             "responseBytes": len(response.content), "inputEchoed": offset in response.text,
+                             "code": detail.get("code") if isinstance(detail, dict) else None})
+                (gateway_directory / "malformed-offset-receipt.json").write_text(
+                    json.dumps(rows, indent=2), encoding="utf-8")
+        assert http.get("/api/v1/health").json()["sessions"] == []
+    assert all(row["status"] == 400 for row in rows), rows
+    assert all(row["code"] == "invalid_description_view" for row in rows), rows
+    assert all(row["responseBytes"] < 4096 and not row["inputEchoed"] for row in rows), rows
+
+
 async def test_bounded_discovery_shared_defaults_lossless_pages_and_legacy_full(
     gateway_url, gateway_directory,
 ):

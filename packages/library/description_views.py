@@ -26,6 +26,14 @@ def serialized_size(value):
 def description_view(detail, resource, selector, *, view="full", section=None, offset=0,
                      document_digest=None):
     """Hash the whole document, including mutable report/reference/recording state."""
+    # HTTP supplies text so malformed offsets use this bounded error, not FastAPI's input echo.
+    if isinstance(offset, str):
+        if not re.fullmatch(r"[+-]?[0-9]+", offset):
+            raise invalid_view("offset must be an integer")
+        try:
+            offset = int(offset)
+        except ValueError:
+            raise invalid_view("offset must be an integer") from None
     if view not in ("summary", "page", "full"):
         raise invalid_view("view must be summary, page or full")
     if view != "page" and (section is not None or offset != 0 or document_digest is not None):
