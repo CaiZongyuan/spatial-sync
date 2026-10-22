@@ -93,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -113,7 +113,7 @@ jobs:
       - run: pnpm build
       - name: Browser acceptance against SyntheticSource
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/5
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/6
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
@@ -127,7 +127,7 @@ jobs:
             sleep 0.5
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
-          # Split the same individual cases across five shards; each gateway keeps one test worker.
+          # Split the same individual cases across six shards; each gateway keeps one test worker.
           SPATIAL_E2E_VIDEO=0 pnpm test:e2e --fully-parallel --workers=1 --shard="$PLAYWRIGHT_SHARD"
       - uses: actions/upload-artifact@v4
         if: always()
