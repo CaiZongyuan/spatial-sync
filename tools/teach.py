@@ -10,6 +10,7 @@ capture requires a paused sample and compares its physical TCP with offline FK.
 
 import argparse
 import json
+import math
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -29,6 +30,20 @@ from packages.protocol.math import compose_pose
 
 ASSET = ROOT / "assets/robots/franka_emika_panda/urdf/fr3_franka_hand.urdf"
 LOCATIONS = ROOT / "library/scenes/robot-and-tubes/1/locations.yaml"
+
+
+class TeachingError(ValueError):
+    """A bounded local IK attempt failed; this is not physical validation."""
+
+    def __init__(self, measurements):
+        self.measurements = measurements
+        super().__init__("Bounded IK did not meet teaching tolerance: " + json.dumps(measurements))
+
+
+def approach_height_m(value):
+    if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+        raise ValueError("The approach height must be a finite positive number in metres")
+    return value
 
 
 class Teacher:
@@ -72,6 +87,11 @@ class Teacher:
         return transform
 
     def solve(self, position, initial=HOME, *, orientation=None):
+        initial = np.asarray(initial, dtype=float)
+        bounds = (self.lower + 1e-4, self.upper - 1e-4)
+        if (initial.shape != self.lower.shape or not np.all(np.isfinite(initial))
+                or np.any(initial < bounds[0]) or np.any(initial > bounds[1])):
+            raise ValueError("Initial joints must be finite and within the teaching joint limits")
         from scipy.optimize import least_squares
         from scipy.spatial.transform import Rotation
 
@@ -85,16 +105,26 @@ class Teacher:
             ]
 
         result = least_squares(
-            lambda q: np.r_[error(q), (q - np.asarray(initial)) * 1e-5],
+            lambda q: np.r_[error(q), (q - initial) * 1e-5],
             initial,
-            bounds=(self.lower + 1e-4, self.upper - 1e-4),
+            bounds=bounds,
             ftol=1e-11,
             xtol=1e-11,
             gtol=1e-11,
             max_nfev=400,
         )
-        if np.linalg.norm(error(result.x)) > 1e-4:
-            raise ValueError(f"Unreachable taught point {position}: {error(result.x)}")
+        residual = error(result.x)
+        if not np.all(np.isfinite(residual)) or np.linalg.norm(residual) > 1e-4:
+            margins = np.minimum(result.x - bounds[0], bounds[1] - result.x)
+            raise TeachingError({
+                "targetM": np.asarray(position).tolist(),
+                "positionErrorM": float(np.linalg.norm(residual[:3])),
+                "angleErrorRad": float(np.linalg.norm(residual[3:]) / .2),
+                "weightedResidual": float(np.linalg.norm(residual)),
+                "jointMarginsRad": margins.tolist(), "minJointMarginRad": float(np.min(margins)),
+                "nfev": int(result.nfev), "solverStatus": int(result.status),
+                "newtonP6Verified": False,
+            })
         return result.x.tolist()
 
 
@@ -223,7 +253,8 @@ def measured_grasp(selection, location, joints, manifest, snapshot):
             "targetDefinition": "tube-grasp-height/1"}
 
 
-def teach_selected(selection):
+def teach_selected(selection, *, approach_height=.15):
+    approach_height = approach_height_m(approach_height)
     document = deepcopy(selection.config["locations"])
     evidence = []
     height = selection.config.get("graspHeightM", 0.0)
@@ -233,13 +264,18 @@ def teach_selected(selection):
         seed = location.get("grasp", HOME)
         orientation = selection.teacher.fk(seed)[:3, :3]
         grasp = selection.teacher.solve(np.array(target), seed, orientation=orientation)
-        approach = selection.teacher.solve(np.array(target) + [0, 0, .15], grasp, orientation=orientation)
+        approach_target = np.array(target) + [0, 0, approach_height]
+        approach = selection.teacher.solve(approach_target, grasp, orientation=orientation)
         location.update(grasp=grasp, approach=approach)
         tcp = selection.teacher.fk(grasp)[:3, 3]
         evidence.append(selection.identity | {"location": name, "bottomSiteWorld": bottom,
                         "graspHeightM": height, "graspTargetWorld": list(target),
                         "physicalTcpWorld": tcp.tolist(), "tcpErrorM": float(np.linalg.norm(tcp - target)),
-                        "targetDefinition": "tube-grasp-height/1"})
+                        "targetDefinition": "tube-grasp-height/1", "approachHeightM": approach_height,
+                        "approachTargetWorld": approach_target.tolist(),
+                        "approachTcpErrorM": float(np.linalg.norm(
+                            selection.teacher.fk(approach)[:3, 3] - approach_target)),
+                        "validationScope": "offline-urdf-fk", "newtonP6Verified": False})
     return document, evidence
 
 
@@ -253,7 +289,8 @@ def write_locations(target, document, protected_roots=()):
     target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
 
-def teach():
+def teach(*, approach_height=.15):
+    approach_height = approach_height_m(approach_height)
     teacher = Teacher()
     locations, evidence = {}, []
     points = {
@@ -273,7 +310,8 @@ def teach():
             f"/World/Lab/Rack/{suffix}" if zone == "rack" else f"/World/Lab/Centrifuge/Rotor/Slot{suffix[-1]}"
         )
         grasp = teacher.solve(np.array(point))
-        approach = teacher.solve(np.array(point) + [0, 0, 0.15], grasp)
+        approach_target = np.array(point) + [0, 0, approach_height]
+        approach = teacher.solve(approach_target, grasp)
         locations[name] = {"site": site, "zone": zone, "approach": approach, "grasp": grasp}
         if zone == "centrifuge":
             locations[name]["requires"] = [
@@ -285,6 +323,9 @@ def teach():
                 "name": name,
                 "site": point,
                 "tcpErrorM": float(np.linalg.norm(teacher.fk(grasp)[:3, 3] - point)),
+                "approachHeightM": approach_height, "approachTargetWorld": approach_target.tolist(),
+                "approachTcpErrorM": float(np.linalg.norm(teacher.fk(approach)[:3, 3] - approach_target)),
+                "validationScope": "offline-urdf-fk", "newtonP6Verified": False,
             }
         )
     return {"locations": locations}, evidence
@@ -386,7 +427,7 @@ def capture(args):
         } | measurement
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="Regenerate all default offline joint waypoints")
@@ -399,14 +440,24 @@ if __name__ == "__main__":
     parser.add_argument("--scene-version", help="Exact imported Newton scene name@rev")
     parser.add_argument("--robot", help="Configured robot entityKey in the selected version")
     parser.add_argument("--library-root", type=Path, help="User library root for the selected scene")
+    parser.add_argument("--approach-height-m", type=float,
+                        help="Explicit offline approach height above grasp (default: 0.15 m)")
     args = parser.parse_args()
     if args.capture:
+        if args.approach_height_m is not None:
+            parser.error("--approach-height-m is an offline teaching option; omit it with --capture")
         print(json.dumps(capture(args), indent=2))
     else:
+        height = approach_height_m(.15 if args.approach_height_m is None else args.approach_height_m)
         selection = (select_scene(args.scene_version, args.robot, args.library_root)
                      if args.scene_version else None)
-        document, evidence = teach_selected(selection) if selection else teach()
+        document, evidence = (teach_selected(selection, approach_height=height) if selection
+                              else teach(approach_height=height))
         if args.write or args.output:
             target = args.output or args.input
             write_locations(target, document, selection.protected_roots if selection else ())
         print(json.dumps(evidence, indent=2))
+
+
+if __name__ == "__main__":
+    main()

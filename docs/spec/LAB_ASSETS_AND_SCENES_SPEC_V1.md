@@ -216,6 +216,27 @@ Newton / Virtual arm Config 可声明 `graspHeightM`，严格有限 number、非
 
 第一次采用 h 或更改 h 都要导入显式新 Scene Version，重新示教并运行新的 S/P 报告；旧版本、旧向量、原素材和旧报告不覆盖。工具从所选版本/机器人读取有效 h、真实模型和 base，输出 bottom/height/nominal target/physical FK TCP/误差及输入版本；不能用硬编码旧 base 的教点工具声称支持新布局。新版本能力依赖运行时支持该字段；旧运行时应拒绝未知 Config，不能静默按 0 执行。
 
+### 6.5.2 离线接近位置
+
+`tools/teach.py` 的离线生成保留默认 150 mm 接近高度。其它场景可显式指定
+`--approach-height-m`，单位为米，必须有限且大于 0；它表示名义抓取点上方的世界 Z
+距离，独立于 `graspHeightM`。例如：
+
+```powershell
+uv run --no-sync python tools/teach.py --scene-version fr3-lab@1 --approach-height-m 0.10 --output .scratch/locations.yaml
+```
+
+输出的每位置证据包含接近高度、目标与离线 FK 误差，并明确
+`validationScope: offline-urdf-fk`、`newtonP6Verified: false`。该选项不改变真实 TCP、
+管底 Site、原位置名或 grasp 姿态方向；不能用于 `--capture`。新示教仍须按 §6.5.1
+导入新 Scene Version，不能覆盖已发布包。
+
+求解继续使用原严格数值门槛：位置误差（米）与旋转向量误差乘以 0.2 后的联合范数
+≤ 0.0001。失败报告位置/角度残差、求解状态及各关节距限位的余量；一次有界局部求解
+失败不等于证明全局不可达。全部位置生成成功后才写输出文件，失败不发布部分示教。
+接近高度必须结合管件抽出、周围物体和真实手的净空选定；数值通过不证明实际关节空间
+轨迹、碰撞或负载安全，物理 P6 与 A3 完整流程验收仍单独执行。
+
 ### 6.6 内置场景迁移
 
 | 场景版本 | `stage` | `sources` |
