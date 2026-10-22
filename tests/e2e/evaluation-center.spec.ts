@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
+declare global { interface Window { __evalRequests: { active: number; peak: number; batches: number; aborted: number; hold: boolean } } }
+
 test('real embodied Suite opens from Evaluation navigation with public conditions and locked test', async ({ page, request }, info) => {
   const response = await request.get(`${api}/api/v1/suites/lab-demo-pick-place/1`);
   expect(response.ok(), await response.text()).toBe(true);
@@ -90,4 +92,38 @@ test('failed public read can retry and an unsupported Agent Suite stays readable
   await expect(page.getByRole('heading', { name: '角色与可见性', exact: true })).toBeVisible();
   await expect(page.getByTestId('held-out-test-row')).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('partial failure cancels deferred peers before polling and navigation aborts the pending batch', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const probe = window.__evalRequests = { active: 0, peak: 0, batches: 0, aborted: 0, hold: false };
+    window.fetch = (input, options) => {
+      const path = new URL(input instanceof Request ? input.url : String(input), location.href).pathname;
+      if (!['/api/v1/suites', '/api/v1/evaluations'].includes(path)) return original(input, options);
+      if (path.endsWith('/suites')) {
+        probe.batches++;
+        if (!probe.hold) return Promise.resolve(new Response(JSON.stringify({ detail: { code: 'suite_unavailable' } }), { status: 503 }));
+      }
+      probe.active++; probe.peak = Math.max(probe.peak, probe.active);
+      return new Promise<Response>((_resolve, reject) => options!.signal!.addEventListener('abort', () => {
+        probe.active--; probe.aborted++; reject(options!.signal!.reason);
+      }, { once: true }));
+    };
+  });
+  await page.goto('/eval');
+  await expect(page.getByRole('alert').filter({ hasText: 'suite_unavailable' })).toBeVisible();
+  await expect(page.getByRole('alert')).not.toContainText('超时');
+  await expect.poll(() => page.evaluate(() => ({ active: window.__evalRequests.active, aborted: window.__evalRequests.aborted }))).toEqual({ active: 0, aborted: 1 });
+  await page.clock.fastForward(5000);
+  await expect.poll(() => page.evaluate(() => ({ active: window.__evalRequests.active, batches: window.__evalRequests.batches }))).toEqual({ active: 0, batches: 2 });
+  await page.evaluate(() => { window.__evalRequests.hold = true; });
+  await page.clock.fastForward(5000);
+  await expect.poll(() => page.evaluate(() => window.__evalRequests.active)).toBe(2);
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Scenes', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__evalRequests.active)).toBe(0);
+  await page.clock.fastForward(10000);
+  expect(await page.evaluate(() => ({ batches: window.__evalRequests.batches, peak: window.__evalRequests.peak, aborted: window.__evalRequests.aborted })))
+    .toEqual({ batches: 3, peak: 2, aborted: 4 });
 });

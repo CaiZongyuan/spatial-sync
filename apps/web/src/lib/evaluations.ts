@@ -61,15 +61,21 @@ export function suitePath(id: string) {
 export const suiteSegment = (id: string) => id.replace(/^suite\//, '');
 
 export async function readEvaluationCenter(suiteId: string | undefined, signal: AbortSignal) {
-  const [suites, evaluations, scores] = await Promise.all([
-    suiteId ? request<EvaluationSuite>(suitePath(suiteId), { signal }).then(suite => [suite])
-      : request<{ suites: EvaluationSuite[] }>('/suites', { signal }).then(value => value.suites),
-    request<{ evaluations: EvaluationRecord[] }>('/evaluations', { signal }).then(value => value.evaluations),
-    suiteId ? request<{ rows: EvaluationScore[] }>(`${suitePath(suiteId)}/scoreboard`, { signal }).then(value => value.rows)
-      : Promise.resolve(undefined),
-  ]);
-  return { suites, evaluations: evaluations.filter(value => !suiteId || value.suite === suiteId),
-    rows: scores ?? evaluations.flatMap(value => value.result ? [value.result] : []).sort((a, b) => a.at.localeCompare(b.at)) };
+  const batch = new AbortController();
+  const options = { signal: AbortSignal.any([signal, batch.signal]) };
+  try {
+    const [suites, evaluations, scores] = await Promise.all([
+      suiteId ? request<EvaluationSuite>(suitePath(suiteId), options).then(suite => [suite])
+        : request<{ suites: EvaluationSuite[] }>('/suites', options).then(value => value.suites),
+      request<{ evaluations: EvaluationRecord[] }>('/evaluations', options).then(value => value.evaluations),
+      suiteId ? request<{ rows: EvaluationScore[] }>(`${suitePath(suiteId)}/scoreboard`, options).then(value => value.rows)
+        : Promise.resolve(undefined),
+    ]);
+    return { suites, evaluations: evaluations.filter(value => !suiteId || value.suite === suiteId),
+      rows: scores ?? evaluations.flatMap(value => value.result ? [value.result] : []).sort((a, b) => a.at.localeCompare(b.at)) };
+  } finally {
+    batch.abort();
+  }
 }
 
 export const compareEvaluations = (suite: string, compare: string, against: string, signal: AbortSignal) =>

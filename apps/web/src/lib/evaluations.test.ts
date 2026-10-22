@@ -42,7 +42,8 @@ it('uses canonical Suite REST paths, public reads and the caller cancellation si
   expect((await compareEvaluations('suite/real@1', 'one', 'two', controller.signal)).comparison.scoreDelta).toBe(.25);
   expect(calls.map(value => value.path)).toEqual(['/api/v1/suites/real/1', '/api/v1/evaluations',
     '/api/v1/suites/real/1/scoreboard', '/api/v1/suites/real/1/scoreboard?compare=one&against=two']);
-  expect(calls.every(value => value.signal === controller.signal)).toBe(true);
+  expect(calls.slice(0, 3).every(value => value.signal === calls[0].signal)).toBe(true);
+  expect(calls[3].signal).toBe(controller.signal);
   expect(() => suitePath('suite/../../private@1')).toThrow('无效的评估集版本');
 });
 
@@ -69,4 +70,40 @@ it('keeps a partial API failure visible instead of turning it into an empty scor
   await expect(readEvaluationCenter('suite/real@1', new AbortController().signal)).rejects.toMatchObject({
     message: 'suite_changed', detail: { code: 'suite_changed' },
   });
+});
+
+it('cancels deferred peers after partial failure before retry, and forwards owner cleanup', async () => {
+  const active = new Set<AbortSignal>();
+  const peers: AbortSignal[] = [];
+  let fail = true;
+  vi.stubGlobal('fetch', vi.fn((path: string, options: RequestInit) => {
+    if (fail && path.endsWith('/suites')) return Promise.resolve(new Response(
+      JSON.stringify({ detail: { code: 'suite_unavailable' } }), { status: 503 }));
+    const signal = options.signal!;
+    active.add(signal); peers.push(signal);
+    return new Promise<Response>((_resolve, reject) => signal.addEventListener('abort', () => {
+      active.delete(signal); reject(signal.reason);
+    }, { once: true }));
+  }));
+  const firstOwner = new AbortController();
+  await expect(readEvaluationCenter(undefined, firstOwner.signal)).rejects.toMatchObject({
+    message: 'suite_unavailable', detail: { code: 'suite_unavailable' },
+  });
+  expect(peers[0].aborted).toBe(true);
+  expect(active.size).toBe(0);
+  expect(firstOwner.signal.aborted).toBe(false);
+  fail = false;
+  const nextOwner = new AbortController();
+  const next = readEvaluationCenter(undefined, nextOwner.signal);
+  expect(peers.slice(1)).toHaveLength(2);
+  expect(peers.slice(1).every(signal => !signal.aborted)).toBe(true);
+  nextOwner.abort(new DOMException('Owner left the page', 'AbortError'));
+  await expect(next).rejects.toMatchObject({ name: 'AbortError', message: 'Owner left the page' });
+  expect(peers.every(signal => signal.aborted)).toBe(true);
+  expect(active.size).toBe(0);
+  const deadlineOwner = new AbortController();
+  const expired = readEvaluationCenter(undefined, deadlineOwner.signal);
+  deadlineOwner.abort(new DOMException('Deadline elapsed', 'TimeoutError'));
+  await expect(expired).rejects.toMatchObject({ name: 'TimeoutError', message: 'Deadline elapsed' });
+  expect(active.size).toBe(0);
 });
