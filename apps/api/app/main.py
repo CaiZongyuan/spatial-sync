@@ -191,10 +191,10 @@ def create_app(
     async def invalid_request(request, error):
         if request.url.path.startswith(("/api/v1/models", "/api/v1/prices", "/api/v1/vault")):
             # These endpoints never echo rejected input (including accidental credential fields).
-            return JSONResponse({"detail": [
-                {"loc": item["loc"], "type": item["type"], "msg": item["msg"]}
-                for item in error.errors()
-            ]}, status_code=422)
+            return JSONResponse(
+                {"detail": {"code": "invalid_resource", "message": "Resource metadata is invalid"}},
+                status_code=422,
+            )
         # A valid JSON numeric literal can overflow the parser's float range.
         # Its diagnostic input must itself remain valid JSON in the 422 response.
         return JSONResponse(

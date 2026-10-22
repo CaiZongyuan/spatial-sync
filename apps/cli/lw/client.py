@@ -92,10 +92,7 @@ class GatewayClient:
                 and not item.get("evaluationId")
             ]
             if len(active) != 1:
-                raise GatewayError(
-                    f"Set LW_SESSION: expected one active session, found {len(active)}",
-                    detail={"code": "active_session_required", "activeSessions": len(active)},
-                )
+                raise GatewayError(f"Set LW_SESSION: expected one active session, found {len(active)}")
             self._session_id = active[0]["sessionId"]
         return "/api/v1/sessions/" + quote(self._session_id, safe="")
 

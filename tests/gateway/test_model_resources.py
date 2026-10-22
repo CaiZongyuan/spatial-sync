@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
+from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from apps.api.app.settings import Settings
 from packages.vault import Vault
 
@@ -16,6 +17,19 @@ MODEL = {
     "defaultThinking": "high",
     "credentialName": "llm/fake",
 }
+
+
+@pytest.fixture(autouse=True)
+def resource_gateway_has_no_source_or_host_probes(monkeypatch):
+    async def no_source(*args, **kwargs):
+        raise AssertionError("Resource metadata must not create a spatial Source")
+
+    def fake_sample(self, rows):
+        return platform_snapshot(rows, unavailable_system("Fake resource test sampler"))
+
+    monkeypatch.setattr("apps.api.app.platform_monitor.HostSampler.sample", fake_sample)
+    monkeypatch.setattr("apps.api.app.session_manager.SessionManager.create", no_source)
+    monkeypatch.delenv("SPATIAL_LIVE_BINDINGS", raising=False)
 
 
 @pytest.fixture
@@ -104,7 +118,11 @@ def test_vault_names_only_no_write_route_no_validation_or_log_leak(configured, c
             )
             assert response.status_code == 405
             documents.append(response)
-        for body in (MODEL | {"credentialValue": SENTINEL}, MODEL | {"modelId": SENTINEL + " invalid"}):
+        for body in (
+            MODEL | {"credentialValue": SENTINEL},
+            MODEL | {"modelId": SENTINEL + " invalid"},
+            MODEL | {SENTINEL: "accidental field name"},
+        ):
             response = http.post("/api/v1/models", json=body)
             assert response.status_code == 422
             documents.append(response)
