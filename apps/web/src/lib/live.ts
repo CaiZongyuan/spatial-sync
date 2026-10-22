@@ -4,6 +4,7 @@ import type { Actor, Catalog, EntityAlert, Condition } from './protocol';
 
 export interface AlertEpisode extends EntityAlert {
   sessionId: string; active: boolean;
+  readOnly?: boolean;
   acknowledgement: { actor: Actor; note: string; simTime: number; sampleTimeMs: number } | null;
   closedContext: { reason: string; epoch: number; simTime: number } | null;
 }

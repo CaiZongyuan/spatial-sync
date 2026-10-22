@@ -253,6 +253,7 @@ def test_sustained_deviation_acknowledgement_and_recovery_are_reliable(
             control(client, route, "step", count=1)  # At .30: .25 seconds of sustained deviation.
             [episode] = await_alerts(client, sid, 1, active=True)
             assert episode["state"] == "raised"
+            assert episode["readOnly"] is False
             raised = next_alert(ws, "raised")
             assert raised["since"] == pytest.approx(0.05)
             assert raised["simTime"] == pytest.approx(0.30)
@@ -264,6 +265,7 @@ def test_sustained_deviation_acknowledgement_and_recovery_are_reliable(
                 headers={"X-Actor": "agent:lab-check"},
             )
             assert ack.status_code == 200, ack.text
+            assert ack.json()["readOnly"] is False
             acknowledged = next_alert(ws, "acknowledged")
             assert acknowledged["actor"] == {"kind": "agent", "name": "lab-check"}
             assert "note" not in acknowledged

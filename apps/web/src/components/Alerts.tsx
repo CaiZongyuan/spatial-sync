@@ -13,8 +13,11 @@ export function AlertAcknowledgement({ alert }: { alert: AlertEpisode }) {
   if (current.acknowledgement) return <div className="alert-audit"><span>已确认 · {current.acknowledgement.actor.kind}:{current.acknowledgement.actor.name}</span>
     <q>{current.acknowledgement.note || '未填写备注'}</q></div>;
   if (!current.active) return <span className="live-muted">{current.closedContext ? `上下文结束 · ${current.closedContext.reason}` : '已恢复'}</span>;
+  if (alert.readOnly) return <span className="live-muted">评估会话只读</span>;
   return open ? <form className="alert-ack-form" onSubmit={event => {
-    event.preventDefault(); setPending(true); setError('');
+    event.preventDefault();
+    if (alert.readOnly || pending) return;
+    setPending(true); setError('');
     void acknowledgeAlert(alert.alertId, note).then(value => { setSaved(value); setOpen(false); })
       .catch((error: Error) => setError(error.message)).finally(() => setPending(false));
   }}>
