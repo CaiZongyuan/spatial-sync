@@ -96,6 +96,12 @@ class Sampler:
 
 
 bindings = yaml.safe_load((ROOT / "devices/live/lab.yaml").read_text(encoding="utf-8"))
+if os.getenv("SPATIAL_TEST_LIVE_LAYOUT") == "1":
+    bindings["layout"] = "lab-demo@2"
+    for entity, place in zip(bindings["entities"], (
+        "/World/Lab/Incubator", "/World/Lab/BiosafetyCabinet", "/World/Lab/EnvironmentSensor",
+    ), strict=True):
+        entity["placeAt"] = place
 bindings["entities"][0]["alerts"] = {"tempDeviation": {
     "when": {"property": "temperatureC", "deviatesFrom": "setpointC", "by": .5},
     "forSeconds": .25, "severity": "critical", "message": "培养箱温度偏离设定值",

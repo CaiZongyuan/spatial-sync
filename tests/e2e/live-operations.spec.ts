@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
-import { createConnection, createServer } from 'node:net';
+import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { cleanupOwnedProcesses, finishCleanup, type OwnedProcess } from './owned-cleanup';
 
 const key = '/Real/Incubator2', environment = '/Real/Environment1';
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function port() {
   return new Promise<number>((resolve, reject) => {
     const server = createServer(); server.once('error', reject);
@@ -16,15 +16,6 @@ async function port() {
     });
   });
 }
-async function closed(port: number) {
-  return new Promise<boolean>(resolve => {
-    const connection = createConnection({ host: '127.0.0.1', port });
-    connection.once('connect', () => { connection.destroy(); resolve(false); });
-    connection.once('error', () => resolve(true));
-    connection.setTimeout(1000, () => { connection.destroy(); resolve(false); });
-  });
-}
-
 test('real Live UI bootstraps plans, approves exact actions, retains alerts and replays without a simulation', async ({ page, playwright }, info) => {
   // Actual DeviceHost, programs, pipeline and writer; device peers are in-process,
   // socket-free fixtures. Actual MQTT wire composition has a separate manual check.
@@ -33,11 +24,12 @@ test('real Live UI bootstraps plans, approves exact actions, retains alerts and 
   const python = process.env.SPATIAL_PYTHON ?? resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
   const owned = resolve('../../tests/fixtures/owned_processes.py');
   const execute = promisify(execFile);
-  const processes: { child: ChildProcess; output: string; exited: Promise<void>; label: string; error?: Error; identity: Promise<string> }[] = [];
+  const processes: OwnedProcess[] = [];
   const start = (label: string, executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) => {
     const child = spawn(executable, args, { cwd, env, windowsHide: true });
     const record = { child, output: '', exited: new Promise<void>(resolve => child.once('exit', () => resolve())), label, error: undefined as Error | undefined,
-      identity: execute(python, [owned, 'snapshot', String(child.pid)]).then(value => value.stdout) };
+      identity: execute(python, [owned, 'snapshot', String(child.pid)])
+        .then(value => ({ identity: value.stdout }), error => ({ error })) };
     child.stdout?.on('data', data => { record.output += data; }); child.stderr?.on('data', data => { record.output += data; });
     child.once('error', error => { record.error = error; }); processes.push(record);
   };
@@ -55,6 +47,7 @@ test('real Live UI bootstraps plans, approves exact actions, retains alerts and 
     if (/\/sessions\/[^/]+\/(manifest|stream|frames|entities|catalog)/.test(path)) forbidden.push(path);
   });
   let ready = false;
+  const original: unknown[] = [];
   try {
     start('live-api', python, ['-m', 'uvicorn', 'live_operations_gateway:app', '--app-dir', 'tests/fixtures',
       '--host', '127.0.0.1', '--port', String(apiPort)], resolve('../..'), env);
@@ -158,26 +151,20 @@ test('real Live UI bootstraps plans, approves exact actions, retains alerts and 
     expect(await receipt()).toMatchObject({ sourceCalls: 0, sessions: 0 });
     await writeFile(info.outputPath('live-composition-evidence.json'), JSON.stringify({ planId: plan.id,
       invocationId: invocation.invocationId, alertId: alert.alertId, ackRequests, forbidden, ...(await receipt()) }));
-  } finally {
-    const shutdown = ready ? await http.post(`${api}/e2e/live/close`).catch(() => undefined) : undefined;
-    const shutdownReceipt = shutdown?.ok() ? await shutdown.json() : undefined;
-    await page.goto('about:blank').catch(() => {}); await http.dispose();
-    for (const record of processes.reverse()) {
-      const identity = await record.identity;
-      const cleanup = await execute(python, [owned, 'stop', identity]);
-      let stopped = await Promise.race([record.exited.then(() => true), delay(3000).then(() => false)]);
-      if (!stopped) { record.child.kill('SIGKILL'); stopped = await Promise.race([record.exited.then(() => true), delay(3000).then(() => false)]); }
-      await writeFile(info.outputPath(`${record.label}.log`), record.output);
-      await writeFile(info.outputPath(`${record.label}-receipt.json`), JSON.stringify({ pid: record.child.pid,
-        source: resolve('../..'), api, web, stopped, cleanup: JSON.parse(cleanup.stdout),
-        exitCode: record.child.exitCode, signalCode: record.child.signalCode }));
-      expect(stopped, `${record.label} owned process exited`).toBe(true);
-    }
-    expect(await closed(apiPort), 'Owned API listener gone').toBe(true);
-    expect(await closed(webPort), 'Owned Vite listener gone').toBe(true);
-    if (ready) {
-      expect(shutdown?.ok(), 'Owned Live Host closed').toBe(true);
-      expect(shutdownReceipt).toMatchObject({ sourceCalls: 0, sessions: 0, peerTasksDone: true });
-    }
+  } catch (error) { original.push(error); }
+  finally {
+    const cleanup = await cleanupOwnedProcesses(processes, { python, script: owned, original,
+      outputPath: name => info.outputPath(name), context: { source: resolve('../..'), api, web },
+      ports: [apiPort, webPort], prepare: [
+        { label: 'live:close', run: async () => {
+          if (!ready) return;
+          const shutdown = await http.post(`${api}/e2e/live/close`);
+          expect(shutdown.ok(), 'Owned Live Host closed').toBe(true);
+          expect(await shutdown.json()).toMatchObject({ sourceCalls: 0, sessions: 0, peerTasksDone: true });
+        } },
+        { label: 'page:close', run: () => page.goto('about:blank') },
+        { label: 'http:dispose', run: () => http.dispose() },
+      ] });
+    finishCleanup(cleanup, original);
   }
 });
