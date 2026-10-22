@@ -19,7 +19,7 @@ lw agent versions lab-operator --json
 lw agent export lab-operator 1 --output original.tar --json
 lw agent create my-operator original.tar --json
 lw agent import my-operator original.tar --json
-lw harness diff my-operator 1 2 --json
+lw harness diff my-operator 1 1 --json
 ```
 
 Export requires a new output file. Import restores the editable Harness and
