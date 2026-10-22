@@ -13,6 +13,7 @@ import json
 import math
 import os
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import dataclass
@@ -285,8 +286,19 @@ def write_locations(target, document, protected_roots=()):
     target = target.resolve()
     if any(target.is_relative_to(root.resolve() / "scenes") for root in roots):
         raise ValueError("Published scene packages are immutable; use --output outside library/scenes")
+    payload = yaml.safe_dump(document, sort_keys=False)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent, prefix=".teach-", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def teach(*, approach_height=.15):
