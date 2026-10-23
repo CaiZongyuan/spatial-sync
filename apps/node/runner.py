@@ -374,11 +374,13 @@ class OwnedRun:
                     self.metrics = json.loads(complete[-1])
                 except ValueError:
                     pass  # A still-open final line is retried at the next heartbeat.
+        # If the producer exits during these reads, another report must collect its final bytes.
+        producer_finished = not self.thread.is_alive() and not self.uncertain_owner
         for name in ("stdout.log", "stderr.log"):
             path = self.root / name
             if path.exists():
                 lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-                complete = [line for line in lines if line.endswith("\n") or not self.thread.is_alive()]
+                complete = [line for line in lines if line.endswith("\n") or producer_finished]
                 new = []
                 for index, line in enumerate(complete[self._log_offsets[name] :], self._log_offsets[name]):
                     line = line.rstrip("\r\n")
@@ -411,7 +413,7 @@ class OwnedRun:
                 pass
         selected = self._logs[self.log_cursor:self.log_cursor + 500]
         draining = self.status in ("succeeded", "failed", "cancelled") and (
-            self.thread.is_alive() or self.log_cursor + len(selected) < len(self._logs))
+            not producer_finished or self.log_cursor + len(selected) < len(self._logs))
         return {
             **self.metrics,
             "jobId": self.assignment["jobId"],
