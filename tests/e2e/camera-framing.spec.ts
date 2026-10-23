@@ -11,6 +11,12 @@ const outlierKey = '/World/TestFramingBody';
 const camera = (page: Page) => page.evaluate(() => window.__spatialRenderDebug?.camera());
 const distance = (a: number[], b: number[]) => Math.hypot(...a.map((value, index) => value - b[index]));
 
+async function readyCamera(page: Page) {
+  let pose: CameraState | undefined;
+  await expect.poll(async () => { pose = await camera(page); return pose; }).toBeDefined();
+  return pose!;
+}
+
 /** Real renderer + recorded binary sample, without creating a Session or Source. */
 async function viewerFixture(page: Page, delayVisual = false, previewOrder = false) {
   const manifest = JSON.parse(readFileSync(join(fixture, 'manifest.json'), 'utf8'));
@@ -84,7 +90,7 @@ for (const render of ['individual', 'instanced']) test(`${render} view survives 
     await page.getByRole('button', { name: 'Fit scene', exact: true }).click();
     const canvas = page.locator('canvas');
     await canvas.hover();
-    const initial = (await camera(page))!;
+    const initial = await readyCamera(page);
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => distance((await camera(page))!.position, initial.position)).toBeGreaterThan(.1);
     const user = (await camera(page))!;
@@ -145,7 +151,7 @@ for (const userOwns of [false, true]) test(`initial plan waits for pose/context/
     let user: CameraState | undefined;
     if (userOwns) {
       await viewport.locator('canvas').hover();
-      const initial = (await camera(page))!;
+      const initial = await readyCamera(page);
       await page.mouse.wheel(0, -400);
       await expect.poll(async () => (await camera(page))?.zoom).not.toBe(initial.zoom);
       user = (await camera(page))!;
@@ -177,6 +183,9 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
         const actual = diagnostics.camera;
         const witness = { unavailableReads: 0, readyReads: 0 };
         Object.defineProperty(window, '__cameraReadinessFixture', { value: witness });
+        Object.defineProperty(window, '__restoreCameraReadinessFixture', {
+          value: () => Object.defineProperty(diagnostics, 'camera', { value: actual }),
+        });
         Object.defineProperty(diagnostics, 'camera', { value: () => {
           if (!witness.unavailableReads) { witness.unavailableReads++; return undefined; }
           witness.readyReads++;
@@ -184,7 +193,7 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
         } });
       });
     }
-    const initial = (await camera(page))!;
+    const initial = await readyCamera(page);
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => distance((await camera(page))!.position, initial.position)).toBeGreaterThan(.1);
     const user = (await camera(page))!;
@@ -201,7 +210,11 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
     }
   } finally {
     if (unavailableFirstRead) {
-      const witness = await page.evaluate(() => Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value);
+      const witness = await page.evaluate(() => {
+        const witness = Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value;
+        Object.getOwnPropertyDescriptor(window, '__restoreCameraReadinessFixture')?.value();
+        return witness;
+      });
       await info.attach('camera-readiness-fixture.json', { body: JSON.stringify(witness), contentType: 'application/json' });
     }
     fixture.release();
