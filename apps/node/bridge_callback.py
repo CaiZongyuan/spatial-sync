@@ -7,7 +7,42 @@ import os
 import statistics
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+
+
+def external_files(policy, output):
+    import onnx
+
+    model = onnx.load_model(str(policy), load_external_data=False)
+    pending, files = [model], {}
+    while pending:
+        message = pending.pop()
+        if (
+            message.DESCRIPTOR.full_name == "onnx.TensorProto"
+            and message.data_location == onnx.TensorProto.EXTERNAL
+        ):
+            properties = {item.key: item.value for item in message.external_data}
+            location = properties["location"]
+            relative = PurePosixPath(location)
+            if (
+                not location
+                or "\\" in location
+                or relative.is_absolute()
+                or PureWindowsPath(location).drive
+                or any(part in (".", "..") or ":" in part for part in relative.parts)
+            ):
+                raise ValueError("ONNX external data must use safe relative file paths")
+            file = policy.parent / location
+            if file.is_symlink() or not file.resolve().is_relative_to(output.resolve()):
+                raise ValueError("ONNX external data escapes the owned output directory")
+            name = file.relative_to(output).as_posix()
+            with file.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            files[name] = {"path": name, "sha256": digest, "size": file.stat().st_size}
+        for field, value in message.ListFields():
+            if field.cpp_type == field.CPPTYPE_MESSAGE:
+                pending.extend(value if field.is_repeated else [value])
+    return [files[name] for name in sorted(files)]
 
 
 def install():
@@ -86,6 +121,7 @@ def install():
                     "checkpointSha256": checkpoint_hash,
                     "policy": "policy.onnx",
                     "policySha256": policy_hash,
+                    "externalData": external_files(output / "policy.onnx", output),
                     "iteration": runner.current_learning_iteration,
                     "afterLearn": True,
                 }

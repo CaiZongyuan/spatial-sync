@@ -53,6 +53,7 @@ def main():
                 "policySha256": hashlib.sha256((output / "policy.onnx").read_bytes()).hexdigest(),
                 "iteration": 0,
                 "afterLearn": True,
+                "externalData": [],
             }
         ),
         encoding="utf-8",

@@ -114,15 +114,30 @@ def _store_artifacts(manager, job, stream):
             checkpoint = relative_path(export["checkpoint"]).as_posix()
             policy = relative_path(export["policy"]).as_posix()
             if (
-                not export["afterLearn"]
+                export["afterLearn"] is not True
                 or type(export["iteration"]) is not int
                 or export["iteration"] < 0
                 or checkpoint not in files
                 or policy not in files
+                or not checkpoint.endswith(".pt")
+                or not policy.endswith(".onnx")
                 or _file_hash(stage / checkpoint) != export["checkpointSha256"]
                 or _file_hash(stage / policy) != export["policySha256"]
             ):
                 raise ValueError("ONNX export does not identify its exact trained checkpoint")
+            external = export["externalData"]
+            if not isinstance(external, list) or len({entry["path"] for entry in external}) != len(external):
+                raise ValueError("ONNX external data manifest must contain distinct files")
+            for entry in external:
+                name = relative_path(entry["path"]).as_posix()
+                if (
+                    name not in files
+                    or type(entry["size"]) is not int
+                    or entry["size"] < 0
+                    or (stage / name).stat().st_size != entry["size"]
+                    or _file_hash(stage / name) != entry["sha256"]
+                ):
+                    raise ValueError("ONNX external data is missing or changed")
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise PlanError("artifacts_incomplete", str(exc), status=422) from exc
         records = [
