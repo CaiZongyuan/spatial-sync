@@ -43,6 +43,7 @@ from apps.api.app.session_manager import SessionManager, default_source_factory,
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
+from apps.api.app.task_routes import install_task_routes
 from packages.assets.registry import AssetRegistry
 from packages.info.invocations import HistoryUnavailable
 from packages.info.plans import PlanError
@@ -152,6 +153,7 @@ def create_app(
         manager.platform_sessions, StructuralValidator(settings.state_root, program_schemas),
         live=lambda: manager.live,
         suites=evaluations.suites,
+        tasks=manager.tasks,
     )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
@@ -212,6 +214,7 @@ def create_app(
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
+    install_task_routes(app, manager.tasks, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))

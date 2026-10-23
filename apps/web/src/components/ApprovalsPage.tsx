@@ -4,6 +4,8 @@ import { ApprovalInboxContext, decideApproval, type ApprovalDecision, type Appro
 import '../approvals.css';
 import { LibraryDeletionApproval } from './LibraryDeletion';
 import type { DeletionDetails } from '../lib/library-deletions';
+import type { TrainingPlanDocument } from '../lib/training';
+import { TrainingPlanDetails } from './TrainingPlanDetails';
 
 const statusText: Record<ApprovalRecord['status'], string> = {
   pending: '待审批', approved: '已批准', denied: '已驳回', revoked: '已撤销', expired: '已超时', unavailable: '已关闭',
@@ -21,6 +23,7 @@ function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide
   const [error, setError] = useState<string>();
   const processed = record.status !== 'pending';
   const last = record.decisions.at(-1);
+  const training = record.details.plan?.kind === 'training';
   async function decide(decision: ApprovalDecision) {
     setBusy(true); setError(undefined);
     try { await decideApproval(record.approvalId, decision, note); setNote(''); }
@@ -28,7 +31,7 @@ function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide
     finally { setBusy(false); }
   }
   return <article className="approval-card" data-testid={`approval-${record.approvalId}`} aria-label={`${subjectText[record.subject]}：${record.title}`}>
-    <div className="approval-card-heading"><span className="eyebrow">{subjectText[record.subject]}</span>
+    <div className="approval-card-heading"><span className="eyebrow">{training ? '训练计划审批' : subjectText[record.subject]}</span>
       <span className={`approval-status is-${record.status}`}><i />{statusText[record.status]}</span></div>
     <h3>{record.title}</h3>
     {record.details.entityKey && <p className="approval-entity"><code>{record.details.entityKey}</code></p>}
@@ -38,7 +41,8 @@ function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide
       {record.sessionId && <div><dt>会话</dt><dd><Link to="/sessions/$sessionId" params={{ sessionId: record.sessionId }}>{record.sessionId}</Link></dd></div>}
     </dl>
     {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
-    {record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
+    {training ? <TrainingPlanDetails plan={record.details.plan as unknown as TrainingPlanDocument} changes={record.details.changes} /> :
+      record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}
     {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}
     {(!processed || record.canRevoke) && <label className="approval-note">备注

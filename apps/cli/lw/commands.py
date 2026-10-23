@@ -83,7 +83,19 @@ class Command:
         for argument in self.arguments:
             name = argument.client_name or argument.name
             if get_origin(argument.annotation) is dict and isinstance(values[name], str):
-                values[name] = yaml_document(values[name])
+                path = Path(values[name])
+                values[name] = yaml_document(path)
+                if self.method in ("plan_submit", "plan_revise") and values[name].get("kind") == "training":
+                    interview = values[name].get("interview")
+                    if not isinstance(interview, str):
+                        raise ValueError("Training plan must name an interview Markdown file")
+                    try:
+                        interview_path = (path.parent / interview).resolve()
+                        if not interview_path.is_relative_to(path.parent.resolve()):
+                            raise ValueError("Interview must be inside the plan directory")
+                        values[name]["interview"] = interview_path.read_text(encoding="utf-8")
+                    except OSError as exc:
+                        raise ValueError("Cannot read training plan interview document") from exc
         if actor is not None:
             values["actor"] = actor
         return await getattr(client, self.method)(**values)
@@ -103,6 +115,22 @@ def description_arguments(default, metavar="id"):
 
 
 COMMANDS = (
+    Command(
+        path=("task", "push"), help="Snapshot an Isaac Lab Task source package without executing it.",
+        method="task_push",
+        arguments=(Argument("directory", ("dir",), str, "Task directory on this client"),),
+        mcp_name="task_push", actor=True,
+    ),
+    Command(path=("task", "ls"), help="List immutable Task versions.", method="tasks_list",
+            output_type=list[dict[str, Any]], mcp_name="task_list"),
+    Command(path=("task", "show"), help="Read an exact Task version and its hash.", method="task_show",
+            arguments=(Argument("id", ("task/name@rev",), str, "Exact Task version"),), mcp_name="task_show"),
+    Command(
+        path=("plan", "submit"), help="Submit a training plan and interview for human approval.",
+        method="plan_submit", arguments=(Argument("document", ("plan.yaml",), dict[str, Any],
+                                                  "Training plan; CLI reads its local interview file"),),
+        mcp_name="plan_submit", actor=True,
+    ),
     Command(
         path=("agent", "ls"), help="List Agents and their configured model and Reference version.",
         method="agents_list", output_type=list[dict[str, Any]], mcp_name="agent_list",

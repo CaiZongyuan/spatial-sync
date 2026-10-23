@@ -28,6 +28,7 @@ def install_approval_routes(app, manager, role_for):
     def document(record):
         if record.subject == "deletion":
             record = manager.library_deletions.describe(record)
+        training = record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training"
         session = target(record)
         invocation = (
             session.pipeline.table.get(record.subjectId)
@@ -44,7 +45,8 @@ def install_approval_routes(app, manager, role_for):
                                and all(step.status == "pending" for step in plan.plan.steps))
         return {
             **record.model_dump(mode="json"),
-            "canRevoke": (record.subject == "deletion" and record.status in ("approved", "denied")
+            "canRevoke": (training and manager.training_plans.can_revoke(record)) or (
+                          record.subject == "deletion" and record.status in ("approved", "denied")
                           and record.details.get("execution", {}).get("status")
                           in ("not_started", "blocked", "failed")) or available
             and (
@@ -105,6 +107,12 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training":
+            try:
+                manager.training_plans.decide(record, body.decision, actor, body.note)
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
+            return document(get_record(approval_id))
         if record.subject == "deletion":
             try:
                 await anyio.to_thread.run_sync(

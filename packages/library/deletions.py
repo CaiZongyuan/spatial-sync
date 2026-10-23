@@ -15,11 +15,12 @@ from packages.library.transactions import durable_json, reserve_revision
 
 
 class LibraryDeletions:
-    def __init__(self, assets, scenes, approvals, recordings, sessions, validator, suites=None, *, live=None):
+    def __init__(self, assets, scenes, approvals, recordings, sessions, validator, suites=None, *, live=None,
+                 tasks=None):
         self.assets, self._scenes, self.approvals = assets, scenes, approvals
         self.root = assets.roots["user"]
         self.inspection = ReferenceInspection(assets, scenes, recordings, sessions, validator,
-                                              suites=suites, live=live)
+                                              suites=suites, live=live, tasks=tasks)
 
     @property
     def scenes(self):

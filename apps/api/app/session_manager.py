@@ -28,6 +28,7 @@ from packages.info.store import StateStore
 from packages.library.archive import import_lock
 from packages.library.assets import AssetLibrary
 from packages.library.scenes import SceneLibrary
+from packages.library.tasks import TaskLibrary
 from packages.protocol.internal import InformationClock, SessionOptions
 from packages.protocol.json import encode
 from packages.protocol.math import compose_pose
@@ -49,6 +50,7 @@ from packages.protocol.schema import (
     TransformFrame,
     validate_command_args,
 )
+from packages.training.plans import TrainingPlanStore
 from packages.transport import FrameCodec
 
 
@@ -1090,6 +1092,11 @@ class SessionManager:
         self.plans = PlanStore(settings.state_root / "plans.jsonl", self.approvals, on_change=self.inbox.plan)
         self._library = None
         self.library_assets = AssetLibrary(settings.state_root)
+        self.tasks = TaskLibrary(self.library_assets, lambda: self.library)
+        self.training_plans = TrainingPlanStore(
+            settings.state_root / "training-plans.json", self.approvals, self.tasks,
+            on_change=self.inbox.plan,
+        )
         self.sessions: dict[str, Session] = {}
         self.live = None
         self._starting_session: Session | None = None
@@ -1106,6 +1113,7 @@ class SessionManager:
             await asyncio.to_thread(self.inbox.startup)
             self.approvals.startup()
             self.plans.startup()
+            self.training_plans.startup()
             self.inbox.reconcile(list(self.approvals.records.values()), list(self.plans.records.values()))
             await self.plans.flush()
             await self.inbox.flush()

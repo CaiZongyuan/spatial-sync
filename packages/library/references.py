@@ -38,10 +38,12 @@ def dependency_reports(version, kind):
 
 
 class ReferenceInspection:
-    def __init__(self, assets, scenes, recordings, sessions, validator, suites=None, *, live=None):
+    def __init__(self, assets, scenes, recordings, sessions, validator, suites=None, *, live=None,
+                 tasks=None):
         self.assets, self._scenes = assets, scenes
         self.recordings, self.sessions, self.validator = recordings, sessions, validator
         self.suites = suites
+        self.tasks = tasks
         self._inspected = {}
         self.live = live or (lambda: None)
 
@@ -61,12 +63,20 @@ class ReferenceInspection:
             unknown.append({"kind": owner_kind, "id": identifier, "reason": str(error)})
 
         # Future product stores have no A2 reader. Existing contents cannot be declared empty.
-        for name in ("tasks", "jobs", "policies"):
+        for name in (("tasks",) if self.tasks is None else ()) + ("jobs", "policies"):
             directory = self.assets.roots["user"] / name
             if directory.is_symlink() or directory.is_junction() or (
                 directory.exists() and (not directory.is_dir() or any(directory.iterdir()))
             ):
                 problem("training", name, "This product store is not supported by A2 reference inspection")
+
+        if self.tasks is not None:
+            try:
+                for task in self.tasks.list():
+                    if kind == "scene" and task["task"]["scene"] == target.id:
+                        reference("task", task["id"], "Pinned training Task scene version")
+            except (OSError, ValueError, LibraryError):
+                problem("task", "library", "Cannot inspect every pinned training Task scene")
 
         if self.suites is not None:
             try:
@@ -205,6 +215,9 @@ class ReferenceInspection:
         return {
             "references": found, "complete": not unknown, "uninspected": unknown,
             "coverage": ["all scene and asset versions", "all bound validation history",
-                         "all recording entries", "starting and retained sessions", "configured Live layout"],
-            "training": "No A2 training store reader; nonempty reserved stores block deletion",
+                         "all recording entries", "starting and retained sessions", "configured Live layout"]
+                        + (["all Task versions"] if self.tasks is not None else []),
+            "training": ("Task scene pins inspected; nonempty job/policy stores still block deletion"
+                         if self.tasks is not None else
+                         "No A2 training store reader; nonempty reserved stores block deletion"),
         }

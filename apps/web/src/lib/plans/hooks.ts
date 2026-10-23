@@ -4,6 +4,7 @@ import type { OperationPlan } from '../protocol';
 import type { SessionClient } from '../stream/client';
 import { previewMatches, type MotionPreview, type PlanDocument, type PlanStep, type PreviewScope } from './model';
 import type { PlanStore } from './store';
+import type { TrainingPlanDocument } from '../training';
 
 const empty = { entries: [], deviations: [] } satisfies ReturnType<PlanStore['getSnapshot']>;
 const noSubscribe = () => () => {};
@@ -15,7 +16,7 @@ export const useClientPlans = (client?: SessionClient) =>
   useSyncExternalStore(client?.plans.subscribe ?? noSubscribe, client?.plans.getSnapshot ?? emptySnapshot);
 
 export function usePlansList() {
-  const [state, setState] = useState<{ plans?: PlanDocument[]; error?: string }>({});
+  const [state, setState] = useState<{ plans?: (PlanDocument | TrainingPlanDocument)[]; error?: string }>({});
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let disposed = false, pending: AbortController | undefined;
@@ -24,7 +25,7 @@ export function usePlansList() {
       const controller = new AbortController(); pending = controller;
       const timeout = setTimeout(() => controller.abort(), 8000);
       try {
-        const value = await request<{ plans: PlanDocument[] }>('/plans?kind=operation', { signal: controller.signal });
+        const value = await request<{ plans: (PlanDocument | TrainingPlanDocument)[] }>('/plans', { signal: controller.signal });
         if (!disposed) setState({ plans: value.plans.sort((a, b) => b.createdAtMs - a.createdAtMs) });
       } catch (error) { if (!disposed) setState(prior => ({ ...prior, error: (error as Error).message })); }
       finally { clearTimeout(timeout); pending = undefined; }
