@@ -83,13 +83,12 @@ class TrainingJobs:
     async def run(self):
         while True:
             await asyncio.sleep(1)
-            async with self.manager._create_lock:
-                try:
-                    self.reconcile()
-                    if self.records:
-                        self._save()
-                except PlanError:
-                    return
+            try:
+                self.reconcile()
+                if self.records:
+                    self._save()
+            except PlanError:
+                return
 
     async def close(self):
         if self._worker:
@@ -214,6 +213,7 @@ class TrainingJobs:
             "estimatedWallSeconds": None,
             "nodeId": None,
             "resourceId": None,
+            "resourceModel": None,
             "leaseId": None,
             "cancelRequested": False,
             "reason": "estimate_unavailable",
@@ -295,13 +295,6 @@ class TrainingJobs:
                 self._event(job)
                 continue
             for node in self.nodes.values():
-                busy = any(
-                    session.kind == "newton" and session.holds_resources and session.options.device != "cpu"
-                    for session in self.manager.platform_sessions()
-                )
-                if busy and job["executionDevice"] == "cuda":
-                    job["reason"] = "session_gpu_busy"
-                    break
                 resources = node["gpus"] + ([{"id": "cpu"}] if node.get("cpuAvailable") else [])
                 for gpu in sorted(resources, key=lambda item: item["id"] in node["leases"]):
                     if (gpu["id"] == "cpu") != (job["executionDevice"] == "cpu"):
@@ -324,30 +317,36 @@ class TrainingJobs:
                     if now > node["lastSeen"] + 60:
                         job["reason"] = "node_unavailable"
                         break
-                    if gpu["id"] in node["leases"]:
-                        job["reason"] = "gpu_busy"
-                        continue
-                    lease = {
-                        "jobId": job["jobId"],
-                        "leaseId": uuid.uuid4().hex,
-                        "assignedAt": now,
-                        "quarantined": False,
-                    }
-                    node["leases"][gpu["id"]] = lease
-                    job.update(
-                        nodeId=node["id"],
-                        resourceId=gpu["id"],
-                        leaseId=lease["leaseId"],
-                        reason="node_starting",
-                    )
-                    break
+                    if self._reserve_resource(job, node, gpu, now):
+                        break
                 if job["leaseId"]:
                     break
 
+    def _reserve_resource(self, job, node, resource, now):
+        # This boundary shares ownership with the registration thread, without I/O or library locks.
+        with self.manager._resource_lock:
+            if job["executionDevice"] == "cuda" and any(
+                session.kind == "newton" and session.options.device != "cpu"
+                and (session.holds_resources or session is self.manager._starting_session)
+                for session in self.manager.platform_sessions()
+            ):
+                job["reason"] = "session_gpu_busy"
+                return False
+            if resource["id"] in node["leases"]:
+                job["reason"] = "gpu_busy"
+                return False
+            lease = {"jobId": job["jobId"], "leaseId": uuid.uuid4().hex, "assignedAt": now,
+                     "quarantined": False}
+            node["leases"][resource["id"]] = lease
+            job.update(nodeId=node["id"], resourceId=resource["id"], leaseId=lease["leaseId"],
+                       resourceModel=resource.get("name") if job["executionDevice"] == "cuda" else None,
+                       reason="node_starting")
+            return True
+
     def holds_gpu(self):
-        return self._failure or any(
-            any(key != "cpu" for key in node["leases"]) for node in self.nodes.values()
-        )
+        with self.manager._resource_lock:
+            return self._failure or any(any(key != "cpu" for key in node["leases"])
+                                        for node in tuple(self.nodes.values()))
 
     def heartbeat(self, body):
         self._require_available()
@@ -418,7 +417,8 @@ class TrainingJobs:
                         reason=report.reason,
                         finishedAt=now,
                     )
-                del node["leases"][job["resourceId"]]
+                with self.manager._resource_lock:
+                    del node["leases"][job["resourceId"]]
             job["lastNodeReport"] = report.model_dump()
             self._event(job)
         self.reconcile()
@@ -505,12 +505,13 @@ class TrainingJobs:
             job, lines = self.get(identity), self.read_logs(identity)
             if after > len(lines):
                 raise PlanError("invalid_log_cursor", "Log cursor is beyond retained output", status=422)
-            if len(lines) > after or job["status"] in TERMINAL or time.monotonic() >= deadline:
+            settled = job["status"] in TERMINAL and not self._has_lease(job)
+            if len(lines) > after or settled or time.monotonic() >= deadline:
                 selected = lines[after : after + 500]
                 return {
                     "lines": selected,
                     "cursor": after + len(selected),
-                    "complete": job["status"] in TERMINAL and after + len(selected) == len(lines),
+                    "complete": settled and after + len(selected) == len(lines),
                 }
             await asyncio.sleep(0.1)
 

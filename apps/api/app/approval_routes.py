@@ -110,8 +110,7 @@ def install_approval_routes(app, manager, role_for):
         record = get_record(approval_id)
         if record.subject == "job":
             try:
-                async with manager._create_lock:
-                    manager.jobs.decide(record, body.decision, actor, body.note)
+                manager.jobs.decide(record, body.decision, actor, body.note)
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
             return document(get_record(approval_id))

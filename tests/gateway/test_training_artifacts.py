@@ -18,6 +18,10 @@ def test_artifact_upload_rejects_missing_or_changed_declared_onnx_data(tmp_path)
         approve(client, plan["approvalId"])
         client.post(HEARTBEAT, headers=NODE, json=heartbeat(plan, task))
         job = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).json()
+        changed_hardware = heartbeat(plan, task)
+        changed_hardware["gpus"][0]["name"] = "later telemetry must not rewrite assigned hardware"
+        assert client.post(HEARTBEAT, headers=NODE, json=changed_hardware).status_code == 200
+        assert client.get(f"/api/v1/jobs/{job['jobId']}").json()["resourceModel"] == job["resourceModel"]
         headers = NODE | {"X-Lease-Id": job["leaseId"], "Content-Type": "application/x-tar"}
         output = tmp_path / "output"
         output.mkdir()
@@ -32,7 +36,7 @@ def test_artifact_upload_rejects_missing_or_changed_declared_onnx_data(tmp_path)
             (output / name).write_bytes(data)
         versions = {
             "versions": {name: "fixture" for name in ("isaaclab", "newton", "warp", "torch", "rsl_rl")},
-            "hardware": {"device": "cuda", "gpu": "fixture-only"},
+            "hardware": {"device": "cuda", "gpu": {"uuid": job["resourceId"], "name": job["resourceModel"]}},
             **{
                 name: job[name]
                 for name in ("jobId", "task", "taskContentHash", "scene", "sceneContentHash", "seed")
@@ -54,6 +58,14 @@ def test_artifact_upload_rejects_missing_or_changed_declared_onnx_data(tmp_path)
         }
         (output / "export.json").write_text(json.dumps(export), encoding="utf-8")
         route = f"/api/v1/jobs/{job['jobId']}/artifacts"
+        for key in ("uuid", "name"):
+            versions["hardware"]["gpu"][key] = "different resource"
+            (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
+            wrong = client.post(route, headers=headers, content=pack_package(output))
+            assert wrong.status_code == 422 and "assigned resource" in wrong.text
+            versions["hardware"]["gpu"][key] = job["resourceId" if key == "uuid" else "resourceModel"]
+        (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
+        assert job["resourceModel"] == "GPU-free contract double"
         original = (output / "policy.onnx.data").read_bytes()
         (output / "policy.onnx.data").unlink()
         missing = client.post(route, headers=headers, content=pack_package(output))

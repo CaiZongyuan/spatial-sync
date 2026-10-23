@@ -89,5 +89,4 @@ async def training_node(payload: dict):
                                               "fixture-gpu"), "iterationSeconds": 36, "setupSeconds": 0,
                           "samples": 1, "measuredAt": 1, "evidence": "Controlled test input"}],
             "reports": payload.get("reports", [])}
-    async with manager._create_lock:
-        return manager.jobs.heartbeat(NodeHeartbeat.model_validate(body))
+    return manager.jobs.heartbeat(NodeHeartbeat.model_validate(body))

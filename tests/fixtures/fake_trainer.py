@@ -59,6 +59,8 @@ def main():
         encoding="utf-8",
     )
     (logs / "events.out.tfevents.fixture").write_bytes(b"fake TensorBoard contract payload")
+    for index in range(1201):
+        print(f"LOGTAIL_{index}", flush=True)
     marker = output / "descendant.json"
     child = subprocess.Popen(
         [

@@ -41,10 +41,9 @@ def install_job_routes(app, manager, role_for):
     @app.post("/api/v1/jobs", status_code=202)
     async def start(body: StartJob, request: Request):
         actor = operator(request)
-        async with manager._create_lock:
-            return jobs.request(
-                body.planId, body.seed, actor, body.requestId or uuid.uuid4().hex, body.planRevision
-            )
+        return jobs.request(
+            body.planId, body.seed, actor, body.requestId or uuid.uuid4().hex, body.planRevision
+        )
 
     @app.get("/api/v1/jobs")
     async def listing(plan: str | None = None, status: str | None = None, kind: str | None = None):
@@ -60,16 +59,14 @@ def install_job_routes(app, manager, role_for):
 
     @app.get("/api/v1/jobs/{identity}")
     async def show(identity: str):
-        async with manager._create_lock:
-            jobs.reconcile()
-            jobs._save()
+        jobs.reconcile()
+        jobs._save()
         return jobs.document(jobs.get(identity))
 
     @app.post("/api/v1/jobs/{identity}/cancel")
     async def cancel(identity: str, request: Request):
         operator(request)
-        async with manager._create_lock:
-            return jobs.cancel(identity)
+        return jobs.cancel(identity)
 
     @app.get("/api/v1/jobs/{identity}/logs")
     async def logs(identity: str, after: int = Query(0, ge=0), timeoutSeconds: float = Query(0, ge=0, le=30)):
@@ -82,8 +79,7 @@ def install_job_routes(app, manager, role_for):
     @app.post("/api/v1/nodes/local/heartbeat")
     async def heartbeat(body: NodeHeartbeat, request: Request):
         node(request)
-        async with manager._create_lock:
-            return jobs.heartbeat(body)
+        return jobs.heartbeat(body)
 
     @app.get("/api/v1/jobs/{identity}/inputs")
     async def inputs(identity: str, request: Request):
@@ -113,8 +109,7 @@ def install_job_routes(app, manager, role_for):
                 stream.write(chunk)
             stream.seek(0)
             records, versions = await anyio.to_thread.run_sync(store_artifacts, manager, job, stream)
-            async with manager._create_lock:
-                node(request, identity)
-                job.update(artifacts=records, versions=versions)
-                jobs._save()
+            node(request, identity)
+            job.update(artifacts=records, versions=versions)
+            jobs._save()
         return {"artifacts": records, "versions": versions}

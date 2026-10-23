@@ -210,7 +210,8 @@ class OwnedRun:
                 )
                 inputs["hardware"] = {
                     "device": inputs["job"]["executionDevice"],
-                    "gpu": self.assignment["gpuId"],
+                    "gpu": ({"uuid": self.assignment["gpuId"], "name": inputs["job"]["resourceModel"]}
+                            if self.assignment["gpuId"] is not None else None),
                     "node": self.node.hardware,
                 }
                 output = self.root / "output"
@@ -408,15 +409,18 @@ class OwnedRun:
                 memory = sum(rows) if rows else None
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+        selected = self._logs[self.log_cursor:self.log_cursor + 500]
+        draining = self.status in ("succeeded", "failed", "cancelled") and (
+            self.thread.is_alive() or self.log_cursor + len(selected) < len(self._logs))
         return {
             **self.metrics,
             "jobId": self.assignment["jobId"],
             "leaseId": self.assignment["leaseId"],
-            "status": self.status,
-            "reason": self.reason,
+            "status": "running" if draining else self.status,
+            "reason": "draining_logs" if draining else self.reason,
             "elapsedSeconds": self.baseline_elapsed + (self.finished or time.monotonic()) - self.started,
             "logAfter": self.log_cursor,
-            "logs": self._logs[self.log_cursor : self.log_cursor + 500],
+            "logs": selected,
             "memoryUsedMb": memory,
         }
 

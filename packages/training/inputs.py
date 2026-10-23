@@ -99,6 +99,10 @@ def _store_artifacts(manager, job, stream):
                 raise ValueError("Required runtime versions are missing")
             if job["executionDevice"] == "cpu" and versions["hardware"].get("gpu") is not None:
                 raise ValueError("CPU execution cannot claim a GPU model")
+            if job["executionDevice"] == "cuda" and versions["hardware"].get("gpu") != {
+                "uuid": job["resourceId"], "name": job["resourceModel"]
+            }:
+                raise ValueError("GPU UUID/model must match the assigned resource")
             if not {"stdout.log", "stderr.log", "versions.json"}.issubset(files):
                 raise ValueError("Runtime versions and both process logs are required")
             for predicate, label in (

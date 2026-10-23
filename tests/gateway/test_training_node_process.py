@@ -68,7 +68,7 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
     settings = Settings(
         node_trainer=(sys.executable, str(trainer), *(("--hold",) if lose_node_owner else ())),
         node_capabilities=capabilities,
-        node_interval=0.1,
+        node_interval=0.1 if lose_node_owner else 1,
         node_job_timeout=30,
     )
     app, server, thread = start_server(settings)
@@ -149,6 +149,14 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
                 # The node may be lost, but its lease cannot turn idle before descendant cleanup.
                 assert http.get("/api/v1/nodes").json()["nodes"][0]["leases"]
                 app.state.jobs.node.start()
+            else:
+                draining = wait_for(
+                    lambda: http.get(f"/api/v1/jobs/{identity}").json(),
+                    lambda value: value["reason"] == "draining_logs",
+                )
+                assert draining["status"] == "running"
+                assert http.get("/api/v1/nodes").json()["nodes"][0]["leases"]
+                assert not http.get(f"/api/v1/jobs/{identity}/logs").json()["complete"]
             finished = wait_for(
                 lambda: http.get(f"/api/v1/jobs/{identity}").json(),
                 lambda value: value["status"] in ("succeeded", "failed"),
@@ -171,6 +179,16 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
                     "policy.onnx",
                 }
                 assert "Fake trainer" in "\n".join(http.get(f"/api/v1/jobs/{identity}/logs").json()["lines"])
+                cursor, lines = 0, []
+                while True:
+                    chunk = http.get(f"/api/v1/jobs/{identity}/logs", params={"after": cursor}).json()
+                    lines.extend(chunk["lines"])
+                    cursor = chunk["cursor"]
+                    if chunk["complete"]:
+                        break
+                numbers = [int(line.split("LOGTAIL_")[1]) for line in lines if "LOGTAIL_" in line]
+                assert numbers == list(range(1201))
+                assert finished["versions"]["hardware"]["gpu"] is None
     finally:
         if identity:
             with httpx.Client(base_url=settings.node_gateway_url, trust_env=False, timeout=5) as http:

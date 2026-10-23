@@ -1,5 +1,7 @@
 """Public training admission and authenticated, socket-free node ownership."""
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -251,6 +253,9 @@ def test_existing_gpu_session_blocks_training_and_training_lease_overrides_only_
         assert original.options.device == "cuda:0"
         client.portal.call(original.close)
         assignment = client.post(HEARTBEAT, headers=NODE, json=heartbeat(plan, task)).json()["assignments"][0]
+        with pytest.raises(HTTPException) as blocked:
+            client.portal.call(lambda: manager.reload(original.session_id))
+        assert blocked.value.status_code == 409 and blocked.value.detail["code"] == "session_gpu_busy"
         fresh = client.portal.call(lambda: manager.create("falling-boxes", "newton", options))
         assert received == ["cuda:0", "cpu"] and fresh.options.device == "cpu"
         assert options.device == "cuda:0"
