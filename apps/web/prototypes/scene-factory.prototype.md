@@ -1,72 +1,78 @@
-# Scene factory interaction prototype
+# Scene collaboration prototype · revision 2
 
-Throwaway design artifact. Do not merge this prototype into the product or treat
-its in-memory model as production behavior.
+Throwaway design artifact. No production implementation is promoted to main.
 
-**Question:** Can a person understand and direct the complete scene-building
-journey—requirements, retrieval, blockout approval, missing-asset creation,
-composition, validation and reuse—while seeing what the agent can do autonomously?
+**Question:** Does the prototype clearly separate external conversation and
+authoring from the platform's asset, version, verification and execution role?
+
+**User-confirmed boundary:** purposes, reference pictures, dimensions,
+clarification, approvals and change requests belong in Claude Code or another
+external agent conversation. Agents or people edit Blender work files. Lab World
+receives artifacts and explicit reports; it does not host another authoring
+wizard, reference upload form, chat client, placement control or modeling form.
 
 ## Open
 
-Double-click `scene-factory.prototype.html`. It is one self-contained HTML file:
-no dependencies, external fonts, network assets, storage or backend calls.
-
-For a local URL, run from this branch/worktree:
+Double-click `scene-factory.prototype.html`, or run:
 
 ```text
 pnpm prototype:scene
 ```
 
-Then open `http://127.0.0.1:5217/?variant=A`. Set `SCENE_PROTOTYPE_PORT` to use
-another port. The server binds only to loopback.
+The loopback preview is `http://127.0.0.1:5217/?variant=A`.
+`SCENE_PROTOTYPE_PORT` selects another port. The HTML works on its own without
+dependencies, external fonts, network assets, persistent storage or backend calls.
 
-## Explore
+## Explore the three applications
 
-- **A — 场景工作台:** scene-first workspace and persistent agent/state context.
-- **B — 引导式导演:** conversational decisions with a smaller persistent scene.
-- **C — 全局流程板:** all seven stages and responsibilities visible together.
+- **Claude Code:** scripted examples of references, clarification, confirmation,
+  repair discussion and change requests. This is an external application mock,
+  not an embedded platform chat. No message is sent to a real agent.
+- **Blender:** a diagram of the external working file, including the alternative
+  where a person edits directly. Changes can exist here before platform import.
+- **Lab World:** actual proposed product controls for asset search/acquisition,
+  scene/version inspection, validation and starting a verified scene. Summaries
+  are read-only and identify the external submitter.
 
-Use the floating switcher or left/right arrow keys. The `variant` URL parameter
-persists presentation choice on reload; scenario data always resets. Arrow keys
-are left to inputs and editable fields while they have focus.
+The dark **原型播放器 · 非产品功能** strip is outside all three application
+windows. “演示下一段” advances a scripted cooperation event. Switching applications
+inspects the same point in the story. Rewinding or changing stories reconstructs
+the demonstration snapshot; it is not a product command or live synchronization.
 
-“带我走一遍” starts a guided journey; subsequent clicks execute individual
-prototype actions. All stages also support free exploration. Choose the budget,
-unknown-metadata, missing-robot or collision-failure scenarios to inspect gaps.
-User/agent views share the same candidate data and constraints. “状态” exposes
-the readable state and optional JSON; “交付规划” separates future capabilities
-from this mock implementation.
+Try “修改一个已交付场景”: after a Blender change, switch to Lab World before the
+new import. The platform still shows the old position and verified v2. The later
+import produces v3 with its own pending validation. Budget and missing-robot
+stories also send decisions back to the external conversation.
 
-The task is deliberately fixed to an FR3, workbench, cart and six-hole rack.
-Editable brief text illustrates the interface; it is not interpreted by an LLM.
-Natural-language retrieval uses a small deterministic keyword/alias mapping.
-Source package names and some BOM sizes are based on the planning investigation;
-dimensions, eligibility, validation and execution results are fictional demo data.
+The floating A/B/C switcher only compares **platform result presentation**:
 
-The SVGs are diagrammatic illustrations, not actual imported geometry, Blender
-renders, motion planning or Newton results. Optional reference images are read
-into browser memory only. Export writes an explicitly marked prototype JSON
-summary to the user's downloads; nothing is sent to a service.
+- **A — 场景优先:** large received-version preview with metadata and reports.
+- **B — 资产与版本:** version inventory and fixed asset dependencies first.
+- **C — 接收记录:** submitted events alongside the received scene.
 
-## Observations and status
+The `variant` URL parameter preserves presentation choice; model data resets on
+reload. “查看交付后的平台” jumps to a populated result for layout comparison.
+Use the player buttons for story navigation; left/right keys compare platform
+layouts when inspecting Lab World. “查看演示状态” explicitly separates the
+external workspace state from received platform data.
 
-Browser walkthroughs exercised the complete guided flow and the key boundaries:
-unknown fields do not meet hard constraints; oversized downloads are rejected;
-missing trusted robots require an explicit choice; failed collision blocks
-delivery; fixing it creates a new scene/asset version and keeps the failed one.
-Changing requirements, assets or layout invalidates downstream confirmation.
-Offline simulation blocks new acquisitions, while imported data remains usable.
+## Scope of the demonstration
 
-The standalone file was opened through `file://` with the browser offline and
-remained interactive. Desktop variants and a mobile viewport were inspected.
-No automated test suite or production runtime was added or run for this artifact.
+The example uses an FR3, workbench, cart and six-hole rack. Search uses a small
+keyword/alias map. Public package names and selected BOM sizes informed the
+planning; dimensions, eligibility, reports and execution results are fictional.
+SVGs are explanatory diagrams, not imported meshes or rendered Blender output.
 
-**Verdict:** the flow and alternatives are ready for user comparison. No layout
-winner or production design has been selected. No prototype code has been
-promoted to main. The branch is the primary-source record for later discussion.
+No files are uploaded, no geometry is edited and no services are connected.
+Copying a report only writes to the clipboard, or presents selectable text if
+the browser cannot use the clipboard; the user chooses where to paste it.
 
-Planning basis: the user-approved external-assets and Scene Director discussion,
-including the NVIDIA-first catalog, 512 MiB per-package / 2 GiB batch / 10 GiB
-cache limits, fixed versions, separate visual/physical claims, external factories
-and MCP for Blender as a control layer.
+Browser inspection covers the three surfaces, unsubmitted-edit isolation,
+version-specific validation, blocked launch, normal search/acquisition controls,
+mobile layout and standalone file use. No test suite or runtime changes are
+part of this prototype.
+
+**Verdict:** the external-dialogue / external-authoring / platform-results
+boundary is selected by the user. Revision 1's in-platform authoring wizard is
+superseded and remains in commit `f7197ec` for provenance. The A/B/C presentation
+winner is still undecided. Production behavior must be implemented separately.
