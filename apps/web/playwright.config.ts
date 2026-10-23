@@ -7,6 +7,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: true,
   workers: 1,
+  retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],
     ['json', { outputFile: '../../.scratch/viewer-e2e/results.json' }],
@@ -14,6 +15,7 @@ export default defineConfig({
       'html',
       { outputFolder: '../../.scratch/viewer-e2e/report', open: 'never' },
     ],
+    ...(process.env.CI ? [['github'] as const] : []),
   ],
   outputDir: '../../.scratch/viewer-e2e/results',
   use: {
