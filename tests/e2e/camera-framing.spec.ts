@@ -196,9 +196,14 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
     await expect.poll(async () => distance((await camera(page))!.position, user.position)).toBeGreaterThan(.1);
     if (unavailableFirstRead) {
       const witness = await page.evaluate(() => Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value);
-      expect(witness.unavailableReads).toBeGreaterThan(0);
+      expect(witness.unavailableReads).toBe(1);
       expect(witness.readyReads).toBeGreaterThan(0);
+    }
+  } finally {
+    if (unavailableFirstRead) {
+      const witness = await page.evaluate(() => Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value);
       await info.attach('camera-readiness-fixture.json', { body: JSON.stringify(witness), contentType: 'application/json' });
     }
-  } finally { fixture.release(); }
+    fixture.release();
+  }
 });
