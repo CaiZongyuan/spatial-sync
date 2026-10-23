@@ -342,6 +342,8 @@ class OwnedRun:
         return self.node.headers | {"X-Lease-Id": self.assignment["leaseId"]}
 
     def report(self):
+        # An exit during any producer-owned read requires another report for its final data.
+        producer_finished = not self.thread.is_alive() and not self.uncertain_owner
         if self.uncertain_owner:
             alive = False
             for receipt in self.root.glob("process-*.json"):
@@ -374,8 +376,6 @@ class OwnedRun:
                     self.metrics = json.loads(complete[-1])
                 except ValueError:
                     pass  # A still-open final line is retried at the next heartbeat.
-        # If the producer exits during these reads, another report must collect its final bytes.
-        producer_finished = not self.thread.is_alive() and not self.uncertain_owner
         for name in ("stdout.log", "stderr.log"):
             path = self.root / name
             if path.exists():

@@ -1,4 +1,4 @@
-"""A producer exiting during a log read must not publish EOF from its stale prefix."""
+"""A producer exiting during a read must not finalize stale metrics or log prefixes."""
 
 import threading
 import time
@@ -9,8 +9,8 @@ import pytest
 from apps.node.runner import OwnedRun
 
 
-@pytest.mark.parametrize("stream", ["stdout.log", "stderr.log"])
-def test_exit_after_log_read_waits_for_final_append_and_preserves_partial_line(tmp_path, monkeypatch, stream):
+@pytest.mark.parametrize("stream", ["stdout.log", "stderr.log", "output/metrics.jsonl"])
+def test_exit_after_producer_read_waits_for_final_append(tmp_path, monkeypatch, stream):
     owned = object.__new__(OwnedRun)
     owned.root, owned.uncertain_owner = tmp_path, False
     owned.metrics, owned._logs = {}, []
@@ -20,13 +20,17 @@ def test_exit_after_log_read_waits_for_final_append_and_preserves_partial_line(t
     owned.started, owned.finished = time.monotonic(), None
     owned.status, owned.reason = "running", None
     log = tmp_path / stream
-    log.write_text("first\npartial", encoding="utf-8")
+    log.parent.mkdir(parents=True, exist_ok=True)
+    metrics = stream == "output/metrics.jsonl"
+    initial = '{"iteration": 1, "meanReward": 1}\n' if metrics else "first\npartial"
+    appended = '{"iteration": 2, "meanReward": 7}\n' if metrics else "-finished\nlast\n"
+    log.write_text(initial, encoding="utf-8")
     read_done, exited = threading.Event(), threading.Event()
 
     def producer():
         assert read_done.wait(5)
         with log.open("a", encoding="utf-8") as writer:
-            writer.write("-finished\nlast\n")
+            writer.write(appended)
         owned.status, owned.reason, owned.finished = "failed", "controlled exit", time.monotonic()
         exited.set()
 
@@ -47,11 +51,15 @@ def test_exit_after_log_read_waits_for_final_append_and_preserves_partial_line(t
     try:
         first = owned.report()
         assert first["status"] == "running" and first["reason"] == "draining_logs"
-        assert first["logs"] == [f"[{stream}] first"]
+        assert first["logs"] == ([] if metrics else [f"[{stream}] first"])
+        if metrics:
+            assert first["iteration"] == 1 and first["meanReward"] == 1
         owned.log_cursor += len(first["logs"])
         final = owned.report()
         assert final["status"] == "failed"
-        assert final["logs"] == [f"[{stream}] partial-finished", f"[{stream}] last"]
+        assert final["logs"] == ([] if metrics else [f"[{stream}] partial-finished", f"[{stream}] last"])
+        if metrics:
+            assert final["iteration"] == 2 and final["meanReward"] == 7
         owned.log_cursor += len(final["logs"])
         assert owned.report()["logs"] == []
         assert owned._logs == first["logs"] + final["logs"]
