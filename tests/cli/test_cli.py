@@ -1,6 +1,7 @@
 """Installed lw subprocesses exercise real HTTP operations and all exit classes."""
 
 import json
+import socket
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -73,7 +74,12 @@ def test_cli_arrays_cancellation_timeout_usage_and_connection_errors(lw, lab):
     assert lw("do", code=1)["error"]
     assert lw("do", ROBOT, "home", "malformed", code=1)["error"]
     assert lw("inv", "unknown", code=1)["error"]["statusCode"] == 404
-    assert lw("status", env=lab[2] | {"LW_URL": "http://127.0.0.1:1"}, code=1)["error"]
+    # Keep ownership while exercising a real refused connection.
+    # Binding without listen prevents another worker/service claiming this port.
+    with socket.socket() as refused:
+        refused.bind(("127.0.0.1", 0))
+        url = f"http://127.0.0.1:{refused.getsockname()[1]}"
+        assert lw("status", env=lab[2] | {"LW_URL": url}, code=1)["error"]
     assert (
         lw("status", env=lab[2] | {"LW_URL": "http://localhost:invalid"}, code=1)["error"]["message"]
         == "Invalid LW_URL"
