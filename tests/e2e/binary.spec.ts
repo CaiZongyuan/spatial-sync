@@ -34,35 +34,58 @@ test('binary browsers share authoritative controls, recovery and replacement', a
   const route = `${api}/api/v1/sessions/${sessionId}`;
   let observerContext: BrowserContext | undefined;
   const failures: unknown[] = [];
+  const errors: string[] = [];
+  let binaryFrames = 0,
+    observerBinaryFrames = 0,
+    jsonFrames = 0,
+    jsonCommands = 0,
+    outgoingChecks = 0,
+    pngCaptured = false;
+  const magicChecks = { primary: 0, observer: 0 };
+  const wireFaults = {
+    invalidMagicFrames: 0,
+    invalidOutgoingTypes: 0,
+    firstInvalidMagic: null as { side: 'primary' | 'observer'; prefixHex: string; bytes: number } | null,
+    firstInvalidOutgoingType: null as { type: string; buffer: boolean } | null,
+  };
+  const checkMagic = (side: 'primary' | 'observer', payload: Buffer) => {
+    magicChecks[side]++;
+    if (payload.subarray(0, 4).toString() !== 'NSYN') {
+      wireFaults.invalidMagicFrames++;
+      wireFaults.firstInvalidMagic ??= { side, prefixHex: payload.subarray(0, 4).toString('hex'), bytes: payload.length };
+    }
+  };
+  const assertWireValid = () => expect(wireFaults, `Sticky wire faults: ${JSON.stringify(wireFaults)}`)
+    .toMatchObject({ invalidMagicFrames: 0, invalidOutgoingTypes: 0 });
   try {
     observerContext = await browser.newContext();
     const observer = await observerContext.newPage();
-    const errors: string[] = [];
-    let binaryFrames = 0,
-      observerBinaryFrames = 0,
-      jsonFrames = 0,
-      jsonCommands = 0,
-      block = false;
+    let block = false;
     const sockets: WebSocketRoute[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('websocket', (socket) => {
       socket.on('framereceived', ({ payload }) => {
         if (Buffer.isBuffer(payload)) {
-          expect(payload.subarray(0, 4).toString()).toBe('NSYN');
+          checkMagic('primary', payload);
           binaryFrames++;
         } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
           jsonFrames++;
       });
       socket.on('framesent', ({ payload }) => {
-        expect(typeof payload).toBe('string');
-        if (JSON.parse(payload as string).type === 'command.request')
+        outgoingChecks++;
+        if (typeof payload !== 'string') {
+          wireFaults.invalidOutgoingTypes++;
+          wireFaults.firstInvalidOutgoingType ??= { type: typeof payload, buffer: Buffer.isBuffer(payload) };
+          return;
+        }
+        if (JSON.parse(payload).type === 'command.request')
           jsonCommands++;
       });
     });
     observer.on('websocket', (socket) =>
       socket.on('framereceived', ({ payload }) => {
         if (Buffer.isBuffer(payload)) {
-          expect(payload.subarray(0, 4).toString()).toBe('NSYN');
+          checkMagic('observer', payload);
           observerBinaryFrames++;
         } else if (['transform.frame', 'stream.snapshot'].includes(JSON.parse(payload).type))
           jsonFrames++;
@@ -206,13 +229,14 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       { revision: manifest.sceneRevision, seq: priorSeq },
       { timeout: 10_000 },
     );
-    expect((await metrics(page))?.invalidBinaryFrames).toBe(0);
     expect(binaryFrames).toBeGreaterThan(3);
     expect(observerBinaryFrames).toBeGreaterThan(3);
     expect(jsonFrames).toBe(0);
     expect(jsonCommands).toBe(3);
     expect(errors).toEqual([]);
     const [binaryMetrics, observerMetrics] = await Promise.all([metrics(page), metrics(observer)]);
+    expect(binaryMetrics?.invalidBinaryFrames).toBe(0);
+    assertWireValid();
     await testInfo.attach('wire-and-client-receipt', {
       body: JSON.stringify(
         {
@@ -222,6 +246,9 @@ test('binary browsers share authoritative controls, recovery and replacement', a
           jsonCommands,
           binary: binaryMetrics,
           observer: observerMetrics,
+          magicChecks: { ...magicChecks },
+          outgoingChecks,
+          wireFaults: { ...wireFaults },
           sampleBoundary: 'last verified two-client state, before observer close and primary PNG',
         },
         null,
@@ -235,10 +262,35 @@ test('binary browsers share authoritative controls, recovery and replacement', a
     await page.screenshot({
       path: testInfo.outputPath('binary-workbench.png'),
     });
+    pngCaptured = true;
   } catch (error) {
     failures.push(error);
   } finally {
-    await cleanupObserver(observerContext, [route], failures);
+    const terminalFailures: unknown[] = [];
+    try { await cleanupObserver(observerContext, [route], failures); }
+    catch (error) { terminalFailures.push(error); }
+    // Close the owned primary page after its PNG and Session cleanup, then inspect all callbacks.
+    try { await page.close(); }
+    catch (error) { terminalFailures.push(error); }
+    try {
+      await testInfo.attach('wire-final-boundary', {
+        body: JSON.stringify({
+          sampleBoundary: 'after primary PNG, owned Session/observer cleanup and primary page close',
+          pngCaptured, binaryFrames, observerBinaryFrames, jsonFrames, jsonCommands,
+          magicChecks, outgoingChecks, wireFaults, errors,
+        }, null, 2),
+        contentType: 'application/json',
+      });
+      assertWireValid();
+      expect(magicChecks.primary).toBe(binaryFrames);
+      expect(magicChecks.observer).toBe(observerBinaryFrames);
+      expect(jsonFrames).toBe(0);
+      expect(jsonCommands).toBe(3);
+      expect(errors).toEqual([]);
+    } catch (error) { terminalFailures.push(error); }
+    if (terminalFailures.length === 1) throw terminalFailures[0];
+    if (terminalFailures.length > 1)
+      throw new AggregateError(terminalFailures, 'Journey, cleanup and terminal wire failures', { cause: terminalFailures[0] });
   }
 });
 
