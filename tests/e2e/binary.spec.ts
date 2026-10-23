@@ -13,9 +13,11 @@ const metrics = (page: Page) =>
 
 async function connected(page: Page) {
   await expect(page.getByTestId('connection-status')).toHaveText('已连接');
-  await expect
-    .poll(async () => (await sample(page))?.seq ?? -1)
-    .toBeGreaterThan(0);
+  await page.waitForFunction(
+    () => (window.__spatialDebug?.getSample()?.seq ?? -1) > 0,
+    undefined,
+    { timeout: 10_000 },
+  );
   await expect(page.locator('canvas')).toBeVisible();
 }
 
@@ -77,9 +79,11 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       observer.goto(`/sessions/${sessionId}`),
     ]);
     await Promise.all([connected(page), connected(observer)]);
-    await expect
-      .poll(async () => (await metrics(page))?.frameFormat)
-      .toBe('binary');
+    await page.waitForFunction(
+      () => window.__spatialDebug?.getStreamMetrics()?.frameFormat === 'binary',
+      undefined,
+      { timeout: 10_000 },
+    );
     expect((await metrics(observer))?.frameFormat).toBe('binary');
     await page.getByRole('button', { name: 'Pause simulation' }).click();
     await expect(page.getByTestId('session-state')).toHaveText('已暂停');
@@ -91,9 +95,11 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       await request.get(`${route}/scene`)
     ).json()) as SceneManifest;
     for (const view of [page, observer]) {
-      await expect
-        .poll(async () => (await sample(view))?.seq)
-        .toBe(snapshot.seq);
+      await view.waitForFunction(
+        (seq) => window.__spatialDebug?.getSample()?.seq === seq,
+        snapshot.seq,
+        { timeout: 10_000 },
+      );
       const poses = await view.evaluate(
         (nodes) =>
           nodes.map((node) => ({
@@ -125,41 +131,59 @@ test('binary browsers share authoritative controls, recovery and replacement', a
     );
     block = false;
     await connected(page);
-    await expect
-      .poll(async () => (await metrics(page))?.receivedFrames ?? 0)
-      .toBeGreaterThan(received);
+    await page.waitForFunction(
+      (count) => (window.__spatialDebug?.getStreamMetrics()?.receivedFrames ?? 0) > count,
+      received,
+      { timeout: 10_000 },
+    );
     expect((await sample(page))?.seq).toBe(snapshot.seq);
     const afterReconnect = (await metrics(page))!.receivedFrames;
     await page.evaluate(() =>
       document.dispatchEvent(new Event('visibilitychange')),
     );
-    await expect
-      .poll(async () => (await metrics(page))?.receivedFrames ?? 0)
-      .toBeGreaterThan(afterReconnect);
+    await page.waitForFunction(
+      (count) => (window.__spatialDebug?.getStreamMetrics()?.receivedFrames ?? 0) > count,
+      afterReconnect,
+      { timeout: 10_000 },
+    );
     expect((await sample(page))?.seq).toBe(snapshot.seq);
     await page.getByRole('button', { name: 'Step simulation' }).click();
-    await expect
-      .poll(async () => (await sample(observer))?.seq ?? 0)
-      .toBeGreaterThan(snapshot.seq);
-    await expect.poll(async () => (await sample(page))?.simTime ?? 0).toBeGreaterThan(snapshot.simTime);
+    await observer.waitForFunction(
+      (seq) => (window.__spatialDebug?.getSample()?.seq ?? 0) > seq,
+      snapshot.seq,
+      { timeout: 10_000 },
+    );
+    await page.waitForFunction(
+      (time) => (window.__spatialDebug?.getSample()?.simTime ?? 0) > time,
+      snapshot.simTime,
+      { timeout: 10_000 },
+    );
     const stepped = await sample(page);
     expect(stepped!.simTime).toBeGreaterThan(snapshot.simTime);
     await page.getByRole('button', { name: 'Reset simulation' }).click();
-    await expect
-      .poll(async () => (await sample(page))?.epoch)
-      .toBe(snapshot.epoch + 1);
-    await expect.poll(async () => (await sample(observer))?.simTime).toBe(0);
+    await page.waitForFunction(
+      (epoch) => window.__spatialDebug?.getSample()?.epoch === epoch,
+      snapshot.epoch + 1,
+      { timeout: 10_000 },
+    );
+    await observer.waitForFunction(
+      () => window.__spatialDebug?.getSample()?.simTime === 0,
+      undefined,
+      { timeout: 10_000 },
+    );
     const priorSeq = (await sample(page))!.seq;
     await page
       .getByRole('button', { name: 'Reload scene', exact: true })
       .click();
     await Promise.all([
-      expect
-        .poll(async () => (await metrics(page))?.revision)
-        .not.toBe(manifest.sceneRevision),
-      expect
-        .poll(async () => (await metrics(observer))?.revision)
-        .not.toBe(manifest.sceneRevision),
+      ...[page, observer].map(view => view.waitForFunction(
+        (prior) => {
+          const revision = window.__spatialDebug?.getStreamMetrics()?.revision;
+          return typeof revision === 'string' && revision !== prior;
+        },
+        manifest.sceneRevision,
+        { timeout: 10_000 },
+      )),
     ]);
     // Observe replacement progress in the browser so driver reply delays do not consume polling turns.
     await page.waitForFunction(
@@ -167,9 +191,11 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       priorSeq,
       { timeout: 10_000 },
     );
-    await expect
-      .poll(async () => (await metrics(page))?.receivedFrames ?? 0)
-      .toBeGreaterThan(afterReconnect + 2);
+    await page.waitForFunction(
+      (count) => (window.__spatialDebug?.getStreamMetrics()?.receivedFrames ?? 0) > count,
+      afterReconnect + 2,
+      { timeout: 10_000 },
+    );
     expect((await metrics(page))?.invalidBinaryFrames).toBe(0);
     expect(binaryFrames).toBeGreaterThan(3);
     expect(observerBinaryFrames).toBeGreaterThan(3);
