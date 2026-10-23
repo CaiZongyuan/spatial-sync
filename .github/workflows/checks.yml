@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   python-checks:
-    name: python-checks (${{ matrix.lane }})
+    name: python-checks (${{ matrix.lane }} ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -19,8 +19,16 @@ jobs:
       matrix:
         include:
           - lane: core
+            shard: 1
+            shards: 1
             tests: tests/contract tests/unit tests/cli
           - lane: gateway
+            shard: 1
+            shards: 2
+            tests: tests/gateway
+          - lane: gateway
+            shard: 2
+            shards: 2
             tests: tests/gateway
     steps:
       - uses: actions/checkout@v4
@@ -42,10 +50,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
         if: matrix.lane == 'core'
       - name: Run Python suite with xdist
+        env:
+          SPATIAL_CI_PYTEST_LANE: ${{ matrix.lane }}
+          SPATIAL_CI_PYTEST_INDEX: ${{ matrix.shard }}
+          SPATIAL_CI_PYTEST_COUNT: ${{ matrix.shards }}
+          SPATIAL_CI_PYTEST_MANIFEST_DIR: .scratch/ci-results/coverage
         run: |
           export PYTEST_XDIST_AUTO_NUM_WORKERS="$(uv run --no-sync python -c 'import os; print(len(os.sched_getaffinity(0)))')"
           uv run --no-sync python -c 'import json, os, psutil; print(json.dumps({"physicalCpus": psutil.cpu_count(logical=False), "affinity": sorted(os.sched_getaffinity(0)), "selectedWorkers": int(os.environ["PYTEST_XDIST_AUTO_NUM_WORKERS"])}))'
-          uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q --durations=20 --junitxml=.scratch/ci-results/${{ matrix.lane }}.xml
+          uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q --durations=20 --junitxml=.scratch/ci-results/${{ matrix.lane }}-${{ matrix.shard }}-of-${{ matrix.shards }}.xml
+      - name: Collect complete independent Python reference
+        if: matrix.lane == 'core'
+        env:
+          SPATIAL_CI_PYTEST_LANE: reference
+          SPATIAL_CI_PYTEST_MANIFEST_DIR: .scratch/ci-results/reference
+        run: uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli --collect-only -q
       - run: uv run --no-sync ruff check apps packages tools tests
         if: matrix.lane == 'core'
       - run: uv run --no-sync python tools/check_platform_skills.py
@@ -61,8 +80,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: python-checks-${{ matrix.lane }}-attempt-${{ github.run_attempt }}
-          path: .scratch/ci-results/${{ matrix.lane }}.xml
+          name: python-checks-${{ matrix.lane }}-${{ matrix.shard }}-of-${{ matrix.shards }}-attempt-${{ github.run_attempt }}
+          path: .scratch/ci-results
 
   contracts:
     if: always()
@@ -74,6 +93,13 @@ jobs:
         env:
           PYTHON_RESULT: ${{ needs.python-checks.result }}
         run: test "$PYTHON_RESULT" = success
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-checks-*-attempt-${{ github.run_attempt }}
+          path: .scratch/ci-python
+      - name: Verify complete collection and all three Python executions
+        run: python tools/check_ci_python_coverage.py .scratch/ci-python
 
   browser-acceptance:
     runs-on: ubuntu-latest

@@ -2,6 +2,16 @@
 
 import pytest
 
+from tests.ci_sharding import (
+    pytest_collection_modifyitems as pytest_collection_modifyitems,
+)
+from tests.ci_sharding import (
+    pytest_sessionfinish as pytest_sessionfinish,
+)
+from tests.ci_sharding import (
+    pytest_terminal_summary as pytest_terminal_summary,
+)
+
 
 @pytest.fixture(autouse=True)
 def isolated_recordings(tmp_path, monkeypatch):

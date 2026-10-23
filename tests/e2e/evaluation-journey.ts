@@ -8,12 +8,13 @@ import type {} from '../../apps/web/src/components/Workbench';
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 
 export async function evaluationJourney(
-  journey: 'handoff' | 'readonly' | 'results',
+  journey: 'handoff' | 'readonly' | 'banner' | 'results',
   { page, request, context }: { page: Page; request: APIRequestContext; context: BrowserContext },
   info: TestInfo,
 ) {
   // Each independent journey executes two complete real episodes and owns its fixture namespace.
   test.setTimeout(60_000);
+  const inspection = journey === 'readonly' || journey === 'banner';
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   let manual: string | undefined;
@@ -50,7 +51,7 @@ export async function evaluationJourney(
     evaluation = (await submitted.json()).evaluationId;
     const bound = await request.post(`${barrierUrl}/bind`, { data: { evaluationId: evaluation } });
     expect(bound.ok(), await bound.text()).toBe(true);
-    if (journey !== 'readonly') {
+    if (!inspection) {
       // Only the readonly goal needs a human inspection window between grading and close.
       const released = await request.post(`${barrierUrl}/release`);
       expect(released.ok(), await released.text()).toBe(true);
@@ -81,7 +82,7 @@ export async function evaluationJourney(
     if (journey === 'handoff')
       await info.attach('explicit-launch-queue.png', { body: await page.screenshot(), contentType: 'image/png' });
     let held;
-    if (journey === 'readonly') {
+    if (inspection) {
       await observer.goto(`/sessions/${episodeSession}`);
       await expect(observer.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
       await expect(observer.getByText('评估中 · 只读', { exact: true })).toBeVisible();
@@ -89,12 +90,17 @@ export async function evaluationJourney(
         await expect(observer.getByRole('button', { name, exact: true })).toBeDisabled();
       await expect(observer.getByRole('button', { name: 'Open Newton viewer', exact: true })).toHaveCount(0);
       await expect.poll(() => observer.evaluate(() => Boolean(window.__spatialDebug?.getRenderedPose('/World/Lab/Tubes/Tube01')))).toBe(true);
-      await info.attach('evaluation-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
-      await observer.getByRole('button', { name: 'Session device telemetry', exact: true }).click();
-      const drawer = observer.getByRole('complementary', { name: '设备抽屉' });
-      await drawer.getByRole('button', { name: /Incubator/ }).click();
-      await drawer.getByTestId('action-setSetpoint').locator('summary').click();
-      await expect(drawer.getByRole('button', { name: 'Run setSetpoint', exact: true })).toBeDisabled();
+      if (journey === 'readonly') {
+        await info.attach('evaluation-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
+        await observer.getByRole('button', { name: 'Session device telemetry', exact: true }).click();
+        const drawer = observer.getByRole('complementary', { name: '设备抽屉' });
+        await drawer.getByRole('button', { name: /Incubator/ }).click();
+        await drawer.getByTestId('action-setSetpoint').locator('summary').click();
+        await expect(drawer.getByRole('button', { name: 'Run setSetpoint', exact: true })).toBeDisabled();
+      } else {
+        await observer.goto('/');
+        await expect(observer.getByTestId('critical-alert-banner')).toContainText('评估会话只读');
+      }
       // UI work overlaps the real action; hold only its graded first episode before close.
       await expect.poll(async () => (await (await request.get(barrierUrl)).json()).state).toBe('held');
       held = await (await request.get(barrierUrl)).json();
@@ -113,29 +119,28 @@ export async function evaluationJourney(
       const refused = await request.post(`${api}/api/v1/alerts/${alert.alertId}/ack`, { data: {} });
       expect(refused.status()).toBe(409);
       expect((await refused.json()).detail.code).toBe('evaluation_busy');
-      // These independent pages keep their own ready states throughout each capture.
-      await Promise.all([
-        (async () => {
-          const episode = observer.locator(`[data-alert-id="${alert.alertId}"]`);
-          await expect(episode).toContainText('活动 · 待确认');
-          await expect(episode).toContainText('评估会话只读');
-          await expect(episode.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
-          await expect(episode.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
-          expect(acknowledgements).toEqual([]);
-          await info.attach('evaluation-devices-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
-        })(),
-        (async () => {
-          await page.goto('/');
-          const banner = page.getByTestId('critical-alert-banner');
-          await expect(banner).toContainText('Evaluation temperature is positive');
-          await expect(banner).toContainText('评估会话只读');
-          await expect(banner.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
-          await expect(banner.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
-          expect(new URL((await banner.getByRole('link').getAttribute('href'))!, api).pathname).toBe(`/sessions/${episodeSession}`);
-          expect(acknowledgements).toEqual([]);
-          await info.attach('evaluation-alert-banner-readonly.png', { body: await page.screenshot(), contentType: 'image/png' });
-        })(),
-      ]);
+      if (journey === 'readonly') {
+        const episode = observer.locator(`[data-alert-id="${alert.alertId}"]`);
+        await expect(episode).toContainText('活动 · 待确认');
+        await expect(episode).toContainText('评估会话只读');
+        await expect(episode.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
+        await expect(episode.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
+        expect(acknowledgements).toEqual([]);
+        await info.attach('evaluation-devices-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
+        // Unmount this actual workspace before checking that it did not cancel, acknowledge or release.
+        await observer.goto('/');
+        await expect(observer.getByTestId('critical-alert-banner')).toContainText('评估会话只读');
+      } else {
+        const banner = observer.getByTestId('critical-alert-banner');
+        await expect(banner).toContainText('Evaluation temperature is positive');
+        await expect(banner).toContainText('评估会话只读');
+        await expect(banner.getByRole('button', { name: '确认', exact: true })).toHaveCount(0);
+        await expect(banner.getByRole('textbox', { name: '确认备注' })).toHaveCount(0);
+        expect(new URL((await banner.getByRole('link').getAttribute('href'))!, api).pathname).toBe(`/sessions/${episodeSession}`);
+        expect(acknowledgements).toEqual([]);
+        await info.attach('evaluation-alert-banner-readonly.png', { body: await observer.screenshot(), contentType: 'image/png' });
+      }
+      expect(acknowledgements).toEqual([]);
       expect(await (await request.get(barrierUrl)).json()).toEqual(held);
       const retained = (await (await request.get(`${api}/api/v1/alerts?sessionId=${episodeSession}&active=true`)).json()).alerts;
       expect(retained.find((value: { alertId: string }) => value.alertId === alert.alertId)).toMatchObject({
@@ -143,18 +148,18 @@ export async function evaluationJourney(
         active: true, readOnly: true, acknowledgement: null, closedContext: null,
       });
     }
-    if (journey === 'readonly') {
+    if (inspection) {
       const released = await request.post(`${barrierUrl}/release`);
       expect(released.ok(), await released.text()).toBe(true);
       expect((await released.json()).state).toBe('released');
     }
     await Promise.all([
-      journey === 'readonly' ? observer.goto(`/sessions/${episodeSession}`) : Promise.resolve(),
+      inspection ? observer.goto(`/sessions/${episodeSession}`) : Promise.resolve(),
       expect.poll(async () => (await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json()).status, { timeout: 35_000 }).toBe('completed'),
     ]);
     const completed = await (await request.get(`${api}/api/v1/evaluations/${evaluation}`)).json();
-    const witnessed = journey === 'readonly' ? held : await (await request.get(barrierUrl)).json();
-    if (journey !== 'readonly') expect(witnessed).toMatchObject({
+    const witnessed = inspection ? held : await (await request.get(barrierUrl)).json();
+    if (!inspection) expect(witnessed).toMatchObject({
       suite, suiteContentHash, sceneVersion, sceneContentHash, caseId: 'train-one',
       evaluationId: evaluation, state: 'released',
       witness: { evaluationId: evaluation, sessionId: episodeSession, outcome: {
