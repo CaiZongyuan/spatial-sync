@@ -72,10 +72,11 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       socket.connectToServer();
       sockets.push(socket);
     });
-    await page.goto(`/sessions/${sessionId}`);
-    await observer.goto(`/sessions/${sessionId}`);
-    await connected(page);
-    await connected(observer);
+    await Promise.all([
+      page.goto(`/sessions/${sessionId}`),
+      observer.goto(`/sessions/${sessionId}`),
+    ]);
+    await Promise.all([connected(page), connected(observer)]);
     await expect
       .poll(async () => (await metrics(page))?.frameFormat)
       .toBe('binary');
@@ -152,12 +153,14 @@ test('binary browsers share authoritative controls, recovery and replacement', a
     await page
       .getByRole('button', { name: 'Reload scene', exact: true })
       .click();
-    await expect
-      .poll(async () => (await metrics(page))?.revision)
-      .not.toBe(manifest.sceneRevision);
-    await expect
-      .poll(async () => (await metrics(observer))?.revision)
-      .not.toBe(manifest.sceneRevision);
+    await Promise.all([
+      expect
+        .poll(async () => (await metrics(page))?.revision)
+        .not.toBe(manifest.sceneRevision),
+      expect
+        .poll(async () => (await metrics(observer))?.revision)
+        .not.toBe(manifest.sceneRevision),
+    ]);
     // Observe replacement progress in the browser so driver reply delays do not consume polling turns.
     await page.waitForFunction(
       (seq) => (window.__spatialDebug?.getSample()?.seq ?? 0) > seq,
