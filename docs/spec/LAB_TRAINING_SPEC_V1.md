@@ -172,11 +172,107 @@ interview: interview.md                # lab-training-plan 产出的完整问答
 
 ## 6. 训练视图
 
-- 注入的回调每 100 ms 读取选定环境（默认 env 0，最多 4 个）中实体刚体的世界位姿，经节点转发给网关。
-- 网关为每个运行中的作业提供一个**只读视图**，复用空间协议：Manifest 来自该作业的 Scene Version（实体加布景，`entityKey` 相同），Transform 帧来自训练进程。多个环境以 `envIndex` 前缀区分，在视图中平铺。
-- 训练视图不是会话：没有动作、暂停、重置，也不受单活跃会话限制；可以同时打开多个。
-- 训练视图不录制。
-- 成本上限：每个视图最多 4 个环境 × 实体刚体数 × 10 Hz。GPU → CPU 拷贝只包含这些位姿。
+### 6.1 只读通道与身份
+
+网关为运行中的作业提供 `/jobs/{id}/view` WebSocket。训练视图不是 Session，
+不创建会话、录制或动作管线，没有动作、暂停或重置；可以同时打开多个，
+并与一个普通可控制的 CPU 交互会话共存。浏览器关闭或视图出错不取消作业、
+不释放训练租约。作业和节点生命周期仍由 §5 管理。
+
+该端点使用独立的 JSON 外层封装 `schema: "lw.training-view/1"`，内层复用**原样的**
+spatial-v2 `SceneManifest` 与 `TransformFrame`，不修改 NSYN-v1、`entityKey` 或旧录制格式。
+`envIndex` 只在外层，不添加到已有严格空间消息、不拼入实体 key，也不追加到二进制帧。
+
+| 身份 | 含义 |
+|---|---|
+| `jobId` | 已有 Job 及其固定的 Task、Scene、Asset、seed |
+| `attemptId` | 与当前 dispatch 绑定的不透明公开标识；不是认证秘密，不增加重试或新的 Attempt 资源 |
+| `viewId` | 一次实际生产者实例；该实例的 socket、节点或网关重连保持不变，替代生产者使用新值 |
+| `envIndex` | 实际环境编号 0–3；环境少于 4 个就只显示真实数量，复制 env 0 不能充当四环境验收 |
+
+每条封装有 `schema`、`type`、`jobId`、`attemptId`、`viewId`；环境消息另有 `envIndex`。
+类型为 `hello`、`manifest`、`frame`、`status`、`ended`、`error`。
+未知版本/类型、身份不符、越界环境、非有限或非法位姿均拒绝。
+生产者通过 `/jobs/{id}/view-frames` WebSocket 推送，由节点令牌、节点实例与当前 dispatch
+认证；浏览器端不接受生产者输入。
+
+内层 `sessionId` 固定为 `training-view:{viewId}:env:{envIndex}`，仅表示一个空间流，
+不得注册、解析为 Session 或用于拼接 `/sessions/...` 请求。
+一个不可变 descriptor revision 绑定固定几何与 canonical streamId 表，所有环境共用它。
+
+`hello` 绑定确切 Task/Scene/Asset 内容哈希、选定环境、canonical descriptor digest、
+实际生产者的来源/版本/solver/physicsDt，以及最多 10 Hz 的发布率。
+每个环境先收到验证后的 Manifest 与一份**真实完整快照**，再接收后续帧。
+v1 每次发布完整刚体位姿表，不保留增量历史；Site 按 canonical 父体与固定 localPose 推导。
+
+### 6.2 reset、重连与结束
+
+每个环境有独立 PoseBuffer、选择与渲染位姿状态。`seq` 在整个 `viewId` 生命周期中严格递增，
+包括 episode reset；`epoch` 只在该环境真实 reset 时增加，下一次样本为完整快照。
+其他环境继续，不把 randomized episode age 当物理时钟；使用实际累计 physics clock。
+
+同一 `viewId` 重连保留 buffer 与 lastSeq，调用 `expectSnapshot`，核对 descriptor 未变，
+并按 buffer 的恢复规则接受同一最新完整样本；旧样本等待新生产者数据，不通过重新 configure
+掩盖倒退。只有新 `viewId` 才销毁/重建环境 source 并重新开始计数；旧 socket/实例消息丢弃。
+
+网关缓存丢失后等待生产者重新绑定 hello/descriptor 与真实完整样本，不从预览恢复动态状态。
+生产者断开显示 waiting/stale 并停止外推。慢读者只保留最新完整样本，不形成无界队列，
+不阻塞训练；多个读者共享同一份有界提取。
+
+Job 进入终态后停止接受 live frame，发送含真实状态/原因的 `ended`，正常关闭读者 socket，
+释放活动视图资源与最新位姿缓存。已终态 Job 返回明确 not-running，不假装仍有 live 视图。
+指标、日志、产物与 TensorBoard 仍可读取；不保留空间回放或终帧录制。
+
+### 6.3 固定几何与实际物理状态
+
+Manifest 来自作业固定的 Scene Version/Asset closure，包含实体、Site、joint 与静态布景。
+严格验证的**确切固定版本**预览可以提供 Manifest/几何字节；其 snapshot、EntitySnapshot、
+catalog 值及动态体初始位姿不能当训练状态。所有 mesh/material/GLB 子资源必须重绑到
+Job 拥有的不可变 `/jobs/{id}/view-assets/{descriptorDigest}/...` 资源，不能请求 Session 路径。
+资源独立于可删除或改变的预览缓存；终态释放活动引用，共享不可变内容缓存可按自身规则淘汰。
+
+Manifest.source 使用实际 trainer 的 SourceInfo（真实 Newton 版本、solver、dt、时钟及 10 Hz
+上限），几何捕获来源单独保留，不能把捕获运行时冒充训练端。实际 Newton source.kind 仍为
+已有的 `newton`，不向空间枚举添加 `training`。
+
+必须核对每个环境完整 canonical body/Site/joint closure 与 streamId 映射；预览 Newton index
+不是 trainer index。使用实际 `NewtonManager.get_model/get_state` 读取完整 Lab，不只取 FR3
+Articulation 而遗漏 tube/lid/rotor。编译、固定关节合并或 clone 后，消费 Task 的 hash-bound
+canonical/world map；从真实保留父体与固定变换恢复 canonical frame。普通模型也必须用实际
+label/world membership 证明映射，不能猜索引或任意剥除 env 前缀。
+
+传输前移除该环境**实际完整 clone rigid transform**，恢复固定场景的 canonical 世界坐标。
+平铺只改变相机/视口，不改实体 key、几何、坐标约定或物理位置。映射或 descriptor 缺失/歧义时
+发明确 `training_view_mapping_unavailable` / `training_view_manifest_unavailable` 错误，训练继续；
+不补预览位姿、不猜机器人模型、不创建假的 Session。
+
+### 6.4 回调与成本边界
+
+Isaac 的零参数 `external_callback` 在环境创建前安装桥接；在已有 `OnPolicyRunner.learn`
+入口取得真实 env 后，观察该**实例**的 public step/reset。每次原调用恰好执行一次，保留结果和
+异常，在 finally 恢复；不编辑 SDK、不全局替换 step 类。每步都跟踪真实 autoreset/显式 reset，
+即使这次未达到采样时刻；状态采集只在 stepping thread 成功 stepping/reset 后进行。
+
+回调至多每 100 ms 提取选定真实环境（默认 env 0；详情的四格可选择实际 env 0–3），上限是
+4 环境 × canonical 实体刚体数 × 10 Hz。先在 producer device gather 这些体、恢复固定 frame
+并移除 clone transform，再 CPU readback；不能先拷全部训练环境再过滤。样本时钟、epoch、seq
+与 gather 一起固定，网络/序列化走有界异步路径，不读取后台线程中的可变物理状态。
+
+训练进程不获得节点令牌。由持有原令牌的节点转发；使用有界临时 latest-state/IPC 通道时，
+其文件必须在 `LW_NODE_OUTPUT` **之外**，不能追加 view.jsonl、进入 Job 产物或录制清单。
+结束/异常均关闭 worker 并清理临时状态；Task 自有诊断日志与正式训练视图传输不是同一种数据。
+
+### 6.5 浏览器与验证
+
+一个 Canvas/WebGL context 通过四个 Drei View/scissor 区域构成 2 × 2 只读视图，
+各有 env 标签、相机、buffer 与选择。不可见区域不渲染，未收到真实完整样本前不显示动态体。
+视图仅在运行中显示，与普通 CPU Session 互不控制。
+
+公开路径验证包括：相同 canonical key/seq 的 env 0/1 具有不同真实位姿；仅 env 1 reset 后以
+更高 seq 出快照；same-view 等 seq 恢复；新生产者 viewId；终态 socket/cache 清理；缺映射或
+descriptor 明确失败而不影响训练；完整 canonical frame/Site closure；四个实际 world 的映射；
+网络/存储证据无 Session/recording 访问或写入；并发 CPU Session 仍可控制。
+假节点四环境 E2E 与手动真实作业四环境/TensorBoard 验收分别记录，原一环境 CPU Task 不能充当后者。
 
 ## 7. 评估
 
@@ -259,7 +355,8 @@ RSI 的改进对象不只是策略权重（参考 EmbodiedRSI 的代码与技能
 | GET | `/jobs?plan=&status=&kind=`、`/jobs/{id}` | 作业状态、最近心跳指标、`versions.json`、产物清单 |
 | POST | `/jobs/{id}/cancel` | 取消；已终态时返回当前状态 |
 | GET | `/jobs/{id}/logs?after=&timeoutSeconds=` | 日志行长轮询，返回新游标 |
-| WS | `/jobs/{id}/view` | 训练视图：先发 Manifest（场景版本的实体与布景），再发带 `envIndex` 的 Transform 帧；只读 |
+| WS | `/jobs/{id}/view` | `lw.training-view/1` 只读通道；hello → 每环境 Manifest/真实完整快照 → 完整帧；见 §6 |
+| GET | `/jobs/{id}/view-assets/{descriptorDigest}/...` | 该 Job 固定、已校验哈希的几何资源；无 Session 路径 |
 | GET | `/nodes` | 节点、GPU、利用率、显存、租约持有者、队列 |
 | POST | `/evaluations` | `{subject, suite, split}` → 评估 ID；占用单活跃会话，会话忙时排队 |
 | GET | `/evaluations/{id}` | 回合列表（录制 ID、结果、失败阶段）、分阶段通过率、成功率与 Wilson 区间、判定 |
@@ -272,7 +369,7 @@ RSI 的改进对象不只是策略权重（参考 EmbodiedRSI 的代码与技能
 | GET | `/loops/{goal}` | RSI 看板数据：各轮成绩与区间、剩余差距缩小、闭环预算使用量 |
 | POST | `/tensorboard` | 启动或返回本地 TensorBoard 地址 |
 
-节点内部接口（本机令牌认证，不对 CLI / MCP 开放）：`GET /jobs/{id}/inputs`（按引用拉取输入包）、`POST /nodes/{id}/heartbeat`、`POST /jobs/{id}/artifacts`、`WS /jobs/{id}/view-frames`（节点推送训练视图帧）。
+节点内部接口（本机令牌认证，不对 CLI / MCP 开放）：`GET /jobs/{id}/inputs`（按引用拉取输入包）、`POST /nodes/{id}/heartbeat`、`POST /jobs/{id}/artifacts`、`WS /jobs/{id}/view-frames`（以当前节点实例/dispatch 认证，推送 §6 独立封装；浏览器不能生产帧）。
 
 ### 9.1 CLI
 
