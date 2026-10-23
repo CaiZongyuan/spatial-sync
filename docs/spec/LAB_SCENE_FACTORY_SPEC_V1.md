@@ -4,6 +4,8 @@
 >
 > 2026-10-24 · **用户已确认，待开发**。本文是该范围的唯一权威规格；验收条目未完成不表示已交付。
 >
+> 跟踪：[Spec #133](https://github.com/CaiZongyuan/spatial-sync/issues/133)。状态、后续实施票和交付证据在该 issue 维护。
+>
 > 归属：[Lab RSI Platform #2](https://github.com/CaiZongyuan/spatial-sync/issues/2)。基础：[素材与场景规格](LAB_ASSETS_AND_SCENES_SPEC_V1.md)、[Web 页面契约](LAB_WEB_UI_SPEC_V1.md)、[术语表](../../GLOSSARY.md)、[USD 规范格式](../adr/0001-usd-canonical-scene-format.md)、[外部素材适配边界](../adr/0003-external-asset-preparation-boundary.md)、[外部工厂与界面分工](../adr/0004-scene-authoring-through-external-factories.md)。
 
 ## 1. 交付目标
