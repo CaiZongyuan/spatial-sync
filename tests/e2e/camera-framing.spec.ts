@@ -200,10 +200,11 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
       });
     }
     const initial = await readyCamera(page);
+    await expect.poll(() => fixture.visualState.requested).toBe(true);
+    expect(fixture.visualState).toEqual({ requested: true, released: false, responseSent: false });
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => distance((await camera(page))!.position, initial.position)).toBeGreaterThan(.1);
     const user = (await camera(page))!;
-    await expect.poll(() => fixture.visualState.requested).toBe(true);
     expect(fixture.visualState).toEqual({ requested: true, released: false, responseSent: false });
     await info.attach('visual-held-after-navigation.json', { body: JSON.stringify(fixture.visualState), contentType: 'application/json' });
     fixture.release();
