@@ -35,7 +35,9 @@ def normalize_body_bvh(model) -> tuple[int, ...]:
 
     Newton can update a body's principal inertia axes after native compilation.
     Rebuild from current geometry, collecting complete candidates before writing.
-    Existing conservative trees are retained; returned IDs identify repaired bodies.
+    Trees already enclosing the current geom envelopes in native projection
+    coordinates are retained; returned IDs identify repaired bodies. The arithmetic
+    allowance covers double operations, not quaternion-source precision.
     """
     boxes = np.asarray(model.bvh_aabb)
     children = np.asarray(model.bvh_child)
