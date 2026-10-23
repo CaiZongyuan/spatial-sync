@@ -158,9 +158,12 @@ test('binary browsers share authoritative controls, recovery and replacement', a
     await expect
       .poll(async () => (await metrics(observer))?.revision)
       .not.toBe(manifest.sceneRevision);
-    await expect
-      .poll(async () => (await sample(page))?.seq ?? 0)
-      .toBeGreaterThan(priorSeq);
+    // Observe replacement progress in the browser so driver reply delays do not consume polling turns.
+    await page.waitForFunction(
+      (seq) => (window.__spatialDebug?.getSample()?.seq ?? 0) > seq,
+      priorSeq,
+      { timeout: 10_000 },
+    );
     await expect
       .poll(async () => (await metrics(page))?.receivedFrames ?? 0)
       .toBeGreaterThan(afterReconnect + 2);
