@@ -309,11 +309,13 @@ class AgentLibrary:
 
     def _publish(self, path, harness, version, base):
         data = pack_harness(harness)
-        record = {"version": version, "baseVersion": base,
-                  "decision": "reference" if base is None else "candidate",
-                  "contentHash": content_hash(harness), "archiveHash": hashlib.sha256(data).hexdigest(),
-                  "files": [{"path": name, "bytes": (harness / name).stat().st_size}
-                            for name in harness_files(harness)]}
+        with tempfile.TemporaryDirectory() as temporary:
+            frozen = Path(temporary)
+            files = unpack_harness(data, frozen)
+            record = {"version": version, "baseVersion": base,
+                      "decision": "reference" if base is None else "candidate",
+                      "contentHash": content_hash(frozen), "archiveHash": hashlib.sha256(data).hexdigest(),
+                      "files": [{"path": name, "bytes": (frozen / name).stat().st_size} for name in files]}
         snapshots = confined(path, ("snapshots",), create=True)
         versions = confined(path, ("versions",), create=True)
         # Exclusive creation: neither a version number nor an existing snapshot can be overwritten.

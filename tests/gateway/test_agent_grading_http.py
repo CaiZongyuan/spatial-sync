@@ -44,6 +44,7 @@ class ScriptedOperator:
 
     def __init__(self, client):
         self.client, self.trace, self.plan = client, [], None
+        self.evidence_seconds = 0
         response = client.post("/api/v1/sessions", json={
             "sceneVersion": "lab-demo@3", "source": "synthetic", "realtimeFactor": 30,
             "approval": {"high": "require"},
@@ -57,6 +58,17 @@ class ScriptedOperator:
     def record(self, kind, **fields):
         self.trace.append({"kind": kind, "atSeconds": time.monotonic() - self.started, **fields})
 
+    def evidence(self):
+        started = time.monotonic()
+        before = self.client.get(self.route).json()
+        state = self.client.get(self.route + "/state").json()
+        after = self.client.get(self.route).json()
+        scope = {key: before[key] for key in ("sessionId", "sceneRevision", "epoch")}
+        self.evidence_seconds += time.monotonic() - started
+        if any(after[key] != value for key, value in scope.items()):
+            return {}
+        return {"scope": scope, "state": state}
+
     def submit(self, *actions):
         response = self.client.post("/api/v1/plans", headers={"X-Actor": "agent:scripted-target"}, json={
             "title": "Scripted laboratory task", "sessionId": self.session["sessionId"], "target": "session",
@@ -68,9 +80,25 @@ class ScriptedOperator:
         self.record("plan", plan=deepcopy(self.plan))
         return self.plan
 
+    def describe(self, key):
+        started = time.monotonic()
+        before = self.client.get(self.route).json()
+        self.evidence_seconds += time.monotonic() - started
+        response = self.client.get(self.route + "/entity", params={"key": key})
+        assert response.status_code == 200, response.text
+        started = time.monotonic()
+        after = self.client.get(self.route).json()
+        self.evidence_seconds += time.monotonic() - started
+        scope = {name: before[name] for name in ("sessionId", "sceneRevision", "epoch")}
+        assert all(after[name] == value for name, value in scope.items())
+        self.record("read", request={"method": "GET", "path": self.route + "/entity", "query": {"key": key}},
+                    response=response.json(), statusCode=response.status_code, **scope)
+        return response.json()
+
     def action(self, entity, action, params=None, *, step=None, expected="succeeded", wait=True):
         params = params or {}
         summary = self.client.get(self.route).json()
+        before = self.evidence()
         body = {"requestId": "script-" + str(len(self.trace)), "entityKey": entity, "action": action,
                 "params": params, "wait": wait, "timeoutSeconds": 15}
         context = {"planId": self.plan["id"], "stepId": step} if step is not None else {}
@@ -90,9 +118,10 @@ class ScriptedOperator:
         expected = (expected,) if isinstance(expected, str) else expected
         assert receipt.get("status") in expected, receipt
         definition = self.catalog["types"][self.catalog["entities"][entity]["type"]]["actions"][action]
+        after = self.evidence()
         self.record("action", entityKey=entity, action=action, params=params,
                     risk=definition.get("risk", "normal"),
-                    status=receipt["status"], **context,
+                    status=receipt["status"], before=before, after=after, **context,
                     **{key: summary[key] for key in ("sessionId", "sceneRevision", "epoch")})
         return receipt
 
@@ -190,15 +219,15 @@ def test_all_ten_public_lab_tasks_are_achievable_through_real_http(case, owned_a
                 operator.command("step", count=1000)
             response = client.get("/api/v1/alerts", params={"sessionId": operator.session["sessionId"]})
             alerts = response.json()["alerts"]
-            alert = next(item for item in alerts if item["entityKey"] == INCUBATOR and item["active"])
+            alert = next(item for item in alerts if item["entityKey"] == INCUBATOR
+                         and item["rule"] == "tempDeviation" and item["active"])
             response = client.post("/api/v1/alerts/" + alert["alertId"] + "/ack",
                                    json={"note": "Warming toward the existing 37 C setpoint"})
             assert response.status_code == 200, response.text
             operator.record("check", status="acknowledged")
         elif case == "preserve-high-risk-gate":
-            state = client.get(operator.route + "/entity", params={"key": INCUBATOR}).json()
+            state = operator.describe(INCUBATOR)
             assert state["definition"]["actions"]["setSetpoint"]["risk"] == "high"
-            operator.record("read")
         else:
             moves = {
                 "centrifuge-two": [(ROBOT, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot1"}),
@@ -247,4 +276,93 @@ def test_all_ten_public_lab_tasks_are_achievable_through_real_http(case, owned_a
         record_property("actualScore", json.dumps(score))
         record_property("trace", json.dumps(operator.trace))
         assert score["score"] == 100, score
+        client.delete(operator.route).raise_for_status()
+
+
+@pytest.mark.parametrize("wrong_work,expected", [
+    ("unrelated-alert", 40), ("wrong-tube", 50), ("substituted-tube", 50),
+    ("empty-cycle", 50), ("late-stop", 50), ("incorrect-rejection", 40),
+    ("early-home-transfer", 50), ("early-home-return", 50), ("empty-inspection", 40),
+])
+def test_actual_wrong_work_never_earns_task_final_state_credit(
+    wrong_work, expected, owned_app, record_property
+):
+    with TestClient(owned_app) as client:
+        operator = ScriptedOperator(client)
+        suite = owned_app.state.manager.evaluations.suites.resolve("suite/lab-ops-basic@1")
+        if wrong_work == "empty-inspection":
+            case = "preserve-high-risk-gate"
+            assert operator.trace == []
+        elif wrong_work == "unrelated-alert":
+            operator.action(CABINET, "setBlower", {"on": False})
+            operator.command("pause")
+            for _ in range(15):
+                operator.command("step", count=1000)
+            response = client.get("/api/v1/alerts", params={"sessionId": operator.session["sessionId"]})
+            alerts = response.json()["alerts"]
+            target = next(item for item in alerts if item["entityKey"] == INCUBATOR
+                          and item["rule"] == "tempDeviation" and item["active"])
+            wrong = next(item for item in alerts if item["entityKey"] == CABINET
+                         and item["rule"] == "lowInflow" and item["active"])
+            assert target["acknowledgement"] is None
+            response = client.post("/api/v1/alerts/" + wrong["alertId"] + "/ack",
+                                   json={"note": "Wrong alert"})
+            assert response.status_code == 200 and response.json()["acknowledgement"]
+            operator.record("check")
+            case = "incubator-alert"
+        else:
+            if wrong_work == "early-home-transfer":
+                moves = [(ROBOT, "home", {}),
+                         (ROBOT, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot1"})]
+                case = "transfer-tube"
+            elif wrong_work == "early-home-return":
+                moves = [(ROBOT, "home", {}),
+                         (ROBOT, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot1"}),
+                         (ROBOT, "pickPlace", {"from": "centrifuge.slot1", "to": "rack.A1"})]
+                case = "return-sample"
+            elif wrong_work == "wrong-tube":
+                moves = [(ROBOT, "pickPlace", {"from": "rack.A2", "to": "centrifuge.slot1"}),
+                         (ROBOT, "pickPlace", {"from": "centrifuge.slot1", "to": "rack.A2"}),
+                         (ROBOT, "home", {})]
+                case = "return-sample"
+            elif wrong_work == "substituted-tube":
+                moves = [(ROBOT, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot2"}),
+                         (ROBOT, "pickPlace", {"from": "rack.A2", "to": "rack.A1"}),
+                         (ROBOT, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot1"}),
+                         (ROBOT, "pickPlace", {"from": "centrifuge.slot1", "to": "rack.A1"}),
+                         (ROBOT, "pickPlace", {"from": "rack.A1", "to": "rack.A2"}),
+                         (ROBOT, "pickPlace", {"from": "centrifuge.slot2", "to": "rack.A1"}),
+                         (ROBOT, "home", {})]
+                case = "return-sample"
+            elif wrong_work == "empty-cycle":
+                moves = [(CENTRIFUGE, "closeLid", {}),
+                         (CENTRIFUGE, "start", {"rpm": 500, "durationSeconds": 1}),
+                         (CENTRIFUGE, "openLid", {}),
+                         (ROBOT, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot1"}),
+                         (ROBOT, "pickPlace", {"from": "rack.A2", "to": "centrifuge.slot3"}),
+                         (ROBOT, "home", {})]
+                case = "centrifuge-two"
+            elif wrong_work == "late-stop":
+                moves = [(CENTRIFUGE, "closeLid", {}),
+                         (CENTRIFUGE, "start", {"rpm": 500, "durationSeconds": 30}), (CENTRIFUGE, "stop", {})]
+                case = "stop-cycle"
+            else:
+                rejected = operator.action(CENTRIFUGE, "start", {"rpm": 100, "durationSeconds": 1},
+                                           expected="rejected")
+                assert rejected["error"]["code"] == "invalid_params"
+                moves = [(CENTRIFUGE, "closeLid", {}),
+                         (CENTRIFUGE, "start", {"rpm": 500, "durationSeconds": 1})]
+                case = "correct-rejection"
+            operator.submit(*moves)
+            for step, (entity, action, params) in enumerate(moves, 1):
+                operator.action(entity, action, params, step=step)
+        score = operator.grade(suite, case)
+        record_property("actualScore", json.dumps(score))
+        record_property("trace", json.dumps(operator.trace))
+        record_property("evaluatorEvidenceSeconds", operator.evidence_seconds)
+        record_property("elapsedIncludesEvaluatorEvidence", "true; no elapsed or step budget changed")
+        if wrong_work == "substituted-tube":
+            assert score["metrics"]["steps"] == 8
+        assert score["dimensions"]["finalState"] == 0, score
+        assert score["score"] == expected, score
         client.delete(operator.route).raise_for_status()

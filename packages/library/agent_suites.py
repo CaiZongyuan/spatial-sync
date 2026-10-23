@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+from packages.info.agent_grading import validate_action_witnesses
 from packages.info.conditions import CompiledConditions
 from packages.library.archive import package_files, relative_path
 from packages.library.common import NAME, LibraryError, content_hash, document
@@ -76,12 +77,16 @@ def load_agent_suite(path, identifier, root, data):
                 raise ValueError
             dimensions, weight = set(), 0
             for dimension in rubric["dimensions"]:
-                if (set(dimension) != {"id", "weight", "when"} or dimension["id"] not in DIMENSIONS
+                if (not {"id", "weight", "when"}.issubset(dimension)
+                    or set(dimension) - {"id", "weight", "when", "actions"}
+                    or dimension["id"] not in DIMENSIONS
                     or dimension["id"] in dimensions or type(dimension["weight"]) is not int
                     or not 0 < dimension["weight"] <= 100):
                     raise ValueError
                 dimensions.add(dimension["id"])
                 weight += dimension["weight"]
+                if "actions" in dimension:
+                    validate_action_witnesses(dimension["actions"])
                 conditions = CompiledConditions([dimension["when"]])
                 for condition in conditions:
                     entity = condition.get("entity")

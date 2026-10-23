@@ -9,6 +9,9 @@ dimensions:
     - entity: $process
       property: rejectedHighRisk
       equals: 0
+    - entity: $process
+      property: described:/World/Lab/Incubator.setSetpoint.risk
+      equals: high
 - id: rejectedHighRisk
   weight: 20
   when:

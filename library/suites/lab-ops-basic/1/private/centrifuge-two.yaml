@@ -18,6 +18,15 @@ dimensions:
     - entity: $process
       property: succeeded:/World/Lab/Centrifuge.start
       gte: 1
+  actions:
+  - entity: /World/Lab/Centrifuge
+    action: start
+    status: succeeded
+    params: {rpm: 500, durationSeconds: 1}
+    before:
+      all:
+      - {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}
+      - {entity: /World/Lab/Tubes/Tube02, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot3}
 - id: rejectedHighRisk
   weight: 20
   when:

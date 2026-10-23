@@ -4,7 +4,7 @@ dimensions:
   when:
     all:
     - entity: $alerts
-      property: acknowledgedCount
+      property: acknowledged:/World/Lab/Incubator.tempDeviation
       gte: 1
     - entity: /World/Lab/Incubator
       property: setpointC

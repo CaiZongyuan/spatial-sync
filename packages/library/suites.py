@@ -67,16 +67,17 @@ class SuiteVersion:
 
 def load_suite(path, identifier, root):
     try:
+        match = SUITE_ID.fullmatch(identifier)
+        if not match:
+            raise ValueError
         files = set(package_files(path))
         data = document(path / "suite.yaml")
         if data.get("layer") == "agent":
             return load_agent_suite(path, identifier, root, data)
         if set(data) != {"id", "title", "layer", "scene", "sceneContentHash", "source", "episodes"}:
             raise ValueError
-        match = SUITE_ID.fullmatch(identifier)
         if (
-            not match
-            or data["id"] != "suite/" + match[1]
+            data["id"] != "suite/" + match[1]
             or data["layer"] != "embodied"
             or not isinstance(data["title"], str)
             or not data["title"]

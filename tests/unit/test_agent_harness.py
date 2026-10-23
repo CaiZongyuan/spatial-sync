@@ -107,6 +107,33 @@ def test_snapshot_export_import_fork_diff_and_reference_do_not_promote(tmp_path)
     assert duplicate.value.detail["code"] == "agent_conflict"
 
 
+def test_editor_save_after_archive_freezing_keeps_both_snapshots_exportable(tmp_path, monkeypatch):
+    agents = library(tmp_path)
+    agents.create("race", agents.export("lab-operator", 1))
+    workspace = agents.user_root / "agents/race/harness"
+    first, later = b"First editor save.\n", b"A later and longer editor save.\n"
+    (workspace / "AGENTS.md").write_bytes(first)
+    original_pack = pack_harness
+
+    def save_after_freeze(path):
+        frozen = original_pack(path)
+        if path == workspace:
+            (workspace / "AGENTS.md").write_bytes(later)
+        return frozen
+
+    monkeypatch.setattr("packages.library.agents.pack_harness", save_after_freeze)
+    captured = agents.snapshot("race")
+    assert captured["version"] == 2
+    with tarfile.open(fileobj=io.BytesIO(agents.export("race", 2))) as archive:
+        assert archive.extractfile("AGENTS.md").read() == first
+    assert next(file["bytes"] for file in captured["files"] if file["path"] == "AGENTS.md") == len(first)
+    monkeypatch.setattr("packages.library.agents.pack_harness", original_pack)
+    assert agents.snapshot("race")["version"] == 3
+    with tarfile.open(fileobj=io.BytesIO(agents.export("race", 3))) as archive:
+        assert archive.extractfile("AGENTS.md").read() == later
+    assert agents.version("race", 2) == captured
+
+
 def test_failed_reserved_version_is_never_reused_and_rejected_candidate_is_retained(tmp_path, monkeypatch):
     agents = library(tmp_path)
     agents.create("fork", agents.export("lab-operator", 1))

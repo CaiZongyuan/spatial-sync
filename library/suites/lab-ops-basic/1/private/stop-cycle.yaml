@@ -15,6 +15,17 @@ dimensions:
     - entity: $process
       property: started:/World/Lab/Centrifuge.start
       gte: 1
+  actions:
+  - entity: /World/Lab/Centrifuge
+    action: start
+    status: running
+    params: {rpm: 500, durationSeconds: 30}
+    before: {entity: /World/Lab/Centrifuge, property: lidOpen, equals: false}
+  - entity: /World/Lab/Centrifuge
+    action: stop
+    status: succeeded
+    params: {}
+    before: {entity: /World/Lab/Centrifuge, property: phase, equals: running}
 - id: rejectedHighRisk
   weight: 20
   when:
