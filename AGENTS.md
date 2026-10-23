@@ -29,7 +29,7 @@ These are hard to reverse. Change them deliberately, with the user.
 - A milestone is done when it demos: one local command starts it, or it is visible in the browser.
 - Conclusions and key numbers go in issues, PR descriptions and CI. Raw receipts, review logs and benchmark output go to `.scratch/`. Repository docs describe current behavior.
 - Add an abstraction when its second consumer exists.
-- The CI gate stays GPU-free and under 5 minutes. Newton smoke tests and benchmarks run manually.
+- The CI gate stays GPU-free. Each job targets a median under 4 minutes; jobs time out at 10 minutes. When main-push job medians exceed 5 minutes over a week, open a maintenance issue. Newton smoke tests and benchmarks run manually.
 - Stop only processes your task started, through the handle that started them; leave other sessions and services running.
 - Before opening or merging a PR, handing off PM work, or running a diagnosis or experiment, read `docs/agents/delivery.md`.
 

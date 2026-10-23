@@ -1,4 +1,4 @@
-import { expect, test, type Request } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Request } from '@playwright/test';
 import type { SceneManifest } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
@@ -201,12 +201,24 @@ test('changing scene filters retires old results and queued previews before the 
   }
 });
 
-test('real scene capture, shared thumbnails, filters, URL preferences and exact launch', async ({ page, request }, testInfo) => {
+async function watchStaticScene(page: Page, request: APIRequestContext) {
   const errors: string[] = [], liveRequests: string[] = [], sockets: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (request.url().includes('/api/v1/sessions')) liveRequests.push(request.url()); });
   page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) sockets.push(socket.url()); });
   const before = await (await request.get(`${api}/api/v1/health`)).json();
+  return {
+    errors,
+    async assertStatic() {
+      expect(liveRequests).toEqual([]); expect(sockets).toEqual([]);
+      const after = await (await request.get(`${api}/api/v1/health`)).json();
+      expect(after.sessionCount).toBe(before.sessionCount);
+    },
+  };
+}
+
+test('real scene captures render every shared thumbnail without a live session', async ({ page, request }) => {
+  const { errors, assertStatic } = await watchStaticScene(page, request);
   await page.goto('/scenes');
   const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
   await expect(laboratory).toContainText('30 实体 · 22 绑定');
@@ -219,6 +231,13 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
     await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
   await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(7);
   await expect(page.locator('canvas')).toHaveCount(0);
+  await assertStatic();
+  expect(errors).toEqual([]);
+});
+
+test('scene library filters and URL preferences navigate to the exact version', async ({ page, request }) => {
+  const { errors, assertStatic } = await watchStaticScene(page, request);
+  await page.goto('/scenes');
   await page.getByRole('button', { name: '列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
   await expect(page.locator('.scene-mini-thumbnail').first()).toHaveCSS('width', '72px');
@@ -233,6 +252,14 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   await page.getByRole('button', { name: '清除筛选' }).click();
   await page.getByRole('link', { name: 'lab-demo@1 Synthetic Laboratory', exact: true }).click();
   await expect(page).toHaveURL(/\/scenes\/lab-demo\/1/);
+  await assertStatic();
+  expect(errors).toEqual([]);
+});
+
+test('an exact scene detail stays static until its selected version launches', async ({ page, request }, testInfo) => {
+  const { errors, assertStatic } = await watchStaticScene(page, request);
+  await page.goto('/scenes/lab-demo/1');
+  await expect(page).toHaveURL(/\/scenes\/lab-demo\/1/);
   await expect(page.locator('canvas')).toHaveCount(1);
   await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.drawnEntities().length ?? 0)).toBeGreaterThan(20);
   await expect.poll(() => page.evaluate(() => window.__spatialRenderDebug?.camera().projection)).toBe('OrthographicCamera');
@@ -245,9 +272,7 @@ test('real scene capture, shared thumbnails, filters, URL preferences and exact 
   await expect(page.locator('.scene-teaching')).toContainText('rack.A1');
   await expect(page.locator('.scene-validation')).toContainText('Physics checks not run');
   await expect(page.getByRole('button', { name: /^Run / })).toHaveCount(0);
-  expect(liveRequests).toEqual([]); expect(sockets).toEqual([]);
-  const after = await (await request.get(`${api}/api/v1/health`)).json();
-  expect(after.sessionCount).toBe(before.sessionCount);
+  await assertStatic();
   await page.screenshot({ path: testInfo.outputPath('scene-detail-real.png'), fullPage: true });
   const creating = page.waitForResponse(response => response.url().endsWith('/api/v1/sessions') && response.request().method() === 'POST');
   await page.getByRole('button', { name: '启动会话' }).click();

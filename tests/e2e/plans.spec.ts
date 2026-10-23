@@ -1,79 +1,10 @@
-import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type {} from '../../apps/web/src/components/Workbench';
 import type {} from '../../apps/web/src/components/PlansPage';
 import type { AvailablePreview, PlanDocument } from '../../apps/web/src/lib/plans/model';
 import { readSegment, type Recording } from '../../apps/web/src/lib/replay/reader';
+import { api, centrifuge, robot, headers, condition, move, close, json, createSession, submit, approve, closeLid, stopSession, geometry } from './plan-fixture';
 
-const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
-const centrifuge = '/World/Lab/Centrifuge';
-const robot = '/World/Lab/RobotA';
-const headers = { 'X-Actor': 'agent:issue26-e2e' };
-const condition = { entity: centrifuge, property: 'lidOpen', equals: false };
-const move = (id: number, positions = [1, .5, -.5, .1, .2, .3, .4]) =>
-  ({ id, do: { entity: robot, action: 'moveJoints', params: { positions } } });
-const close = { id: 1, do: { entity: centrifuge, action: 'closeLid' }, expect: condition };
-
-async function json<T>(response: Awaited<ReturnType<APIRequestContext['get']>>): Promise<T> {
-  expect(response.ok(), await response.text()).toBe(true);
-  return response.json() as Promise<T>;
-}
-async function createSession(request: APIRequestContext) {
-  return json<{ sessionId: string }>(await request.post(`${api}/api/v1/sessions`, {
-    data: { sceneVersion: 'lab-demo@2', source: 'synthetic', continueWithoutObservers: true },
-  }));
-}
-async function submit(request: APIRequestContext, title: string, steps: unknown[]) {
-  return approve(request, await json<PlanDocument>(await request.post(`${api}/api/v1/plans`, {
-    headers, data: { title, target: 'session', steps },
-  })));
-}
-async function approve(request: APIRequestContext, plan: PlanDocument) {
-  // The mandatory E2E gateway declares closeLid high-risk; exercise its real approval too.
-  if (plan.status !== 'submitted') return plan;
-  await json(await request.post(`${api}/api/v1/approvals/${plan.approvalId}/decision`, {
-    headers: { 'X-Actor': 'user:issue26-test-reviewer' }, data: { decision: 'approve' },
-  }));
-  return json<PlanDocument>(await request.get(`${api}/api/v1/plans/${plan.id}`));
-}
-async function closeLid(request: APIRequestContext, sessionId: string, plan: PlanDocument) {
-  const result = await json<{ status: string; invocationId: string }>(await request.post(`${api}/api/v1/sessions/${sessionId}/actions`, {
-    headers, data: { requestId: `close-${plan.id}`, entityKey: centrifuge, action: 'closeLid',
-      planId: plan.id, stepId: 1, planRevision: plan.revision, wait: true, timeoutSeconds: 4 },
-  }));
-  expect(result.status).toBe('succeeded');
-  return result;
-}
-async function stopSession(request: APIRequestContext, sessionId: string, info: TestInfo) {
-  const response = await request.delete(`${api}/api/v1/sessions/${sessionId}`);
-  expect(response.ok(), await response.text()).toBe(true);
-  const after = await json<{ state: string }>(await request.get(`${api}/api/v1/sessions/${sessionId}`));
-  expect(after.state).toBe('STOPPED');
-  await info.attach('session-cleanup.json', { body: JSON.stringify({ sessionId, deleteStatus: response.status(), after }), contentType: 'application/json' });
-}
-async function geometry(page: Page, preview: AvailablePreview, detail = false) {
-  const inspect = () => page.evaluate(detail => detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry(), detail);
-  await expect.poll(async () => {
-    const value = await inspect();
-    return value && value.points.length === preview.points.length &&
-      Object.values(value.ghosts).every(body => body.meshes > 0 && body.source !== 'loading');
-  }).toBe(true);
-  await expect(page.getByTestId('scene-viewport')).toHaveAttribute('data-camera-fitted', 'true');
-  const actual = (await inspect())!;
-  expect(actual.policyDriven).toBe(false);
-  expect(actual.target).toEqual(preview.targetPose.p);
-  expect(actual.targetInView, 'Actual target projects inside the rendered viewport').toBe(true);
-  expect(actual.points).toHaveLength(preview.points.length);
-  actual.points.forEach((point, index) => point.forEach((value, axis) => expect(value).toBeCloseTo(preview.points[index][axis], 5)));
-  expect(Object.keys(actual.ghosts).sort()).toEqual(Object.keys(preview.targetBodyPoses).sort());
-  for (const [key, pose] of Object.entries(preview.targetBodyPoses)) {
-    const body = actual.ghosts[key];
-    expect(body.p).toEqual(pose.p); expect(body.q).toEqual(pose.q);
-    expect(body.meshes).toBeGreaterThan(0); expect(body.visible).toBe(true);
-    expect(body.opacity.length).toBeGreaterThan(0);
-    body.opacity.forEach(value => expect(value).toBe(.24));
-  }
-  return actual;
-}
 async function seek(page: Page, timeMs: number) {
   await page.getByLabel('Replay position').evaluate((element, value) => {
     (element as HTMLInputElement).value = String(value > 0 ? value - 1 : 1);
@@ -82,7 +13,7 @@ async function seek(page: Page, timeMs: number) {
   await expect(page.getByLabel('Replay position')).toHaveValue(String(timeMs));
 }
 
-test('real operation plan tracks calls and revisions beside an actual TCP path and ghost bodies', async ({ page, request, context }, info) => {
+test('real operation plan tracks calls and revisions beside an actual TCP path and ghost bodies', async ({ page, request }, info) => {
   const { sessionId } = await createSession(request);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   try {
@@ -144,34 +75,7 @@ test('real operation plan tracks calls and revisions beside an actual TCP path a
     // Original scene tree / Inspector interaction remains available beside the checklist.
     await page.getByTestId(`entity-${centrifuge}`).click();
     await expect(page.getByTestId('property-lidOpen').locator('output')).toHaveText('false');
-    await page.goto(`/plans/${plan.id}?step=4`);
-    await expect(page.getByRole('table')).toContainText(plan.id);
-    await expect(page.getByRole('table')).toContainText('issue26-e2e');
-    const detailGeometry = await geometry(page, updated, true);
-    await info.attach('detail-rendered-preview.json', { body: JSON.stringify({ preview: updated, rendered: detailGeometry }), contentType: 'application/json' });
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await page.getByRole('button', { name: '复制', exact: true }).click();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await page.getByTestId('plan-command').textContent());
-    for (const theme of ['dark', 'light']) {
-      await page.getByLabel('Color theme').selectOption(theme);
-      await page.screenshot({ path: info.outputPath(`plans-${theme}-1440.png`), fullPage: true });
-    }
-    await page.setViewportSize({ width: 400, height: 960 });
-    await page.screenshot({ path: info.outputPath('plans-light-400.png'), fullPage: true });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const reduced = await geometry(page, updated, true);
-    const offsets = await page.evaluate(async () => {
-      const values = [];
-      for (let frame = 0; frame < 4; frame++) {
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        values.push(window.__planViewDebug?.()?.dashOffset);
-      }
-      return values;
-    });
-    expect(offsets).toEqual(Array(4).fill(reduced.dashOffset));
     expect(errors).toEqual([]);
-    await info.attach('rendered-preview.json', { body: JSON.stringify({ preview: updated, rendered: reduced }), contentType: 'application/json' });
   } finally { await stopSession(request, sessionId, info); }
 });
 

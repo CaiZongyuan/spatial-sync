@@ -7,6 +7,7 @@ Rules for merging, PM progress and hand-off, and diagnosis. They override the de
 - Push the branch, open the PR and merge it without asking once non-author `code-review` finds no open defects on the final candidate (a judgement call may stay open with its reason in the PR) and the rules below hold. A PR that changes a contract in `AGENTS.md` also needs the user's approval of that change, recorded in its issue or PR. When the user withholds merging, stop at a passing PR.
 - Merge only while the latest main push CI is successful. When it is red, repair it before merging other PRs; if a repair is not ready within one hour, revert the introducing squash commit.
 - Rebase the PR head onto current main before merging; that exact head must pass CI. Verify the integrated tree equals the reviewed and tested candidate.
+- Browser tests retry once in CI. A pass after a retry counts as a pass; record its flaky cases in the flaky-test issue and fix them in a weekly batch instead of blocking merges. A case that flakes three times in a week goes to the front of the maintenance queue.
 - Newton runtime changes need the four Newton CPU checks in `docs/VERIFICATION.md` ("Real physics and browser checks").
 - Start a regression-fix PR description with `Regression from #N`, naming the introducing PR.
 - Use the `pr-media` branch only for PR screenshots and recordings.

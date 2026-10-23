@@ -44,12 +44,13 @@ async def storage_roots():
 
 
 @app.post("/e2e/evaluation-alert-suite")
-async def evaluation_alert_suite():
+async def evaluation_alert_suite(payload: dict | None = None):
     from tests.fixtures.evaluation_alerts import prepare_suite
     from tests.fixtures.evaluation_barrier import EvaluationAlertBarriers
 
     manager = app.state.manager
-    scene = manager.library.resolve("evaluation-alerts", launch=True, source="synthetic")
+    scene = manager.library.resolve((payload or {}).get("sceneVersion", "evaluation-alerts"),
+                                    launch=True, source="synthetic")
     suite = await asyncio.to_thread(prepare_suite, manager.library.roots["user"], scene)
     await asyncio.to_thread(manager.evaluations.suites.refresh)
     if not hasattr(app.state, "evaluation_alert_barriers"):

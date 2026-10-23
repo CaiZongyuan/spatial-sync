@@ -5,42 +5,31 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python-checks:
-    name: python-checks (${{ matrix.lane }})
+    name: python-checks (${{ matrix.lane }} ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         include:
           - lane: core
-            tests: tests/contract tests/unit tests/gateway/test_evaluation_api.py tests/gateway/test_info.py tests/gateway/test_agent_grading_http.py
+            shard: 1
+            shards: 1
+            tests: tests/contract tests/unit tests/cli
           - lane: gateway
-            tests: >-
-              tests/gateway
-              --ignore=tests/gateway/test_binding_templates.py
-              --ignore=tests/gateway/test_template_pin_history.py
-              --ignore=tests/gateway/test_template_previews.py
-              --ignore=tests/gateway/test_builtin_template_migration.py
-              --ignore=tests/gateway/test_template_asset_references.py
-              --ignore=tests/gateway/test_library_deletions.py
-              --ignore=tests/gateway/test_asset_imports.py
-              --ignore=tests/gateway/test_structure_validation.py
-              --ignore=tests/gateway/test_evaluation_api.py
-              --ignore=tests/gateway/test_info.py
-              --ignore=tests/gateway/test_agent_grading_http.py
-          - lane: library-templates
-            tests: >-
-              tests/gateway/test_binding_templates.py
-              tests/gateway/test_template_pin_history.py
-              tests/gateway/test_template_previews.py
-              tests/gateway/test_builtin_template_migration.py
-              tests/gateway/test_template_asset_references.py
-              tests/gateway/test_asset_imports.py
-              tests/gateway/test_structure_validation.py
-          - lane: cli
-            tests: tests/cli tests/gateway/test_library_deletions.py
+            shard: 1
+            shards: 2
+            tests: tests/gateway
+          - lane: gateway
+            shard: 2
+            shards: 2
+            tests: tests/gateway
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -60,7 +49,22 @@ jobs:
           uv pip install --python .venv/bin/python --index-url https://pypi.org/simple --no-deps -e .
       - run: pnpm install --frozen-lockfile
         if: matrix.lane == 'core'
-      - run: uv run --no-sync python -m pytest ${{ matrix.tests }} -q
+      - name: Run Python suite with xdist
+        env:
+          SPATIAL_CI_PYTEST_LANE: ${{ matrix.lane }}
+          SPATIAL_CI_PYTEST_INDEX: ${{ matrix.shard }}
+          SPATIAL_CI_PYTEST_COUNT: ${{ matrix.shards }}
+          SPATIAL_CI_PYTEST_MANIFEST_DIR: .scratch/ci-results/coverage
+        run: |
+          export PYTEST_XDIST_AUTO_NUM_WORKERS="$(uv run --no-sync python -c 'import os; print(len(os.sched_getaffinity(0)))')"
+          uv run --no-sync python -c 'import json, os, psutil; print(json.dumps({"physicalCpus": psutil.cpu_count(logical=False), "affinity": sorted(os.sched_getaffinity(0)), "selectedWorkers": int(os.environ["PYTEST_XDIST_AUTO_NUM_WORKERS"])}))'
+          uv run --no-sync python -m pytest ${{ matrix.tests }} -n auto -q --durations=20 --junitxml=.scratch/ci-results/${{ matrix.lane }}-${{ matrix.shard }}-of-${{ matrix.shards }}.xml
+      - name: Collect complete independent Python reference
+        if: matrix.lane == 'core'
+        env:
+          SPATIAL_CI_PYTEST_LANE: reference
+          SPATIAL_CI_PYTEST_MANIFEST_DIR: .scratch/ci-results/reference
+        run: uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli --collect-only -q
       - run: uv run --no-sync ruff check apps packages tools tests
         if: matrix.lane == 'core'
       - run: uv run --no-sync python tools/check_platform_skills.py
@@ -73,6 +77,11 @@ jobs:
         if: matrix.lane == 'core'
       - run: pnpm build
         if: matrix.lane == 'core'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-checks-${{ matrix.lane }}-${{ matrix.shard }}-of-${{ matrix.shards }}-attempt-${{ github.run_attempt }}
+          path: .scratch/ci-results
 
   contracts:
     if: always()
@@ -84,17 +93,24 @@ jobs:
         env:
           PYTHON_RESULT: ${{ needs.python-checks.result }}
         run: test "$PYTHON_RESULT" = success
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-checks-*-attempt-${{ github.run_attempt }}
+          path: .scratch/ci-python
+      - name: Verify complete collection and all three Python executions
+        run: python tools/check_ci_python_coverage.py .scratch/ci-python
 
   browser-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -114,7 +130,7 @@ jobs:
       - run: pnpm build
       - name: Browser acceptance against SyntheticSource
         env:
-          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/6
+          PLAYWRIGHT_SHARD: ${{ matrix.shard }}/12
           SPATIAL_RECORDINGS_ROOT: .scratch/viewer-e2e/recordings
           SPATIAL_STATE_ROOT: .scratch/viewer-e2e/state
           SPATIAL_TEST_APPROVAL: '1'
@@ -128,16 +144,17 @@ jobs:
             sleep 0.5
           done
           curl --fail http://127.0.0.1:8000/api/v1/health
-          # Split the same individual cases across six shards; each gateway keeps one test worker.
+          # Split individual cases across twelve shards; each gateway keeps one test worker.
           SPATIAL_E2E_VIDEO=0 pnpm test:e2e --fully-parallel --workers=1 --shard="$PLAYWRIGHT_SHARD"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-acceptance-evidence-${{ matrix.shard }}
+          name: browser-acceptance-evidence-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: |
             /tmp/spatial-api.log
             .scratch/viewer-e2e/report
             .scratch/viewer-e2e/results
+            .scratch/viewer-e2e/results.json
 
   contract-gateway-viewer:
     if: always()

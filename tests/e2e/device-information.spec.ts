@@ -106,20 +106,20 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
     await (await action(page, 'closeLid'))
       .getByRole('button', { name: 'Run closeLid', exact: true })
       .click();
+    // Form edits do not depend on the lid action; submission still waits for both observers.
+    await start.getByLabel('start rpm', { exact: true }).fill('3000');
+    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
     await expect(
       invocation(page, 'closeLid').locator('.invocation-status'),
     ).toHaveText('succeeded');
-    for (const view of [page, observer])
-      await expect(
+    await Promise.all([page, observer].map(view => expect(
         view.getByTestId('property-lidOpen').locator('output'),
-      ).toHaveText('false');
+      ).toHaveText('false')));
     await expect(
       start
         .getByRole('list', { name: 'start preconditions' })
         .locator('.unmet'),
     ).toHaveCount(0);
-    await start.getByLabel('start rpm', { exact: true }).fill('3000');
-    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
     await start.getByRole('button', { name: 'Run start', exact: true }).click();
     await expect(
       invocation(page, 'start').locator('.invocation-status'),
@@ -147,16 +147,41 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
     await page.screenshot({
       path: info.outputPath('device-action-running.png'),
     });
-    await expect(
-      invocation(page, 'start').locator('.invocation-status'),
-    ).toHaveText('succeeded', { timeout: 20_000 });
-    await expect(
-      observer.getByTestId(id).locator('.invocation-status'),
-    ).toHaveText('succeeded');
-    for (const view of [page, observer])
-      await expect(
+    await Promise.all([
+      expect(invocation(page, 'start').locator('.invocation-status')).toHaveText('succeeded', { timeout: 20_000 }),
+      expect(observer.getByTestId(id).locator('.invocation-status')).toHaveText('succeeded'),
+    ]);
+    await Promise.all([page, observer].map(view => expect(
         view.getByTestId('property-phase').locator('output'),
-      ).toHaveText('idle');
+      ).toHaveText('idle')));
+    expect(errors).toEqual([]);
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    await cleanupObserver(context, [`${api}/api/v1/sessions/${sessionId}`], failures);
+  }
+});
+
+test('Inspector completed invocations retain action parameters and selected device properties', async ({ page, request }, info) => {
+  const created = await request.post(`${api}/api/v1/sessions`, {
+    data: { sceneId: 'lab-demo', source: 'synthetic' },
+  });
+  expect(created.ok()).toBe(true);
+  const { sessionId } = await created.json();
+  const errors: string[] = [];
+  const failures: unknown[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await device(page, sessionId);
+    await (await action(page, 'closeLid'))
+      .getByRole('button', { name: 'Run closeLid', exact: true }).click();
+    await expect(invocation(page, 'closeLid').locator('.invocation-status')).toHaveText('succeeded');
+    const start = await action(page, 'start');
+    await start.getByLabel('start rpm', { exact: true }).fill('3000');
+    await start.getByLabel('start durationSeconds', { exact: true }).fill('2');
+    await start.getByRole('button', { name: 'Run start', exact: true }).click();
+    await expect(invocation(page, 'start').locator('.invocation-status')).toHaveText('succeeded', { timeout: 20_000 });
+    await expect(page.getByTestId('property-phase').locator('output')).toHaveText('idle');
     await invocation(page, 'start').locator('summary').click();
     await expect(
       invocation(page, 'start').locator('.invocation-details'),
@@ -170,7 +195,7 @@ test('Inspector schema forms run a centrifuge action and two observers see its l
   } catch (error) {
     failures.push(error);
   } finally {
-    await cleanupObserver(context, [`${api}/api/v1/sessions/${sessionId}`], failures);
+    await cleanupObserver(undefined, [`${api}/api/v1/sessions/${sessionId}`], failures);
   }
 });
 

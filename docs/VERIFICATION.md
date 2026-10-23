@@ -23,6 +23,22 @@ pnpm --filter @spatial-sync/web exec playwright install chromium
 pnpm test:e2e
 ```
 
+CI keeps two logical Python lanes: contract/unit/CLI core and gateway. Core has
+one execution shard; gateway has two. Each still collects its whole directory
+set before selecting `sha256(nodeid UTF-8) % count`, then uses `-n auto` within
+its own runner. `SPATIAL_CI_PYTEST_INDEX` and `SPATIAL_CI_PYTEST_COUNT` are paired,
+one-based settings used only by CI; with neither, ordinary local tests retain the complete
+collection. Invalid or incomplete settings fail instead of silently selecting
+a subset. `SPATIAL_CI_PYTEST_MANIFEST_DIR` records each worker's full, selected and
+deselected identities; deselected nodes are not skips.
+
+Core also collects all four mandatory directories independently. The `contracts`
+job downloads all three attempt-specific Python artifacts and runs
+`python tools/check_ci_python_coverage.py <artifact-directory>` to verify worker
+agreement, the exact disjoint selection union and all three JUnit identity sets.
+It derives totals from the full collection. The workflow has 17 checks: three
+Python executions, twelve browser shards and two aggregate checks.
+
 Start an owned `approval_gateway:app --app-dir tests/fixtures` API first. E2E
 defaults to API8000 and isolated web5184. `SPATIAL_API_URL` selects another API;
 `SPATIAL_WEB_URL` selects an existing web server. Both must serve the candidate
