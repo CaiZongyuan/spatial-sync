@@ -43,14 +43,17 @@ async function viewerFixture(page: Page, delayVisual = false, previewOrder = fal
   let socket: WebSocketRoute | undefined;
   let sequence = Number(spatial.readBigUInt64LE(16));
   let release!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
+  const visualState = { requested: false, released: false, responseSent: false };
+  const held = new Promise<void>(resolve => { release = () => { visualState.released = true; resolve(); }; });
   await page.route('**/api/v1/sessions/framing-fixture/scene', route => route.fulfill({ json: manifest }));
   await page.route('**/api/v1/sessions/framing-fixture/catalog', route => route.fulfill({ json: catalog }));
   await page.route('**/api/v1/sessions/framing-fixture/stats', route => route.fulfill({ json: {} }));
   if (delayVisual) {
     const url = manifest.nodes.find((node: { entityKey: string }) => node.entityKey === '/World/Lab/FallbackBox').visuals[0].url;
     await page.route(`**/${url}`, async route => {
+      visualState.requested = true;
       await held; await route.fulfill({ status: 404 });
+      visualState.responseSent = true;
     });
   }
   await page.routeWebSocket('**/api/v1/sessions/framing-fixture/ws', route => {
@@ -66,7 +69,7 @@ async function viewerFixture(page: Page, delayVisual = false, previewOrder = fal
       sceneRevision: manifest.sceneRevision, sessionState: 'PAUSED', epoch: 0, seq: sequence,
       simTime: 0, realtimeFactor: 1, heartbeatIntervalMs: 30000 }));
   });
-  return { release, sceneRevision: manifest.sceneRevision as string,
+  return { release, visualState, sceneRevision: manifest.sceneRevision as string,
     firstPose() { socket!.send(spatial); }, remotePose() {
     const next = Buffer.from(spatial);
     next.writeBigUInt64LE(BigInt(++sequence), 16);
@@ -200,7 +203,10 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => distance((await camera(page))!.position, initial.position)).toBeGreaterThan(.1);
     const user = (await camera(page))!;
+    await expect.poll(() => fixture.visualState.requested).toBe(true);
+    expect(fixture.visualState).toEqual({ requested: true, released: false, responseSent: false });
     expect(await page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('loading');
+    await info.attach('visual-held-after-navigation.json', { body: JSON.stringify(fixture.visualState), contentType: 'application/json' });
     fixture.release();
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('colliders');
     await assertViewRetained(page, user);
@@ -212,7 +218,9 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
       expect(witness.readyReads).toBeGreaterThan(0);
     }
   } finally {
+    const visualState = { ...fixture.visualState };
     fixture.release();
+    await info.attach('visual-hold-at-cleanup.json', { body: JSON.stringify(visualState), contentType: 'application/json' });
     if (unavailableFirstRead) {
       const witness = await page.evaluate(() => {
         const witness = Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value;
