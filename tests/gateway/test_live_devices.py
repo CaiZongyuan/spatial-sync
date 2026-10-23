@@ -28,8 +28,12 @@ from apps.api.app.sources.synthetic_source import SyntheticSource
 from packages.info.approvals import ApprovalStore
 from packages.info.inbox import InboxStore
 from packages.info.plans import PlanStore
+from packages.library.assets import AssetLibrary
+from packages.library.scenes import SceneLibrary
+from packages.library.tasks import TaskLibrary
 from packages.live.bindings import load_bindings
 from packages.live.ingress import BrokerIngress, BrokerReceipt
+from packages.training.plans import TrainingPlanStore
 
 KEY = "/Real/Incubator2"
 EXAMPLE = Path(__file__).parents[2] / "devices/live/lab.yaml"
@@ -77,7 +81,14 @@ async def live(tmp_path):
     plans.startup()
     host = DeviceHost(load_bindings(EXAMPLE), approvals, plans, transport_factory=factory,
                       clock=lambda: clock[0], inbox=inbox)
-    manager = SimpleNamespace(sessions={}, live=host, approvals=approvals, plans=plans, inbox=inbox)
+    assets = AssetLibrary(tmp_path / "state")
+    tasks = TaskLibrary(assets, lambda: SceneLibrary(user_root=assets.roots["user"],
+                                                   state_root=tmp_path / "state"))
+    training_plans = TrainingPlanStore(tmp_path / "training-plans.json", approvals, tasks,
+                                      on_change=inbox.plan)
+    training_plans.startup()
+    manager = SimpleNamespace(sessions={}, live=host, approvals=approvals, plans=plans, inbox=inbox,
+                              training_plans=training_plans)
 
     def missing_session(_identity):
         raise HTTPException(404, {"code": "unknown_session"})

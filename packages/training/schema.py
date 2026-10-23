@@ -67,6 +67,23 @@ class TaskMetadata(Schema):
     evaluation: Evaluation
     loopBudget: LoopBudget
 
+    @field_validator("success")
+    @classmethod
+    def condition_structure(cls, value):
+        pending = [value]
+        while pending:
+            condition = pending.pop()
+            if not isinstance(condition, dict):
+                raise ValueError("Success conditions must be mappings")
+            for key in ("entity", "property"):
+                if key in condition and (not isinstance(condition[key], str) or not condition[key]):
+                    raise ValueError(f"Condition {key} must be a nonempty string")
+            if "all" in condition:
+                if not isinstance(condition["all"], list):
+                    raise ValueError("All requires an array of conditions")
+                pending.extend(condition["all"])
+        return value
+
     @model_validator(mode="after")
     def evaluation_scene(self):
         if self.evaluation.scene != self.scene:

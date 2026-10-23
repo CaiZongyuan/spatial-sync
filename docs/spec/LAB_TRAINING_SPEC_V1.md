@@ -75,8 +75,9 @@ episode:
   params: {from: rack.A1, to: centrifuge.slot1}   # 训练时的动作参数；评估可另给
 success:                             # 平台条件语言（信息规格 §4.3）
   all:
-    - {entity: /World/Lab/Tubes/Tube01, property: location, equals: centrifuge.slot1}
-    - {entity: /World/Lab/RobotA, property: gripperWidth, equals: 0.04}
+    - {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}
+    - {entity: /World/Lab/RobotA, property: gripperWidth, gte: 0.0799} # 0.08 m 打开，容许浮点反馈
+    - {entity: /World/Lab/RobotA, property: gripperWidth, lte: 0.0801}
 control: {hz: 30, action: joint_position_delta}
 observation: obs_spec.yaml           # 观测与动作规格，供一致性测试（§8.2）
 isaaclab: {task_id: Lab-FR3-Pick-Tube-v0, presets: [newton_mjwarp]}

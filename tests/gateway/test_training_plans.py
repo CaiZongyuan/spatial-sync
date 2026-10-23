@@ -167,3 +167,17 @@ def test_task_pins_its_scene_without_blocking_unrelated_deletion_and_damage_stay
         unknown = client.delete("/api/v1/library/scenes/lab-demo/5")
         assert unknown.status_code == 409
         assert unknown.json()["detail"]["code"] == "reference_inspection_incomplete"
+
+
+@pytest.mark.parametrize("success", [{"all": [0]}, {"property": [], "equals": True},
+                                     {"entity": [], "property": "location", "equals": "placed"}])
+def test_malformed_task_success_returns_import_invalid_without_publishing_a_version(tmp_path, success):
+    package = task_directory(tmp_path / "task")
+    task = yaml.safe_load((package / "task.yaml").read_text(encoding="utf-8"))
+    task["success"] = success
+    (package / "task.yaml").write_text(yaml.safe_dump(task), encoding="utf-8")
+    with TestClient(create_app(Settings())) as client:
+        response = push(client, task_archive(package))
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["code"] == "import_invalid"
+        assert client.get("/api/v1/tasks").json()["tasks"] == []

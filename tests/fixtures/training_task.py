@@ -15,8 +15,10 @@ def task_document(name="training-probe"):
         "robot": "/World/Lab/RobotA", "implements": "robot-arm/v1.pickPlace",
         "episode": {"params": {"from": "rack.A1", "to": "centrifuge.slot1"}},
         "success": {"all": [
-            {"entity": "/World/Lab/Tubes/Tube01", "property": "location", "equals": "centrifuge.slot1"},
-            {"entity": "/World/Lab/RobotA", "property": "gripperWidth", "equals": 0.04},
+            {"entity": "/World/Lab/Tubes/Tube01", "property": "location",
+             "equals": "/World/Lab/Centrifuge/Rotor/Slot1"},
+            {"entity": "/World/Lab/RobotA", "property": "gripperWidth", "gte": 0.0799},
+            {"entity": "/World/Lab/RobotA", "property": "gripperWidth", "lte": 0.0801},
         ]},
         "control": {"hz": 30, "action": "joint_position_delta"}, "observation": "obs_spec.yaml",
         "isaaclab": {"task_id": "Lab-FR3-Probe-v0", "presets": ["newton_mjwarp"]},
