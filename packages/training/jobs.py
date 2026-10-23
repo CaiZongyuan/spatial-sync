@@ -14,6 +14,7 @@ from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.transactions import durable_json
+from packages.training.node_telemetry import NodeTelemetryHistory
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
@@ -31,6 +32,7 @@ def profile_key(plan, task_hash, hardware, gpu_id):
 class TrainingJobs:
     def __init__(self, manager, *, clock=time.time):
         self.manager, self.clock = manager, clock
+        self.telemetry = NodeTelemetryHistory()
         self.path = manager.settings.state_root / "jobs.json"
         self.records, self.nodes = {}, {}
         self._worker = None
@@ -423,6 +425,7 @@ class TrainingJobs:
             self._event(job)
         self.reconcile()
         self._save()
+        self.telemetry.observe(node["id"], node["instanceId"], node["gpus"], now)
         return {
             "nodeId": "local",
             "logCursors": {report.jobId: len(self.read_logs(report.jobId)) for report in body.reports},
@@ -443,6 +446,11 @@ class TrainingJobs:
         return [
             {
                 **deepcopy(node),
+                "gpus": [
+                    {**gpu, "history": self.telemetry.for_gpu(
+                        node["id"], node["instanceId"], gpu["id"], self.clock()
+                    )} for gpu in node["gpus"]
+                ],
                 "state": "online" if self.clock() <= node["lastSeen"] + 60 else "offline",
                 "queue": [job["jobId"] for job in self.records.values() if job["status"] == "queued"],
             }

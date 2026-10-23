@@ -36,9 +36,9 @@ export function PlatformOverview({ page, children, nodeCount }: {
     <div className="platform-heading">
       <div>
         <h1 id="platform-title" aria-label={page === 'sessions' ? 'Sessions' : 'Compute resources'}>{page === 'sessions' ? '会话' : '资源'}</h1>
-        <p>{page === 'sessions' ? '查看托管会话、观察者与原生查看器。' : '查看网关主机资源与托管的 Newton 后端。'}</p></div>
+        <p>{page === 'sessions' ? '查看托管会话、观察者与原生查看器。' : '查看计算节点、资源租约与网关主机状态。'}</p></div>
       <div className={`platform-sample ${error || stale ? 'is-stale' : ''}`} role="status">
-        {!snapshot ? error ? '平台暂不可用' : '正在读取平台…' : stale ? '采样已过期' : error ? '刷新失败' : '实时 · 每 2 秒刷新'}
+        {!snapshot ? error ? '平台暂不可用' : '正在读取平台…' : stale ? '采样已过期' : error ? '刷新失败' : page === 'resources' ? '主机 · 每 2 秒刷新' : '实时 · 每 2 秒刷新'}
         {snapshot && <small>采样于 {new Date(snapshot.sampledAtMs).toLocaleTimeString()}</small>}
       </div>
     </div>

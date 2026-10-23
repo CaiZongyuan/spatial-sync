@@ -3,7 +3,7 @@ import { listJobs, listNodes, type TrainingJob, type TrainingNode } from './jobs
 
 export function useTrainingResources() {
   const [data, setData] = useState<{ jobs?: TrainingJob[]; nodes?: TrainingNode[];
-    jobsError?: string; nodesError?: string; sampledAt?: number }>({});
+    jobsError?: string; nodesError?: string }>({});
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let disposed = false, pending: AbortController | undefined;
@@ -19,7 +19,6 @@ export function useTrainingResources() {
         nodes: nodes.status === 'fulfilled' ? nodes.value : previous.nodes,
         jobsError: jobs.status === 'rejected' ? String(jobs.reason?.message ?? jobs.reason) : undefined,
         nodesError: nodes.status === 'rejected' ? String(nodes.reason?.message ?? nodes.reason) : undefined,
-        sampledAt: Date.now(),
       }));
       clearTimeout(timeout); pending = undefined;
     };

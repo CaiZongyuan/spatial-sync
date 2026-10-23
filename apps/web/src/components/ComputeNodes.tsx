@@ -18,18 +18,23 @@ export function ComputeNodes({ nodes, jobs, compact = false }: {
         {leases.length > 0 && <span className="resource-tag">{leases.length} 个租约</span>}</div>
         {compact && <Link to="/resources/gpu">查看算力 →</Link>}</header>
       <div className="resource-panel-body"><p className="compute-hardware">{node.hardware}</p>
-        <p className="resource-note">最近心跳 {localTime(node.lastSeen)} · {node.cpuAvailable ? 'CPU 可用' : 'CPU 容量未报告'}</p>
+        <p className="resource-note">最近心跳 {localTime(node.lastSeen)} · {node.cpuAvailable ? '支持 CPU 作业' : '未提供 CPU 算力'}</p>
         {node.state === 'offline' && <p className="resource-note">节点未在时限内上报；已有租约保留至作业清理，不能视为空闲。</p>}
         {!node.gpus.length && <p className="resource-note">节点未报告 GPU 设备。</p>}
-        <div className="compute-device-list">{node.gpus.map(gpu => <div className="compute-device" key={gpu.id}>
+        <div className="compute-device-list">{node.gpus.map(gpu => {
+          const stale = node.state === 'offline' || gpu.observedAt == null || Date.now() / 1000 - gpu.observedAt > 30;
+          const utilization = stale ? null : gpu.utilization, memory = stale ? null : gpu.memoryUsedMb;
+          return <div className="compute-device" key={gpu.id}>
           <strong>{gpu.name}</strong><code>{gpu.id}</code>
-          <span>使用率 {percentage(gpu.utilization)} · 显存 {megabytes(gpu.memoryUsedMb)} / {megabytes(gpu.memoryTotalMb)}</span>
+          <span>使用率 {percentage(utilization)} · 显存 {megabytes(memory)} / {megabytes(gpu.memoryTotalMb)}</span>
+          {stale && <small>{node.state === 'offline' ? '节点已失联，当前 GPU 状态未知' : '等待节点提供新的有效采样'}</small>}
           {gpu.unavailableReason && <small>{gpu.unavailableReason}</small>}
           {gpu.observedAt != null && <small>采样于 {localTime(gpu.observedAt)}</small>}
-          {!compact && <>{gpu.memoryUsedMb != null && gpu.memoryTotalMb != null && <meter className="gpu-memory-meter"
-            aria-label={`${gpu.name} 显存使用`} min={0} max={gpu.memoryTotalMb} value={gpu.memoryUsedMb} />}
+          {!compact && <>{memory != null && gpu.memoryTotalMb != null && <meter className="gpu-memory-meter"
+            aria-label={`${gpu.name} 显存使用`} min={0} max={gpu.memoryTotalMb} value={memory} />}
             <GPUHistory gpu={gpu} /></>}
-        </div>)}</div>
+        </div>;
+        })}</div>
         <div className="compute-leases">{leases.length ? leases.map(([resource, lease]) => {
           const job = jobs.find(value => value.jobId === lease.jobId);
           const estimate = releaseEstimate(job);

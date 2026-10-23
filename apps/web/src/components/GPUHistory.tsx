@@ -9,7 +9,7 @@ export function GPUHistory({ gpu, now = Date.now() / 1000 }: { gpu: NodeGPU; now
   let current: { at: number; utilization: number }[] | undefined;
   for (const sample of samples) {
     if (sample.utilization == null) { current = undefined; continue; }
-    if (!current || sample.at - current[current.length - 1].at > (history?.sampleIntervalSeconds ?? 10) * 2) {
+    if (!current || sample.at - current[current.length - 1].at > (history?.sampleIntervalSeconds ?? 10) * 1.5) {
       current = []; segments.push(current);
     }
     current.push({ at: sample.at, utilization: sample.utilization });
@@ -17,7 +17,6 @@ export function GPUHistory({ gpu, now = Date.now() / 1000 }: { gpu: NodeGPU; now
   const x = (at: number) => 28 + ((at - (now - window)) / window) * 548;
   const y = (utilization: number) => 112 - utilization * .9;
   const recorded = samples.filter(sample => sample.utilization != null).length;
-  const covered = history?.startedAt == null ? 0 : Math.min(window, Math.max(0, now - history.startedAt));
   return <div className="gpu-history"><div className="gpu-history-heading"><span>GPU 使用率 · 过去 1 小时</span>
     <small>{recorded ? `${recorded} 个实测点` : '暂无可用历史'}</small></div>
     <svg viewBox="0 0 600 140" role="img" aria-label={`${gpu.name} 过去一小时 GPU 使用率，缺失采样留空`}>
@@ -31,7 +30,7 @@ export function GPUHistory({ gpu, now = Date.now() / 1000 }: { gpu: NodeGPU; now
           <title>{localTime(sample.at)} · {percentage(sample.utilization)}</title></circle>)}
       </g>)}
     </svg>
-    <p className="resource-note">{covered < window ? '一小时前的完整历史尚未积累；较早时段留空。' : '历史仅保留最近一小时。'}
+    <p className="resource-note">窗口为最近一小时；未保留或未采样时留空。
       {samples.some(sample => sample.utilization == null) && ' 存在节点未提供的采样。'}</p>
   </div>;
 }

@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router';
-import { useContext, useState } from 'react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { useContext } from 'react';
 import { ApprovalInboxContext } from '../lib/approvals';
 import type { JobStatus } from '../lib/jobs';
 import { usePlansList } from '../lib/plans/hooks';
@@ -17,7 +17,7 @@ function TrainingStages() {
     <Link to="/scenes"><small>02 · 场景</small><strong>场景版本</strong><span>选择物理世界 →</span></Link>
     <Link to="/plans"><small>03 · 计划</small><strong>计划与审批</strong><span>确认目标与预算 →</span></Link>
     <Link to="/train" hash="jobs" aria-current="step"><small>04 · 作业</small><strong>训练作业</strong><span>当前阶段 ↓</span></Link>
-    <Link to="/eval"><small>05 · 评估</small><strong>评估中心</strong><span>查看已实现的评估 →</span></Link>
+    <Link to="/eval"><small>05 · 评估</small><strong>评估中心</strong><span>查看评估结果 →</span></Link>
     <Link to="/train" hash="policies"><small>06 · 策略</small><strong>策略版本</strong><span>尚未接入 ↓</span></Link>
   </nav>;
 }
@@ -26,8 +26,8 @@ export function TrainPage() {
   const resources = useTrainingResources();
   const plans = usePlansList();
   const approvals = useContext(ApprovalInboxContext);
-  const [status, setStatus] = useState<JobStatus | ''>('');
-  const [query, setQuery] = useState('');
+  const search = useSearch({ from: '/train' }), navigate = useNavigate();
+  const status = search.status ?? '', query = search.q ?? '';
   const jobs = resources.jobs?.filter(job => (!status || job.status === status)
     && `${job.jobId} ${job.task} ${job.planId}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -44,8 +44,10 @@ export function TrainPage() {
         <span className="resource-tag">{resources.jobs?.filter(job => job.status === 'running').length ?? '—'} 个运行中</span></div>
         <button onClick={resources.refresh}>刷新作业与节点</button></header>
       <div className="resource-panel-body"><div className="training-filters">
-        <label>搜索<input aria-label="搜索训练作业" placeholder="作业、Task 或计划" value={query} onChange={event => setQuery(event.target.value)} /></label>
-        <label>状态<select aria-label="筛选作业状态" value={status} onChange={event => setStatus(event.target.value as JobStatus | '')}>
+        <label>搜索<input aria-label="搜索训练作业" placeholder="作业、Task 或计划" value={query}
+          onChange={event => void navigate({ to: '/train', search: { q: event.target.value || undefined, status: search.status }, resetScroll: false })} /></label>
+        <label>状态<select aria-label="筛选作业状态" value={status}
+          onChange={event => void navigate({ to: '/train', search: { q: search.q, status: event.target.value as JobStatus || undefined }, resetScroll: false })}>
           <option value="">全部状态</option>{Object.entries(jobStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label></div>
         {resources.jobsError && <p className="resource-error" role="alert">作业刷新失败：{resources.jobsError}。{resources.jobs && '当前保留最近一次结果。'}</p>}

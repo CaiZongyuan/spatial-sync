@@ -30,6 +30,7 @@ import { Route as ResourcesModelsRouteImport } from './routes/resources.models'
 import { Route as ScenesIndexRouteImport } from './routes/scenes.index'
 import { Route as SessionsIndexRouteImport } from './routes/sessions.index'
 import { Route as SessionsSessionIdRouteImport } from './routes/sessions.$sessionId'
+import { Route as TrainIndexRouteImport } from './routes/train.index'
 import { Route as ScenesNameRevRouteImport } from './routes/scenes.$name.$rev'
 import { Route as TrainJobsIdRouteImport } from './routes/train.jobs.$id'
 import { Route as AssetsKindNameRevRouteImport } from './routes/assets.$kind.$name.$rev'
@@ -139,6 +140,11 @@ const SessionsSessionIdRoute = SessionsSessionIdRouteImport.update({
   path: '/$sessionId',
   getParentRoute: () => SessionsRoute,
 } as any)
+const TrainIndexRoute = TrainIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TrainRoute,
+} as any)
 const ScenesNameRevRoute = ScenesNameRevRouteImport.update({
   id: '/$name/$rev',
   path: '/$name/$rev',
@@ -177,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/plans/': typeof PlansIndexRoute
   '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
+  '/train/': typeof TrainIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
   '/train/jobs/$id': typeof TrainJobsIdRoute
   '/assets/$kind/$name/$rev': typeof AssetsKindNameRevRoute
@@ -186,7 +193,6 @@ export interface FileRoutesByTo {
   '/approvals': typeof ApprovalsRoute
   '/live': typeof LiveRoute
   '/recordings': typeof RecordingsRoute
-  '/train': typeof TrainRouteWithChildren
   '/eval/$suiteId': typeof EvalSuiteIdRoute
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
@@ -198,6 +204,7 @@ export interface FileRoutesByTo {
   '/plans': typeof PlansIndexRoute
   '/scenes': typeof ScenesIndexRoute
   '/sessions': typeof SessionsIndexRoute
+  '/train': typeof TrainIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
   '/train/jobs/$id': typeof TrainJobsIdRoute
   '/assets/$kind/$name/$rev': typeof AssetsKindNameRevRoute
@@ -225,6 +232,7 @@ export interface FileRoutesById {
   '/plans/': typeof PlansIndexRoute
   '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
+  '/train/': typeof TrainIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
   '/train/jobs/$id': typeof TrainJobsIdRoute
   '/assets/$kind/$name/$rev': typeof AssetsKindNameRevRoute
@@ -253,6 +261,7 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/scenes/'
     | '/sessions/'
+    | '/train/'
     | '/scenes/$name/$rev'
     | '/train/jobs/$id'
     | '/assets/$kind/$name/$rev'
@@ -262,7 +271,6 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/live'
     | '/recordings'
-    | '/train'
     | '/eval/$suiteId'
     | '/plans/$planId'
     | '/replay/$recordingId'
@@ -274,6 +282,7 @@ export interface FileRouteTypes {
     | '/plans'
     | '/scenes'
     | '/sessions'
+    | '/train'
     | '/scenes/$name/$rev'
     | '/train/jobs/$id'
     | '/assets/$kind/$name/$rev'
@@ -300,6 +309,7 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/scenes/'
     | '/sessions/'
+    | '/train/'
     | '/scenes/$name/$rev'
     | '/train/jobs/$id'
     | '/assets/$kind/$name/$rev'
@@ -470,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SessionsSessionIdRouteImport
       parentRoute: typeof SessionsRoute
     }
+    '/train/': {
+      id: '/train/'
+      path: '/'
+      fullPath: '/train/'
+      preLoaderRoute: typeof TrainIndexRouteImport
+      parentRoute: typeof TrainRoute
+    }
     '/scenes/$name/$rev': {
       id: '/scenes/$name/$rev'
       path: '/$name/$rev'
@@ -559,10 +576,12 @@ const SessionsRouteWithChildren = SessionsRoute._addFileChildren(
 )
 
 interface TrainRouteChildren {
+  TrainIndexRoute: typeof TrainIndexRoute
   TrainJobsIdRoute: typeof TrainJobsIdRoute
 }
 
 const TrainRouteChildren: TrainRouteChildren = {
+  TrainIndexRoute: TrainIndexRoute,
   TrainJobsIdRoute: TrainJobsIdRoute,
 }
 
