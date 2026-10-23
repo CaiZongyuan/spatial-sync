@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-23T06:08:01.824905+00:00",
+  "capturedAt": "2026-10-23T22:17:25.896730+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -280,6 +280,10 @@
       "sha256": "f1afb5032d7e96c281d951da75d68bbfb1d9ddd98845aa20b28b9d5d7fed30a4"
     },
     {
+      "path": "packages/sim_runtime/mujoco_bvh.py",
+      "sha256": "ff5be2ba0492d5b4dcc20cb5953d38fa9c032f73e354bcd8e5ba1771dc08f84e"
+    },
+    {
       "path": "packages/sim_runtime/pacer.py",
       "sha256": "ca65d0768522b5df8e19bfca06363eac46c57b33eae49d3b1ea8ea298907d96d"
     },
@@ -309,7 +313,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "d40d046714dfba13801e72615567f049c0d125910bbc84ec5ece8eb885260028"
+      "sha256": "57ab038fd95086e631caa60b21ec7d9c7961d7eb52781a399d5844c2fb9a63a0"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -347,10 +351,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "723b135fb0db6db626dd2ef0a85f9a0f8a90bddfa022060f9e382167fcadbd24",
-    "catalog.json": "c98347b68285e21ea7b56c582eb0622f09cce24c305de35a5fd5781635f81dea",
-    "state.json": "1ea8be3a77596bd7e2119e97394258a3acd269f6bcbeaada58157f9ebfaab4f4",
-    "snapshot.bin": "80a2a5798313d02b090fee3cbe7fd6d8a005ae036daf08e1dbc619ab0c7f7e0d",
+    "manifest.json": "e61adf5ada7294b6fd27301a70faddfde2d925ba37789a3c02b75e1e6403045e",
+    "catalog.json": "707315c8a9cd4f0e4fdf8833398ba34927f08c4d8c22042e40541ef880c8eab4",
+    "state.json": "fa8f5d5886b560c57aaec21a2067da917ce64d3f5cec8180725017887154bdd5",
+    "snapshot.bin": "f3a86b8417db760498f80e9eedf3993557f27d979f92efa759867563beb4b2fb",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

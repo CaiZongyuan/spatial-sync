@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-23T06:08:17.675649+00:00",
+  "capturedAt": "2026-10-23T22:17:55.571900+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -393,6 +393,10 @@
       "sha256": "f1afb5032d7e96c281d951da75d68bbfb1d9ddd98845aa20b28b9d5d7fed30a4"
     },
     {
+      "path": "packages/sim_runtime/mujoco_bvh.py",
+      "sha256": "ff5be2ba0492d5b4dcc20cb5953d38fa9c032f73e354bcd8e5ba1771dc08f84e"
+    },
+    {
       "path": "packages/sim_runtime/pacer.py",
       "sha256": "ca65d0768522b5df8e19bfca06363eac46c57b33eae49d3b1ea8ea298907d96d"
     },
@@ -422,7 +426,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "d40d046714dfba13801e72615567f049c0d125910bbc84ec5ece8eb885260028"
+      "sha256": "57ab038fd95086e631caa60b21ec7d9c7961d7eb52781a399d5844c2fb9a63a0"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -460,10 +464,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "a8b747c6ffccbc20c17c03999300268e07aead40fe0f040df04f705ae2a48a0a",
-    "catalog.json": "71779b7f99e78675b1a7fe77afb70925cfe70620b1a25ddaa6c9459782bbfaf7",
-    "state.json": "05275051416c47c2d9ef1ce24f5fc75cf80e5d794203027a2f6222b2a1145cd6",
-    "snapshot.bin": "6ce8531ef1707a662aeb48e586ef58c234cd457000d2dd2991a8651f9753cb1c",
+    "manifest.json": "c4182e63e8d70d2bf360db9f050084eedaeca1a222a25fa10fe7bcd29beb359b",
+    "catalog.json": "0581eda2dbafd33784de4cac0db67e1128efc04d55922ecd9115bebac436ecb5",
+    "state.json": "4d93bcff551399458c8cf82cdb0561f49c840d60b79f96deb2fe4c8d0963036b",
+    "snapshot.bin": "4fc11ee2d701e90a92bc2458137e159521d8596ec1d3c7621c4d8420a2ab1866",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
