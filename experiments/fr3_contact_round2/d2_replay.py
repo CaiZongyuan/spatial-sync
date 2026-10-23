@@ -87,6 +87,18 @@ def install():
     arm = os.environ["FR3_D2_ARM"]
     if arm not in ("A", "B"):
         raise RuntimeError("D2 arm must be the literal A or B")
+    for package, expected in identity["versions"].items():
+        if metadata.version(package) != expected:
+            raise RuntimeError("Protected environment version changed: " + package)
+    backend = sys._getframe(1).f_globals
+    backend_path = Path(backend.get("__file__", "")).resolve()
+    expected_backend = identity["files"]["d2_play_backend"]
+    if (backend_path != Path(expected_backend["path"]).resolve()
+            or file_sha(backend_path) != expected_backend["sha256"]
+            or backend.get("OnPolicyRunner").__name__ != "OnPolicyRunner"
+            or backend["args_cli"].deterministic or backend["args_cli"].video
+            or backend["args_cli"].real_time or backend["args_cli"].train_env_cfg):
+        raise RuntimeError("Pinned play backend/default playback contract changed")
     import d2_origins as origins
 
     pins = origins.module_pins(identity)
@@ -109,18 +121,6 @@ def install():
     origins.check_symbol(evaluation._install_episode_counter, pins["fr3_contact.evaluation"], "original counter")
     origins.check_symbol(base.Trace.__init__, pins["frozen_home_trace"], "original observer.Trace")
     origins.check_symbol(round2_home.install, pins["round2_home"], "D1 observer.install")
-    for package, expected in identity["versions"].items():
-        if metadata.version(package) != expected:
-            raise RuntimeError("Protected environment version changed: " + package)
-    backend = sys._getframe(1).f_globals
-    backend_path = Path(backend.get("__file__", "")).resolve()
-    expected_backend = identity["files"]["d2_play_backend"]
-    if (backend_path != Path(expected_backend["path"]).resolve()
-            or file_sha(backend_path) != expected_backend["sha256"]
-            or backend.get("OnPolicyRunner").__name__ != "OnPolicyRunner"
-            or backend["args_cli"].deterministic or backend["args_cli"].video
-            or backend["args_cli"].real_time or backend["args_cli"].train_env_cfg):
-        raise RuntimeError("Pinned play backend/default playback contract changed")
     requested, filtered, reference_epochs, reference_first, reference_home = load_schedule(
         identity["d2_trace"]
     )

@@ -47,6 +47,8 @@ def execute(preparation, root_go, origin_text):
         expired.set()
         if job:
             k.TerminateJobObject(job, 124)  # This current unnamed job, never PID lookup.
+        if process.hProcess and not bound:
+            k.TerminateProcess(process.hProcess, 124)  # Fresh suspended child not yet assigned.
 
     def save(name, value):
         # Best-effort receipts never delay termination: timer and outer handle guard remain armed.
@@ -97,11 +99,12 @@ def execute(preparation, root_go, origin_text):
             api.checked(k.CreateProcessW(command[0], line, None, None, True,
                 api.CREATE_SUSPENDED | api.CREATE_NO_WINDOW | api.CREATE_UNICODE_ENVIRONMENT,
                 C.cast(block, C.c_void_p), str(evidence), C.byref(startup), C.byref(process)))
-            api.checked(k.AssignProcessToJobObject(job, process.hProcess))
-            bound = True
             receipt.update({"command": command, "coordinator_pid": process.dwProcessId,
                 "coordinator_creation_filetime_100ns": api.creation_filetime(k, process.hProcess),
-                "assigned_before_resume": True, "status": "owned_child_bound"})
+                "assigned_before_resume": False, "status": "fresh_suspended_child"})
+            api.checked(k.AssignProcessToJobObject(job, process.hProcess))
+            bound = True
+            receipt.update({"assigned_before_resume": True, "status": "owned_child_bound"})
             save("launch-bound.json", receipt)
             if expired.is_set() or time.monotonic() - started >= WORK_STOP_SECONDS:
                 hard_stop()
