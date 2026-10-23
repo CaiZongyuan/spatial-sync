@@ -18,9 +18,15 @@ def require(condition, message):
 def identities(nodes):
     result = []
     for node in nodes:
-        parts = node.split("::")
+        address, bracket, parameters = node.partition("[")
+        parts = address.split("::")
         require(len(parts) >= 2 and parts[0].endswith(".py"), f"Invalid node: {node}")
-        result.append((".".join([parts[0][:-3].replace("/", "."), *parts[1:-1]]), parts[-1]))
+        result.append(
+            (
+                ".".join([parts[0][:-3].replace("/", "."), *parts[1:-1]]),
+                parts[-1] + bracket + parameters,
+            )
+        )
     return result
 
 

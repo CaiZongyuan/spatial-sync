@@ -196,15 +196,23 @@ test('binary browsers share authoritative controls, recovery and replacement', a
       afterReconnect + 2,
       { timeout: 10_000 },
     );
+    await observer.waitForFunction(
+      ({ revision, seq }) => {
+        const debug = window.__spatialDebug;
+        const current = debug?.getStreamMetrics()?.revision;
+        return typeof current === 'string' && current !== revision &&
+          (debug?.getSample()?.seq ?? 0) > seq;
+      },
+      { revision: manifest.sceneRevision, seq: priorSeq },
+      { timeout: 10_000 },
+    );
     expect((await metrics(page))?.invalidBinaryFrames).toBe(0);
     expect(binaryFrames).toBeGreaterThan(3);
     expect(observerBinaryFrames).toBeGreaterThan(3);
     expect(jsonFrames).toBe(0);
     expect(jsonCommands).toBe(3);
     expect(errors).toEqual([]);
-    await page.screenshot({
-      path: testInfo.outputPath('binary-workbench.png'),
-    });
+    const [binaryMetrics, observerMetrics] = await Promise.all([metrics(page), metrics(observer)]);
     await testInfo.attach('wire-and-client-receipt', {
       body: JSON.stringify(
         {
@@ -212,13 +220,20 @@ test('binary browsers share authoritative controls, recovery and replacement', a
           observerBinaryFrames,
           jsonFrames,
           jsonCommands,
-          binary: await metrics(page),
-          observer: await metrics(observer),
+          binary: binaryMetrics,
+          observer: observerMetrics,
+          sampleBoundary: 'last verified two-client state, before observer close and primary PNG',
         },
         null,
         2,
       ),
       contentType: 'application/json',
+    });
+    await observerContext.close();
+    observerContext = undefined;
+    expect((await (await request.get(route)).json()).state).toBe('RUNNING');
+    await page.screenshot({
+      path: testInfo.outputPath('binary-workbench.png'),
     });
   } catch (error) {
     failures.push(error);

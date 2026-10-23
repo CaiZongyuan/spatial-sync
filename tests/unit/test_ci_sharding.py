@@ -14,7 +14,8 @@ def test_ci_shards_execute_the_complete_collection_and_reject_missing_junit_node
         path = tmp_path / "tests" / directory / "test_probe.py"
         path.parent.mkdir(parents=True)
         path.write_text(
-            "import pytest\n@pytest.mark.parametrize('value', range(4))\n"
+            "import pytest\n@pytest.mark.parametrize('value', range(4), "
+            "ids=['scene::x', 'one', 'two', 'three'])\n"
             "def test_probe(value):\n    assert value >= 0\n",
             encoding="utf-8",
         )
