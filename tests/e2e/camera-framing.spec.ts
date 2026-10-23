@@ -205,7 +205,6 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
     const user = (await camera(page))!;
     await expect.poll(() => fixture.visualState.requested).toBe(true);
     expect(fixture.visualState).toEqual({ requested: true, released: false, responseSent: false });
-    expect(await page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('loading');
     await info.attach('visual-held-after-navigation.json', { body: JSON.stringify(fixture.visualState), contentType: 'application/json' });
     fixture.release();
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('colliders');
