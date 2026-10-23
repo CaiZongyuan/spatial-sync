@@ -47,9 +47,12 @@ async function viewerFixture(page: Page, delayVisual = false, previewOrder = fal
   await page.route('**/api/v1/sessions/framing-fixture/scene', route => route.fulfill({ json: manifest }));
   await page.route('**/api/v1/sessions/framing-fixture/catalog', route => route.fulfill({ json: catalog }));
   await page.route('**/api/v1/sessions/framing-fixture/stats', route => route.fulfill({ json: {} }));
-  if (delayVisual) await page.route('**/*missing-reference*', async route => {
-    await held; await route.fulfill({ status: 404 });
-  });
+  if (delayVisual) {
+    const url = manifest.nodes.find((node: { entityKey: string }) => node.entityKey === '/World/Lab/FallbackBox').visuals[0].url;
+    await page.route(`**/${url}`, async route => {
+      await held; await route.fulfill({ status: 404 });
+    });
+  }
   await page.routeWebSocket('**/api/v1/sessions/framing-fixture/ws', route => {
     socket = route;
     route.onMessage(message => {
@@ -209,6 +212,7 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
       expect(witness.readyReads).toBeGreaterThan(0);
     }
   } finally {
+    fixture.release();
     if (unavailableFirstRead) {
       const witness = await page.evaluate(() => {
         const witness = Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value;
@@ -217,6 +221,5 @@ for (const unavailableFirstRead of [false, true]) test(`user navigation during v
       });
       await info.attach('camera-readiness-fixture.json', { body: JSON.stringify(witness), contentType: 'application/json' });
     }
-    fixture.release();
   }
 });
