@@ -15,6 +15,8 @@ operate the lab through the actual Catalog and CLI. List them with `lw skills ls
 install them into an explicit agent directory with `lw skills install --target DIR`.
 The [embodied evaluator](docs/EVALUATIONS.md) runs pinned suites through platform
 sessions, with per-episode recordings and a Wilson-confidence scoreboard.
+The [local training node guide](docs/TRAINING_NODE.md) covers approved-plan Jobs,
+measured budget profiles, owned processes and runtime/scene compatibility limits.
 
 ```powershell
 uv sync --frozen --group dev

@@ -186,6 +186,14 @@ async def run(args, machine):
                 output(message, machine)
             return 0
         if declaration := getattr(args, "registered_command", None):
+            if declaration.method == "job_logs" and args.follow:
+                after = args.after
+                while True:
+                    chunk = await client.job_logs(args.id, after=after, follow=True)
+                    output(chunk, machine)
+                    after = chunk["cursor"]
+                    if chunk["complete"]:
+                        return 0
             if declaration.method == "approve_invocation":
                 if machine or not sys.stdin.isatty() or not sys.stdout.isatty():
                     raise GatewayError(

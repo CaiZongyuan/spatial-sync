@@ -29,6 +29,8 @@ class GPU(Schema):
     memoryTotalMb: float | None = Field(default=None, gt=0)
     memoryUsedMb: float | None = Field(default=None, ge=0)
     utilization: float | None = Field(default=None, ge=0, le=100)
+    observedAt: float | None = Field(default=None, ge=0)
+    unavailableReason: str | None = None
 
 
 class JobReport(Schema):

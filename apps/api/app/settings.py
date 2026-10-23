@@ -2,6 +2,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,13 @@ class Settings:
     ))
 
     def __post_init__(self):
+        node_url = urlsplit(self.node_gateway_url)
+        if (node_url.scheme not in ("http", "https")
+                or node_url.hostname not in ("127.0.0.1", "localhost", "::1")
+                or node_url.username or node_url.password or node_url.query or node_url.fragment):
+            raise ValueError("The local node gateway URL must be an explicit loopback HTTP(S) address")
+        if not 0 < self.node_interval <= 30 or self.node_job_timeout <= 0:
+            raise ValueError("Node heartbeat interval and job timeout must be positive and bounded")
         if self.recordings_keep < 1:
             raise ValueError("recordings_keep must be positive")
         if self.live_retention_days < 1:

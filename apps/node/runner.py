@@ -112,11 +112,13 @@ class OwnedRun:
         self.uncertain_owner = False
         self.finished = None
         self.baseline_elapsed = 0.0
+        self.current_process = None
         self.thread = threading.Thread(target=self.run, name="owned-training-job", daemon=False)
         self.thread.start()
 
     def _command(self, command, env, stdout, stderr):
         process = OwnedProcess(command, cwd=self.root, env=env, stdout=stdout, stderr=stderr)
+        self.current_process = process.process
         try:
             while process.process.poll() is None:
                 if self.cancel.wait(0.05) or time.monotonic() - self.started > self.node.timeout:
@@ -126,6 +128,7 @@ class OwnedRun:
                 raise RuntimeError(f"Owned subprocess exited with status {process.process.returncode}")
         finally:
             process.close()
+            self.current_process = None
 
     def _request(self, http, method, url, **arguments):
         while True:
@@ -172,7 +175,25 @@ class OwnedRun:
             ) as http:
                 response = self._request(http, "GET", f"/api/v1/jobs/{self.assignment['jobId']}/inputs")
                 inputs = response.json()
+                job = inputs["job"]
+                expected = {
+                    ("task", job["task"]): job["taskContentHash"],
+                    ("scene", job["scene"]): job["sceneContentHash"],
+                    **{("asset", item["id"]): item["contentHash"] for item in job["assets"]},
+                }
+                actual = {(item["kind"], item["id"]): item["contentHash"] for item in inputs["packages"]}
+                if (
+                    inputs["schemaVersion"] != 1
+                    or job["jobId"] != self.assignment["jobId"]
+                    or job["leaseId"] != self.assignment["leaseId"]
+                    or job["resourceId"] != self.assignment["resourceId"]
+                    or actual != expected
+                    or len(inputs["packages"]) != len(expected)
+                ):
+                    raise ValueError("Node inputs do not describe this exact immutable dispatch")
                 for index, package in enumerate(inputs["packages"]):
+                    if package["url"] != f"/api/v1/jobs/{job['jobId']}/inputs/packages/{index}":
+                        raise ValueError("Input downloads must stay inside the owned dispatch endpoint")
                     target = self.root / "inputs" / str(index)
                     target.mkdir(parents=True)
                     response = self._request(http, "GET", package["url"])
@@ -374,6 +395,19 @@ class OwnedRun:
                             stream.write(json.dumps(row) + "\n")
                     self._logs.extend(row["text"] for row in new)
                 self._log_offsets[name] = len(complete)
+        memory = None
+        if self.assignment["gpuId"] is not None and self.current_process is not None:
+            try:
+                root = psutil.Process(self.current_process.pid)
+                identities = {root.pid, *(child.pid for child in root.children(recursive=True))}
+                rows = [
+                    self.node.process_memory[identity]
+                    for identity in identities
+                    if identity in self.node.process_memory
+                ]
+                memory = sum(rows) if rows else None
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
         return {
             **self.metrics,
             "jobId": self.assignment["jobId"],
@@ -383,6 +417,7 @@ class OwnedRun:
             "elapsedSeconds": self.baseline_elapsed + (self.finished or time.monotonic()) - self.started,
             "logAfter": self.log_cursor,
             "logs": self._logs[self.log_cursor : self.log_cursor + 500],
+            "memoryUsedMb": memory,
         }
 
 
@@ -401,6 +436,7 @@ class LocalNode:
         self.headers = {"X-Node-Token": os.environ["SPATIAL_NODE_TOKEN"], "X-Node-Instance": self.instance}
         self.active = {}
         self.capabilities_path = None
+        self.process_memory = {}
 
     async def run(self):
         async with httpx.AsyncClient(
@@ -415,6 +451,20 @@ class LocalNode:
                         if updated["hardware"] != self.hardware:
                             raise RuntimeError("A live node cannot change its measured hardware identity")
                         self.capabilities["profiles"] = updated.get("profiles", [])
+                    if self.capabilities["gpus"]:
+                        usage, self.process_memory = await asyncio.to_thread(gpu_usage)
+                        for gpu in self.capabilities["gpus"]:
+                            gpu.update(
+                                usage.get(
+                                    gpu["id"],
+                                    {
+                                        "memoryUsedMb": None,
+                                        "utilization": None,
+                                        "observedAt": None,
+                                        "unavailableReason": "GPU telemetry unavailable",
+                                    },
+                                )
+                            )
                     reports = [owned.report() for owned in self.active.values()]
                     for report in reports:
                         root = self.active[report["jobId"]].root
@@ -495,6 +545,40 @@ def main():
     )
     node.capabilities_path = capabilities_path
     asyncio.run(node.run())
+
+
+def gpu_usage():
+    usage, processes = {}, {}
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=uuid,memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                identity, memory, utilization = [part.strip() for part in line.split(",", 2)]
+                usage[identity] = {
+                    "memoryUsedMb": float(memory),
+                    "utilization": float(utilization),
+                    "observedAt": time.time(),
+                    "unavailableReason": None,
+                }
+        result = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                identity, memory = [part.strip() for part in line.split(",", 1)]
+                if memory != "N/A":
+                    processes[int(identity)] = processes.get(int(identity), 0) + float(memory)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass
+    return usage, processes
 
 
 def discover():

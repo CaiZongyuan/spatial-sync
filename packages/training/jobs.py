@@ -34,7 +34,6 @@ class TrainingJobs:
         self.path = manager.settings.state_root / "jobs.json"
         self.records, self.nodes = {}, {}
         self._worker = None
-        self._closing = False
         self.node_token = manager.settings.node_token
         self._failure = False
         self._started = False
@@ -130,11 +129,14 @@ class TrainingJobs:
         return self.records[identity]
 
     def document(self, job):
-        return deepcopy(
+        value = deepcopy(
             {key: value for key, value in job.items() if key not in ("plan", "lastNodeReport")}
         ) | {
             "gpuId": job["resourceId"] if job["executionDevice"] == "cuda" else None,
         }
+        if job["reason"] == "pending_approval":
+            value["code"] = "pending_approval"
+        return value
 
     def _approved_plan(self, plan_id, revision=None):
         record = self.manager.training_plans.get(plan_id, revision)
@@ -300,7 +302,8 @@ class TrainingJobs:
                 if busy and job["executionDevice"] == "cuda":
                     job["reason"] = "session_gpu_busy"
                     break
-                for gpu in node["gpus"] + ([{"id": "cpu"}] if node.get("cpuAvailable") else []):
+                resources = node["gpus"] + ([{"id": "cpu"}] if node.get("cpuAvailable") else [])
+                for gpu in sorted(resources, key=lambda item: item["id"] in node["leases"]):
                     if (gpu["id"] == "cpu") != (job["executionDevice"] == "cpu"):
                         continue
                     key = profile_key(job["plan"], job["taskContentHash"], node["hardware"], gpu["id"])
@@ -380,6 +383,7 @@ class TrainingJobs:
                 raise PlanError(
                     "artifacts_incomplete", "Upload verified artifacts before success", status=422
                 )
+            self._log_suffix(job, report.logAfter, report.logs)
         if node is None or node["instanceId"] != body.instanceId:
             node = {"id": "local", "instanceId": body.instanceId, "leases": {}, "profiles": {}}
             self.nodes["local"] = node
@@ -445,6 +449,15 @@ class TrainingJobs:
             for node in self.nodes.values()
         ]
 
+    def reference_snapshot(self):
+        # Pinned fields never change; copy membership once for the library worker thread.
+        return {
+            job["jobId"]: {
+                key: deepcopy(job[key]) for key in ("jobId", "scene", "sceneContentHash", "assets")
+            }
+            for job in tuple(self.records.values())
+        }
+
     def _log_path(self, identity):
         self.get(identity)
         root = self.manager.library_assets.roots["user"]
@@ -452,15 +465,19 @@ class TrainingJobs:
 
     def read_logs(self, identity):
         path = self._log_path(identity)
-        return (
-            [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-            if path.exists()
-            else []
-        )
+        if not path.exists():
+            return []
+        lines, complete = [], 0
+        for line in path.read_bytes().splitlines(keepends=True):
+            if not line.endswith(b"\n"):
+                with path.open("r+b") as stream:
+                    stream.truncate(complete)
+                break
+            lines.append(json.loads(line))
+            complete += len(line)
+        return lines
 
-    def _append_logs(self, job, after, lines):
-        if not lines:
-            return
+    def _log_suffix(self, job, after, lines):
         previous = self.read_logs(job["jobId"])
         overlap = min(len(previous) - after, len(lines))
         if (
@@ -469,7 +486,10 @@ class TrainingJobs:
             or any(len(line) > 16000 for line in lines)
         ):
             raise PlanError("invalid_log_cursor", "Node logs do not continue the retained prefix", status=422)
-        new = lines[overlap:]
+        return lines[overlap:]
+
+    def _append_logs(self, job, after, lines):
+        new = self._log_suffix(job, after, lines)
         if new:
             with self._log_path(job["jobId"]).open("a", encoding="utf-8", newline="\n") as stream:
                 for line in new:
@@ -490,7 +510,7 @@ class TrainingJobs:
                 return {
                     "lines": selected,
                     "cursor": after + len(selected),
-                    "complete": job["status"] in TERMINAL,
+                    "complete": job["status"] in TERMINAL and after + len(selected) == len(lines),
                 }
             await asyncio.sleep(0.1)
 

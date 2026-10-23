@@ -1,6 +1,7 @@
 """Command compatibility with the pinned IsaacLab3 train entrypoint."""
 
 import argparse
+
 import pytest
 
 from apps.node.runner import trainer_arguments

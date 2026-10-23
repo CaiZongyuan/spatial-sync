@@ -238,7 +238,9 @@ class ReferenceInspection:
             "coverage": ["all scene and asset versions", "all bound validation history",
                          "all recording entries", "starting and retained sessions", "configured Live layout"]
                         + (["all Task versions"] if self.tasks is not None else []),
-            "training": ("Task scene pins inspected; nonempty job/policy stores still block deletion"
+            "training": ("Task and Job pins inspected; nonempty policy stores still block deletion"
+                         if self.tasks is not None and self.jobs is not None else
+                         "Task scene pins inspected; nonempty job/policy stores still block deletion"
                          if self.tasks is not None else
                          "No A2 training store reader; nonempty reserved stores block deletion"),
         }

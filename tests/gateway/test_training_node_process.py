@@ -2,6 +2,7 @@
 
 import json
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -14,7 +15,6 @@ import uvicorn
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.library.common import content_hash
-from packages.training.jobs import profile_key
 from tests.fixtures.training_task import task_archive, task_directory, training_plan
 
 
@@ -57,18 +57,7 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
                 "hardware": "explicit CPU contract fixture",
                 "gpus": [],
                 "cpuAvailable": True,
-                "profiles": [
-                    {
-                        "key": profile_key(
-                            plan, content_hash(package), "explicit CPU contract fixture", "cpu"
-                        ),
-                        "iterationSeconds": 0.05,
-                        "setupSeconds": 0,
-                        "samples": 1,
-                        "measuredAt": 10,
-                        "evidence": "Controlled fixture data; not a performance measurement",
-                    }
-                ],
+                "profiles": [],
             }
         ),
         encoding="utf-8",
@@ -105,12 +94,52 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
             )
             started = http.post("/api/v1/jobs", json={"planId": submitted["id"], "seed": 42}).json()
             identity = started["jobId"]
-            assert started["gpuId"] is None and started["estimatedGpuHours"] == 0
+            assert started["reason"] == "estimate_unavailable" and started["estimatedGpuHours"] is None
+            assert started["leaseId"] is None
+            measurement = tmp_path / "measurement.json"
+            measurement.write_text(
+                json.dumps(
+                    {
+                        "schema": "lw.training-profile/1",
+                        "taskContentHash": content_hash(package),
+                        "hardware": "explicit CPU contract fixture",
+                        "resourceId": "cpu",
+                        **{key: plan[key] for key in ("algorithm", "model", "hyperparameters")},
+                        "samplesSeconds": [0.05],
+                        "setupSeconds": 0,
+                        "measuredAt": 10,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            imported = subprocess.run(
+                [
+                    sys.executable,
+                    str(trainer.parents[2] / "tools/import_training_profile.py"),
+                    "--job",
+                    identity,
+                    "--resource",
+                    "cpu",
+                    "--measurement",
+                    str(measurement),
+                    "--capabilities",
+                    str(capabilities),
+                    "--url",
+                    settings.node_gateway_url,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=10,
+            )
+            assert imported.returncode == 0, imported.stdout + imported.stderr
             root = settings.state_root / "local-node/work"
+
             def started_marker():
                 state = http.get(f"/api/v1/jobs/{identity}").json()
                 assert state["status"] not in ("failed", "cancelled"), state
                 return list(root.glob("*/output/descendant.json"))
+
             marker = wait_for(started_marker, bool)
             descendant = json.loads(marker[0].read_text(encoding="utf-8"))
             if lose_node_owner:

@@ -32,8 +32,8 @@ from apps.api.app.evaluation_recordings import EvaluationRecordingRepository
 from apps.api.app.evaluations import EvaluationService, install_evaluation_routes
 from apps.api.app.history_routes import install_history_routes
 from apps.api.app.inbox_routes import install_inbox_routes
-from apps.api.app.job_routes import install_job_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
+from apps.api.app.job_routes import install_job_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
 from apps.api.app.live_routes import install_live_routes
@@ -156,7 +156,7 @@ def create_app(
         live=lambda: manager.live,
         suites=evaluations.suites,
         tasks=manager.tasks,
-        jobs=lambda: manager.jobs.records,
+        jobs=manager.jobs.reference_snapshot,
     )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 

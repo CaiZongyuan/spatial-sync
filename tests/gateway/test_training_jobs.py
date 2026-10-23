@@ -187,6 +187,17 @@ def test_unrelated_measured_profile_never_authorizes_an_estimated_gpu_launch():
         assert client.get("/api/v1/nodes").json()["nodes"][0]["leases"] == {}
 
 
+def test_remote_operator_is_not_a_node_and_node_identity_is_not_public_operator_authority():
+    app = create_app(Settings(remote=True, operator_token="fixture-operator", node_token=TOKEN))
+    with TestClient(app) as client:
+        body = {"instanceId": "worker-one", "hardware": "fixture", "gpus": [], "profiles": []}
+        operator = {"Authorization": "Bearer fixture-operator"}
+        assert client.post(HEARTBEAT, headers=operator, json=body).status_code == 403
+        assert client.post(HEARTBEAT, headers=NODE, json=body).status_code == 200
+        assert client.post("/api/v1/jobs", headers=NODE, json={"planId": "unapproved"}).status_code == 401
+        assert client.get("/api/v1/nodes", headers=operator).status_code == 200
+
+
 def test_budget_reserves_pending_work_once_and_node_loss_keeps_physical_lease_quarantined():
     app = create_app(Settings(node_token=TOKEN))
     clock = [100.0]
