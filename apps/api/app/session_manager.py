@@ -50,6 +50,7 @@ from packages.protocol.schema import (
     TransformFrame,
     validate_command_args,
 )
+from packages.training.jobs import TrainingJobs
 from packages.training.plans import TrainingPlanStore
 from packages.transport import FrameCodec
 
@@ -1105,6 +1106,7 @@ class SessionManager:
         self._startup_lock = asyncio.Lock()
         self._information_started = False
         self.evaluations = None
+        self.jobs = TrainingJobs(self)
 
     async def startup(self):
         async with self._startup_lock:
@@ -1114,6 +1116,8 @@ class SessionManager:
             self.approvals.startup()
             self.plans.startup()
             self.training_plans.startup()
+            self.jobs.startup()
+            self.jobs._worker = asyncio.create_task(self.jobs.run(), name="training-job-reconciliation")
             self.inbox.reconcile(list(self.approvals.records.values()), list(self.plans.records.values()))
             await self.plans.flush()
             await self.inbox.flush()
@@ -1153,7 +1157,10 @@ class SessionManager:
                             "message": "Close the active session before starting another scene",
                         })
                     session = Session(
-                        selected.name, selected_source, options, self.settings, self.factory,
+                        selected.name, selected_source,
+                        options.model_copy(update={"device": "cpu"})
+                        if selected_source == "newton" and self.jobs.holds_gpu() else options,
+                        self.settings, self.factory,
                         self.recordings, self.approvals, self.plans, scene_version=selected,
                         inbox=self.inbox,
                         evaluation_id=evaluation_id,
@@ -1236,6 +1243,7 @@ class SessionManager:
             for session in self.sessions.values():
                 await session.close()
         finally:
+            await self.jobs.close()
             try:
                 await self.plans.close()
             finally:

@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,15 @@ class Settings:
     operator_token: str | None = None
     viewer_token: str | None = None
     remote_requests_per_minute: int = 120
+    node_token: str | None = field(default_factory=lambda: os.getenv("SPATIAL_NODE_TOKEN"))
+    node_trainer: tuple[str, ...] = field(default_factory=lambda: tuple(json.loads(
+        os.getenv("SPATIAL_NODE_TRAINER", "[]"))))
+    node_capabilities: Path | None = field(default_factory=lambda: (
+        Path(os.environ["SPATIAL_NODE_CAPABILITIES"]) if os.getenv("SPATIAL_NODE_CAPABILITIES") else None))
+    node_gateway_url: str = field(default_factory=lambda: os.getenv(
+        "SPATIAL_NODE_GATEWAY_URL", "http://127.0.0.1:8000"))
+    node_interval: float = 10
+    node_job_timeout: float = 86400
     scene_previews_root: Path = field(
         default_factory=lambda: Path(os.getenv(
             "SPATIAL_SCENE_PREVIEWS_ROOT", "~/.spatial-sync/cache/scene-previews"

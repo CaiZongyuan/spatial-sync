@@ -47,6 +47,7 @@ class Control(Schema):
 class IsaacLab(Schema):
     task_id: Text
     presets: list[Text] = Field(min_length=1)
+    sceneInput: Literal["usd", "scene-package"] = "usd"
 
 
 class Episode(Schema):

@@ -45,7 +45,8 @@ def install_approval_routes(app, manager, role_for):
                                and all(step.status == "pending" for step in plan.plan.steps))
         return {
             **record.model_dump(mode="json"),
-            "canRevoke": (training and manager.training_plans.can_revoke(record)) or (
+            "canRevoke": (record.subject == "job" and manager.jobs.can_revoke(record)) or (
+                          training and manager.training_plans.can_revoke(record)) or (
                           record.subject == "deletion" and record.status in ("approved", "denied")
                           and record.details.get("execution", {}).get("status")
                           in ("not_started", "blocked", "failed")) or available
@@ -107,6 +108,13 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.subject == "job":
+            try:
+                async with manager._create_lock:
+                    manager.jobs.decide(record, body.decision, actor, body.note)
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
+            return document(get_record(approval_id))
         if record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training":
             try:
                 manager.training_plans.decide(record, body.decision, actor, body.note)
