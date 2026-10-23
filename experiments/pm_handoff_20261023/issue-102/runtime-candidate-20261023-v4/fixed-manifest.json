@@ -1,0 +1,126 @@
+{
+    "stage":  "source-only extra-package provenance candidate",
+    "performanceAuthorized":  false,
+    "importsExecuted":  0,
+    "checksExecuted":  0,
+    "sourceStarts":  0,
+    "pyprojectOrLockChanged":  false,
+    "source":  "8db36c375d6e6d0da674df091ea4c0fc6a88efa0",
+    "instrumentSha256":  "ec6a712ab37b344388ba83c4338b1bc7fe10bb078dd409ac5d985218b94063c7",
+    "supportSha256":  "b988d3189bb0c37cde247be8770a154144e895a09bd2ad5e5f1134cc723f3c35",
+    "outerSupervisorSha256":  "dc7bd092026eeeb01e2ab70de1729ff3f58d4c05d772d7ac57ed043c9663b19b",
+    "overlayTreeSha256":  "1bff43ab2e7a2440dc8a63b6d8dfd6c4d3448e2c5b87c83b6f73853cd2b2f0e8",
+    "extraPackage":  {
+                         "name":  "sniffio",
+                         "version":  "1.3.1",
+                         "wheelSha256":  "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+                         "originRelative":  "sniffio/__init__.py"
+                     },
+    "baseOriginalPins":  79,
+    "declaredNewOverlayPackages":  1,
+    "originalPahoSha256":  "6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee",
+    "baseline":  "8db plus v3 invalid raw, not final/current main",
+    "componentEvidence":  "../spatial-issue102-sniffio-official-20261023T081802Z/final-readback.json",
+    "componentReceiptSha256":  "30011f3721cba689707a208aa33df4aaddd228f71165f06d175653d727906182",
+    "maxProposedFullRuns":  1,
+    "proposedOuterSeconds":  480,
+    "boundedPreflightRequiresRootScheduling":  true,
+    "skillsApplied":  [
+                          "change-impact",
+                          "check-benchmark"
+                      ],
+    "files":  [
+                  {
+                      "path":  "CHANGE-IMPACT.md",
+                      "sha256":  "8ee726691f115a7f3d783fc933593cf8e169d1619c18432b2f0f31a7c3f840aa"
+                  },
+                  {
+                      "path":  "GO.template.NOT_AUTHORIZED.json",
+                      "sha256":  "eeb3439ec1454b0f61ca37c85f9ee71776a62b5119a82f30413fe7ddd9bb3226"
+                  },
+                  {
+                      "path":  "overlay_common_trace.py",
+                      "sha256":  "ec6a712ab37b344388ba83c4338b1bc7fe10bb078dd409ac5d985218b94063c7"
+                  },
+                  {
+                      "path":  "overlay-image/paho_mqtt-2.1.0-py3-none-any.whl",
+                      "sha256":  "6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio/__init__.py",
+                      "sha256":  "f562442655eeef296e3f462d239490f4cf4e4d07db34791a75aacad6f5c60cf3"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio/_impl.py",
+                      "sha256":  "526505319a62b8eadc8e7b8786e62260cc5e08d59faaef6406568f7f4c64e97f"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio/_tests/__init__.py",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio/_tests/test_sniffio.py",
+                      "sha256":  "30c2596498d0ad48bde5100d34cf9aff9e4166ab80fe0bf8ac7535a5ebdc4c23"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio/_version.py",
+                      "sha256":  "8957ace71c2c1de4734037b105a021cb1fed68db76b9c7c0ec2580a38403b7a4"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio/py.typed",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/LICENSE",
+                      "sha256":  "652c878488d1456361e08c3f8607fd7ba59892a14103d15cce4ff93c85b5cc8b"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/LICENSE.APACHE2",
+                      "sha256":  "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/LICENSE.MIT",
+                      "sha256":  "3e6dae555eb92787fc82d1d48355677f454c7f65aeb38d3f9e72bf9a3daf034b"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/METADATA",
+                      "sha256":  "0b318b57098edeccf585e60a889a6b6a7b5c4086f3a9aa62eff76a1d3cee12d9"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/RECORD",
+                      "sha256":  "064c8055feff5a74960318c8fe7476aac7f738d2993eb450cf0f481cbaa9dfaa"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/top_level.txt",
+                      "sha256":  "bfd5095c6b390b275d095780a979108963aba69e96b71e86791acfb7dfa38c78"
+                  },
+                  {
+                      "path":  "overlay-image/sniffio-1.3.1.dist-info/WHEEL",
+                      "sha256":  "a2241587fe4f9d033413780f762cf4f5608d9b08870cc6867abfde96a0777283"
+                  },
+                  {
+                      "path":  "overlay-tree-manifest.json",
+                      "sha256":  "7499b2eb77d5bdff936120cd6569f4d7f311b71ed50565a132cd554ff18657d7"
+                  },
+                  {
+                      "path":  "PLAN.md",
+                      "sha256":  "e47cba96333e2bd660bf61fe247ebbdc584bac7f34d601cc65fe73209a71637d"
+                  },
+                  {
+                      "path":  "repair_support_v2.py",
+                      "sha256":  "b988d3189bb0c37cde247be8770a154144e895a09bd2ad5e5f1134cc723f3c35"
+                  },
+                  {
+                      "path":  "sniffio-1.3.1-py3-none-any.whl",
+                      "sha256":  "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2"
+                  },
+                  {
+                      "path":  "supervise_overlay_trace.py",
+                      "sha256":  "dc7bd092026eeeb01e2ab70de1729ff3f58d4c05d772d7ac57ed043c9663b19b"
+                  },
+                  {
+                      "path":  "v3-to-v4.patch",
+                      "sha256":  "954f41a777d71f94cb96bfbb1127ea28369d2403dcfca5bc614369c643778cd9"
+                  }
+              ]
+}

@@ -1,0 +1,20 @@
+--- frozen-r3/adapter.py
++++ proposed-c0-ownership-fork/adapter.py
+@@
+-    path=out/'receipt.json'
+-    save(path,receipt)  # Exists before Popen; remains useful if startup is interrupted.
++    publish_owner(out/'receipt-snapshots',receipt)  # Closed immutable initial snapshot before Popen.
+@@
+-    def persist(*,strict=True):
++    def persist(*,strict=True,final=False):
+         receipt['processes']=([root] if root else [])+list(children.values())
+         try:
+-            save(path,receipt)
++            publish_owner(out/('receipt-final' if final else 'receipt-snapshots'),receipt)
+@@
+-            persist(strict=False)  # Failure is fatal to status, never to handle cleanup above.
++            persist(strict=False,final=True)  # Publication failure remains fatal after handle cleanup.
+             owner({'kind':'final-outcome','status':receipt['status'],
+                   'processes':receipt['processes'],'postrun':receipt['postrun'],
+                   'persistenceErrors':receipt['persistenceErrors'],
+                   'uncertain':receipt['uncertain'],'cleanupErrors':receipt['cleanupErrors']},strict=False)

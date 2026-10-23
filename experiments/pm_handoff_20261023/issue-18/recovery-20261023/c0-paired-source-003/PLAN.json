@@ -1,0 +1,715 @@
+{
+  "schema": "R18-C0-static-paired-registration/1",
+  "status": "source-only; model/FK allocation false",
+  "allocation": false,
+  "scope": "new explicit C0 subject; never retroactive N2 physical subject",
+  "scene": {
+    "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\scenes\\fr3-lab\\1",
+    "id": "fr3-lab@1",
+    "contentHash": "78b7c2c4467c1245a5553f56d3ec325d57a6a056c9bf949d4cc7fadcaba77bef",
+    "canonicalAlgorithm": "packages.library.common.content_hash + packages.library.scenes.SceneVersion.id",
+    "files": [
+      "base.usda",
+      "devices.yaml",
+      "locations.yaml",
+      "scene.yaml",
+      "stage.usda"
+    ],
+    "bytes": 18909,
+    "assetDependencyHashingPerformed": false
+  },
+  "packagesRoot": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003",
+  "staticValidationPath": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\STATIC_VALIDATION.json",
+  "assets": [
+    {
+      "id": "device/fr3-lab-centrifuge-a@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-centrifuge-a\\1",
+      "contentHash": "fa6d5011b9996885d2d836fe9d8b21c0a6011cafad7cfdf091ec482e520f5d12",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 2993223,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 1407978
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 616
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 74506
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 1509684
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "device/fr3-lab-lid-a@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-lid-a\\1",
+      "contentHash": "a7d6bb20036f853a8d170f5a01df2f0e2598463148321e78fddcc4325faf1e61",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 127426,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 47809
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 464
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 30750
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 47964
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "device/fr3-lab-rotor-a@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-rotor-a\\1",
+      "contentHash": "8321af202643c52da497ef83641bbc7d0195d127fd4c9e6217df031375cbc0e3",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 437843,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 182865
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 465
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 54802
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 199272
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "environment/fr3-lab-bench@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-bench\\1",
+      "contentHash": "eb73b775ffd6494736be48143e1f86f91ae4f20edfca79529fe881da1872e994",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 166291,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 61705
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 358
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 30501
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 73288
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "environment/fr3-lab-biosafety@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-biosafety\\1",
+      "contentHash": "6d0a288e931cbcba34ab1f893b902634b67db5aa86bf40ec727cb0c2841afaae",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 1920254,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 775426
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 387
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 55954
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 1088048
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "environment/fr3-lab-room@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-room\\1",
+      "contentHash": "155d3a235fee01d06aab1fb779c863d8fec3b01430f2aed8c6bc8f26f9ee4cce",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 10676382,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 101
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 381
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 209149
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 10466312
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-rack@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-rack\\1",
+      "contentHash": "9112147e110dcbd4cbce45c5f901ac4570bd99dd38a87fd3139230c0a53c47db",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 424224,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 173063
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 368
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 35234
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 215120
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-tube-01@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-01\\1",
+      "contentHash": "188696ff76f049d87f6293a94fb5a69598b4492ce3f633848c1012a502e3dbe1",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 331774,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 227425
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 455
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 33875
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 69580
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-tube-02@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-02\\1",
+      "contentHash": "3d4aa4feaf5043d345bfcacd5423362cc8a84f7f4634451ebded58c671add38e",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 331750,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 227399
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 455
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 33873
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 69584
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-tube-03@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-03\\1",
+      "contentHash": "78930fa8cec38d2e1323fb034c4e5c2fda069c9d885cf564662fe937a72a6784",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 331785,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 227421
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 455
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 33882
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 69588
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-tube-04@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-04\\1",
+      "contentHash": "99385d53545e2dd04df02c374396a41f021618f9589beb87c9a3c3b94ad9a0a1",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 331789,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 227424
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 455
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 33883
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 69588
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-tube-05@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-05\\1",
+      "contentHash": "aee6d3de00180d7e3b53466df4f6967e7ef2faf7329b8181f0719840588c7d20",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 331774,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 227426
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 455
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 33874
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 69580
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "labware/fr3-lab-tube-06@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-06\\1",
+      "contentHash": "a82dc1d73c4a09a78d72571dd8f2f5f6c103ddc00523760b34cc035b22b25529",
+      "root": "user",
+      "fileCount": 5,
+      "bytes": 331775,
+      "files": [
+        {
+          "name": "asset.usda",
+          "bytes": 227425
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 455
+        },
+        {
+          "name": "LICENSE.md",
+          "bytes": 439
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 33876
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 69580
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    },
+    {
+      "id": "robot/fr3@1",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\library\\assets\\robot\\fr3\\1",
+      "contentHash": "ba789cc9c8748251495b2a788f6e5365adc9bac23abaea9567fd90e07fc0c0f9",
+      "root": "builtin",
+      "fileCount": 9,
+      "bytes": 10260622,
+      "files": [
+        {
+          "name": "asset.usdc",
+          "bytes": 5105274
+        },
+        {
+          "name": "asset.yaml",
+          "bytes": 827
+        },
+        {
+          "name": "LICENSE",
+          "bytes": 12926
+        },
+        {
+          "name": "provenance.json",
+          "bytes": 6215
+        },
+        {
+          "name": "UPSTREAM_README.md",
+          "bytes": 670
+        },
+        {
+          "name": "validation.json",
+          "bytes": 689
+        },
+        {
+          "name": "visual.glb",
+          "bytes": 5113864
+        },
+        {
+          "name": "source/fr3_franka_hand.urdf",
+          "bytes": 15803
+        },
+        {
+          "name": "source/PROVENANCE.json",
+          "bytes": 4354
+        }
+      ],
+      "canonicalHashEvidence": "recorded STATIC_VALIDATION; source preparation stat only; actual loader must verify unchanged"
+    }
+  ],
+  "runtimeRepo": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime",
+  "runtimeHead": "3e3d7bcae567348dda5a60e9e51f3c556688b052",
+  "runtimeTree": "aa72c1f2e8e2e6c5ea68bd99f8a5b60d0b35109e",
+  "teacherRepo": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b",
+  "teacherHead": "8db36c375d6e6d0da674df091ea4c0fc6a88efa0",
+  "teacherTree": "30ac9d982960d63e8d2c0695391479a2c4ab5475",
+  "modelPython": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Scripts\\python.exe",
+  "teacherPython": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Scripts\\python.exe",
+  "r3Adapter": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\r18-n1b-r3\\adapter.py",
+  "r3AdapterSha256": "7b38ef9b1639fe8bf2384662296dccfbd06ede86ef5f557fdad56c33f5b3c2b2",
+  "windowsGit": "C:\\Program Files\\Git\\cmd\\git.exe",
+  "baseMatrix": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.2
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.7
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.95
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "urdf": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\assets\\robots\\franka_emika_panda\\urdf\\fr3_franka_hand.urdf",
+  "robotKey": "/World/Lab/RobotA",
+  "robotAssetId": "robot/fr3@1",
+  "handBody": "/World/Lab/RobotA/fr3_hand",
+  "tcpSite": "/World/Lab/RobotA/fr3_hand/tcp",
+  "jointKeys": [
+    "/World/Lab/RobotA/fr3_joint1",
+    "/World/Lab/RobotA/fr3_joint2",
+    "/World/Lab/RobotA/fr3_joint3",
+    "/World/Lab/RobotA/fr3_joint4",
+    "/World/Lab/RobotA/fr3_joint5",
+    "/World/Lab/RobotA/fr3_joint6",
+    "/World/Lab/RobotA/fr3_joint7"
+  ],
+  "samples": [
+    {
+      "name": "rack.A1/grasp",
+      "reportPointer": "locations/rack.A1/grasp",
+      "q": [
+        -2.1021974143267164,
+        1.0390001116030503,
+        -0.1542941866252011,
+        -1.3586703390487544,
+        0.24034733796393176,
+        0.8127514736658014,
+        0.8174348720820899
+      ]
+    },
+    {
+      "name": "centrifuge.slot4/grasp",
+      "reportPointer": "locations/centrifuge.slot4/grasp",
+      "q": [
+        0.15741486315154482,
+        0.4304371193385636,
+        -0.22335035181915,
+        -1.4629777482124948,
+        -1.8167546698279238,
+        2.3777979296998137,
+        -0.3259105256263618
+      ]
+    }
+  ],
+  "all100Path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\issue-18-teaching-repair\\all-100mm.json",
+  "candidatePath": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-window-2-red\\reviewed-source\\candidate.json",
+  "oldLedgerPath": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\MECHANICAL_BUDGET.json",
+  "diagnosticPositionToleranceM": 1e-05,
+  "diagnosticAngleToleranceRad": 0.0001,
+  "diagnosticAxisTolerance": 0.0001,
+  "budget": {
+    "proposedTotalSeconds": 180,
+    "workSeconds": 120,
+    "cleanupSeconds": 30,
+    "readbackSeconds": 30,
+    "modelConstructions": 1,
+    "maximumImplicitConstructionEvalFkCalls": 0,
+    "staticEvalFkCalls": 2,
+    "teacherFkCalls": 2,
+    "allocated": false,
+    "urdfDescriptorPasses": 1,
+    "staticAxisLineComparisons": 7,
+    "additionalConfigurationFkPasses": 0
+  },
+  "forbidden": [
+    "Source instance",
+    "NewtonSimulation instance",
+    "solver instance",
+    "step",
+    "contact evaluation",
+    "IK/solve",
+    "actions/host",
+    "P6/feasibility",
+    "package regeneration",
+    "environment sync",
+    "layout/height/base/TCP modification"
+  ],
+  "freshness": "Referenced runtime asset canonical guards retained; original historical33mesh-source provenance is not rescanned",
+  "n2WaypointsBound": false,
+  "oldMechanicalBudget": "2/2 permanently consumed",
+  "slotTargets": [
+    {
+      "name": "centrifuge.slot1",
+      "site": "/World/Lab/Centrifuge/Rotor/Slot1",
+      "bottomWorldM": [
+        1.15131998062,
+        0.750699996948,
+        1.3579399585723877
+      ],
+      "tcpYawDegrees": 0,
+      "tcpWorldRotation": [
+        [
+          0.0,
+          -0.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "zone": "centrifuge"
+    },
+    {
+      "name": "centrifuge.slot2",
+      "site": "/World/Lab/Centrifuge/Rotor/Slot2",
+      "bottomWorldM": [
+        1.0,
+        0.90201997757,
+        1.3579399585723877
+      ],
+      "tcpYawDegrees": 45,
+      "tcpWorldRotation": [
+        [
+          0.0,
+          -0.7071067811865476,
+          0.7071067811865476
+        ],
+        [
+          0.0,
+          0.7071067811865476,
+          0.7071067811865476
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "zone": "centrifuge"
+    },
+    {
+      "name": "centrifuge.slot3",
+      "site": "/World/Lab/Centrifuge/Rotor/Slot3",
+      "bottomWorldM": [
+        0.848680019379,
+        0.750699996948,
+        1.3579399585723877
+      ],
+      "tcpYawDegrees": 135,
+      "tcpWorldRotation": [
+        [
+          0.0,
+          -0.7071067811865476,
+          -0.7071067811865475
+        ],
+        [
+          0.0,
+          -0.7071067811865475,
+          0.7071067811865476
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "zone": "centrifuge"
+    },
+    {
+      "name": "centrifuge.slot4",
+      "site": "/World/Lab/Centrifuge/Rotor/Slot4",
+      "bottomWorldM": [
+        1.0,
+        0.599380016327,
+        1.3579399585723877
+      ],
+      "tcpYawDegrees": -45,
+      "tcpWorldRotation": [
+        [
+          0.0,
+          0.7071067811865476,
+          0.7071067811865476
+        ],
+        [
+          0.0,
+          0.7071067811865476,
+          -0.7071067811865476
+        ],
+        [
+          -1.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "zone": "centrifuge"
+    }
+  ],
+  "methodRevision": 3,
+  "sourceRepairs": [
+    "parent-frame oriented axis line position, not just rest/direction",
+    "tagged nonfinite observations with original error and independent persistence receipt",
+    "raw finite numeric TCP local validation before pose arithmetic or FK",
+    "actual seven-q readback validation before eval_fk and before Teacher import",
+    "finite success and receipt-only failure pure-data controls"
+  ],
+  "pureDataCounterexampleScript": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\counterexamples.py",
+  "allConfigurationBoundTransfer": "not inferred from two poses or finite diagnostic tolerances; requires separate structural proof/error propagation",
+  "readbackPolicy": "same declared sample: actual seven q read/validated before FK; read again after FK must be unchanged; Teacher validates both before import"
+}

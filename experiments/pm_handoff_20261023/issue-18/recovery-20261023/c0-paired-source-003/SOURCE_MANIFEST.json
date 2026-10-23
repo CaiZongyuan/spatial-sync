@@ -1,0 +1,719 @@
+{
+  "scope": "small code/metadata/input pins; runtime asset integrity remains the real loader guard",
+  "files": [
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\PLAN.json",
+      "sha256": "f17bb9fcf11225cf5ec3cf8f7000fe56198a7403de7b132a3f44378017b34414",
+      "bytes": 22213
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\ENVIRONMENT_PINS.json",
+      "sha256": "9aa8193a2e8d000903fa3102269cc40a1b6b9180eacf282398f5660419c8afec",
+      "bytes": 5501
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\adapter.py",
+      "sha256": "d685b8013f8c79ad56309c45ffd9452b8db03addc7d0e92769ba1c12811f9c90",
+      "bytes": 26876
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\pose_data.py",
+      "sha256": "e89c653a8012f99d84bc19593c643a1bf24652dbf11b71309eeb83c408a02abb",
+      "bytes": 3930
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\r18-n1b-r3\\adapter.py",
+      "sha256": "7b38ef9b1639fe8bf2384662296dccfbd06ede86ef5f557fdad56c33f5b3c2b2",
+      "bytes": 25893
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\STATIC_VALIDATION.json",
+      "sha256": "050cdb41822a8e7b6e02b4c3637bcd43a40b8bd2c635d85ce83890556ec7a9b7",
+      "bytes": 78123
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\issue-18-teaching-repair\\all-100mm.json",
+      "sha256": "3b470f9a40ec3ee3cde604f768df35c57541223c4a957a9a0e13e467ab499c5a",
+      "bytes": 18752
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-window-2-red\\reviewed-source\\candidate.json",
+      "sha256": "a2fc6ca58f729984153da17d1795c0060bd15eda6ec632fccea71d13a854481a",
+      "bytes": 8849
+    },
+    {
+      "role": "old-ledger",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\MECHANICAL_BUDGET.json",
+      "sha256": "67d76ccc5b9ba9e46cdb1dd53cf58e7118b6d403ced49857122891da2457a1f1",
+      "bytes": 1941
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\assets\\robots\\franka_emika_panda\\urdf\\fr3_franka_hand.urdf",
+      "sha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497",
+      "bytes": 15803
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "C:\\Program Files\\Git\\cmd\\git.exe",
+      "sha256": "81ef35ae005ca9318018d18e3327578ce939fb99feaad6b2d7c8ab15f3de8db5",
+      "bytes": 46480
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-metadata-001\\actual-001\\RESULT.json",
+      "sha256": "a53dc94b955bed8bdc37c06acb750ee0858e76175f9f0820ade0fa9910d934a9",
+      "bytes": 10335
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\scenes\\fr3-lab\\1\\base.usda",
+      "sha256": "25afe0dee3fd98a9512e4b01dcb98bd2185eba509d533971e93f68670747637d",
+      "bytes": 3811
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\scenes\\fr3-lab\\1\\devices.yaml",
+      "sha256": "c2450dc0c0462588332c14c9e37bb4a2331bbdaea7b452fcdff927b41a88fea2",
+      "bytes": 2677
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\scenes\\fr3-lab\\1\\locations.yaml",
+      "sha256": "7c8d12ea2f9624d5129664a5bb43658e2d7512da73c76f87e235458efc707d23",
+      "bytes": 6417
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\scenes\\fr3-lab\\1\\scene.yaml",
+      "sha256": "eba30b1cf450c9f59e69fdabad6958b46a9c75467f94cfeb911bb06f6dc9e3dc",
+      "bytes": 361
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\scenes\\fr3-lab\\1\\stage.usda",
+      "sha256": "ef3d470fec182484787972ffdab0a4cd3f242e968f05603a6eb495b2adf7f101",
+      "bytes": 5643
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-centrifuge-a\\1\\asset.yaml",
+      "sha256": "830b07b66a831e94eb00b81a1c4d80906fad241be485c5a2d61b95255fcb6825",
+      "bytes": 616
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-centrifuge-a\\1\\provenance.json",
+      "sha256": "7309a2a8fedf54d5e2a00514c575e9a12f79a7efda0b6d51130e552be8d08131",
+      "bytes": 74506
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-lid-a\\1\\asset.yaml",
+      "sha256": "4b480f87e884167d91309a081f6d640d0f1625274bbaeb4cdb17528a16402e5c",
+      "bytes": 464
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-lid-a\\1\\provenance.json",
+      "sha256": "8e23d31d69cbddf7c7656176afcd23dcfed80d5681f5a2da491b4558c8297b1d",
+      "bytes": 30750
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-rotor-a\\1\\asset.yaml",
+      "sha256": "836091a3c4746c1a9e45a276c5c3ce0eb707a723f89e48284f6e9258846e4de3",
+      "bytes": 465
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\device\\fr3-lab-rotor-a\\1\\provenance.json",
+      "sha256": "4362010efa6997c641d2be84668b6707b9ad053686dcf499814d3686b289769d",
+      "bytes": 54802
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-bench\\1\\asset.yaml",
+      "sha256": "273f4e4e6051c2d5046ac20f2f8567282f14fbcdd7e3ae52ef98e6a0ab334ff5",
+      "bytes": 358
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-bench\\1\\provenance.json",
+      "sha256": "5309d5b94dfdd0aa87ab89a2c36a4328005d3a34a8ccd7ca6c94b8015a2436bb",
+      "bytes": 30501
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-biosafety\\1\\asset.yaml",
+      "sha256": "0735a3985da559596af6b38ce522d79df424d60c55ae1ccfa80063b0890ec7f3",
+      "bytes": 387
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-biosafety\\1\\provenance.json",
+      "sha256": "b29b7691c3ea2d8b31800ecb3ac084fda9e7e25779ea61ffcb84724fdf4ed6b5",
+      "bytes": 55954
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-room\\1\\asset.yaml",
+      "sha256": "4fa6ca2a2fc0bd44b6852a1a42960cfbe2d042e6b38e0f836430f5f886409b52",
+      "bytes": 381
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\environment\\fr3-lab-room\\1\\provenance.json",
+      "sha256": "f9d53bea47abd356d82abb8a2bb850565f7009a23e1319e31263badd969ea1e5",
+      "bytes": 209149
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-rack\\1\\asset.yaml",
+      "sha256": "a713272066c8655cf01c590ae06715a455d1437c3f4f10d9259a718ef1cfa009",
+      "bytes": 368
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-rack\\1\\provenance.json",
+      "sha256": "3ae37e75f0e1cdf1bf63d138d357f0f550c17f4a905ae17c4cae897d09c19b02",
+      "bytes": 35234
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-01\\1\\asset.yaml",
+      "sha256": "035fe6c7df0f22f7d5878fd33288b04e4d5f70b66b2353f3735b1a67e4fe9c34",
+      "bytes": 455
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-01\\1\\provenance.json",
+      "sha256": "aae8ed6996bb83d6497541fe7f19a57326ccd87153f634f43e49a1504237bc19",
+      "bytes": 33875
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-02\\1\\asset.yaml",
+      "sha256": "79d61e2a3e3f7f1df5684a60c7a6695c354c5a358df57f274bd087ff1c3f95c0",
+      "bytes": 455
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-02\\1\\provenance.json",
+      "sha256": "4d82c4ecb8894082c790e205c2fb7e9b46e524684941734077a3337fafc78c69",
+      "bytes": 33873
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-03\\1\\asset.yaml",
+      "sha256": "65e78439ffb8d7d829cdbed8efa50c8b3fb7f79b7868ef3b8103437bb25c6998",
+      "bytes": 455
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-03\\1\\provenance.json",
+      "sha256": "bea6a1a3fcabf6b6d0c9e765ce8823a15836121e3aaa8ba00a542abdb9239b1a",
+      "bytes": 33882
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-04\\1\\asset.yaml",
+      "sha256": "d78a9897227d0eb2863e434cc71ab365f0a5e93fc0e7867c455ef2e6f6493c25",
+      "bytes": 455
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-04\\1\\provenance.json",
+      "sha256": "0335f6379eeb97790e9aaec3a2d6ff397e143ce87602df87afe9751f0b9b747f",
+      "bytes": 33883
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-05\\1\\asset.yaml",
+      "sha256": "55029fa3a80cfaf444869012815f9c986880da71d190d9728010bced00c06758",
+      "bytes": 455
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-05\\1\\provenance.json",
+      "sha256": "227fba59b04be4f93c08c2af2168d24ff7dec440fdfbe0f825d6279fff1f63e5",
+      "bytes": 33874
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-06\\1\\asset.yaml",
+      "sha256": "c215128082b81cc36ed0265a446f70c1f3e5d8a7418ba0eb0156779dad8d4999",
+      "bytes": 455
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\factory\\mechanical-a-001\\private-seed-packages-003-adopted-003\\assets\\labware\\fr3-lab-tube-06\\1\\provenance.json",
+      "sha256": "b929de8e7042d1051b69ba350eff36c6daa6d4044c4eb752847f49bf42a58fc7",
+      "bytes": 33876
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\library\\assets\\robot\\fr3\\1\\asset.yaml",
+      "sha256": "82b60077a0978b28b432f4ca4b5b903055b55ce86f2f49f1c6cd02246e9c5693",
+      "bytes": 827
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\library\\assets\\robot\\fr3\\1\\provenance.json",
+      "sha256": "dc8c7357055c64259701d4fba4a83886c845552b282871294feb7fadb8b2dead",
+      "bytes": 6215
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\library\\assets\\robot\\fr3\\1\\source\\PROVENANCE.json",
+      "sha256": "126c12fdd03094d54e24c38b223d6ab45bcebfce594e7351196e6dd5cfc7d9ce",
+      "bytes": 4354
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\library\\assets\\robot\\fr3\\1\\source\\fr3_franka_hand.urdf",
+      "sha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497",
+      "bytes": 15803
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\apps\\api\\app\\library_validation.py",
+      "sha256": "b6bb44517e55ab5611203dcb9857433b37c2735f1caafa3a7f200d201efecaa1",
+      "bytes": 971
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\common.py",
+      "sha256": "a3fdf8fa18d5f25615afb42836947e04cdc861ee42dcfd518647eade008dad59",
+      "bytes": 1426
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\archive.py",
+      "sha256": "6c91bdca13839cf5610352d43c8868ce9f0587302ca60f5ea52b620af9d85403",
+      "bytes": 7284
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\metadata.py",
+      "sha256": "3961427fb15648d58c2d704b059cb5c7dfd31bd90acd33088f356ed6906ec43d",
+      "bytes": 8236
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\scenes.py",
+      "sha256": "23dbd6d0f6a2dc57a5600b9753be3025a90d1c411a9c9c94bf902bd8bfb31c09",
+      "bytes": 17685
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\reports.py",
+      "sha256": "4e1f8551e54108859b70139d76ee5e70de1da72278151e3fdb9e11c3536ecac4",
+      "bytes": 13313
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\templates.py",
+      "sha256": "ef4cfcbb66ac98ab638679b0527d04f6cff2c7c536aff37657e8dbf78506fe0c",
+      "bytes": 11211
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\structural.py",
+      "sha256": "3f0caf3371ab62d7c7d0f9a8b69793923d029cc019077b34485ac77c0aa730cc",
+      "bytes": 32375
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\grasp_calibration.py",
+      "sha256": "e052f6912bdbebc9e565f46429613ddc3257975b2840d7d8c29c4830310df511",
+      "bytes": 13587
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\validation.py",
+      "sha256": "5109257196e03802f0c556f012b71a818e76cdd69ec7180fe040b754d0c8e71a",
+      "bytes": 10185
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\sim_runtime\\library_scene.py",
+      "sha256": "ab3747717f6d9527d3b5a5f619cb626f0181ff92e12820f4dec95103b9b4d651",
+      "bytes": 12992
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\sim_runtime\\loaders.py",
+      "sha256": "2ecfe709a5b68d275cc18859f08e69ac0e43d0deef46a394229fbdbabc79929e",
+      "bytes": 3208
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\sim_runtime\\sites.py",
+      "sha256": "45d377a424b2852a288aaf6ec7aeaaf051b29dd1f4e17b08b8c63b09c5c0c682",
+      "bytes": 1622
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\sim_runtime\\scenes.py",
+      "sha256": "e6261890b2e226077a9552791c5af8749806ea8444257309ada2518926f657e6",
+      "bytes": 2889
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\sim_runtime\\info_catalog.py",
+      "sha256": "2a805051b3d6307de5fbaa4623b9cb9d66b0c01dbae879e09d8e0f7ce6d9b293",
+      "bytes": 1035
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\protocol\\math.py",
+      "sha256": "d5ec041483abb9b7e675546ecc8d12f73d11be846110211cb32cbf04454e86d7",
+      "bytes": 4072
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\tools\\teach.py",
+      "sha256": "85a61daef941e3daa35844cefa16cd38a0d3e97ab259069e203458087639d0a2",
+      "bytes": 25104
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\packages\\programs\\robot_arm\\grasp.py",
+      "sha256": "8ea9b892d2e17bce1c88ed3bc73cb16207a32af8160058013d09b7a2ab589921",
+      "bytes": 1889
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\packages\\programs\\robot_arm\\newton.py",
+      "sha256": "662007ffdcbf90c9eeaa63be4976afb08eae9779963849d1cd139919458ac7f0",
+      "bytes": 15910
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\packages\\protocol\\math.py",
+      "sha256": "d5ec041483abb9b7e675546ecc8d12f73d11be846110211cb32cbf04454e86d7",
+      "bytes": 4072
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\pyproject.toml",
+      "sha256": "ce6881f85e5c679eb492c3f1785fa24d12c13c536150bca5373ef4d6e5b833ad",
+      "bytes": 1769
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\uv.lock",
+      "sha256": "fe9daf273e4d0c40bee28886ab8e30a13e4bc0eace695fd04525906b0f4c4f66",
+      "bytes": 164850
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton\\__init__.py",
+      "sha256": "1f890fe7f6461b31ce1b91c752310dd1fb1de792aa240d7aab9fca8c7b3ed293",
+      "bytes": 3574
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton\\_src\\sim\\model.py",
+      "sha256": "a8e7ec580b9cff4c492f84da7c5a3969bff7ba368906ff4f956cd5146f92e034",
+      "bytes": 120611
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton\\_src\\sim\\builder.py",
+      "sha256": "baa975f5c90a3fb1e906829c5a7748649729d842e88f2ae7015b2f15c6c03f60",
+      "bytes": 764143
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton\\_src\\sim\\articulation.py",
+      "sha256": "68f62b6a64fda7f7ad5fc6a2c53e4624d790395a16371a80cdef40ba66bc8c49",
+      "bytes": 63839
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\warp\\__init__.py",
+      "sha256": "81e043b02787e0e703b8b05ec8ab356d138f7749f08af4ce30c72a0cb2ac2ef9",
+      "bytes": 27997
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton-1.7.0.dist-info\\METADATA",
+      "sha256": "d6e3fc2cdc0e8d9fd56507f8d67cdd9509af7d8798a2ab38a2d90f417ebfaa59",
+      "bytes": 53170
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton-1.7.0.dist-info\\RECORD",
+      "sha256": "d5a45350f78a3793ce013b0876ced51416d63417d241e7d4ac0435ea6beeedd5",
+      "bytes": 95906
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\warp_lang-1.18.0.dist-info\\METADATA",
+      "sha256": "caa8cc026c50cc98551646b23b408892b66f35704ba7fb8b6beeca5f8cfc089a",
+      "bytes": 26467
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\warp_lang-1.18.0.dist-info\\RECORD",
+      "sha256": "2e5ed467660c3b9f9e3d4451496f2a5a33309dba25b38cd27ca42c07acfd07a7",
+      "bytes": 56713
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\usd_core-26.8.dist-info\\METADATA",
+      "sha256": "ef20894f6c5d385d3eea1bfd939b39377e9335282f31d2098058317874b418cf",
+      "bytes": 1805
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\usd_core-26.8.dist-info\\RECORD",
+      "sha256": "fea3a65d94e6ac0e748ae77cd3f81460e7751eca6e699ab1dd89411bb2b6af99",
+      "bytes": 17040
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton_usd_schemas-0.6.0.dist-info\\METADATA",
+      "sha256": "0bb23164b5c7885cbb422db2eb44c339a50ca3d80a3a42c3372a8e6a44d500f8",
+      "bytes": 6273
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton_usd_schemas-0.6.0.dist-info\\RECORD",
+      "sha256": "72fd487ebe0585e1aad5e28ed962ecef146a2721bc72776976f2026e2ada7d2b",
+      "bytes": 906
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\mujoco-3.15.0.dist-info\\METADATA",
+      "sha256": "7ef0a7531511fa4466716177b5b8c2c72d79418e7a175d644dea569d61087f44",
+      "bytes": 237622
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\mujoco-3.15.0.dist-info\\RECORD",
+      "sha256": "a1346992291e2ef4aba7be952fefc328378a0d9d96afd96c07ac06070b2c31f0",
+      "bytes": 26759
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\mujoco_warp-3.15.0.dist-info\\METADATA",
+      "sha256": "43f9138ff2466283997c8c8230a59a8994513d7622bde0793de263fd0ef63931",
+      "bytes": 9419
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\mujoco_warp-3.15.0.dist-info\\RECORD",
+      "sha256": "2383cc09e084cefcb3ab7ddf25d792022651cdd170e8108d0e927a7bb98051f0",
+      "bytes": 37379
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\numpy-2.5.4.dist-info\\METADATA",
+      "sha256": "e2b909d6a37d76c2bc130f528d7fed0c517322bce16dc7846b6a6df30e200403",
+      "bytes": 6635
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\numpy-2.5.4.dist-info\\RECORD",
+      "sha256": "77b9eb1807458da3cdb4eb97314e846ef1f3114d9d3cbfe962eb6ac7b0ab4ef3",
+      "bytes": 87792
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\scipy-1.18.1.dist-info\\METADATA",
+      "sha256": "c8313d18ca0168ff291fe0a3b50532f3a18b14547695e9aa7ca1c1ce6eca92dc",
+      "bytes": 61161
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\scipy-1.18.1.dist-info\\RECORD",
+      "sha256": "6c095a8ca448fcbc802d66a3887f7bdd0c2a9d4aaaf33c44e14a496aa6a8bf88",
+      "bytes": 147152
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\pydantic-2.12.4.dist-info\\METADATA",
+      "sha256": "9fea0467ea0f8bd08b0faff4eada5d2952007fa1e3be9b01ea868e60ea3cf254",
+      "bytes": 89859
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\pydantic-2.12.4.dist-info\\RECORD",
+      "sha256": "763a55231f987d3a47b17f0ba5158d91cb057a90275da5a9b4577631f082a58a",
+      "bytes": 9516
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\pyyaml-6.0.3.dist-info\\METADATA",
+      "sha256": "847a701020334386852b6e07bad1053cb0ce3da9ee1846e7e9d02b24e8bb3f8d",
+      "bytes": 2410
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\pyyaml-6.0.3.dist-info\\RECORD",
+      "sha256": "11c6594d6d41f4dc245bcfdd94c44329e9d455c5a6441192bcd6df34d4a17c4f",
+      "bytes": 1958
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\httpx-0.28.1.dist-info\\METADATA",
+      "sha256": "febb9b0f8f3e80d57c8199c304f35c4336e8581d1d18d7983c92766b82793b25",
+      "bytes": 7052
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\httpx-0.28.1.dist-info\\RECORD",
+      "sha256": "386ac232eabac111e713add94e1fb7f270a4345fc410795ab2b45bddff46ceaf",
+      "bytes": 2476
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\psutil-7.2.2.dist-info\\METADATA",
+      "sha256": "a263a40220d921d9cb963fc636d34f817aa2eb72c2696e3e3465d088cdb1976b",
+      "bytes": 22729
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\psutil-7.2.2.dist-info\\RECORD",
+      "sha256": "0d4c336a396000d4cae7c9225ae020e4ec471be9873d2e3b92fb516fc9d6fff4",
+      "bytes": 1392
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\pyvenv.cfg",
+      "sha256": "c96d020ef109ca98816c532eb74cdc5f3dfb096aa61909d60ea3e40caf47eaaf",
+      "bytes": 211
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\numpy-2.5.4.dist-info\\METADATA",
+      "sha256": "e2b909d6a37d76c2bc130f528d7fed0c517322bce16dc7846b6a6df30e200403",
+      "bytes": 6635
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\numpy-2.5.4.dist-info\\RECORD",
+      "sha256": "5e7ca6254f823a0d82791d55e8d7a4f4de1401713f5314119f7e6479f7632bcd",
+      "bytes": 87792
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\scipy-1.18.1.dist-info\\METADATA",
+      "sha256": "c8313d18ca0168ff291fe0a3b50532f3a18b14547695e9aa7ca1c1ce6eca92dc",
+      "bytes": 61161
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\scipy-1.18.1.dist-info\\RECORD",
+      "sha256": "6c095a8ca448fcbc802d66a3887f7bdd0c2a9d4aaaf33c44e14a496aa6a8bf88",
+      "bytes": 147152
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\pydantic-2.12.4.dist-info\\METADATA",
+      "sha256": "9fea0467ea0f8bd08b0faff4eada5d2952007fa1e3be9b01ea868e60ea3cf254",
+      "bytes": 89859
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\pydantic-2.12.4.dist-info\\RECORD",
+      "sha256": "763a55231f987d3a47b17f0ba5158d91cb057a90275da5a9b4577631f082a58a",
+      "bytes": 9516
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\pyyaml-6.0.3.dist-info\\METADATA",
+      "sha256": "847a701020334386852b6e07bad1053cb0ce3da9ee1846e7e9d02b24e8bb3f8d",
+      "bytes": 2410
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\pyyaml-6.0.3.dist-info\\RECORD",
+      "sha256": "11c6594d6d41f4dc245bcfdd94c44329e9d455c5a6441192bcd6df34d4a17c4f",
+      "bytes": 1958
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\httpx-0.28.1.dist-info\\METADATA",
+      "sha256": "febb9b0f8f3e80d57c8199c304f35c4336e8581d1d18d7983c92766b82793b25",
+      "bytes": 7052
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\httpx-0.28.1.dist-info\\RECORD",
+      "sha256": "b38444016c1a11afd4efabd49f131587937267184efe739bf54abe703de1ffc3",
+      "bytes": 2476
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\psutil-7.2.2.dist-info\\METADATA",
+      "sha256": "a263a40220d921d9cb963fc636d34f817aa2eb72c2696e3e3465d088cdb1976b",
+      "bytes": 22729
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\psutil-7.2.2.dist-info\\RECORD",
+      "sha256": "0d4c336a396000d4cae7c9225ae020e4ec471be9873d2e3b92fb516fc9d6fff4",
+      "bytes": 1392
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\pyvenv.cfg",
+      "sha256": "b8e55b6137f57e1eb20c8fc5041275509570f9629e304d72e4e2a0c3a976e136",
+      "bytes": 176
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton\\_src\\utils\\import_usd.py",
+      "sha256": "e0a75bde0b96f9cd2fd8ccb301e52e2a9af8f8efa7e783fee3495bef786afcae",
+      "bytes": 156195
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\library\\posture.py",
+      "sha256": "7429a0a2495bfbd3e503041985e4cf06b4f8023d7a25329cd2969eb7d2d77284",
+      "bytes": 6517
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\packages\\programs\\robot_arm\\grasp.py",
+      "sha256": "8ea9b892d2e17bce1c88ed3bc73cb16207a32af8160058013d09b7a2ab589921",
+      "bytes": 1889
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\pyproject.toml",
+      "sha256": "c4352d16eb9303017cc4444bc329ee59cb3d3ee6fad1ba3a20ce6aa5e4604837",
+      "bytes": 1757
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-a-runtime\\uv.lock",
+      "sha256": "b43fa58df43685e76a89442e029880f9c6ef5cfd9de134ed2f297cd165642a45",
+      "bytes": 164004
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\terminal_data.py",
+      "sha256": "8f636d54a21b83586f0fb47b3b12b4b6c9257238d6128f3c0538ee1d927b3f73",
+      "bytes": 4946
+    },
+    {
+      "role": "declared-source-metadata-input",
+      "path": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-18\\recovery-20261023\\c0-paired-source-003\\counterexamples.py",
+      "sha256": "6da507d32862843e655a230519f5387b12637e8f5c3e9d4acb6ae54d41da6da9",
+      "bytes": 7178
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+--- launcher2/launch_once.py
++++ proposed-c0-launcher/launch_once.py
+@@
+-        for path in sorted([*RUNTIME.rglob('receipt.json'), OUT / 'owned-adapter/receipt.json']):
+-            receipt = m.load(path)
++        for directory in sorted([*RUNTIME.glob('[0-9][0-9]-*'), OUT / 'owned-adapter']):
++            final_files = list((directory / 'receipt-final').glob('*.json'))
++            assert len(final_files) == 1, 'Missing or ambiguous closed final receipt'
++            path = final_files[0]
++            receipt = m.load(path)
++            outcomes = [m.load(entry) for entry in (directory / 'owners').glob('*.json')]
++            outcomes = [value for value in outcomes if value.get('kind') == 'final-outcome']
++            assert len(outcomes) == 1, 'Missing or ambiguous critical final owner outcome'
++            for key in ('status', 'processes', 'postrun', 'persistenceErrors', 'uncertain', 'cleanupErrors'):
++                assert outcomes[0][key] == receipt[key], 'Final receipt/owner outcome mismatch: ' + key
+             observations = [m.observe(row, psutil) for row in receipt.get('processes', [])]

@@ -1,0 +1,124 @@
+{
+  "model": {
+    "python": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Scripts\\python.exe",
+    "versions": {
+      "newton": "1.7.0",
+      "warp-lang": "1.18.0",
+      "usd-core": "26.8",
+      "newton-usd-schemas": "0.6.0",
+      "mujoco": "3.15.0",
+      "mujoco-warp": "3.15.0",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "pydantic": "2.12.4",
+      "pyyaml": "6.0.3",
+      "httpx": "0.28.1",
+      "psutil": "7.2.2"
+    },
+    "metadata": [
+      {
+        "name": "newton",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton-1.7.0.dist-info\\METADATA",
+        "sha256": "d6e3fc2cdc0e8d9fd56507f8d67cdd9509af7d8798a2ab38a2d90f417ebfaa59"
+      },
+      {
+        "name": "warp-lang",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\warp_lang-1.18.0.dist-info\\METADATA",
+        "sha256": "caa8cc026c50cc98551646b23b408892b66f35704ba7fb8b6beeca5f8cfc089a"
+      },
+      {
+        "name": "usd-core",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\usd_core-26.8.dist-info\\METADATA",
+        "sha256": "ef20894f6c5d385d3eea1bfd939b39377e9335282f31d2098058317874b418cf"
+      },
+      {
+        "name": "newton-usd-schemas",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\newton_usd_schemas-0.6.0.dist-info\\METADATA",
+        "sha256": "0bb23164b5c7885cbb422db2eb44c339a50ca3d80a3a42c3372a8e6a44d500f8"
+      },
+      {
+        "name": "mujoco",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\mujoco-3.15.0.dist-info\\METADATA",
+        "sha256": "7ef0a7531511fa4466716177b5b8c2c72d79418e7a175d644dea569d61087f44"
+      },
+      {
+        "name": "mujoco-warp",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\mujoco_warp-3.15.0.dist-info\\METADATA",
+        "sha256": "43f9138ff2466283997c8c8230a59a8994513d7622bde0793de263fd0ef63931"
+      },
+      {
+        "name": "numpy",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\numpy-2.5.4.dist-info\\METADATA",
+        "sha256": "e2b909d6a37d76c2bc130f528d7fed0c517322bce16dc7846b6a6df30e200403"
+      },
+      {
+        "name": "scipy",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\scipy-1.18.1.dist-info\\METADATA",
+        "sha256": "c8313d18ca0168ff291fe0a3b50532f3a18b14547695e9aa7ca1c1ce6eca92dc"
+      },
+      {
+        "name": "pydantic",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\pydantic-2.12.4.dist-info\\METADATA",
+        "sha256": "9fea0467ea0f8bd08b0faff4eada5d2952007fa1e3be9b01ea868e60ea3cf254"
+      },
+      {
+        "name": "pyyaml",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\pyyaml-6.0.3.dist-info\\METADATA",
+        "sha256": "847a701020334386852b6e07bad1053cb0ce3da9ee1846e7e9d02b24e8bb3f8d"
+      },
+      {
+        "name": "httpx",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\httpx-0.28.1.dist-info\\METADATA",
+        "sha256": "febb9b0f8f3e80d57c8199c304f35c4336e8581d1d18d7983c92766b82793b25"
+      },
+      {
+        "name": "psutil",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.venv\\Lib\\site-packages\\psutil-7.2.2.dist-info\\METADATA",
+        "sha256": "a263a40220d921d9cb963fc636d34f817aa2eb72c2696e3e3465d088cdb1976b"
+      }
+    ]
+  },
+  "teacher": {
+    "python": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Scripts\\python.exe",
+    "versions": {
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "pydantic": "2.12.4",
+      "pyyaml": "6.0.3",
+      "httpx": "0.28.1",
+      "psutil": "7.2.2"
+    },
+    "metadata": [
+      {
+        "name": "numpy",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\numpy-2.5.4.dist-info\\METADATA",
+        "sha256": "e2b909d6a37d76c2bc130f528d7fed0c517322bce16dc7846b6a6df30e200403"
+      },
+      {
+        "name": "scipy",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\scipy-1.18.1.dist-info\\METADATA",
+        "sha256": "c8313d18ca0168ff291fe0a3b50532f3a18b14547695e9aa7ca1c1ce6eca92dc"
+      },
+      {
+        "name": "pydantic",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\pydantic-2.12.4.dist-info\\METADATA",
+        "sha256": "9fea0467ea0f8bd08b0faff4eada5d2952007fa1e3be9b01ea868e60ea3cf254"
+      },
+      {
+        "name": "pyyaml",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\pyyaml-6.0.3.dist-info\\METADATA",
+        "sha256": "847a701020334386852b6e07bad1053cb0ce3da9ee1846e7e9d02b24e8bb3f8d"
+      },
+      {
+        "name": "httpx",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\httpx-0.28.1.dist-info\\METADATA",
+        "sha256": "febb9b0f8f3e80d57c8199c304f35c4336e8581d1d18d7983c92766b82793b25"
+      },
+      {
+        "name": "psutil",
+        "path": "D:\\Projects\\Robots\\spatial-sync\\.worktrees\\issue-18-n1b\\.venv\\Lib\\site-packages\\psutil-7.2.2.dist-info\\METADATA",
+        "sha256": "a263a40220d921d9cb963fc636d34f817aa2eb72c2696e3e3465d088cdb1976b"
+      }
+    ]
+  }
+}

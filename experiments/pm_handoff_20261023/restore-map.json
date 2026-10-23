@@ -1,0 +1,140 @@
+[
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/adapter.py",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/adapter.py",
+        "sha256":  "d685b8013f8c79ad56309c45ffd9452b8db03addc7d0e92769ba1c12811f9c90",
+        "bytes":  26876
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/pose_data.py",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/pose_data.py",
+        "sha256":  "e89c653a8012f99d84bc19593c643a1bf24652dbf11b71309eeb83c408a02abb",
+        "bytes":  3930
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/terminal_data.py",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/terminal_data.py",
+        "sha256":  "8f636d54a21b83586f0fb47b3b12b4b6c9257238d6128f3c0538ee1d927b3f73",
+        "bytes":  4946
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/counterexamples.py",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/counterexamples.py",
+        "sha256":  "6da507d32862843e655a230519f5387b12637e8f5c3e9d4acb6ae54d41da6da9",
+        "bytes":  7178
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/PLAN.json",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/PLAN.json",
+        "sha256":  "f17bb9fcf11225cf5ec3cf8f7000fe56198a7403de7b132a3f44378017b34414",
+        "bytes":  22213
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/ENVIRONMENT_PINS.json",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/ENVIRONMENT_PINS.json",
+        "sha256":  "9aa8193a2e8d000903fa3102269cc40a1b6b9180eacf282398f5660419c8afec",
+        "bytes":  5501
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-paired-source-003/SOURCE_MANIFEST.json",
+        "copy":  "issue-18/recovery-20261023/c0-paired-source-003/SOURCE_MANIFEST.json",
+        "sha256":  "09ebbc2b8acc586c6e862bc236d9f1238066ed001c2b9bdf82b4f4f98148a193",
+        "bytes":  37320
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/r18-n1b-r3/adapter.py",
+        "copy":  "issue-18/recovery-20261023/r18-n1b-r3/adapter.py",
+        "sha256":  "7b38ef9b1639fe8bf2384662296dccfbd06ede86ef5f557fdad56c33f5b3c2b2",
+        "bytes":  25893
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-receipt-repair-001/OWNED_CALL_REPAIR.diff",
+        "copy":  "issue-18/recovery-20261023/c0-receipt-repair-001/OWNED_CALL_REPAIR.diff",
+        "sha256":  "0749abd14f0dc75d785d399d0f475906819628ed5163d8a75fdcfba85c1c7bbc",
+        "bytes":  1125
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-receipt-repair-001/CONSUMER_REPAIR.diff",
+        "copy":  "issue-18/recovery-20261023/c0-receipt-repair-001/CONSUMER_REPAIR.diff",
+        "sha256":  "7ed82f02686d2d3ea668548491aa6f79bc85cd7cb8bd63661f1b6a8cdb355e85",
+        "bytes":  1119
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-18/recovery-20261023/c0-static-003-002/launch_once.py",
+        "copy":  "issue-18/recovery-20261023/c0-static-003-002/launch_once.py",
+        "sha256":  "dd950b5344e67489af911d073375f3b80c36f98bd7eba9ab7c96d5c17f7cd1b4",
+        "bytes":  7059
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/probe.py",
+        "copy":  "issue-102/probe.py",
+        "sha256":  "25edcd0e5a48b9fdbfab4634c2c08fa8f5ed2931f82fe83e528444eab8e7d355",
+        "bytes":  29830
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/runtime-candidate-20261023-v4/overlay_common_trace.py",
+        "copy":  "issue-102/runtime-candidate-20261023-v4/overlay_common_trace.py",
+        "sha256":  "ec6a712ab37b344388ba83c4338b1bc7fe10bb078dd409ac5d985218b94063c7",
+        "bytes":  28934
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/runtime-candidate-20261023-v4/repair_support_v2.py",
+        "copy":  "issue-102/runtime-candidate-20261023-v4/repair_support_v2.py",
+        "sha256":  "b988d3189bb0c37cde247be8770a154144e895a09bd2ad5e5f1134cc723f3c35",
+        "bytes":  5856
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/runtime-candidate-20261023-v4/supervise_overlay_trace.py",
+        "copy":  "issue-102/runtime-candidate-20261023-v4/supervise_overlay_trace.py",
+        "sha256":  "dc7bd092026eeeb01e2ab70de1729ff3f58d4c05d772d7ac57ed043c9663b19b",
+        "bytes":  5103
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/runtime-candidate-20261023-v4/fixed-manifest.json",
+        "copy":  "issue-102/runtime-candidate-20261023-v4/fixed-manifest.json",
+        "sha256":  "575a4814c06b126092a1c1796c0a6aaa7399ac4e0eaf590ff61b1f45de8c293b",
+        "bytes":  6636
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/runtime-candidate-20261023-v4/overlay-tree-manifest.json",
+        "copy":  "issue-102/runtime-candidate-20261023-v4/overlay-tree-manifest.json",
+        "sha256":  "7499b2eb77d5bdff936120cd6569f4d7f311b71ed50565a132cd554ff18657d7",
+        "bytes":  4149
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/verify_common_trace.py",
+        "copy":  "issue-102/verify_common_trace.py",
+        "sha256":  "9b2272dfdc5bb0d9e96cf4106ef400827f3aaf535584872613f137170c4b6e5d",
+        "bytes":  19417
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-102/report_v4_details_offline.py",
+        "copy":  "issue-102/report_v4_details_offline.py",
+        "sha256":  "5a20e6450efa39cc905a11d5baafdf15d46263362d8853a1c4c1d4d9a78b08e4",
+        "bytes":  6831
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-85/resume-20261023/analyze_ci_attempt_capacity.py",
+        "copy":  "issue-85/resume-20261023/analyze_ci_attempt_capacity.py",
+        "sha256":  "a4a49624ae75591a244160e82e372f28847f33788acd4b4623ce325120f3237d",
+        "bytes":  8372
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-85/resume-20261023/analyze_ci_attempt_current.py",
+        "copy":  "issue-85/resume-20261023/analyze_ci_attempt_current.py",
+        "sha256":  "ef7c68f2fdb9337c9d2d5e2fed05487dbde4ecf2ba1f4bb4e51640a797ddb7c0",
+        "bytes":  6938
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-85/resume-20261023/audit_6c_capacity_once.py",
+        "copy":  "issue-85/resume-20261023/audit_6c_capacity_once.py",
+        "sha256":  "93773efbf3bc168e8a12629ae0ae5754521a16cdcc08d6d658b63744e9836d44",
+        "bytes":  6934
+    },
+    {
+        "source":  ".scratch/rsi-platform/issue-85/resume-20261023/analyze_profile_offline.py",
+        "copy":  "issue-85/resume-20261023/analyze_profile_offline.py",
+        "sha256":  "ec323776376d02d66dcc8714586e0ea767b225c4ee20a2982014ec7d06ce2963",
+        "bytes":  9616
+    }
+]

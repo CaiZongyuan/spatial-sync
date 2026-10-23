@@ -1,0 +1,84 @@
+{
+    "schema":  1,
+    "treeHashRule":  "UTF8 ordinal-sorted relative path + NUL + lowercase SHA256 + LF per file",
+    "treeSha256":  "1bff43ab2e7a2440dc8a63b6d8dfd6c4d3448e2c5b87c83b6f73853cd2b2f0e8",
+    "originalPahoSha256":  "6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee",
+    "declaredExtraPackage":  {
+                                 "name":  "sniffio",
+                                 "version":  "1.3.1",
+                                 "wheelSha256":  "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+                                 "originRelative":  "sniffio/__init__.py"
+                             },
+    "files":  [
+                  {
+                      "path":  "paho_mqtt-2.1.0-py3-none-any.whl",
+                      "sha256":  "6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee",
+                      "bytes":  67219
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/LICENSE",
+                      "sha256":  "652c878488d1456361e08c3f8607fd7ba59892a14103d15cce4ff93c85b5cc8b",
+                      "bytes":  185
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/LICENSE.APACHE2",
+                      "sha256":  "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+                      "bytes":  11358
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/LICENSE.MIT",
+                      "sha256":  "3e6dae555eb92787fc82d1d48355677f454c7f65aeb38d3f9e72bf9a3daf034b",
+                      "bytes":  1046
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/METADATA",
+                      "sha256":  "0b318b57098edeccf585e60a889a6b6a7b5c4086f3a9aa62eff76a1d3cee12d9",
+                      "bytes":  3875
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/RECORD",
+                      "sha256":  "064c8055feff5a74960318c8fe7476aac7f738d2993eb450cf0f481cbaa9dfaa",
+                      "bytes":  1032
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/WHEEL",
+                      "sha256":  "a2241587fe4f9d033413780f762cf4f5608d9b08870cc6867abfde96a0777283",
+                      "bytes":  92
+                  },
+                  {
+                      "path":  "sniffio-1.3.1.dist-info/top_level.txt",
+                      "sha256":  "bfd5095c6b390b275d095780a979108963aba69e96b71e86791acfb7dfa38c78",
+                      "bytes":  8
+                  },
+                  {
+                      "path":  "sniffio/__init__.py",
+                      "sha256":  "f562442655eeef296e3f462d239490f4cf4e4d07db34791a75aacad6f5c60cf3",
+                      "bytes":  335
+                  },
+                  {
+                      "path":  "sniffio/_impl.py",
+                      "sha256":  "526505319a62b8eadc8e7b8786e62260cc5e08d59faaef6406568f7f4c64e97f",
+                      "bytes":  2843
+                  },
+                  {
+                      "path":  "sniffio/_tests/__init__.py",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                      "bytes":  0
+                  },
+                  {
+                      "path":  "sniffio/_tests/test_sniffio.py",
+                      "sha256":  "30c2596498d0ad48bde5100d34cf9aff9e4166ab80fe0bf8ac7535a5ebdc4c23",
+                      "bytes":  2058
+                  },
+                  {
+                      "path":  "sniffio/_version.py",
+                      "sha256":  "8957ace71c2c1de4734037b105a021cb1fed68db76b9c7c0ec2580a38403b7a4",
+                      "bytes":  89
+                  },
+                  {
+                      "path":  "sniffio/py.typed",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                      "bytes":  0
+                  }
+              ]
+}
