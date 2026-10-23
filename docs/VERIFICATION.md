@@ -36,8 +36,8 @@ Core also collects all four mandatory directories independently. The `contracts`
 job downloads all three attempt-specific Python artifacts and runs
 `python tools/check_ci_python_coverage.py <artifact-directory>` to verify worker
 agreement, the exact disjoint selection union and all three JUnit identity sets.
-It derives totals from the full collection. The workflow has 13 checks: three
-Python executions, eight browser shards and two aggregate checks.
+It derives totals from the full collection. The workflow has 17 checks: three
+Python executions, twelve browser shards and two aggregate checks.
 
 Start an owned `approval_gateway:app --app-dir tests/fixtures` API first. E2E
 defaults to API8000 and isolated web5184. `SPATIAL_API_URL` selects another API;
