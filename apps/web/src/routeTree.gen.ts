@@ -18,6 +18,7 @@ import { Route as PlansRouteImport } from './routes/plans'
 import { Route as RecordingsRouteImport } from './routes/recordings'
 import { Route as ScenesRouteImport } from './routes/scenes'
 import { Route as SessionsRouteImport } from './routes/sessions'
+import { Route as TrainRouteImport } from './routes/train'
 import { Route as AssetsIndexRouteImport } from './routes/assets.index'
 import { Route as EvalIndexRouteImport } from './routes/eval.index'
 import { Route as EvalSuiteIdRouteImport } from './routes/eval.$suiteId'
@@ -30,6 +31,7 @@ import { Route as ScenesIndexRouteImport } from './routes/scenes.index'
 import { Route as SessionsIndexRouteImport } from './routes/sessions.index'
 import { Route as SessionsSessionIdRouteImport } from './routes/sessions.$sessionId'
 import { Route as ScenesNameRevRouteImport } from './routes/scenes.$name.$rev'
+import { Route as TrainJobsIdRouteImport } from './routes/train.jobs.$id'
 import { Route as AssetsKindNameRevRouteImport } from './routes/assets.$kind.$name.$rev'
 
 const IndexRoute = IndexRouteImport.update({
@@ -75,6 +77,11 @@ const ScenesRoute = ScenesRouteImport.update({
 const SessionsRoute = SessionsRouteImport.update({
   id: '/sessions',
   path: '/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrainRoute = TrainRouteImport.update({
+  id: '/train',
+  path: '/train',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AssetsIndexRoute = AssetsIndexRouteImport.update({
@@ -137,6 +144,11 @@ const ScenesNameRevRoute = ScenesNameRevRouteImport.update({
   path: '/$name/$rev',
   getParentRoute: () => ScenesRoute,
 } as any)
+const TrainJobsIdRoute = TrainJobsIdRouteImport.update({
+  id: '/jobs/$id',
+  path: '/jobs/$id',
+  getParentRoute: () => TrainRoute,
+} as any)
 const AssetsKindNameRevRoute = AssetsKindNameRevRouteImport.update({
   id: '/$kind/$name/$rev',
   path: '/$kind/$name/$rev',
@@ -153,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/recordings': typeof RecordingsRoute
   '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
+  '/train': typeof TrainRouteWithChildren
   '/eval/$suiteId': typeof EvalSuiteIdRoute
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
@@ -165,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
+  '/train/jobs/$id': typeof TrainJobsIdRoute
   '/assets/$kind/$name/$rev': typeof AssetsKindNameRevRoute
 }
 export interface FileRoutesByTo {
@@ -172,6 +186,7 @@ export interface FileRoutesByTo {
   '/approvals': typeof ApprovalsRoute
   '/live': typeof LiveRoute
   '/recordings': typeof RecordingsRoute
+  '/train': typeof TrainRouteWithChildren
   '/eval/$suiteId': typeof EvalSuiteIdRoute
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
@@ -184,6 +199,7 @@ export interface FileRoutesByTo {
   '/scenes': typeof ScenesIndexRoute
   '/sessions': typeof SessionsIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
+  '/train/jobs/$id': typeof TrainJobsIdRoute
   '/assets/$kind/$name/$rev': typeof AssetsKindNameRevRoute
 }
 export interface FileRoutesById {
@@ -197,6 +213,7 @@ export interface FileRoutesById {
   '/recordings': typeof RecordingsRoute
   '/scenes': typeof ScenesRouteWithChildren
   '/sessions': typeof SessionsRouteWithChildren
+  '/train': typeof TrainRouteWithChildren
   '/eval/$suiteId': typeof EvalSuiteIdRoute
   '/plans/$planId': typeof PlansPlanIdRoute
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
@@ -209,6 +226,7 @@ export interface FileRoutesById {
   '/scenes/': typeof ScenesIndexRoute
   '/sessions/': typeof SessionsIndexRoute
   '/scenes/$name/$rev': typeof ScenesNameRevRoute
+  '/train/jobs/$id': typeof TrainJobsIdRoute
   '/assets/$kind/$name/$rev': typeof AssetsKindNameRevRoute
 }
 export interface FileRouteTypes {
@@ -223,6 +241,7 @@ export interface FileRouteTypes {
     | '/recordings'
     | '/scenes'
     | '/sessions'
+    | '/train'
     | '/eval/$suiteId'
     | '/plans/$planId'
     | '/replay/$recordingId'
@@ -235,6 +254,7 @@ export interface FileRouteTypes {
     | '/scenes/'
     | '/sessions/'
     | '/scenes/$name/$rev'
+    | '/train/jobs/$id'
     | '/assets/$kind/$name/$rev'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -242,6 +262,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/live'
     | '/recordings'
+    | '/train'
     | '/eval/$suiteId'
     | '/plans/$planId'
     | '/replay/$recordingId'
@@ -254,6 +275,7 @@ export interface FileRouteTypes {
     | '/scenes'
     | '/sessions'
     | '/scenes/$name/$rev'
+    | '/train/jobs/$id'
     | '/assets/$kind/$name/$rev'
   id:
     | '__root__'
@@ -266,6 +288,7 @@ export interface FileRouteTypes {
     | '/recordings'
     | '/scenes'
     | '/sessions'
+    | '/train'
     | '/eval/$suiteId'
     | '/plans/$planId'
     | '/replay/$recordingId'
@@ -278,6 +301,7 @@ export interface FileRouteTypes {
     | '/scenes/'
     | '/sessions/'
     | '/scenes/$name/$rev'
+    | '/train/jobs/$id'
     | '/assets/$kind/$name/$rev'
   fileRoutesById: FileRoutesById
 }
@@ -291,6 +315,7 @@ export interface RootRouteChildren {
   RecordingsRoute: typeof RecordingsRoute
   ScenesRoute: typeof ScenesRouteWithChildren
   SessionsRoute: typeof SessionsRouteWithChildren
+  TrainRoute: typeof TrainRouteWithChildren
   ReplayRecordingIdRoute: typeof ReplayRecordingIdRoute
   ResourcesGpuRoute: typeof ResourcesGpuRoute
   ResourcesModelsRoute: typeof ResourcesModelsRoute
@@ -359,6 +384,13 @@ declare module '@tanstack/react-router' {
       path: '/sessions'
       fullPath: '/sessions'
       preLoaderRoute: typeof SessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/train': {
+      id: '/train'
+      path: '/train'
+      fullPath: '/train'
+      preLoaderRoute: typeof TrainRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/assets/': {
@@ -445,6 +477,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScenesNameRevRouteImport
       parentRoute: typeof ScenesRoute
     }
+    '/train/jobs/$id': {
+      id: '/train/jobs/$id'
+      path: '/jobs/$id'
+      fullPath: '/train/jobs/$id'
+      preLoaderRoute: typeof TrainJobsIdRouteImport
+      parentRoute: typeof TrainRoute
+    }
     '/assets/$kind/$name/$rev': {
       id: '/assets/$kind/$name/$rev'
       path: '/$kind/$name/$rev'
@@ -519,6 +558,16 @@ const SessionsRouteWithChildren = SessionsRoute._addFileChildren(
   SessionsRouteChildren,
 )
 
+interface TrainRouteChildren {
+  TrainJobsIdRoute: typeof TrainJobsIdRoute
+}
+
+const TrainRouteChildren: TrainRouteChildren = {
+  TrainJobsIdRoute: TrainJobsIdRoute,
+}
+
+const TrainRouteWithChildren = TrainRoute._addFileChildren(TrainRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApprovalsRoute: ApprovalsRoute,
@@ -529,6 +578,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecordingsRoute: RecordingsRoute,
   ScenesRoute: ScenesRouteWithChildren,
   SessionsRoute: SessionsRouteWithChildren,
+  TrainRoute: TrainRouteWithChildren,
   ReplayRecordingIdRoute: ReplayRecordingIdRoute,
   ResourcesGpuRoute: ResourcesGpuRoute,
   ResourcesModelsRoute: ResourcesModelsRoute,
