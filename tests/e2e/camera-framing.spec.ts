@@ -163,20 +163,42 @@ for (const userOwns of [false, true]) test(`initial plan waits for pose/context/
   } finally { releasePreview(); fixture.release(); }
 });
 
-test('user navigation during visual loading survives late readiness and explicit fit remains available', async ({ page }) => {
+for (const unavailableFirstRead of [false, true]) test(`user navigation during visual loading survives late readiness and explicit fit remains available${unavailableFirstRead ? '; disclosed unavailable first camera read' : ''}`, async ({ page }, info) => {
   const fixture = await viewerFixture(page, true);
   try {
     await page.goto('/sessions/framing-fixture');
     await expect(page.getByTestId('connection-status')).toHaveText('已连接');
     await page.locator('canvas').hover();
+    if (unavailableFirstRead) {
+      await page.waitForFunction(() => window.__spatialRenderDebug !== undefined, undefined, { timeout: 10_000 });
+      await page.evaluate(() => {
+        // Only diagnostic publication is delayed; every available pose comes from the real renderer.
+        const diagnostics = window.__spatialRenderDebug!;
+        const actual = diagnostics.camera;
+        const witness = { unavailableReads: 0, readyReads: 0 };
+        Object.defineProperty(window, '__cameraReadinessFixture', { value: witness });
+        Object.defineProperty(diagnostics, 'camera', { value: () => {
+          if (!witness.unavailableReads) { witness.unavailableReads++; return undefined; }
+          witness.readyReads++;
+          return actual();
+        } });
+      });
+    }
     const initial = (await camera(page))!;
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => distance((await camera(page))!.position, initial.position)).toBeGreaterThan(.1);
     const user = (await camera(page))!;
+    expect(await page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('loading');
     fixture.release();
     await expect.poll(() => page.evaluate(() => window.__spatialDebug?.inspectVisuals('/World/Lab/FallbackBox')?.source)).toBe('colliders');
     await assertViewRetained(page, user);
     await page.getByRole('button', { name: 'Fit scene', exact: true }).click();
     await expect.poll(async () => distance((await camera(page))!.position, user.position)).toBeGreaterThan(.1);
+    if (unavailableFirstRead) {
+      const witness = await page.evaluate(() => Object.getOwnPropertyDescriptor(window, '__cameraReadinessFixture')?.value);
+      expect(witness.unavailableReads).toBeGreaterThan(0);
+      expect(witness.readyReads).toBeGreaterThan(0);
+      await info.attach('camera-readiness-fixture.json', { body: JSON.stringify(witness), contentType: 'application/json' });
+    }
   } finally { fixture.release(); }
 });
