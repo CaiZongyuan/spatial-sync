@@ -68,7 +68,6 @@ def trainer_arguments(inputs, callback):
         str(job["seed"]),
         "--device",
         "cpu" if job["executionDevice"] == "cpu" else "cuda:0",
-        "--headless",
         "--logger",
         "tensorboard",
         "--experiment_name",
@@ -378,6 +377,7 @@ class LocalNode:
         self.hardware = capabilities["hardware"]
         self.headers = {"X-Node-Token": os.environ["SPATIAL_NODE_TOKEN"], "X-Node-Instance": self.instance}
         self.active = {}
+        self.capabilities_path = None
 
     async def run(self):
         async with httpx.AsyncClient(
@@ -387,6 +387,11 @@ class LocalNode:
                 while True:
                     if (self.root / "stop").exists():
                         return
+                    if self.capabilities_path:
+                        updated = json.loads(self.capabilities_path.read_text(encoding="utf-8"))
+                        if updated["hardware"] != self.hardware:
+                            raise RuntimeError("A live node cannot change its measured hardware identity")
+                        self.capabilities["profiles"] = updated.get("profiles", [])
                     reports = [owned.report() for owned in self.active.values()]
                     for report in reports:
                         root = self.active[report["jobId"]].root
@@ -440,9 +445,17 @@ def main():
     parser.add_argument("--interval", type=float, default=10)
     parser.add_argument("--timeout", type=float, default=86400)
     args = parser.parse_args()
-    capabilities = (
-        json.loads(Path(args.capabilities).read_text(encoding="utf-8")) if args.capabilities else discover()
-    )
+    capabilities_path = Path(args.capabilities) if args.capabilities else Path(args.root) / "capabilities.json"
+    if args.capabilities:
+        capabilities = json.loads(capabilities_path.read_text(encoding="utf-8"))
+    else:
+        capabilities = discover()
+        if capabilities_path.exists():
+            previous = json.loads(capabilities_path.read_text(encoding="utf-8"))
+            if previous["hardware"] == capabilities["hardware"]:
+                capabilities["profiles"] = previous.get("profiles", [])
+        capabilities_path.parent.mkdir(parents=True, exist_ok=True)
+        capabilities_path.write_text(json.dumps(capabilities), encoding="utf-8")
     node = LocalNode(
         args.url,
         args.root,
@@ -451,6 +464,7 @@ def main():
         interval=args.interval,
         timeout=args.timeout,
     )
+    node.capabilities_path = capabilities_path
     asyncio.run(node.run())
 
 
