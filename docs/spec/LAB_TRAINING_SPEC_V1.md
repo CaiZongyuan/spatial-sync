@@ -63,6 +63,8 @@ agent 与人一起制定**训练计划**，经人批准后，平台在**计算�
 
 Task 是一个 Isaac Lab 下游 Python 包（同 IsaacLabTutorial 的结构），通过 `isaaclab.tasks` entry point 注册，外加一份 `task.yaml`：
 
+以下保留 `fr3-lab@2` 的目标场景示例；T1 开发期以 `robot-and-tubes@2`（含 FR3）代入。
+
 ```yaml
 name: fr3-pick-tube
 title: FR3 从试管架取管放入离心机
@@ -95,6 +97,8 @@ isaaclab: {task_id: Lab-FR3-Pick-Tube-v0, presets: [newton_mjwarp]}
 训练计划是 `kind: training` 的 Plan，与操作计划共用 Plan 的修订、状态、界面面板和 `lw plan` 命令组（实时操作规格 §8）。
 
 ### 4.1 内容
+
+以下计划的评估场景保留为 `fr3-lab@2`；T1 开发期以 `robot-and-tubes@2` 代入。
 
 ```yaml
 id: plan-0007
@@ -300,7 +304,8 @@ lw loop show <task>                      RSI 看板与闭环预算
 
 ```text
 T0 FR3 接触抓取技术验证（与平台开发并行）──► #35（策略与 robot_arm.policy）
-A3 fr3-lab ──► T1 作业 + 节点 + 训练视图 ──► T2 评估 + 策略 + 实验记录 + 一圈 RSI ──► T3 脚本程序 + 示范
+A2 + L2 ──► T1 作业 + 节点 + 训练视图 ──► T2 评估 + 策略 + 实验记录 + 一圈 RSI ──► T3 脚本程序 + 示范
+A3 fr3-lab ──► T2 的 fr3-lab 验收（#35）
 ```
 
 **T0 技术验证（平台外，Isaac Lab 工作区）**
@@ -315,7 +320,7 @@ A3 fr3-lab ──► T1 作业 + 节点 + 训练视图 ──► T2 评估 + 策
 
 **T1 作业、节点与训练视图**
 
-前置：A3（#18）完成后从 #30 开始；T1 不等待 T0。T0 只阻挡 #35；#34 可先用 `lab-demo` 的 virtual 程序作为被测对象。
+前置：A2 与 L2。T1 不等待 A3 与 T0，从 #30 开始；#30–#33 以 `robot-and-tubes@2`（含 FR3）开发与验收。A3（#18）与 T0（#29）只阻挡 #35，T2 的里程碑验收仍在 `fr3-lab` 上进行；#34 可先用 `lab-demo` 的 virtual 程序作为被测对象。
 
 内容：Task 版本、训练计划与审批、本机节点与 GPU 租约、作业契约、心跳、TensorBoard 启动、训练视图、训练页与待审批页、`lab-training-plan` skill。
 
