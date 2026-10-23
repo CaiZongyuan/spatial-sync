@@ -1,0 +1,53 @@
+dimensions:
+- id: finalState
+  weight: 50
+  when:
+    all:
+    - entity: /World/Lab/Tubes/Tube01
+      property: location
+      equals: /World/Lab/Centrifuge/Rotor/Slot1
+    - entity: /World/Lab/Tubes/Tube02
+      property: location
+      equals: /World/Lab/Centrifuge/Rotor/Slot3
+    - entity: /World/Lab/Centrifuge
+      property: lidOpen
+      equals: true
+    - entity: /World/Lab/Centrifuge
+      property: phase
+      equals: idle
+    - entity: $process
+      property: succeeded:/World/Lab/Centrifuge.start
+      gte: 1
+  actions:
+  - entity: /World/Lab/Centrifuge
+    action: start
+    status: succeeded
+    params: {rpm: 500, durationSeconds: 1}
+    before:
+      all:
+      - {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}
+      - {entity: /World/Lab/Tubes/Tube02, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot3}
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 12
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60
+- id: planFirst
+  weight: 10
+  when:
+    entity: $process
+    property: planFirst
+    equals: true

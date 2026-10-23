@@ -11,7 +11,9 @@ async def test_evaluation_and_explicit_launch_tickets_share_cli_mcp_http_without
     async with Client(transport, mode="legacy") as mcp:
         suite = lab[0].get("/api/v1/suites/lab-demo-pick-place/1").json()
         assert lw("suite", "show", SUITE) == await result(mcp, "suite_show", suite=SUITE) == suite
-        assert lw("suite", "ls") == await result(mcp, "suite_list") == [suite]
+        public_suites = lab[0].get("/api/v1/suites").json()["suites"]
+        assert lw("suite", "ls") == await result(mcp, "suite_list") == public_suites
+        assert suite in public_suites
         assert not any(
             private in json.dumps(suite) for private in ("4101", "4102", "9101", "held-out-example")
         )

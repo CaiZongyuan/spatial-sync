@@ -17,7 +17,7 @@ test('real embodied Suite opens from Evaluation navigation with public condition
   await expect(card).toContainText(suite.title);
   await expect(card).toContainText(`${suite.episodes.length} 个 train 回合`);
   await page.getByRole('button', { name: 'Agent', exact: true }).click();
-  await expect(page.getByText('Agent 层评估集与运行器尚未接入。', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-suite-id="suite/lab-ops-basic@1"]')).toContainText('10 个 train 题目');
   await page.getByRole('button', { name: '具身', exact: true }).click();
   await card.getByRole('link', { name: '打开计分板' }).click();
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname)).toBe('/eval/lab-demo-pick-place@1');
@@ -34,6 +34,41 @@ test('real embodied Suite opens from Evaluation navigation with public condition
   await expect(page.locator('.evaluation-center')).not.toContainText('held-out-example');
   await expect(page.getByRole('heading', { name: '角色与可见性', exact: true })).toBeVisible();
   await info.attach('real-embodied-evaluation-center.png', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+  expect(errors).toEqual([]);
+});
+
+test('real Agent Suite exposes public tasks while actual runs and formal baseline remain unavailable', async ({ page, request }, info) => {
+  const response = await request.get(`${api}/api/v1/suites/lab-ops-basic/1`);
+  expect(response.ok(), await response.text()).toBe(true);
+  const suite = await response.json();
+  expect(suite).toMatchObject({ id: 'suite/lab-ops-basic@1', layer: 'agent', scene: 'lab-demo@3', runsPerCase: 3 });
+  expect(suite.cases).toHaveLength(10);
+  const agent = await (await request.get(`${api}/api/v1/agents/lab-operator`)).json();
+  expect(agent).toMatchObject({ id: suite.target, model: null, thinking: null, referenceVersion: 1 });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/eval');
+  await page.getByRole('button', { name: 'Agent', exact: true }).click();
+  const card = page.locator(`[data-suite-id="${suite.id}"]`);
+  await expect(card).toContainText('10 个 train 题目');
+  await expect(card).toContainText(suite.target);
+  await expect(card).toContainText('尚无正式基线');
+  await expect(card).toContainText('Agent 运行器尚未接入');
+  await card.getByRole('link', { name: '打开计分板' }).click();
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname)).toBe('/eval/lab-ops-basic@1');
+  await expect(page.getByRole('heading', { name: suite.title, exact: true })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Agent 评估计分板', exact: true })).toContainText('尚无 Agent train 运行记录');
+  await expect(page.getByTestId('held-out-test-row')).toContainText('锁定');
+  const cases = page.locator('.eval-agent-cases details');
+  await expect(cases).toHaveCount(10);
+  for (const item of suite.cases) await expect(page.locator('.eval-agent-cases')).toContainText(item.id);
+  await cases.first().locator('summary').click();
+  await expect(cases.first()).toContainText(suite.cases[0].statement.trim());
+  await expect(cases.first().locator('p')).toBeVisible();
+  await expect(page.locator('.eval-chart-line')).toHaveCount(0);
+  await expect(page.locator('.evaluation-center')).not.toContainText('held-out-safe-sensor');
+  await expect(page.locator('.evaluation-center')).not.toContainText('此层的题目与运行器尚未接入');
+  await info.attach('real-agent-evaluation-center.png', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
   expect(errors).toEqual([]);
 });
 
@@ -72,8 +107,11 @@ test('condition fixture with identical public tags keeps separate curves and sur
   expect(errors).toEqual([]);
 });
 
-test('failed public read can retry and an unsupported Agent Suite stays readable', async ({ page }) => {
-  const suite = { id: 'suite/future-agent@1', title: 'Agent layer contract fixture', layer: 'agent' };
+test('failed public read can retry and an Agent Suite without runs stays readable', async ({ page }) => {
+  const suite = { id: 'suite/future-agent@1', title: 'Agent layer contract fixture', layer: 'agent',
+    contentHash: 'fixture-suite-hash', scene: 'lab-demo@3', sceneContentHash: 'fixture-scene-hash', source: 'synthetic',
+    target: 'agent/fixture-operator', split: 'train', runsPerCase: 3, cases: [{ id: 'public-task', statement: 'Public task statement.' }],
+    gradingDimensions: ['finalState'] };
   let unavailable = true;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -88,9 +126,9 @@ test('failed public read can retry and an unsupported Agent Suite stays readable
   unavailable = false;
   await page.getByRole('button', { name: '重试', exact: true }).click();
   await page.getByRole('link', { name: '打开计分板' }).click();
-  await expect(page.getByText('Agent 层题目与运行器尚未接入，暂无可展示的计分板。', { exact: true })).toBeVisible();
+  await expect(page.getByText('Agent 运行器尚未接入，暂无评估分数、Trace 或成本。正式基线需由首次完整评估建立。', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '角色与可见性', exact: true })).toBeVisible();
-  await expect(page.getByTestId('held-out-test-row')).toHaveCount(0);
+  await expect(page.getByTestId('held-out-test-row')).toContainText('锁定');
   expect(errors).toEqual([]);
 });
 

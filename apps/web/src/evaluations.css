@@ -95,6 +95,10 @@
 .evaluation-center .eval-public-cases { padding: 16px 24px; border-top: 1px solid var(--line); }
 .evaluation-center .eval-public-cases li { margin: 8px 0; overflow-wrap: anywhere; }
 .evaluation-center .eval-public-cases dl > div { display: flex; gap: 16px; }
+.evaluation-center .eval-agent-cases { padding: 8px 24px 20px; }
+.evaluation-center .eval-agent-cases details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+.evaluation-center .eval-agent-cases summary { color: var(--ink); font-size: 12px; }
+.evaluation-center .eval-agent-cases p { white-space: pre-wrap; font-size: 12px; line-height: 1.8; }
 .evaluation-center .eval-empty { padding: 36px 24px; color: var(--muted); text-align: center; font-size: 12px; }
 .evaluation-center .eval-error { border: 1px solid var(--bad); background: var(--surface); color: var(--bad); border-radius: 7px; padding: 16px; margin-bottom: 24px; font-size: 12px; }
 .evaluation-center .eval-error small { margin-top: 8px; }

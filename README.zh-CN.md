@@ -45,6 +45,11 @@ uv run --frozen --extra simulation --extra usd python -m uvicorn apps.api.app.ma
 启动、加入入口；**Resources · Compute**（`/resources/gpu`）展示主机资源与托管
 Newton 后端。这些页面每两秒刷新。**Recordings**（`/recordings`）进入录制列表，
 回放地址保持 `/replay/{id}`，仅供读取。
+**评估**（`/eval`）列出 Agent 与具身评估集。具身层展示真实运行的计分板、
+可比较条件与回放；Agent 层展示十道公开实验室操作题、固定场景和每题三次的
+运行要求，运行器、分数与正式基线尚未产生。held-out test 始终锁定。
+[Agent 与 Harness 版本](docs/AGENT_HARNESS.md)可通过 HTTP、`lw agent` 和通用
+MCP 工具查看、快照、导出、导入和分叉；模型与思考等级保留在 Harness 之外。
 侧栏可折叠并记住偏好，900 px 及以下变为顶部导航。主题默认跟随系统，也可
 手动选择并保存深浅主题。IBM Plex 拉丁字体与导航图标均随应用本地提供。
 **实况**（`/live`）展示当前仿真会话的遥测设备：真实场景等距视口、设备动作、

@@ -1,0 +1,1 @@
+Load Tube01 and Tube02 from rack A1/A2 into opposite centrifuge slots 1/3. Submit an operation Plan, centrifuge them at 500 rpm for one second, wait until idle, then open the lid. Leave both tubes in those slots.

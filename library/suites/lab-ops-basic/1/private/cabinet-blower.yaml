@@ -1,0 +1,38 @@
+dimensions:
+- id: finalState
+  weight: 50
+  when:
+    all:
+    - entity: /World/Lab/BiosafetyCabinet
+      property: blowerOn
+      equals: false
+    - entity: /World/Lab/BiosafetyCabinet
+      property: uvOn
+      equals: false
+    - entity: $process
+      property: succeeded:/World/Lab/BiosafetyCabinet.setBlower
+      gte: 1
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 12
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60
+- id: planFirst
+  weight: 10
+  when:
+    entity: $process
+    property: planFirst
+    equals: true

@@ -1,4 +1,4 @@
-"""Pinned embodied suite packages. Public projections never include private inputs."""
+"""Pinned evaluation suite packages. Public projections never include private inputs."""
 
 import json
 import re
@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from packages.info.conditions import CompiledConditions
+from packages.library.agent_suites import load_agent_suite
 from packages.library.archive import package_files
 from packages.library.common import NAME, LibraryError, content_hash, document
 from packages.protocol.schema import MAX_SESSION_SEED
@@ -66,14 +67,17 @@ class SuiteVersion:
 
 def load_suite(path, identifier, root):
     try:
+        match = SUITE_ID.fullmatch(identifier)
+        if not match:
+            raise ValueError
         files = set(package_files(path))
         data = document(path / "suite.yaml")
+        if data.get("layer") == "agent":
+            return load_agent_suite(path, identifier, root, data)
         if set(data) != {"id", "title", "layer", "scene", "sceneContentHash", "source", "episodes"}:
             raise ValueError
-        match = SUITE_ID.fullmatch(identifier)
         if (
-            not match
-            or data["id"] != "suite/" + match[1]
+            data["id"] != "suite/" + match[1]
             or data["layer"] != "embodied"
             or not isinstance(data["title"], str)
             or not data["title"]

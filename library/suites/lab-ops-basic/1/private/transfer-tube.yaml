@@ -1,0 +1,49 @@
+dimensions:
+- id: finalState
+  weight: 50
+  when:
+    all:
+    - entity: /World/Lab/Tubes/Tube01
+      property: location
+      equals: /World/Lab/Centrifuge/Rotor/Slot1
+    - entity: /World/Lab/RobotA
+      property: holding
+      equals: null
+    - entity: $process
+      property: succeeded:/World/Lab/RobotA.home
+      gte: 1
+  actions:
+  - entity: /World/Lab/RobotA
+    action: pickPlace
+    status: succeeded
+    params: {from: rack.A1, to: centrifuge.slot1}
+    before: {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Rack/A1}
+    after: {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}
+  - entity: /World/Lab/RobotA
+    action: home
+    status: succeeded
+    params: {}
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 12
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60
+- id: planFirst
+  weight: 10
+  when:
+    entity: $process
+    property: planFirst
+    equals: true

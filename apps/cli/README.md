@@ -60,6 +60,15 @@ to inspect or cancel it. It does not become the active CLI session until it star
 See [embodied evaluations](../../docs/EVALUATIONS.md) for package format, privacy,
 queue behavior and the GPU-free example.
 
+Agent metadata and Harness versions are also available before a Session exists:
+`lw agent ls|show|versions|snapshot`, `lw agent export|import|create`, and
+`lw harness diff`. Their shared command-table MCP mirrors are `agent_list`,
+`agent_show`, `agent_versions`, `agent_snapshot`, `agent_export`, `agent_import`,
+`agent_create` and `harness_diff`. Snapshots contain validated Harness files and
+environment references; model configuration stays outside them. See
+[Agent Harness versions](../../docs/AGENT_HARNESS.md) for a runnable roundtrip and
+the Agent suite's public statements and private grading.
+
 The migrated legacy commands are `ls`, `show`, `cancel`, `approve` and `rec ls`. Other
 existing commands retain their adapters, including CLI property extraction,
 action parameters, waits and simulation subcommands. The eight published MCP

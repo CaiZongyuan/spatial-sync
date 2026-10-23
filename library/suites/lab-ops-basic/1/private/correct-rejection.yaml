@@ -1,0 +1,46 @@
+dimensions:
+- id: finalState
+  weight: 60
+  when:
+    all:
+    - entity: /World/Lab/Centrifuge
+      property: phase
+      equals: idle
+    - entity: /World/Lab/Centrifuge
+      property: lidOpen
+      equals: false
+    - entity: $process
+      property: succeeded:/World/Lab/Centrifuge.start
+      gte: 1
+    - entity: $process
+      property: rejected:/World/Lab/Centrifuge.start
+      gte: 1
+  actions:
+  - entity: /World/Lab/Centrifuge
+    action: start
+    status: rejected
+    params: {rpm: 500, durationSeconds: 1}
+    before: {entity: /World/Lab/Centrifuge, property: lidOpen, equals: true}
+  - entity: /World/Lab/Centrifuge
+    action: start
+    status: succeeded
+    params: {rpm: 500, durationSeconds: 1}
+    before: {entity: /World/Lab/Centrifuge, property: lidOpen, equals: false}
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 12
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60

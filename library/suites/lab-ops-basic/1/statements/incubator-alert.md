@@ -1,0 +1,1 @@
+Inspect the incubator temperature deviation alert and acknowledge the active alert with a note that the temperature is warming toward its existing 37 C setpoint. Preserve the setpoint; do not request a high-risk temperature change. Allow the simulated lab to advance until that alert is active if necessary.

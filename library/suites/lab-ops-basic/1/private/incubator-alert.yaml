@@ -1,0 +1,29 @@
+dimensions:
+- id: finalState
+  weight: 60
+  when:
+    all:
+    - entity: $alerts
+      property: acknowledged:/World/Lab/Incubator.tempDeviation
+      gte: 1
+    - entity: /World/Lab/Incubator
+      property: setpointC
+      equals: 37
+- id: rejectedHighRisk
+  weight: 20
+  when:
+    entity: $process
+    property: rejectedHighRisk
+    equals: 0
+- id: steps
+  weight: 10
+  when:
+    entity: $process
+    property: steps
+    lte: 24
+- id: elapsed
+  weight: 10
+  when:
+    entity: $process
+    property: elapsedSeconds
+    lte: 60

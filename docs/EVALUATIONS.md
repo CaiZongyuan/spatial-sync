@@ -53,7 +53,11 @@ rate, Wilson 95% interval, elapsed time and decision. Select a row for its actua
 stage observations and episode replay links. Registered Controller versions and
 training costs display as unknown. Each complete condition group has its own
 curve and current baseline/accepted Reference; rejected candidates remain visible.
-Agent evaluation is not yet available.
+The Agent suite `suite/lab-ops-basic@1` exposes ten public laboratory tasks and its
+fixed environment at `/eval/lab-ops-basic@1`. Its model-driven execution, scores,
+Trace, costs and formal baseline remain unavailable. The page keeps held-out test
+locked. See [Agent and Harness versions](AGENT_HARNESS.md) for snapshots and the
+private final-state/process grading boundary.
 
 Use the comparison selectors to compare two public train evaluations. The HTTP
 equivalent is `GET /api/v1/suites/{name}/{revision}/scoreboard?compare=<id>&against=<id>`.
@@ -120,7 +124,7 @@ and the operator-configured user library (`LW_LIBRARY`). Restart after adding a
 new version. Suite upload/import, full Isaac Lab Task ingestion and policy
 promotion belong to their later features.
 
-Each package contains exactly three files:
+Each embodied package contains exactly three files:
 
 ```text
 suite.yaml

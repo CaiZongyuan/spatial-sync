@@ -1,0 +1,6 @@
+servers:
+  lab:
+    command: lw
+    args: [mcp]
+    env:
+      LW_URL: ${LW_URL}
