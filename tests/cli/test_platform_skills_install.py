@@ -37,7 +37,7 @@ def link_directory(link, target):
 
 def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_path(tmp_path):
     catalog = invoke(tmp_path, "skills", "ls")
-    assert [item["name"] for item in catalog] == ["lab", "lab-library", "lab-operate"]
+    assert [item["name"] for item in catalog] == ["lab", "lab-library", "lab-operate", "lab-training-plan"]
     target = tmp_path / "Agent skills with spaces"
     target.mkdir()
     other = target / "unrelated-user-skill.md"
@@ -45,7 +45,7 @@ def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_pat
     first = invoke(tmp_path, "skills", "install", "--target", str(target))
     assert first == {
         "target": str(target),
-        "installed": ["lab", "lab-library", "lab-operate"],
+        "installed": ["lab", "lab-library", "lab-operate", "lab-training-plan"],
         "unchanged": [],
     }
     timestamps = {}
@@ -61,7 +61,7 @@ def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_pat
     assert repeated == {
         "target": str(target),
         "installed": [],
-        "unchanged": ["lab", "lab-library", "lab-operate"],
+        "unchanged": ["lab", "lab-library", "lab-operate", "lab-training-plan"],
     }
     assert all((target / name / "SKILL.md").stat().st_mtime_ns == stamp for name, stamp in timestamps.items())
     assert other.read_bytes() == b"keep exact user content"

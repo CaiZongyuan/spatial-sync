@@ -1,0 +1,18 @@
+.training-plan-details { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; color: var(--ink); }
+.training-plan-details > section { min-width: 0; }
+.training-plan-details h3 { margin-top: 0; font-family: var(--serif); }
+.training-plan-details h4 { margin: 22px 0 8px; }
+.training-plan-details pre { margin: 0; font: 12px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.training-plan-facts { margin: 0; display: grid; gap: 10px; }
+.training-plan-facts > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; }
+.training-plan-facts dt { color: var(--muted); font-size: 12px; }
+.training-plan-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
+.training-hypotheses { padding-left: 20px; font-size: 13px; }
+.training-hypotheses p { margin: 5px 0; }
+.training-diff-scroll { overflow: auto; max-height: 320px; border: 1px solid var(--line); }
+.training-diff-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.training-diff-scroll th, .training-diff-scroll td { vertical-align: top; padding: 8px; text-align: left; border-bottom: 1px solid var(--line); }
+.training-diff-scroll td { min-width: 130px; }
+.training-interview { padding: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; }
+.training-plan-panel { padding: 20px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; }
+@media (max-width: 1100px) { .training-plan-details { grid-template-columns: minmax(0, 1fr); } }

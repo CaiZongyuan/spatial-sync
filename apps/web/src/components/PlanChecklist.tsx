@@ -6,11 +6,11 @@ import { useInvocations } from '../lib/info/hooks';
 import { planChanges, stepCommand, stepEntity, stepInvocationStatus, type PlanDocument, type PlanStep } from '../lib/plans/model';
 import type { PlanEntry } from '../lib/plans/store';
 
-const planStates: Record<OperationPlan['status'], [string, string]> = {
+const planStates: Record<OperationPlan['status'] | 'rejected', [string, string]> = {
   draft: ['草稿', 'na'], submitted: ['待审批', 'warn'], approved: ['已批准', 'ok'], running: ['运行中', 'run'],
-  completed: ['已完成', 'ok'], abandoned: ['已终止', 'na'],
+  completed: ['已完成', 'ok'], abandoned: ['已终止', 'na'], rejected: ['已驳回', 'warn'],
 };
-export function PlanStatus({ status }: { status: OperationPlan['status'] }) {
+export function PlanStatus({ status }: { status: OperationPlan['status'] | 'rejected' }) {
   const [label, tone] = planStates[status];
   return <span className={`plan-chip ${tone}`}><i aria-hidden="true" />{label}</span>;
 }

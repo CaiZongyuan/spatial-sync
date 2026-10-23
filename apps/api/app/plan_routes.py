@@ -24,6 +24,7 @@ def plan_context(plan_id=None, step_id=None, revision=None):
 
 def install_plan_routes(app, manager, role_for):
     store = manager.plans
+    training = manager.training_plans
 
     @app.exception_handler(PlanError)
     async def plan_error(request, error):
@@ -62,13 +63,21 @@ def install_plan_routes(app, manager, role_for):
     @app.post("/api/v1/plans", status_code=201)
     async def create_plan(body: dict[str, Any], request: Request):
         actor = operator(request)
+        if body.get("kind") == "training":
+            if body.get("id") in store.records:
+                raise PlanError("plan_exists", "Plan ID already exists")
+            return training.submit(body, actor)
         payload, session = target(body)
         await session.action_pipeline()
+        if payload.get("id") in training.records:
+            raise PlanError("plan_exists", "Plan ID already exists")
         return store.document(await store.create(payload, session, actor))
 
     @app.post("/api/v1/plans/{plan_id}/revisions", status_code=201)
     async def revise_plan(plan_id: str, body: dict[str, Any], request: Request):
         actor = operator(request)
+        if plan_id in training.records:
+            return training.submit(body, actor, plan_id=plan_id)
         payload, session = target(body)
         await session.action_pipeline()
         return store.document(await store.create(payload, session, actor, plan_id=plan_id))
@@ -77,23 +86,26 @@ def install_plan_routes(app, manager, role_for):
     async def plans(kind: str | None = None, status: str | None = None):
         store.require_started()
         await store.flush()
-        return {
-            "plans": [
+        documents = [
                 store.document(record)
                 for record in store.records.values()
-                if (kind is None or kind == record.plan.kind)
-                and (status is None or status == record.plan.status)
-            ]
-        }
+            ] + [training.document(record) for record in training.records.values()]
+        return {"plans": [value for value in documents
+                          if (kind is None or kind == value["kind"])
+                          and (status is None or status == value["status"])]}
 
     @app.get("/api/v1/plans/{plan_id}")
     async def plan(plan_id: str, revision: int | None = None):
         await store.flush()
+        if plan_id in training.records:
+            return training.document(training.get(plan_id, revision))
         return store.document(store.get(plan_id, revision))
 
     @app.get("/api/v1/plans/{plan_id}/steps/{step_id}/preview")
     async def preview(plan_id: str, step_id: int = Path(ge=1), revision: int | None = Query(None, ge=1)):
         await store.flush()
+        if plan_id in training.records:
+            raise PlanError("unknown_plan_step", "Training plans have no device steps", status=404)
         record = store.get(plan_id, revision)
         session = information_target(manager, record.sessionId)
         if session is None:

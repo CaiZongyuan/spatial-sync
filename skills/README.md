@@ -4,7 +4,8 @@
 loop. `lab-operate` observes the actual Catalog and state, invokes generic
 actions, corrects refusals and verifies outcomes. `lab-library` discovers and
 imports assets/scenes, reads completeness and validation, and revalidates exact
-immutable versions. All three reserve approvals and
+immutable versions. `lab-training-plan` interviews the user, snapshots a Task
+and submits measurable hypotheses for human approval. All four reserve approvals and
 Vault writes for a person, including when a user asks an agent to bypass them.
 Later workflows are explicitly marked unavailable in this release.
 
@@ -17,7 +18,8 @@ lw skills install --target "/path/to/agent skills" --json
 ```
 
 `--target` is the parent skill directory: the installer creates `lab/SKILL.md`
-`lab-library/SKILL.md` and `lab-operate/SKILL.md` beneath it. Quoted paths containing spaces work.
+`lab-library/SKILL.md`, `lab-operate/SKILL.md` and `lab-training-plan/SKILL.md` beneath it.
+Quoted paths containing spaces work.
 The default is `~/.claude/skills` (Claude Code's user skill directory); choose
 another agent's directory explicitly with `--target`.
 

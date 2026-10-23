@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 LW = Path(sys.executable).parent / ("lw.exe" if os.name == "nt" else "lw")
 TOOLS = {
+    "task_push", "task_list", "task_show", "plan_submit",
     "model_ls",
     "agent_list", "agent_show", "agent_versions", "agent_snapshot", "agent_export", "agent_import",
     "agent_create", "harness_diff",

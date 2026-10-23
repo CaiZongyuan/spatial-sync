@@ -8,6 +8,7 @@ import { previewBodies, type AvailablePreview, type PlanDocument } from '../lib/
 import { PlanChecklist, PlanStatus, defaultStep } from './PlanChecklist';
 import { SceneViewport, type InspectVisuals, type InspectPreview, type RenderMetrics, type RenderedPose } from './viewer/SceneViewport';
 import '../plans.css';
+import { TrainingPlanDetails } from './TrainingPlanDetails';
 
 declare global { interface Window { __planViewDebug?: () => ReturnType<InspectPreview> | undefined } }
 const planLayers = { colliders: false, sites: false, origins: false, grid: true };
@@ -108,22 +109,27 @@ function StageStrip({ count }: { count?: number }) {
 export function PlansPage({ planId }: { planId?: string }) {
   const result = usePlansList(), navigate = useNavigate(), search = useSearch({ strict: false });
   const query = search.q ?? '', status = search.status ?? '';
+  const selected = result.plans?.find(plan => plan.id === planId);
+  const training = result.plans?.some(plan => plan.kind === 'training');
   const plans = result.plans?.filter(value => (!status || value.status === status)
     && `${value.id} ${value.title} ${value.requestedBy.name}`.toLowerCase().includes(query.toLowerCase()));
   useEffect(() => { if (!planId && plans?.[0]) void navigate({ to: '/plans/$planId', params: { planId: plans[0].id }, replace: true,
     search: previous => ({ ...previous, step: undefined }) }); }, [planId, plans?.[0]?.id, navigate]);
   return <main className="plans-page" data-testid="plans-page"><header className="plans-heading"><div><span className="eyebrow">LAB OPERATIONS</span><h1>计划</h1><p>先写意图，再逐步执行。每一步都与真实结果相连。</p></div>
-    <span className="plan-tag">操作计划 {result.plans?.length ?? '—'}</span></header><StageStrip count={result.plans?.length} />
+    <span className="plan-tag">{training ? '计划' : '操作计划'} {result.plans?.length ?? '—'}</span></header><StageStrip count={result.plans?.length} />
     <section className="plan-list-panel" aria-label="计划列表"><div className="plan-list-toolbar"><h2>操作计划</h2><div><label>搜索<input aria-label="搜索计划" value={query} placeholder="名称、ID 或提交者"
       onChange={event => void navigate({ to: '.', search: prior => ({ ...prior, q: event.target.value || undefined }) })} /></label><label>状态<select aria-label="筛选计划状态" value={status}
         onChange={event => void navigate({ to: '.', search: prior => ({ ...prior, status: event.target.value || undefined }) })}>
-        <option value="">全部状态</option>{['draft', 'submitted', 'approved', 'running', 'completed', 'abandoned'].map(value => <option key={value} value={value}>{({ draft: '草稿', submitted: '待审批', approved: '已批准', running: '运行中', completed: '已完成', abandoned: '已终止' } as Record<string, string>)[value]}</option>)}</select></label></div></div>
+        <option value="">全部状态</option>{['draft', 'submitted', 'approved', 'running', 'completed', 'abandoned', 'rejected'].map(value => <option key={value} value={value}>{({ draft: '草稿', submitted: '待审批', approved: '已批准', running: '运行中', completed: '已完成', abandoned: '已终止', rejected: '已驳回' } as Record<string, string>)[value]}</option>)}</select></label></div></div>
       {result.error && <p className="plan-inline-error" role="status">计划列表暂不可用：{result.error} <button onClick={result.retry}>重试</button></p>}
-      {!result.plans ? <div className="plan-loading" role="status" aria-busy="true">正在读取计划…<i /><i /></div> : plans?.length ? <div className="plan-table-scroll"><table className="plan-table"><thead><tr><th>计划</th><th>名称与提交者</th><th>种类</th><th>状态</th><th className="number">修订</th><th>审批方式</th></tr></thead><tbody>{plans.map((plan: PlanDocument) =>
+      {!result.plans ? <div className="plan-loading" role="status" aria-busy="true">正在读取计划…<i /><i /></div> : plans?.length ? <div className="plan-table-scroll"><table className="plan-table"><thead><tr><th>计划</th><th>名称与提交者</th><th>种类</th><th>状态</th><th className="number">修订</th><th>审批方式</th></tr></thead><tbody>{plans.map(plan =>
         <tr key={plan.id} className={plan.id === planId ? 'is-selected' : ''}><td><Link to="/plans/$planId" params={{ planId: plan.id }} search={prior => ({ ...prior, step: undefined })}><code>{plan.id}</code></Link></td>
           <td><Link to="/plans/$planId" params={{ planId: plan.id }} search={prior => ({ ...prior, step: undefined })}>{plan.title}</Link><small>{plan.requestedBy.kind} · {plan.requestedBy.name}</small></td>
-          <td><span className="plan-tag">操作计划</span></td><td><PlanStatus status={plan.status} /></td><td className="number">r{plan.revision}</td><td>{plan.approvalMode === 'auto' ? '自动批准' : '人工审批'}</td></tr>)}</tbody></table></div> :
+          <td><span className="plan-tag">{plan.kind === 'training' ? '训练计划' : '操作计划'}</span></td><td><PlanStatus status={plan.status} /></td><td className="number">r{plan.revision}</td><td>{plan.approvalMode === 'auto' ? '自动批准' : '人工审批'}</td></tr>)}</tbody></table></div> :
         <div className="plan-empty">{result.plans.length ? '没有符合筛选的计划。' : <>尚无操作计划。由 agent 使用 <code>lw plan create</code> 提交，计划会在这里显示。</>}</div>}</section>
-    {planId && <PlanConnection key={planId} id={planId} />}
+    {selected?.kind === 'training' ? <section className="training-plan-panel" aria-label="训练计划详情">
+      <h2>{selected.title} · r{selected.revision}</h2><PlanStatus status={selected.status} />
+      <TrainingPlanDetails plan={selected} changes={selected.changes} /></section> :
+      planId && result.plans && <PlanConnection key={planId} id={planId} />}
   </main>;
 }

@@ -186,6 +186,21 @@ class GatewayClient:
         return await self.request("DELETE", self._library_path(id), actor=actor)
 
     async def library_import(self, directory, *, actor="cli:lw"):
+        return await self._upload_directory(directory, "/api/v1/library/imports", actor)
+
+    async def task_push(self, directory, *, actor="cli:lw"):
+        return await self._upload_directory(directory, "/api/v1/tasks", actor)
+
+    async def tasks_list(self):
+        return (await self.request("GET", "/api/v1/tasks"))["tasks"]
+
+    async def task_show(self, id):
+        match = re.fullmatch(r"task/([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)", id)
+        if not match:
+            raise ValueError("Select an exact task/name@revision")
+        return await self.request("GET", f"/api/v1/tasks/{match[1]}/{match[2]}")
+
+    async def _upload_directory(self, directory, route, actor):
         # The gateway independently validates paths, schema and upload/expansion limits.
         try:
             root = Path(directory).expanduser().resolve()
@@ -209,7 +224,7 @@ class GatewayClient:
 
                 return await self.request(
                     "POST",
-                    "/api/v1/library/imports",
+                    route,
                     content=chunks(),
                     headers={"Content-Type": "application/x-tar"},
                     actor=actor,
@@ -486,9 +501,17 @@ class GatewayClient:
                                   json={**document, "sessionId": session_id})
 
     async def plan_revise(self, id, document, *, actor="cli:lw"):
+        if document.get("kind") == "training":
+            return await self.request("POST", "/api/v1/plans/" + quote(id, safe="") + "/revisions",
+                                      actor=actor, json=document)
         session_id = (await self.route()).rsplit("/", 1)[-1]
         return await self.request("POST", "/api/v1/plans/" + quote(id, safe="") + "/revisions", actor=actor,
                                   json={**document, "sessionId": session_id})
+
+    async def plan_submit(self, document, *, actor="cli:lw"):
+        if document.get("kind") != "training":
+            raise ValueError("plan submit requires kind: training")
+        return await self.request("POST", "/api/v1/plans", actor=actor, json=document)
 
     async def plan_show(self, id, revision=None):
         return await self.request("GET", "/api/v1/plans/" + quote(id, safe=""),

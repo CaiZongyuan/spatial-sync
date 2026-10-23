@@ -76,10 +76,16 @@ episode:
 success:                             # 平台条件语言（信息规格 §4.3）
   all:
     - {entity: /World/Lab/Tubes/Tube01, property: location, equals: centrifuge.slot1}
-    - {entity: /World/Lab/RobotA, property: gripper, equals: open}
+    - {entity: /World/Lab/RobotA, property: gripperWidth, equals: 0.04}
 control: {hz: 30, action: joint_position_delta}
 observation: obs_spec.yaml           # 观测与动作规格，供一致性测试（§8.2）
 isaaclab: {task_id: Lab-FR3-Pick-Tube-v0, presets: [newton_mjwarp]}
+evaluation:                           # 固定评估声明（§7）
+  scene: fr3-lab@2
+  episodes: 100
+  seeds: [42, 43]
+  params: {from: [rack.A1, rack.A2], to: [centrifuge.slot1, centrifuge.slot2]}
+loopBudget: {gpuHours: 18, episodes: 1000, days: 7}   # 目标闭环预算（§8.9）
 ```
 
 - 环境配置加载 `scene` 指向的 Scene Version 的 USD：只取 `/World/Lab/**`，按环境数复制。
