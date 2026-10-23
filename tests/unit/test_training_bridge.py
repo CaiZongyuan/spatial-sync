@@ -58,7 +58,14 @@ def test_registration_installs_after_learn_export_bound_to_exact_final_checkpoin
     module = types.ModuleType("rsl_rl.runners")
     module.OnPolicyRunner = Runner
     monkeypatch.setitem(sys.modules, "rsl_rl.runners", module)
-    assert bridge_callback.install() == [] and order == []
+    # The frozen Isaac CLI intersects remaining argv with this return value.
+    # None preserves every override; [] would silently remove CPU and preset selection.
+    returned = bridge_callback.install()
+    assert returned is None and order == []
+    overrides = ["presets=newton_mjwarp", "env.sim.physics.solver_cfg.use_mujoco_cpu=true",
+                 "agent.device=cpu", "agent.num_steps_per_env=16", "agent.algorithm.learning_rate=0.001"]
+    retained = overrides if returned is None else [argument for argument in overrides if argument in returned]
+    assert retained == overrides
     Runner().learn()
     assert order == ["learn", "export"]
     export = json.loads((output / "export.json").read_text())

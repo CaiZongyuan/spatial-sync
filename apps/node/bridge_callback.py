@@ -78,4 +78,4 @@ def install():
         return result
 
     OnPolicyRunner.learn = learn
-    return []
+    return None
