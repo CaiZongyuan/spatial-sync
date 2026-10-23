@@ -42,6 +42,10 @@ class NewtonSimulation:
                     njmax=2048,
                     nconmax=2048,
                 )
+                if self.model.device.is_cpu:
+                    from .mujoco_bvh import normalize_body_bvh
+
+                    normalize_body_bvh(self.solver.mj_model)
                 self.collision_pipeline, self.contacts = None, None
             else:
                 self.solver = (
