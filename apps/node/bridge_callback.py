@@ -5,6 +5,7 @@ import importlib.metadata
 import json
 import os
 import statistics
+import sys
 import time
 from pathlib import Path
 
@@ -33,6 +34,22 @@ def install():
     }
     if versions["versions"]["rsl_rl"] != inputs["plan"]["algorithm"]["version"]:
         raise RuntimeError("Installed RSL-RL version differs from the approved plan")
+    declared = inputs.get("task", {})
+    presets = declared.get("isaaclab", {}).get("presets", []) if isinstance(declared, dict) else []
+    if not presets:
+        presets = next(
+            (arg.split("=", 1)[1].split(",") for arg in sys.argv if arg.startswith("presets=")), []
+        )
+    if (
+        versions["hardware"]["device"] == "cpu"
+        and versions["versions"]["isaaclab"] == "3.0.0"
+        and versions["versions"]["newton"] == "1.6.0rc1"
+        and "newton_mjwarp" in presets
+    ):
+        raise RuntimeError(
+            "This frozen IsaacLab3/Newton1.6 native CPU runtime lacks contact reporting; "
+            "no approved environment count or physics setting was changed"
+        )
     (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
     original_learn = OnPolicyRunner.learn
 

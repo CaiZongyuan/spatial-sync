@@ -92,7 +92,9 @@ def trainer_arguments(inputs, callback):
         if "activation" in plan["model"]:
             command.append(f"agent.{name}.activation={plan['model']['activation']}")
     if job["executionDevice"] == "cpu":
-        command.extend(["env.sim.physics.solver_cfg.use_mujoco_cpu=true", "agent.device=cpu"])
+        command.append("agent.device=cpu")
+        if "newton_mjwarp" in task["isaaclab"]["presets"]:
+            command.append("env.sim.physics.solver_cfg.use_mujoco_cpu=true")
     return command
 
 
@@ -125,6 +127,21 @@ class OwnedRun:
         finally:
             process.close()
 
+    def _request(self, http, method, url, **arguments):
+        while True:
+            try:
+                response = http.request(method, url, **arguments)
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code < 500:
+                    raise
+            except httpx.TransportError:
+                pass
+            if self.cancel.wait(0.1) or time.monotonic() - self.started > self.node.timeout:
+                self.cancel.set()
+                raise InterruptedError("Owned job stopped while waiting for gateway recovery")
+
     def run(self):
         try:
             if self.root.exists():
@@ -142,18 +159,23 @@ class OwnedRun:
             env = dict(os.environ)
             for name in ("SPATIAL_NODE_TOKEN", "LW_TOKEN"):
                 env.pop(name, None)
-            env.update(PXR_WORK_THREAD_LIMIT="1", PYTHONIOENCODING="utf-8")
+            env.update(
+                PXR_WORK_THREAD_LIMIT="1",
+                PYTHONIOENCODING="utf-8",
+                PYTHONDONTWRITEBYTECODE="1",
+                WARP_CACHE_PATH=str(self.root / "warp-cache"),
+                TORCH_EXTENSIONS_DIR=str(self.root / "torch-cache"),
+                TRITON_CACHE_DIR=str(self.root / "triton-cache"),
+            )
             with httpx.Client(
                 base_url=self.node.url, headers=self.headers(), trust_env=False, timeout=60
             ) as http:
-                response = http.get(f"/api/v1/jobs/{self.assignment['jobId']}/inputs")
-                response.raise_for_status()
+                response = self._request(http, "GET", f"/api/v1/jobs/{self.assignment['jobId']}/inputs")
                 inputs = response.json()
                 for index, package in enumerate(inputs["packages"]):
                     target = self.root / "inputs" / str(index)
                     target.mkdir(parents=True)
-                    response = http.get(package["url"])
-                    response.raise_for_status()
+                    response = self._request(http, "GET", package["url"])
                     extract_package(io.BytesIO(response.content), target)
                     if content_hash(target) != package["contentHash"]:
                         raise ValueError("Downloaded input content differs from the approved hash")
@@ -264,12 +286,13 @@ class OwnedRun:
                         shutil.copyfile(file, target)
                 for name in ("stdout.log", "stderr.log"):
                     shutil.copyfile(self.root / name, output / name)
-                response = http.post(
+                response = self._request(
+                    http,
+                    "POST",
                     f"/api/v1/jobs/{self.assignment['jobId']}/artifacts",
                     content=pack_package(output),
                     headers={"Content-Type": "application/x-tar"},
                 )
-                response.raise_for_status()
                 self.status = "succeeded"
         except BaseException as error:
             self.reason = str(error)
@@ -423,7 +446,11 @@ class LocalNode:
                                 raise RuntimeError("Node cannot replace an owned live dispatch")
                             if assignment["cancel"]:
                                 self.active[identity].cancel.set()
-                    except httpx.HTTPError:
+                    except httpx.HTTPStatusError as error:
+                        if error.response.status_code < 500:
+                            for owned in self.active.values():
+                                owned.cancel.set()
+                    except httpx.TransportError:
                         pass  # Preserve process ownership and retry the same reports after gateway recovery.
                     await asyncio.sleep(self.interval)
             finally:
@@ -445,7 +472,9 @@ def main():
     parser.add_argument("--interval", type=float, default=10)
     parser.add_argument("--timeout", type=float, default=86400)
     args = parser.parse_args()
-    capabilities_path = Path(args.capabilities) if args.capabilities else Path(args.root) / "capabilities.json"
+    capabilities_path = (
+        Path(args.capabilities) if args.capabilities else Path(args.root) / "capabilities.json"
+    )
     if args.capabilities:
         capabilities = json.loads(capabilities_path.read_text(encoding="utf-8"))
     else:
