@@ -71,3 +71,22 @@ async def evaluation_alert_barrier(token: str):
 @app.post("/e2e/evaluation-alert-barriers/{token}/release")
 async def release_evaluation_alert_barrier(token: str):
     return app.state.evaluation_alert_barriers.release(token)
+
+
+@app.post("/e2e/training-node")
+async def training_node(payload: dict):
+    from packages.training.job_contract import NodeHeartbeat
+    from packages.training.jobs import profile_key
+
+    manager = app.state.manager
+    plan = manager.training_plans.document(manager.training_plans.get(payload["planId"]))
+    task = manager.tasks.show(plan["task"])
+    owner = manager.jobs.nodes.get("local", {})
+    body = {"instanceId": owner.get("instanceId", "browser-budget-fixture"),
+            "hardware": "GPU-free browser budget fixture",
+            "gpus": [{"id": "fixture-gpu", "name": "No physical GPU is used"}],
+            "profiles": [{"key": profile_key(plan, task["contentHash"], "GPU-free browser budget fixture",
+                                              "fixture-gpu"), "iterationSeconds": 36, "setupSeconds": 0,
+                          "samples": 1, "measuredAt": 1, "evidence": "Controlled test input"}],
+            "reports": payload.get("reports", [])}
+    return manager.jobs.heartbeat(NodeHeartbeat.model_validate(body))

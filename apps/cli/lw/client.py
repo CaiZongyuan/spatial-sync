@@ -513,6 +513,30 @@ class GatewayClient:
             raise ValueError("plan submit requires kind: training")
         return await self.request("POST", "/api/v1/plans", actor=actor, json=document)
 
+    async def job_start(self, planId, seed=None, planRevision=None, requestId=None, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/jobs", actor=actor, json={
+            "planId": planId, "seed": seed, "planRevision": planRevision,
+            "requestId": requestId or uuid.uuid4().hex,
+        })
+
+    async def job_list(self, plan=None, status=None, kind=None):
+        values = {key: value for key, value in {"plan": plan, "status": status, "kind": kind}.items()
+                  if value is not None}
+        return (await self.request("GET", "/api/v1/jobs", params=values))["jobs"]
+
+    async def job_show(self, id):
+        return await self.request("GET", "/api/v1/jobs/" + quote(id, safe=""))
+
+    async def job_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/jobs/" + quote(id, safe="") + "/cancel", actor=actor)
+
+    async def job_logs(self, id, after=0, follow=False):
+        return await self.request("GET", "/api/v1/jobs/" + quote(id, safe="") + "/logs",
+                                  params={"after": after, "timeoutSeconds": 10 if follow else 0}, timeout=15)
+
+    async def node_list(self):
+        return (await self.request("GET", "/api/v1/nodes"))["nodes"]
+
     async def plan_show(self, id, revision=None):
         return await self.request("GET", "/api/v1/plans/" + quote(id, safe=""),
                                   params={"revision": revision} if revision is not None else {})

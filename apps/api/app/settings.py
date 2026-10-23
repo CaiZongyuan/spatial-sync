@@ -1,6 +1,8 @@
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,15 @@ class Settings:
     operator_token: str | None = None
     viewer_token: str | None = None
     remote_requests_per_minute: int = 120
+    node_token: str | None = field(default_factory=lambda: os.getenv("SPATIAL_NODE_TOKEN"))
+    node_trainer: tuple[str, ...] = field(default_factory=lambda: tuple(json.loads(
+        os.getenv("SPATIAL_NODE_TRAINER", "[]"))))
+    node_capabilities: Path | None = field(default_factory=lambda: (
+        Path(os.environ["SPATIAL_NODE_CAPABILITIES"]) if os.getenv("SPATIAL_NODE_CAPABILITIES") else None))
+    node_gateway_url: str = field(default_factory=lambda: os.getenv(
+        "SPATIAL_NODE_GATEWAY_URL", "http://127.0.0.1:8000"))
+    node_interval: float = 10
+    node_job_timeout: float = 86400
     scene_previews_root: Path = field(
         default_factory=lambda: Path(os.getenv(
             "SPATIAL_SCENE_PREVIEWS_ROOT", "~/.spatial-sync/cache/scene-previews"
@@ -46,6 +57,13 @@ class Settings:
     ))
 
     def __post_init__(self):
+        node_url = urlsplit(self.node_gateway_url)
+        if (node_url.scheme not in ("http", "https")
+                or node_url.hostname not in ("127.0.0.1", "localhost", "::1")
+                or node_url.username or node_url.password or node_url.query or node_url.fragment):
+            raise ValueError("The local node gateway URL must be an explicit loopback HTTP(S) address")
+        if not 0 < self.node_interval <= 30 or self.node_job_timeout <= 0:
+            raise ValueError("Node heartbeat interval and job timeout must be positive and bounded")
         if self.recordings_keep < 1:
             raise ValueError("recordings_keep must be positive")
         if self.live_retention_days < 1:

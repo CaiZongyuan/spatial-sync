@@ -58,6 +58,7 @@ class InboxStore:
         self._messages = []
         self._approvals = {}
         self._plans = {}
+        self._jobs = {}
         self._tail = None
 
     def startup(self):
@@ -103,6 +104,8 @@ class InboxStore:
             self._approvals[data["approvalId"]] = data
         elif message["kind"] == "plan":
             self._plans[data["id"]] = data
+        elif message["kind"] == "job":
+            self._jobs[data["jobId"]] = data
 
     def _require_available(self):
         if not self._started or self._failure or self.journal.error:
@@ -163,6 +166,17 @@ class InboxStore:
         with self._lock:
             try:
                 self._append(selected, event, message.model_dump(mode="json"), session_id)
+            except Exception as error:
+                self._failed_publication(error)
+
+    def job(self, record):
+        with self._lock:
+            try:
+                data = {key: record[key] for key in (
+                    "jobId", "kind", "status", "planId", "planRevision", "task", "seed", "reason",
+                )}
+                if self._jobs.get(record["jobId"]) != data:
+                    self._append("job", record["status"], data)
             except Exception as error:
                 self._failed_publication(error)
 

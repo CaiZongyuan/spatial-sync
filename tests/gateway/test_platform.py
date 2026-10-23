@@ -173,11 +173,14 @@ async def test_http_platform_exposes_loading_while_existing_health_and_session_r
         ))
         try:
             await asyncio.wait_for(started.wait(), 5)
-            for _ in range(100):
-                response = (await client.get("/api/v1/platform")).json()
-                if response["sessions"]:
-                    break
-                await asyncio.sleep(0.002)
+            # A cached registration row can precede the loading source's first backend sample.
+            async with asyncio.timeout(5):
+                while True:
+                    response = (await client.get("/api/v1/platform")).json()
+                    if (response["summary"]["newtonBackends"] == 1
+                            and response["sessions"][0]["state"] == "LOADING"):
+                        break
+                    await asyncio.sleep(0.01)
             assert response["summary"]["newtonBackends"] == 1
             pending = response["sessions"][0]
             assert pending["state"] == "LOADING"

@@ -8,6 +8,7 @@ import hmac
 import json
 import math
 import os
+import re
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -32,6 +33,7 @@ from apps.api.app.evaluations import EvaluationService, install_evaluation_route
 from apps.api.app.history_routes import install_history_routes
 from apps.api.app.inbox_routes import install_inbox_routes
 from apps.api.app.info_routes import actor_from_headers, install_info_routes
+from apps.api.app.job_routes import install_job_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
 from apps.api.app.live_routes import install_live_routes
@@ -154,6 +156,7 @@ def create_app(
         live=lambda: manager.live,
         suites=evaluations.suites,
         tasks=manager.tasks,
+        jobs=manager.jobs.reference_snapshot,
     )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
 
@@ -214,6 +217,7 @@ def create_app(
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
+    install_job_routes(app, manager, lambda headers: _role(headers, settings))
     install_task_routes(app, manager.tasks, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
@@ -225,6 +229,11 @@ def create_app(
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):
+        if (manager.jobs.authenticated_node(request.headers) and re.fullmatch(
+            r"/api/v1/(?:nodes/local/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
+            request.url.path,
+        )):
+            return await call_next(request)
         if (
             settings.remote
             and request.url.path.startswith(("/api/v1", "/recordings/"))

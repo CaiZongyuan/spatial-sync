@@ -115,6 +115,31 @@ def description_arguments(default, metavar="id"):
 
 
 COMMANDS = (
+    Command(path=("job", "start"), help="Queue a declared seed of an approved training plan.",
+            method="job_start", arguments=(
+                Argument("planId", ("planId",), str, "Current approved training plan ID"),
+                Argument("seed", ("--seed",), int | None, "One of the declared seeds", None),
+                Argument("planRevision", ("--revision",), int | None, "Expected approved revision", None),
+                Argument("requestId", ("--request-id",), str | None, "Stable retry identity", None),
+            ), mcp_name="job_start", actor=True),
+    Command(path=("job", "ls"), help="List retained jobs and their real queue/approval state.",
+            method="job_list", arguments=(
+                Argument("plan", ("--plan",), str | None, "Plan ID", None),
+                Argument("status", ("--status",), str | None, "Lifecycle status", None),
+                Argument("kind", ("--kind",), str | None, "Job kind", None),
+            ), output_type=list[dict[str, Any]], mcp_name="job_list"),
+    Command(path=("job", "show"), help="Read a Job's pinned inputs, progress and artifacts.",
+            method="job_show", arguments=(Argument("id", ("id",), str, "Job ID"),), mcp_name="job_show"),
+    Command(path=("job", "cancel"), help="Cancel a job; release its lease after owned cleanup.",
+            method="job_cancel", arguments=(Argument("id", ("id",), str, "Job ID"),),
+            mcp_name="job_cancel", actor=True),
+    Command(path=("job", "logs"), help="Read log chunks; CLI --follow continues until complete.",
+            method="job_logs", arguments=(Argument("id", ("id",), str, "Job ID"),
+                Argument("after", ("--after",), int, "Cursor from a previous chunk", 0),
+                Argument("follow", ("--follow",), bool, "Wait for output; CLI repeats bounded reads", False)),
+            mcp_name="job_logs"),
+    Command(path=("node", "ls"), help="Read actual node capabilities, profiles, leases and queue.",
+            method="node_list", output_type=list[dict[str, Any]], mcp_name="node_ls"),
     Command(
         path=("task", "push"), help="Snapshot an Isaac Lab Task source package without executing it.",
         method="task_push",

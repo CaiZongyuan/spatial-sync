@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import threading
 import time
 import uuid
 from collections import OrderedDict, deque
@@ -50,6 +51,7 @@ from packages.protocol.schema import (
     TransformFrame,
     validate_command_args,
 )
+from packages.training.jobs import TrainingJobs
 from packages.training.plans import TrainingPlanStore
 from packages.transport import FrameCodec
 
@@ -1102,9 +1104,11 @@ class SessionManager:
         self._starting_session: Session | None = None
         self._session_view: tuple[Session, ...] = ()
         self._create_lock = asyncio.Lock()
+        self._resource_lock = threading.RLock()
         self._startup_lock = asyncio.Lock()
         self._information_started = False
         self.evaluations = None
+        self.jobs = TrainingJobs(self)
 
     async def startup(self):
         async with self._startup_lock:
@@ -1114,6 +1118,8 @@ class SessionManager:
             self.approvals.startup()
             self.plans.startup()
             self.training_plans.startup()
+            self.jobs.startup()
+            self.jobs._worker = asyncio.create_task(self.jobs.run(), name="training-job-reconciliation")
             self.inbox.reconcile(list(self.approvals.records.values()), list(self.plans.records.values()))
             await self.plans.flush()
             await self.inbox.flush()
@@ -1141,29 +1147,34 @@ class SessionManager:
                     if not selected.metadata["stage"].startswith("python:") and selected_source != "newton":
                         raise HTTPException(503, {"code": "source_unavailable",
                                                   "message": "This source does not load USD scene packages"})
-                    for session in self.sessions.values():
-                        if not session.holds_resources:
-                            continue
-                        if (not evaluation_id and not session.evaluation_id
-                                and session.scene_version.id == selected.id
-                                and session.kind == selected_source):
-                            return session
-                        raise HTTPException(409, {
-                            "code": "session_exists",
-                            "message": "Close the active session before starting another scene",
-                        })
-                    session = Session(
-                        selected.name, selected_source, options, self.settings, self.factory,
-                        self.recordings, self.approvals, self.plans, scene_version=selected,
-                        inbox=self.inbox,
-                        evaluation_id=evaluation_id,
-                        on_closed=lambda: self.evaluations and self.evaluations.wake(),
-                    )
-                    if evaluation_id:
-                        self.recordings.pin(session.session_id)
-                    self._starting_session = session
-                    self._session_view = (*self.sessions.values(), session)
-                    return session
+                    # Order: asset/import -> resource; resource sections never acquire library locks.
+                    with self._resource_lock:
+                        for session in self.sessions.values():
+                            if not session.holds_resources:
+                                continue
+                            if (not evaluation_id and not session.evaluation_id
+                                    and session.scene_version.id == selected.id
+                                    and session.kind == selected_source):
+                                return session
+                            raise HTTPException(409, {
+                                "code": "session_exists",
+                                "message": "Close the active session before starting another scene",
+                            })
+                        session = Session(
+                            selected.name, selected_source,
+                            options.model_copy(update={"device": "cpu"})
+                            if selected_source == "newton" and self.jobs.holds_gpu() else options,
+                            self.settings, self.factory,
+                            self.recordings, self.approvals, self.plans, scene_version=selected,
+                            inbox=self.inbox,
+                            evaluation_id=evaluation_id,
+                            on_closed=lambda: self.evaluations and self.evaluations.wake(),
+                        )
+                        if evaluation_id:
+                            self.recordings.pin(session.session_id)
+                        self._starting_session = session
+                        self._session_view = (*self.sessions.values(), session)
+                        return session
 
             registration = asyncio.create_task(asyncio.to_thread(register_starting))
             try:
@@ -1223,7 +1234,17 @@ class SessionManager:
             if any(other is not session and other.holds_resources for other in self.sessions.values()):
                 raise HTTPException(409, {"code": "session_exists",
                                           "message": "Close the active session before reloading another"})
-            await session.reload()
+            with self._resource_lock:
+                if session.kind == "newton" and session.options.device != "cpu" and self.jobs.holds_gpu():
+                    raise HTTPException(409, {
+                        "code": "session_gpu_busy", "message": "Training owns the GPU; retry reload later",
+                    })
+                # A stopped session reserves its next source before waiting on the command lock.
+                self._starting_session = session
+            try:
+                await session.reload()
+            finally:
+                self._starting_session = None
             return session
 
     def get(self, session_id):
@@ -1236,6 +1257,7 @@ class SessionManager:
             for session in self.sessions.values():
                 await session.close()
         finally:
+            await self.jobs.close()
             try:
                 await self.plans.close()
             finally:

@@ -39,11 +39,12 @@ def dependency_reports(version, kind):
 
 class ReferenceInspection:
     def __init__(self, assets, scenes, recordings, sessions, validator, suites=None, *, live=None,
-                 tasks=None):
+                 tasks=None, jobs=None):
         self.assets, self._scenes = assets, scenes
         self.recordings, self.sessions, self.validator = recordings, sessions, validator
         self.suites = suites
         self.tasks = tasks
+        self.jobs = jobs
         self._inspected = {}
         self.live = live or (lambda: None)
 
@@ -63,12 +64,32 @@ class ReferenceInspection:
             unknown.append({"kind": owner_kind, "id": identifier, "reason": str(error)})
 
         # Future product stores have no A2 reader. Existing contents cannot be declared empty.
-        for name in (("tasks",) if self.tasks is None else ()) + ("jobs", "policies"):
+        reserved = (("tasks",) if self.tasks is None else ()) + (("jobs",) if self.jobs is None else ())
+        for name in reserved + ("policies",):
             directory = self.assets.roots["user"] / name
             if directory.is_symlink() or directory.is_junction() or (
                 directory.exists() and (not directory.is_dir() or any(directory.iterdir()))
             ):
                 problem("training", name, "This product store is not supported by A2 reference inspection")
+
+        if self.jobs is not None:
+            try:
+                jobs = self.jobs()
+                directory = self.assets.roots["user"] / "jobs"
+                if directory.is_symlink() or directory.is_junction():
+                    raise ValueError("Linked job store")
+                if directory.exists() and any(path.name not in jobs for path in directory.iterdir()):
+                    raise ValueError("Unindexed job outputs")
+                for job in jobs.values():
+                    scene = self.scenes.resolve(job["scene"])
+                    if scene.content_hash != job["sceneContentHash"]:
+                        raise ValueError("Pinned job scene changed")
+                    if kind == "scene" and target.id == job["scene"]:
+                        reference("job", job["jobId"], "Pinned training job scene")
+                    if kind == "asset" and target.id in {item["id"] for item in job["assets"]}:
+                        reference("job", job["jobId"], "Pinned training job asset")
+            except (OSError, ValueError, KeyError, LibraryError):
+                problem("job", "library", "Cannot inspect every retained training job")
 
         if self.tasks is not None:
             try:
@@ -217,7 +238,9 @@ class ReferenceInspection:
             "coverage": ["all scene and asset versions", "all bound validation history",
                          "all recording entries", "starting and retained sessions", "configured Live layout"]
                         + (["all Task versions"] if self.tasks is not None else []),
-            "training": ("Task scene pins inspected; nonempty job/policy stores still block deletion"
+            "training": ("Task and Job pins inspected; nonempty policy stores still block deletion"
+                         if self.tasks is not None and self.jobs is not None else
+                         "Task scene pins inspected; nonempty job/policy stores still block deletion"
                          if self.tasks is not None else
                          "No A2 training store reader; nonempty reserved stores block deletion"),
         }

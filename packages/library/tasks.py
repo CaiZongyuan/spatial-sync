@@ -22,6 +22,7 @@ from packages.library.archive import (
 from packages.library.common import NAME, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.templates import resolve
 from packages.library.transactions import durable_json
+from packages.training.inputs import pack_package
 from packages.training.schema import TaskMetadata
 
 
@@ -69,6 +70,11 @@ class TaskLibrary:
         if path is None:
             raise LibraryError("unknown_task", "Unknown Task version", 404)
         return self._read(identifier, path)
+
+    def export(self, identifier):
+        self.show(identifier)
+        package = self._versions()[identifier] / "package"
+        return pack_package(package)
 
     def _validate(self, package):
         try:

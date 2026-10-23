@@ -90,6 +90,7 @@ loopBudget: {gpuHours: 18, episodes: 1000, days: 7}   # 目标闭环预算（§8
 ```
 
 - 环境配置加载 `scene` 指向的 Scene Version 的 USD：只取 `/World/Lab/**`，按环境数复制。
+- `isaaclab.sceneInput` 默认 `usd`，节点下载固定场景及素材包后提供包内 USD 路径。对于保留的 Python builder 场景（如 T1 的 `robot-and-tubes@2`），Task 必须显式声明 `sceneInput: scene-package` 并在自己的 Isaac Lab 配置中消费场景包；节点不把 Python builder 当成 USD，也不替换成其他场景。未声明的 builder 输入在作业预检时明确拒绝。
 - 奖励、观测、重置与随机化写在 Python 里。agent "改奖励"就是改这里，然后推一个新版本。
 - 训练端的成功判定由 Task 自己用 torch 实现，必须与 `success` 语义一致。**平台评估以 `success` 为准**（§7）。
 

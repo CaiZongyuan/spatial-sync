@@ -34,6 +34,7 @@ class TrainingPlanStore:
         self.records: dict[str, StoredTrainingPlan] = {}
         self.history: dict[str, dict[int, StoredTrainingPlan]] = {}
         self._lock = threading.RLock()
+        self.job_in_use = lambda identity, revision: False
 
     def startup(self):
         if self.path.exists():
@@ -147,7 +148,8 @@ class TrainingPlanStore:
     def can_revoke(self, approval):
         record = self.records.get(approval.subjectId)
         return bool(record and record.approvalId == approval.approvalId
-                    and approval.status in ("approved", "denied"))
+                    and approval.status in ("approved", "denied")
+                    and not self.job_in_use(record.plan.id, record.plan.revision))
 
     def decide(self, approval, decision, actor, note):
         with self._lock:
