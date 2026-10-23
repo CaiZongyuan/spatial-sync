@@ -1,5 +1,9 @@
 # D2 fixed-action A/B — source candidate, no execution authorization
 
+Revision2 fixes both Advisor findings on76adba5. That old commit and its frozen
+v1 source request are preserved. No counter, syntax, Windows Job or GPU result
+is claimed for either source revision.
+
 This private experiment reuses the already reviewed D1 observer, original Task,
 first-done oracle and handle-owned Windows JobObject supervisor. It adds one
 recorded-action adapter and one predeclared gripper transform. It does not change
@@ -41,6 +45,25 @@ Original environment creation, wrapper reset, original counter and Task remain.
 A must requalify the actual baseline because avoiding runner RNG consumption may
 matter to later resets; no equivalence is assumed from source alone.
 
+The standard-library bootstrap `d2_entry.py` checks already-loaded modules before
+the CLI, registers the same Task and records gym entry/configuration strings.
+The callback imports required Task definitions, wrapper and observer modules and
+checks their actual `__file__`, ModuleSpec, loader paths and actual-file SHA
+against `loaded_module_pins`; key constructor, wrapper-step, counter and observer
+code filenames are checked too. Old same-byte Task files at the old worktree path
+are rejected. Registered class/configuration objects are resolved and checked
+before the callback returns, hence before the pinned backend enters
+`launch_simulation` or constructs an Env. Actual module/registration/symbol
+records persist in `module-origins.jsonl`.
+
+All bootstrap/import work is inside the globally billed Job. Source inspection
+of this pinned kitless backend places callback/Task config imports before App
+launch; runtime validation is pending. Import-time library/GPU side effects are
+not claimed absent: they remain charged and under the same hard limit. If a
+dependency cannot be imported before App initialization, this candidate fails
+before Env construction; do not skip/defer the check or launch an unguarded App.
+Any such change needs a new reviewed proposal with charged initialization stated.
+
 ## Output and qualification
 
 The unmodified D1 observer still captures raw native outputs/first RANGE events,
@@ -75,12 +98,13 @@ intervention is never used as the mean-policy final audit. D-01 stays weld.
 ## Future preparation, literal execution shape, and budget
 
 `prepare_d2.py --root D:/Projects/Robots/spatial-sync --directory
-D:/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-29-round2/d2-prep-v1`
+D:/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-29-round2/d2-prep-v2`
 is a **future** standard-library preparation entrypoint, not run in this phase.
 It rejects dirty source/stale inputs, copies unchanged D1 observer modules and
 supervision helpers, and changes only five exact supervisor text seams: hard430s,
 inner420s, soft390s, callback `d2_replay.install`, and new-module hash checking.
-It produces an identity manifest and execution request; no budget write/launch.
+It produces an identity manifest/request including loaded-module pins and the
+private bootstrap; no budget write/launch.
 
 Future outer argv (after independent source/counter checks and specific PM GO):
 
@@ -92,7 +116,7 @@ powershell.exe -NoProfile -File <source>/Run-D2-Replay.ps1
 For each arm, the literal ordered inner payload remains:
 
 ```text
-<canonical-python> <old-audit_entry.py> play --rl_library rsl_rl
+<canonical-python> <frozen-d2_entry.py> play --rl_library rsl_rl
   --task Lab-FR3-Pick-Tube-v0 --num_envs 1024 --checkpoint <old-model630-path>
   --external_callback d2_replay.install presets=newton_mjwarp
 ```
@@ -104,14 +128,28 @@ phase/request/900s reservation, no unresolved usage, settled92s diagnostics,
 0full-training and intact1200s final-audit reserve. Neither the preparation nor
 this source freeze changes the ledger or creates such a GO/reservation.
 
-Two serial arms have <=450s inclusive windows each: soft390/supervisor420/
-hard430/cleanup15/launcherheadroom5. The pair refuses another arm without450s
-remaining in its900s window. It charges setup/inventory/hash/failed start/
-serialization/cleanup too. Read-only inventory has a10s bound and terminates only
+The thin PS entrypoint records launch origin before any GO/request/ledger/hash
+read and starts a guardian by its current process handle. The guardian uses D1's
+native API definitions in `d2_jobapi.py`, creates its unnamed kill-on-close Job
+and arms a timer before receipt/file setup and child resume. Every GO/ledger/git/
+hash/preflight operation, both arm supervisor/physics trees and qualification/
+terminal readback run in its suspended-bound coordinator child. Blocking hash
+work cannot escape this guardian. One900s absolute launch boundary applies:
+guardian stops work at origin+870s with<=15s cleanup; PS escalates only its fresh
+guardian handle at origin+885s and bounds the tail by origin+900s. Subordinate
+arm limits cannot reset that origin. Interpreter/startup time is counted; late
+startup refuses preflight. Missing Job0/receipts or PS escalation is fatal and
+unresolved, never accepted. No historical PID/process-name cleanup is used.
+
+Two serial arms retain <=450s inclusive subordinate windows each:
+soft390/supervisor420/hard430/cleanup15/launcherheadroom5. The coordinator refuses
+another arm without450s before the global work-stop. Setup/inventory/hash/failed
+start/serialization/cleanup count too. Read-only inventory has a10s bound and terminates only
 its freshly created process handle if necessary. Each physics supervisor reuses
 suspended-create -> bind current kill-on-close JobObject -> resume, then requires
-normal exit, terminal receipt and verified Job0. Root must settle the proposed
-origin-to-completion receipt; the launcher deliberately does not change live
+normal exit, terminal receipt and verified Job0. Root reconciles the guardian's
+entire-Job-zero receipt and outer handle receipt and conservatively charges the
+full launch window; coordinator-only elapsed is not a settlement. The launcher does not change live
 accounting, release a reservation, or treat missing cleanup as zero. No retry.
 
 Current budget unchanged:92/7200diagnostics,7108remaining including1200audit,
@@ -129,6 +167,10 @@ not merely mirror the formula in a separate implementation:
 
 1. Pin Task/auditor/reset/limits bytes against1abcd490 and D1 manifest; original
    counter still counts each world once and keeps all failures in the denominator.
+   Preload an old Task path with identical bytes, wrong wrapper/observer origin,
+   wrong ModuleSpec/loader or wrong registered class/constructor. Each must fail
+   with zero Env constructions and record actual rejected origins. The healthy
+   current-path registration must reach the original counter.
 2. Asymmetric impulse in one world: only its gripper filter changes; first commands
    independent per world, arm signed-zero bytes preserved, alpha fixed. Resetting
    one world must not reset/reindex either schedule or another world's filter.
@@ -151,6 +193,15 @@ not merely mirror the formula in a separate implementation:
 7. Stale/wrong GO, request/identity/head mutation, ledger unknown usage, insufficient
    remaining450s, audit reserve damage and duplicate phase reject without launching.
    Proposed receipt counts failed startup/cleanup and never settles the live ledger.
+8. Exercise actual guardian/coordinator seams with a fake clock/current-handle Job
+   API. Block GO read, input hash or terminal readback and advance beyond the
+   single work-stop: fatal termination and cleanup must be charged from the same
+   original launch origin. Failure cleanup cannot gain a new900s interval. Also
+   cover guardian startup/receipt-write stalls, failed suspended assignment,
+   descendants surviving coordinator exit and outer fallback stopping only its
+   current guardian handle. Start/partial/argv/helper identities must remain
+   available when terminal persistence fails. Healthy fake A->B must qualify;
+   fake results do not establish actual Windows/nested-Job cleanup behavior.
 
 Independent review and any separately scheduled source-free counter validation
 remain required. No tests, compilation, simulation, training, build or installation

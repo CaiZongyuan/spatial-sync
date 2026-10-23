@@ -87,6 +87,28 @@ def install():
     arm = os.environ["FR3_D2_ARM"]
     if arm not in ("A", "B"):
         raise RuntimeError("D2 arm must be the literal A or B")
+    import d2_origins as origins
+
+    pins = origins.module_pins(identity)
+    origins.check_loaded(pins, "callback_preloaded", required=("fr3_contact", "d2_replay", "d2_origins"))
+    # The pinned kitless backend calls this callback before launch_simulation.
+    # Import definitions here, inside the billed Job, and reject before Env construction.
+    import importlib
+
+    for name in identity["loaded_module_pins"]:
+        importlib.import_module(name)
+    import round2_home
+    import frozen_home_trace as base
+
+    origins.check_loaded(pins, "callback_before_environment", required=tuple(pins))
+    origins.registration(identity, resolve_class=True)
+    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+    from fr3_contact import evaluation
+
+    origins.check_symbol(RslRlVecEnvWrapper.step, pins["isaaclab_rl.rsl_rl.vecenv_wrapper"], "original wrapper.step")
+    origins.check_symbol(evaluation._install_episode_counter, pins["fr3_contact.evaluation"], "original counter")
+    origins.check_symbol(base.Trace.__init__, pins["frozen_home_trace"], "original observer.Trace")
+    origins.check_symbol(round2_home.install, pins["round2_home"], "D1 observer.install")
     for package, expected in identity["versions"].items():
         if metadata.version(package) != expected:
             raise RuntimeError("Protected environment version changed: " + package)
@@ -129,9 +151,6 @@ def install():
             del kwargs
 
     backend["OnPolicyRunner"] = ReplayRunner
-    import round2_home
-    import frozen_home_trace as base
-
     arguments = round2_home.install()
     original_trace = base.Trace
 

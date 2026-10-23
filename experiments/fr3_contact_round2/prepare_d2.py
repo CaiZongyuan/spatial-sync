@@ -46,7 +46,8 @@ def main():
     prepared.mkdir()
     for name in ("frozen_home_trace.py", "trace_contract.py", "round2_home.py", "owned_status.py", "run_owned_terminal.py"):
         (prepared / name).write_bytes((d1 / name).read_bytes())
-    (prepared / "d2_replay.py").write_bytes((source / "d2_replay.py").read_bytes())
+    for name in ("d2_replay.py", "d2_entry.py", "d2_origins.py"):
+        (prepared / name).write_bytes((source / name).read_bytes())
     watchdog = (d1 / "bounded_watchdog.py").read_text(encoding="utf-8")
     for before, after in (
         ("HARD_SECONDS = 900.0", "HARD_SECONDS = 430.0"),
@@ -54,12 +55,14 @@ def main():
         ("'round2_home.install'", "'d2_replay.install'"),
         ("dt.timedelta(seconds=840)", "dt.timedelta(seconds=390)"),
         ("('frozen_home_trace.py', 'trace_contract.py', 'round2_home.py', 'owned_status.py')",
-         "('frozen_home_trace.py', 'trace_contract.py', 'round2_home.py', 'owned_status.py', 'd2_replay.py')"),
+         "('frozen_home_trace.py', 'trace_contract.py', 'round2_home.py', 'owned_status.py', 'd2_replay.py', 'd2_entry.py', 'd2_origins.py')"),
     ):
         watchdog = replace_once(watchdog, before, after)
     (prepared / "bounded_watchdog.py").write_text(watchdog, encoding="utf-8", newline="\n")
     identity["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
     identity["run_owned"] = str(prepared / "run_owned_terminal.py")
+    identity["d2_original_audit_entry"] = identity["audit_entry"]
+    identity["audit_entry"] = str(prepared / "d2_entry.py")
     identity["d2_trace"] = str(archive / "frozen-home-all-first-20261020-164027701/trace.pt")
     identity["files"] = dict(identity["files"])
     # Old files remain pinned; add new helper/backend/data pins without weakening them.
@@ -80,8 +83,24 @@ def main():
         raise RuntimeError("Frozen D1 trace changed")
     identity["prepared_module_sha256"] = {
         name: sha(prepared / name) for name in
-        ("frozen_home_trace.py", "trace_contract.py", "round2_home.py", "owned_status.py", "d2_replay.py")
+        ("frozen_home_trace.py", "trace_contract.py", "round2_home.py", "owned_status.py", "d2_replay.py", "d2_entry.py", "d2_origins.py")
     }
+    identity["loaded_module_pins"] = {
+        "fr3_contact" if path.name == "__init__.py" else "fr3_contact." + path.stem:
+        {"path": str(path), "sha256": sha(path)}
+        for path in (repo / "experiments/fr3_contact").glob("*.py")
+        if path.name in ("__init__.py", "environment.py", "env_cfg.py", "evaluation.py", "reset.py",
+                         "progress.py", "validity.py", "physics_validity.py", "terms.py")
+    }
+    for module, key in (
+        ("isaaclab_rl.rsl_rl.vecenv_wrapper", "d2_vecenv_wrapper"),
+        ("isaaclab_tutorial.tasks.place_vial.config.so101.agents.rsl_rl_ppo_cfg", "d2_tutorial_runner"),
+        ("isaaclab_tutorial.tasks.place_vial.config.so101.env_cfg", "d2_tutorial_physics"),
+        ("isaaclab_tutorial.tasks.place_vial.mdp.actions", "d2_tutorial_actions"),
+    ):
+        identity["loaded_module_pins"][module] = dict(identity["files"][key])
+    identity["run_module_names"] = {name.removesuffix(".py"): name for name in
+        ("frozen_home_trace.py", "trace_contract.py", "round2_home.py", "d2_replay.py", "d2_origins.py")}
     (prepared / "prepared_identity.json").write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
     request = {
         "state": "prepared_unexecuted_requires_independent_review_and_root_go",
@@ -89,6 +108,8 @@ def main():
         "identity_sha256": sha(prepared / "prepared_identity.json"), "reservation_seconds": 900,
         "per_arm_inclusive_seconds": 450, "soft_seconds": 390, "supervisor_seconds": 420,
         "hard_seconds": 430, "cleanup_seconds": 15, "launcher_headroom_seconds": 5,
+        "entire_launch_seconds": 900, "pair_work_stop_seconds": 870,
+        "outer_handle_fallback_seconds": 885, "preflight_and_hash_inside_guardian_job": True,
         "arms": ["A", "B"], "alpha": 0.25, "d1_trace_sha256": identity["files"]["d2_trace"]["sha256"],
         "gpu_executions": 0, "budget_reserved": False, "training_authorized": False,
         "launcher": str(source / "Run-D2-Replay.ps1"),
@@ -96,6 +117,11 @@ def main():
                          "--task", "Lab-FR3-Pick-Tube-v0", "--num_envs", "1024", "--checkpoint",
                          identity["checkpoint"], "--external_callback", "d2_replay.install", "presets=newton_mjwarp"],
         "phase_rule": "Exact fresh phase from reviewed Root GO, suffixed -A then -B; evidence is archive/phase",
+        "guardian_argv_template": [identity["canonical_python"], str(source / "d2_guardian.py"),
+                                   "--preparation", str(prepared), "--root-go", "<EXACT_ROOT_GO>", "--origin", "<LAUNCH_UTC>"],
+        "coordinator_argv_template": ["<SYSTEM_POWERSHELL>", "-NoProfile", "-File", str(source / "Invoke-D2-Pair.ps1"),
+                                      "-Preparation", str(prepared), "-RootGo", "<EXACT_ROOT_GO>",
+                                      "-LaunchEvidence", "<GUARDIAN_EVIDENCE>", "-LaunchOrigin", "<LAUNCH_UTC>"],
         "inner_prefix_argv": [identity["primary_python"], identity["run_owned"], "--phase", "<PHASE>-<ARM>",
                               "--evidence", "<ARCHIVE>/<PHASE>-<ARM>", "--cwd", "<ARCHIVE>/<PHASE>-<ARM>",
                               "--source-commit", identity["source_commit"], "--timeout-seconds", "420", "--"],
