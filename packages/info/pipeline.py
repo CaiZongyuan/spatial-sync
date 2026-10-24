@@ -168,7 +168,14 @@ class ActionPipeline:
                 result = self._reject(invocation, code, message, details=details)
             else:
                 definition = self.catalog.action(invocation.entityKey, invocation.action)
-                if (
+                if getattr(self.session, "deny_human_gates", False) and (
+                    force_approval or definition.get("risk", "normal") == "high"
+                ):
+                    result = self._reject(
+                        invocation, "approval_denied", "Human gates are denied during evaluation",
+                        details={"policy": "evaluation_auto_deny"},
+                    )
+                elif (
                     not plan_grant
                     and (force_approval or (definition.get("risk", "normal") == "high"
                                            and self.session.options.approval.high == "require"))

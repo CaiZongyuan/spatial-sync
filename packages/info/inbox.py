@@ -208,17 +208,21 @@ class InboxStore:
                 "Cursor is invalid for this inbox stream; omit after for a fresh snapshot"
             ) from error
 
-    async def poll(self, after, kinds, alerts):
+    async def poll(self, after, kinds, alerts, *, session_id=None):
         with self._lock:
             self._require_available()
             position = self._position(after) if after is not None else None
             sequence = len(self._messages)
             # Sequences are contiguous, so cursor positions index the next item.
-            messages = [message for message in self._messages[position or 0:] if message["kind"] in kinds]
+            messages = [message for message in self._messages[position or 0:]
+                        if message["kind"] in kinds
+                        and (session_id is None or message["sessionId"] == session_id)]
             response = {
                 "messages": messages[-20:] if position is None else messages,
                 "alerts": alerts if position is None and "alert" in kinds else [],
-                "approvals": [record for record in self._approvals.values() if record["status"] == "pending"]
+                "approvals": [record for record in self._approvals.values()
+                              if record["status"] == "pending"
+                              and (session_id is None or record["sessionId"] == session_id)]
                 if position is None and "approval" in kinds else [],
                 "cursor": self._cursor(sequence),
             }

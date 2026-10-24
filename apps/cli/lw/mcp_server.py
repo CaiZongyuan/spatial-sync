@@ -215,6 +215,11 @@ async def create_server(client: GatewayClient):
         result = await checked(client.session_control(action, count=count, actor=actor(ctx)))
         return result["state"] | {"ack": result["ack"]}
 
+    allowed = getattr(client, "allowed_tools", None)
+    if allowed is not None:
+        for tool in await server.list_tools():
+            if tool.name not in allowed:
+                server.remove_tool(tool.name)
     return server
 
 

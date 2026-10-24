@@ -83,13 +83,14 @@ def install_plan_routes(app, manager, role_for):
         return store.document(await store.create(payload, session, actor, plan_id=plan_id))
 
     @app.get("/api/v1/plans")
-    async def plans(kind: str | None = None, status: str | None = None):
+    async def plans(kind: str | None = None, status: str | None = None, sessionId: str | None = None):
         store.require_started()
         await store.flush()
         documents = [
                 store.document(record)
                 for record in store.records.values()
-            ] + [training.document(record) for record in training.records.values()]
+                if sessionId is None or record.sessionId == sessionId
+            ] + [training.document(record) for record in training.records.values() if sessionId is None]
         return {"plans": [value for value in documents
                           if (kind is None or kind == value["kind"])
                           and (status is None or status == value["status"])]}

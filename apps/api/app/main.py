@@ -113,6 +113,10 @@ class CreateSession(Model):
 
 
 def _role(headers, settings: Settings):
+    from packages.agents.scope import current_scope
+
+    if current_scope() is not None:
+        return "operator"  # Scoped middleware already admits only the owned non-human interfaces.
     if not settings.remote:
         return "operator"
     authorization = headers.get("authorization", "")
@@ -695,6 +699,9 @@ def create_app(
                     finally:
                         await connection.finish()
 
+    from packages.agents.scope import install_agent_scopes
+
+    install_agent_scopes(app, manager)
     return app
 
 

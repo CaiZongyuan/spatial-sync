@@ -92,6 +92,8 @@ class Session:
         self.scene_id, self.kind = scene_id, kind
         self.scene_version = scene_version
         self.evaluation_id = evaluation_id
+        self.agent_run_id = None
+        self.deny_human_gates = False
         self.on_closed = on_closed
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
@@ -1074,6 +1076,10 @@ class Session:
 
     def require_interactive(self):
         if self.evaluation_id:
+            from packages.agents.scope import owns_session
+
+            if owns_session(self):
+                return
             raise HTTPException(409, {
                 "code": "evaluation_busy", "message": "This session is evaluator-owned",
             })

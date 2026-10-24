@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import sys
 
 from .client import GatewayClient, GatewayError, condition_hint, exit_code
@@ -174,7 +175,13 @@ async def run(args, machine):
         Vault().set(args.name, value)
         print("Credential saved in the local Vault.", flush=True)
         return 0
-    async with GatewayClient() as client:
+    if args.command == "mcp" and os.getenv("LW_AGENT_RUN"):
+        from .scoped import ScopedGatewayClient
+
+        client = ScopedGatewayClient.from_environment()
+    else:
+        client = GatewayClient()
+    async with client:
         command = args.command
         if command == "mcp":
             from .mcp_server import serve

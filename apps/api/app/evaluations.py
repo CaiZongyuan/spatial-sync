@@ -121,6 +121,12 @@ class EvaluationService:
         )
 
     def require_interactive(self):
+        from packages.agents.scope import current_scope
+
+        scope = current_scope()
+        if (scope is not None and self._active_evaluation == scope.evaluation_id
+                and self._active_evaluation is not None and not self._starting_request and not self._blocked):
+            return
         if self._active_evaluation or self._starting_request or self._blocked:
             raise HTTPException(409, {"code": "evaluation_busy", "message": "The session slot is reserved"})
 

@@ -283,6 +283,8 @@ class PlanStore:
             )
             for step in plan.steps
         )
+        if human and getattr(session, "deny_human_gates", False):
+            raise PlanError("approval_denied", "Human gates are denied by evaluation policy", status=403)
         plan.status = "submitted" if human else "approved"
         record = StoredPlan(
             plan=plan,
