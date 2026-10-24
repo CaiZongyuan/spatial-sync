@@ -47,6 +47,15 @@ def setup(
             usage = {"input_tokens": 20, "output_tokens": 5}
         if mode == "overbound":
             usage = usage | {"input_tokens": 150, "output_tokens": 30}
+        if mode in ("stream_error", "stream_incomplete"):
+            events = [
+                {"type": "message_start", "message": {"id": "fixture-message", "usage": {"input_tokens": 20}}}
+            ]
+            if mode == "stream_error":
+                events.append({"type": "error", "error": {"type": "overloaded_error", "message": canary}})
+            return Response(
+                "".join(f"data: {json.dumps(event)}\n\n" for event in events), media_type="text/event-stream"
+            )
         if mode == "stream":
             events = [
                 {
@@ -284,5 +293,25 @@ async def test_durable_reservation_rechecks_authority_at_the_known_unstarted_bou
         assert actual["requests"] == 0 and actual["failures"] == 0
         assert actual["tokens"] == 0 and actual["llmUsd"] == 0
         assert actual["reservedTokens"] == 0 and actual["notForwardedRequests"] == 1
+    finally:
+        await provider.aclose()
+
+
+@pytest.mark.parametrize("mode", ["stream_error", "stream_incomplete"])
+async def test_stream_error_is_a_failure_but_unterminated_eof_has_unknown_outcome(tmp_path, mode):
+    app, gate, provider, calls, canary = setup(tmp_path, mode=mode)
+    try:
+        result = await post(app, stream=True)
+        assert result.status_code == (200 if mode == "stream_error" else 502)
+        assert canary not in result.text
+        actual = gate.snapshot()
+        assert actual["requests"] == 1
+        assert actual["tokens"] is None and actual["knownTokens"] == 20
+        assert actual["reservedTokens"] == 100
+        assert actual["failures"] == (1 if mode == "stream_error" else None)
+        assert actual["unknownOutcomeRequests"] == (0 if mode == "stream_error" else 1)
+        assert actual["knownLlmUsd"] == pytest.approx(0.00002)
+        assert actual["reservedUsd"] == pytest.approx(0.0001)
+        assert (await post(app)).status_code == 429 and len(calls) == 1
     finally:
         await provider.aclose()

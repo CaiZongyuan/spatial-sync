@@ -74,17 +74,26 @@ def _observe_usage(content, content_type):
             if line.startswith("data:") and line[5:].strip() not in ("", "[DONE]")
         ]
         complete = any(packet.get("type") == "message_stop" for packet in packets)
+        outcome = (
+            "failed"
+            if any(packet.get("type") == "error" for packet in packets)
+            else "succeeded"
+            if complete
+            else "incomplete"
+        )
         candidates = []
         for packet in packets:
             message = packet.get("message", {})
             if packet.get("type") == "message_start":
                 message_id = message.get("id")
                 candidates.append(message.get("usage", {}))
-            candidates.append(packet.get("usage", {}))
+            if packet.get("type") == "message_delta":
+                candidates.append(packet.get("usage", {}))
     else:
         packet = json.loads(content)
         message_id, candidates = packet.get("id"), [packet.get("usage", {})]
         complete = packet.get("type") == "message"
+        outcome = "succeeded" if complete else "failed" if packet.get("type") == "error" else "incomplete"
     for usage in candidates:
         if not isinstance(usage, dict):
             raise ValueError("Invalid provider usage")
@@ -95,7 +104,12 @@ def _observe_usage(content, content_type):
             if type(value) is not int or value < 0:
                 raise ValueError("Invalid provider counter")
             observed[key] = max(observed.get(key, 0), value)
-    return message_id, observed, complete and all(key in observed for key in TOKEN_KEYS)
+    return (
+        message_id,
+        observed,
+        outcome == "succeeded" and complete and all(key in observed for key in TOKEN_KEYS),
+        outcome,
+    )
 
 
 class BudgetedProvider:
@@ -158,6 +172,8 @@ class BudgetedProvider:
         not_forwarded = [row for row in rows if row.get("dispatchState") == "not_forwarded"]
         attempted = [row for row in rows if row.get("dispatchState") != "not_forwarded"]
         pending = [row for row in attempted if row.get("dispatchState") == "reserved"]
+        unknown_outcome = [row for row in attempted if row["status"] in ("pending", "incomplete")]
+        failures = sum(row["status"] == "failed" for row in rows)
         unknown = [row for row in rows if not row.get("usageComplete")]
         tokens = sum(sum(row["usage"].values()) for row in rows)
         costs = {
@@ -169,7 +185,9 @@ class BudgetedProvider:
             "knownRequests": len(attempted) - len(pending),
             "reservedRequests": len(pending),
             "notForwardedRequests": len(not_forwarded),
-            "failures": sum(row["status"] == "failed" for row in rows),
+            "failures": None if unknown_outcome else failures,
+            "knownFailures": failures,
+            "unknownOutcomeRequests": len(unknown_outcome),
             "tokens": None if unknown else tokens,
             "knownTokens": tokens,
             "llmUsd": None if unknown else float(money),
@@ -290,9 +308,9 @@ class BudgetedProvider:
                         headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01"},
                     )
                 content_type = response.headers.get("content-type", "application/json")
-                message_id, usage, complete = _observe_usage(response.content, content_type)
+                message_id, usage, complete, outcome = _observe_usage(response.content, content_type)
                 record.update(
-                    status="succeeded" if response.is_success else "failed",
+                    status=outcome if response.is_success else "failed",
                     usage=usage,
                     usageComplete=complete and response.is_success,
                     providerMessageId=self._redact(message_id),
@@ -308,6 +326,20 @@ class BudgetedProvider:
                 if self.state.get("stopReason"):
                     raise PlanError(
                         "agent_bound_violated", "The provider exceeded its admitted bound", status=502
+                    )
+                if record["status"] == "incomplete":
+                    return Response(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "type": "provider_stream_incomplete",
+                                    "message": "Model response ended before its terminal event",
+                                },
+                            }
+                        ),
+                        status_code=502,
+                        media_type="application/json",
                     )
                 if not response.is_success:
                     return Response(
