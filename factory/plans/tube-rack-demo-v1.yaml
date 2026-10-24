@@ -1,0 +1,97 @@
+schema: lw.scene-plan/1
+recipe: sf3-blender-factory-v1
+buildLabel: solid-collision
+units:
+  length: m
+  upAxis: Z
+  metersPerUnit: 1
+scene:
+  name: tube-rack-demo
+  title: Test-tube rack seating (solid collision, v1)
+  description: >-
+    Scene Factory demo: the SF2-acquired cardboard box retained by exact library
+    reference as a fixed prop, a procedural six-hole rack whose first collision
+    version is one solid box, and a procedural test tube seated in hole A1. The
+    rack visual shows holes; version 1 collision does not.
+  sources:
+    - newton
+  simulation:
+    solver: xpbd
+    warmupSteps: 1
+  locations:
+    locations: {}
+  dressing:
+    - name: Bench
+      sizeM: [2.0, 1.0, 0.05]
+      positionM: [0.15, 0.0, 0.725]
+      color: [0.55, 0.58, 0.61]
+assets:
+  - id: environment/cardboard-box
+    version: 1
+procedural:
+  - id: environment/six-hole-tube-rack
+    version: 1
+    kind: environment
+    type: six-hole-tube-rack
+    seed: 151
+    license: CC0-1.0
+    rack:
+      widthM: 0.13
+      depthM: 0.09
+      heightM: 0.042
+      wallThicknessM: 0.006
+      baseThicknessM: 0.006
+      plateThicknessM: 0.008
+      holeDiameterM: 0.020
+      tubeDiameterM: 0.016
+      clearanceM: 0.002
+      pitchXM: 0.035
+      pitchYM: 0.035
+      rows: 2
+      columns: 3
+      collision: solid
+      massDensityKgM3: 700.0
+  - id: labware/sf3-test-tube
+    version: 1
+    kind: labware
+    type: test-tube
+    seed: 151
+    license: CC0-1.0
+    tube:
+      diameterM: 0.016
+      heightM: 0.030
+      massDensityKgM3: 1200.0
+instances:
+  - instanceId: box
+    entityKey: /World/Lab/Box
+    asset: environment/cardboard-box@1
+    transform:
+      positionM: [0.65, 0.0, 0.75]
+      rotationDeg: [0.0, 0.0, 0.0]
+    kinematic: true
+  - instanceId: rack
+    entityKey: /World/Lab/Rack
+    asset: environment/six-hole-tube-rack@1
+    transform:
+      positionM: [0.22, 0.0, 0.75]
+      rotationDeg: [0.0, 0.0, 0.0]
+  - instanceId: tube
+    entityKey: /World/Lab/Tubes/Tube01
+    asset: labware/sf3-test-tube@1
+    transform:
+      positionM: [0.185, -0.0175, 0.756]
+      rotationDeg: [0.0, 0.0, 0.0]
+    seat:
+      rack: rack
+      hole: A1
+    binding:
+      template: labware/sf3-test-tube@1
+      config:
+        robots: []
+        locationSites:
+          - /World/Lab/Rack/HoleA1
+          - /World/Lab/Rack/HoleA2
+          - /World/Lab/Rack/HoleA3
+          - /World/Lab/Rack/HoleB1
+          - /World/Lab/Rack/HoleB2
+          - /World/Lab/Rack/HoleB3
