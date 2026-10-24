@@ -28,6 +28,7 @@ const pages = [
   { to: '/plans', label: 'Plans', text: '计划', icon: 'plans' },
   { to: '/train', label: 'Training', text: '训练', icon: 'training' },
   { to: '/eval', label: 'Evaluation', text: '评估', icon: 'evaluation' },
+  { to: '/runtime-sessions', label: 'Runtime records', text: '运行记录', icon: 'recordings' },
   { to: '/cost', label: 'Cost', text: '成本', icon: 'cost' },
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
   { to: '/approvals', label: 'Approvals', text: '待审批', icon: 'approvals' },
@@ -64,7 +65,7 @@ export function PlatformShell() {
   }, [theme]);
   const current = replay ? pages.find(page => page.to === '/recordings')! :
     pages.find(page => page.to !== '/' && pathname.startsWith(page.to === '/resources/gpu' ? '/resources' : page.to)) ?? pages[0];
-  const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/') || pathname.startsWith('/plans/') || pathname.startsWith('/train/jobs/') || pathname.startsWith('/eval/') || /^\/scenes\/[^/]+\/[^/]+/.test(pathname) || /^\/assets\/[^/]+\/[^/]+\/[^/]+/.test(pathname);
+  const detail = pathname.startsWith('/replay/') || pathname.startsWith('/sessions/') || pathname.startsWith('/runtime-sessions/') || pathname.startsWith('/plans/') || pathname.startsWith('/train/jobs/') || pathname.startsWith('/eval/') || /^\/scenes\/[^/]+\/[^/]+/.test(pathname) || /^\/assets\/[^/]+\/[^/]+\/[^/]+/.test(pathname);
   const detailId = pathname.startsWith('/assets/') ? `${pathname.split('/').slice(-3, -1).join('/')}@${pathname.split('/').at(-1)}` : pathname.startsWith('/scenes/') ? pathname.split('/').slice(-2).join('@') : pathname.split('/').at(-1) ?? '';
   return <div className={`platform-shell ${collapsed ? 'is-collapsed' : ''}`}>
     <a className="skip-link" href="#page-content">Skip to content</a>

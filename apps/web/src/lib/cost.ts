@@ -8,6 +8,10 @@ export type CostRange = typeof costRanges[number];
 export type CostDimension = 'agent' | 'model' | 'node' | 'goal' | 'plan' | 'job';
 export interface CostFilters { range: CostRange; agent?: string; model?: string; node?: string; goal?: string; plan?: string; start?: string; end?: string }
 export interface CostTotals {
+  cacheWriteTokens?: number | null; knownRequests?: number; knownTokens?: number;
+  knownInputTokens?: number; knownOutputTokens?: number; knownCacheReadTokens?: number; knownCacheWriteTokens?: number;
+  knownLlmUsd?: number; runtimeSessionCount?: number; timeBasis?: 'importedAt';
+  costSource?: 'runtime-reported' | 'runtime-estimate' | 'runtime-mixed' | 'unknown';
   requests: number | null; failures: number | null; tokens: number | null;
   inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null;
   llmUsd: number | null; successRate: number | null; cacheHitRate: number | null;
