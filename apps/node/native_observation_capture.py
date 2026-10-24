@@ -60,6 +60,7 @@ class NativeObservationCapture:
                 "exporter": source_identity(self.runner.export_policy_to_onnx),
                 "stateProvider": source_identity(self.provider),
                 "observationGroups": list(policy.obs_groups),
+                "environments": self.indices,
                 "boundary": "rsl-mlp-pre-normalizer",
                 "normalization": "inside-exported-graph",
                 "previousAction": "raw-native-algorithm-output",
@@ -226,6 +227,7 @@ class NativeObservationCapture:
             "sampleCount": len(self.samples),
             "witnesses": self.witnesses,
             "normalizerStateSha256": canonical_hash(normalizer),
+            "normalizerState": normalizer,
             "afterLearn": export["afterLearn"],
             "iteration": export["iteration"],
         }

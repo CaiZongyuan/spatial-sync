@@ -20,11 +20,11 @@ class ObservationArtifact(BaseModel):
     artifact: str = Field(min_length=1, max_length=1000)
 
 
-def install_policy_routes(app, manager, role_for):
+def install_policy_routes(app, manager, role_for, *, profiles=None):
     policies = PolicyLibrary(manager.library_assets.roots)
     app.state.policies = policies
     manager.policies = policies
-    evidence = ObservationEvidence(manager)
+    evidence = ObservationEvidence(manager, profiles=profiles)
     manager.policy_evidence = app.state.policy_evidence = evidence
 
     def operator(request):

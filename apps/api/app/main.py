@@ -161,6 +161,7 @@ def create_app(
     acquisition_limits=None,
     acquisition_disk_usage=None,
     acquisition_source_root: Path | None = None,
+    observation_profiles=None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
@@ -333,7 +334,9 @@ def create_app(
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_job_routes(app, manager, lambda headers: _role(headers, settings), views)
     install_task_routes(app, manager.tasks, lambda headers: _role(headers, settings))
-    install_policy_routes(app, manager, lambda headers: _role(headers, settings))
+    install_policy_routes(
+        app, manager, lambda headers: _role(headers, settings), profiles=observation_profiles
+    )
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))

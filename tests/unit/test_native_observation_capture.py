@@ -97,6 +97,7 @@ def setup(tmp_path, monkeypatch):
         "exporter": source_identity(runner.export_policy_to_onnx),
         "stateProvider": source_identity(env.lw_policy_observation_state),
         "observationGroups": ["policy"],
+        "environments": [0],
         "boundary": "rsl-mlp-pre-normalizer",
         "normalization": "inside-exported-graph",
         "previousAction": "raw-native-algorithm-output",
