@@ -155,6 +155,9 @@ class BudgetedProvider:
     def snapshot(self):
         self._available()
         rows = self.state["requests"]
+        not_forwarded = [row for row in rows if row.get("dispatchState") == "not_forwarded"]
+        attempted = [row for row in rows if row.get("dispatchState") != "not_forwarded"]
+        pending = [row for row in attempted if row.get("dispatchState") == "reserved"]
         unknown = [row for row in rows if not row.get("usageComplete")]
         tokens = sum(sum(row["usage"].values()) for row in rows)
         costs = {
@@ -162,7 +165,10 @@ class BudgetedProvider:
         }
         money = sum(costs.values(), Decimal(0))
         return {
-            "requests": len(rows),
+            "requests": None if pending else len(attempted),
+            "knownRequests": len(attempted) - len(pending),
+            "reservedRequests": len(pending),
+            "notForwardedRequests": len(not_forwarded),
             "failures": sum(row["status"] == "failed" for row in rows),
             "tokens": None if unknown else tokens,
             "knownTokens": tokens,
@@ -202,7 +208,7 @@ class BudgetedProvider:
         current = self.snapshot()
         if (
             remaining_time <= 0
-            or current["requests"] >= self.limits.requests
+            or current["knownRequests"] + current["reservedRequests"] >= self.limits.requests
             or current["knownTokens"] + current["reservedTokens"] + bound_tokens > self.limits.tokens
             or Decimal(str(current["knownLlmUsd"])) + Decimal(str(current["reservedUsd"])) + bound_usd
             > Decimal(str(self.limits.usd))
@@ -217,12 +223,37 @@ class BudgetedProvider:
             "boundTokens": bound_tokens,
             "boundUsd": float(bound_usd),
             "status": "pending",
+            "dispatchState": "reserved",
             "usage": {},
             "usageComplete": False,
         }
         self.state["requests"].append(record)
         self._save()  # No provider operation before its reservation is durable.
-        return record, quote, payload | {"max_tokens": output}, remaining_time
+        return record, quote, payload | {"max_tokens": output}
+
+    def _before_forward(self, record):
+        try:
+            self._request_allowed()
+            remaining = self.limits.wall_seconds - (self._clock() - self._started)
+            if remaining <= 0:
+                raise PlanError(
+                    "agent_budget_exhausted", "The model execution deadline has passed", status=429
+                )
+        except PlanError:
+            record.update(
+                status="not_forwarded",
+                dispatchState="not_forwarded",
+                usage=dict.fromkeys(TOKEN_KEYS, 0),
+                usageComplete=True,
+                usd=0.0,
+            )
+            self._save()
+            raise
+        # No blocking save or await between this final authority check and
+        # beginning the external HTTP attempt. A persisted reserved record is
+        # uncertain after a crash; only this explicit branch proves no forward.
+        record["dispatchState"] = "started"
+        return remaining
 
     def _redact(self, value):
         if isinstance(value, str):
@@ -248,14 +279,16 @@ class BudgetedProvider:
 
     async def generate(self, payload):
         async with self._lock:
-            record, quote, body, timeout = self._reserve(payload)
+            record, quote, body = self._reserve(payload)
+            timeout = self._before_forward(record)
             try:
-                response = await self.upstream.post(
-                    "/v1/messages",
-                    json=body,
-                    timeout=timeout,
-                    headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01"},
-                )
+                async with asyncio.timeout(timeout):
+                    response = await self.upstream.post(
+                        "/v1/messages",
+                        json=body,
+                        timeout=timeout,
+                        headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01"},
+                    )
                 content_type = response.headers.get("content-type", "application/json")
                 message_id, usage, complete = _observe_usage(response.content, content_type)
                 record.update(
@@ -295,7 +328,11 @@ class BudgetedProvider:
                     status_code=response.status_code,
                     media_type=content_type.split(";")[0],
                 )
-            except (httpx.HTTPError, ValueError, UnicodeError) as error:
+            except asyncio.CancelledError:
+                record.update(status="failed", usageComplete=False, errorCode="provider_interrupted")
+                self._save()
+                raise
+            except (httpx.HTTPError, ValueError, UnicodeError, TimeoutError) as error:
                 record.update(status="failed", usageComplete=False, errorCode="provider_response_unavailable")
                 self._save()
                 raise PlanError(

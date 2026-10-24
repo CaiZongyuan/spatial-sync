@@ -23,6 +23,7 @@ def setup(
     quote_reader=None,
     clock=time.monotonic,
     is_active=lambda: True,
+    after_save=None,
 ):
     external = FastAPI()
     calls = []
@@ -80,6 +81,12 @@ def setup(
         if rates is None
         else rates,
     )
+
+    def save():
+        durable_json(saved, state)
+        if after_save is not None:
+            after_save()
+
     gate = BudgetedProvider(
         "run-fixture",
         "fixture-model",
@@ -87,7 +94,7 @@ def setup(
         quote_reader if quote_reader is not None else quote,
         100,
         state,
-        lambda: durable_json(saved, state),
+        save,
         client,
         canary,
         transport_token="TEST_ONLY_OWNED_TRANSPORT",
@@ -252,5 +259,30 @@ async def test_provider_bound_violation_stops_future_calls_without_erasing_actua
         actual = gate.snapshot()
         assert actual["tokens"] == 180 and actual["stopReason"] == "provider_bound_violated"
         assert (await post(app)).status_code == 502 and len(calls) == 1
+    finally:
+        await provider.aclose()
+
+
+@pytest.mark.parametrize("changed", ["deadline", "active"])
+async def test_durable_reservation_rechecks_authority_at_the_known_unstarted_boundary(tmp_path, changed):
+    now, active = [0.0], [True]
+
+    def after_save():
+        if changed == "deadline":
+            now[0] = 31
+        else:
+            active[0] = False
+
+    app, gate, provider, calls, _ = setup(
+        tmp_path, clock=lambda: now[0], is_active=lambda: active[0], after_save=after_save
+    )
+    try:
+        result = await post(app)
+        assert result.status_code == (429 if changed == "deadline" else 403)
+        assert calls == []
+        actual = gate.snapshot()
+        assert actual["requests"] == 0 and actual["failures"] == 0
+        assert actual["tokens"] == 0 and actual["llmUsd"] == 0
+        assert actual["reservedTokens"] == 0 and actual["notForwardedRequests"] == 1
     finally:
         await provider.aclose()
