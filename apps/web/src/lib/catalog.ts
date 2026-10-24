@@ -19,7 +19,7 @@ export interface CatalogSnapshot {
 }
 
 export interface CatalogZeroResult {
-  reason: 'no_query_match' | 'hard_filters' | 'scope' | 'empty_catalog' | 'unknown_exact_id';
+  reason: 'no_query_match' | 'hard_filters' | 'scope' | 'empty_catalog' | 'unknown_exact_id' | 'response_budget';
   messages: string[];
   excludedBy: { filter: string; count: number }[];
   suggestions: { action: 'remove_filter' | 'broaden_scope' | 'enable_approximation'; filter?: string }[];
@@ -40,9 +40,18 @@ export interface CatalogLicense {
   obligations: string[];
 }
 
+export interface CatalogInstalledVersion {
+  id: string;
+  contentHash: string;
+  usage?: Record<CatalogUsage, boolean | null>;
+  license?: { name: string | null; admitted: boolean; unknown: boolean };
+  unknown?: string[];
+}
+
 export interface CatalogInstalled {
-  versions: { id: string; contentHash: string }[];
+  versions: CatalogInstalledVersion[];
   latest: string | null;
+  truncated?: boolean;
 }
 
 export interface CatalogLocalAsset {
@@ -256,6 +265,7 @@ export const zeroReasonLabels: Record<CatalogZeroResult['reason'], string> = {
   scope: '结果位于其他范围',
   empty_catalog: '目录快照为空',
   unknown_exact_id: '未知的精确 ID',
+  response_budget: '响应大小超出上限',
 };
 
 export const usageLabel = (value: boolean | null | undefined) =>

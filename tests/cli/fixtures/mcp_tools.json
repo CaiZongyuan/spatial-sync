@@ -371,6 +371,11 @@
           "title": "Installed",
           "type": "boolean"
         },
+        "notInstalled": {
+          "default": false,
+          "title": "Notinstalled",
+          "type": "boolean"
+        },
         "minSourceBytes": {
           "anyOf": [
             {

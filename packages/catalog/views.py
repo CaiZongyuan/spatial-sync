@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 
+from packages.catalog.local import local_license, local_unknown, local_usage
 from packages.catalog.models import ENTRY_SCHEMA, ESTIMATE_SCHEMA
 from packages.library.common import LibraryError
 
@@ -29,14 +30,31 @@ def clip_list(values, maximum, length):
     return [clip(value, length) for value in (values or [])[:maximum]]
 
 
-def installed_document(local_assets):
-    versions = sorted(local_assets, key=lambda item: item.version.rev, reverse=True)[:3]
+def installed_document(local_assets, limit=3):
+    ordered = sorted(local_assets, key=lambda item: item.version.rev, reverse=True)
+    selected = ordered[:limit] if limit is not None else ordered
+    versions = []
+    for item in selected:
+        usage = local_usage(item)
+        license_document = local_license(item)
+        versions.append({
+            "id": item.version.id,
+            "contentHash": item.version.content_hash,
+            "usage": {
+                "dressing": usage["dressing"],
+                "staticCollision": usage["staticCollision"],
+            },
+            "license": {
+                "name": license_document["name"],
+                "admitted": license_document["admitted"],
+                "unknown": license_document["unknown"],
+            },
+            "unknown": local_unknown(item),
+        })
     return {
-        "versions": [
-            {"id": item.version.id, "contentHash": item.version.content_hash}
-            for item in versions
-        ],
-        "latest": versions[0].version.id if versions else None,
+        "versions": versions,
+        "latest": ordered[0].version.id if ordered else None,
+        "truncated": len(selected) < len(ordered),
     }
 
 
@@ -115,7 +133,7 @@ def _base_document(entry, local_assets):
         "adaptation": entry.adaptation.document(),
         "upstreamValidation": entry.upstream_validation.document(),
         "acquisition": entry.acquisition.document(),
-        "installed": installed_document(local_assets),
+        "installed": installed_document(local_assets, limit=20),
         "unknown": entry.unknown_attributes(),
         "evidence": evidence_document(entry),
         "preview": preview_document(local_assets),
@@ -201,7 +219,7 @@ def _summary(base, digest):
 def entry_document(catalog, entry, local_assets, *, view="summary", document_digest=None):
     # The digest pins the bounded catalog document; the response-envelope fields
     # (view and documentDigest itself) are excluded from the hash.
-    base = _bound(_base_document(entry, local_assets), 32768)
+    base = _bound(_base_document(entry, local_assets), 32768 - 512)
     digest = document_digest_of(base)
     if document_digest is not None and document_digest != digest:
         raise LibraryError(
@@ -274,13 +292,28 @@ def estimate_document(catalog, entry, local_assets):
 
 def compact_candidate(candidate):
     value = copy.deepcopy(candidate)
+    for key in ("ref", "id"):
+        value[key] = clip(value.get(key), 300)
+    value["kind"] = clip(value.get("kind"), 50)
     value["title"] = clip(value.get("title"), 200)
     value["names"] = {language: clip(text, 200) for language, text in value["names"].items()}
     value["descriptions"] = {
         language: clip(text, 240) for language, text in value["descriptions"].items()
     }
+    source = value["source"]
+    source["provider"] = clip(source.get("provider"), 100)
+    source["packageId"] = clip(source.get("packageId"), 200)
+    source["revision"] = clip(source.get("revision"), 100)
+    value["license"]["name"] = clip(value["license"].get("name"), 200)
     value["license"]["obligations"] = clip_list(value["license"]["obligations"], 5, 200)
+    value["installed"]["latest"] = clip(value["installed"].get("latest"), 200)
     value["installed"]["versions"] = value["installed"]["versions"][:3]
+    for version in value["installed"]["versions"]:
+        version["id"] = clip(version.get("id"), 200)
+        version["contentHash"] = clip(version.get("contentHash"), 128)
+        if isinstance(version.get("license"), dict):
+            version["license"]["name"] = clip(version["license"].get("name"), 200)
+        version["unknown"] = [clip(item, 80) for item in version.get("unknown", [])[:8]]
     value["match"]["reasons"] = [
         {
             "field": clip(reason["field"], 80),
@@ -290,20 +323,33 @@ def compact_candidate(candidate):
         for reason in value["match"]["reasons"][:5]
     ]
     for key in ("satisfied", "unsatisfied", "unknown"):
-        value["match"][key] = value["match"][key][:8]
-    value["unknown"] = value["unknown"][:8]
+        value["match"][key] = [clip(item, 80) for item in value["match"][key][:8]]
+    value["unknown"] = [clip(item, 80) for item in value["unknown"][:8]]
     value["acquisition"]["reasons"] = clip_list(value["acquisition"]["reasons"], 5, 240)
     value["usage"]["evidence"] = clip(value["usage"].get("evidence"), 240)
+    value["detail"]["id"] = clip(value["detail"].get("id"), 300)
+    value["preview"]["url"] = clip(value["preview"].get("url"), 500)
     value["preview"]["reason"] = clip(value["preview"].get("reason"), 240)
     local = value.get("local")
     if local is not None:
+        local["id"] = clip(local.get("id"), 200)
+        local["contentHash"] = clip(local.get("contentHash"), 128)
         local["bytes"] = local.get("bytes")
         asset = local["asset"]
+        asset["id"] = clip(asset.get("id"), 200)
         asset["title"] = clip(asset.get("title"), 200)
+        asset["kind"] = clip(asset.get("kind"), 50)
+        asset["validationStatus"] = clip(asset.get("validationStatus"), 80)
+        asset["thumbnailUrl"] = clip(asset.get("thumbnailUrl"), 500)
+        asset["visualUrl"] = clip(asset.get("visualUrl"), 500)
+        dimensions = asset.get("dimensionsM")
+        if isinstance(dimensions, list):
+            asset["dimensionsM"] = dimensions[:3]
         asset["implementedTypes"] = clip_list(asset.get("implementedTypes", []), 32, 80)
         asset["gaps"] = clip_list(asset.get("gaps", []), 8, 200)
         completeness = asset.get("completeness")
         if isinstance(completeness, dict):
+            completeness["status"] = clip(completeness.get("status"), 80)
             completeness["gaps"] = clip_list(completeness.get("gaps", []), 8, 200)
             items = completeness.get("items", [])[:8]
             for item in items:

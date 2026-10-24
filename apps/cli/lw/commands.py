@@ -508,6 +508,8 @@ COMMANDS = (
                      "License admission; sent as licenseAdmitted=true|false", None),
             Argument("installed", ("--installed",), bool,
                      "Only candidates with a correlated installed local version", False),
+            Argument("notInstalled", ("--not-installed",), bool,
+                     "Only candidates without a correlated installed local version", False),
             Argument("minSourceBytes", ("--min-source-bytes",), int | None,
                      "Minimum source package size in bytes", None),
             Argument("maxSourceBytes", ("--max-source-bytes",), int | None,

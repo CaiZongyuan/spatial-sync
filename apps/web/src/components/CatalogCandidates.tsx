@@ -174,8 +174,13 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 <div><dt>固定来源版本</dt><dd><code>{entry.revision}</code></dd></div>
                 <div><dt>上游包</dt><dd>{entry.provider}/{entry.packageId} · {entry.kind}</dd></div>
                 <div><dt>来源文件</dt><dd>{formatBytes(entry.source.bytes)} · {entry.source.files} 个文件</dd></div>
+                <div><dt>来源链接</dt><dd><a className="catalog-source-link" href={entry.source.url} target="_blank" rel="noreferrer">{entry.source.url}</a></dd></div>
+                <div><dt>BOM 外文件</dt><dd>{entry.source.bomNotInBom.length} 项<small className="catalog-reason">{entry.source.bomNotInBom.join('、')}</small></dd></div>
                 <div><dt>许可</dt><dd>{entry.license.name} · {entry.license.admitted ? '已准入' : '未准入'}{entry.license.obligations.length ? ` · ${entry.license.obligations.join('、')}` : ''}</dd></div>
                 <div><dt>许可证据</dt><dd><code>{entry.license.evidence.file}</code><small className="catalog-hash">{entry.license.evidence.sha256}</small></dd></div>
+                <div><dt>附件许可</dt><dd className="catalog-evidence-list">{entry.license.attachments.length
+                  ? entry.license.attachments.map(item => <span key={item.file}><code>{item.file}</code> {item.license}</span>)
+                  : '无'}</dd></div>
                 <div><dt>适配状态</dt><dd>{entry.adaptation.status} · {entry.adaptation.dimensionsM ? dimensionsLabel(entry.adaptation.dimensionsM) : '尺寸未知'}</dd></div>
               </dl>
               <h3 className="asset-subheading">用途证据</h3>
@@ -198,8 +203,14 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
             </div></section>
             <section className="asset-panel"><header><h2>已安装版本与预览</h2></header><div className="asset-panel-body">
               {entry.installed.versions.length
-                ? <ul className="catalog-installed">{entry.installed.versions.map(version => <li key={version.id}><code>{version.id}</code><small>{version.contentHash}</small></li>)}</ul>
+                ? <ul className="catalog-installed">{entry.installed.versions.map(version => <li key={version.id}>
+                  <code>{version.id}</code><small>{version.contentHash}</small>
+                  {version.usage && <small>用途：布景 {usageLabel(version.usage.dressing)} · 静态碰撞 {usageLabel(version.usage.staticCollision)}</small>}
+                  {version.license && <small>许可：{version.license.unknown ? '未知' : version.license.name} {version.license.unknown ? '' : version.license.admitted ? '已准入' : '未准入'}</small>}
+                  {version.unknown && version.unknown.length > 0 && <small>未知：{version.unknown.map(labelFor).join('、')}</small>}
+                </li>)}</ul>
                 : <p className="asset-small-note">尚未安装本地版本；候选只显示为在线条目，不冒充已安装 Asset。</p>}
+              {entry.installed.truncated && <p className="asset-small-note">仅显示最近 20 个本地版本；其余版本见本地素材库。</p>}
               <div className="catalog-detail-preview">{entry.preview.kind === 'local' && imageUrl(entry.preview.url)
                 ? <img src={entry.preview.url!} alt={`${entry.names.zh} 的本地版本预览`} />
                 : <div className="catalog-preview-placeholder"><b>预览未缓存</b><small>{entry.preview.reason ?? '获取流程会解析来源预览；页面不会请求远程图片。'}</small></div>}</div>

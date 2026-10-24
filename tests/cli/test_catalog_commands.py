@@ -109,6 +109,19 @@ async def test_catalog_search_show_estimate_pages_errors_and_local_shape(gateway
                 ("installed", False, ("-q", "fr3", "--scope", "local", "--installed"),
                  {"q": "fr3", "scope": "local", "installed": True},
                  {"query": "fr3", "scope": "local", "installed": True}),
+                ("notInstalled", True, ("-q", "box", "--scope", "online", "--not-installed"),
+                 {"q": "box", "scope": "online", "installed": False},
+                 {"query": "box", "scope": "online", "notInstalled": True}),
+                ("sourceSort", True, (
+                    "-q", "environment", "--scope", "online", "--provider", "simready",
+                    "--sort", "sourceBytes", "--max-source-bytes", "250000000",
+                    "--max-dimension-m", "2",
+                 ), {"q": "environment", "scope": "online", "provider": "simready",
+                     "sort": "sourceBytes", "maxSourceBytes": 250000000,
+                     "maxDimensionM": 2.0},
+                 {"query": "environment", "scope": "online", "provider": "simready",
+                  "sort": "sourceBytes", "maxSourceBytes": 250000000,
+                  "maxDimensionM": 2.0}),
                 ("approximate", False, ("-q", "cart", "--usage", "dressing", "--approximate"),
                  {"q": "cart", "usage": "dressing", "approximate": True},
                  {"query": "cart", "usage": "dressing", "approximate": True}),
@@ -142,6 +155,20 @@ async def test_catalog_search_show_estimate_pages_errors_and_local_shape(gateway
             assert approximate["counts"]["approximate"] == 1
             assert approximate["results"][0]["match"]["unknown"] == ["usage"]
             assert "dressing" in approximate["results"][0]["unknown"]
+
+            # Local exact identities accept the asset: prefix through every surface.
+            asset_expected = http.get(
+                "/api/v1/library/search",
+                params={"q": "asset:robot/fr3@1", "scope": "local"},
+            ).json()
+            assert [item["id"] for item in asset_expected["results"]] == ["robot/fr3@1"]
+            assert search_view(await result(
+                mcp, "catalog_search", query="asset:robot/fr3@1", scope="local"
+            )) == search_view(asset_expected)
+            assert search_view(await cli_async(
+                environment, "catalog", "search", "-q", "asset:robot/fr3@1",
+                "--scope", "local",
+            )) == search_view(asset_expected)
 
             # Catalog identity accepts a catalog: ref and returns the exact entry documents.
             summary = http.get(ENTRY_ROUTE).json()

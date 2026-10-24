@@ -172,9 +172,13 @@ class GatewayClient:
         return (await self.request("GET", "/api/v1/library/" + resource, params=params))[resource]
 
     async def catalog_search(self, query=None, scope="all", kind=None, provider=None, usage=None,
-                             license=None, installed=False, minSourceBytes=None,
-                             maxSourceBytes=None, minDimensionM=None, maxDimensionM=None,
-                             approximate=False, sort="relevance", limit=10, cursor=None):
+                             license=None, installed=False, notInstalled=False,
+                             minSourceBytes=None, maxSourceBytes=None, minDimensionM=None,
+                             maxDimensionM=None, approximate=False, sort="relevance", limit=10,
+                             cursor=None):
+        if installed and notInstalled:
+            raise ValueError("installed and notInstalled are mutually exclusive")
+        installed_filter = True if installed else False if notInstalled else None
         params = {name: value for name, value in {
             "q": query,
             "scope": scope if scope != "all" else None,
@@ -182,7 +186,7 @@ class GatewayClient:
             "provider": provider,
             "usage": usage,
             "licenseAdmitted": None if license is None else license == "admitted",
-            "installed": True if installed else None,
+            "installed": installed_filter,
             "minSourceBytes": minSourceBytes,
             "maxSourceBytes": maxSourceBytes,
             "minDimensionM": minDimensionM,

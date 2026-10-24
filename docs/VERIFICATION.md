@@ -388,7 +388,12 @@ lw catalog estimate simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d
 `tests/cli/test_catalog_commands.py` compares HTTP, the installed entrypoint and
 official MCP stdio for bilingual search, filters, pages, errors and the retained
 local `library_describe` detail shape. The GPU-free gateway tests cover snapshot
-loading, correlation, bounds and estimate limits.
+loading, correlation, bounds and estimate limits. The browser journey uses the
+same owned fixture gateway as the asset library:
+
+```powershell
+pnpm --filter @spatial-sync/web exec playwright test catalog-search.spec.ts
+```
 
 ## Ownership and cleanup
 

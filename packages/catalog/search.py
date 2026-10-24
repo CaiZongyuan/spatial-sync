@@ -11,7 +11,22 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from packages.catalog.local import LocalAsset, package_bytes
+from packages.catalog.local import (
+    LocalAsset,
+    package_bytes,
+)
+from packages.catalog.local import (
+    local_license as _local_license,
+)
+from packages.catalog.local import (
+    local_source as _local_source,
+)
+from packages.catalog.local import (
+    local_unknown as _local_unknown,
+)
+from packages.catalog.local import (
+    local_usage as _local_usage,
+)
 from packages.catalog.models import SEARCH_SCHEMA, unavailable_snapshot_document
 from packages.catalog.views import (
     canonical_json,
@@ -183,7 +198,19 @@ def _interpret(text, filters):
         )
     if filters.min_dimension_m is not None or filters.max_dimension_m is not None:
         notes.append("Dimension filters compare the largest bounding-box extent in metres.")
-    return keywords[:32], preferences[:8], notes[:10], numeric[:16]
+    return (
+        keywords[:32],
+        preferences[:8],
+        [clip(note, 400) for note in notes[:10]],
+        numeric[:16],
+    )
+
+
+def _exact_document(resource, identifier, ref=None):
+    value = {"type": resource, "id": clip(identifier, 300)}
+    if ref is not None:
+        value["ref"] = clip(ref, 300)
+    return value
 
 
 def _exact_selector(text):
@@ -292,59 +319,6 @@ def _online_status(entry, local_versions, filters):
     if filters.max_dimension_m is not None:
         status["maxDimensionM"] = None if size is None else size <= filters.max_dimension_m
     return status
-
-
-def _local_report(local):
-    report = getattr(local.version, "report", None)
-    if not callable(report):
-        return {}
-    try:
-        value = report()
-    except (OSError, ValueError, LibraryError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def _local_usage(local):
-    """Derive usage from this version's own recorded checks, never from a correlated source."""
-    report = _local_report(local)
-    checks = {
-        check.get("id"): check
-        for check in report.get("checks", [])
-        if isinstance(check, dict) and isinstance(check.get("id"), str)
-    }
-
-    def passed(identifier):
-        return (checks.get(identifier) or {}).get("status") == "pass"
-
-    structure = ("S1", "S2", "S4", "S6")
-    if all(identifier in checks for identifier in structure):
-        dressing = all(passed(identifier) for identifier in structure)
-    else:
-        dressing = None
-    collision = (local.version.metadata.get("physics") or {}).get("collision")
-    if collision is None:
-        static = None
-    elif dressing is None:
-        static = None
-    elif dressing is False:
-        static = False
-    elif "P1" not in checks or "P3" not in checks:
-        static = None
-    else:
-        static = passed("P1") and passed("P3")
-    if checks:
-        evidence = (
-            "Derived from this version's recorded checks: S1/S2/S4/S6 for dressing and "
-            "P1/P3 plus an authored collision for static collision. Missing checks stay unknown."
-        )
-    else:
-        evidence = "This version has no recorded validation checks; usage stays unknown."
-    return {
-        "dressing": dressing,
-        "staticCollision": static,
-        "evidence": evidence,
-    }
 
 
 def _local_status(local, filters):
@@ -462,61 +436,6 @@ def _license_document(license):
     }
 
 
-def _local_license(local):
-    value = (local.provenance or {}).get("license")
-    name = value.get("name") if isinstance(value, dict) else value if isinstance(value, str) else None
-    if not name:
-        return {"name": None, "admitted": False, "unknown": True, "obligations": []}
-    obligations = value.get("obligations", []) if isinstance(value, dict) else []
-    return {
-        "name": name,
-        "admitted": name in {"CC0-1.0", "CC-BY-4.0"},
-        "unknown": False,
-        "obligations": list(obligations) if isinstance(obligations, list) else [],
-    }
-
-
-def _local_source(local):
-    if local.entry is not None:
-        return {
-            "provider": local.entry.provider,
-            "packageId": local.entry.package_id,
-            "revision": local.entry.revision,
-            "bytes": local.entry.source.bytes,
-            "files": local.entry.source.files,
-        }
-    provenance = local.provenance or {}
-    return {
-        "provider": None,
-        "packageId": provenance.get("sourcePackage"),
-        "revision": provenance.get("sourceRevision"),
-        "bytes": None,
-        "files": None,
-    }
-
-
-def _local_unknown(local):
-    source = _local_source(local)
-    license_document = _local_license(local)
-    usage = _local_usage(local)
-    unknown = []
-    if source["provider"] is None:
-        unknown.append("provider")
-    if source["bytes"] is None:
-        unknown.append("sourceBytes")
-    if license_document["unknown"]:
-        unknown.append("license")
-    for name in ("dressing", "staticCollision"):
-        if usage[name] is None:
-            unknown.append(name)
-    if local.version.metadata.get("dimensionsM") is None:
-        unknown.append("dimensionsM")
-    if (local.version.metadata.get("physics") or {}).get("collision") is None:
-        if "staticCollision" not in unknown:
-            unknown.append("staticCollision")
-    return list(dict.fromkeys(unknown))
-
-
 def _local_asset(local):
     version = local.version
     metadata = version.metadata
@@ -582,7 +501,7 @@ def _candidate(match, filters, language, correlated, by_bare_id):
                 "staticCollision": entry.usage_value("staticCollision"),
                 "evidence": _usage_evidence(entry),
             },
-            "installed": installed_document(locals_),
+            "installed": installed_document(locals_, limit=3),
             "acquisition": entry.acquisition.document(),
             "match": {
                 "reasons": match.reasons,
@@ -605,7 +524,7 @@ def _candidate(match, filters, language, correlated, by_bare_id):
         "zh": local.entry.descriptions["zh"] if local.entry is not None else None,
     }
     own = by_bare_id.get(version.bare_id, [])
-    installed = installed_document(own or [local])
+    installed = installed_document(own or [local], limit=3)
     return {
         "type": "local",
         "ref": f"asset:{version.id}",
@@ -682,11 +601,21 @@ def _shrink(response):
             response["interpretedQuery"]["notes"].pop()
         elif response["interpretedQuery"]["keywords"]:
             response["interpretedQuery"]["keywords"].pop()
+        elif response["interpretedQuery"].get("preferences"):
+            response["interpretedQuery"]["preferences"].pop()
         elif len(response["interpretedQuery"]["text"]) > 80:
             response["interpretedQuery"]["text"] = clip(
                 response["interpretedQuery"]["text"],
                 max(80, len(response["interpretedQuery"]["text"]) // 2),
             )
+        elif response["interpretedQuery"].get("exact"):
+            exact = response["interpretedQuery"]["exact"]
+            if len(exact.get("ref") or "") > 80:
+                exact["ref"] = clip(exact["ref"], 80)
+            elif len(exact.get("id") or "") > 80:
+                exact["id"] = clip(exact["id"], 80)
+            else:
+                response["interpretedQuery"]["exact"] = None
         elif response["snapshot"]["coverage"]:
             response["snapshot"]["coverage"] = clip(response["snapshot"]["coverage"], 200)
         elif response["zeroResult"] and response["zeroResult"]["messages"]:
@@ -700,7 +629,7 @@ def _shrink(response):
 def _zero(reason, messages, excluded_by, suggestions):
     return {
         "reason": reason,
-        "messages": messages[:10],
+        "messages": [clip(message, 400) for message in messages[:10]],
         "excludedBy": excluded_by[:9],
         "suggestions": suggestions[:11],
     }
@@ -708,12 +637,34 @@ def _zero(reason, messages, excluded_by, suggestions):
 
 def _zero_document(scope, interpreted, filters, snapshot, reason, messages, excluded_by,
                    suggestions):
-    return _summary_response(
+    document = _summary_response(
         scope, interpreted, filters, snapshot,
         {"returned": 0, "matching": 0, "localMatching": 0, "onlineMatching": 0,
          "approximate": 0, "budgetTruncated": False},
         [], None, False, _zero(reason, messages, excluded_by, suggestions),
     )
+    if not _fits(document):
+        _shrink(document)
+    if not _fits(document):
+        document["interpretedQuery"] = {
+            "text": clip(document["interpretedQuery"].get("text", ""), 80),
+            "keywords": [],
+            "preferences": [],
+            "exact": None,
+            "approximateRequested": bool(
+                document["interpretedQuery"].get("approximateRequested")
+            ),
+            "notes": [],
+        }
+        document["snapshot"]["coverage"] = clip(document["snapshot"]["coverage"], 200)
+        document["zeroResult"] = {
+            "reason": reason,
+            "messages": [],
+            "excludedBy": [],
+            "suggestions": [],
+        }
+        document["counts"]["budgetTruncated"] = True
+    return document
 
 
 def _other_scope_matches(scope, online_matches, local_matches):
@@ -822,25 +773,24 @@ def search_catalog(
                 entry = None
             if scope == "local":
                 if entry is None:
-                    interpreted["exact"] = {"type": "catalog",
-                                            "id": f"{first}/{second}@{third}"}
+                    interpreted["exact"] = _exact_document("catalog", f"{first}/{second}@{third}")
                     return _zero_document(
                         scope, interpreted, filters, snapshot, "unknown_exact_id",
                         [f"No catalog entry has the exact ID '{clip(text, 200)}'."], [], [],
                     )
-                interpreted["exact"] = {"type": "catalog", "id": entry.id}
+                interpreted["exact"] = _exact_document("catalog", entry.id)
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "scope",
                     ["The exact catalog identity is outside scope=local."],
                     [], [{"action": "broaden_scope"}],
                 )
             if entry is None:
-                interpreted["exact"] = {"type": "catalog", "id": f"{first}/{second}@{third}"}
+                interpreted["exact"] = _exact_document("catalog", f"{first}/{second}@{third}")
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "unknown_exact_id",
                     [f"No catalog entry has the exact ID '{clip(text, 200)}'."], [], [],
                 )
-            interpreted["exact"] = {"type": "catalog", "id": entry.id, "ref": entry.ref}
+            interpreted["exact"] = _exact_document("catalog", entry.id, entry.ref)
             local_versions = correlated.get(entry.id, [])
             match = _Match(
                 "online", entry, None, [{"field": "id", "value": entry.id, "query": text}],
@@ -854,13 +804,14 @@ def search_catalog(
             except LibraryError:
                 version = None
             if version is None:
-                interpreted["exact"] = {"type": "local", "id": f"{first}/{second}"
-                                        + (f"@{third}" if third else "")}
+                interpreted["exact"] = _exact_document(
+                    "local", f"{first}/{second}" + (f"@{third}" if third else "")
+                )
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "unknown_exact_id",
                     [f"No local asset has the exact ID '{clip(text, 200)}'."], [], [],
                 )
-            interpreted["exact"] = {"type": "local", "id": version.id}
+            interpreted["exact"] = _exact_document("local", version.id)
             if scope == "online":
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "scope",
@@ -898,9 +849,15 @@ def search_catalog(
             results, None, False, None,
         )
         if not _fits(response):
-            response["results"] = []
-            response["counts"].update(returned=0, budgetTruncated=True)
-            _shrink(response)
+            identity = clip(
+                match.entry.id if match.type == "online" else match.local.version.id, 200
+            )
+            return _zero_document(
+                scope, interpreted, filters, snapshot, "response_budget",
+                [f"The exact candidate '{identity}' exceeds the 32 KiB compact budget; read "
+                 "it through its library or catalog detail."],
+                [], [],
+            )
         return response
 
     online_matches = []
@@ -958,6 +915,7 @@ def search_catalog(
             [item for item in locals_all
              if _match_fields(_local_fields(item), keywords)[0] is not None],
         )
+
         if scope == "online" and catalog.available and not catalog.entries:
             reason = "empty_catalog"
             messages = ["The catalog snapshot contains no entries."]
@@ -995,6 +953,12 @@ def search_catalog(
         return _zero_document(scope, interpreted, filters, snapshot, reason, messages,
                               excluded_by, suggestions)
 
+    if offset >= len(ordered):
+        raise LibraryError(
+            "invalid_cursor",
+            "Cursor offset is past the matching candidates; repeat the search",
+            400,
+        )
     page = ordered[offset: offset + limit]
     results = [
         compact_candidate(_candidate(item, filters, language, correlated, by_bare_id))
@@ -1021,6 +985,20 @@ def search_catalog(
         budget = True
         results.pop()
         response = build(results)
+    if not results:
+        return _zero_document(
+            scope, interpreted, filters, snapshot, "response_budget",
+            ["The matching page exceeds the 32 KiB compact budget even after trimming; "
+             "narrow the query or request a single candidate by exact ID."],
+            [], [],
+        )
     if not _fits(response):
         _shrink(response)
+        if not _fits(response):
+            return _zero_document(
+                scope, interpreted, filters, snapshot, "response_budget",
+                ["The matching page exceeds the 32 KiB compact budget even after trimming; "
+                 "narrow the query or request a single candidate by exact ID."],
+                [], [],
+            )
     return response

@@ -11,6 +11,8 @@ test('online catalog scope renders the five committed candidates and bilingual s
   await expect(page.locator('.catalog-card.is-online')).toHaveCount(5);
   await expect(page.locator('.catalog-snapshot')).toContainText('sha256:');
   await expect(page.locator('.catalog-snapshot')).toContainText('Curated SimReady subset; not the complete dataset.');
+  await expect(page.locator('.catalog-snapshot')).toContainText('索引时间');
+  await expect(page.locator('.catalog-snapshot')).toContainText(/\d+ (秒|分钟|小时|天)前/);
   await expect(page.locator('.catalog-snapshot')).toContainText('快照可离线读取');
   await page.getByRole('searchbox', { name: '搜索素材' }).fill('纸箱');
   const cards = page.locator('.catalog-card.is-online');
@@ -76,6 +78,11 @@ test('zero results explain the applied filters and only act when the user asks',
   await expect(zero.getByRole('button', { name: '允许近似结果' })).toBeVisible();
   await expect(page.locator('.catalog-card')).toHaveCount(0);
   expect(new URL(page.url()).searchParams.get('usage')).toBe('dressing');
+  await zero.getByRole('button', { name: '移除条件：用途' }).click();
+  await expect(page).not.toHaveURL(/usage=dressing/);
+  await expect(page.locator('.catalog-card.is-online')).toHaveCount(1);
+  await page.getByLabel('用途', { exact: true }).selectOption('dressing');
+  await expect(page.locator('.catalog-zero')).toBeVisible();
   await page.getByRole('checkbox', { name: '允许近似结果' }).check();
   const card = page.locator('.catalog-card.is-online');
   await expect(card).toHaveCount(1);
@@ -101,6 +108,9 @@ test('candidate detail and estimate expose the fixed revision and desk/cart elig
   await expect(detail).toContainText('必须磁盘');
   await expect(detail).toContainText('Raw cache is not implemented before SF2.');
   await expect(detail).toContainText('估算不下载主文件');
+  await expect(detail).toContainText('BSD-3-Clause');
+  await expect(detail).toContainText('source_assets/OmniPBR.mdl');
+  await expect(detail.locator('.catalog-source-link')).toHaveAttribute('href', /huggingface\.co/);
   await expect(detail.locator('img')).toHaveCount(0);
   await page.getByRole('button', { name: '关闭详情' }).click();
   await expect(detail).toHaveCount(0);

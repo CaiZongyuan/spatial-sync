@@ -1,5 +1,6 @@
 """The committed catalog, unified search, bounded pages, describe and estimate."""
 
+import base64
 import copy
 import hashlib
 import json
@@ -140,6 +141,12 @@ def ids(result):
 
 def package(result):
     return [item["id"].split("/")[1].partition("@")[0] for item in result["results"]]
+
+
+def canonical_bytes(value):
+    return len(json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+    ).encode("utf-8"))
 
 
 def test_catalog_facts_match_factory_support_and_committed_bytes():
@@ -347,6 +354,9 @@ def test_scope_dedup_and_cross_scope_explanations(tmp_path):
     assert online["results"][0]["installed"]["versions"] == [{
         "id": "environment/cardboard-box@1",
         "contentHash": correlated.content_hash,
+        "usage": {"dressing": None, "staticCollision": None},
+        "license": {"name": None, "admitted": False, "unknown": True},
+        "unknown": ["license", "dressing", "staticCollision"],
     }]
     local = value.search(library, q="zzz", scope="local")
     assert local["zeroResult"]["reason"] == "no_query_match"
@@ -372,7 +382,9 @@ def test_provenance_correlation_requires_exact_revision_and_package(tmp_path):
     library = FakeLibrary([wrong_revision, wrong_package])
     value = catalog()
     result = value.search(library, q="box", scope="online")
-    assert result["results"][0]["installed"] == {"versions": [], "latest": None}
+    assert result["results"][0]["installed"] == {
+        "versions": [], "latest": None, "truncated": False,
+    }
     combined = value.search(library, q="environment", scope="all")
     assert {"environment/box-rev@1", "environment/box-package@1"} == {
         item for item in ids(combined) if item.startswith("environment/")
@@ -514,6 +526,8 @@ def test_local_results_use_their_own_license_and_validation_not_catalog_claims(t
         "id": "environment/mystery-crate", "kind": "environment", "title": "Mystery crate",
         "description": "No provenance", "dimensionsM": [0.2, 0.2, 0.2],
     })
+    for version in (passing, failing, unvalidated):
+        (version.path / "LICENSE.txt").write_text("CC-BY-4.0", encoding="utf-8")
     library = FakeLibrary([passing, failing, unvalidated, unlicensed])
     value = catalog()
     result = value.search(library, q="environment", scope="local")
@@ -524,6 +538,17 @@ def test_local_results_use_their_own_license_and_validation_not_catalog_claims(t
     assert box["source"]["provider"] == "simready"
     assert box["source"]["bytes"] == 21530693
     assert box["local"]["asset"]["title"] == "Cardboard Box"
+    assert box["installed"]["latest"] == "environment/cardboard-box@3"
+    assert box["installed"]["truncated"] is False
+    assert box["installed"]["versions"][1]["id"] == "environment/cardboard-box@2"
+    assert box["installed"]["versions"][1]["usage"]["staticCollision"] is False
+    combined = value.search(library, q="纸箱", scope="all")
+    assert [item["id"] for item in combined["results"]] == [
+        "simready/box_cardboard_a01@" + REVISION
+    ]
+    online = combined["results"][0]
+    assert online["usage"]["staticCollision"] is True
+    assert online["installed"]["versions"][1]["usage"]["staticCollision"] is False
     # A failing local P1 must not inherit the catalog's passing static-collision claim.
     assert by_id["environment/cardboard-box@2"]["usage"] == {
         "dressing": True, "staticCollision": False,
@@ -608,7 +633,7 @@ def test_compact_pages_stay_under_32_kib_and_continue_without_skipping(tmp_path)
     while True:
         result = value.search(EmptyLibrary(), q="widget", scope="online", limit=50,
                               cursor=cursor)
-        assert serialized_size(result) <= 32768
+        assert canonical_bytes(result) <= 32768
         assert result["schema"] == SEARCH_SCHEMA
         collected.extend(ids(result))
         pages += 1
@@ -620,6 +645,100 @@ def test_compact_pages_stay_under_32_kib_and_continue_without_skipping(tmp_path)
     assert pages > 1
     assert len(collected) == 40 == len(set(collected))
     assert set(collected) == {f"simready/widget_{index:02d}@{REVISION}" for index in range(40)}
+
+
+def test_zero_and_exact_results_stay_within_budget_for_adversarial_queries():
+    value = catalog()
+    queries = (
+        "9" * 40_000 + "m",
+        "simready/" + "a" * 40_000 + "@" + "0" * 40,
+        "x" * 40_000,
+    )
+    for query in queries:
+        result = value.search(EmptyLibrary(), q=query, scope="online")
+        assert canonical_bytes(result) <= 32768, query[:20]
+        assert result["zeroResult"] is not None
+        assert result["results"] == []
+
+
+def test_oversized_local_provenance_fields_are_bounded_and_reachable(tmp_path):
+    version = make_version(tmp_path, "big-thing", 1, provenance={
+        "sourcePackage": "P" * 50_000,
+        "sourceRevision": "R" * 50_000,
+        "license": {"name": "L" * 50_000, "file": "LICENSE.txt"},
+    })
+    (version.path / "LICENSE.txt").write_text("fixture", encoding="utf-8")
+    library = FakeLibrary([version])
+    value = catalog()
+    result = value.search(library, q="big", scope="local")
+    assert canonical_bytes(result) <= 32768
+    assert ids(result) == ["environment/big-thing@1"]
+    assert len(result["results"][0]["license"]["name"]) <= 200
+    assert len(result["results"][0]["source"]["packageId"]) <= 200
+    exact = value.search(library, q="environment/big-thing", scope="local")
+    assert canonical_bytes(exact) <= 32768
+    assert ids(exact) == ["environment/big-thing@1"]
+
+
+def test_cursor_offset_past_the_match_list_is_invalid(tmp_path):
+    value = catalog()
+    first = value.search(EmptyLibrary(), q="environment", scope="online", limit=2)
+    payload = json.loads(base64.urlsafe_b64decode(
+        first["nextCursor"] + "=" * (-len(first["nextCursor"]) % 4)
+    ))
+    payload["offset"] = 999
+    cursor = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode()
+    ).rstrip(b"=").decode()
+    with pytest.raises(LibraryError) as invalid:
+        value.search(EmptyLibrary(), q="environment", scope="online", cursor=cursor)
+    assert invalid.value.status == 400
+    assert invalid.value.detail["code"] == "invalid_cursor"
+
+
+def test_cursor_binds_filters_and_sort(tmp_path):
+    value = catalog()
+    first = value.search(EmptyLibrary(), q="environment", scope="online",
+                         kind="environment", limit=1)
+    with pytest.raises(LibraryError) as filters:
+        value.search(EmptyLibrary(), q="environment", scope="online", kind="robot",
+                     cursor=first["nextCursor"])
+    assert filters.value.detail["code"] == "cursor_mismatch"
+    with pytest.raises(LibraryError) as sort:
+        value.search(EmptyLibrary(), q="environment", scope="online", kind="environment",
+                     sort="name", cursor=first["nextCursor"])
+    assert sort.value.detail["code"] == "cursor_mismatch"
+
+
+def test_local_unknown_usage_and_license_are_excluded_by_hard_filters(tmp_path):
+    version = make_version(tmp_path, "mystery-crate", 1, metadata={
+        "id": "environment/mystery-crate", "kind": "environment", "title": "Mystery crate",
+        "description": "No provenance or checks", "dimensionsM": [0.2, 0.2, 0.2],
+    })
+    library = FakeLibrary([version])
+    value = catalog()
+    for filters in ({"license_admitted": True}, {"usage": "dressing"}):
+        result = value.search(library, q="mystery", scope="local", **filters)
+        assert result["results"] == []
+        assert result["zeroResult"]["reason"] == "hard_filters"
+    approximate = value.search(library, q="mystery", scope="local", usage="dressing",
+                               approximate=True)
+    assert ids(approximate) == ["environment/mystery-crate@1"]
+    assert "usage" in approximate["results"][0]["match"]["unknown"]
+
+
+def test_local_license_requires_retained_evidence(tmp_path):
+    bare = make_version(tmp_path, "bare-license", 1, provenance={
+        "license": {"name": "CC-BY-4.0"},
+    })
+    backed = make_version(tmp_path, "backed-license", 1, provenance={
+        "license": {"name": "CC-BY-4.0"},
+    })
+    (backed.path / "LICENSE.txt").write_text("CC-BY-4.0", encoding="utf-8")
+    result = catalog().search(FakeLibrary([bare, backed]), q="license", scope="local")
+    by_id = {item["id"]: item for item in result["results"]}
+    assert by_id["environment/bare-license@1"]["license"]["unknown"] is True
+    assert by_id["environment/backed-license@1"]["license"]["admitted"] is True
 
 
 def test_empty_query_browses_and_snapshot_reports_offline_freshness():
@@ -648,7 +767,7 @@ def test_describe_summary_full_digest_and_unknown_entry():
     assert serialized_size(summary) <= 8192
     assert summary["names"] == {"en": "Cardboard box", "zh": "纸箱"}
     assert summary["aliases"]["zh"] == ["瓦楞纸箱", "纸盒", "包装箱"]
-    assert summary["installed"] == {"versions": [], "latest": None}
+    assert summary["installed"] == {"versions": [], "latest": None, "truncated": False}
     assert summary["unknown"] == []
     assert summary["details"]["view"] == "full"
     assert summary["details"]["documentDigest"] == summary["documentDigest"]
@@ -672,6 +791,22 @@ def test_describe_summary_full_digest_and_unknown_entry():
         value.describe("simready", "absent", REVISION)
     assert unknown.value.status == 404
     assert unknown.value.detail["code"] == "unknown_catalog_entry"
+
+
+def test_maximal_valid_entry_describe_stays_bounded(tmp_path):
+    entry = raw_entry()
+    entry["names"] = {"en": "N" * 20_000, "zh": "名" * 20_000}
+    entry["aliases"] = {"en": ["A" * 20_000] * 10, "zh": ["别" * 20_000] * 10}
+    entry["descriptions"] = {"en": "D" * 200_000, "zh": "描" * 200_000}
+    entry["usage"]["dressing"]["evidence"] = "E" * 100_000
+    entry["source"]["bomNotInBom"] = ["B" * 10_000] * 100
+    entry["license"]["obligations"] = ["O" * 10_000] * 20
+    value = catalog(write_catalog(tmp_path, [entry]))
+    summary = value.describe("simready", "box_cardboard_a01", REVISION)
+    full = value.describe("simready", "box_cardboard_a01", REVISION, view="full")
+    assert canonical_bytes(summary) <= 8192
+    assert canonical_bytes(full) <= 32768
+    assert full.get("previewTruncated") is True
 
 
 def test_cart_describe_exposes_unknowns_and_gap():

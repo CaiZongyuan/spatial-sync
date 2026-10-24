@@ -216,7 +216,10 @@ def test_search_cursor_pagination_and_bounded_errors():
             assert invalid_limit.json()["detail"]["code"] == "invalid_limit"
 
 
-def test_imported_provenance_correlated_asset_appears_under_the_online_entry(tmp_path):
+def test_imported_provenance_correlated_asset_appears_under_the_online_entry(tmp_path, monkeypatch):
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    monkeypatch.setenv("SPATIAL_STATE_ROOT", str(tmp_path / "state"))
+    monkeypatch.setenv("SPATIAL_RECORDINGS_ROOT", str(tmp_path / "recordings"))
     with TestClient(create_app()) as client:
         job = upload(client, correlated_asset())
         assert job["assetVersion"] == "environment/cardboard-box@1"
