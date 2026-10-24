@@ -7,6 +7,17 @@ description: 与人逐轮制定具身训练计划，记录可测量假设和完�
 
 先读上一轮计划、评估和实验记录，确认失败阶段、已证伪假设与剩余预算。已有计划用 `lw plan ls --json` 和 `lw plan show plan-0006 --json` 阅读；尚无历史时记录这是第一轮。已证伪的假设只有附上新证据后才能重提。
 
+以实际 `goalId` 读取目标记录和预算；默认目标为 `goal/<Task.name>`，跨 Task 版本保持不变。自然语言 `goal` 是结果描述。
+
+```bash
+lw notebook show goal/fr3-pick-tube --json
+lw notebook show goal/fr3-pick-tube --refuted --json
+lw loop show goal/fr3-pick-tube --json
+```
+
+读完各条自动判定、人工改判、比较条件与预算覆盖说明后再开始访谈。缺少历史或限额证据时记录未知。
+假设 `confirmed` 只表示达成声明的预测，不表示 Candidate 已被接受或可以部署；分别阅读接受决定和人工部署状态。
+
 ## 访谈
 
 每轮提出当前能判断的全部问题，每题写明推荐答案及理由，再等待人的回答；“是”表示接受推荐。根据回答继续追问，直到以下选择已确定：
@@ -39,12 +50,13 @@ lw task show task/fr3-pick-tube@1 --json
 kind: training
 title: FR3 插入阶段第 1 轮
 goal: 平台评估至少 85/100
+goalId: goal/fr3-pick-tube
 task: task/fr3-pick-tube@1
 algorithm: {library: rsl_rl, name: PPO, version: 5.4.1}
 model: {actor: [256, 128], critic: [256, 128]}
 hyperparameters: {num_envs: 2048, max_iterations: 800, learning_rate: 0.001}
 jobs: {seeds: [42, 43, 44]}
-budget: {gpuHours: 9}
+budget: {gpuHours: 9, episodes: 100}
 evaluation: {scene: robot-and-tubes@2, episodes: 100, threshold: 85}
 rationale: 上一轮插入阶段较弱，检验持管目标引导的影响
 hypotheses:
@@ -64,3 +76,13 @@ lw plan show plan-0007 --json
 ```
 
 使用实际返回的计划 ID 与审批 ID，向人说明预算、假设及相对上一轮的变化，并给出 Web 待审批页。人在审批页或交互终端决定；MCP 没有审批工具。被驳回后回到访谈，按反馈用 `lw plan revise plan-0007 plan.yaml --json` 提交新修订。算法、模型、Task、奖励或声明的 seeds 改变都要经过新的审批。计划批准仅表示意图获批，训练执行另受作业与 GPU 授权约束。
+
+同一 Plan ID 的修订共享预算池并保持目标；独立新一轮用新 Plan ID 和 `previous`。
+审批若返回 `loop_budget_changed`，重新读取预算并提交新修订，让人看到当前依据；已有批准重试不创建新授权。
+后续具身评估用实际 Plan ID 与固定修订关联，平台才会将结果和尝试消耗写入该目标：
+
+```bash
+lw eval run robot_arm.virtual --suite suite/lab-demo-pick-place@1 --plan plan-0007 --revision 1 --json
+```
+
+上例只示意接口；选择与实际 Task 场景和动作一致的评估集。实验记录只提供 train 投影，使用平台返回的失败/无效证据，保留未知；下一轮的统计接受规则仍按当前规格执行。

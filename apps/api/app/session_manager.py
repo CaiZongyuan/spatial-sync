@@ -52,6 +52,7 @@ from packages.protocol.schema import (
     validate_command_args,
 )
 from packages.training.jobs import TrainingJobs
+from packages.training.loop_budgets import LoopBudgets
 from packages.training.plans import TrainingPlanStore
 from packages.transport import FrameCodec
 
@@ -1108,10 +1109,13 @@ class SessionManager:
         self._startup_lock = asyncio.Lock()
         self._information_started = False
         self.evaluations = None
+        self.notebooks = None
         self.jobs = TrainingJobs(self)
         from packages.cost.ledger import CostLedger
 
         self.costs = CostLedger(self)
+        self.loop_budgets = LoopBudgets(self)
+        self.training_plans.loop_budgets = self.loop_budgets
 
     async def startup(self):
         async with self._startup_lock:

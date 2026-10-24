@@ -72,6 +72,39 @@ only a generated fake credential locally, never through HTTP or in the user's Va
 
 ## Information and recording checks
 
+### Training Goal and Lab Notebook
+
+An approved Training Plan's linked train Evaluations produce public Notebook
+records, including failed and cancelled attempts. Use the Plan's returned
+`goalId` (by default `goal/<Task.name>`, stable across Task revisions):
+
+```powershell
+lw eval run robot_arm.virtual --suite suite/lab-demo-pick-place@1 --plan plan-0007 --revision 1 --json
+lw notebook show goal/fr3-pick-tube --json
+lw notebook show goal/fr3-pick-tube --refuted --json
+lw loop show goal/fr3-pick-tube --json
+```
+
+Replace the example Plan, Goal, subject and Suite with matching fixed inputs.
+The CLI and generic MCP tools `notebook_show` / `loop_show` read the same HTTP
+resources. The Training page selects a Goal with `?goal=goal%2F<name>` and shows
+scores, Wilson intervals, comparison groups, hypotheses and cumulative budget.
+An operator can add a reasoned human judgement there; the automatic result,
+Candidate acceptance and deployment decision remain separate.
+
+The canonical state is `SPATIAL_STATE_ROOT/notebook-records.json`; retryable
+Markdown/YAML projections live under `LW_LIBRARY/notebooks/<goal-name>/`.
+Private/test materials are excluded. Unknown legacy limits, execution identities
+and LLM cost remain unknown. Plan revisions share one budget pool; the first
+durable human approval fixes the Goal limit and wall-clock anchor.
+
+`tests/cli/test_notebook_commands.py` exercises the installed entrypoint and
+official MCP stdio client. `tests/e2e/notebooks.spec.ts`, with
+`SPATIAL_E2E_WEB_MODE=preview` after a build, owns a separate API/Web process and
+verifies two controlled evaluator rounds, CI lines, budget exhaustion and durable
+human audit. Its labelled fake evaluator adapter runs no physics or training;
+the gateway Notebook tests separately exercise actual Synthetic evaluation.
+
 The latency budgets in information specification section12 use this development
 machine's Linux/WSL2 environment, as used for the I3 acceptance, as the reference.
 Windows results are diagnostic references and do not gate delivery. Before

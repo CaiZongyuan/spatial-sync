@@ -8,6 +8,7 @@ import { elapsed, jobReason, jobStatusLabels, numberOrUnknown, percentage } from
 import { useTrainingResources } from '../lib/use-training-resources';
 import { ApprovalCard } from './ApprovalsPage';
 import { ComputeNodes } from './ComputeNodes';
+import { GoalNotebookPanel } from './training/GoalNotebookPanel';
 import '../resources.css';
 import '../training-resources.css';
 
@@ -36,18 +37,19 @@ export function TrainPage() {
     && record.status === 'pending' && record.details.plan?.kind === 'training');
   return <main className="training-page" data-testid="training-page"><header className="training-heading">
     <div><span className="eyebrow">LAB TRAINING</span><h1>训练</h1><p>从已批准的计划跟进作业、资源与结果。</p></div>
-    <div className="training-layer"><span aria-current="page">具身层 · 机器人训练</span>
+    <div className="training-layer"><span aria-current="page">具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</span>
       <button disabled title="Agent 层作业尚未接入">Agent 层 · 尚未接入</button></div>
   </header><TrainingStages />
+    <GoalNotebookPanel goal={search.goal} onGoalChange={goal => void navigate({ to: '/train', search: { ...search, goal }, resetScroll: false })} />
     <section className="training-job-section resource-panel" id="jobs" aria-label="训练作业">
       <header><div><h2>训练作业</h2><span className="resource-tag">{resources.jobs?.length ?? '—'} 个作业</span>
         <span className="resource-tag">{resources.jobs?.filter(job => job.status === 'running').length ?? '—'} 个运行中</span></div>
         <button onClick={resources.refresh}>刷新作业与节点</button></header>
       <div className="resource-panel-body"><div className="training-filters">
         <label>搜索<input aria-label="搜索训练作业" placeholder="作业、Task 或计划" value={query}
-          onChange={event => void navigate({ to: '/train', search: { q: event.target.value || undefined, status: search.status }, resetScroll: false })} /></label>
+          onChange={event => void navigate({ to: '/train', search: { ...search, q: event.target.value || undefined }, resetScroll: false })} /></label>
         <label>状态<select aria-label="筛选作业状态" value={status}
-          onChange={event => void navigate({ to: '/train', search: { q: search.q, status: event.target.value as JobStatus || undefined }, resetScroll: false })}>
+          onChange={event => void navigate({ to: '/train', search: { ...search, status: event.target.value as JobStatus || undefined }, resetScroll: false })}>
           <option value="">全部状态</option>{Object.entries(jobStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label></div>
         {resources.jobsError && <p className="resource-error" role="alert">作业刷新失败：{resources.jobsError}。{resources.jobs && '当前保留最近一次结果。'}</p>}
@@ -89,7 +91,7 @@ export function TrainPage() {
         <p className="resource-note">{resources.nodesError ? '节点数据暂不可用。' : '正在读取节点…'}</p>}
     </section></div>
     <section className="resource-panel training-unavailable" id="policies" aria-labelledby="training-policies-title"><div className="resource-panel-body">
-      <h2 id="training-policies-title">策略与改进记录尚未接入</h2><p>当前可跟进作业、检查点与训练计划。策略提升、版本对比和 RSI 成绩将在对应流程上线后显示。</p>
+      <h2 id="training-policies-title">策略提升尚未接入</h2><p>实验记录与 RSI 成绩已在本页展示。策略创建、运行与部署提升将在对应流程上线后显示。</p>
       <Link to="/eval">查看评估中心 →</Link></div></section>
   </main>;
 }

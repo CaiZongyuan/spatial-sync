@@ -13,7 +13,7 @@ The cycle in which an agent, through the platform, goes from assets to scene to 
 _Avoid_: Reference State Initialization (a different RL term), self-play
 
 **Goal** (目标):
-A result a person asks the lab to achieve, such as finding the best culture condition for a sample.
+A result a person asks the lab to achieve, such as finding the best culture condition for a sample. It remains the same across Task revisions and groups the training rounds, experimental evidence and cumulative budget toward that result.
 _Avoid_: Task (a training definition), mission
 
 ## Assets
@@ -102,7 +102,7 @@ A Plan's stated cause of a past failure together with a measurable expected effe
 _Avoid_: Idea, guess
 
 **Lab Notebook** (实验记录):
-The cumulative record across rounds of Hypotheses, what was tried and what the Evaluations showed, which an agent reads before proposing the next Plan.
+The cumulative record across rounds of Hypotheses, what was tried and what the Evaluations showed, which an agent reads before proposing the next Plan. Automatic judgements and later human judgements remain separately attributable; neither approves deployment.
 _Avoid_: Memory, log, history
 
 **Evaluation Suite** (评估集):

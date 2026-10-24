@@ -318,9 +318,37 @@ class GatewayClient:
         return (await self.request("GET", self._suite_path(suite) + "/scoreboard",
                                    params={"subject": subject} if subject else {}))["rows"]
 
-    async def evaluation_run(self, subject, suite, *, actor="cli:lw"):
-        return await self.request("POST", "/api/v1/evaluations",
-                                  json={"subject": subject, "suite": suite, "split": "train"}, actor=actor)
+    async def evaluation_run(self, subject, suite, planId=None, planRevision=None, *, actor="cli:lw"):
+        payload = {"subject": subject, "suite": suite, "split": "train"}
+        if planId is not None:
+            payload["planId"] = planId
+        if planRevision is not None:
+            payload["planRevision"] = planRevision
+        return await self.request("POST", "/api/v1/evaluations", json=payload, actor=actor)
+
+    @staticmethod
+    def _goal(value):
+        if re.fullmatch(r"task/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*", value):
+            return "goal/" + value.split("/", 1)[1].rsplit("@", 1)[0]
+        if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", value):
+            return "goal/" + value
+        if not re.fullmatch(r"goal/[a-z0-9]+(?:-[a-z0-9]+)*", value):
+            raise GatewayError("Select goal/name, a Task version or its default goal name")
+        return value
+
+    async def notebook_show(self, goal, refuted=False):
+        return await self.request("GET", "/api/v1/notebooks/" + quote(self._goal(goal), safe=""),
+                                  params={"refuted": str(refuted).lower()})
+
+    async def loop_show(self, goal):
+        return await self.request("GET", "/api/v1/loops/" + quote(self._goal(goal), safe=""))
+
+    async def notebook_override(self, goal, entry, hypothesisId, verdict, note, requestId=None,
+                                *, actor="cli:lw"):
+        return await self.request("PATCH", "/api/v1/notebooks/" + quote(self._goal(goal), safe="") + "/" +
+                                  quote(entry, safe=""), actor=actor,
+                                  json={"hypothesisId": hypothesisId, "verdict": verdict, "note": note,
+                                        "requestId": requestId or uuid.uuid4().hex})
 
     async def evaluation_show(self, id):
         return await self.request("GET", "/api/v1/evaluations/" + quote(id, safe=""))

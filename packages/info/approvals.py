@@ -109,6 +109,25 @@ class ApprovalStore:
         approval_id = self._invocations.get(invocation_id)
         return self.records.get(approval_id)
 
+    def first_decision(self, approval_ids, decision):
+        """Return real durable audit order, independent of IDs and wall-clock ordering."""
+        identities = set(approval_ids)
+        if not identities:
+            return None
+        with self._write_lock:
+            payload = self.path.read_bytes() if self.path.exists() else b""
+        for line in payload.splitlines(keepends=True):
+            if not line.endswith(b"\n"):
+                break  # A partial append never establishes an approval decision.
+            value = json.loads(line)
+            if value["approvalId"] not in identities:
+                continue
+            record = ApprovalRecord.model_validate(value)
+            event = next((event for event in record.decisions if event.decision == decision), None)
+            if event is not None:
+                return record.approvalId, event
+        return None
+
     def decide(self, approval_id, decision: Decision, actor, note=""):
         record = self.records[approval_id]
         status = {"approve": "approved", "deny": "denied", "revoke": "revoked"}[decision]

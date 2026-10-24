@@ -38,6 +38,8 @@ from apps.api.app.job_routes import install_job_routes
 from apps.api.app.library_routes import install_library_routes
 from apps.api.app.library_validation import program_schemas
 from apps.api.app.live_routes import install_live_routes
+from apps.api.app.notebook_routes import install_notebook_routes
+from apps.api.app.notebook_service import NotebookService
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import install_recording_routes
@@ -154,6 +156,9 @@ def create_app(
         )
     evaluations = EvaluationService(manager)
     manager.evaluations = evaluations
+    notebooks = NotebookService(manager)
+    manager.notebooks = notebooks
+    manager.training_plans.additional_in_use = notebooks.plan_in_use
     library_assets = manager.library_assets
     manager.library_deletions = LibraryDeletions(
         library_assets, lambda: manager.library, manager.approvals, recordings,
@@ -175,6 +180,7 @@ def create_app(
             library_assets.startup()
             await recordings.startup()
             await evaluations.startup()
+            await asyncio.to_thread(notebooks.startup)
             await monitor.start()
             await views.start()
             if manager.live:
@@ -230,10 +236,12 @@ def create_app(
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
     app.state.training_views = views
+    app.state.notebooks = notebooks
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_live_routes(app, manager, settings, lambda headers: _role(headers, settings))
 
     install_evaluation_routes(app, evaluations, lambda headers: _role(headers, settings))
+    install_notebook_routes(app, notebooks, lambda headers: _role(headers, settings))
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))

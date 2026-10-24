@@ -1,10 +1,10 @@
 """Authoring schemas are HTTP metadata, separate from spatial recording messages."""
 
-import math
-import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+
+from packages.training.predictions import prediction
 
 
 class Schema(BaseModel):
@@ -14,6 +14,7 @@ class Schema(BaseModel):
 Text = Annotated[str, Field(min_length=1, max_length=4000, pattern=r"\S")]
 SceneRef = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
 TaskRef = Annotated[str, Field(pattern=r"^task/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
+GoalRef = Annotated[str, Field(pattern=r"^goal/[a-z0-9]+(?:-[a-z0-9]+)*$")]
 
 
 class Evaluation(Schema):
@@ -105,10 +106,10 @@ class Prediction(Schema):
     @field_validator("to")
     @classmethod
     def measurable(cls, value):
-        if isinstance(value, str):
-            match = re.fullmatch(r"\s*(?:>=|<=|>|<|==|=)?\s*([-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)\s*", value)
-            if not match or not math.isfinite(float(match[1])):
-                raise ValueError("predict.to requires a finite number or numeric comparison")
+        try:
+            prediction(value)
+        except ValueError:
+            raise ValueError("predict.to requires a finite number or numeric comparison") from None
         return value
 
 
@@ -140,6 +141,7 @@ class TrainingPlan(Schema):
     kind: Literal["training"] = "training"
     title: Text
     goal: Text
+    goalId: GoalRef | None = None
     task: TaskRef
     previous: str | None = None
     algorithm: dict[str, JsonValue] = Field(min_length=1)

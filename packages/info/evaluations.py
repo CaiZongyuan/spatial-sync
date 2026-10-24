@@ -41,10 +41,11 @@ def evaluation_decision(successes, episodes, reference=None, *, split="train"):
 class EvaluationStore:
     """Only the gateway writes these receipts; the API exposes projections."""
 
-    def __init__(self, state_root):
+    def __init__(self, state_root, *, on_change=None):
         self.root = Path(state_root) / "evaluations"
         self.records = {}
         self.rows = []
+        self.on_change = on_change
 
     def startup(self):
         self.root.mkdir(parents=True, exist_ok=True)
@@ -67,6 +68,8 @@ class EvaluationStore:
     def save(self, record):
         durable_json(self.root / (record["evaluationId"] + ".json"), record)
         self.records = self.records | {record["evaluationId"]: deepcopy(record)}
+        if self.on_change is not None:
+            self.on_change(self.records[record["evaluationId"]])
 
     def reference(self, key):
         return next(
