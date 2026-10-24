@@ -111,6 +111,14 @@ def public_episode(value):
         result["milestones"] = {
             key: passed for key, passed in value["milestones"].items() if type(passed) is bool
         }
+    execution = value.get("policyExecution")
+    if isinstance(execution, dict):
+        summary = fields(execution, ("kind", "policy", "policyContentHash", "onnxSha256",
+                                     "observationSha256", "runtimeVersion"), (str,))
+        summary.update(fields(execution, ("actionStarts", "inferenceCalls", "validOutputs"), (int,)))
+        if execution.get("providers") == ["CPUExecutionProvider"]:
+            summary["providers"] = ["CPUExecutionProvider"]
+        result["policyExecution"] = summary
     return result
 
 
@@ -136,7 +144,8 @@ def public_score(value, rows=()):
     result["comparisonState"] = "known" if comparison_identity(value) else "unknown"
     result.update(fields(value, ("version",), (str, int)))
     result.update(fields(value, ("planRevision",), (int,)))
-    result.update(numbers(value, ("successes", "episodes", "score", "durationSeconds")))
+    result.update(numbers(value, ("successes", "episodes", "score", "durationSeconds", "trainingSuccess")))
+    result.update(fields(value, ("simGap",), (bool,)))
     if "ci95" in value:
         interval = value["ci95"]
         result["ci95"] = (
