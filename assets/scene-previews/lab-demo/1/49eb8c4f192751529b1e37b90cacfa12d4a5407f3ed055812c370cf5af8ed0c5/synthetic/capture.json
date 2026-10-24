@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-23T06:07:44.223025+00:00",
+  "capturedAt": "2026-10-24T14:23:01.179094+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -193,7 +193,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "76adf983e8be222de2c22e7a45412b5611631679d06e92c253bd8f0f5bb6f1ff"
+      "sha256": "336b811f6b0b38cab4219958de52c69cda6a3c4135edcbf6dbe41f6ed062ff20"
     }
   ],
   "documents": {
@@ -203,10 +203,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "b759fa07bbae8f582c17194212b015ca9229de2bc2b119017a4e5e98c39471a9",
-    "catalog.json": "5f8b2e08eb202f81951b50ee6cdeacacd62d497ee17b452b70ee1d6bfdde3bb4",
-    "state.json": "7c01f52b9da1dfea908080a2bc1ca17603c9b34f2ffef997bbfbdbb5dac53200",
-    "snapshot.bin": "9a9de46fd0cde5d68d622c260d303c06d69d300115921a8bf66034e3db3acb6c"
+    "manifest.json": "fcff04aa1681a6b5980f605c7858ee5a46f177805835df2d07c023d5c65124e0",
+    "catalog.json": "fe7d378683d9c22ea405aa238321ad61cba1c82a37eaa48fb6a646f5e89e8b45",
+    "state.json": "455a21074de65168f1c8c1688480c196fc13e06d2abc24181680fa3f05a34f62",
+    "snapshot.bin": "8fde1707f044eacfe2cbe61c9ac9660e03be4bc0b738bd65f8e2683502430d69"
   },
   "counts": {
     "physicalEntities": 30,

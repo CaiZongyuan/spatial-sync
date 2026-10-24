@@ -33,7 +33,7 @@ schema: lw.obs-spec/1
 observations:
   - name: arm_q
     source: joint_position
-    keys: [/World/Lab/RobotA/fr3_joint1]
+    keys: [/World/Lab/RobotA/fr3/fr3_joint1]
     frame: world
     unit: rad
     shape: [1]
@@ -41,7 +41,7 @@ observations:
     scale: [1.0]
 action:
   space: joint_position_delta
-  jointKeys: [/World/Lab/RobotA/fr3_joint1]
+  jointKeys: [/World/Lab/RobotA/fr3/fr3_joint1]
   units: [rad]
   scale: [0.05]
   lower: [-2.7]
