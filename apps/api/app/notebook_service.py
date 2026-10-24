@@ -6,7 +6,7 @@ from copy import deepcopy
 
 from apps.api.app.evaluation_views import public_episode
 from packages.info.plans import PlanError
-from packages.library.common import REPO_ROOT
+from packages.library.common import REPO_ROOT, LibraryError
 from packages.training.loop_budgets import goal_id, plan_budget
 from packages.training.notebook_contract import NotebookEntry
 from packages.training.notebook_rules import RULE_VERSION, judge_hypothesis, remaining_gap_reduction
@@ -19,7 +19,14 @@ def code_digest(paths):
     digest = hashlib.sha256()
     for name in paths:
         root = REPO_ROOT / name
+        if not root.exists():
+            raise FileNotFoundError("Required public implementation input is unavailable")
         files = [root] if root.is_file() else sorted(root.rglob("*"))
+        files = [
+            path for path in files if path.is_file() and path.suffix in (".py", ".yaml", ".yml", ".lock")
+        ]
+        if not files:
+            raise FileNotFoundError("Required public implementation input is empty")
         for path in files:
             if path.is_file() and path.suffix in (".py", ".yaml", ".yml", ".lock"):
                 digest.update(path.relative_to(REPO_ROOT).as_posix().encode() + b"\0")
@@ -76,6 +83,12 @@ class NotebookService:
             raise PlanError(
                 "evaluation_plan_mismatch", "Evaluation and Plan have different fixed bindings", status=409
             )
+        try:
+            implementations = deepcopy(self.identities())
+        except (OSError, ValueError) as error:
+            raise PlanError(
+                "comparison_evidence_unavailable", "Required comparison evidence is unavailable", status=503
+            ) from error
         return {
             "version": 1,
             "planId": plan["id"],
@@ -94,7 +107,7 @@ class NotebookService:
             },
             "hypotheses": deepcopy(plan["hypotheses"]),
             "ruleVersion": RULE_VERSION,
-            "implementations": deepcopy(self.identities()),
+            "implementations": implementations,
             "comparisonInputs": {
                 "suite": suite.id,
                 "suiteContentHash": suite.content_hash,
@@ -121,7 +134,7 @@ class NotebookService:
             raise PlanError("plan_not_approved", "Plan changed before evaluation admission", status=409)
         self.manager.jobs._require_available()
         used = 0
-        for record in tuple(self.manager.evaluations.store.records.values()):
+        for record in self.manager.loop_budgets._evaluation_records():
             if record.get("planId") != context["planId"]:
                 continue
             attempts = record.get("attemptedEpisodes", len(record.get("episodes", [])))
@@ -148,7 +161,7 @@ class NotebookService:
             record.get("planId") == identity
             and record.get("planRevision") == revision
             and self.manager.loop_budgets._held_evaluation(record)
-            for record in tuple(self.manager.evaluations.store.records.values())
+            for record in self.manager.loop_budgets._evaluation_records()
         )
 
     def complete_evaluation(self, record):
@@ -310,7 +323,7 @@ class NotebookService:
                     self.store.add(self._entry(record, record.get("notebookExecution")))
                 else:
                     self.store.publish(identity)
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError, LibraryError):
             self.error = (
                 True  # Evaluator truth/usage stay committed; public reads retry or report unavailable.
             )

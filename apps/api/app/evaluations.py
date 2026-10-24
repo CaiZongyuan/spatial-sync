@@ -83,6 +83,7 @@ class EvaluationService:
         self._ordinary_creates = 0
         self._runtime_hash = runtime_fingerprint()
         self._admission = asyncio.Lock()
+        self._admitting = {}
         self._cancellation_requested = set()
 
     def _changed(self, record):
@@ -289,9 +290,20 @@ class EvaluationService:
         async with self._admission:
             if notebooks is not None:
                 record.update(notebooks.admit_evaluation(context))
-            await persist(self.store.save, record)
-            self._queue.append(("evaluation", identifier))
-            self.wake()
+            self._admitting[identifier] = record
+            try:
+                try:
+                    await persist(self.store.save, record)
+                except asyncio.CancelledError:
+                    # A disconnected caller does not erase a confirmed durable intent.
+                    if identifier in self.store.records:
+                        self._queue.append(("evaluation", identifier))
+                        self.wake()
+                    raise
+                self._queue.append(("evaluation", identifier))
+                self.wake()
+            finally:
+                self._admitting.pop(identifier, None)
         return deepcopy(record)
 
     async def _run(self):

@@ -395,6 +395,24 @@ def test_publication_failure_keeps_evaluator_truth_and_recovery_uses_frozen_comp
         assert entry["reportedDecision"] == "baseline"
 
 
+def test_normal_library_projection_conflict_does_not_escape_durable_evaluation_save(tmp_path):
+    app = create_app(Settings())
+    with TestClient(app) as client:
+        plan = prepare(client, tmp_path / "task")
+        collision = app.state.notebooks.store.library_root / "notebooks"
+        collision.write_text("Owned projection conflict")
+        record = controlled_receipt(app, plan)
+        response = client.get(f"/api/v1/evaluations/{record['evaluationId']}")
+        assert response.status_code == 200 and response.json()["status"] == "completed"
+        assert client.get("/api/v1/notebooks/goal/notebook-probe").status_code == 503
+        later = controlled_receipt(app, plan, successes=0)
+        assert client.get(f"/api/v1/evaluations/{later['evaluationId']}").json()["status"] == "completed"
+        collision.unlink()
+        restored = client.get("/api/v1/notebooks/goal/notebook-probe")
+        assert restored.status_code == 200, restored.text
+        assert len(restored.json()["entries"]) == 2
+
+
 @pytest.mark.parametrize("boundary", ["membership", "markdown"])
 def test_worker_projection_and_new_revision_share_only_short_plan_snapshots(tmp_path, monkeypatch, boundary):
     app = create_app(Settings())

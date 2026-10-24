@@ -1,6 +1,9 @@
 """Only public train snapshots become Markdown; human changes retain immutable evidence."""
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 import yaml
@@ -172,3 +175,47 @@ def test_agent_override_is_refused_at_the_domain_boundary(store):
         )
     assert refused.value.status == 403
     assert not store.document(original["entryId"])["hypotheses"][0]["overrides"]
+
+
+def test_slow_old_markdown_projection_cannot_overwrite_a_committed_new_human_audit(store, monkeypatch):
+    original = store.add(entry())
+    entered, release = threading.Event(), threading.Event()
+    import os
+
+    replace = os.replace
+    held = []
+
+    def blocked(source, target):
+        if Path(target).suffix == ".md" and not held:
+            held.append(True)
+            entered.set()
+            assert release.wait(3)
+        return replace(source, target)
+
+    monkeypatch.setattr("packages.training.notebooks.os.replace", blocked)
+    with ThreadPoolExecutor(2) as pool:
+        older = pool.submit(store.publish, original["entryId"])
+        assert entered.wait(2)
+        changed = pool.submit(
+            store.override,
+            "goal/probe",
+            original["entryId"],
+            "H1",
+            "refuted",
+            Actor(kind="user", name="reviewer"),
+            "New human evidence",
+            "latest-audit",
+        )
+        try:
+            try:
+                changed.result(timeout=0.5)
+            except TimeoutError:
+                pass  # A correct publisher serializes this actor until its replacement finishes.
+        finally:
+            release.set()
+        older.result(timeout=2)
+        changed.result(timeout=2)
+    markdown = next((store.library_root / "notebooks/probe").glob("*.md")).read_text()
+    public = yaml.safe_load(markdown.split("---\n", 2)[1])
+    assert public["hypotheses"][0]["overrides"][-1]["requestId"] == "latest-audit"
+    assert public["hypotheses"][0]["effectiveVerdict"] == "refuted"

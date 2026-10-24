@@ -107,6 +107,10 @@ class LabNotebooks:
             return self.document(identity)
 
     def publish(self, identity):
+        with self._lock:
+            self._publish(identity)
+
+    def _publish(self, identity):
         entry = self.document(identity)
         directory = destination_parent(
             self.library_root, ("notebooks", entry["goalId"].removeprefix("goal/")), create=True

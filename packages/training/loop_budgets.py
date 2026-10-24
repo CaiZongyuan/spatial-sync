@@ -51,7 +51,11 @@ class LoopBudgets:
 
     def _evaluation_records(self):
         service = self.manager.evaluations
-        return tuple(service.store.records.values()) if service else ()
+        if service is None:
+            return ()
+        pending = tuple(getattr(service, "_admitting", {}).values())
+        saved = tuple(service.store.records.values())
+        return tuple({record["evaluationId"]: record for record in (*pending, *saved)}.values())
 
     def _legacy_limit(self, record):
         """Use only the first approval's own immutable Task, never a later declaration."""

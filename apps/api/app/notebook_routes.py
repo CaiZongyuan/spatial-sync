@@ -7,6 +7,7 @@ from fastapi import Request
 
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
+from packages.library.common import LibraryError
 from packages.training.notebook_contract import Verdict
 from packages.training.schema import Schema, Text
 
@@ -55,7 +56,7 @@ def install_notebook_routes(app, service, role_for):
                 body.note,
                 body.requestId,
             )
-        except OSError as error:
+        except (OSError, ValueError, LibraryError) as error:
             raise PlanError(
                 "notebook_unavailable", "Lab Notebook publication is unavailable", status=503
             ) from error
