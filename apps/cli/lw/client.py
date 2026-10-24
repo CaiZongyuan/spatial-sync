@@ -318,6 +318,46 @@ class GatewayClient:
         return (await self.request("GET", self._suite_path(suite) + "/scoreboard",
                                    params={"subject": subject} if subject else {}))["rows"]
 
+    async def _import_runtime(self, format, *, content=None, records=None, sourceLabel=None,
+                              agentId=None, harnessVersion=None, planId=None, planRevision=None,
+                              goalId=None, clearAssociations=False, actor="cli:lw"):
+        if (planId is None) != (planRevision is None):
+            raise ValueError("Associate an exact Plan with both --plan and --plan-revision")
+        if harnessVersion is not None and agentId is None:
+            raise ValueError("A Harness association requires --agent")
+        associations = {key: value for key, value in {
+            "agentId": agentId, "harnessVersion": harnessVersion, "planId": planId,
+            "planRevision": planRevision, "goalId": goalId,
+        }.items() if value is not None}
+        if clearAssociations and associations:
+            raise ValueError("Choose explicit associations or --clear-associations")
+        body = {"format": format, **({"content": content} if content is not None else {"records": records})}
+        if sourceLabel is not None:
+            body["sourceLabel"] = sourceLabel
+        if associations or clearAssociations:
+            body["associations"] = associations
+        return await self.request("POST", "/api/v1/runtime-sessions/import", json=body, actor=actor)
+
+    async def runtime_import_file(self, file, format="claude-code-stream-json", **options):
+        try:
+            content = Path(file).read_bytes().decode("utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError("Cannot read the explicitly selected UTF-8 runtime capture") from exc
+        if options.get("sourceLabel") is None:
+            options["sourceLabel"] = Path(file).name
+        return await self._import_runtime(format, content=content, **options)
+
+    async def runtime_import_records(self, records, format="claude-code-stream-json", **options):
+        return await self._import_runtime(format, records=records, **options)
+
+    async def runtime_list(self, q=None, runtime=None, agent=None, plan=None, goal=None):
+        params = {key: value for key, value in {"q": q, "runtime": runtime, "agent": agent,
+                  "plan": plan, "goal": goal}.items() if value is not None}
+        return (await self.request("GET", "/api/v1/runtime-sessions", params=params))["sessions"]
+
+    async def runtime_show(self, id):
+        return await self.request("GET", "/api/v1/runtime-sessions/" + quote(id, safe=""))
+
     async def demo_add(self, recordingId, task=None, *, actor="cli:lw"):
         body = {"recordingId": recordingId}
         if task is not None:

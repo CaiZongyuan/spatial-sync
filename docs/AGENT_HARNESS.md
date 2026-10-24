@@ -1,8 +1,8 @@
 # Agents and Harness versions
 
 An Agent keeps its model and thinking level outside its editable Harness.
-`lab-operator` is bundled with both fields unconfigured (`null`). Agent SDK
-execution and model configuration are separate capabilities; creating a snapshot
+`lab-operator` is bundled with both fields unconfigured (`null`). Runtime
+execution and model configuration belong to the existing external runtime; creating a snapshot
 does not start a model request, a job or a simulation.
 Explicit Agent model references and thinking levels use the model catalog's
 syntax. Selecting a platform default model leaves existing Agent definitions
@@ -75,6 +75,72 @@ preserving a human approval gate. The package also contains private grading and
 held-out inputs; public API, CLI, MCP and library-file routes do not return them.
 The shared suite list retains the existing embodied suite projection.
 
+## Import existing runtime records
+
+Existing Claude Code executes the Agent and connects to the platform through
+skills, CLI or MCP. The platform imports an explicitly selected native JSONL
+file; it does not launch a model, scan runtime directories or resolve credentials.
+Open **Runtime records** at `/runtime-sessions`, or use the installed CLI:
+
+```powershell
+lw runtime import capture.jsonl --format claude-code-stream-json --json
+lw runtime ls --query claude --json
+lw runtime show <runtime-session-id> --json
+lw cost --since 7d --json
+```
+
+The supported formats are `claude-code-stream-json` (native `--output-format
+stream-json` records) and `claude-code-session-jsonl` (native session JSONL).
+Select the format that produced the file; JSON syntax alone does not identify
+the format. pi is not yet supported. A growing file can be imported again:
+native event identities and cumulative receipts prevent duplicate messages or
+cost. A changed event or a different capture scope for the same native session
+returns a conflict; keep the original capture rather than combining unrelated
+outputs. Native stream captures support one final result; multi-result scopes
+return an unsupported-format error.
+After a result is retained, new conversation events or changed message usage
+require a full ordered snapshot containing every retained event and the original
+result identity, with its reported counters preserved or increased. Backfilled
+conversation stays before that result. Partial conversation increments return
+a conflict; known-event retries and metadata-only additions remain supported.
+
+`lw runtime ingest records.json --format claude-code-stream-json --json` accepts
+a JSON array of the same native records. Generic MCP `runtime_import` accepts
+the array directly; `runtime_list` and `runtime_show` read the same HTTP records.
+The HTTP intake is `POST /api/v1/runtime-sessions/import`, with exactly one of
+`content` (JSONL text) or `records` (object array), a `format`, and an optional
+`sourceLabel`. The gateway accepts content up to 16 MiB, never a server path.
+Mutations require operator permission.
+
+Agent, Harness version, Plan revision and Goal are optional explicit associations:
+CLI flags are `--agent`, `--harness-version`, `--plan`, `--plan-revision` and
+`--goal`. A Plan needs its revision; a Harness version needs its Agent. The
+referenced resources must exist, but importing does not approve or execute them.
+Absent links stay absent, including a Goal not explicitly supplied with a Plan.
+Reimport without association flags preserves existing links;
+`--clear-associations` removes them.
+
+Runtime detail shows safe imported messages/tool records, native timestamps and
+models, plus transcript and usage evidence URLs. These artifacts are generated
+from the owned normalized store at `SPATIAL_STATE_ROOT/runtime-sessions.json`;
+they do not expose the runtime workspace or original source file. Recognized
+credential fields and literals are redacted before persistence.
+
+Usage keeps runtime-supplied input/output/cache counters and USD cost. Explicit
+zero stays zero; missing requests, total tokens, thinking level or execution time
+stay unknown. Turns are separate from requests. A capture total replaces its
+contained message receipt projection; it is never added to it. Runtime list-price
+estimates are labelled `runtime-estimate`, other supplied costs
+`runtime-reported`. No price table or model registration is needed. Cost charts
+bucket these records by first server import time (`timeBasis: importedAt`), not
+an invented execution timestamp, and attribute only explicit associations.
+
+Install the [product skills](../skills/README.md) to use `lab-runtime-records` in
+an existing runtime. See the [first-delivery specification](spec/LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)
+for the record and accounting boundary.
+
+## Full Agent evaluations
+
 The Web evaluation center lists the Agent suite, its ten public train statements,
 fixed environment and three-runs-per-case requirement. Its held-out row stays
 locked. Until the Agent runner produces real results, the page shows no formal
@@ -89,4 +155,6 @@ control and inspection tasks do not require a device operation Plan. The Target
 cannot submit counters, elapsed time or grades through a public endpoint.
 Submitting an Agent suite to the embodied evaluation endpoint returns
 `agent_runner_unavailable` before creating or queuing a Session. Real Agent runs,
-their Trace storage and scoreboard writes require the Agent runner.
+their trusted execution evidence and scoreboard writes remain later work.
+Imported runtime messages and their typed usage receipts do not create scores,
+approvals, Notebook outcomes or completed evaluations.

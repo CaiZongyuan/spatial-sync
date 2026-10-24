@@ -72,6 +72,33 @@ only a generated fake credential locally, never through HTTP or in the user's Va
 
 ## Information and recording checks
 
+### Existing runtime records
+
+The GPU-free import journey uses the actual Claude Code stream-format fixture
+and its provenance in `tests/fixtures/runtime/`. It needs no runtime process,
+authentication, model registry or provider request:
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_runtime_records.py tests/gateway/test_runtime_native_edges.py tests/cli/test_runtime_commands.py -q
+uv run --no-sync python tools/check_platform_skills.py
+lw runtime import tests/fixtures/runtime/claude-code-stream.jsonl --format claude-code-stream-json --json
+lw runtime ls --json
+lw runtime show <runtime-session-id> --json
+```
+
+Use owned state roots for the running API. Reimport the selected file and confirm
+idempotence, then open `/runtime-sessions` and inspect the returned session's
+messages, usage and transcript/usage evidence. Missing request and total-token
+counts stay unknown; the fixture's native capture cost is retained once. The
+cost dashboard buckets it by first import observation, not execution time.
+CLI/MCP tests use the installed entrypoint, real HTTP and official MCP client.
+The runtime browser journey owns an API that refuses all spatial Source creation.
+It covers a growing capture, retry, public evidence and cost readback; importing
+text does not create evaluations, approvals or jobs. These checks are separate
+from the optional model-driven I5 journey below. See
+[runtime records](AGENT_HARNESS.md#import-existing-runtime-records) for supported
+formats, optional associations and conflict behavior.
+
 ### Training Goal and Lab Notebook
 
 An approved Training Plan's linked train Evaluations produce public Notebook

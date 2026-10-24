@@ -134,8 +134,16 @@ The fixed set of cases that every Candidate for one goal is scored on, split int
 _Avoid_: Benchmark, test set
 
 **Agent** (智能体):
-An LLM-driven operator of the lab, defined by a fixed model and thinking level plus a Harness; the platform can run it headlessly to evaluate it.
-_Avoid_: Bot, assistant, Claude Code (one client that can host an Agent)
+An LLM-driven operator of the lab, defined by a fixed model and thinking level plus a Harness, and executed by an Agent Runtime.
+_Avoid_: Bot, assistant, Agent Runtime
+
+**Agent Runtime** (智能体运行时):
+The external execution environment that hosts an Agent and owns its model interaction, context, tools and execution lifecycle, such as Claude Code or pi.
+_Avoid_: Agent, Harness, platform runner
+
+**Imported Runtime Session** (导入的运行时会话):
+A retained record of an explicitly supplied Agent Runtime capture, including its native identity, conversation and reported usage. Its optional links to platform work do not establish an Evaluation result or an Approval Gate decision.
+_Avoid_: Session (the laboratory context), Job, Evaluation
 
 **Harness**:
 The editable part of an Agent: its Platform Skills version, instructions, hooks and tool configuration. Agent-layer RSI changes the Harness and never the model.

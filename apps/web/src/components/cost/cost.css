@@ -74,5 +74,17 @@
 .cost-severity.is-warning { color: var(--warn); }
 .cost-footer { color: var(--muted); font-size: 10px; line-height: 1.8; }
 .cost-footer p { margin: 4px 0; }
+.cost-svg-chart { display: block; width: 100%; margin-top: 16px; overflow: visible; }
+.cost-svg-chart text { fill: var(--muted); font: 9px var(--mono); }
+.cost-plot-grid { stroke: var(--line); stroke-width: 1; }
+.cost-series-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; color: var(--muted); }
+.cost-series-legend span { display: inline-flex; gap: 5px; align-items: center; }
+.cost-series-legend i { width: 7px; height: 7px; border-radius: 2px; }
+.cost-rate-series { margin-top: 18px; border-top: 1px solid var(--line); border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 10px; }
+.cost-rate-series > span { display: flex; justify-content: space-between; padding-top: 10px; }
+.cost-rate-series > svg { display: block; width: 100%; height: 52px; }
+.cost-price-area { fill: color-mix(in oklab, var(--accent) 15%, transparent); }
+.cost-price-line { stroke: var(--accent); stroke-width: 2; }
+.cost-price-point { fill: var(--accent); }
 @media (max-width: 1050px) { .cost-charts-grid, .cost-breakdown-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .cost-page { padding: 18px 14px; } .cost-summary-grid { grid-template-columns: minmax(0, 1fr); } .cost-heading { align-items: start; } .cost-heading h1 { font-size: 24px; } .cost-filters label { max-width: 100%; } }

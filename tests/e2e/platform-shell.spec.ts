@@ -10,9 +10,10 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(12);
+  await expect(navigation.getByRole('link')).toHaveCount(13);
   expect(await navigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))))
-    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Training', 'Evaluation', 'Cost', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Training', 'Evaluation', 'Runtime records', 'Cost', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+  await expect(navigation.getByRole('link', { name: 'Runtime records', exact: true })).toHaveAttribute('href', '/runtime-sessions');
   await expect(navigation.getByRole('link', { name: 'Cost', exact: true })).toHaveAttribute('href', '/cost');
   await expect(navigation.getByRole('link', { name: 'Training', exact: true })).toHaveAttribute('href', '/train');
   await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
@@ -36,6 +37,10 @@ test('platform navigation, persistent preferences, system theme and local assets
   await navigation.getByRole('link', { name: 'Training', exact: true }).click();
   await expect(page).toHaveURL(/\/train$/);
   await expect(navigation.getByRole('link', { name: 'Training', exact: true })).toHaveAttribute('aria-current', 'page');
+  await navigation.getByRole('link', { name: 'Runtime records', exact: true }).click();
+  await expect(page).toHaveURL(/\/runtime-sessions$/);
+  await expect(page.getByRole('heading', { name: '运行记录', exact: true })).toBeVisible();
+  await expect(navigation.getByRole('link', { name: 'Runtime records', exact: true })).toHaveAttribute('aria-current', 'page');
   await navigation.getByRole('link', { name: 'Cost', exact: true }).click();
   await expect(page).toHaveURL(/\/cost/);
   await expect(page.getByRole('heading', { name: '成本与统计', exact: true })).toBeVisible();

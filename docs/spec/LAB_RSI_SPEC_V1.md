@@ -27,7 +27,7 @@
 
 - 两层改进对象的定义、版本与快照。
 - Embodiment 与 Robot Model 目录。
-- Agent 运行器：平台以作业形式无头运行 Agent。
+- Agent runtime 接入：导入已有运行记录；完整评估交接另行交付（§4）。
 - 评估中心：统一的评估集、记分板、可比较条件、基线与 test 集。
 - 接受规则、角色与信息隔离、Default RSI 工具包。
 - 成本中心：LLM Token、GPU 小时，价格表与异常。
@@ -110,23 +110,26 @@ runnable: true                 # v1 只有 onnx 策略与脚本程序可运行
 
 VLA 条目（π0、GR00T N、OpenVLA、SmolVLA 等）在 v1 只登记来源、许可、支持的本体、动作空间与推理算力，`runnable: false`。条目内容由人或 agent 依据官方来源填写，并注明来源链接。
 
-## 4. Agent 运行器
+## 4. Agent runtime 接入
 
-### 4.1 适配器
+#44 首版采用 [Runtime records integration A](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)：
+现有 Claude Code/pi 等 runtime 通过 skills、CLI、MCP 接入；平台导入、持久化和展示其已有会话、事件与报告用量。
+本轮不启动 SDK/runtime、不代理模型凭据、不自动驱动完整 Suite；原托管 SDK、全题自动运行与付费 smoke 首版验收由新规格替代。
 
-- Agent 运行是一种作业（训练规格 §5，类型 `agent-run`），由计算节点上的适配器执行。v1 实现 **Claude Agent SDK 适配器**；接口允许以后接入其他 agent。
-- 输入：Harness 版本、模型与思考等级、题目题面、场景版本、凭据引用。
-- 运行：在专属工作目录中加载该 Harness（平台 skill 按 `skills.lock` 安装），连接平台 MCP / CLI，执行题面；审批模式为平台 skill 规定的模式，人工关口在评估中一律自动驳回，并计入评分。
-- 输出：完整 Trace（JSON Lines：消息、工具调用、审批决定、Token 用量）、最终平台状态快照、用量记录、耗时。
+### 4.1 运行时与平台职责
 
-### 4.2 凭据
+- 外部 runtime 拥有 Agent 执行、模型、上下文、工具、取消与计量；平台 skills 描述工作流，CLI/MCP 调用共享 HTTP API。
+- 平台首版接收明确选择的 Claude Code 原生记录文件或记录数组，保留身份、消息、工具事件、来源与报告用量，支持持久读回和幂等刷新。pi 等格式须有真实格式导入器后才支持。
+- 导入记录可显式关联 Agent/Harness/Plan/Goal；关联不是执行授权，也不产生平台评分、人工审批或 Evaluation 结果。
 
-- 模型凭据存于平台 **Vault**（本机文件，权限 0600），只以环境变量注入适配器进程，从不写入 Trace、日志或模型上下文。
-- `lw vault set <name>` 交互输入；`lw vault ls` 只列名称。
+### 4.2 凭据与模型
 
-### 4.3 交互式 agent
+- 外部 runtime 保留自身凭据和模型配置；导入无需平台 Vault、模型登记或人工价格表。
+- 既有 Vault 能力保持原用途。导入流程不读取 runtime 认证或配置文件，不扫描用户目录。
 
-人在 Claude Code 里交互使用平台照常可用，不受本规格约束。交互会话的用量只在其客户端上报时计入成本中心，并标注"自报"。
+### 4.3 完整评估交接
+
+人在 Claude Code 里通过平台工具操作实验室照常可用。外部 runtime 自动驱动完整 Suite、受信过程证据与记分板写入属于后续范围，须有明确规格与验收；本次导入不声称完成这些能力。
 
 ## 5. 评估集
 
@@ -219,25 +222,28 @@ Builder 建好评估集后，对当前对象跑一次完整评估，记为**正�
 
 ## 11. 成本中心
 
+#44 首版 runtime 来源和幂等用量口径见 [Runtime records integration A](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)。
+直接保留 runtime 报告的用量、成本与来源，缺失为未知；原价格表不作为导入门槛，也不与 runtime 成本重复相加。
+
 ### 11.1 用量记录
 
 | 类型 | 记录 | 来源 |
 |---|---|---|
-| LLM | Agent、Harness 版本、模型、输入 / 输出 / 缓存 Token、请求成功或失败、所属 Plan 与评估 | Agent 运行器 Trace；交互客户端自报（标注） |
+| LLM | 原生会话/捕获身份、模型、报告的输入 / 输出 / 缓存 Token、请求与 USD 成本；可选显式 Agent/Harness/Plan/Goal | 支持格式的 runtime 记录导入；保留来源标签 |
 | GPU | 节点、作业、GPU 秒、显存峰值、所属 Plan | 节点心跳 |
 | 机器人 | 真机使用时长（预留） | — |
 
 ### 11.2 价格与汇总
 
-- 价格表 `prices.yaml` 由人配置（每百万 Token 的输入、输出、缓存价格；每 GPU 小时价格）。未配置价格的记录不计金额，界面标星号。Token 与 GPU 秒是精确值，金额是估算。
+- 价格表 `prices.yaml` 保留既有用途，GPU 账本沿用入账价格版本。Runtime 导入直接使用其报告成本并标注 `runtime-reported` 或 `runtime-estimate`，不重复套用价格；缺失金额保持未知，明确零保留为零。
 - 汇总维度：时间范围（最近一小时 / 一天 / 7 天 / 30 天 / 自定义）、Agent、模型、节点、改进目标、Plan。
 - 异常面板：失败的 LLM 请求、失败的作业、超时的评估；可标记为已读。
 
 R1 的 GPU 账本与 `chargedGpuHours` 在同一次 Job 状态提交中持久化：仅累计计数增加时记增量，
 重复报告不重复计费，CPU Job 的 GPU 秒为 0。每笔用量归属 Job 固定的 Plan 修订与目标，
 Agent 维度表示发起该 Job 的 Agent；模型维度预留给 LLM 用量，不能以训练算法冒充模型用量。
-尚未接入的 LLM 请求、Token、成功率和金额返回 `null`；保留记录字段由 #44 接入真实适配器，
-不从 GPU 作业推算请求或 Token。
+LLM 指标只采用原生记录提供的字段；缺失请求、Token、成功率和金额返回 `null`，
+不从 GPU 作业、turn 数或消息文本推算。Runtime 成本按首次导入时间分桶，明确 `timeBasis: importedAt`，不冒充原生执行时间。
 
 汇总返回 GPU 累计秒、已上报秒、未确认的保守秒、历史累计秒与未定价秒。节点失联时沿用
 作业预算的保守计数，并明确标为估计；之后的有效报告可确认同一累计前缀而不重复入账。
@@ -274,7 +280,8 @@ R1 时间桶按 UTC：`1h` 为 5 分钟桶、`1d` 为小时桶、`7d` / `30d` �
 | GET | `/agents`、`/agents/{id}` | Agent、默认模型与思考等级、当前 Reference 版本 |
 | GET | `/agents/{id}/versions`、`/agents/{id}/versions/{v}?against={u}` | Harness 版本表；带 `against` 时返回两版本差异 |
 | POST | `/agents`、`/agents/{id}/snapshots` | 从快照创建 Agent、导入快照 |
-| POST | `/agents/{id}/runs` | `{suite, version, split}` → `agent-run` 作业 ID |
+| POST | `/runtime-sessions/import` | 导入明确的 `content` 或 `records`、`format` 与可选关联；不接受服务端文件路径 |
+| GET | `/runtime-sessions`、`/runtime-sessions/{id}` | 已导入会话列表、详情与规范化证据链接 |
 | GET | `/suites`、`/suites/{id}` | 评估集元数据与公开题面；**私有评分条件与 test 题目从不由 API 返回** |
 | GET | `/suites/{id}/scoreboard?subject=` | 记分板记录与可比较条件；比较不同条件的记录返回 `not_comparable` |
 | POST | `/suites/{id}/runs` | `{subject, version, split}`；`split: test` 只能由提升流程触发 |
@@ -300,7 +307,11 @@ R1 时间桶按 UTC：`1h` 为 5 分钟桶、`1d` 为小时桶、`7d` / `30d` �
 ### 13.1 CLI
 
 ```text
-lw agent ls | show <id> | snapshot <id> | run <id> --suite <s> [--version N]
+lw agent ls | show <id> | snapshot <id>
+lw runtime import <capture.jsonl> --format claude-code-stream-json
+lw runtime ingest <records.json> --format claude-code-stream-json
+lw runtime ls
+lw runtime show <id>
 lw harness diff <id> <vA> <vB>
 lw suite ls | show <id> | run <id> --subject <agent|controller> [--split train]
 lw score ls --suite <id> [--subject <id>]
@@ -312,7 +323,7 @@ lw robot-model ls | show <id>
 lw controller show <id>[@N]
 ```
 
-- 全部支持 `--json`。MCP 镜像为通用工具：`agent_*`、`suite_*`、`score_ls`、`cost_query`、`model_ls`、`robot_*`、`controller_show`。不提供 `vault_*` 与审批工具。
+- 全部支持 `--json`。MCP 镜像为通用工具：`agent_*`、`runtime_import/list/show`、`suite_*`、`score_ls`、`cost_query`、`model_ls`、`robot_*`、`controller_show`。不提供 `vault_*` 与审批工具。
 - 新增平台 skill：`lab-eval-build`（Builder）、`lab-harness-optimize`（Agent 层 Optimizer）。`lab-training-plan` 与 `lab-train-evaluate` 改为引用本规格的角色与隔离规则。
 
 ## 14. 前端
@@ -328,13 +339,13 @@ lw controller show <id>[@N]
 
 ```text
 T2 ──► R1 评估中心 + 记分板 + 成本中心（GPU）
-A1、L2 ──► R2 Agent 运行器 + Agent 评估集 + LLM 成本 ──► R3 Agent 层一圈 RSI
+A1、L2 ──► R2 runtime 记录接入 + Agent 评估集 + LLM 成本 ──► 后续完整评估交接 ──► R3 Agent 层一圈 RSI
 A2 ──► R4 资源：Embodiment、Controller、Robot Model 目录
 ```
 
 **R1**：具身评估集加 train / test；记分板与可比较条件；评估页；成本中心（GPU 小时）。验收：两版策略在同一评估集上可比较，test 只在申请提升时运行；GPU 小时与作业心跳一致。
 
-**R2**：Claude Agent SDK 适配器、Vault、`suite/lab-ops-basic`（≥ 10 题）、LLM 用量与成本。验收：`lw agent run lab-operator --suite lab-ops-basic` 跑完全部题目，每题 3 次，记分板与 Trace 完整；凭据不出现在任何 Trace 或日志中。
+**R2 / #44 首版 A**：已有 runtime 记录的导入、持久化、CLI/MCP/Web 读回与报告用量/成本；`suite/lab-ops-basic` 的公开题面和既有 Agent/Harness 元数据继续可读。首版验收以 [runtime records integration](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md) 为准。全题每题 3 次的真实评估、可信记分板与自动交接仍为后续 B，不由导入记录代替，也不因 A 交付而关闭。
 
 **R3**：`lab-harness-optimize`、Harness 快照与回滚、Agent 层接受规则。验收：一轮 Candidate 被接受、一轮被拒绝并回滚；实验记录与成本中心对得上。
 
@@ -345,7 +356,7 @@ A2 ──► R4 资源：Embodiment、Controller、Robot Model 目录
 | ID | 决策 | 默认值 | 状态 |
 |---|---|---|---|
 | R-01 | 两层改进对象 | Agent（改 Harness）+ Controller（改控制组合） | 已定 |
-| R-02 | Agent 运行 | 平台无头运行；v1 Claude Agent SDK 适配器 | 已定 |
+| R-02 | Agent 运行 | 外部 runtime 经 skills/CLI/MCP 接入；平台首版导入已有记录 | A 已定，完整评估另行交付 |
 | R-03 | Agent 层接受规则 | train 平均分严格更高，每题 ≥ 3 次 | 已定 |
 | R-04 | 具身层接受规则 | Wilson 95% 下界 > Reference 点估计 | 已定 |
 | R-05 | 落选 Candidate 是否进记分板 | 进，标 `rejected` | 默认生效 |

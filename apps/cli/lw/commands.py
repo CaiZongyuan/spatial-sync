@@ -6,6 +6,7 @@ types belong here; neither frontend needs another registration.
 Complex legacy commands can migrate here when their CLI/MCP adapters are needed.
 """
 
+import json
 from dataclasses import dataclass
 from inspect import Parameter
 from pathlib import Path
@@ -57,7 +58,7 @@ class Argument:
         else:
             # Omitted nullable options stay None; supplied values use their concrete type.
             kinds = get_args(self.annotation)
-            options["type"] = str if get_origin(self.annotation) is dict else (
+            options["type"] = str if get_origin(self.annotation) in (dict, list) else (
                 next(kind for kind in kinds if kind is not type(None))
                 if type(None) in kinds else self.annotation
             )
@@ -82,6 +83,15 @@ class Command:
         # CLI grammar accepts a path without I/O; MCP supplies the structured object directly.
         for argument in self.arguments:
             name = argument.client_name or argument.name
+            if get_origin(argument.annotation) is list and isinstance(values[name], str):
+                try:
+                    values[name] = json.loads(Path(values[name]).read_text(encoding="utf-8"))
+                    if not isinstance(values[name], list) or any(
+                        not isinstance(item, dict) for item in values[name]
+                    ):
+                        raise ValueError("Runtime records must be a JSON array of objects")
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ValueError("Cannot read runtime records JSON array") from exc
             if get_origin(argument.annotation) is dict and isinstance(values[name], str):
                 path = Path(values[name])
                 values[name] = yaml_document(path)
@@ -114,7 +124,43 @@ def description_arguments(default, metavar="id"):
     )
 
 
+def runtime_import_options():
+    return (
+        Argument("format", ("--format",), Literal["claude-code-stream-json", "claude-code-session-jsonl"],
+                 "Native capture format", "claude-code-stream-json"),
+        Argument("sourceLabel", ("--source-label",), str | None, "Observed capture label", None),
+        Argument("agentId", ("--agent",), str | None, "Optional existing Agent association", None),
+        Argument("harnessVersion", ("--harness-version",), int | None, "Explicit Harness version", None),
+        Argument("planId", ("--plan",), str | None, "Optional existing Plan association", None),
+        Argument("planRevision", ("--plan-revision",), int | None, "Exact associated Plan revision", None),
+        Argument("goalId", ("--goal",), str | None, "Optional existing Goal association", None),
+        Argument("clearAssociations", ("--clear-associations",), bool, "Clear existing associations", False),
+    )
+
+
 COMMANDS = (
+    Command(path=("runtime", "import"), help="Import an explicitly selected local runtime capture file.",
+            method="runtime_import_file", arguments=(
+                Argument("file", ("file",), str, "Explicit local UTF-8 capture, uploaded as content"),
+                *runtime_import_options(),
+            ), actor=True),
+    Command(path=("runtime", "ingest"), help="Import native runtime record objects from a JSON array.",
+            method="runtime_import_records", mcp_name="runtime_import", arguments=(
+                Argument("records", ("records",), list[dict[str, Any]],
+                         "Array of native objects (CLI: local JSON-array file)"),
+                *runtime_import_options(),
+            ), actor=True),
+    Command(path=("runtime", "ls"), help="List imported runtime sessions and reported usage.",
+            method="runtime_list", mcp_name="runtime_list", output_type=list[dict[str, Any]], arguments=(
+                Argument("q", ("--query",), str | None, "Source/session/model text", None),
+                Argument("runtime", ("--runtime",), str | None, "Runtime source", None),
+                Argument("agent", ("--agent",), str | None, "Explicit associated Agent", None),
+                Argument("plan", ("--plan",), str | None, "Explicit associated Plan", None),
+                Argument("goal", ("--goal",), str | None, "Explicit associated Goal", None),
+            )),
+    Command(path=("runtime", "show"), help="Read an imported runtime session, messages and evidence links.",
+            method="runtime_show", mcp_name="runtime_show",
+            arguments=(Argument("id", ("id",), str, "Imported runtime session ID"),)),
     Command(path=("demo", "add"), help="Keep a proven successful recorded Task episode as a Demonstration.",
             method="demo_add", arguments=(
                 Argument("recordingId", ("recordingId",), str, "Complete successful episode recording"),

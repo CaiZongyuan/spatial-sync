@@ -42,6 +42,17 @@ credentials to child environment variables without modifying the gateway's
 environment. Its result is only for a child process's `env`; it must never be
 serialized into arguments, logs, Trace, recordings or model messages. This
 delivery does not start an Agent adapter or make external health requests.
+Existing runtimes retain their own authentication and model configuration.
+
+## Imported runtime usage
+
+[Runtime records](AGENT_HARNESS.md#import-existing-runtime-records) retain native
+model identities, typed usage counters and supplied USD costs. Importing a
+capture needs no model registration, Vault entry or configured token price.
+Runtime list-price estimates retain the `runtime-estimate` label; other supplied
+costs are `runtime-reported`. Missing metering stays unknown and explicit zero
+stays zero. These receipts are not added to a second estimate from this price
+table. The existing GPU ledger continues using its recorded price revisions.
 
 ## Prices
 
