@@ -54,7 +54,10 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
   const approvals = useContext(ApprovalInboxContext);
   useEffect(() => {
     const controller = new AbortController();
-    void listGoals(controller.signal).then(result => { setGoals(result.goals); if (!goal && result.goals[0]) change.current(result.goals[0]); })
+    void listGoals(controller.signal).then(result => {
+      if (controller.signal.aborted) return;
+      setGoals(result.goals); if (!goal && result.goals[0]) change.current(result.goals[0]);
+    })
       .catch(failure => { if (!controller.signal.aborted) setError((failure as Error).message); });
     return () => controller.abort();
   }, [retry, goal]);
