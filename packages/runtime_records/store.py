@@ -171,7 +171,13 @@ class RuntimeRecords:
                 createdAt=min(times) if times else None,
                 updatedAt=max(times) if times else None,
                 eventCount=len(record["events"]),
-                messageCount=sum(event["role"] in {"assistant", "user"} for event in record["events"]),
+                messageCount=len(
+                    {
+                        (event["role"], event["messageId"] or event["id"])
+                        for event in record["events"]
+                        if event["role"] in {"assistant", "user"}
+                    }
+                ),
                 toolCallCount=len(
                     {
                         block["id"]

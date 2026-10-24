@@ -44,7 +44,9 @@ def test_message_usage_is_owned_by_provider_message_not_each_block_uuid_and_zero
     imported = post(http, [first, second], format="claude-code-session-jsonl")
     assert imported.status_code == 202, imported.text
     session = imported.json()["session"]
-    assert session["eventCount"] == 2 and session["usage"]["inputTokens"] == 10
+    assert (
+        session["eventCount"] == 2 and session["messageCount"] == 1 and session["usage"]["inputTokens"] == 10
+    )
     assert session["usage"]["outputTokens"] == 0 and session["usage"]["cacheWriteTokens"] == 0
     assert session["usage"]["llmUsd"] is None and session["usage"]["requests"] is None
     growing = deepcopy(second)
@@ -126,6 +128,9 @@ def test_explicit_links_need_no_approved_plan_and_unprovided_goal_stays_unassoci
         (1, "input_tokens", -1),
         (1, "input_tokens", float("nan")),
         (1, "toolInput", float("inf")),
+        (1, "toolId", {}),
+        (1, "toolMapping", []),
+        (1, "textBlock", {}),
     ],
 )
 def test_malformed_native_scalar_and_nonfinite_data_is_safe_422(http, change):
@@ -137,6 +142,12 @@ def test_malformed_native_scalar_and_nonfinite_data_is_safe_422(http, change):
         records[index]["message"]["usage"][field] = value
     elif field == "toolInput":
         records[index]["message"]["content"][0]["input"]["not_finite"] = value
+    elif field == "toolId":
+        records[index]["message"]["content"][0]["id"] = value
+    elif field == "toolMapping":
+        records[index]["message"]["content"][0]["input"] = value
+    elif field == "textBlock":
+        records[index]["message"]["content"] = [{"type": "text", "text": value}]
     else:
         records[index][field] = value
     response = http.post(
@@ -169,3 +180,41 @@ def test_model_claims_and_credentials_remain_safe_imported_text_not_platform_out
     assert session["usage"]["llmUsd"] == 0.3244434
     assert http.get("/api/v1/evaluations").json()["evaluations"] == []
     assert http.get("/api/v1/approvals").json()["pendingCount"] == 0
+
+
+def test_cost_high_water_keeps_amount_and_source_from_the_same_runtime_evidence(http):
+    records = native()
+    original = post(http, records).json()["session"]
+    records[-1]["total_cost_usd"] = 0
+    records[-1]["modelUsage"]["claude-opus-5-5"]["costBasis"] = "provider"
+    lower = post(http, records).json()["session"]
+    assert lower["usage"]["llmUsd"] == original["usage"]["llmUsd"] == 0.3244434
+    assert lower["usage"]["costSource"] == "runtime-estimate"
+    records[-1]["total_cost_usd"] = 0.5
+    greater = post(http, records).json()["session"]
+    assert greater["usage"]["llmUsd"] == 0.5 and greater["usage"]["costSource"] == "runtime-reported"
+    assert (
+        http.get("/api/v1/runtime-sessions", params={"q": "opus-5-5"}).json()["sessions"][0]["id"]
+        == greater["id"]
+    )
+
+
+def test_conflicting_events_or_capture_scope_are_actionable_and_cannot_read_server_paths(http):
+    records = native()
+    initial = post(http, records).json()["session"]
+    conflicting = deepcopy(records)
+    conflicting[1]["message"]["content"][0]["input"]["query"] = "Changed native event"
+    response = post(http, conflicting)
+    assert response.status_code == 409 and "runtime_event_conflict" in response.text
+    another_capture = deepcopy(records)
+    another_capture[0]["uuid"] = "different-native-capture"
+    assert post(http, another_capture).status_code == 409
+    assert post(http, records, format="unsupported-runtime-format").status_code == 422
+    secret_path = "PRIVATE_SERVER_FILE_MUST_NOT_READ"
+    invalid = http.post(
+        "/api/v1/runtime-sessions/import",
+        json={"format": "claude-code-stream-json", "records": records, "path": secret_path},
+    )
+    assert invalid.status_code == 422 and secret_path not in invalid.text
+    current = http.get(f"/api/v1/runtime-sessions/{initial['id']}").json()
+    assert current["contentHash"] == initial["contentHash"]

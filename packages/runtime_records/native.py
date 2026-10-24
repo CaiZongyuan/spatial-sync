@@ -28,6 +28,9 @@ SENSITIVE = {
     "password",
     "secret",
     "credentials",
+    "token",
+    "credential",
+    "client_secret",
 }
 
 
@@ -65,10 +68,10 @@ def number(value, *, integer=False):
     return value
 
 
-def text(value, *, required=False):
+def text(value, *, required=False, limit=4096):
     if value is None and not required:
         return None
-    if not isinstance(value, str) or required and not value or len(value) > 4096:
+    if not isinstance(value, str) or required and not value or limit is not None and len(value) > limit:
         raise PlanError(
             "invalid_runtime_record", "A native identity or text field has an invalid type", status=422
         )
@@ -101,6 +104,19 @@ def safe_content(content):
         if not isinstance(block, dict):
             continue
         selected = fields.get(text(block.get("type"), required=True))
+        if block["type"] in {"text", "thinking"}:
+            text(block.get("text" if block["type"] == "text" else "thinking"), limit=None)
+        if block["type"] == "tool_use":
+            text(block.get("id"), required=True)
+            text(block.get("name"), required=True)
+            if not isinstance(block.get("input"), dict):
+                raise PlanError("invalid_runtime_record", "Native tool input must be a mapping", status=422)
+        if block["type"] == "tool_result":
+            text(block.get("tool_use_id"), required=True)
+            if "is_error" in block and type(block["is_error"]) is not bool:
+                raise PlanError(
+                    "invalid_runtime_record", "Native tool error status must be boolean", status=422
+                )
         blocks.append(
             redacted({key: block[key] for key in selected if key in block})
             if selected
@@ -110,6 +126,8 @@ def safe_content(content):
 
 
 def metric(usage, value=None):
+    if usage is not None and not isinstance(usage, dict):
+        raise PlanError("invalid_runtime_usage", "Native usage must be a mapping", status=422)
     usage = usage if isinstance(usage, dict) else {}
     value = value or {}
     result = {field: number(usage.get(key), integer=True) for field, key in TOKEN_FIELDS.items()}
@@ -131,11 +149,13 @@ def metric(usage, value=None):
 
 def merge_metric(previous, incoming):
     result = dict(previous or incoming)
-    for field in (*TOKEN_FIELDS, "requests", "turns", "llmUsd"):
+    for field in (*TOKEN_FIELDS, "requests", "turns"):
         value = incoming.get(field)
         if value is not None:
             result[field] = max(result.get(field) or 0, value)
-    if incoming.get("costSource") != "unknown":
+    amount = incoming.get("llmUsd")
+    if amount is not None and (result.get("llmUsd") is None or amount >= result["llmUsd"]):
+        result["llmUsd"] = amount
         result["costSource"] = incoming["costSource"]
     return result
 

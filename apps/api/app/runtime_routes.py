@@ -38,7 +38,13 @@ def install_runtime_routes(app, manager, agents, role_for):
                 and (
                     q is None
                     or q.casefold()
-                    in (record["nativeSessionId"] + " " + (record["sourceLabel"] or "")).casefold()
+                    in (
+                        record["nativeSessionId"]
+                        + " "
+                        + (record["sourceLabel"] or "")
+                        + " "
+                        + " ".join(record["models"])
+                    ).casefold()
                 )
             ]
         }
