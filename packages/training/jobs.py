@@ -54,6 +54,7 @@ class TrainingJobs:
         if self.path.exists():
             saved = json.loads(self.path.read_text(encoding="utf-8"))
             self.records, self.nodes = saved["jobs"], saved["nodes"]
+        self.manager.costs.prepare(self.records)
         # Retain leases while a live node reconnects; a restart never invents an idle GPU.
         for node in self.nodes.values():
             node["reconnectDeadline"] = self.clock() + 60
@@ -77,6 +78,7 @@ class TrainingJobs:
     def _save(self):
         self._require_available()
         try:
+            self.manager.costs.capture(self.records, self.clock())
             durable_json(self.path, {"jobs": self.records, "nodes": self.nodes})
         except (OSError, ValueError) as exc:
             self._failure = True
@@ -131,7 +133,7 @@ class TrainingJobs:
 
     def document(self, job):
         value = deepcopy(
-            {key: value for key, value in job.items() if key not in ("plan", "lastNodeReport")}
+            {key: value for key, value in job.items() if key not in ("plan", "lastNodeReport", "costLedger")}
         ) | {
             "gpuId": job["resourceId"] if job["executionDevice"] == "cuda" else None,
         }
