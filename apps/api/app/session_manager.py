@@ -679,6 +679,9 @@ class Session:
 
     async def execute(self, client: ClientConnection, command: Command):
         async with self.command_lock:
+            from packages.agents.scope import current_scope
+
+            current_scope()
             reason = None
             if client.role != "operator":
                 reason = "unauthorized"

@@ -318,3 +318,96 @@ async def test_revocation_during_http_body_read_prevents_a_previously_authentica
             response = await asyncio.wait_for(pending, 2)
             assert response.status_code == 403, response.text
             assert session.state == "RUNNING"
+
+
+@pytest.mark.parametrize("waiting_on", ["command_lock", "plan_journal"])
+@pytest.mark.parametrize("withdrawal", ["revoke", "deadline"])
+async def test_managed_rights_are_rechecked_after_shared_waits_before_physical_effects(
+    waiting_on, withdrawal, monkeypatch
+):
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://127.0.0.1:8048"
+        ) as http:
+            created = (await http.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"})).json()
+            session_id = created["sessionId"]
+            base = f"/api/v1/sessions/{session_id}"
+            session = app.state.manager.get(session_id)
+            session.agent_run_id = "job-effect-barrier"
+            clock = [0]
+            app.state.agent_grants.clock = lambda: clock[0]
+            grant = app.state.agent_grants.issue(session.agent_run_id, session_id, ttl=1)
+            headers = {"Authorization": "Bearer " + grant}
+            entered, release = asyncio.Event(), asyncio.Event()
+            calls = []
+            if waiting_on == "command_lock":
+                original = session.execute
+
+                async def waiting(client, command):
+                    entered.set()
+                    return await original(client, command)
+
+                monkeypatch.setattr(session, "execute", waiting)
+                await session.command_lock.acquire()
+                payload = {"requestId": "effect-barrier", "command": "pause"}
+                pending = asyncio.create_task(http.post(base + "/commands", json=payload, headers=headers))
+            else:
+                document = {
+                    "title": "Move one tube",
+                    "target": "session",
+                    "steps": [
+                        {
+                            "id": 1,
+                            "do": {
+                                "entity": "/World/Lab/RobotA",
+                                "action": "pickPlace",
+                                "params": {"from": "rack.A1", "to": "centrifuge.slot1"},
+                            },
+                        }
+                    ],
+                }
+                plan = (
+                    await http.post(
+                        "/api/v1/plans", headers=headers, json=document | {"sessionId": session_id}
+                    )
+                ).json()
+                assert plan["status"] == "approved", plan
+                original = app.state.manager.plans.flush
+
+                async def waiting():
+                    entered.set()
+                    await release.wait()
+                    await original()
+
+                original_invoke = session.source.invoke
+
+                async def observed(request):
+                    calls.append(request)
+                    return await original_invoke(request)
+
+                monkeypatch.setattr(app.state.manager.plans, "flush", waiting)
+                monkeypatch.setattr(session.source, "invoke", observed)
+                payload = {
+                    "requestId": "effect-barrier",
+                    "entityKey": "/World/Lab/RobotA",
+                    "action": "pickPlace",
+                    "params": {"from": "rack.A1", "to": "centrifuge.slot1"},
+                    "planId": plan["id"],
+                    "stepId": 1,
+                    "planRevision": 1,
+                }
+                pending = asyncio.create_task(http.post(base + "/actions", json=payload, headers=headers))
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                if withdrawal == "revoke":
+                    app.state.agent_grants.revoke(session.agent_run_id)
+                else:
+                    clock[0] = 2
+            finally:
+                if waiting_on == "command_lock":
+                    session.command_lock.release()
+                release.set()
+            response = await asyncio.wait_for(pending, 2)
+            assert response.status_code == 403, response.text
+            assert session.state == "RUNNING" and calls == []

@@ -200,6 +200,9 @@ class ActionPipeline:
             self._reserved.pop(invocation.invocationId, None)
 
     async def _dispatch(self, invocation):
+        from packages.agents.scope import current_scope
+
+        current_scope()
         request = InvokeRequest.model_validate(
             {
                 key: value
@@ -208,8 +211,15 @@ class ActionPipeline:
             }
         )
         source = self.session.source
+
+        async def forward():
+            current_scope()
+            return await source.invoke(request)
+
         try:
-            update = await asyncio.wait_for(source.invoke(request), 0.5)
+            update = await asyncio.wait_for(forward(), 0.5)
+        except PlanError:
+            raise
         except Exception:
             task = asyncio.create_task(self._cancel_unconfirmed(source, invocation.invocationId))
             self._cleanup_tasks.add(task)
@@ -292,11 +302,14 @@ class ActionPipeline:
             self.session.approvals.decide(approval.approvalId, "revoke", actor, note)
 
     async def cancel(self, invocation_id, role):
+        from packages.agents.scope import current_scope
+
         if role != "operator":
             raise PermissionError("Operator permission is required")
         # Approval can still be awaiting Host admission while the table says pending.
         async with self._control_locks.setdefault(invocation_id, asyncio.Lock()):
             invocation = await self.table.lookup(invocation_id)
+            current_scope()
             if invocation is None:
                 raise KeyError(invocation_id)
             if invocation.status in TERMINAL:
@@ -304,7 +317,13 @@ class ActionPipeline:
             if invocation.status == "pending_approval":
                 return self._reject(invocation, "approval_denied", "Pending action cancelled")
             try:
-                update = await asyncio.wait_for(self.session.source.cancel(invocation_id), 0.5)
+                async def forward():
+                    current_scope()
+                    return await self.session.source.cancel(invocation_id)
+
+                update = await asyncio.wait_for(forward(), 0.5)
+            except PlanError:
+                raise
             except Exception:
                 return self._reject(
                     invocation, "source_unavailable", "Device host unavailable", status="failed"
