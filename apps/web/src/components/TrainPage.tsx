@@ -46,7 +46,8 @@ export function TrainPage() {
     && record.status === 'pending' && record.details.plan?.kind === 'training' && record.details.plan.layer !== 'agent');
   return <main className="training-page" data-testid="training-page"><header className="training-heading">
     <div><span className="eyebrow">LAB TRAINING</span><h1>训练</h1><p>从已批准的计划跟进作业、资源与结果。</p></div>
-    <div className="training-layer" role="group" aria-label="训练层"><button aria-pressed={!agentLayer} onClick={() => void navigate({ search: current => ({ ...current, layer: undefined }), hash: true })}>具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</button>
+    <div className="training-layer" role="group" aria-label="训练层"><button aria-pressed={!agentLayer} onClick={() => void navigate({ search: current => ({ ...current, layer: undefined,
+      status: current.status === 'admitting' || current.status === 'cancelling' ? undefined : current.status }), hash: true })}>具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</button>
       <button aria-pressed={agentLayer} onClick={() => void navigate({ search: current => ({ ...current, layer: 'agent' }), hash: true })}>Agent 运行</button></div>
   </header>{agentLayer ? <AgentRunsPanel plans={agentPlans} query={query} status={status}
     onQuery={q => void navigate({ search: current => ({ ...current, q: q || undefined }), hash: true })}
