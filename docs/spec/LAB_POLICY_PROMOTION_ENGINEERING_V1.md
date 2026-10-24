@@ -39,12 +39,16 @@ Before queuing any held-out work, reconstruct and freeze:
 
 1. The exact Candidate id/content hash/material hashes and authorized adapter.
 2. The fixed Suite, Scene and complete base binding hashes, server-produced
-   environment/judge identity, current comparable Reference and its exact
-   Candidate identity. Unknown evidence is a refusal.
-3. A completed train result for this exact Candidate under these exact
-   conditions. Recompute the shipped Wilson lower bound and compare it strictly
-   with the current Reference point estimate. An old `accepted` string alone
-   cannot authorize deployment after the Reference changes.
+   environment/judge identity, current accepted statistical Reference and its
+   exact Candidate identity. Unknown evidence is a refusal.
+3. The current accepted train row must be this exact Candidate. Acceptance has
+   already advanced the statistical Reference: follow that row's `reference`
+   to its prior complete same-condition comparator, and recompute the shipped
+   Wilson lower bound strictly above that prior point estimate. Never compare
+   Candidate against its own current score. Freeze current accepted row, prior
+   comparator and actual deployed Controller current separately. A later
+   accepted row replacing this Candidate during test/human review makes the
+   intent stale; it does not imply deployment has already switched.
 4. Policy observation qualification from the trusted verifier below; scripted
    programs instead require their exact currently approved Plan/code snapshot.
 5. The simulated Embodiment, Controller current version/hash and immutable
@@ -121,7 +125,7 @@ admission still require the separately concrete authorization and evidence.
 
 ## Held-out execution and visibility
 
-Only an admitted promotion requests held-out Reference and Candidate scopes
+Only an admitted promotion requests held-out prior-Reference and accepted-Candidate scopes
 through the existing Evaluator queue. Each scope freezes its purpose, split,
 promotion id and exact Candidate before Source allocation. Persist private
 intent before Session.start, suppress private Inbox events, and retain actual
@@ -175,6 +179,11 @@ Controller metadata records the exact material, action/observation/Task facts,
 new deployment Scene and actual public train Evaluation. Unknown metadata such
 as model parameters/licence stays unknown; a taught Model is not relabelled as
 a learned policy. Held-out results do not enter public Controller files.
+Keep `program` as the fixed runtime implementation. Add optional
+`programArtifact: ProgramIntent{id,contentHash}` for the actual immutable script
+material, reusing #38's schema; old teacher/policy files read as None. A script
+runtime without that material cannot represent a deployed script. Scene config,
+Controller artifact and committed deployment proof must match exactly.
 
 After a crash, recover by verifying the reserved destinations and their exact
 hashes: reuse this transaction's already published package/version, finish the

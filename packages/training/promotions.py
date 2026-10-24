@@ -63,8 +63,6 @@ def accepted_train_evidence(store, candidate, scene, *, evaluation_id=None):
     if not accepted:
         label = matching[-1].get("decision", "reported") if matching else "reported"
         _refuse("candidate_not_accepted", label=label)
-    for row in accepted:
-        _complete_train(store, row)
     current = [row for row in accepted if (store.reference(row["key"]) or {}).get("evaluationId")
                == row["evaluationId"]]
     if not current:
@@ -72,6 +70,7 @@ def accepted_train_evidence(store, candidate, scene, *, evaluation_id=None):
     if len(current) != 1:
         _refuse("promotion_evaluation_ambiguous", evaluations=[row["evaluationId"] for row in current])
     row = current[0]
+    _complete_train(store, row)
     reference = next(
         (value for value in store.rows if value.get("evaluationId") == row.get("reference")), None
     )

@@ -46,16 +46,16 @@ class DeploymentPublication:
         self.after_effect = after_effect or (lambda *_: None)
         self._lock = threading.RLock()
 
-    def _directory(self, identifier):
+    def _directory(self, identifier, *, create=False):
         if not isinstance(identifier, str) or not NAME.fullmatch(identifier):
             raise PlanError("invalid_publication", "Invalid publication identity", status=422)
-        return destination_parent(self.root, (identifier,), create=True)
+        return destination_parent(self.root, (identifier,), create=create)
 
     def read(self, identifier):
         return document(self._directory(identifier) / "record.json")
 
     def _save(self, record):
-        durable_json(self._directory(record["id"]) / "record.json", record)
+        durable_json(self._directory(record["id"], create=True) / "record.json", record)
         return deepcopy(record)
 
     def _current(self, identifier):
@@ -77,6 +77,8 @@ class DeploymentPublication:
 
     def _reserve_controller(self, identifier):
         ledger = self.library / ".controller-revisions.json"
+        if ledger.is_symlink() or ledger.is_junction():
+            raise PlanError("publication_unavailable", "Controller reservations cannot be a filesystem link")
         values = document(ledger) if ledger.exists() else {}
         if any(not NAME.fullmatch(key) or type(value) is not int or value < 1
                for key, value in values.items()):
@@ -113,7 +115,7 @@ class DeploymentPublication:
 
     def prepare(self, plan: DeploymentPlan):
         with self._lock:
-            directory = self._directory(plan.promotion_id)
+            directory = self._directory(plan.promotion_id, create=True)
             intent = {"baseScene": {"id": plan.scene.id, "contentHash": plan.scene.content_hash},
                       "subject": plan.subject.document(), "controller": plan.controller,
                       "versionFields": plan.version_fields, "contextHash": plan.context_hash}
@@ -127,6 +129,20 @@ class DeploymentPublication:
                 plan.subject.evaluationScene.id, plan.subject.evaluationScene.contentHash
             ):
                 raise PlanError("publication_scene_changed", "Subject does not belong to the base Scene")
+            fields = plan.version_fields
+            allowed = set(ControllerVersion.model_fields) - {"controller", "version", "scene"}
+            required = {key for key, value in ControllerVersion.model_fields.items() if value.is_required()}
+            required -= {"controller", "version", "scene"}
+            candidate = plan.subject.document()["candidateIdentity"]
+            artifact = {key: candidate[key] for key in ("id", "contentHash")}
+            policy = candidate["id"] if candidate["kind"] == "policy" else None
+            program_artifact = artifact if candidate["kind"] == "program" else None
+            if (not required <= set(fields) <= allowed
+                    or fields["embodiment"] != plan.controller["embodiment"]
+                    or fields["program"] != plan.subject.binding["program"]
+                    or fields["policy"] != policy
+                    or fields.get("programArtifact") != program_artifact):
+                raise PlanError("publication_material_changed", "Controller and Subject composition differ")
             stage = directory / "scene"
             stage.mkdir()
             for name in package_files(plan.scene.path):
@@ -134,6 +150,7 @@ class DeploymentPublication:
                     target = stage / name
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes((plan.scene.path / name).read_bytes())
+            plan.scene.require_launchable()
             metadata = document(stage / "scene.yaml")
             metadata["derivedFrom"] = intent["baseScene"] | {"promotion": plan.promotion_id}
             (stage / "scene.yaml").write_text(yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8")

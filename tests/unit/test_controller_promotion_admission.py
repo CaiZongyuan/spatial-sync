@@ -31,12 +31,12 @@ def result(store, identifier, candidate, successes, *, reference=None, decision=
     return store.rows[-1]
 
 
-def accepted_pair(tmp_path):
+def accepted_pair(tmp_path, *, successes=10):
     store = EvaluationStore(tmp_path)
     reference = result(store, "eval-reference", {"kind": "program", "id": "robot_arm.newton",
                                                "contentHash": "1" * 64},
                        0, decision="baseline")
-    candidate = result(store, "eval-candidate", CANDIDATE, 10, reference=reference["evaluationId"])
+    candidate = result(store, "eval-candidate", CANDIDATE, successes, reference=reference["evaluationId"])
     return store, reference, candidate
 
 
@@ -50,7 +50,7 @@ def test_current_accepted_candidate_is_compared_to_its_prior_reference_not_itsel
 
 
 def test_later_accepted_candidate_makes_the_old_promotion_stale(tmp_path):
-    store, _, candidate = accepted_pair(tmp_path)
+    store, _, candidate = accepted_pair(tmp_path, successes=7)
     result(store, "eval-later", CANDIDATE | {"id": "policy/probe@2", "contentHash": "c" * 64},
            10, reference=candidate["evaluationId"])
     with pytest.raises(PlanError) as error:
