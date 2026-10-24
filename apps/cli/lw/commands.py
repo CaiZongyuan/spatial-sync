@@ -139,6 +139,16 @@ def runtime_import_options():
 
 
 COMMANDS = (
+    Command(path=("policy", "create"), help="Freeze a validated Job export as a policy candidate.",
+            method="policy_create", mcp_name="policy_create", actor=True, arguments=(
+                Argument("checkpoint", ("job/checkpoint",), str, "Job ID/checkpoint relative path"),
+            )),
+    Command(path=("policy", "ls"), help="List immutable policy candidates and missing quality evidence.",
+            method="policy_list", mcp_name="policy_list", output_type=list[dict[str, Any]]),
+    Command(path=("policy", "show"), help="Read an exact policy version and its frozen provenance.",
+            method="policy_show", mcp_name="policy_show", arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
+            )),
     Command(path=("runtime", "import"), help="Import an explicitly selected local runtime capture file.",
             method="runtime_import_file", arguments=(
                 Argument("file", ("file",), str, "Explicit local UTF-8 capture, uploaded as content"),
