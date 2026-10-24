@@ -30,9 +30,10 @@ uv run --no-sync python factory/verify.py blender \
 `evidence` writes raw reports under `<out>/reports/`, adapted packages under
 `<out>/adapted/`, and a sanitized support list at `<out>/support.json`. Raw
 probe output and downloaded packages stay in `.scratch/` and are not committed.
-Real source evidence needs the dev group with the simulation and USD extras
-(`uv sync --frozen --group dev --extra simulation --extra usd`) because texture
-handling uses Pillow and the usage decision comes from real Newton CPU checks.
+Real source evidence needs the simulation/USD extras and Pillow because texture
+handling and the usage decision use them. Use `uv run --with pillow --no-sync`
+or a local environment that already has them; do not change `uv.lock`, because
+captured scene previews include its digest as a build input.
 
 ## Restricted derivation
 

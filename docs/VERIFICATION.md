@@ -312,8 +312,9 @@ validates it for pinned identity, verified BOMs, measured outputs and honest
 usage flags. Real Newton evidence is recorded by the separate evidence run.
 
 Real source and Blender evidence is separate from CI and needs network access.
-The factory evidence run also needs the simulation/USD extras for the Newton CPU
-usage decision:
+The factory evidence run also needs the simulation/USD extras and Pillow for the
+Newton CPU usage decision and texture handling; use `uv run --with pillow --no-sync`
+or a local environment that has them without changing `uv.lock`:
 
 ```powershell
 uv run --no-sync python factory/verify.py evidence --cache .scratch/sf0/cache --out .scratch/sf0/evidence
