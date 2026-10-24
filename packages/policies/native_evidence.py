@@ -16,6 +16,7 @@ class Implementation(Schema):
 
 class NativeRuntime(Schema):
     collectorSha256: Hash
+    observerSha256: Hash
     runner: Implementation
     actor: Implementation
     act: Implementation

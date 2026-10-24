@@ -9,8 +9,10 @@ from hashlib import sha256
 from pathlib import Path
 
 if __package__:
+    from . import environment_observer
     from .observation_capture import canonical_hash, code_hash, file_hash, task_file
 else:
+    import lw_environment_observer as environment_observer
     from lw_observation_capture import canonical_hash, code_hash, file_hash, task_file
 
 
@@ -54,6 +56,7 @@ class NativeObservationCapture:
             self.provider = self.observer.env.lw_policy_observation_state
             self.runtime = {
                 "collectorSha256": code_hash(__file__),
+                "observerSha256": code_hash(environment_observer.__file__),
                 "runner": source_identity(self.runner),
                 "actor": source_identity(policy),
                 "act": source_identity(self.runner.alg.act),
@@ -102,7 +105,8 @@ class NativeObservationCapture:
         try:
             step = self.observer.physics_count
             if (
-                self.observer.env.sim.get_physics_step_count() != step
+                self.observer.disabled
+                or self.observer.env.sim.get_physics_step_count() != step
                 or list(self.policy.obs_groups) != self.runtime["observationGroups"]
             ):
                 raise ValueError("Native actor/physics scope changed before capture")

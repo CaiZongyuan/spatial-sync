@@ -13,6 +13,7 @@ from packages.policies.native_evidence import NativeProfile
 from packages.training.inputs import pack_package
 from tests.fixtures.policy import artifact_archive, observation_spec
 from tests.gateway.test_policies import uploaded_job
+from tests.gateway.test_training_jobs import NODE
 from tests.unit import test_native_observation_capture as controlled
 
 
@@ -29,6 +30,8 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None):
         output.mkdir()
         extract_package(io.BytesIO(artifact_archive(job)), output)
         versions = json.loads((output / "versions.json").read_bytes())
+        versions["versions"]["rsl_rl"] = "5.4.1"  # Match approved dispatch; the profile stays controlled.
+        (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
         export = json.loads((output / "export.json").read_bytes())
         runner, env = controlled.Runner(), controlled.Environment()
         observer = SimpleNamespace(env=env, selected=[0], epochs=[0], physics_count=0, disabled=False)
@@ -43,6 +46,7 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None):
             inputName="observations",
             actionWidth=1,
             collectorSha256=code_hash(native.__file__),
+            observerSha256=code_hash(native.environment_observer.__file__),
             runner=native.source_identity(runner),
             actor=native.source_identity(runner.alg.actor),
             act=native.source_identity(runner.alg.act),
@@ -57,6 +61,13 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None):
         )
         if registry is not None:
             registry.profiles[profile.id] = profile  # Constructor-owned controlled registry, no HTTP setter.
+        transported = client.get(
+            f"/api/v1/jobs/{job['jobId']}/inputs", headers=NODE | {"X-Lease-Id": job["leaseId"]}
+        )
+        assert transported.status_code == 200, transported.text
+        assert transported.json()["nativeObservationProfile"] == (
+            profile.model_dump(mode="json") if registry is not None else None
+        )
         with native.NativeObservationCapture(
             runner,
             observer,

@@ -1,12 +1,15 @@
 """Controlled native-call fixtures prove input-boundary mechanics, not actual training quality."""
 
 import json
+import sys
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from apps.node.native_observation_capture import NativeObservationCapture, source_identity
 from apps.node.observation_capture import code_hash
+from apps.node.view_bridge import TrainingViewBridge
 
 
 class Tensor:
@@ -85,12 +88,13 @@ def setup(tmp_path, monkeypatch):
     runner, env = Runner(), Environment()
     observer = SimpleNamespace(env=env, selected=[0], epochs=[0], physics_count=0, disabled=False)
     env.sim = SimpleNamespace(get_physics_step_count=lambda: observer.physics_count)
-    from apps.node import native_observation_capture
+    from apps.node import environment_observer, native_observation_capture
 
     profile = {
         "id": "controlled-native-call-fixture",
         "evidenceMode": "controlled",
         "collectorSha256": code_hash(native_observation_capture.__file__),
+        "observerSha256": code_hash(environment_observer.__file__),
         "runner": source_identity(runner),
         "actor": source_identity(runner.alg.actor),
         "act": source_identity(runner.alg.act),
@@ -184,3 +188,68 @@ def test_an_action_without_a_step_is_not_a_witness_and_reset_uses_zero_previous_
     assert capture.error is None and len(capture.samples) == 2
     assert capture.samples[0]["previousAction"] == [0.25]
     assert capture.samples[1]["previousAction"] == [0.0]
+
+
+@pytest.mark.parametrize("view_error", [False, True])
+def test_native_capture_owns_clock_without_a_working_view_and_restores_calls(
+    tmp_path, monkeypatch, view_error
+):
+    runner, env, _, profile, inputs = setup(tmp_path, monkeypatch)
+    monkeypatch.delenv("LW_NODE_VIEW_IPC", raising=False)
+    if view_error:
+        monkeypatch.setenv("LW_NODE_VIEW_IPC", str(tmp_path))
+        inputs["view"] = {"error": {"code": "fixture-map-error", "message": "Controlled unavailable view"}}
+    calls = []
+
+    class Done:
+        device = "controlled"
+
+        def __or__(self, other):
+            return self
+
+        def index_select(self, _, indices):
+            assert indices == [0]
+            return self
+
+        def to(self, **_):
+            return self
+
+        def tolist(self):
+            return [False]
+
+    count = 0
+    result = ({}, None, Done(), Done(), {})
+
+    def step(action):
+        nonlocal count
+        calls.append(action)
+        count += 1
+        env.state["joints"]["/World/Joint"]["q"] = count / 512
+        return result
+
+    original_error = RuntimeError("actual trainer error")
+
+    def reset():
+        raise original_error
+
+    env.step, env.reset, env.unwrapped, env.num_envs = step, reset, env, 1
+    env.sim = SimpleNamespace(get_physics_dt=lambda: 1 / 60, get_physics_step_count=lambda: count)
+    runner.env = env
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(long=int, tensor=lambda indices, **_: indices))
+    with TrainingViewBridge(runner, inputs) as observer:
+        assert (observer.writer is None) is (not view_error)
+        assert observer.view_disabled is view_error and not observer.disabled
+        with NativeObservationCapture(runner, observer, profile, inputs) as capture:
+            runner.alg.act(Tensor([[0.0]]))
+            for index in range(1, 257):
+                assert env.step(index) is result
+                runner.alg.act(Tensor([[index / 256]]))
+            try:
+                env.reset()
+            except RuntimeError as error:
+                assert error is original_error
+            else:
+                raise AssertionError("Original reset exception was lost")
+            assert observer.epochs == [0] and observer.physics_count == 256
+    assert len(capture.samples) == 256 and capture.error is None
+    assert calls == list(range(1, 257)) and env.step is step and env.reset is reset

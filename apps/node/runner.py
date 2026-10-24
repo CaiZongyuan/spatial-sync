@@ -249,6 +249,10 @@ class OwnedRun:
                     Path(__file__).with_name("bridge_callback.py"), bridge / "lw_training_bridge.py"
                 )
                 shutil.copyfile(Path(__file__).with_name("view_bridge.py"), bridge / "lw_view_bridge.py")
+                shutil.copyfile(Path(__file__).with_name("environment_observer.py"),
+                                bridge / "lw_environment_observer.py")
+                shutil.copyfile(Path(__file__).with_name("native_observation_capture.py"),
+                                bridge / "lw_native_observation_capture.py")
                 shutil.copyfile(Path(__file__).with_name("observation_capture.py"),
                                 bridge / "lw_observation_capture.py")
                 self.view_directory.mkdir()

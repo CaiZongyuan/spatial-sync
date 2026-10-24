@@ -15,6 +15,11 @@ import time
 import uuid
 from pathlib import Path
 
+if __package__:
+    from .environment_observer import EnvironmentObserver
+else:
+    from lw_environment_observer import EnvironmentObserver
+
 
 def canonical_digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -139,13 +144,14 @@ class LatestState:
                     (self.directory / name).unlink(missing_ok=True)
 
 
-class TrainingViewBridge:
+class TrainingViewBridge(EnvironmentObserver):
     def __init__(self, runner, inputs, *, clock=time.monotonic):
-        self.runner, self.inputs, self.clock = runner, inputs, clock
+        super().__init__(runner)
+        self.inputs, self.clock = inputs, clock
         self.writer = None
         self.env = None
         self.originals = {}
-        self.disabled = False
+        self.view_disabled = False
         self.view_id = "view-" + uuid.uuid4().hex
 
     def envelope(self, kind, payload, index=None):
@@ -160,11 +166,12 @@ class TrainingViewBridge:
         return value
 
     def error(self, error, code="training_view_mapping_unavailable"):
-        self.disabled = True
+        self.view_disabled = True
         if self.writer:
             self.writer.put({"error": self.envelope("error", {"code": code, "message": str(error)[:4000]})})
 
     def __enter__(self):
+        super().__enter__()
         directory = os.getenv("LW_NODE_VIEW_IPC")
         if not directory:
             return self  # Older Node launches keep their original training behavior.
@@ -174,12 +181,12 @@ class TrainingViewBridge:
             if "error" in hint:
                 self.error(hint["error"]["message"], hint["error"]["code"])
                 return self
-            import torch
             import warp as wp
             from isaaclab_newton.physics import NewtonManager
 
-            self.wp, self.torch, self.manager = wp, torch, NewtonManager
-            self.env = self.runner.env.unwrapped
+            self.wp, self.manager = wp, NewtonManager
+            if self.disabled:
+                raise ValueError(self.observer_error)
             model = NewtonManager.get_model()
             mapping = self.env.lw_training_view()
             self.selected = validate_mapping(
@@ -201,10 +208,7 @@ class TrainingViewBridge:
             self.inverse = wp.array(inverse, dtype=wp.transform, device=device)
             self.output = wp.empty(len(indices), dtype=wp.transform, device=device)
             self.kernel = gather_kernel(wp)
-            self.epochs, self.sequences = [0] * len(self.selected), [0] * len(self.selected)
-            self.dt = self.env.sim.get_physics_dt()
-            self.physics_count = self.env.sim.get_physics_step_count()
-            self.sim_time = self.physics_count * self.dt
+            self.sequences = [0] * len(self.selected)
             self.last_sample = -math.inf
             source = {
                 "kind": "newton", "newtonVersion": importlib.metadata.version("newton"),
@@ -219,42 +223,20 @@ class TrainingViewBridge:
                 "descriptorDigest": hint["descriptorDigest"], "mappingDigest": canonical_digest(mapping),
                 "environments": self.selected, "source": source, "maxRateHz": 10.0,
             })
-            for name in ("step", "reset"):
-                # Restore instance attributes exactly, including inherited bound methods.
-                self.originals[name] = (name in vars(self.env), getattr(self.env, name))
-                setattr(self.env, name, self._observe(name, getattr(self.env, name)))
             self._sample()
         except Exception as error:
             self.error(error)
         return self
 
-    def _observe(self, name, original):
-        def observed(*args, **kwargs):
-            result = original(*args, **kwargs)
-            if not self.disabled:
-                try:
-                    if name == "reset":
-                        self.epochs = [epoch + 1 for epoch in self.epochs]
-                    else:
-                        # DirectRLEnv.step returns (obs, rewards, terminated, truncated, extras).
-                        done = result[2] | result[3]
-                        selected = self.torch.tensor(self.selected, dtype=self.torch.long, device=done.device)
-                        resets = done.index_select(0, selected).to(device="cpu").tolist()
-                        self.epochs = [
-                            epoch + int(reset) for epoch, reset in zip(self.epochs, resets, strict=True)
-                        ]
-                    count = self.env.sim.get_physics_step_count()
-                    if count < self.physics_count:
-                        raise ValueError("Actual physics step clock regressed")
-                    self.sim_time += (count - self.physics_count) * self.dt
-                    self.physics_count = count
-                    self._sample()
-                except Exception as error:
-                    self.error(error)
-            return result
-        return observed
-
     def _sample(self):
+        if self.writer is None or self.view_disabled:
+            return
+        try:
+            self._publish_sample()
+        except Exception as error:
+            self.error(error)
+
+    def _publish_sample(self):
         now = self.clock()
         if now - self.last_sample < 0.1:
             return
@@ -280,12 +262,7 @@ class TrainingViewBridge:
         self.last_sample = now
 
     def __exit__(self, *exception):
-        if self.env is not None:
-            for name, (owned_attribute, original) in self.originals.items():
-                if owned_attribute:
-                    setattr(self.env, name, original)
-                else:
-                    delattr(self.env, name)
+        super().__exit__(*exception)
         if self.writer:
             with contextlib.suppress(Exception):
                 self.writer.close()  # A failed view teardown cannot replace a training result/exception.
