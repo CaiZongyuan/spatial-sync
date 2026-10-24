@@ -9,6 +9,7 @@ export interface TrainingPlanDocument {
   goalId?: string | null;
   task: string;
   previous: string | null;
+  program?: { id: string; contentHash: string } | null;
   algorithm: Record<string, unknown>;
   model: Record<string, unknown>;
   hyperparameters: Record<string, unknown>;

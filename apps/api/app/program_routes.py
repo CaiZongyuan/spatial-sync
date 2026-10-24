@@ -15,6 +15,28 @@ MAX_UPLOAD_BYTES = 16 * 1024 * 1024
 def install_program_routes(app, manager, role_for):
     library = ProgramLibrary(manager.library_assets.roots)
     manager.programs = app.state.programs = library
+    manager.training_plans.programs = library
+
+    def document(record):
+        associations = []
+        history, _ = manager.training_plans.snapshot()
+        for stored in history:
+            intent = stored.plan.program
+            if (
+                intent is not None
+                and intent.id == record["id"]
+                and intent.contentHash == record["contentHash"]
+            ):
+                plan = manager.training_plans.document(stored)
+                associations.append(
+                    {
+                        "id": plan["id"],
+                        "revision": plan["revision"],
+                        "approvalId": plan["approvalId"],
+                        "status": plan["status"],
+                    }
+                )
+        return record | {"plans": sorted(associations, key=lambda value: (value["id"], value["revision"]))}
 
     async def receive(request, *, inspect=False):
         if role_for(request.headers) != "operator":
@@ -34,7 +56,8 @@ def install_program_routes(app, manager, role_for):
             stream.seek(0)
             if inspect:
                 return await anyio.to_thread.run_sync(library.inspect, stream)
-            return await anyio.to_thread.run_sync(library.push, stream, actor_from_headers(request.headers))
+            record = await anyio.to_thread.run_sync(library.push, stream, actor_from_headers(request.headers))
+            return document(record)
 
     @app.post("/api/v1/programs/inspect")
     async def inspect_program(request: Request):
@@ -46,11 +69,13 @@ def install_program_routes(app, manager, role_for):
 
     @app.get("/api/v1/programs")
     async def listing():
-        return {"programs": await anyio.to_thread.run_sync(library.list)}
+        return {"programs": [document(value) for value in await anyio.to_thread.run_sync(library.list)]}
 
     @app.get("/api/v1/programs/{name}/{revision}")
     async def show(name: str, revision: str):
-        return await anyio.to_thread.run_sync(library.show, f"program/robot_arm.script.{name}@{revision}")
+        return document(
+            await anyio.to_thread.run_sync(library.show, f"program/robot_arm.script.{name}@{revision}")
+        )
 
     @app.get("/api/v1/programs/{name}/{revision}/archive")
     async def archive(name: str, revision: str):

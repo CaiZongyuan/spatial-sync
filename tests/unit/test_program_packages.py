@@ -8,6 +8,7 @@ import pytest
 
 from packages.library.common import LibraryError
 from packages.programs.library import ProgramLibrary, inspect_package
+from packages.programs.metadata import ProgramMetadata
 from packages.protocol.schema import Actor
 from packages.training.inputs import pack_package
 from tests.fixtures.script_program import SOURCE, program_directory
@@ -19,6 +20,7 @@ def test_inspection_hashes_original_dirty_bytes_and_config_without_importing_the
     assert not hasattr(math, "_lw_uploaded_program_marker")
     first = inspect_package(package)
     assert first["metadata"] == manifest
+    assert ProgramMetadata.model_validate(first["metadata"]).model_dump(mode="json") == manifest
     assert first["files"]["controller.py"]["size"] == len(SOURCE)
     assert source.read_bytes() == SOURCE
     assert not hasattr(math, "_lw_uploaded_program_marker")

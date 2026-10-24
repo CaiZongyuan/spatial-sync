@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
+from packages.programs.metadata import ProgramIntent
 from packages.training.predictions import prediction
 
 
@@ -104,8 +105,10 @@ class TaskMetadata(Schema):
     def evaluation_scene(self):
         if self.evaluation.scene != self.scene:
             raise ValueError("Task evaluation must pin the Task scene")
-        if not self.evaluation.seeds or not self.evaluation.params or any(
-            not values for values in self.evaluation.params.values()
+        if (
+            not self.evaluation.seeds
+            or not self.evaluation.params
+            or any(not values for values in self.evaluation.params.values())
         ):
             raise ValueError("Task evaluation must declare fixed seeds and nonempty parameter coverage")
         return self
@@ -158,9 +161,10 @@ class TrainingPlan(Schema):
     goalId: GoalRef | None = None
     task: TaskRef
     previous: str | None = None
-    algorithm: dict[str, JsonValue] = Field(min_length=1)
-    model: dict[str, JsonValue] = Field(min_length=1)
-    hyperparameters: dict[str, JsonValue] = Field(min_length=1)
+    program: ProgramIntent | None = None
+    algorithm: dict[str, JsonValue] = Field(default_factory=dict)
+    model: dict[str, JsonValue] = Field(default_factory=dict)
+    hyperparameters: dict[str, JsonValue] = Field(default_factory=dict)
     jobs: Jobs
     budget: PlanBudget
     evaluation: Evaluation
@@ -170,6 +174,18 @@ class TrainingPlan(Schema):
     interview: str = Field(min_length=1, max_length=128000, pattern=r"\S")
     revision: int = Field(default=1, ge=1)
     status: Literal["draft", "submitted", "approved", "rejected", "completed", "abandoned"] = "draft"
+
+    @model_validator(mode="after")
+    def work_kind(self):
+        training = (self.algorithm, self.model, self.hyperparameters)
+        if self.program is None:
+            if not all(training):
+                raise ValueError("A training round requires algorithm, model and hyperparameters")
+        elif any(training) or self.jobs.seeds or self.budget.gpuHours != 0 or self.budget.episodes is None:
+            raise ValueError(
+                "A script round has no training metadata/Jobs/GPU budget and requires episode budget"
+            )
+        return self
 
     @field_validator("hypotheses")
     @classmethod

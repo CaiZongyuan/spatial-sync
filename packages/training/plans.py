@@ -32,6 +32,7 @@ class TrainingPlanStore:
     def __init__(self, path: Path, approvals, tasks, *, on_change=None):
         self.path, self.approvals, self.tasks = path, approvals, tasks
         self.on_change = on_change
+        self.programs = None
         self.records: dict[str, StoredTrainingPlan] = {}
         self.history: dict[str, dict[int, StoredTrainingPlan]] = {}
         self._lock = threading.RLock()
@@ -104,6 +105,21 @@ class TrainingPlanStore:
             updated.plan.status = self.document(record)["status"]
             self.on_change(updated)
 
+    def _require_program(self, plan, task_snapshot):
+        if plan.program is None:
+            return
+        if self.programs is None:
+            raise ValueError("Program library is unavailable")
+        program = self.programs.show(plan.program.id)
+        task = task_snapshot["task"]
+        scene = self.tasks.scenes().resolve(task["scene"])
+        if (
+            program["contentHash"] != plan.program.contentHash
+            or program["metadata"]["implements"] != task["implements"]
+            or "newton" not in scene.metadata["sources"]
+        ):
+            raise ValueError("Program version/hash, Task interface or simulation Source differs")
+
     def submit(self, document, actor, *, plan_id=None):
         with self._lock:
             previous_revision = self.get(plan_id) if plan_id else None
@@ -115,6 +131,7 @@ class TrainingPlanStore:
                 if plan.status != "draft" or (plan_id and plan.id != plan_id):
                     raise ValueError("Submit draft content; identity and lifecycle are server-owned")
                 task_snapshot = self.tasks.show(plan.task)
+                self._require_program(plan, task_snapshot)
                 task = task_snapshot["task"]
                 if plan.evaluation.scene != task["scene"]:
                     raise ValueError("Plan evaluation must use the pinned Task scene")
@@ -189,7 +206,13 @@ class TrainingPlanStore:
                 decision != "revoke" and current.status != "pending"
             ):
                 raise ApprovalConflict("This training plan approval has already been processed")
-            if decision == "approve" and self.loop_budgets is not None:
-                self.loop_budgets.require_fresh_approval(record)
+            if decision == "approve":
+                if record.plan.program is not None:
+                    try:
+                        self._require_program(record.plan, self.tasks.show(record.plan.task))
+                    except (ValueError, LibraryError) as exc:
+                        raise ApprovalConflict("Frozen program/Task is unavailable or differs") from exc
+                if self.loop_budgets is not None:
+                    self.loop_budgets.require_fresh_approval(record)
             self.approvals.decide(approval.approvalId, decision, actor, note)
             self._notify(record)

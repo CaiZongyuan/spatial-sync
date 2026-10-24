@@ -1,8 +1,9 @@
 import type { TrainingPlanDocument, TrainingPlanChange } from '../lib/training';
+import { ProgramReview } from './training/ProgramReview';
 import '../training-plans.css';
 
 type TrainingContent = Pick<TrainingPlanDocument, 'goal' | 'task' | 'algorithm' | 'model' | 'hyperparameters'
-  | 'jobs' | 'budget' | 'evaluation' | 'rationale' | 'hypotheses' | 'notebookRead' | 'interview' | 'previous'>;
+  | 'program' | 'jobs' | 'budget' | 'evaluation' | 'rationale' | 'hypotheses' | 'notebookRead' | 'interview' | 'previous'>;
 const value = (item: unknown) => item == null ? '—' : typeof item === 'string' ? item : JSON.stringify(item, null, 2);
 
 function Interview({ transcript }: { transcript: string }) {
@@ -20,18 +21,19 @@ function Interview({ transcript }: { transcript: string }) {
 
 export function TrainingPlanDetails({ plan, changes = [] }: { plan: TrainingContent; changes?: TrainingPlanChange[] }) {
   return <div className="training-plan-details" data-testid="training-plan-details">
-    <section aria-label="训练计划内容"><h3>训练计划</h3>
+    <section aria-label="训练计划内容"><h3>{plan.program ? '脚本程序计划' : '训练计划'}</h3>
       <dl className="training-plan-facts">
         <div><dt>目标</dt><dd>{plan.goal}</dd></div>
         <div><dt>Task 版本</dt><dd><code>{plan.task}</code></dd></div>
-        <div><dt>算法</dt><dd><pre>{value(plan.algorithm)}</pre></dd></div>
+        {!plan.program && <><div><dt>算法</dt><dd><pre>{value(plan.algorithm)}</pre></dd></div>
         <div><dt>模型</dt><dd><pre>{value(plan.model)}</pre></dd></div>
-        <div><dt>规模与超参</dt><dd><pre>{value(plan.hyperparameters)}</pre></dd></div>
+        <div><dt>规模与超参</dt><dd><pre>{value(plan.hyperparameters)}</pre></dd></div></>}
         <div><dt>作业种子</dt><dd>{plan.jobs.seeds.join(', ') || '无训练作业'}</dd></div>
-        <div><dt>GPU 预算</dt><dd>{plan.budget.gpuHours} 小时</dd></div>
+        {plan.program ? <div><dt>评估回合预算</dt><dd>{plan.budget.episodes} 回合</dd></div> : <div><dt>GPU 预算</dt><dd>{plan.budget.gpuHours} 小时</dd></div>}
         <div><dt>成功标准</dt><dd>{plan.evaluation.scene} · {plan.evaluation.episodes} 回合
           {plan.evaluation.threshold != null && ` · 至少 ${plan.evaluation.threshold} 次成功`}</dd></div>
       </dl>
+      {plan.program && <ProgramReview intent={plan.program} />}
       <h4>可测量假设</h4><ol className="training-hypotheses">{plan.hypotheses.map(hypothesis => <li key={hypothesis.id}>
         <strong>{hypothesis.id} · {hypothesis.cause}</strong><p>{hypothesis.change}</p>
         <p><code>{hypothesis.predict.metric}</code>：{hypothesis.predict.from ?? '无基线'} → {hypothesis.predict.to}</p>
