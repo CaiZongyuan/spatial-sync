@@ -24,6 +24,17 @@ def invoke(env, *args, code=0):
     return json.loads(called.stdout)
 
 
+async def test_tensorboard_cli_and_mcp_reach_the_public_runtime_check_without_a_session(gateway_url):
+    env = environment(gateway_url)
+    error = invoke(env, "tensorboard", code=1)["error"]
+    assert error["statusCode"] == 409 and error["detail"]["code"] == "tensorboard_runtime_unavailable"
+    async with Client(StdioServerParameters(command=str(LW), args=["mcp"], env=env), mode="legacy") as mcp:
+        response = await mcp.call_tool("tensorboard", {})
+        assert response.is_error and "tensorboard_runtime_unavailable" in str(response.content)
+    with httpx.Client(base_url=gateway_url, trust_env=False) as http:
+        assert http.get("/api/v1/health").json()["sessionCount"] == 0
+
+
 def test_installed_task_push_submit_relative_interview_and_revise_without_session(gateway_url, tmp_path):
     env = environment(gateway_url)
     package = task_directory(tmp_path / "Task source", "cli-task-probe")
