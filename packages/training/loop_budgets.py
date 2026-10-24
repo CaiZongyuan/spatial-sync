@@ -5,11 +5,14 @@ There is no second usage ledger. A Plan ID owns one pool across its revisions.
 
 import hashlib
 import json
+import re
 import time
 from collections import defaultdict
 from copy import deepcopy
 
 from packages.info.plans import PlanError
+from packages.library.common import LibraryError
+from packages.training.schema import LoopBudget
 
 
 def goal_id(plan):
@@ -53,6 +56,30 @@ class LoopBudgets:
     def _evaluation_records(self):
         service = self.manager.evaluations
         return tuple(service.store.records.values()) if service else ()
+
+    def _legacy_limit(self, record):
+        """Use only the first approval's own immutable Task, never a later declaration."""
+        approval = self._approval(record)
+        tasks = getattr(self.manager, "tasks", None)
+        if tasks is None or approval.details.get("plan", {}).get("task") != record.plan.task:
+            return None, None
+        try:
+            task = tasks.show(record.plan.task)  # TaskLibrary verifies immutable package bytes/hash.
+            if task["id"] != record.plan.task or not re.fullmatch(r"[a-f0-9]{64}", task["contentHash"]):
+                return None, None
+            original_hashes = {
+                job["taskContentHash"]
+                for job in self.manager.jobs.records.values()
+                if job["planId"] == record.plan.id
+                and job["planRevision"] == record.plan.revision
+                and job.get("taskContentHash") is not None
+            }
+            if original_hashes and original_hashes != {task["contentHash"]}:
+                return None, None
+            limit = LoopBudget.model_validate(task["task"]["loopBudget"]).model_dump(mode="json")
+            return limit, {"task": record.plan.task, "taskContentHash": task["contentHash"]}
+        except (LibraryError, OSError, ValueError, KeyError):
+            return None, None
 
     def _held_job(self, job):
         if job["status"] in ("queued", "running"):
@@ -107,15 +134,15 @@ class LoopBudgets:
                     rights.append(plan_budget(version.plan.model_dump(mode="json")))
             if reserve_proposed and proposed is not None and proposed["id"] == identity:
                 rights.append(plan_budget(proposed))
-            # Existing Jobs use a shared Plan-ID pool. Estimates/explicit overbudget
-            # grants can retain more capacity, but an old full Plan is never added twice.
+            # allowedGpuHours is derived from shared remaining capacity, not an
+            # independent reservation or enforced running limit. Use admitted estimates.
             job_capacity = actual_gpu + sum(
                 max(
                     0,
-                    (job.get("allowedGpuHours") or job.get("estimatedGpuHours") or 0)
-                    - job["chargedGpuHours"],
+                    (job.get("estimatedGpuHours") or 0) - job["chargedGpuHours"],
                 )
                 for job in held_jobs
+                if job.get("budgetReserved") or self.manager.jobs._has_lease(job)
             )
             evaluation_capacity = actual_episodes + sum(
                 max(
@@ -147,9 +174,18 @@ class LoopBudgets:
         self.manager.jobs._require_available()
         records = self._records(goal)
         approved = [(at, record) for record in records for at in self._ever_approved(record)]
-        authorities = [(at, record) for at, record in approved if record.goalContext is not None]
-        authority = min(authorities, key=lambda item: (item[0], item[1].plan.id)) if authorities else None
-        limit = deepcopy(authority[1].goalContext["declaredBudget"] if authority else declared)
+        authority = min(approved, key=lambda item: (item[0], item[1].plan.id)) if approved else None
+        legacy_evidence = None
+        if authority is None:
+            limit, limit_source = deepcopy(declared), "proposed-task-snapshot" if declared else "unknown"
+        elif authority[1].goalContext is not None:
+            limit, limit_source = (
+                deepcopy(authority[1].goalContext["declaredBudget"]),
+                "approved-task-snapshot",
+            )
+        else:
+            limit, legacy_evidence = self._legacy_limit(authority[1])
+            limit_source = "legacy-immutable-task" if limit is not None else "unknown"
         first_at = min((at for at, _ in approved), default=None)
         deadline = first_at + limit["days"] * 86400 if first_at is not None and limit else None
         expired = deadline is not None and self.clock() >= deadline
@@ -180,15 +216,15 @@ class LoopBudgets:
             "firstApprovedAt": first_at,
             "deadline": deadline,
             "expired": expired,
+            "legacyEvidence": legacy_evidence,
         }
         return {
             "goalId": goal,
             "limit": limit,
-            "limitSource": "approved-task-snapshot"
-            if authority
-            else "proposed-task-snapshot"
-            if limit
-            else "unknown",
+            "limitSource": limit_source,
+            "limitReason": "first_approval_budget_evidence_unavailable"
+            if authority and limit is None
+            else None,
             "actual": actual,
             "unspentCommitment": unspent,
             "effective": effective,

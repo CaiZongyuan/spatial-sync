@@ -24,7 +24,9 @@ def domain(tmp_path, monkeypatch):
     manager = SimpleNamespace(
         training_plans=plans,
         approvals=approvals,
-        jobs=SimpleNamespace(records={}, nodes={}, _require_available=lambda: None),
+        jobs=SimpleNamespace(
+            records={}, nodes={}, _require_available=lambda: None, _has_lease=lambda job: False
+        ),
         evaluations=SimpleNamespace(store=SimpleNamespace(records={}), _blocked=set()),
     )
     budgets = LoopBudgets(manager, clock=lambda: clock[0])
