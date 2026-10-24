@@ -543,6 +543,27 @@ COMMANDS = (
             output_type=list[dict[str, Any]], mcp_name="task_list"),
     Command(path=("task", "show"), help="Read an exact Task version and its hash.", method="task_show",
             arguments=(Argument("id", ("task/name@rev",), str, "Exact Task version"),), mcp_name="task_show"),
+    *(
+        Command(path=("program", verb), help=help, method=method, mcp_name=method, actor=True,
+                arguments=(Argument("directory", ("dir",), str, "Program directory on this client"),))
+        for verb, method, help in (
+            ("inspect", "program_inspect", "Inspect program source and config without executing Python."),
+            ("push", "program_push", "Snapshot immutable program bytes for later human code approval."),
+        )
+    ),
+    Command(path=("program", "ls"), help="List immutable program packages.", method="program_list",
+            mcp_name="program_list", output_type=list[dict[str, Any]]),
+    Command(path=("program", "show"), help="Read a frozen program package and its Plan associations.",
+            method="program_show", mcp_name="program_show", arguments=(
+                Argument("id", ("program/id@rev",), str, "Exact program version"),)),
+    Command(path=("program", "source"), help="Read one frozen source file as text.",
+            method="program_source", mcp_name="program_source", arguments=(
+                Argument("id", ("program/id@rev",), str, "Exact program version"),
+                Argument("filename", ("filename",), str, "Relative frozen source filename"))),
+    Command(path=("program", "export"), help="Export frozen bytes to a new file on this client.",
+            method="program_export", mcp_name="program_export", arguments=(
+                Argument("id", ("program/id@rev",), str, "Exact program version"),
+                Argument("output", ("output.tar",), str, "New local archive filename"))),
     Command(
         path=("plan", "submit"), help="Submit a training plan and interview for human approval.",
         method="plan_submit", arguments=(Argument("document", ("plan.yaml",), dict[str, Any],

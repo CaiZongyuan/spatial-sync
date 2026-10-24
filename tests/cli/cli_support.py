@@ -24,6 +24,7 @@ TOOLS = {
     "tensorboard",
     "job_start", "job_list", "job_show", "job_cancel", "job_logs", "node_ls",
     "task_push", "task_list", "task_show", "plan_submit",
+    "program_inspect", "program_push", "program_list", "program_show", "program_source", "program_export",
     "model_ls", "cost_query",
     "agent_list", "agent_show", "agent_versions", "agent_snapshot", "agent_export", "agent_import",
     "agent_create", "harness_diff",
