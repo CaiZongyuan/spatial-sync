@@ -50,22 +50,23 @@ class TensorBoardService:
         ]
 
     async def start(self):
-        if self.closed:
-            raise PlanError("tensorboard_closed", "Gateway is shutting down", status=503)
-        if self.pending is not None:
-            return await asyncio.shield(self.pending)
-        directories = self.log_directories()
-        if (
-            self.process is not None and self.process.process.poll() is None
-            and self.input_directories == directories
-        ):
-            return {"url": self.url}
-        # Task creation is atomic on this event loop; no Session/Jobs lock spans launch or readiness.
-        if self.pending is None:
+        while True:
+            if self.closed:
+                raise PlanError("tensorboard_closed", "Gateway is shutting down", status=503)
+            if self.pending is not None:
+                await asyncio.shield(self.pending)
+                continue  # A Job may have changed the input set during cold readiness.
+            directories = self.log_directories()
+            if (
+                self.process is not None and self.process.process.poll() is None
+                and self.input_directories == directories
+            ):
+                return {"url": self.url}
+            # Task creation is atomic; no Session/Jobs lock spans launch/readiness.
             self.input_directories = directories
             self.pending = asyncio.create_task(self._launch(), name="tensorboard-launch")
             self.pending.add_done_callback(lambda finished: setattr(self, "pending", None))
-        return await asyncio.shield(self.pending)
+            await asyncio.shield(self.pending)
 
     async def _launch(self):
         if self.process is not None:

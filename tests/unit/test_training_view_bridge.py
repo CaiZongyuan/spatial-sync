@@ -127,3 +127,19 @@ def test_recovered_ipc_cannot_claim_live_ownership(tmp_path):
     capability = SimpleNamespace(is_set=lambda: False)
     owned = SimpleNamespace(view_active=capability, view_directory=tmp_path)
     assert latest(owned) is None
+
+
+def test_view_teardown_cannot_mask_the_original_training_exception():
+    bridge = TrainingViewBridge(None, {})
+    error = RuntimeError("real trainer failure")
+
+    def unavailable():
+        raise OSError("owned view IPC deletion unavailable")
+
+    bridge.writer = SimpleNamespace(close=unavailable)
+    with pytest.raises(RuntimeError) as caught:
+        try:
+            raise error
+        finally:
+            bridge.__exit__()
+    assert caught.value is error

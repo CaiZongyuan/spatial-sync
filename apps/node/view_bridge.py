@@ -3,6 +3,7 @@
 Only this module enters Isaac/Warp. The Node owns authentication and transport.
 """
 
+import contextlib
 import hashlib
 import importlib.metadata
 import json
@@ -134,7 +135,8 @@ class LatestState:
         self.thread.join(timeout=3)
         if not self.thread.is_alive():
             for name in ("latest.json", "latest.tmp"):
-                (self.directory / name).unlink(missing_ok=True)
+                with contextlib.suppress(OSError):
+                    (self.directory / name).unlink(missing_ok=True)
 
 
 class TrainingViewBridge:
@@ -166,8 +168,8 @@ class TrainingViewBridge:
         directory = os.getenv("LW_NODE_VIEW_IPC")
         if not directory:
             return self  # Older Node launches keep their original training behavior.
-        self.writer = LatestState(directory)
         try:
+            self.writer = LatestState(directory)
             hint = self.inputs.get("view", {})
             if "error" in hint:
                 self.error(hint["error"]["message"], hint["error"]["code"])
@@ -285,7 +287,8 @@ class TrainingViewBridge:
                 else:
                     delattr(self.env, name)
         if self.writer:
-            self.writer.close()
+            with contextlib.suppress(Exception):
+                self.writer.close()  # A failed view teardown cannot replace a training result/exception.
 
 
 def observe_training(runner, inputs):
