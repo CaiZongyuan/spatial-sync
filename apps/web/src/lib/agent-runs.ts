@@ -2,12 +2,13 @@ import { request } from './api';
 import type { EvaluationScore } from './evaluations';
 import type { RuntimeUsage } from './runtime-records';
 
-export interface RuntimeDeclaration { name: string; version: string | null; model: string; thinking: string }
+export interface RuntimeDeclaration { name: string; version: string | null; model: string; thinking: string | null }
 export interface HarnessVersion { version: number; contentHash: string; archiveHash: string; decision: string }
 export interface AgentCase {
   caseRunId: string; caseId: string; repeat: number;
   status: 'waiting' | 'running' | 'finishing' | 'completed' | 'invalid' | 'cancelled';
   sessionId?: string; nativeSessionId?: string; runtimeRecordId?: string; runtimeRecordHash?: string;
+  observedRuntime?: { name: string; version: string | null; models: string[]; thinking: string | null };
   score?: number; dimensions?: Record<string, number>; recordingId?: string;
   artifacts: { id: string; kind: string; url: string; sha256: string; size: number }[];
   usage?: RuntimeUsage & { observationBasis: 'completion-snapshot' };

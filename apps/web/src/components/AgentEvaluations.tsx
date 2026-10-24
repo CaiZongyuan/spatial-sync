@@ -86,7 +86,7 @@ function RunDetails({ run, cancelled }: { run: AgentRun; cancelled: (run: AgentR
     <span>{agentRunStatus[run.status]}</span></header><div className="eval-agent-run-summary">
     <code>{run.id}</code><dl className="eval-metadata">
       <div><dt>冻结对象</dt><dd>{run.agentId} · Harness v{run.harnessVersion} · {run.purpose === 'train' ? '完整 train' : '单题验证，不发布计分板'}</dd></div>
-      <div><dt>运行时声明</dt><dd>{run.runtime.name} · {run.runtime.version ?? '版本未提供'} · {run.runtime.model} · {run.runtime.thinking}</dd></div>
+      <div><dt>运行时声明</dt><dd>{run.runtime.name} · {run.runtime.version ?? '版本未提供'} · {run.runtime.model} · {run.runtime.thinking ?? '思考等级未声明'}</dd></div>
       <div><dt>实验环境</dt><dd>{run.pins.scene} · {run.pins.source}<small>Suite {run.pins.suiteContentHash} · Scene {run.pins.sceneContentHash}</small></dd></div>
       <div><dt>Harness 固定</dt><dd>{run.pins.harnessHash}<small>Archive {run.pins.archiveHash}</small></dd></div>
       <div><dt>Skills 固定</dt><dd>{run.pins.skills.map(item => <small key={item.name}>{item.name} · {item.sha256}</small>)}</dd></div>
@@ -105,7 +105,8 @@ function RunDetails({ run, cancelled }: { run: AgentRun; cancelled: (run: AgentR
         <td>{agentCaseStatus[item.status]}{item.error && <small>{item.error.code}</small>}</td><td className="numeric">{agentScore(item.score)}
           {item.dimensions && <details><summary>评分维度</summary>{Object.entries(item.dimensions).map(([name, value]) => <small key={name}>{name}: {value}</small>)}</details>}</td>
         <td><code>{item.sessionId ?? '等待 Session'}</code><small>{item.nativeSessionId ?? '原生会话未报告'}</small>
-          {item.runtimeRecordId && <><Link to="/runtime-sessions/$id" params={{ id: item.runtimeRecordId }}>查看原生运行记录 ↗</Link><small>固定内容 {item.runtimeRecordHash}</small></>}</td>
+          {item.runtimeRecordId && <><Link to="/runtime-sessions/$id" params={{ id: item.runtimeRecordId }}>查看原生运行记录 ↗</Link><small>固定内容 {item.runtimeRecordHash}</small></>}
+          {item.observedRuntime && <small>原生观测：{item.observedRuntime.name} · {item.observedRuntime.version ?? '版本未知'} · {item.observedRuntime.models.join(', ') || '模型未知'} · {item.observedRuntime.thinking ?? '思考等级未知'}</small>}</td>
         <td>{item.recordingId && <Link to="/replay/$recordingId" params={{ recordingId: item.recordingId }}>查看回放 ↗</Link>}
           {item.artifacts.map(artifact => <div key={artifact.id}><a href={artifact.url} target="_blank" rel="noreferrer">{artifact.kind} ↗</a>
             <small title={artifact.sha256}>{shortVersion(artifact.sha256)} · {artifact.size} B</small></div>)}

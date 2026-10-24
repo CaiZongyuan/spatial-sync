@@ -42,7 +42,7 @@ class GatewayClient:
     def __init__(self, url=None, token=None, session=None, *, http=None):
         self.url = (url or os.getenv("LW_URL", "http://127.0.0.1:8000")).rstrip("/")
         self.token = token if token is not None else os.getenv("LW_TOKEN")
-        self._session_id = session or os.getenv("LW_SESSION")
+        self._session_id = session or os.getenv("LW_SESSION") or None
         self._session_explicit = self._session_id is not None
         self._invocation_targets = {}
         try:
