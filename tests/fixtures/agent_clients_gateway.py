@@ -5,7 +5,6 @@ are labelled test data; the full backend execution journey is verified separatel
 """
 
 import asyncio
-import hashlib
 import json
 import os
 import time
@@ -13,7 +12,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import httpx
-from fastapi import Request, Response
+from fastapi import Request
 
 ROOT = Path(__file__).resolve().parents[2]
 for variable, directory in (
@@ -58,7 +57,6 @@ app = create_app(
     platform_sampler=Sampler(),
     agent_adapter=Adapter(),
 )
-published = {}
 plan_modes = {}
 
 
@@ -123,7 +121,7 @@ async def controlled_evaluation(evaluation_id):
             )
             if partial:
                 break
-    cases, artifacts = [], []
+    cases = []
     suite = manager.evaluations.suites.resolve(run["suite"])
     for index, (case, repetition) in enumerate(
         (case, repetition)
@@ -150,26 +148,19 @@ async def controlled_evaluation(evaluation_id):
             result.pop("score")
             result.pop("dimensions")
         cases.append(result)
-        for kind, data in (
-            ("platform-trace", {"controlled": True, "caseRunId": case_id}),
-            ("final-state", {"controlled": True, "entities": {}}),
-            ("score", result),
+        directory = service.root / identifier / "cases" / case_id
+        directory.mkdir(parents=True)
+        for filename, data in (
+            ("trace.jsonl", {"kind": "case.final", "controlled": True, "caseRunId": case_id}),
+            ("final.json", {"controlled": True, "entities": {}}),
+            ("score.json", result),
+            ("usage.json", service.get(identifier)["usage"]),
         ):
-            payload = json.dumps(data).encode()
-            artifact_id = f"{case_id}-{kind}"
-            published[(identifier, artifact_id)] = payload
-            artifacts.append(
-                {
-                    "id": artifact_id,
-                    "path": f"cases/{case_id}/{kind}.json",
-                    "size": len(payload),
-                    "sha256": hashlib.sha256(payload).hexdigest(),
-                    "url": f"/api/v1/agent-runs/{identifier}/artifacts/{artifact_id}",
-                    "caseRunId": case_id,
-                    "kind": kind,
-                    "source": "platform",
-                }
-            )
+            (directory / filename).write_text(json.dumps(data) + "\n", encoding="utf-8")
+        service.update(identifier, caseRuns=cases, attemptedCaseRuns=len(cases))
+        service.publish_case(identifier, case_id)
+        service.append_log(identifier, case_id, {"kind": "case.final", "controlled": True})
+    artifacts = service.get(identifier)["artifacts"]
     usage = service.get(identifier)["usage"]
     from apps.api.app.evaluations import now
 
@@ -289,9 +280,3 @@ async def seed(request: Request):
     plan = response.json()
     plan_modes[plan["id"]] = request.query_params.get("mode", "complete")
     return plan
-
-
-@app.get("/api/v1/agent-runs/{identifier}/artifacts/{artifact_id}")
-async def artifact(identifier: str, artifact_id: str):
-    payload = published.get((identifier, artifact_id))
-    return Response(payload or b"{}", status_code=200 if payload else 404, media_type="application/json")

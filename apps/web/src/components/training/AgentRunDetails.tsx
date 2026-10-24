@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { request } from '../../lib/api';
-import { agentMoney, agentRunStatus } from '../../lib/agent-runs';
+import { agentCaseStatus, agentMoney, agentRunStatus } from '../../lib/agent-runs';
 import { cancelJob, type AgentArtifact, type AgentRunJob } from '../../lib/jobs';
 import { suiteSegment } from '../../lib/evaluations';
 import { numberOrUnknown } from '../../lib/training-presentation';
@@ -20,6 +20,24 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
   const [plan, setPlan] = useState<AgentTrainingPlanDocument>(), [planError, setPlanError] = useState<string>();
   const [pending, setPending] = useState(false), [actionError, setActionError] = useState<string>();
   const [goalBudget, setGoalBudget] = useState<LoopBudget>(), [goalError, setGoalError] = useState<string>();
+  const [logs, setLogs] = useState<string[]>([]), [logError, setLogError] = useState<string>();
+  const [logsComplete, setLogsComplete] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController(); setLogs([]); setLogError(undefined); setLogsComplete(false);
+    const follow = async () => {
+      let cursor = 0;
+      try {
+        while (!controller.signal.aborted) {
+          const value = await request<{ lines: string[]; cursor: number; complete: boolean }>(
+            `/jobs/${encodeURIComponent(job.jobId)}/logs?after=${cursor}&timeoutSeconds=20`, { signal: controller.signal });
+          if (controller.signal.aborted) return;
+          setLogs(current => [...current, ...value.lines].slice(-2000)); cursor = value.cursor;
+          if (value.complete) { setLogsComplete(true); return; }
+        }
+      } catch (failure) { if (!controller.signal.aborted) setLogError((failure as Error).message); }
+    };
+    void follow(); return () => controller.abort();
+  }, [job.jobId]);
   useEffect(() => {
     const controller = new AbortController();
     void request<{ budget: LoopBudget }>(`/loops/${encodeURIComponent(job.goalId)}`, { signal: controller.signal })
@@ -54,7 +72,7 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
       <div><span>已尝试 / 固定题次</span><strong>{job.attemptedCaseRuns} / {job.allocatedCaseRuns}</strong></div>
       <div><span>有效 / 无效或取消</span><strong>{valid} / {invalid}</strong></div>
       <div><span>Token / 请求</span><strong>{numberOrUnknown(job.usage.tokens, 0)} / {numberOrUnknown(job.usage.requests, 0)}</strong></div>
-      <div><span>LLM 估算</span><strong>{agentMoney(job.usage.llmUsd)}</strong></div>
+      <div><span>运行时 LLM 费用</span><strong>{agentMoney(job.usage.llmUsd)}</strong></div>
     </div>
     <div className="agent-run-links"><Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(job.suite) }}>查看 Agent 计分板</Link>
       <Link to="/cost" search={{ range: '7d', plan: `${job.planId}@${job.planRevision}`, goal: job.goalId, agent: job.agent }}>查看本计划成本</Link>
@@ -62,6 +80,7 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
       {job.status === 'cancelling' && <span>正在取消，等待服务确认资源清理。</span>}
       {job.cleanupIncomplete && <><span role="alert">清理尚未确认，用量与资源承诺仍保留。</span><button disabled={pending} onClick={() => void act(true)}>重试清理</button></>}
     </div>{actionError && <p role="alert">{actionError}</p>}
+    {job.currentCase && <p>当前题目 {job.currentCase.caseId} · 第 {job.currentCase.repetition} 次 · {job.currentCase.status}</p>}
     {job.goalException && <p className="loop-budget-warning" role="status">{job.goalException.dimensions.includes('days') ? 'Goal 期限已过；' : 'Goal 预算已用尽；'}本计划获有限例外，仍按本计划剩余执行额度运行。原目标上限与截止时间保持不变。</p>}
     <section className="panel"><h2>固定运行身份与用量</h2><dl className="training-plan-facts">
       <div><dt>Agent / Harness</dt><dd>{job.agent} · v{job.harnessVersion}</dd></div>
@@ -73,9 +92,13 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
       <div><dt>实际执行资源</dt><dd>本地受管执行 · CPU · {job.gpuHours} GPU 小时</dd></div>
       {job.reason && <div><dt>状态原因</dt><dd>{job.reason}</dd></div>}
     </dl><p className="resource-note">有效负例保留得分；无效或不完整题次不补成零分。reported 记录不代表已接受或部署。</p></section>
+    <section className="panel"><h2>模型 Token 用量</h2><table aria-label="Agent 四类 Token"><thead><tr><th>类别</th><th>总量</th><th>已知部分</th></tr></thead><tbody>
+      {([['inputTokens', 'knownInputTokens', '输入'], ['outputTokens', 'knownOutputTokens', '输出'], ['cacheReadTokens', 'knownCacheReadTokens', '缓存读取'], ['cacheWriteTokens', 'knownCacheWriteTokens', '缓存写入']] as const).map(([field, known, label]) =>
+        <tr key={field}><th>{label}</th><td>{numberOrUnknown(job.usage[field], 0)}</td><td>{numberOrUnknown(job.usage[known], 0)}</td></tr>)}
+    </tbody></table></section>
     {goalError && <p role="alert">目标预算暂不可用：{goalError}</p>}{goalBudget && <LoopBudgetSummary budget={goalBudget} />}
     <section className="panel"><h2>逐题运行记录</h2><div className="resource-table-scroll"><table aria-label="Agent 题次结果"><thead><tr><th>题目 / 重复</th><th>状态</th><th>得分 / 100</th><th>维度得分</th><th>证据</th></tr></thead><tbody>
-      {job.caseRuns.map(caseRun => <tr key={caseRun.caseRunId}><td>{caseRun.caseId} · #{caseRun.repetition}</td><td>{caseRun.status}{caseRun.error && <small>{caseRun.error.code}</small>}</td>
+      {job.caseRuns.map(caseRun => <tr key={caseRun.caseRunId}><td>{caseRun.caseId} · #{caseRun.repetition}</td><td>{agentCaseStatus(caseRun.status)}{caseRun.error && <small>{caseRun.error.code}</small>}</td>
         <td>{numberOrUnknown(caseRun.score, 2)}</td><td>{caseRun.dimensions ? Object.entries(caseRun.dimensions).map(([key, score]) => `${key}: ${score}`).join(' · ') : '未形成有效评分'}</td>
         <td>{caseRun.recordingId && <Link to="/replay/$recordingId" params={{ recordingId: caseRun.recordingId }}>查看回放</Link>}
           {job.artifacts.filter(artifact => artifact.caseRunId === caseRun.caseRunId).map(artifact => <a key={artifact.id} href={artifact.url} target="_blank" rel="noreferrer">{artifactNames[artifact.kind]}</a>)}</td></tr>)}
@@ -84,6 +107,8 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
       <a href={artifact.url} target="_blank" rel="noreferrer">{artifactNames[artifact.kind]} · {artifact.caseRunId ?? '整次运行'}</a>
       <small>{artifact.source} · {artifact.size.toLocaleString()} B · {artifact.sha256.slice(0, 12)}</small></li>)}</ul></details>
       {!job.artifacts.length && <p>暂无已发布的公开证据。</p>}</section>
+    <section className="panel"><h2>受信运行日志 <small>{logsComplete ? '已读至末尾' : '跟随中'}</small></h2>{logError && <p role="alert">日志读取失败：{logError}</p>}
+      <pre className="agent-public-log" aria-label="Agent 公开日志">{logs.join('\n') || '等待受管运行的公开记录。'}</pre></section>
     {planError && <p role="alert">固定计划读取失败：{planError}</p>}
     {plan && <section className="panel"><h2>批准的 Agent 计划 · r{job.planRevision}</h2>
       {plan.loopBudget && <details><summary>提交审批时的目标预算快照</summary><LoopBudgetSummary budget={plan.loopBudget} /></details>}

@@ -117,8 +117,8 @@ export function PlansPage({ planId }: { planId?: string }) {
   useEffect(() => { if (!planId && plans?.[0]) void navigate({ to: '/plans/$planId', params: { planId: plans[0].id }, replace: true,
     search: previous => ({ ...previous, step: undefined }) }); }, [planId, plans?.[0]?.id, navigate]);
   return <main className="plans-page" data-testid="plans-page"><header className="plans-heading"><div><span className="eyebrow">LAB OPERATIONS</span><h1>计划</h1><p>先写意图，再逐步执行。每一步都与真实结果相连。</p></div>
-    <span className="plan-tag">{training ? '计划' : '操作计划'} {result.plans?.length ?? '—'}</span></header><StageStrip count={result.plans?.length} />
-    <section className="plan-list-panel" aria-label="计划列表"><div className="plan-list-toolbar"><h2>操作计划</h2><div><label>搜索<input aria-label="搜索计划" value={query} placeholder="名称、ID 或提交者"
+    <span className="plan-tag">{training ? '计划' : '操作计划'} {result.plans?.length ?? '—'}</span></header>{!(selected?.kind === 'training' && selected.layer === 'agent') && <StageStrip count={result.plans?.length} />}
+    <section className="plan-list-panel" aria-label="计划列表"><div className="plan-list-toolbar"><h2>计划列表</h2><div><label>搜索<input aria-label="搜索计划" value={query} placeholder="名称、ID 或提交者"
       onChange={event => void navigate({ to: '.', search: prior => ({ ...prior, q: event.target.value || undefined }) })} /></label><label>状态<select aria-label="筛选计划状态" value={status}
         onChange={event => void navigate({ to: '.', search: prior => ({ ...prior, status: event.target.value || undefined }) })}>
         <option value="">全部状态</option>{['draft', 'submitted', 'approved', 'running', 'completed', 'abandoned', 'rejected'].map(value => <option key={value} value={value}>{({ draft: '草稿', submitted: '待审批', approved: '已批准', running: '运行中', completed: '已完成', abandoned: '已终止', rejected: '已驳回' } as Record<string, string>)[value]}</option>)}</select></label></div></div>

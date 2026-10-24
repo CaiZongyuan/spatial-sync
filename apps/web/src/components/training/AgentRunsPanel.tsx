@@ -37,7 +37,7 @@ export function AgentRunsPanel({ plans, query, status, onQuery, onStatus }: {
       <label>状态<select aria-label="筛选 Agent 运行状态" value={status} onChange={event => onStatus(event.target.value as ManagedJobStatus || undefined)}><option value="">全部状态</option>
         {Object.entries(agentRunStatus).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
       {error && <p role="alert">Agent 运行暂不可用：{error}</p>}
-      <div className="resource-table-scroll"><table aria-label="Agent 运行作业表"><thead><tr><th>作业 / Agent</th><th>模型 / 思考等级</th><th>状态</th><th>题次尝试</th><th>LLM 估算</th><th>固定计划</th></tr></thead><tbody>
+      <div className="resource-table-scroll"><table aria-label="Agent 运行作业表"><thead><tr><th>作业 / Agent</th><th>模型 / 思考等级</th><th>状态</th><th>题次尝试</th><th>运行时 LLM 费用</th><th>固定计划</th></tr></thead><tbody>
         {filtered?.map(job => <tr key={job.jobId}><td><Link to="/train/jobs/$id" params={{ id: job.jobId }}>{job.jobId}</Link><small>{job.agent} · Harness v{job.harnessVersion}</small></td>
           <td>{job.model}<small>{job.thinking}</small></td><td>{agentRunStatus[job.status]}{job.reason && <small>{job.reason}</small>}</td><td>{job.attemptedCaseRuns} / {job.allocatedCaseRuns}</td>
           <td>{agentMoney(job.usage.llmUsd)}{job.usage.llmUsd == null && <small>已知 {agentMoney(job.usage.knownLlmUsd)} · 预留 {agentMoney(job.usage.reservedUsd)}</small>}</td>

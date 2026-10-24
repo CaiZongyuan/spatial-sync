@@ -34,11 +34,12 @@ test(`approved Agent Plan exposes ${scenario} Run, scores and attributed cost`, 
     SPATIAL_NODE_TRAINER: '[]', SPATIAL_LIVE_BINDINGS: '', LW_LIBRARY: info.outputPath('library'),
     SPATIAL_STATE_ROOT: info.outputPath('state'), SPATIAL_RECORDINGS_ROOT: info.outputPath('recordings') };
   const http = await playwright.request.newContext();
-  const errors: string[] = [], forbidden: string[] = [], requests: Record<string, unknown>[] = [];
+  const errors: string[] = [], forbidden: string[] = [], publicLogs: string[] = [], requests: Record<string, unknown>[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => {
     const path = new URL(request.url()).pathname;
-    if (/\/api\/v1\/(sessions|tensorboard)(\/|$)|\/jobs\/[^/]+\/(view|logs)/.test(path)) forbidden.push(path);
+    if (/\/api\/v1\/(sessions|tensorboard)(\/|$)|\/jobs\/[^/]+\/view/.test(path)) forbidden.push(path);
+    if (/\/jobs\/[^/]+\/logs$/.test(path)) publicLogs.push(path);
     if (request.method() === 'POST' && /\/agents\/[^/]+\/runs$/.test(path)) requests.push(request.postDataJSON());
   });
   try {
@@ -107,6 +108,8 @@ test(`approved Agent Plan exposes ${scenario} Run, scores and attributed cost`, 
     const url = await evidence.getAttribute('href');
     expect(url).toMatch(/^\/api\/v1\/agent-runs\/job-[^/]+\/artifacts\//);
     expect((await (await http.get(api + url)).json()).controlled).toBe(true);
+    await expect(detail.getByLabel('Agent 公开日志')).toContainText('case.final');
+    expect(publicLogs.every(path => path === `/api/v1/jobs/${jobs[0].jobId}/logs`)).toBe(true);
     await page.getByLabel('Color theme').selectOption('dark');
     await page.screenshot({ path: info.outputPath('agent-run-dark.png'), fullPage: true });
     await detail.getByRole('link', { name: '查看本计划成本', exact: true }).click();
@@ -121,6 +124,7 @@ test(`approved Agent Plan exposes ${scenario} Run, scores and attributed cost`, 
       await expect(page.getByLabel('当前范围成本摘要')).toContainText('未确认预留 $0.0001');
       await expect(tokens.getByRole('table', { name: 'Token 数据表' })).toContainText('未知');
       expect((await tokens.locator('rect[data-coverage="partial"]').count())).toBeGreaterThan(0);
+      await expect(page.locator('.cost-anomalies')).toContainText('模型用量尚未确认');
     } else {
       for (const amount of ['600', '300', '60', '90']) await expect(tokens.getByRole('cell', { name: amount, exact: true })).toBeVisible();
     }
@@ -144,7 +148,7 @@ test(`approved Agent Plan exposes ${scenario} Run, scores and attributed cost`, 
     expect((await (await http.get(`${api}/api/v1/health`)).json()).sessionCount).toBe(0);
     expect(errors).toEqual([]); expect(forbidden).toEqual([]);
     await writeFile(info.outputPath('client-receipt.json'), JSON.stringify({ planId: plan.id, requests,
-      jobs, forbidden, errors, scope: 'Controlled scores/final states; actual Plan/approval/admission/stores/model gate/HTTP/UI, no Source/SDK/external provider' }));
+      jobs, forbidden, publicLogs, errors, scope: 'Controlled scores/final states; actual Plan/approval/admission/stores/model gate/whitelist publisher+serving/public logs/HTTP/UI, no Source/SDK/external provider' }));
   } catch (error) { original.push(error); }
   finally {
     const cleanup = await cleanupOwnedProcesses(processes, { python, script, original, outputPath: name => info.outputPath(name),

@@ -2,6 +2,7 @@ import type { TrainingPlanContent, TrainingPlanChange, AgentFrozenInputs } from 
 import '../training-plans.css';
 
 const value = (item: unknown) => item == null ? '—' : typeof item === 'string' ? item : JSON.stringify(item, null, 2);
+const enforcement = (coverage: string) => ({ hard: '执行前约束', 'stop-after-observation': '观测后停止', unavailable: '未提供' }[coverage] ?? coverage);
 
 function Interview({ transcript }: { transcript: string }) {
   const lines = transcript.trim().split(/\r?\n/);
@@ -37,7 +38,7 @@ export function TrainingPlanDetails({ plan, changes = [], frozenInputs }: {
           {frozenInputs && <><div><dt>固定输入摘要</dt><dd><code>{frozenInputs.immutablePlanInputHash}</code></dd></div>
             <div><dt>Harness 归档</dt><dd><code>{frozenInputs.harness.archiveHash}</code></dd></div>
             <div><dt>锁定技能</dt><dd>{frozenInputs.harness.skills.map(skill => <p key={skill.name}>{skill.name} · <code>{skill.sha256}</code></p>)}</dd></div>
-            <div><dt>执行约束覆盖</dt><dd>{Object.entries(frozenInputs.adapter.enforcement).map(([name, coverage]) => `${name}: ${coverage}`).join(' · ')} · 上下文界限 {frozenInputs.adapter.contextTokens} Token · 价格 r{frozenInputs.priceQuote.revision}</dd></div></>}
+            <div><dt>运行时约束覆盖</dt><dd>{Object.entries(frozenInputs.adapter.enforcement ?? {}).map(([name, coverage]) => `${name}: ${enforcement(coverage)}`).join(' · ') || '未知'} · 上下文界限 {frozenInputs.adapter.contextTokens ?? '未知'} Token{frozenInputs.priceQuote && ` · 价格快照 r${frozenInputs.priceQuote.revision}`}</dd></div></>}
         </> : <><div><dt>Task 版本</dt><dd><code>{plan.task}</code></dd></div>
         <div><dt>算法</dt><dd><pre>{value(plan.algorithm)}</pre></dd></div>
         <div><dt>模型</dt><dd><pre>{value(plan.model)}</pre></dd></div>

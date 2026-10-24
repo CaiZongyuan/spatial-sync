@@ -1,6 +1,6 @@
 .agent-run-links { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1rem 0; }
 .agent-run-detail > .panel, .agent-run-start { padding: 1.25rem; margin: 1rem 0; }
-.agent-run-detail td small, .agent-run-detail li small { display: block; color: var(--text-muted); }
+.agent-run-detail td small, .agent-run-detail li small { display: block; color: var(--muted); }
 .agent-run-detail td a { display: block; }
 .agent-run-detail table { width: 100%; border-collapse: collapse; }
 .agent-run-detail th, .agent-run-detail td { text-align: left; padding: .75rem; border-bottom: 1px solid var(--line); }
@@ -8,3 +8,4 @@
 .agent-runs-panel td small { display: block; color: var(--muted); }
 .agent-runs-panel table { min-width: 700px; width: 100%; border-collapse: collapse; }
 .agent-runs-panel th, .agent-runs-panel td { text-align: left; padding: .75rem; border-bottom: 1px solid var(--line); }
+.agent-public-log { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 var(--mono); }

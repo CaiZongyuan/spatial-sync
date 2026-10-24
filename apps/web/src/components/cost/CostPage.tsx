@@ -18,7 +18,7 @@ function dateInput(iso: string | undefined) {
 function SummaryCard({ title, values, llm }: { title: string; values: CostTotals; llm: boolean }) {
   return <section className="cost-summary-card" aria-label={`${title} 成本摘要`}><h2>{title}</h2><dl>
     <div><dt>Token</dt><dd>{values.tokens == null && llm ? '未知' : usage(values.tokens)}{llm && values.tokens == null && <small>已知 {numberOrUnknown(values.knownTokens, 0)}</small>}</dd></div><div><dt>请求</dt><dd>{values.requests == null && llm ? '未知' : usage(values.requests)}</dd></div>
-    <div><dt>LLM 成本（估算）</dt><dd>{llm ? agentMoney(values.llmUsd) : values.llmUsd == null ? '未接入' : dollars(values.llmUsd)}{llm && values.llmUsd == null && <small>已知 {agentMoney(values.knownLlmUsd)} · 预留 {agentMoney(values.reservedLlmUsd)}</small>}</dd></div>
+    <div><dt>LLM 运行时费用</dt><dd>{llm ? agentMoney(values.llmUsd) : values.llmUsd == null ? '未接入' : dollars(values.llmUsd)}{llm && values.llmUsd == null && <small>已知 {agentMoney(values.knownLlmUsd)} · 预留 {agentMoney(values.reservedLlmUsd)}</small>}</dd></div>
     <div><dt>GPU 小时</dt><dd>{numberOrUnknown(values.gpuHours, 6)}</dd></div>
   </dl></section>;
 }
@@ -58,7 +58,7 @@ export function CostPage({ filters, onFiltersChange }: { filters: CostFilters; o
   ])];
   const total = data?.summary.totals;
   return <main className="cost-page" data-testid="cost-page">
-    <header className="cost-heading"><div><p className="eyebrow">COST & USAGE</p><h1>成本与统计</h1><p>受管 LLM / GPU 用量与价格估算</p></div>
+    <header className="cost-heading"><div><p className="eyebrow">COST & USAGE</p><h1>成本与统计</h1><p>受管 LLM 运行时费用与 GPU 用量</p></div>
       <button onClick={refresh}>刷新成本</button></header>
     <div className="cost-filters" aria-label="成本筛选">
       {([['agent', 'Agent'], ['model', '模型'], ['node', '节点'], ['goal', 'RSI 目标'], ['plan', '计划']] as const).map(([key, label]) =>
@@ -79,7 +79,7 @@ export function CostPage({ filters, onFiltersChange }: { filters: CostFilters; o
           {localTime(data.summary.window.start)} — {localTime(data.summary.window.end)} <small>（时间桶按 UTC）</small></span></div>
         <strong data-testid="cost-selected-gpu">{numberOrUnknown(total.gpuHours, 6)} <small>GPU 小时</small></strong>
         <span>GPU 估算 {dollars(total.gpuUsd)}</span>
-        {data.summary.availability.llm && <><span data-testid="cost-selected-tokens">{numberOrUnknown(total.tokens, 0)} Token</span><span data-testid="cost-selected-llm">LLM 估算 {agentMoney(total.llmUsd)}</span>
+        {data.summary.availability.llm && <><span data-testid="cost-selected-tokens">{numberOrUnknown(total.tokens, 0)} Token</span><span data-testid="cost-selected-llm">LLM 费用 {agentMoney(total.llmUsd)}</span>
           {total.llmUsd == null && <small className="cost-price-unknown">总量未知；已知部分 {agentMoney(total.knownLlmUsd)} · 未确认预留 {agentMoney(total.reservedLlmUsd)} · {total.unknownUsageRequests ?? '未知'} 个用量未确认请求</small>}</>}
         {total.unpricedGpuSeconds > 0 && <small className="cost-price-unknown">* 未定价 {numberOrUnknown(total.unpricedGpuSeconds, 3)} GPU 秒；已定价部分 {dollars(total.knownGpuUsd)}</small>}
       </section>
@@ -93,12 +93,12 @@ export function CostPage({ filters, onFiltersChange }: { filters: CostFilters; o
         {anomalies.data && !anomalies.data.anomalies.length && <p className="cost-chart-note">暂无已记录的作业失败或评估超时。</p>}
         <ul>{anomalies.data?.anomalies.map(row => <li className={row.read ? 'is-read' : ''} key={row.id}>
           <span className={`cost-severity is-${row.severity}`}>{row.severity === 'error' ? '错误' : '警告'}</span>
-          <div><strong>{row.title}</strong><p>{row.detail}</p><small>{localTime(row.at)}{row.plan && ` · ${row.plan}`}</small>
+          <div><strong>{row.title}</strong><p>{row.detail}</p><small>{localTime(row.at)}{row.plan && ` · ${row.plan}`}{row.agent && ` · ${row.agent}`}{row.model && ` · ${row.model}`}</small>{row.requestId && <small>受管请求：{row.requestId}</small>}
             {row.jobId && <Link to="/train/jobs/$id" params={{ id: row.jobId }}>{row.jobId}</Link>}</div>
           {row.read ? <span>已读</span> : anomalies.data?.canAcknowledge && <button disabled={reading} onClick={() => void markRead([row.id])}>标为已读</button>}
         </li>)}</ul>
       </section>
-      <footer className="cost-footer"><p>{data.summary.availability.llm ? '受信用量、已知部分与未确认预留分别展示；金额按价格表估算。' : total.estimatedGpuSeconds > 0 || total.historicalGpuSeconds > 0
+      <footer className="cost-footer"><p>{data.summary.availability.llm ? 'LLM 用量与费用按运行时回执展示，缺失部分保留未知；GPU 金额仍按价格表估算。' : total.estimatedGpuSeconds > 0 || total.historicalGpuSeconds > 0
         ? 'GPU 账本含保守计数或历史累计，已上报量与估计量分列；金额按价格表估算。'
         : 'Token 与 GPU 小时为平台精确记录，金额按价格表估算。'}</p>
         <p>{data.summary.availability.llm ? 'LLM 仅覆盖受管 Agent 的受信请求；交互客户端用量不作推断。未知用量与预留分别保留，失败也记账。' : 'LLM 用量尚未接入，未显示的请求与 Token 保留未知。'} GPU 已上报 {numberOrUnknown(total.reportedGpuSeconds, 3)} 秒；失联或尚未确认的保守计数 {numberOrUnknown(total.estimatedGpuSeconds, 3)} 秒。</p>

@@ -4,7 +4,7 @@ import './notebooks.css';
 const amount = (value: number | null | undefined, digits = 2) => value == null ? '未知' : value.toFixed(digits);
 const axes: { id: BudgetAxis; label: string; digits: number }[] = [
   { id: 'gpuHours', label: '作业 GPU 小时', digits: 3 }, { id: 'episodes', label: '评估尝试', digits: 0 },
-  { id: 'caseRuns', label: 'Agent 题次', digits: 0 }, { id: 'llmUsd', label: 'LLM USD（估算）', digits: 6 },
+  { id: 'caseRuns', label: 'Agent 题次', digits: 0 }, { id: 'llmUsd', label: 'LLM USD', digits: 6 },
 ];
 
 export function LoopBudgetSummary({ budget, review = false }: { budget: LoopBudget; review?: boolean }) {

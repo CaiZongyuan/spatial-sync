@@ -32,8 +32,9 @@ export interface CostBreakdown {
     jobs: (CostTotals & { jobId: string; nodeId: string | null; status: string })[] })[];
 }
 export interface CostAnomaly {
-  id: string; kind: 'job' | 'evaluation'; severity: 'error' | 'warning'; title: string; detail: string;
+  id: string; kind: 'job' | 'evaluation' | 'llm'; severity: 'error' | 'warning'; title: string; detail: string;
   at: number | null; read: boolean; jobId?: string; plan?: string; evaluationId?: string;
+  requestId?: string; agent?: string; model?: string;
 }
 export interface CostAnomalies { anomalies: CostAnomaly[]; unreadCount: number; canAcknowledge: boolean }
 export interface CostAnomalyState { data?: CostAnomalies; error?: string }

@@ -88,7 +88,7 @@ export function LlmCharts({ buckets, available = false }: { buckets: CostBucket[
         <div className="cost-empty-plot" role="img" aria-label="Token 堆叠柱：LLM 用量尚未接入"><p>Token 用量尚未接入</p><small>输入、输出与缓存读取保留未知。</small></div></>}
       <CostSeriesTable title="Token" available={available} buckets={buckets} fields={[{ key: 'inputTokens', label: '输入' }, { key: 'outputTokens', label: '输出' }, { key: 'cacheReadTokens', label: '缓存读取' }, { key: 'cacheWriteTokens', label: '缓存写入' }, { key: 'knownTokens', label: '已知总 Token' }, { key: 'reservedTokens', label: '未确认预留' }, { key: 'cacheHitRate', label: '缓存命中率', percent: true }]} />
     </section>
-    <section className="panel cost-chart"><header><h2>LLM 成本变化</h2><span className="cost-chart-legend">USD · 估算</span></header>
+    <section className="panel cost-chart"><header><h2>LLM 成本变化</h2><span className="cost-chart-legend">USD · 运行时回执</span></header>
       {available ? <><p className="cost-chart-note">峰值 {agentMoney(extrema.peak)} · 末值 {agentMoney(extrema.last)}</p>
         <svg className="cost-svg-chart" viewBox="0 0 640 185" role="img" aria-label="LLM 成本面积折线；未知不连线">
           <line x1="40" x2="620" y1="160" y2="160" className="cost-plot-grid" />
@@ -97,7 +97,7 @@ export function LlmCharts({ buckets, available = false }: { buckets: CostBucket[
               <polyline className="cost-price-line" points={points} fill="none" />{segment.map(point => <circle key={point.index} cx={chartX(point.index, buckets.length)} cy={priceY(point.value)} r="3" className="cost-price-point"><title>{new Date(buckets[point.index].start * 1000).toISOString()} · {agentMoney(point.value)}</title></circle>)}</g>; })}
           {buckets.map((bucket, index) => bucket.llmUsd == null && bucket.knownLlmUsd != null ? <circle key={index} data-coverage="partial" cx={chartX(index, buckets.length)} cy={priceY(bucket.knownLlmUsd)} r="4" fill="none" stroke="var(--c2)"><title>总额未知；已知 {agentMoney(bucket.knownLlmUsd)} · 预留 {agentMoney(bucket.reservedLlmUsd)}</title></circle> : null)}
         </svg></> : <div className="cost-empty-plot is-tall" role="img" aria-label="LLM 成本面积折线：没有真实 Token 记录，峰值和末值未知"><p>尚无可估算的 LLM 用量</p><small>峰值 * · 末值 *</small></div>}
-      <CostSeriesTable title="LLM 成本" available={available} buckets={buckets} fields={[{ key: 'llmUsd', label: 'LLM 估算', money: true }, { key: 'knownLlmUsd', label: '已知部分', money: true }, { key: 'reservedLlmUsd', label: '未确认预留', money: true }]} />
+      <CostSeriesTable title="LLM 成本" available={available} buckets={buckets} fields={[{ key: 'llmUsd', label: 'LLM 费用', money: true }, { key: 'knownLlmUsd', label: '已知部分', money: true }, { key: 'reservedLlmUsd', label: '未确认预留', money: true }]} />
     </section>
   </>;
 }
@@ -136,7 +136,7 @@ export function GpuChart({ breakdown, connectedNodes }: { breakdown: CostBreakdo
 export function CostBreakdownTable({ data, title, available = false }: { data: CostBreakdown; title: string; available?: boolean }) {
   return <section className="panel cost-breakdown"><header><h2>{title}</h2><span>当前范围</span></header>
     <div className="cost-table-scroll" role="region" aria-label={`${title} 数据区域`} tabIndex={0}><table aria-label={title}>
-      <thead><tr><th scope="col">{data.by === 'goal' ? 'RSI 目标' : '计划 / 固定修订'}</th><th scope="col">请求</th><th scope="col">Token</th><th scope="col">LLM 估算</th><th scope="col">GPU 小时</th><th scope="col">GPU 占比</th></tr></thead>
+      <thead><tr><th scope="col">{data.by === 'goal' ? 'RSI 目标' : '计划 / 固定修订'}</th><th scope="col">请求</th><th scope="col">Token</th><th scope="col">LLM 费用</th><th scope="col">GPU 小时</th><th scope="col">GPU 占比</th></tr></thead>
       <tbody>{data.rows.map(row => <tr key={row.key ?? 'none'}><th scope="row">{row.label}</th><td>{llmValue(row.requests, available)}</td><td>{llmValue(row.tokens, available)}</td>
         <td>{available ? agentMoney(row.llmUsd) : dollars(row.llmUsd)}{available && row.llmUsd == null && <small>已知 {agentMoney(row.knownLlmUsd)} · 预留 {agentMoney(row.reservedLlmUsd)}</small>}</td><td>{numberOrUnknown(row.gpuHours, 6)}</td><td>{row.gpuShare == null ? '—' : `${numberOrUnknown(row.gpuShare * 100, 1)}%`}</td></tr>)}</tbody>
     </table></div>{!data.rows.length && <p className="cost-chart-note">当前范围与筛选下没有用量。</p>}

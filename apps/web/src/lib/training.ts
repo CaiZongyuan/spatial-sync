@@ -47,8 +47,8 @@ export interface AgentFrozenInputs {
   harness: { harnessHash: string; archiveHash: string; skills: { name: string; sha256: string }[] };
   suite: { id: string; contentHash: string; scene: string; source: string; runsPerCase: number;
     cases: { id: string; statementHash: string }[] };
-  adapter: { contextTokens: number; enforcement: Record<string, string> };
-  priceQuote: { revision: number; rates: Record<string, number | null> };
+  adapter: { contextTokens?: number | null; enforcement?: Record<string, string> };
+  priceQuote?: { revision: number; rates: Record<string, number | null> };
 }
 export type TrainingPlanContent = EmbodiedTrainingPlanContent | AgentTrainingPlanContent;
 interface PlanMetadata {

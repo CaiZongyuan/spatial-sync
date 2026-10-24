@@ -6,7 +6,7 @@ import { compareEvaluations, currentReference, evaluationDate, evaluationScoreLa
   type AgentEvaluationSuite, type EmbodiedEvaluationSuite, type EvaluationConditions, type EvaluationRecord,
   type EvaluationScore, type EvaluationSuite, type EmbodiedEvaluationScore, type EmbodiedEvaluationRecord,
   type AgentEvaluationScore, type AgentEvaluationRecord } from '../lib/evaluations';
-import { agentMoney } from '../lib/agent-runs';
+import { agentCaseStatus, agentMoney } from '../lib/agent-runs';
 import { Icon } from './Icon';
 import '../evaluations.css';
 
@@ -191,7 +191,7 @@ function AgentSuiteDetails({ suite, rows, evaluations }: { suite: AgentEvaluatio
       {record && <p>{record.attemptedCaseRuns} / {record.allocatedCaseRuns} 题次已尝试 · {statusLabels[record.status] ?? record.status} · <Link to="/train/jobs/$id" params={{ id: record.jobId }}>运行详情与公开证据</Link></p>}
     </section>
     {record && <section className="eval-panel"><header><h2>Agent 逐题得分</h2><span>同一版本的固定重复记录</span></header><div className="eval-table-scroll"><table aria-label="Agent 逐题得分"><thead><tr><th>题目 / 重复</th><th>结果</th><th>得分 / 100</th><th>实际维度分</th><th>证据</th></tr></thead><tbody>
-      {record.caseRuns.map(caseRun => <tr key={caseRun.caseRunId}><th>{caseRun.caseId} · #{caseRun.repetition}</th><td>{caseRun.status}{caseRun.error && <small>{caseRun.error.code}</small>}</td><td>{caseRun.score == null ? '未形成有效评分' : caseRun.score.toFixed(2)}</td>
+      {record.caseRuns.map(caseRun => <tr key={caseRun.caseRunId}><th>{caseRun.caseId} · #{caseRun.repetition}</th><td>{agentCaseStatus(caseRun.status)}{caseRun.error && <small>{caseRun.error.code}</small>}</td><td>{caseRun.score == null ? '未形成有效评分' : caseRun.score.toFixed(2)}</td>
         <td>{caseRun.dimensions ? Object.entries(caseRun.dimensions).map(([name, score]) => `${gradingLabels[name] ?? name}: ${score}`).join(' · ') : '未知'}</td>
         <td><Link to="/train/jobs/$id" params={{ id: record.jobId }}>查看公开运行证据</Link>{caseRun.recordingId && <Link to="/replay/$recordingId" params={{ recordingId: caseRun.recordingId }}>回放</Link>}</td></tr>)}
     </tbody></table></div></section>}
