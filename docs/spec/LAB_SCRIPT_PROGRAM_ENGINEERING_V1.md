@@ -7,7 +7,7 @@ rules, spatial messages, geometry conventions or recording formats.
 
 ## Package and immutable identity
 
-`lw program push <directory> --plan <id> --revision <n>` snapshots a standalone
+`lw program push <directory>` snapshots a standalone
 workspace package as `program/robot_arm.script.<name>@N`. The gateway accepts a
 bounded portable tar of regular files using the existing archive/path rules.
 It never imports, compiles for execution, instantiates or invokes uploaded Python.
@@ -37,13 +37,12 @@ runtime imports reject. These checks enforce the authoring contract, not an OS
 sandbox or protection against malicious Python reflection.
 
 The local `program inspect` operation returns validated metadata, material hash,
-source-file hashes, code hash and config hash so a Plan can pin exact bytes.
-`artifactHash` covers all uploaded filenames and original bytes. The committed
-Candidate `contentHash` additionally covers server-written Plan/Task provenance;
-the canonical exported archive has its own SHA256. Dirty workspace bytes are
-retained, not represented merely by a Git commit. Same material and exact Plan
-revision retry returns the existing immutable version; changed material needs a
-new Plan revision/approval. Files are staged and atomically published under the
+source-file hashes, code hash and config hash. Candidate `contentHash` covers all
+material filenames and original bytes; the canonical exported archive has its
+own SHA256. Dirty workspace bytes are retained, not represented merely by a Git
+commit. Identical material retries return the existing immutable version.
+Changed material creates a new version and needs a new approved Plan intent
+before execution. Files are staged and atomically published under the
 existing library/import lock, without overwriting a prior revision.
 
 ## Plan and code approval
@@ -51,7 +50,7 @@ existing library/import lock, without overwriting a prior revision.
 The existing `kind: training` Plan gains an optional `program` intent:
 
 ```yaml
-program: {name: pick-tube, artifactHash: <64 lowercase hex>}
+program: {id: program/robot_arm.script.pick-tube@1, contentHash: <64 lowercase hex>}
 jobs: {seeds: []}
 budget: {gpuHours: 0, episodes: 2}
 ```
@@ -61,18 +60,20 @@ evaluation budget. Algorithm/model/hyperparameter maps are empty and no Job is
 created; ordinary training Plans retain their existing required metadata and
 behavior. The existing Jobs admission also rejects undeclared seeds.
 
-The exact Plan revision first pins the material hash. A submitted revision can
-receive its immutable package snapshot so the human can inspect actual source,
-config and changes before approving. Approval requires those exact material
-bytes to be available; a hash without reviewable bytes is insufficient. A new
-revision or rejected package remains readable and cannot silently borrow a prior
-approval. No Python executes during snapshotting or approval.
+Push first creates an immutable **unauthorized-for-loading** snapshot. The Plan
+then references that actual version/content hash so the human can inspect frozen
+source, config and changes before approving. Submission and approval require
+those exact bytes to be available and compatible with the Task. The existing
+Plan/approval records provide an independent association/readback; binding or
+approving a Plan never rewrites the archive. A new revision or rejected package
+remains readable and cannot silently borrow another Candidate's approval. No
+Python executes during snapshotting or approval.
 
 Evaluation admission requires the current approved training Plan revision whose
-program name/material hash matches the exact Candidate, with compatible Task,
+program version/content hash matches the exact Candidate, with compatible Task,
 Scene/target/action and remaining episode budget. This is checked again under
 the existing admission ownership before Source effects. Completed, rejected,
-cancelled and invalid evidence retains its actual Plan and Candidate provenance;
+cancelled and invalid evidence retains its actual Plan and Candidate association;
 missing environment/judge proof never discards known code identity.
 
 ## Shared Subject and binding facts
