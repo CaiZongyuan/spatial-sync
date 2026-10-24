@@ -111,6 +111,12 @@ async def create_server(client: GatewayClient):
             )
         return await call_next(context)
 
+    async def managed_tool_context(context, call_next):
+        if context.method == "tools/call" and hasattr(client, "tool_scope"):
+            with client.tool_scope((context.params or {}).get("name")):
+                return await call_next(context)
+        return await call_next(context)
+
     catalog = await client.catalog_if_active()
     instructions = catalog_instructions(catalog) if catalog is not None else (
         "Use library_search and library_describe to inspect assets and scenes; library_import uploads a "
@@ -124,7 +130,8 @@ async def create_server(client: GatewayClient):
         attention = "Active alerts: unavailable (inbox unavailable). "
     attention += "Start each work round with inbox_poll; report critical alerts to the human before acting. "
     instructions = attention + instructions[:1500 - len(attention)]
-    server = MCPServer("Laboratory", instructions=instructions, middleware=[reject_human_decisions])
+    server = MCPServer("Laboratory", instructions=instructions,
+                       middleware=[reject_human_decisions, managed_tool_context])
 
     for command in COMMANDS:
         if command.mcp_name and not command.human_only:

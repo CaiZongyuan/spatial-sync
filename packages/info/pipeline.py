@@ -62,6 +62,9 @@ class ActionPipeline:
             if timer:
                 timer.cancel()
         self.publish(update)
+        audit = getattr(self.session, "agent_audit", None)
+        if audit is not None:
+            audit.invocation(update)
         self.session.plans.invocation(self.session, update)
         return True
 

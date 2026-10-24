@@ -35,10 +35,35 @@ def validate_action_witnesses(actions):
                         raise ValueError("Action observations require an entity identity")
 
 
+def running_observation(event):
+    observation = event.get("runningObservation", {})
+    if not isinstance(observation, dict):
+        return None
+    invocation = observation.get("invocation", {})
+    if not isinstance(invocation, dict) or not isinstance(observation.get("after", {}), dict):
+        return None
+    scope = {key: event.get(key) for key in ("sessionId", "sceneRevision", "epoch")}
+    return observation if (
+        invocation.get("status") == "running"
+        and isinstance(event.get("invocationId"), str) and all(value is not None for value in scope.values())
+        and invocation.get("invocationId") == event.get("invocationId")
+        and invocation.get("entityKey") == event.get("entityKey")
+        and invocation.get("action") == event.get("action")
+        and json_equal(invocation.get("params"), event.get("params", {}))
+        and all(invocation.get(key) == scope[key] for key in ("sceneRevision", "epoch"))
+        and observation.get("after", {}).get("scope") == scope
+    ) else None
+
+
 def action_matches(event, action, final_scope):
     if (event["kind"] != "action" or event.get("entityKey") != action["entity"]
-        or event.get("action") != action["action"] or event.get("status") != action["status"]):
+        or event.get("action") != action["action"]):
         return False
+    if event.get("status") != action["status"]:
+        running = running_observation(event) if action["status"] == "running" else None
+        if running is None:
+            return False
+        event = event | {"status": "running", "after": running["after"]}
     params = event.get("params", {})
     if any(key not in params or not json_equal(params[key], value)
            for key, value in action["params"].items()):
@@ -125,7 +150,9 @@ def process_metrics(trace, elapsed_seconds):
         if kind == "action" and event.get("status") in ("succeeded", "rejected"):
             key = event["status"] + ":" + event["entityKey"] + "." + event["action"]
             action_counts[key] = action_counts.get(key, 0) + 1
-        if kind == "action" and event.get("status") in ("running", "succeeded"):
+        if kind == "action" and (
+            event.get("status") in ("running", "succeeded") or running_observation(event)
+        ):
             key = "started:" + event["entityKey"] + "." + event["action"]
             action_counts[key] = action_counts.get(key, 0) + 1
     planned = False

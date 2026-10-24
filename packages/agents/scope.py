@@ -22,6 +22,7 @@ class ManagedScope:
     evaluation_id: str | None
     actor_name: str
     valid: object
+    audit: object = None
 
     def require(self):
         if not self.valid():
@@ -51,7 +52,7 @@ class AgentGrants:
         self.manager, self.clock = manager, clock
         self._tokens = {}
 
-    def issue(self, run_id, session_id, *, active=lambda: True, ttl=300):
+    def issue(self, run_id, session_id, *, active=lambda: True, ttl=300, audit=None):
         session = self.manager.get(session_id)
         if getattr(session, "agent_run_id", None) != run_id or session.manifest is None:
             raise PlanError(
@@ -72,7 +73,7 @@ class AgentGrants:
             )
 
         self._tokens[token] = ManagedScope(
-            run_id, session_id, revision, session.evaluation_id, "managed-" + run_id, valid
+            run_id, session_id, revision, session.evaluation_id, "managed-" + run_id, valid, audit
         )
         return token
 
@@ -170,7 +171,28 @@ def install_agent_scopes(app, manager):
                     "agent_capability_denied", "This interface is not granted to Target", status=403
                 )
             reset = _current.set(scope)
-            return await call_next(request)
+            record = (
+                scope.audit.begin(
+                    request.method,
+                    request.url.path,
+                    request.query_params,
+                    body,
+                    request.headers.get("x-lw-tool-name"),
+                )
+                if scope.audit
+                else None
+            )
+            response = await call_next(request)
+            if record is not None:
+                chunks = [chunk async for chunk in response.body_iterator]
+                scope.audit.end(record, response.status_code, b"".join(chunks))
+
+                async def content():
+                    for chunk in chunks:
+                        yield chunk
+
+                response.body_iterator = content()
+            return response
         except ValueError:
             return JSONResponse({"detail": {"code": "invalid_agent_request"}}, status_code=422)
         except PlanError as error:
