@@ -12,12 +12,15 @@ from .physics_port import PhysicsPort
 
 
 class NewtonInfoHost:
-    def __init__(self, simulation, manifest, options, emit, *, scene_package=None):
+    def __init__(self, simulation, manifest, options, emit, *, scene_package=None, policy_subject=None):
         self.sim, self.emit = simulation, emit
-        self.catalog = load_info_catalog(manifest, simulation.scene_id, scene_package=scene_package)
+        self.catalog = load_info_catalog(
+            manifest, simulation.scene_id, scene_package=scene_package, policy_subject=policy_subject
+        )
         self.port = PhysicsPort(simulation, manifest) if self.catalog.entities else None
-        self.host = HostCore(self.catalog, REGISTRY, physics=self.port, source="sim", fact_hz=options.factHz,
-                             seed=options.seed)
+        self.host = HostCore(
+            self.catalog, REGISTRY, physics=self.port, source="sim", fact_hz=options.factHz, seed=options.seed
+        )
         self.timings = deque(maxlen=6000)
         self.tick_ms = 0.0
         simulation.install_program_loop(options.controlHz, self.tick, self.reset)
@@ -61,6 +64,9 @@ class NewtonInfoHost:
 
     def snapshot(self):
         return self.host.snapshot()
+
+    def program_execution(self, entity_key):
+        return self.host.program_execution(entity_key)
 
     def preview(self, request):
         return self.host.preview(request)

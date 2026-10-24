@@ -61,15 +61,20 @@ class CpuPolicy:
             raise ValueError("Policy must have one fixed float32 [1,observation] input and [1,action] output")
         self.input, self.output = inputs[0].name, outputs[0].name
         self.observations, self.actions = spec.size, len(spec.action.jointKeys)
+        self.runtime_version = ort.__version__
+        self.inference_calls = self.valid_outputs = 0
 
     def infer(self, observations):
         inputs = vector(observations, self.observations).astype(np.float32)[None, :]
         if not np.isfinite(inputs).all():
             raise ValueError("Observation exceeds finite float32 range")
         try:
+            self.inference_calls += 1
             output = self.session.run([self.output], {self.input: inputs})[0]
         except Exception as exc:
             raise ValueError("ONNX CPU inference failed") from exc
         if output.shape != (1, self.actions):
             raise ValueError("ONNX output shape changed")
-        return vector(output[0], self.actions)
+        result = vector(output[0], self.actions)
+        self.valid_outputs += 1
+        return result

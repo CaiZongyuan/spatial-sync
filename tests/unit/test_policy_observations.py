@@ -99,11 +99,13 @@ def test_real_cpu_onnx_inference_then_independent_action_limits(tmp_path):
     model = CpuPolicy(path, spec)
     assert model.session.get_providers() == ["CPUExecutionProvider"]
     assert model.infer([3.0]).tolist() == [3.0]
+    assert model.inference_calls == model.valid_outputs == 1
     # raw3 * scale.1 clamps to .2 then position .95 clamps at 1.
     assert joint_targets(spec, [0.95], model.infer([3.0])).tolist() == [1.0]
     assert joint_targets(spec, [0.0], [-100.0]).tolist() == [-0.2]
     with pytest.raises(ValueError):
         model.infer([float("nan")])
+    assert model.inference_calls == model.valid_outputs == 2  # Invalid input never enters the native runtime.
     with pytest.raises(ValueError):
         joint_targets(spec, [0.0], [float("inf")])
     wrong = deepcopy(spec)

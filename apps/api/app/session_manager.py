@@ -8,6 +8,7 @@ import time
 import uuid
 from collections import OrderedDict, deque
 from collections.abc import Callable
+from copy import deepcopy
 
 from fastapi import HTTPException
 
@@ -86,12 +87,14 @@ class Session:
         scene_version=None,
         inbox=None,
         evaluation_id=None,
+        policy_subject=None,
         on_closed=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.scene_version = scene_version
         self.evaluation_id = evaluation_id
+        self.policy_subject = deepcopy(policy_subject)
         self.on_closed = on_closed
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
@@ -148,10 +151,21 @@ class Session:
             self._starting_source = candidate
             if self.scene_version and (configure := getattr(candidate, "configure_scene", None)):
                 configure(self.scene_version)
+            if self.policy_subject is not None:
+                configure = getattr(candidate, "configure_evaluation", None)
+                if configure is None:
+                    raise ValueError("Source cannot apply the frozen policy evaluation binding")
+                configure(self.policy_subject)
             started = await candidate.start(
                 self.scene_version.builder if self.scene_version else self.scene_id, self.options
             )
             manifest, catalog = started if isinstance(started, tuple) else (started, None)
+            if self.policy_subject is not None:
+                from packages.policies.subjects import validate_policy_catalog
+
+                if manifest.source.kind != "newton" or catalog is None:
+                    raise ValueError("Policy evaluation did not start the actual Newton Catalog")
+                validate_policy_catalog(catalog, self.policy_subject)
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
             manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number + 1})
@@ -1148,7 +1162,18 @@ class SessionManager:
             self._library = SceneLibrary(state_root=self.settings.state_root)
         return self._library
 
-    async def create(self, scene_id, source, options, *, scene_version=None, evaluation_id=None):
+    async def create(self, scene_id, source, options, *, scene_version=None, evaluation_id=None,
+                     policy_subject=None):
+        records = getattr(getattr(self.evaluations, "store", None), "records", {})
+        expected = records.get(evaluation_id, {}).get("policySubject") if evaluation_id else None
+        if policy_subject is not None or expected is not None:
+            if not evaluation_id or policy_subject is None or expected is None:
+                raise HTTPException(422, {"code": "policy_binding_required"})
+            from packages.policies.subjects import PolicySubject
+
+            policy_subject = PolicySubject.model_validate(policy_subject).document()
+            if policy_subject != expected:
+                raise HTTPException(409, {"code": "policy_subject_changed"})
         await self.startup()
         async with self._create_lock:
             for session in self.sessions.values():
@@ -1161,6 +1186,11 @@ class SessionManager:
                     self.library.refresh()
                     selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
                     selected_source = source or selected.metadata["sources"][0]
+                    if policy_subject is not None:
+                        fixed = policy_subject["evaluationScene"]
+                        if (selected_source != "newton" or selected.id != fixed["id"]
+                                or selected.content_hash != fixed["contentHash"]):
+                            raise HTTPException(409, {"code": "policy_evaluation_scene_mismatch"})
                     if not selected.metadata["stage"].startswith("python:") and selected_source != "newton":
                         raise HTTPException(503, {"code": "source_unavailable",
                                                   "message": "This source does not load USD scene packages"})
@@ -1185,6 +1215,7 @@ class SessionManager:
                             self.recordings, self.approvals, self.plans, scene_version=selected,
                             inbox=self.inbox,
                             evaluation_id=evaluation_id,
+                            policy_subject=policy_subject,
                             on_closed=lambda: self.evaluations and self.evaluations.wake(),
                         )
                         if evaluation_id:
