@@ -701,3 +701,5 @@ async def test_non_retryable_failure_cannot_be_retried(tmp_path):
     refused = await catch(service.retry(record["id"]))
     assert refused.status == 409 and refused.detail["code"] == "acquisition_not_retryable"
     assert runner.runs == 1
+    assert record["id"] not in service._budget.charges()
+    assert record["id"] not in service._budget.reservations()
