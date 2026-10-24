@@ -130,6 +130,7 @@ class CaseAudit:
                 "after": reply["after"],
                 "request": request,
                 "response": response,
+                "statusCode": reply["status"],
             }
             if method == "POST" and path.endswith("/actions") and "invocationId" in response:
                 body = request["body"]

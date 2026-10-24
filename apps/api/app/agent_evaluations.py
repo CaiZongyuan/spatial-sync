@@ -271,30 +271,39 @@ class ExternalEvaluations:
             if grant is None or grant.case["caseRunId"] != body.caseRunId:
                 raise PlanError("case_not_active", "This case is not active", status=409)
             async with grant.lock:
-                grant.require()
-                if any(
-                    previous.get("nativeSessionId") == body.nativeSessionId
-                    and previous["caseRunId"] != body.caseRunId
-                    for record in self.evaluator.store.records.values()
-                    if record.get("layer") == "agent"
-                    for previous in record["cases"]
-                ):
-                    raise PlanError(
-                        "native_session_reused",
-                        "Each independent case requires a fresh native Session",
-                        status=409,
+                known = grant.case.get("completionHash")
+                if known is not None:
+                    if known != complete_hash:
+                        raise PlanError(
+                            "case_completion_conflict",
+                            "This case has a different completion signal",
+                            status=409,
+                        )
+                else:
+                    grant.require()
+                    if any(
+                        previous.get("nativeSessionId") == body.nativeSessionId
+                        and previous["caseRunId"] != body.caseRunId
+                        for record in self.evaluator.store.records.values()
+                        if record.get("layer") == "agent"
+                        for previous in record["cases"]
+                    ):
+                        raise PlanError(
+                            "native_session_reused",
+                            "Each independent case requires a fresh native Session",
+                            status=409,
+                        )
+                    native = self._native_record(body, run)
+                    grant.case.update(
+                        nativeSessionId=body.nativeSessionId,
+                        completionHash=complete_hash,
+                        status="finishing",
+                        **native,
                     )
-                native = self._native_record(body, run)
-                grant.case.update(
-                    nativeSessionId=body.nativeSessionId,
-                    completionHash=complete_hash,
-                    status="finishing",
-                    **native,
-                )
-                await self.save(
-                    self.evaluator.store.records[identifier] | {"cases": self._live_cases(identifier)}
-                )
-                self.signals[body.caseRunId].set()
+                    await self.save(
+                        self.evaluator.store.records[identifier] | {"cases": self._live_cases(identifier)}
+                    )
+                    self.signals[body.caseRunId].set()
         event = self.finalized.setdefault(body.caseRunId, asyncio.Event())
         try:
             await asyncio.wait_for(event.wait(), timeout=30)
@@ -523,6 +532,12 @@ class ExternalEvaluations:
                     run["result"] = row
                 run.update(status="completed", endedAt=now())
         except BaseException as error:
+            committed = next(
+                (row for row in self.evaluator.store.rows if row["evaluationId"] == identifier), None
+            )
+            if committed is not None:
+                run.update(status="completed", result=committed, endedAt=now())
+                return
             run.update(
                 status="cancelled" if isinstance(error, asyncio.CancelledError) else "failed",
                 endedAt=now(),
@@ -541,7 +556,10 @@ class ExternalEvaluations:
                     error=run["error"],
                 )
             owned = [
-                session for session in self.manager.sessions.values() if session.evaluation_id == identifier
+                session
+                for session in self.manager.sessions.values()
+                if session.evaluation_id == identifier
+                and (session.holds_resources or not session.cleanup_complete)
             ]
             for session in owned:
                 try:
@@ -550,7 +568,9 @@ class ExternalEvaluations:
                     self.evaluator._blocked.add(identifier)
             if grant:
                 grant.audit.close()
-            blocked = any(session.holds_resources or not session.cleanup_complete for session in owned)
+            blocked = identifier in self.evaluator._blocked or any(
+                session.holds_resources or not session.cleanup_complete for session in owned
+            )
             if blocked:
                 self.evaluator._blocked.add(identifier)
             run["cleanup"] = {"complete": not blocked, "blocked": blocked}
@@ -563,6 +583,8 @@ class ExternalEvaluations:
 
     async def cancel(self, identifier):
         run = self.get(identifier)
+        if run["status"] in ("completed", "failed", "cancelled"):
+            return self.document(run)
         if self.evaluator._active_evaluation == identifier and self.evaluator._running:
             self.evaluator._running.cancel()
             try:

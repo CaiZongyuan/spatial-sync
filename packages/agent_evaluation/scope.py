@@ -184,9 +184,14 @@ class CaseAuthority:
                     await send(message)
 
                 try:
-                    await self.app(scope, replay, capture)
+                    async with asyncio.timeout_at(grant.deadline):
+                        await self.app(scope, replay, capture)
                 finally:
                     grant.audit.end(record, status, b"".join(chunks))
+        except TimeoutError:
+            await JSONResponse({"detail": {"code": "agent_scope_expired"}}, status_code=403)(
+                scope, receive, send
+            )
         except (ValueError, UnicodeError):
             await JSONResponse({"detail": {"code": "invalid_agent_request"}}, status_code=422)(
                 scope, receive, send
