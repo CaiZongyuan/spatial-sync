@@ -32,6 +32,9 @@ class NewtonSource:
         self.session_id = session_id
         self.scene_package = None
         self.policy_subject = None
+        self.simulation_subject = None
+        self.deployment_permit = None
+        self.execution_state_root = None
         self._process = None
         self._transport = None
         self._writer = None
@@ -64,15 +67,33 @@ class NewtonSource:
     def configure_evaluation(self, policy_subject):
         if self._process is not None or self._closed:
             raise RuntimeError("Evaluation binding must be fixed before Source startup")
-        from packages.policies.subjects import PolicySubject
+        from packages.programs.simulation import parse_subject
 
-        self.policy_subject = PolicySubject.model_validate(policy_subject).document()
+        subject = parse_subject(policy_subject)
+        if subject.schema_version == "lw.policy-subject/1":
+            self.policy_subject = subject.document()
+            self.simulation_subject = None
+        else:
+            self.simulation_subject = subject.document()
+            self.policy_subject = None
+
+    def configure_execution(self, *, state_root, deployment_permit=None):
+        if self._process is not None or self._closed:
+            raise RuntimeError("Simulation execution context must be fixed before Source startup")
+        from copy import deepcopy
+        from pathlib import Path
+
+        self.execution_state_root = Path(state_root).resolve()
+        self.deployment_permit = deepcopy(deployment_permit)
 
     async def start(self, scene_id: str, options: SessionOptions) -> tuple[SceneManifest, Catalog]:
         from packages.sim_runtime.runner import run_runner
 
         if self._process is not None or self._closed:
             raise RuntimeError("Newton source cannot be started twice")
+        if ((self.simulation_subject is not None or self.deployment_permit is not None)
+                and self.execution_state_root is None):
+            raise ValueError("Approved script/deployment execution requires an explicit state root")
         self._loop = asyncio.get_running_loop()
         self._ready = self._loop.create_future()
         self.options = options.model_copy()
@@ -82,11 +103,17 @@ class NewtonSource:
         arguments = (child, self.session_id, scene_id, options.model_dump(), self.scene_package)
         if self.policy_subject is not None:
             arguments += (self.policy_subject,)
-        self._process = mp.get_context("spawn").Process(
-            target=run_runner,
-            args=arguments,
-            name=f"newton-{self.session_id}",
-        )
+        worker_context = {}
+        if self.simulation_subject is not None:
+            worker_context["simulation_subject"] = self.simulation_subject
+        if self.deployment_permit is not None:
+            worker_context["deployment_permit"] = self.deployment_permit
+        if self.execution_state_root is not None:
+            worker_context["state_root"] = str(self.execution_state_root)
+        process = {"target": run_runner, "args": arguments, "name": f"newton-{self.session_id}"}
+        if worker_context:
+            process["kwargs"] = worker_context
+        self._process = mp.get_context("spawn").Process(**process)
         self._process.start()
         child.close()
         self._metrics["runnerPID"] = self._process.pid
@@ -165,6 +192,7 @@ class NewtonSource:
                     self.scene_id,
                     scene_package=self.scene_package,
                     policy_subject=self.policy_subject,
+                    simulation_subject=self.simulation_subject,
                 )
                 if self.catalog.model_dump(mode="json") != packet["catalog"]:
                     raise ValueError("Runner and gateway Catalog definitions differ")

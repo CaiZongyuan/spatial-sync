@@ -26,7 +26,8 @@ def _body_targets(manifest):
 
 
 class _Runner:
-    def __init__(self, transport, session_id, scene_id, options, scene_package=None, policy_subject=None):
+    def __init__(self, transport, session_id, scene_id, options, scene_package=None, policy_subject=None,
+                 *, simulation_subject=None, deployment_permit=None, state_root=None):
         # Only the spawned process reaches these imports or owns a Newton State.
         import newton
         import warp as wp
@@ -98,6 +99,9 @@ class _Runner:
         self.info = NewtonInfoHost(
             self.sim, self.manifest, options, self._info_events, scene_package=scene_package,
             policy_subject=policy_subject,
+            simulation_subject=simulation_subject,
+            deployment_permit=deployment_permit,
+            state_root=state_root,
         )
         self.viewer = None
         self._viewer_error = None
@@ -458,25 +462,31 @@ class _Runner:
     def close(self):
         try:
             try:
-                if self.viewer is not None:
-                    self.viewer.close()
+                if getattr(self, "info", None) is not None:
+                    self.info.close()
             finally:
                 try:
-                    self.extractor.close()
+                    if self.viewer is not None:
+                        self.viewer.close()
                 finally:
-                    self.sim.close()
+                    try:
+                        self.extractor.close()
+                    finally:
+                        self.sim.close()
         finally:
             self.frames.close()
             self.control.close(drain=True)
 
 
 def run_runner(transport, session_id: str, scene_id: str, options: dict,
-               scene_package=None, policy_subject=None):
+               scene_package=None, policy_subject=None, *, simulation_subject=None,
+               deployment_permit=None, state_root=None):
     runner = None
     try:
         runner = _Runner(
             transport, session_id, scene_id, SessionOptions.model_validate(options),
             scene_package, policy_subject,
+            simulation_subject=simulation_subject, deployment_permit=deployment_permit, state_root=state_root,
         )
         runner.run()
     except BaseException as exc:

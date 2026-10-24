@@ -88,13 +88,23 @@ class Session:
         inbox=None,
         evaluation_id=None,
         policy_subject=None,
+        simulation_subject=None,
+        deployment_permit=None,
         on_closed=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.scene_version = scene_version
         self.evaluation_id = evaluation_id
-        self.policy_subject = deepcopy(policy_subject)
+        from packages.programs.simulation import select_subject
+
+        subject = select_subject(simulation_subject=simulation_subject, policy_subject=policy_subject)
+        self.simulation_subject = subject.document() if subject is not None else None
+        self.policy_subject = (
+            deepcopy(self.simulation_subject)
+            if subject is not None and subject.schema_version == "lw.policy-subject/1" else None
+        )
+        self.deployment_permit = deepcopy(deployment_permit)
         self.on_closed = on_closed
         self.options, self.settings, self.factory = options, settings, factory
         self.approvals = approvals
@@ -151,21 +161,29 @@ class Session:
             self._starting_source = candidate
             if self.scene_version and (configure := getattr(candidate, "configure_scene", None)):
                 configure(self.scene_version)
-            if self.policy_subject is not None:
+            if self.simulation_subject is not None:
                 configure = getattr(candidate, "configure_evaluation", None)
                 if configure is None:
-                    raise ValueError("Source cannot apply the frozen policy evaluation binding")
-                configure(self.policy_subject)
+                    raise ValueError("Source cannot apply the frozen simulation evaluation binding")
+                configure(self.simulation_subject)
+            if self.deployment_permit is not None or (
+                self.simulation_subject is not None
+                and self.simulation_subject["schema"] == "lw.script-subject/1"
+            ):
+                configure = getattr(candidate, "configure_execution", None)
+                if configure is None:
+                    raise ValueError("Source cannot apply the approved simulation execution context")
+                configure(state_root=self.settings.state_root, deployment_permit=self.deployment_permit)
             started = await candidate.start(
                 self.scene_version.builder if self.scene_version else self.scene_id, self.options
             )
             manifest, catalog = started if isinstance(started, tuple) else (started, None)
-            if self.policy_subject is not None:
-                from packages.policies.subjects import validate_policy_catalog
+            if self.simulation_subject is not None:
+                from packages.programs.simulation import validate_simulation_catalog
 
                 if manifest.source.kind != "newton" or catalog is None:
                     raise ValueError("Policy evaluation did not start the actual Newton Catalog")
-                validate_policy_catalog(catalog, self.policy_subject)
+                validate_simulation_catalog(catalog, self.simulation_subject)
             if manifest.sessionId != self.session_id:
                 raise ValueError("source manifest sessionId does not match the session")
             manifest = manifest.model_copy(update={"revisionNumericId": self._revision_number + 1})
@@ -1164,18 +1182,21 @@ class SessionManager:
 
     async def create(
         self, scene_id, source, options, *, scene_version=None, evaluation_id=None,
-        policy_subject=None, private_evaluation=False,
+        policy_subject=None, simulation_subject=None, private_evaluation=False,
     ):
-        records = getattr(getattr(self.evaluations, "store", None), "records", {})
-        expected = records.get(evaluation_id, {}).get("policySubject") if evaluation_id else None
-        if policy_subject is not None or expected is not None:
-            if not evaluation_id or policy_subject is None or expected is None:
-                raise HTTPException(422, {"code": "policy_binding_required"})
-            from packages.policies.subjects import PolicySubject
+        from packages.programs.simulation import admitted_subject, select_subject
 
-            policy_subject = PolicySubject.model_validate(policy_subject).document()
-            if policy_subject != expected:
-                raise HTTPException(409, {"code": "policy_subject_changed"})
+        records = getattr(getattr(self.evaluations, "store", None), "records", {})
+        expected = admitted_subject(records.get(evaluation_id, {})) if evaluation_id else None
+        subject = select_subject(simulation_subject=simulation_subject, policy_subject=policy_subject)
+        if subject is not None or expected is not None:
+            selected_subject = subject if subject is not None else expected
+            prefix = "policy" if selected_subject.schema_version == "lw.policy-subject/1" else "program"
+            if not evaluation_id or subject is None or expected is None:
+                raise HTTPException(422, {"code": prefix + "_binding_required"})
+            if subject.document() != expected.document():
+                raise HTTPException(409, {"code": prefix + "_subject_changed"})
+        simulation_subject = subject.document() if subject is not None else None
         await self.startup()
         async with self._create_lock:
             for session in self.sessions.values():
@@ -1188,11 +1209,24 @@ class SessionManager:
                     self.library.refresh()
                     selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
                     selected_source = source or selected.metadata["sources"][0]
-                    if policy_subject is not None:
-                        fixed = policy_subject["evaluationScene"]
+                    if simulation_subject is not None:
+                        fixed = simulation_subject["evaluationScene"]
                         if (selected_source != "newton" or selected.id != fixed["id"]
                                 or selected.content_hash != fixed["contentHash"]):
-                            raise HTTPException(409, {"code": "policy_evaluation_scene_mismatch"})
+                            raise HTTPException(409, {"code": prefix + "_evaluation_scene_mismatch"})
+                    deployment_permit = None
+                    if simulation_subject is None:
+                        from packages.programs.simulation import scene_requires_material_authorization
+
+                        issuer = getattr(self, "controller_promotions", None)
+                        if evaluation_id is None and issuer is not None:
+                            deployment_permit = issuer.authorize_scene(selected)
+                        if (deployment_permit is None
+                                and scene_requires_material_authorization(selected, selected_source)):
+                            raise PlanError(
+                                "simulation_deployment_required",
+                                "Select a human-approved published Scene for this controller", status=409,
+                            )
                     if not selected.metadata["stage"].startswith("python:") and selected_source != "newton":
                         raise HTTPException(503, {"code": "source_unavailable",
                                                   "message": "This source does not load USD scene packages"})
@@ -1218,6 +1252,8 @@ class SessionManager:
                             inbox=None if private_evaluation else self.inbox,
                             evaluation_id=evaluation_id,
                             policy_subject=policy_subject,
+                            simulation_subject=simulation_subject,
+                            deployment_permit=deployment_permit,
                             on_closed=lambda: self.evaluations and self.evaluations.wake(),
                         )
                         if evaluation_id:

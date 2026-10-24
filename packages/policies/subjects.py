@@ -17,7 +17,7 @@ from packages.programs.subjects import (
     validate_base_catalog as validate_simulation_base,
 )
 
-from .library import read_json
+from .library import PolicyLibrary, read_json
 from .observations import ObservationSpec
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -262,3 +262,26 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
         raise _invalid(
             "Native policy execution evidence is unavailable or differs", "policy_execution_unavailable"
         ) from exc
+
+
+def validate_policy_material(candidate, binding, roots, *, controller=None):
+    identity = CandidateIdentity.model_validate(candidate)
+    record, package = PolicyLibrary(roots).resolve(identity.id)
+    if (
+        binding.get("program") != PolicyProgram.id
+        or binding.get("type") != PolicyProgram.type
+        or binding.get("config", {}).get("policy") != identity.id
+        or any(record.get(name) != getattr(identity, name)
+               for name in CandidateIdentity.model_fields if name != "kind")
+    ):
+        raise _invalid("Deployed Policy material or binding differs", "policy_subject_changed")
+    task = read_json(package / "task.json")
+    if task["robot"] != binding.get("key") or task["implements"].rsplit(".", 1)[0] != PolicyProgram.type:
+        raise _invalid("Deployed Policy Task target differs")
+    if controller is not None and (
+        controller.get("program") != PolicyProgram.id
+        or controller.get("policy") != identity.id
+        or controller.get("programArtifact") is not None
+    ):
+        raise _invalid("Deployed Controller/Policy material differs")
+    return record

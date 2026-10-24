@@ -11,7 +11,9 @@ REGISTRY = {
 }
 
 
-def load_info_catalog(manifest, scene_id, *, scene_package=None, policy_subject=None):
+def load_info_catalog(
+    manifest, scene_id, *, scene_package=None, policy_subject=None, simulation_subject=None
+):
     if scene_package:
         if not scene_package.bindings["entities"]:
             catalog = Catalog(sceneRevision=manifest.sceneRevision)
@@ -27,10 +29,11 @@ def load_info_catalog(manifest, scene_id, *, scene_package=None, policy_subject=
         catalog = load_catalog(manifest, scene_id, REGISTRY)
     else:
         catalog = Catalog(sceneRevision=manifest.sceneRevision)
-    if policy_subject is not None:
-        from packages.policies.subjects import apply_policy_catalog
+    from packages.programs.simulation import apply_simulation_catalog, select_subject
 
+    subject = select_subject(simulation_subject=simulation_subject, policy_subject=policy_subject)
+    if subject is not None:
         if manifest.source.kind != "newton":
             raise ValueError("Policy overrides require the actual Newton Source")
-        apply_policy_catalog(catalog, policy_subject, scene_package)
+        apply_simulation_catalog(catalog, subject, scene_package)
     return catalog

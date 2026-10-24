@@ -20,6 +20,7 @@ from packages.policies.subjects import (
     validate_base_catalog,
     validate_policy_catalog,
     validate_policy_execution,
+    validate_policy_material,
     verify_policy_subject,
 )
 from packages.protocol.schema import SceneManifest, SessionOptions
@@ -171,6 +172,18 @@ def test_native_receipt_must_match_the_exact_loaded_model_and_keep_zero_counts_h
         with pytest.raises(LibraryError) as error:
             validate_policy_execution(subject, receipt | change)
         assert error.value.detail["code"] == "policy_execution_unavailable"
+
+
+def test_deployment_material_matches_immutable_policy_and_controller_without_new_qualification(policy_inputs):
+    manager, policy, scene, suite, _ = policy_inputs
+    subject = resolve_policy_subject(manager, policy["id"], suite, scene)
+    identity = subject.candidateIdentity.model_dump(mode="json")
+    controller = {"program": "robot_arm.policy", "policy": policy["id"], "programArtifact": None}
+    assert validate_policy_material(identity, subject.binding, manager.library_assets.roots,
+                                    controller=controller)["contentHash"] == policy["contentHash"]
+    with pytest.raises(LibraryError):
+        validate_policy_material(identity | {"contentHash": "0" * 64}, subject.binding,
+                                 manager.library_assets.roots, controller=controller)
 
 
 async def test_session_creation_requires_the_exact_admitted_policy_descriptor(policy_inputs):
