@@ -1,0 +1,1392 @@
+{
+  "spec": "LAB_SCENE_FACTORY_SPEC_V1",
+  "checkedAt": "2026-10-24T13:53:52+00:00",
+  "source": {
+    "dataset": "nvidia/simready-assets",
+    "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1"
+  },
+  "limits": {
+    "sourcePackageBytes": 536870912,
+    "adaptedPackageBytes": 536870912,
+    "batchBytes": 2147483648,
+    "rawCacheBytes": 10737418240,
+    "concurrentAcquisitions": 2,
+    "freeDiskMinBytes": 10737418240,
+    "existingUploadBytes": 134217728,
+    "existingUnpackBytes": 268435456
+  },
+  "blender": {
+    "version": "4.5.9",
+    "mcpForBlender": "2.2.2",
+    "mcpCommit": "5a3618fccb2d982d0dd61e7a1879912c3100073b",
+    "blenderDownload": "https://download.blender.org/release/Blender4.5/blender-4.5.9-windows-x64.zip",
+    "addon": {
+      "name": "MCP for Blender",
+      "version": "1.8"
+    },
+    "license": {
+      "blender": "GPL-3.0-or-later",
+      "mcpForBlender": "MIT",
+      "addon": "MIT"
+    },
+    "configuration": {
+      "safeMode": "BLENDER_MCP_SAFE_MODE=1",
+      "telemetry": "DISABLE_TELEMETRY=true",
+      "autoStartServer": false,
+      "providersEnabled": false,
+      "autoStartServerDefault": true,
+      "telemetryRuntime": "unavailable (wheel omits blender_mcp.config)"
+    },
+    "verified": {
+      "backgroundScript": true,
+      "safeMode": true,
+      "telemetryDisabled": false,
+      "providersDisabled": true
+    },
+    "notes": [
+      "The server package is 2.2.2; the addon bl_info version is 1.8 in the same pinned commit.",
+      "The addon defaults to auto-start; the factory baseline explicitly disables it.",
+      "The installed 2.2.2 wheel omits blender_mcp.config, so telemetry cannot initialize; telemetry is recorded as unavailable rather than verified.",
+      "The Blender binary is GPL-3.0-or-later; MCP for Blender and its addon are MIT.",
+      "The addon socket is not auto-started; Blender background mode refuses the interactive server.",
+      "BLENDER_MCP_SAFE_MODE covers the MCP path only; the addon socket accepts local code from any process."
+    ],
+    "evidence": "Blender and MCP probe output is kept in the delivery evidence directory.",
+    "contentTelemetryConsent": false
+  },
+  "limitations": [
+    "Only the pinned NVIDIA SimReady package family is prepared; this is not a general converter.",
+    "Only the Newton physics variant and UsdPreviewSurface fallback materials are used; MDL shading is not reproduced.",
+    "MDL files may import NVIDIA core libraries outside the source package; that render path is reported, not executed.",
+    "UDIM/UVTILE texture sets are not supported by the restricted GLB path and are gaps.",
+    "Mesh simplification is not performed. An over-budget mesh is a gap, not a deterministic adaptation.",
+    "The existing asset physics loader requires joints to belong to an articulation; SimReady prop-level fixed joints can fail P1 (recorded for the container).",
+    "The existing 128 MiB upload and 256 MiB unpack limits remain; larger adapted packages need the SF2 internal import path.",
+    "Upstream SimReady validation statements are recorded as declarations, never as platform validation."
+  ],
+  "unknowns": [
+    "Real Blender acceptance is separate from GPU-free CI.",
+    "Scene-level Newton P2/P3 behavior is not established by single-asset adaptation.",
+    "The license status of MDL core libraries outside the package is not established by the package license.",
+    "Whether SimReady prop-level joints are intended as articulations is not established by the source package."
+  ],
+  "ci": {
+    "command": "uv run --no-sync python factory/verify.py check",
+    "lane": "core",
+    "expectedAddedSeconds": 10,
+    "actualAddedSeconds": 1.52,
+    "measuredScope": "synthetic adapter/import journey"
+  },
+  "sourcePackages": [
+    {
+      "package": "box_cardboard_a01",
+      "title": "Cardboard box",
+      "role": "dressing and static collision prop",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/box_cardboard_a01",
+        "files": 36,
+        "bytes": 21530693,
+        "expectedFiles": 36,
+        "expectedBytes": 21530693,
+        "rootUsd": "simready_usd/sm_box_cardboard_a01_01.usd",
+        "bomItems": 30,
+        "bomVerified": 30,
+        "bomMissing": [],
+        "bomMismatched": [],
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ],
+        "bomSha256": "2e84f1414884ec776cb8fa67021688b87c1ab79a3b0083ce5eba3abb3679fecc",
+        "bomBytes": 7116
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "file": ".metadata/LICENSE.txt",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        "bytes": 18657,
+        "manifestSha256": "04564849ff24749775961a514a895909af6bc32113d185d359a20000d8c341d4",
+        "inBom": false,
+        "attribution": "NVIDIA SimReady asset box_cardboard_a01",
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ]
+      },
+      "mdl": {
+        "externalImports": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          }
+        ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
+        "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_004_MUJOCO",
+          "FET_004_NEWTON",
+          "FET_004_PHYSX",
+          "FET_004_STANDARD",
+          "FET_005_STANDARD",
+          "FET_006_OPENPBR"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ],
+        "output": {
+          "preview": "previews/thumbnail.png",
+          "textures": [
+            "textures/T_Cardbox_A1_Albedo_1.png",
+            "textures/T_Cardbox_A1_Normal_1.png",
+            "textures/T_Cardbox_A1_ORM_1.png"
+          ],
+          "bytes": 19085294,
+          "files": 10
+        },
+        "visual": {
+          "triangles": 554,
+          "meshes": 1,
+          "materials": 1
+        },
+        "dimensionsM": [
+          0.699435,
+          0.521152,
+          0.509927
+        ],
+        "physics": {
+          "massKg": 0.9999663233757019,
+          "massSource": "estimated",
+          "collision": "authored"
+        },
+        "variant": {
+          "selected": "Newton/Enabled",
+          "variantSets": [
+            "MuJoCo",
+            "Newton",
+            "PhysX"
+          ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 0.9999663233757019,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
+        }
+      },
+      "import": {
+        "status": "pass",
+        "reason": "",
+        "assetVersion": "environment/cardboard-box@1",
+        "contentHash": "bb22bf60b7cb31cfa11554115143f9721f475ca78467870212a61f80e0bb0745",
+        "uploadBytes": 19097600,
+        "structural": {
+          "S1": "pass",
+          "S2": "pass",
+          "S3": "pass",
+          "S4": "pass",
+          "S5": "pass",
+          "S6": "pass",
+          "S7": "pass",
+          "S8": "warn"
+        },
+        "physics": {
+          "P1": "pass",
+          "P4": "fail",
+          "P5": "warn",
+          "P6": "warn",
+          "P2": "pass",
+          "P3": "pass"
+        },
+        "physicsStatus": "completed",
+        "validationFailures": [
+          {
+            "id": "P4",
+            "message": "Collision-volume density: 5.414 kg/m³ (range 50–20000 kg/m³); mass is estimated"
+          }
+        ]
+      },
+      "usage": {
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": true,
+        "staticCollisionUsable": true
+      },
+      "evidence": "reports/box_cardboard_a01.json",
+      "plannedLocalAssetId": "environment/cardboard-box"
+    },
+    {
+      "package": "bucket_utility_gray_a01",
+      "title": "Gray utility bucket",
+      "role": "dressing and static collision prop",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/bucket_utility_gray_a01",
+        "files": 50,
+        "bytes": 15683159,
+        "expectedFiles": 50,
+        "expectedBytes": 15683159,
+        "rootUsd": "simready_usd/sm_bucket_utility_gray_a01_01.usd",
+        "bomItems": 44,
+        "bomVerified": 44,
+        "bomMissing": [],
+        "bomMismatched": [],
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ],
+        "bomSha256": "c3cd440ceb50f2d85b4b52adbfb2b825298679bc9a402477844eeeb959f264c2",
+        "bomBytes": 9682
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "file": ".metadata/LICENSE.txt",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        "bytes": 18657,
+        "manifestSha256": "2889aedea325cfa06016838b7b019f6a8902ebde3f658bb5aee0b454887b044c",
+        "inBom": false,
+        "attribution": "NVIDIA SimReady asset bucket_utility_gray_a01",
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ]
+      },
+      "mdl": {
+        "externalImports": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          }
+        ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
+        "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_005_STANDARD",
+          "FET_006_MDL",
+          "FET_006_OPENPBR"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ],
+        "output": {
+          "preview": "previews/thumbnail.png",
+          "textures": [
+            "textures/T_Metal_Glossy_A_Albedo.png",
+            "textures/T_Metal_Glossy_A_Normal.png",
+            "textures/T_Metal_Glossy_A_ORM.png",
+            "textures/T_Plastic_Gray_A_Albedo.png",
+            "textures/T_Plastic_Gray_A_Normal.png",
+            "textures/T_Plastic_Gray_A_ORM.png",
+            "textures/T_Plastic_Red_A_Albedo.png",
+            "textures/T_Plastic_Red_A_Normal.png",
+            "textures/T_Plastic_Red_A_ORM.png"
+          ],
+          "bytes": 16247969,
+          "files": 16
+        },
+        "visual": {
+          "triangles": 14990,
+          "meshes": 3,
+          "materials": 3
+        },
+        "dimensionsM": [
+          0.338272,
+          0.328056,
+          0.258783
+        ],
+        "physics": {
+          "massKg": 1.3274039775133133,
+          "massSource": "estimated",
+          "collision": "authored"
+        },
+        "variant": {
+          "selected": "Newton/Enabled",
+          "variantSets": [
+            "MuJoCo",
+            "Newton",
+            "PhysX"
+          ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 1.3274039775133133,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
+        }
+      },
+      "import": {
+        "status": "pass",
+        "reason": "",
+        "assetVersion": "environment/utility-bucket@1",
+        "contentHash": "36dde4c8b9c34ed5909d8f0d754255fd720c52c58319797446df6ead7b42063b",
+        "uploadBytes": 16261120,
+        "structural": {
+          "S1": "pass",
+          "S2": "pass",
+          "S3": "pass",
+          "S4": "pass",
+          "S5": "pass",
+          "S6": "pass",
+          "S7": "pass",
+          "S8": "warn"
+        },
+        "physics": {
+          "P1": "pass",
+          "P4": "warn",
+          "P5": "warn",
+          "P6": "warn",
+          "P2": "pass",
+          "P3": "pass"
+        },
+        "physicsStatus": "completed",
+        "validationFailures": []
+      },
+      "usage": {
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": true,
+        "staticCollisionUsable": true
+      },
+      "evidence": "reports/bucket_utility_gray_a01.json",
+      "plannedLocalAssetId": "environment/utility-bucket"
+    },
+    {
+      "package": "container_recycle_square_blue_a02",
+      "title": "Blue square recycling container",
+      "role": "dressing and static collision prop",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/container_recycle_square_blue_a02",
+        "files": 35,
+        "bytes": 8482999,
+        "expectedFiles": 35,
+        "expectedBytes": 8482999,
+        "rootUsd": "simready_usd/sm_container_recycle_square_blue_a02_01.usd",
+        "bomItems": 29,
+        "bomVerified": 29,
+        "bomMissing": [],
+        "bomMismatched": [],
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ],
+        "bomSha256": "a72f1055a5ec153b6fb1c8f575fb2ee695db824e64c2beacaf7ad02228a21ccf",
+        "bomBytes": 6419
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "file": ".metadata/LICENSE.txt",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        "bytes": 18657,
+        "manifestSha256": "4b16948b62e28d2983f5c5e2895019b0a4a2d6c3f625ea8509d989a47a503ca1",
+        "inBom": false,
+        "attribution": "NVIDIA SimReady asset container_recycle_square_blue_a02",
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ]
+      },
+      "mdl": {
+        "externalImports": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          }
+        ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
+        "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_005_STANDARD",
+          "FET_006_MDL",
+          "FET_006_OPENPBR"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ],
+        "output": {
+          "preview": "previews/thumbnail.png",
+          "textures": [
+            "textures/T_Plastic_Blue_A_Albedo.png",
+            "textures/T_Plastic_Blue_A_Normal.png",
+            "textures/T_Plastic_Blue_A_ORM.png"
+          ],
+          "bytes": 8798478,
+          "files": 10
+        },
+        "visual": {
+          "triangles": 11652,
+          "meshes": 3,
+          "materials": 3
+        },
+        "dimensionsM": [
+          0.516591,
+          0.516591,
+          0.855702
+        ],
+        "physics": {
+          "massKg": 1.3542308807373047,
+          "massSource": "estimated",
+          "collision": "authored"
+        },
+        "variant": {
+          "selected": "Newton/Enabled",
+          "variantSets": [
+            "MuJoCo",
+            "Newton",
+            "PhysX"
+          ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 1.3542308807373047,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
+        }
+      },
+      "import": {
+        "status": "pass",
+        "reason": "",
+        "assetVersion": "environment/recycle-container@1",
+        "contentHash": "e7a89c02d21e41234c064a087838681070b1353e424caadfdd41cec255a3c151",
+        "uploadBytes": 8816640,
+        "structural": {
+          "S1": "pass",
+          "S2": "pass",
+          "S3": "pass",
+          "S4": "pass",
+          "S5": "pass",
+          "S6": "pass",
+          "S7": "pass",
+          "S8": "warn"
+        },
+        "physics": {
+          "P1": "fail",
+          "P2": "warn",
+          "P3": "warn",
+          "P4": "warn",
+          "P5": "warn",
+          "P6": "warn"
+        },
+        "physicsStatus": "completed",
+        "validationFailures": [
+          {
+            "id": "P1",
+            "message": "Newton model could not load (ValueError)"
+          }
+        ]
+      },
+      "usage": {
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": true,
+        "staticCollisionUsable": false
+      },
+      "evidence": "reports/container_recycle_square_blue_a02.json",
+      "plannedLocalAssetId": "environment/recycle-container"
+    },
+    {
+      "package": "desk_a01",
+      "title": "Laboratory desk",
+      "role": "dressing and static collision prop",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/desk_a01",
+        "files": 46,
+        "bytes": 242383218,
+        "expectedFiles": 46,
+        "expectedBytes": 242383218,
+        "rootUsd": "simready_usd/sm_desk_a01_01.usd",
+        "bomItems": 40,
+        "bomVerified": 40,
+        "bomMissing": [],
+        "bomMismatched": [],
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ],
+        "bomSha256": "23a7c08852ccd14232957dd261e1a614d655e185fc35b250f2b895c8d82c001b",
+        "bomBytes": 10702
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "file": ".metadata/LICENSE.txt",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        "bytes": 18657,
+        "manifestSha256": "dca08764c6b21638810e0dd156eae0577898419a67a7b1330c29810bdedbb3c7",
+        "inBom": false,
+        "attribution": "NVIDIA SimReady asset desk_a01",
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ]
+      },
+      "mdl": {
+        "externalImports": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          }
+        ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
+        "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_004_MUJOCO",
+          "FET_004_NEWTON",
+          "FET_004_PHYSX",
+          "FET_004_STANDARD",
+          "FET_005_STANDARD",
+          "FET_006_OPENPBR",
+          "FET_010_STANDARD"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ],
+        "output": {
+          "preview": "previews/thumbnail.png",
+          "textures": [
+            "textures/t_metal_glossy_a01_tile_alb.png",
+            "textures/t_metal_glossy_a01_tile_nor.png",
+            "textures/t_metal_glossy_a01_tile_orm.png",
+            "textures/t_plastic_glossy_white_a01_tile_alb.png",
+            "textures/t_plastic_glossy_white_a01_tile_nor.png",
+            "textures/t_plastic_glossy_white_a01_tile_orm.png",
+            "textures/t_plastic_rough_black_a01_tile_alb.png",
+            "textures/t_plastic_rough_black_a01_tile_nor.png",
+            "textures/t_plastic_rough_black_a01_tile_orm.png"
+          ],
+          "bytes": 297991931,
+          "files": 16
+        },
+        "visual": {
+          "triangles": 277118,
+          "meshes": 3,
+          "materials": 3
+        },
+        "dimensionsM": [
+          0.802,
+          1.802,
+          0.759153
+        ],
+        "physics": {
+          "massKg": 120.5645980834961,
+          "massSource": "estimated",
+          "collision": "authored"
+        },
+        "variant": {
+          "selected": "Newton/Enabled",
+          "variantSets": [
+            "MuJoCo",
+            "Newton",
+            "PhysX"
+          ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 120.5645980834961,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
+        }
+      },
+      "import": {
+        "status": "gap",
+        "reason": "Adapted package is 297991931 bytes before tar headers; the existing upload limit is 134217728 bytes",
+        "assetVersion": null,
+        "contentHash": null,
+        "uploadBytes": null,
+        "structural": null,
+        "physics": null,
+        "physicsStatus": null,
+        "validationFailures": null
+      },
+      "usage": {
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": "unknown",
+        "staticCollisionUsable": "unknown"
+      },
+      "evidence": "reports/desk_a01.json",
+      "plannedLocalAssetId": "environment/desk"
+    },
+    {
+      "package": "equipment_utility_cart_e01",
+      "title": "Utility equipment cart",
+      "role": "dressing and static collision prop",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/equipment_utility_cart_e01",
+        "files": 64,
+        "bytes": 171038176,
+        "expectedFiles": 64,
+        "expectedBytes": 171038176,
+        "rootUsd": "simready_usd/sm_equipment_utility_cart_e01_01.usd",
+        "bomItems": 58,
+        "bomVerified": 58,
+        "bomMissing": [],
+        "bomMismatched": [],
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ],
+        "bomSha256": "7d3b7c9550d5b1037df44080c95d12965f110fd61b93ea85ada1eb26bbb157a4",
+        "bomBytes": 15040
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "file": ".metadata/LICENSE.txt",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+        "bytes": 18657,
+        "manifestSha256": "ba7cd0177f3d6fddd233560716d3dc446de219c6ebb75de4ed6a2142963b8322",
+        "inBom": false,
+        "attribution": "NVIDIA SimReady asset equipment_utility_cart_e01",
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ]
+      },
+      "mdl": {
+        "externalImports": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::debug::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::file_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "import": "::nvidia::core_definitions::normalmap_texture"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::df::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::state::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::math::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::base::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::tex::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "import": "::anno::*"
+          }
+        ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
+        "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_005_STANDARD",
+          "FET_006_OPENPBR",
+          "FET_010_STANDARD"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "adaptation": {
+        "status": "gap",
+        "gaps": [
+          "UDIM/UVTILE texture sets are not supported by the restricted GLB path: ../Textures/t_equipment_utility_cart_e01_alb.<UDIM>.png"
+        ],
+        "approximations": [],
+        "output": null,
+        "visual": null,
+        "dimensionsM": null,
+        "physics": null,
+        "variant": {
+          "selected": "Newton/Enabled",
+          "variantSets": [
+            "MuJoCo",
+            "Newton",
+            "PhysX"
+          ]
+        },
+        "sourcePhysics": null
+      },
+      "import": {
+        "status": "gap",
+        "reason": "Adaptation did not produce a package",
+        "assetVersion": null,
+        "contentHash": null,
+        "uploadBytes": null,
+        "structural": null,
+        "physics": null,
+        "physicsStatus": null,
+        "validationFailures": null
+      },
+      "usage": {
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": "unknown",
+        "staticCollisionUsable": "unknown"
+      },
+      "evidence": "reports/equipment_utility_cart_e01.json",
+      "plannedLocalAssetId": "environment/utility-cart"
+    }
+  ],
+  "sourcePackagesComplete": true
+}
