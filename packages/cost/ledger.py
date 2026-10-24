@@ -122,9 +122,9 @@ class CostLedger:
     def attribution(job):
         actor = job["requestedBy"]
         return {
-            "agent": job["agent"] if job.get("kind") == "agent-run" else (
-                actor["name"] if actor["kind"] == "agent" else None
-            ),
+            "agent": job["agent"]
+            if job.get("kind") == "agent-run"
+            else (actor["name"] if actor["kind"] == "agent" else None),
             "model": job.get("model") if job.get("kind") == "agent-run" else None,
             "node": job["nodeId"],
             "goal": job["plan"].get("goalId") or job["plan"].get("goal"),
@@ -197,24 +197,44 @@ class CostLedger:
         }
         service = getattr(self.manager, "agent_runs", None)
         if service and service.records:
-            rows = [row for job in jobs if job.get("kind") == "agent-run"
-                    for row in job["provider"]["requests"]
-                    if window.start <= row["at"] < window.end or include_end and row["at"] == window.end]
+            rows = [
+                row
+                for job in jobs
+                if job.get("kind") == "agent-run"
+                for row in job["provider"]["requests"]
+                if window.start <= row["at"] < window.end or include_end and row["at"] == window.end
+            ]
             snapshot = usage_snapshot(rows)
             token_fields = ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
             known = {name: snapshot["known" + name[0].upper() + name[1:]] for name in token_fields}
             result.update({name: snapshot[name] for name in token_fields})
             result.update({"known" + name[0].upper() + name[1:]: value for name, value in known.items()})
-            result.update({name: snapshot[name] for name in ("requests", "failures", "tokens", "llmUsd",
-                            "knownRequests", "knownFailures", "knownTokens", "knownLlmUsd",
-                            "unknownUsageRequests", "unknownOutcomeRequests", "notForwardedRequests",
-                            "reservedRequests")})
+            result.update(
+                {
+                    name: snapshot[name]
+                    for name in (
+                        "requests",
+                        "failures",
+                        "tokens",
+                        "llmUsd",
+                        "knownRequests",
+                        "knownFailures",
+                        "knownTokens",
+                        "knownLlmUsd",
+                        "unknownUsageRequests",
+                        "unknownOutcomeRequests",
+                        "notForwardedRequests",
+                        "reservedRequests",
+                    )
+                }
+            )
             result.update(reservedLlmUsd=snapshot["reservedUsd"], reservedTokens=snapshot["reservedTokens"])
             count, failed = snapshot["requests"], snapshot["failures"]
             result["successRate"] = (count - failed) / count if count and failed is not None else None
             inputs = known["inputTokens"] + known["cacheReadTokens"] + known["cacheWriteTokens"]
-            result["cacheHitRate"] = (known["cacheReadTokens"] / inputs
-                                      if inputs and not snapshot["unknownUsageRequests"] else None)
+            result["cacheHitRate"] = (
+                known["cacheReadTokens"] / inputs if inputs and not snapshot["unknownUsageRequests"] else None
+            )
             result["priceRevisions"] = sorted(revisions | set(snapshot["priceRevisions"]))
         return result
 
@@ -262,11 +282,17 @@ class CostLedger:
                         type(window)(window.key, start, end, window.bucket_seconds),
                         include_end=end == window.end,
                     ),
-                    "agents": [{"agent": agent, **self.aggregate(
-                        [job for job in jobs if job.get("agent") == agent],
-                        type(window)(window.key, start, end, window.bucket_seconds),
-                        include_end=end == window.end,
-                    )} for agent in sorted({job["agent"] for job in jobs if job.get("kind") == "agent-run"})],
+                    "agents": [
+                        {
+                            "agent": agent,
+                            **self.aggregate(
+                                [job for job in jobs if job.get("agent") == agent],
+                                type(window)(window.key, start, end, window.bucket_seconds),
+                                include_end=end == window.end,
+                            ),
+                        }
+                        for agent in sorted({job["agent"] for job in jobs if job.get("kind") == "agent-run"})
+                    ],
                 }
                 for start, end in window.buckets()
             ],
@@ -325,6 +351,53 @@ class CostLedger:
                     "plan": f"{job['planId']}@{job['planRevision']}",
                 }
             )
+        agents = getattr(self.manager, "agent_runs", None)
+        for run in agents.records.values() if agents else ():
+            if run["status"] == "failed":
+                rows.append(
+                    {
+                        "id": "job:" + run["jobId"],
+                        "kind": "job",
+                        "severity": "error",
+                        "title": "Agent 运行失败",
+                        "detail": run["reason"] or "agent_run_failed",
+                        "at": run["finishedAt"],
+                        "jobId": run["jobId"],
+                        "plan": f"{run['planId']}@{run['planRevision']}",
+                    }
+                )
+            for attempt in run["provider"]["requests"]:
+                suffix = hashlib.sha256(attempt["id"].encode()).hexdigest()[:24]
+                base = {
+                    "at": attempt["at"],
+                    "jobId": run["jobId"],
+                    "requestId": attempt["id"],
+                    "agent": run["agent"],
+                    "model": run["model"],
+                    "plan": f"{run['planId']}@{run['planRevision']}",
+                }
+                if attempt["status"] == "failed":
+                    rows.append(
+                        base
+                        | {
+                            "id": "llm:" + suffix,
+                            "kind": "llm",
+                            "severity": "error",
+                            "title": "模型请求失败",
+                            "detail": attempt.get("errorCode", "provider_request_failed"),
+                        }
+                    )
+                if not attempt.get("usageComplete"):
+                    rows.append(
+                        base
+                        | {
+                            "id": "usage:" + suffix,
+                            "kind": "llm",
+                            "severity": "warning",
+                            "title": "模型用量尚未确认",
+                            "detail": "usage_incomplete",
+                        }
+                    )
         service = self.manager.evaluations
         for evaluation in service.store.records.values() if service else ():
             code = (evaluation.get("error") or {}).get("code", "")

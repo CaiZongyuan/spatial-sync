@@ -34,6 +34,7 @@ class CredentialRelay:
         self.model, self.deadline, self.upstream_origin = model, deadline, upstream_origin
         self.grant = secrets.token_urlsafe(32)
         self.process, self.client = None, None
+        self.spawn_attempted = False
 
     async def __aenter__(self):
         await self.start()
@@ -65,6 +66,7 @@ class CredentialRelay:
         try:
             if time.monotonic() >= self.deadline:
                 raise PlanError("agent_run_inactive", "The Agent execution deadline expired", status=403)
+            self.spawn_attempted = True
             self.process = OwnedProcess(
                 [sys.executable, "-I", str(Path(__file__).with_name("relay.py"))],
                 cwd=self.root,

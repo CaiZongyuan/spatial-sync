@@ -108,7 +108,7 @@ class SDKAdapter:
             async with relay:
                 yield relay
         except CleanupIncomplete:
-            if relay.process is None:
+            if relay.process is None and relay.spawn_attempted:
                 self._untracked.add(record["jobId"])
             raise
         finally:
@@ -120,12 +120,20 @@ class SDKAdapter:
         relay = self._relays.get(identity)
         if (
             identity not in self._untracked
-            and all(worker.process is not None and worker.process.cleanup.is_file() for worker in workers)
+            and all(
+                not worker.spawn_attempted or worker.process is not None and worker.process.cleanup.is_file()
+                for worker in workers
+            )
             and all(
                 task.done() and not server.server_state.tasks and listener.fileno() == -1
                 for server, task, listener in listeners
             )
-            and (relay is None or relay.process is not None and relay.process.cleanup.is_file())
+            and (
+                relay is None
+                or not relay.spawn_attempted
+                or relay.process is not None
+                and relay.process.cleanup.is_file()
+            )
         ):
             self._workers.pop(identity, None)
             self._listeners.pop(identity, None)
@@ -183,7 +191,7 @@ class SDKAdapter:
             try:
                 receipt = await worker.run()
             except CleanupIncomplete:
-                if worker.process is None:
+                if worker.process is None and worker.spawn_attempted:
                     self._untracked.add(identity)
                 raise
         messages = [json.loads(line) for line in receipt["trace"].read_text(encoding="utf-8").splitlines()]

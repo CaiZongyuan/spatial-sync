@@ -22,6 +22,8 @@ async def complete_cleanup(awaitable):
             await asyncio.shield(task)
         except asyncio.CancelledError:
             cancelled = True
+        except BaseException:
+            break  # Read the completed task below so a prior caller cancellation keeps its identity.
     if cancelled:
         try:
             task.result()
@@ -165,6 +167,7 @@ class AgentWorker:
         self.deadline, self.active = deadline, active
         self.on_cleanup = on_cleanup
         self.process = None
+        self.spawn_attempted = False
 
     def remaining(self):
         remaining = self.deadline - time.monotonic()
@@ -195,6 +198,7 @@ class AgentWorker:
                 import subprocess
 
                 self.remaining()
+                self.spawn_attempted = True
                 self.process = OwnedProcess(
                     [sys.executable, "-I", str(Path(__file__).with_name("sdk_worker.py")), str(config)],
                     cwd=public,

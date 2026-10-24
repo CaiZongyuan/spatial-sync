@@ -17,6 +17,7 @@ import psutil
 from pydantic import Field
 
 from apps.node.process import CleanupIncomplete, cleanup_confirmed
+from packages.agents.artifacts import publish_case as public_case_artifacts
 from packages.agents.audit import CaseAudit
 from packages.agents.bundle import prepare_harness
 from packages.agents.inputs import AgentPlanInputs, fingerprint
@@ -48,6 +49,7 @@ class AgentRuns:
         self.path = manager.settings.state_root / "agent-runs.json"
         self.root = (manager.settings.state_root / "agent-runs").resolve()
         self.records, self._deadlines, self._case_active = {}, {}, {}
+        self._audits = {}
         self._lock = threading.RLock()
         self._failure = False
         self.clock = time.time
@@ -120,6 +122,49 @@ class AgentRuns:
         if identity not in self.records:
             raise PlanError("unknown_job", "Unknown Agent Job", status=404)
         return self.records[identity]
+
+    def publish_case(self, identity, case_id):
+        record = self.get(identity)
+        artifacts = {value["id"]: value for value in record["artifacts"]}
+        selected = public_case_artifacts(self.root, record, case_id)
+        artifacts.update({value["id"]: value for value in selected})
+        self.update(identity, artifacts=list(artifacts.values()))
+        return selected
+
+    def append_log(self, identity, case_id, record):
+        path = self.root / identity / "public.log.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        message = json.dumps({"caseRunId": case_id, **record}, ensure_ascii=False, allow_nan=False)
+        with path.open("a", encoding="utf-8", newline="\n") as output:
+            output.write(json.dumps(message, ensure_ascii=False) + "\n")
+
+    async def logs(self, identity, after, timeout):
+        deadline = time.monotonic() + timeout
+        while True:
+            record = self.get(identity)
+            path = self.root / identity / "public.log.jsonl"
+            lines = (
+                [
+                    json.loads(line)
+                    for line in path.read_bytes().splitlines(keepends=True)
+                    if line.endswith(b"\n")
+                ]
+                if path.exists()
+                else []
+            )
+            if after > len(lines):
+                raise PlanError(
+                    "invalid_log_cursor", "Log cursor is beyond retained public output", status=422
+                )
+            complete = record["status"] in TERMINAL and not record.get("cleanupIncomplete")
+            if len(lines) > after or complete or time.monotonic() >= deadline:
+                selected = lines[after : after + 500]
+                return {
+                    "lines": selected,
+                    "cursor": after + len(selected),
+                    "complete": complete and after + len(selected) == len(lines),
+                }
+            await asyncio.sleep(0.05)
 
     def document(self, record):
         result = deepcopy(
@@ -441,6 +486,7 @@ class AgentRuns:
             not self._failure
             and record["status"] == "running"
             and self._case_active.get(identity, True)
+            and (identity not in self._audits or self._audits[identity].healthy)
             and approval
             and approval.status == "approved"
             and time.monotonic() < self._deadlines.get(identity, 0)
@@ -569,7 +615,16 @@ class AgentRuns:
                 )
 
                 def save_usage():
+                    current = self.get(identity).get("currentCase")
+                    if current is not None:
+                        for row in gate.state["requests"]:
+                            row.setdefault("caseRunId", current["caseRunId"])
                     self.update(identity, provider=gate.state, usage=gate.snapshot())
+
+                def observe_model(kind, data):
+                    current = self._audits.get(identity)
+                    if current is not None:
+                        current.append(kind, data)
 
                 gate = BudgetedProvider(
                     identity,
@@ -584,6 +639,7 @@ class AgentRuns:
                     transport_token=secrets.token_urlsafe(32),
                     is_active=lambda: bool(self.active(identity)),
                     trusted_relay=transport.trusted_relay,
+                    observe=observe_model,
                 )
                 for case in suite.public()["cases"]:
                     for repetition in range(1, suite.metadata["runsPerCase"] + 1):
@@ -618,7 +674,12 @@ class AgentRuns:
                         )
                         session.agent_run_id, session.deny_human_gates = identity, True
                         directory = self.root / identity / "cases" / case_id
-                        audit = CaseAudit(session, directory / "trace.jsonl")
+                        audit = CaseAudit(
+                            session,
+                            directory / "trace.jsonl",
+                            on_record=lambda record: self.append_log(identity, case_id, record),
+                        )
+                        self._audits[identity] = audit
                         session.agent_audit = audit
                         grant = self.manager.agent_grants.issue(
                             identity,
@@ -681,6 +742,8 @@ class AgentRuns:
                             raise PlanError(
                                 "agent_trace_unavailable", "Trusted case evidence is unavailable", status=503
                             )
+                        if hasattr(transport, "reconcile"):
+                            transport.reconcile(gate)
                         trace_id = f"trace-{identity}-{case_id}"
                         outcome.update(
                             caseRunId=case_id,
@@ -695,9 +758,22 @@ class AgentRuns:
                         durable_json(directory / "score.json", outcome)
                         runs = self.get(identity)["caseRuns"] + [outcome]
                         self.update(identity, caseRuns=runs, currentCase=None)
+                        rows = [row for row in gate.state["requests"] if row.get("caseRunId") == case_id]
+                        durable_json(
+                            directory / "usage.json",
+                            {
+                                "source": "trusted-transport",
+                                "jobId": identity,
+                                "caseRunId": case_id,
+                                "summary": usage_snapshot(rows),
+                                "attempts": rows,
+                            },
+                        )
+                        self.publish_case(identity, case_id)
                         evaluation["caseRuns"] = runs
                         await persist(evaluations.store.save, evaluation)
                         session, audit = None, None
+                        self._audits.pop(identity, None)
                         current_case = None
                 if len(self.get(identity)["caseRuns"]) != original["allocatedCaseRuns"]:
                     raise PlanError(
@@ -787,6 +863,7 @@ class AgentRuns:
                         outcome["traceId"] = f"trace-{identity}-{current_case['caseRunId']}"
                     runs = self.get(identity)["caseRuns"] + [outcome]
                     self.update(identity, caseRuns=runs, currentCase=None)
+                    self.publish_case(identity, current_case["caseRunId"])
                     evaluation["caseRuns"] = runs
                 self.update(
                     identity,
@@ -801,6 +878,7 @@ class AgentRuns:
             await persist(evaluations.store.save, evaluation)
             self._deadlines.pop(identity, None)
             self._case_active.pop(identity, None)
+            self._audits.pop(identity, None)
 
     async def close(self):
         for identity in self.records:

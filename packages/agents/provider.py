@@ -171,6 +171,7 @@ class BudgetedProvider:
         is_active=lambda: True,
         clock=time.monotonic,
         trusted_relay=False,
+        observe=lambda kind, data: None,
     ):
         self.run_id, self.model, self.limits = run_id, model, limits
         self.quote, self.context_tokens = quote, context_tokens
@@ -178,6 +179,7 @@ class BudgetedProvider:
         self._api_key = api_key
         self._transport_token, self._is_active = transport_token, is_active
         self._trusted_relay = trusted_relay
+        self.observe = observe
         self.state.setdefault("requests", [])
         self._clock, self._started = clock, clock()
         self._lock = asyncio.Lock()
@@ -336,6 +338,10 @@ class BudgetedProvider:
     async def generate(self, payload):
         async with self._lock:
             record, quote, body = self._reserve(payload)
+            self.observe(
+                "model.request",
+                {"attemptId": record["id"], "payload": self._redact(body), "quoteRevision": quote.revision},
+            )
             timeout = self._before_forward(record)
             try:
                 async with asyncio.timeout(timeout):
@@ -392,6 +398,16 @@ class BudgetedProvider:
                 ):
                     self.state["stopReason"] = "provider_bound_violated"
                 self._save()
+                self.observe(
+                    "model.response",
+                    {
+                        "attemptId": record["id"],
+                        "status": response.status_code,
+                        "content": self._safe_response(response.content, content_type).decode(),
+                        "usage": record["usage"],
+                        "usageComplete": record["usageComplete"],
+                    },
+                )
                 if self.state.get("stopReason"):
                     raise PlanError(
                         "agent_bound_violated", "The provider exceeded its admitted bound", status=502
@@ -432,6 +448,7 @@ class BudgetedProvider:
             except asyncio.CancelledError:
                 record.update(status="failed", usageComplete=False, errorCode="provider_interrupted")
                 self._save()
+                self.observe("model.interrupted", {"attemptId": record["id"], "usage": record["usage"]})
                 raise
             except (httpx.HTTPError, ValueError, UnicodeError, TimeoutError) as error:
                 record.update(status="failed", usageComplete=False, errorCode="provider_response_unavailable")

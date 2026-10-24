@@ -9,12 +9,13 @@ from packages.info.plans import PlanError
 
 
 class CaseAudit:
-    def __init__(self, session, path, *, clock=time.monotonic):
+    def __init__(self, session, path, *, clock=time.monotonic, on_record=lambda record: None):
         self.session, self.path, self.clock = session, path, clock
         self.started = clock()
         self.records, self.requests = [], []
         self._cutoff = None
         self._cutoff_time = None
+        self.on_record = on_record
         self.healthy = True
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._stream = self.path.open("x", encoding="utf-8", newline="\n")
@@ -46,6 +47,7 @@ class CaseAudit:
         try:
             self._stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
             self._stream.flush()
+            self.on_record(record)
         except (OSError, ValueError):
             self.healthy = False
             return None

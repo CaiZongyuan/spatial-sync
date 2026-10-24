@@ -74,6 +74,8 @@ def install_job_routes(app, manager, role_for, views=None):
 
     @app.get("/api/v1/jobs/{identity}/logs")
     async def logs(identity: str, after: int = Query(0, ge=0), timeoutSeconds: float = Query(0, ge=0, le=30)):
+        if identity in manager.agent_runs.records:
+            return await manager.agent_runs.logs(identity, after, timeoutSeconds)
         return await jobs.logs(identity, after, timeoutSeconds)
 
     @app.get("/api/v1/nodes")
