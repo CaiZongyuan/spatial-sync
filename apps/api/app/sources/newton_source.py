@@ -219,6 +219,8 @@ class NewtonSource:
                     value = JointState.model_validate(packet["state"])
                 elif kind == "program_execution_result":
                     value = packet["evidence"]
+                elif kind == "observation_runtime_result":
+                    value = packet["runtime"]
                 elif kind == "preview_result":
                     value = SourcePreview.model_validate(packet["result"])
                 elif kind == "preview_error":
@@ -362,6 +364,9 @@ class NewtonSource:
 
     async def program_execution(self, entity_key: str):
         return await self._request("program_execution", key=entity_key, timeout=1)
+
+    async def observation_runtime(self):
+        return await self._request("observation_runtime", timeout=1)
 
     async def preview(self, request: PreviewRequest) -> SourcePreview:
         return await self._request("preview", request=request.model_dump(mode="json"), timeout=5)

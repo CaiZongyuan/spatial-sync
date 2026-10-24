@@ -382,6 +382,11 @@ class _Runner:
                     positions=positions.tolist(),
                 )
                 self.control.offer({"kind": "joint_result", "token": token, "state": state.model_dump()})
+        elif kind == "observation_runtime":
+            from packages.policies.inference import runtime_facts
+
+            self.control.offer({"kind": "observation_runtime_result", "token": token,
+                                "runtime": runtime_facts()})
         elif kind == "program_execution":
             try:
                 evidence = self.info.program_execution(packet["key"])

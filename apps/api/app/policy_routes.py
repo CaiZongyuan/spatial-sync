@@ -4,6 +4,7 @@ import anyio
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.app.evaluation_views import public_evaluation
 from packages.info.plans import PlanError
 from packages.policies.evidence import ObservationEvidence
 from packages.policies.library import PolicyLibrary
@@ -38,8 +39,17 @@ def install_policy_routes(app, manager, role_for):
     async def show(name: str, revision: str):
         identity = f"policy/{name}@{revision}"
         policy = await anyio.to_thread.run_sync(policies.show, identity)
+        evaluations = []
+        if manager.evaluations is not None:
+            rows = tuple(manager.evaluations.store.rows)
+            for record in tuple(manager.evaluations.store.records.values()):
+                candidate = record.get("candidateIdentity") or {}
+                if (record.get("split") == "train" and candidate.get("kind") == "policy"
+                        and candidate.get("id") == identity):
+                    evaluations.append(public_evaluation(record, rows))
         return policy | {
-            "evidence": {"observationChecks": await anyio.to_thread.run_sync(evidence.list, identity)}
+            "evidence": {"observationChecks": await anyio.to_thread.run_sync(evidence.list, identity),
+                         "evaluations": evaluations}
         }
 
     @app.post("/api/v1/policies", status_code=201)

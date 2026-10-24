@@ -234,7 +234,7 @@ def apply_policy_catalog(catalog, subject, scene):
     return catalog
 
 
-def validate_policy_execution(subject, evidence):
+def validate_policy_execution(subject, evidence, *, runtime=None):
     subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
     try:
         value = PolicyExecution.model_validate(evidence)
@@ -249,6 +249,11 @@ def validate_policy_execution(subject, evidence):
             and value.actionStarts == 0
         ):
             raise ValueError("Actual native policy identity/counters differ")
+        if runtime is not None and (
+            runtime.get("available") is not True or value.runtimeVersion != runtime.get("runtimeVersion")
+            or any(provider not in runtime.get("availableProviders", []) for provider in value.providers)
+        ):
+            raise ValueError("Actual policy runtime differs from the common native runtime probe")
         return value.model_dump(mode="json")
     except (ValueError, TypeError) as exc:
         raise _invalid(

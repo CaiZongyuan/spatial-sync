@@ -7,6 +7,16 @@ from packages.library.archive import package_files, relative_path
 from .observations import vector
 
 
+def runtime_facts():
+    """Observe this interpreter's package/provider facts without creating a model session."""
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return {"available": False, "runtimeVersion": None, "availableProviders": []}
+    return {"available": True, "runtimeVersion": ort.__version__,
+            "availableProviders": sorted(ort.get_available_providers())}
+
+
 class CpuPolicy:
     def __init__(self, path, spec, *, root=None, external=()):
         import onnx
