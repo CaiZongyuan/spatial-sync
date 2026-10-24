@@ -86,7 +86,7 @@ def public_conditions(value):
 
 def public_episode(value):
     result = fields(
-        value, ("caseId", "failedStage", "invocationId", "invocationStatus", "recordingId"), (str,)
+        value, ("caseId", "failedStage", "invocationId", "invocationStatus", "recordingId", "reason"), (str,)
     )
     result.update(fields(value, ("success",), (bool,)))
     if isinstance(value.get("milestones"), dict):
