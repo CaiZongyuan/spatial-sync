@@ -115,6 +115,16 @@ def description_arguments(default, metavar="id"):
 
 
 COMMANDS = (
+    Command(path=("agent", "run"), help="Run the exact public train scope of an approved Agent Plan.",
+            method="agent_run", arguments=(
+                Argument("id", ("id",), str, "Agent ID from the approved Plan"),
+                Argument("suite", ("--suite",), str, "Exact approved Suite version"),
+                Argument("planId", ("--plan",), str, "Approved parent Plan ID"),
+                Argument("planRevision", ("--plan-revision",), int, "Exact approved parent revision"),
+                Argument("version", ("--version",), int | None,
+                         "Matching Harness version; omit to use Plan", None),
+                Argument("requestId", ("--request-id",), str | None, "Stable retry identity", None),
+            ), mcp_name="agent_run", actor=True),
     Command(path=("demo", "add"), help="Keep a proven successful recorded Task episode as a Demonstration.",
             method="demo_add", arguments=(
                 Argument("recordingId", ("recordingId",), str, "Complete successful episode recording"),

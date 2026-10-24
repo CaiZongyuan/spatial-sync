@@ -3,7 +3,7 @@ import { useContext } from 'react';
 import { ApprovalInboxContext } from '../lib/approvals';
 import type { JobStatus } from '../lib/jobs';
 import { usePlansList } from '../lib/plans/hooks';
-import type { TrainingPlanDocument } from '../lib/training';
+import type { EmbodiedTrainingPlanDocument } from '../lib/training';
 import { elapsed, jobReason, jobStatusLabels, numberOrUnknown, percentage } from '../lib/training-presentation';
 import { useTrainingResources } from '../lib/use-training-resources';
 import { ApprovalCard } from './ApprovalsPage';
@@ -38,7 +38,7 @@ export function TrainPage() {
   const jobs = resources.jobs?.filter(job => (!status || job.status === status)
     && `${job.jobId} ${job.task} ${job.planId}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.createdAt - a.createdAt);
-  const trainingPlans = plans.plans?.filter((plan): plan is TrainingPlanDocument => plan.kind === 'training');
+  const trainingPlans = plans.plans?.filter((plan): plan is EmbodiedTrainingPlanDocument => plan.kind === 'training' && plan.layer !== 'agent');
   const pending = approvals.inbox?.approvals.filter(record => record.subject === 'plan'
     && record.status === 'pending' && record.details.plan?.kind === 'training');
   return <main className="training-page" data-testid="training-page"><header className="training-heading">

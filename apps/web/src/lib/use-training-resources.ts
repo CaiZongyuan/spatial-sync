@@ -12,7 +12,7 @@ export function useTrainingResources() {
       const controller = new AbortController(); pending = controller;
       const timeout = setTimeout(() => controller.abort(), 8000);
       const [jobs, nodes] = await Promise.allSettled([
-        listJobs(undefined, controller.signal), listNodes(controller.signal),
+        listJobs({ kind: 'training' }, controller.signal), listNodes(controller.signal),
       ]);
       if (!disposed) setData(previous => ({
         jobs: jobs.status === 'fulfilled' ? jobs.value : previous.jobs,

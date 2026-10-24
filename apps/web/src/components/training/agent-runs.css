@@ -1,0 +1,7 @@
+.agent-run-links { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1rem 0; }
+.agent-run-detail > .panel, .agent-run-start { padding: 1.25rem; margin: 1rem 0; }
+.agent-run-detail td small, .agent-run-detail li small { display: block; color: var(--text-muted); }
+.agent-run-detail td a { display: block; }
+.agent-run-detail table { width: 100%; border-collapse: collapse; }
+.agent-run-detail th, .agent-run-detail td { text-align: left; padding: .75rem; border-bottom: 1px solid var(--line); }
+.agent-run-start p, .agent-run-detail dd { overflow-wrap: anywhere; }

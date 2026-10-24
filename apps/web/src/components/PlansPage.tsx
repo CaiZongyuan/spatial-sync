@@ -9,6 +9,7 @@ import { PlanChecklist, PlanStatus, defaultStep } from './PlanChecklist';
 import { SceneViewport, type InspectVisuals, type InspectPreview, type RenderMetrics, type RenderedPose } from './viewer/SceneViewport';
 import '../plans.css';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
+import { AgentRunStart } from './training/AgentRunStart';
 
 declare global { interface Window { __planViewDebug?: () => ReturnType<InspectPreview> | undefined } }
 const planLayers = { colliders: false, sites: false, origins: false, grid: true };
@@ -125,11 +126,12 @@ export function PlansPage({ planId }: { planId?: string }) {
       {!result.plans ? <div className="plan-loading" role="status" aria-busy="true">正在读取计划…<i /><i /></div> : plans?.length ? <div className="plan-table-scroll"><table className="plan-table"><thead><tr><th>计划</th><th>名称与提交者</th><th>种类</th><th>状态</th><th className="number">修订</th><th>审批方式</th></tr></thead><tbody>{plans.map(plan =>
         <tr key={plan.id} className={plan.id === planId ? 'is-selected' : ''}><td><Link to="/plans/$planId" params={{ planId: plan.id }} search={prior => ({ ...prior, step: undefined })}><code>{plan.id}</code></Link></td>
           <td><Link to="/plans/$planId" params={{ planId: plan.id }} search={prior => ({ ...prior, step: undefined })}>{plan.title}</Link><small>{plan.requestedBy.kind} · {plan.requestedBy.name}</small></td>
-          <td><span className="plan-tag">{plan.kind === 'training' ? '训练计划' : '操作计划'}</span></td><td><PlanStatus status={plan.status} /></td><td className="number">r{plan.revision}</td><td>{plan.approvalMode === 'auto' ? '自动批准' : '人工审批'}</td></tr>)}</tbody></table></div> :
+          <td><span className="plan-tag">{plan.kind === 'training' ? plan.layer === 'agent' ? 'Agent 运行计划' : '具身训练计划' : '操作计划'}</span></td><td><PlanStatus status={plan.status} /></td><td className="number">r{plan.revision}</td><td>{plan.approvalMode === 'auto' ? '自动批准' : '人工审批'}</td></tr>)}</tbody></table></div> :
         <div className="plan-empty">{result.plans.length ? '没有符合筛选的计划。' : <>尚无操作计划。由 agent 使用 <code>lw plan create</code> 提交，计划会在这里显示。</>}</div>}</section>
     {selected?.kind === 'training' ? <section className="training-plan-panel" aria-label="训练计划详情">
       <h2>{selected.title} · r{selected.revision}</h2><PlanStatus status={selected.status} />
-      <TrainingPlanDetails plan={selected} changes={selected.changes} /></section> :
+      <TrainingPlanDetails plan={selected} changes={selected.changes} frozenInputs={selected.frozenInputs} />
+      {selected.layer === 'agent' && <AgentRunStart key={`${selected.id}:${selected.revision}`} plan={selected} />}</section> :
       planId && result.plans && <PlanConnection key={planId} id={planId} />}
   </main>;
 }

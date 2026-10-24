@@ -3,21 +3,26 @@ import type { Actor } from './protocol';
 import type { TrainingPlanDocument } from './training';
 
 export type HypothesisVerdict = 'confirmed' | 'refuted' | 'inconclusive';
+export type BudgetAxis = 'gpuHours' | 'episodes' | 'caseRuns' | 'llmUsd';
+export type BudgetAmounts = Partial<Record<BudgetAxis, number | null>>;
 export interface LoopBudget {
   goalId: string;
-  limit: { gpuHours: number; episodes: number; days: number; llmUsd?: number | null } | null;
+  limit: (BudgetAmounts & { days: number }) | null;
   limitSource: string;
   limitReason?: string | null;
-  actual: { gpuHours: number; episodes: number };
-  unspentCommitment: { gpuHours: number; episodes: number };
-  effective: { gpuHours: number; episodes: number };
-  remaining: { gpuHours: number | null; episodes: number | null };
+  actual: BudgetAmounts;
+  knownActual?: BudgetAmounts;
+  unspentCommitment: BudgetAmounts;
+  effective: BudgetAmounts;
+  remaining: BudgetAmounts;
   firstApprovedAt: number | null;
   deadline: number | null;
   elapsedDays: number;
   exhausted: boolean;
   exhaustedBefore?: boolean;
   exhaustedDimensions: string[];
+  authority?: { planId: string; revision: number } | null;
+  coverage?: Record<string, string>;
 }
 export interface NotebookHypothesis {
   definition: TrainingPlanDocument['hypotheses'][number];

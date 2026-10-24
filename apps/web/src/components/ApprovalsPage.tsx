@@ -4,7 +4,6 @@ import { ApprovalInboxContext, decideApproval, type ApprovalDecision, type Appro
 import '../approvals.css';
 import { LibraryDeletionApproval } from './LibraryDeletion';
 import type { DeletionDetails } from '../lib/library-deletions';
-import type { TrainingPlanDocument } from '../lib/training';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
 import { LoopBudgetSummary } from './training/LoopBudgetSummary';
 
@@ -46,7 +45,7 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
     </dl>
     {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
     {training && record.details.loopBudget && <LoopBudgetSummary budget={record.details.loopBudget} review />}
-    {training ? <TrainingPlanDetails plan={record.details.plan as unknown as TrainingPlanDocument} changes={record.details.changes} /> :
+    {record.details.plan?.kind === 'training' ? <TrainingPlanDetails plan={record.details.plan} changes={record.details.changes} frozenInputs={record.details.frozenInputs} /> :
       record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}
     {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}

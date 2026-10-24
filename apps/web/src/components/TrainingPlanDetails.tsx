@@ -1,8 +1,6 @@
-import type { TrainingPlanDocument, TrainingPlanChange } from '../lib/training';
+import type { TrainingPlanContent, TrainingPlanChange, AgentFrozenInputs } from '../lib/training';
 import '../training-plans.css';
 
-type TrainingContent = Pick<TrainingPlanDocument, 'goal' | 'task' | 'algorithm' | 'model' | 'hyperparameters'
-  | 'jobs' | 'budget' | 'evaluation' | 'rationale' | 'hypotheses' | 'notebookRead' | 'interview' | 'previous'>;
 const value = (item: unknown) => item == null ? '—' : typeof item === 'string' ? item : JSON.stringify(item, null, 2);
 
 function Interview({ transcript }: { transcript: string }) {
@@ -18,19 +16,36 @@ function Interview({ transcript }: { transcript: string }) {
   </tbody></table></div><details><summary>完整访谈原文</summary><pre className="training-interview">{transcript}</pre></details></>;
 }
 
-export function TrainingPlanDetails({ plan, changes = [] }: { plan: TrainingContent; changes?: TrainingPlanChange[] }) {
+export function TrainingPlanDetails({ plan, changes = [], frozenInputs }: {
+  plan: TrainingPlanContent; changes?: TrainingPlanChange[]; frozenInputs?: AgentFrozenInputs;
+}) {
   return <div className="training-plan-details" data-testid="training-plan-details">
-    <section aria-label="训练计划内容"><h3>训练计划</h3>
+    <section aria-label="训练计划内容"><h3>{plan.layer === 'agent' ? 'Agent 运行计划' : '训练计划'}</h3>
       <dl className="training-plan-facts">
         <div><dt>目标</dt><dd>{plan.goal}</dd></div>
-        <div><dt>Task 版本</dt><dd><code>{plan.task}</code></dd></div>
+        {plan.goalId && <div><dt>Goal</dt><dd><code>{plan.goalId}</code></dd></div>}
+        {plan.layer === 'agent' ? <>
+          <div><dt>Agent / Harness</dt><dd><code>{plan.agent.id}</code> · v{plan.agent.harnessVersion}</dd></div>
+          <div><dt>固定评估集</dt><dd><code>{plan.suite}</code> · train</dd></div>
+          <div><dt>模型 / 思考等级</dt><dd>{plan.model.ref} · {plan.model.thinking}</dd></div>
+          <div><dt>凭据引用</dt><dd><code>{plan.credentialRef}</code></dd></div>
+          <div><dt>运行范围</dt><dd>{frozenInputs ? `${frozenInputs.suite.cases.length} 题 × ${frozenInputs.suite.runsPerCase} 次 = ${frozenInputs.caseRunsRequired} 题次` : '固定范围证据未知'}</dd></div>
+          <div><dt>执行配置</dt><dd>受限运行 · {plan.executionProfile}</dd></div>
+          <div><dt>本计划共享额度</dt><dd>{plan.budget.caseRuns} 题次 · {plan.budget.requests} 请求 · {plan.budget.tokens.toLocaleString()} Token · ${plan.budget.llmUsd} · {plan.budget.wallSeconds}s 执行时间</dd></div>
+          <div><dt>单次输出上限</dt><dd>{plan.budget.maxOutputTokensPerRequest.toLocaleString()} Token</dd></div>
+          <div><dt>本计划声明的目标预算</dt><dd>{plan.goalBudget.caseRuns} 题次 · ${plan.goalBudget.llmUsd} · {plan.goalBudget.days} 天；已有目标以上次人审来源为准。</dd></div>
+          {frozenInputs && <><div><dt>固定输入摘要</dt><dd><code>{frozenInputs.immutablePlanInputHash}</code></dd></div>
+            <div><dt>Harness 归档</dt><dd><code>{frozenInputs.harness.archiveHash}</code></dd></div>
+            <div><dt>锁定技能</dt><dd>{frozenInputs.harness.skills.map(skill => <p key={skill.name}>{skill.name} · <code>{skill.sha256}</code></p>)}</dd></div>
+            <div><dt>执行约束覆盖</dt><dd>{Object.entries(frozenInputs.adapter.enforcement).map(([name, coverage]) => `${name}: ${coverage}`).join(' · ')} · 上下文界限 {frozenInputs.adapter.contextTokens} Token · 价格 r{frozenInputs.priceQuote.revision}</dd></div></>}
+        </> : <><div><dt>Task 版本</dt><dd><code>{plan.task}</code></dd></div>
         <div><dt>算法</dt><dd><pre>{value(plan.algorithm)}</pre></dd></div>
         <div><dt>模型</dt><dd><pre>{value(plan.model)}</pre></dd></div>
         <div><dt>规模与超参</dt><dd><pre>{value(plan.hyperparameters)}</pre></dd></div>
         <div><dt>作业种子</dt><dd>{plan.jobs.seeds.join(', ') || '无训练作业'}</dd></div>
         <div><dt>GPU 预算</dt><dd>{plan.budget.gpuHours} 小时</dd></div>
         <div><dt>成功标准</dt><dd>{plan.evaluation.scene} · {plan.evaluation.episodes} 回合
-          {plan.evaluation.threshold != null && ` · 至少 ${plan.evaluation.threshold} 次成功`}</dd></div>
+          {plan.evaluation.threshold != null && ` · 至少 ${plan.evaluation.threshold} 次成功`}</dd></div></>}
       </dl>
       <h4>可测量假设</h4><ol className="training-hypotheses">{plan.hypotheses.map(hypothesis => <li key={hypothesis.id}>
         <strong>{hypothesis.id} · {hypothesis.cause}</strong><p>{hypothesis.change}</p>

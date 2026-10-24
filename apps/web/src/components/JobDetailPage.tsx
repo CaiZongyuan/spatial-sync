@@ -1,22 +1,46 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { request } from '../lib/api';
-import { getJob, type TrainingJob } from '../lib/jobs';
+import { getJob, type ManagedJob, type TrainingJob } from '../lib/jobs';
 import { remainingSeconds } from '../lib/training-presentation';
 import type { TrainingPlanDocument } from '../lib/training';
 import type { TrainingViewStatus } from '../lib/training/view-source';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
 import { JobMetricCharts } from './training/JobMetricCharts';
 import { TrainingViewGrid } from './training/TrainingViewGrid';
+import { AgentRunDetails } from './training/AgentRunDetails';
 import '../job-detail.css';
 
 const statuses = { queued: '排队中', running: '训练中', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
 const value = (number: number | null | undefined, digits = 2) => number == null ? '—' : number.toFixed(digits);
 
 export function JobDetailPage({ jobId }: { jobId: string }) {
-  const [job, setJob] = useState<TrainingJob>();
+  const [job, setJob] = useState<ManagedJob>();
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let disposed = false, pending: AbortController | undefined;
+    setJob(undefined); setError(undefined);
+    const refresh = async () => {
+      if (pending) return;
+      const controller = new AbortController(); pending = controller;
+      try { const result = await getJob(jobId, controller.signal); if (!disposed) { setJob(result); setError(undefined); } }
+      catch (failure) { if (!disposed) setError((failure as Error).message); }
+      finally { pending = undefined; }
+    };
+    void refresh(); const timer = setInterval(() => void refresh(), 2000);
+    return () => { disposed = true; clearInterval(timer); pending?.abort(); };
+  }, [jobId, retry]);
+  const refresh = () => setRetry(current => current + 1);
+  if (!job || job.jobId !== jobId) return <section className="job-detail"><header className="page-header"><h1>作业详情</h1></header>
+    {error ? <div role="alert">{error} <button onClick={refresh}>重试</button></div> : <p role="status">正在读取作业…</p>}</section>;
+  return job.kind === 'agent-run' ? <AgentRunDetails job={job} error={error} refresh={refresh} /> :
+    <TrainingJobDetails key={jobId} jobId={jobId} job={job} error={error} retry={retry} refresh={refresh} />;
+}
+
+function TrainingJobDetails({ jobId, job, error, retry, refresh }: {
+  jobId: string; job: TrainingJob; error?: string; retry: number; refresh: () => void;
+}) {
   const [plan, setPlan] = useState<TrainingPlanDocument>();
   const [planError, setPlanError] = useState<string>();
   const [logs, setLogs] = useState<string[]>([]);
@@ -38,25 +62,11 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   };
 
   useEffect(() => {
-    let disposed = false, pending: AbortController | undefined;
-    setJob(undefined); setError(undefined);
-    const refresh = async () => {
-      if (pending) return;
-      const controller = new AbortController(); pending = controller;
-      try { const result = await getJob(jobId, controller.signal); if (!disposed) { setJob(result); setError(undefined); } }
-      catch (failure) { if (!disposed) setError((failure as Error).message); }
-      finally { pending = undefined; }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 2000);
-    return () => { disposed = true; clearInterval(timer); pending?.abort(); };
-  }, [jobId, retry]);
-
-  useEffect(() => {
     setPlan(undefined); setPlanError(undefined);
     if (!job) return;
     const controller = new AbortController();
     void request<TrainingPlanDocument>(`/plans/${encodeURIComponent(job.planId)}?revision=${job.planRevision}`, { signal: controller.signal })
-      .then(result => { if (!controller.signal.aborted) setPlan(result); })
+      .then(result => { if (!controller.signal.aborted && result.layer !== 'agent') setPlan(result); })
       .catch(failure => { if (!controller.signal.aborted) setPlanError((failure as Error).message); });
     return () => controller.abort();
   }, [job?.planId, job?.planRevision]);
@@ -81,10 +91,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     return () => controller.abort();
   }, [jobId, retry]);
 
-  if (!job || job.jobId !== jobId) return <section className="job-detail"><header className="page-header"><h1>训练作业详情</h1></header>
-    {error ? <div role="alert">{error} <button onClick={() => setRetry(current => current + 1)}>重试</button></div>
-      : <p role="status" aria-busy="true">正在读取作业…</p>}</section>;
-  const iterations = plan?.hyperparameters.max_iterations;
+  const iterations = plan?.layer !== 'agent' ? plan?.hyperparameters.max_iterations : undefined;
   const total = typeof iterations === 'number' ? iterations : undefined;
   const elapsed = job.metrics.elapsedSeconds;
   const remaining = remainingSeconds(job.status, job.estimatedWallSeconds, elapsed);
@@ -93,7 +100,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     <header className="page-header"><div><p className="eyebrow">TRAINING JOB</p><h1>训练作业详情</h1>
       <p><code>{job.jobId}</code> · {statuses[job.status]}</p></div>
       <Link to="/train">返回训练</Link></header>
-    {error && <p role="alert">{error} <button onClick={() => setRetry(current => current + 1)}>重试</button></p>}
+    {error && <p role="alert">{error} <button onClick={refresh}>重试</button></p>}
     <div className="job-stat-strip" aria-label="作业标题指标">
       <div><span>Iteration</span><strong>{job.metrics.iteration ?? '—'} / {total ?? '—'}</strong></div>
       <div><span>Mean reward</span><strong>{value(job.metrics.meanReward, 3)}</strong></div>

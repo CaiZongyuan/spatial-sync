@@ -318,6 +318,16 @@ class GatewayClient:
         return (await self.request("GET", self._suite_path(suite) + "/scoreboard",
                                    params={"subject": subject} if subject else {}))["rows"]
 
+    async def agent_run(
+        self, id, suite, planId, planRevision, version=None, requestId=None, *, actor="cli:lw"
+    ):
+        body = {"suite": suite, "planId": planId, "planRevision": planRevision, "split": "train"}
+        if version is not None:
+            body["version"] = version
+        if requestId is not None:
+            body["requestId"] = requestId
+        return await self.request("POST", self._agent_path(id) + "/runs", json=body, actor=actor)
+
     async def demo_add(self, recordingId, task=None, *, actor="cli:lw"):
         body = {"recordingId": recordingId}
         if task is not None:
