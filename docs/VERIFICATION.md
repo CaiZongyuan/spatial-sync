@@ -269,6 +269,16 @@ the replacement viewer, then stops it and checks backend counts. Ordinary CI
 explicitly skips this optional native case. Other operations browser cases
 separate contract mocks from the real Synthetic connection/pause/stop journey.
 
+## Scene Factory acceptance prerequisites (planned)
+
+The SF implementation tickets must record their supported external agent client,
+Blender version, paired MCP server/addon and configuration from the
+[Scene Factory specification](spec/LAB_SCENE_FACTORY_SPEC_V1.md).
+These tools are not prerequisites for ordinary CI. Factory acceptance separately
+checks actual Blender authoring, received-version isolation, real Newton CPU
+validation and offline use. Real agent calls require the model and bounded cost
+authorization recorded in the relevant ticket before execution.
+
 ## Ownership and cleanup
 
 Use isolated ports, processes, worktrees, build directories and evidence.

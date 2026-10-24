@@ -29,8 +29,20 @@ One of `robot`, `device`, `labware` or `environment`.
 The local collection of every imported Asset version that people and agents can browse and place.
 _Avoid_: Registry, repository
 
+**External Asset Catalog** (外部素材目录):
+A discoverable collection of offerings from external publishers that people and agents can acquire to prepare local Assets.
+_Avoid_: Asset Library (the imported local collection), marketplace
+
+**Source Package** (来源包):
+The original material supplied by an external publisher for one item, including its dependencies and license notices, from which an Asset is prepared.
+_Avoid_: Asset (the prepared local package), model download
+
+**Acquisition** (获取记录):
+A recorded attempt to obtain a fixed Source Package and prepare a local Asset, including its outcome and resource use.
+_Avoid_: Asset, import, download (when meaning the complete attempt)
+
 **Asset Factory** (素材工厂):
-Any process outside the platform that produces Assets, such as the Blender scene-director pipeline; its output enters the Asset Library by import.
+An authoring workflow outside the platform that creates or repairs Assets and assembles them into Scenes; its outputs enter the platform by import.
 _Avoid_: Modeling pipeline (when meaning the platform itself)
 
 ## Scenes
@@ -42,6 +54,18 @@ _Avoid_: Object, prop (when it has physics)
 **Scene** (场景):
 A laid-out laboratory: its Entities, Dressing, device bindings and Teach Locations, together with the simulation settings it runs under.
 _Avoid_: World, level, environment (an Asset kind)
+
+**Scene Draft** (场景草稿):
+An editable, unpublished Scene in preparation, including its layout, assumptions and unresolved asset requirements.
+_Avoid_: Scene Version, Session
+
+**Scene Director** (场景构建 Agent):
+An agent role that coordinates a person's scene requirements, asset selection, authoring and delivery through an external conversation and Asset Factory.
+_Avoid_: Platform editor, device controller
+
+**Authoring Report** (外部提交记录):
+A statement explicitly submitted by an external agent or Asset Factory about a Scene Draft or delivered version, with its source and time.
+_Avoid_: Validation Report, live authoring state
 
 **Scene Library** (场景库):
 The collection of every Scene Version the platform can show and launch, both built-in and imported.

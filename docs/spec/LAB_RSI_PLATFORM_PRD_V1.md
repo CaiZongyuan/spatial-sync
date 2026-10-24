@@ -8,6 +8,7 @@
 > | 规格 | 内容 | 里程碑 |
 > |---|---|---|
 > | Lab Assets and Scenes | 库、素材包、场景包、验证报告、agent 接口与人工关口 | A1–A3 |
+> | [Lab Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md) | 外部 Agent 对话、素材检索／获取、Blender 工厂与结果管理 | SF0–SF5（SF1 分 a/b） |
 > | Lab Live Operations | 物联网设备、实验室实况、告警、历史、收件箱、操作计划与路径预览 | L1–L3 |
 > | Lab Training | 作业、计算节点、训练视图、评估、策略、脚本程序、示范、实验记录 | T0–T3 |
 > | Lab RSI | 两层改进对象、Agent 运行器、评估中心、成本中心、资源 | R1–R4 |
@@ -229,12 +230,16 @@ T0 ─► #35（策略与 robot_arm.policy）
 T2 ─► R1 评估中心 + 成本中心（GPU）
 A1 + L2 ─► R2 Agent 运行器 + Agent 评估集 + LLM 成本 ─► R3 Agent 层一圈 RSI
 A2 + T2 ─► R4 Embodiment / Controller / Robot Model
+A2 ─► SF0 可行性 ─► SF1a 基础检索 ─┬─► SF1b 语义增强 ─────────────┐
+                                   └─► SF2 获取 ─┬─► SF3 工厂 ─┼─► SF5 外部 Agent 验收
+                                                └─► SF4 结果 ─┘
 ```
 
 - W0 与 A1 可以合并成第一个交付：新框架承载现有页面，并上线场景库。
 - 每个里程碑以"能演示"为完成标准：一条本地命令启动，或在浏览器中可见。
 - 每个页面随其里程碑上线；之前在导航中隐藏。
 - T1 不等待 A3 与 T0：#30–#33 以 `robot-and-tubes@2`（含 FR3）开发与验收。A3（#18）与 T0（#29）只阻挡 #35；T2 的里程碑验收仍在 `fr3-lab` 上进行。#34 可以先评估 `lab-demo` 的 virtual 程序，依赖保持不变。
+- SF 与 #18 独立，沿用已交付的 A1/A2 基础；本期终点是可运行新场景、复用补制物件和验证失败后的修复，不承担完整机器人操作或训练验收。
 
 ### 模块
 
@@ -375,7 +380,7 @@ A2 + T2 ─► R4 Embodiment / Controller / Robot Model
 
 ## Out of Scope
 
-- 平台内的场景搭建与建模（Web 编辑、agent 在平台内放置物体、Blender 导出插件）；素材与场景由平台外的素材工厂制作后导入。
+- 平台内的场景搭建与建模（Web 编辑、agent 在平台内放置物体）。场景由平台外的素材工厂制作后导入；SF 包含本仓库独立维护的外部 Blender／OpenUSD 工厂脚本，网关不依赖 Blender，不建设通用导出插件框架。
 - 视觉检查（自动渲染评审）与 Isaac Sim 资产校验器。
 - 场景变体、初始条件预设与域随机化的平台化管理（Task 内部可以自行随机化）。
 - Synthetic 源运行 USD 场景。
