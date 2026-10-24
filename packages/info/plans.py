@@ -310,6 +310,12 @@ class PlanStore:
                 },
             )
             record.approvalId = approval.approvalId
+            if getattr(session, "evaluation_deny_high_risk", False):
+                self.approvals.decide(
+                    approval.approvalId, "deny", Actor(kind="agent", name="evaluation-policy"),
+                    "Evaluation policy denies human-gated operation Plans",
+                )
+                record.plan.status = "abandoned"
         self._save(record)
         self._full(record, session)
         await self.flush()

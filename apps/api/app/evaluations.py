@@ -291,9 +291,16 @@ class EvaluationService:
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
             if notebooks else None
         )
+        await self.admit(record, context)
+        return deepcopy(record)
+
+    async def admit(self, record, notebook_context=None):
+        """Persist one intent on the shared queue, including a disconnected submitter."""
+        identifier = record["evaluationId"]
         async with self._admission:
+            notebooks = getattr(self.manager, "notebooks", None)
             if notebooks is not None:
-                record.update(notebooks.admit_evaluation(context))
+                record.update(notebooks.admit_evaluation(notebook_context))
             self._admitting[identifier] = record
             try:
                 try:
@@ -308,7 +315,6 @@ class EvaluationService:
                 self.wake()
             finally:
                 self._admitting.pop(identifier, None)
-        return deepcopy(record)
 
     async def _run(self):
         while not self._closing:
@@ -702,6 +708,8 @@ class EvaluationService:
             if session.evaluation_id == identifier:
                 await session.close()
         self._blocked.discard(identifier)
+        if self.store.records[identifier].get("layer") == "agent":
+            await self.external.refreshed_cleanup(identifier)
         self.wake()
         return self.status()
 

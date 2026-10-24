@@ -95,6 +95,12 @@ class ExternalEvaluations:
             suite = self.evaluator.suites.resolve(body.suite)
             if suite.metadata["layer"] != "agent" or suite.metadata["target"] != agent:
                 raise PlanError("agent_suite_mismatch", "Select this Agent's public Agent Suite", status=422)
+            if suite.metadata["source"] != "synthetic":
+                raise PlanError(
+                    "unsupported_agent_source",
+                    "External evaluation v1 uses owned Synthetic Sessions",
+                    status=422,
+                )
             if body.purpose == "train" and body.caseId is not None:
                 raise PlanError(
                     "invalid_agent_scope", "A train evaluation requires the complete train scope", status=422
@@ -183,10 +189,7 @@ class ExternalEvaluations:
             if hashlib.sha256(archive).hexdigest() != harness["archiveHash"]:
                 raise PlanError("harness_changed", "The fixed Harness archive changed", status=409)
             (directory / "harness.tar").write_bytes(archive)
-            async with self.evaluator._admission:
-                await self.save(record)
-                self.evaluator._queue.append(("evaluation", identifier))
-                self.evaluator.wake()
+            await self.evaluator.admit(record)
             return self.document(record)
 
     async def next(self, identifier):
@@ -300,17 +303,30 @@ class ExternalEvaluations:
                         status="finishing",
                         **native,
                     )
-                    await self.save(
-                        self.evaluator.store.records[identifier] | {"cases": self._live_cases(identifier)}
-                    )
-                    self.signals[body.caseRunId].set()
+                    try:
+                        await self.save(
+                            self.evaluator.store.records[identifier] | {"cases": self._live_cases(identifier)}
+                        )
+                    finally:
+                        stored = next(
+                            case
+                            for case in self.get(identifier)["cases"]
+                            if case["caseRunId"] == body.caseRunId
+                        )
+                        if stored.get("completionHash") == complete_hash:
+                            self.signals[body.caseRunId].set()
+        if self.get(identifier)["status"] in ("completed", "failed", "cancelled"):
+            return self.completion_response(identifier, body.caseRunId)
         event = self.finalized.setdefault(body.caseRunId, asyncio.Event())
         try:
             await asyncio.wait_for(event.wait(), timeout=30)
         except TimeoutError:
             pass
+        return self.completion_response(identifier, body.caseRunId)
+
+    def completion_response(self, identifier, case_id):
         latest = self.get(identifier)
-        outcome = next(case for case in latest["cases"] if case["caseRunId"] == body.caseRunId)
+        outcome = next(case for case in latest["cases"] if case["caseRunId"] == case_id)
         return {"case": self.public_case(outcome), "run": self.document(latest)}
 
     def _live_cases(self, identifier):
@@ -383,7 +399,6 @@ class ExternalEvaluations:
                 dimensions=score["dimensions"],
                 metrics=score["metrics"],
                 scoringCutoffAt=final["observedAt"],
-                status="completed",
                 recordingId=grant.session.session_id,
             )
             grant.revoked = True
@@ -396,9 +411,19 @@ class ExternalEvaluations:
         if not grant.audit.healthy:
             raise PlanError("agent_trace_unavailable", "Trusted Trace could not be retained", status=503)
         case["artifacts"] = []
+        self.refresh_artifacts(run, case)
+        if len(case["artifacts"]) != 3:
+            raise PlanError("agent_evidence_unavailable", "Required case evidence is unavailable", status=503)
+        case["status"] = "completed"
+
+    def refresh_artifacts(self, run, case):
+        artifacts = []
         for name, kind in (("trace", "agent-trace"), ("final", "agent-final"), ("score", "agent-score")):
-            content = self.artifact(run, case, name)
-            case["artifacts"].append(
+            try:
+                content = self.artifact(run, case, name)
+            except PlanError:
+                continue
+            artifacts.append(
                 {
                     "id": name,
                     "kind": kind,
@@ -409,6 +434,7 @@ class ExternalEvaluations:
                     ),
                 }
             )
+        case["artifacts"] = artifacts
 
     @staticmethod
     def cost(cases):
@@ -483,6 +509,13 @@ class ExternalEvaluations:
                         evaluation_id=identifier,
                     )
                     session.evaluation_deny_high_risk = True
+                    case.update(sessionId=session.session_id, recordingId=session.session_id)
+                    if (
+                        not session.recording
+                        or not session._recording_revision_ready
+                        or session.recording.metadata["status"] != "recording"
+                    ):
+                        raise PlanError("recording_unavailable", "Owned recording is not ready", status=503)
                     directory = self.directory(run) / case["caseRunId"]
                     audit = CaseAudit(session, directory / "trace.jsonl")
                     session.evaluation_audit = audit
@@ -551,10 +584,12 @@ class ExternalEvaluations:
             )
             if grant is not None:
                 grant.revoked = True
-                grant.case.update(
-                    status="cancelled" if isinstance(error, asyncio.CancelledError) else "invalid",
-                    error=run["error"],
-                )
+            for case in run["cases"]:
+                if case["status"] in ("starting", "running", "finishing"):
+                    case.update(
+                        status="cancelled" if isinstance(error, asyncio.CancelledError) else "invalid",
+                        error=run["error"],
+                    )
             owned = [
                 session
                 for session in self.manager.sessions.values()
@@ -568,6 +603,7 @@ class ExternalEvaluations:
                     self.evaluator._blocked.add(identifier)
             if grant:
                 grant.audit.close()
+                self.refresh_artifacts(run, grant.case)
             blocked = identifier in self.evaluator._blocked or any(
                 session.holds_resources or not session.cleanup_complete for session in owned
             )
@@ -577,9 +613,10 @@ class ExternalEvaluations:
         finally:
             if grant:
                 grant.revoked = True
-                self.finalized[grant.case["caseRunId"]].set()
             self.active.pop(identifier, None)
             await self.save(run)
+            if grant:
+                self.finalized[grant.case["caseRunId"]].set()
 
     async def cancel(self, identifier):
         run = self.get(identifier)
@@ -597,6 +634,12 @@ class ExternalEvaluations:
             )
             await self.save(run | {"status": "cancelled", "endedAt": now()})
         return self.document(self.get(identifier))
+
+    async def refreshed_cleanup(self, identifier):
+        record = self.get(identifier)
+        owned = [session for session in self.manager.sessions.values() if session.evaluation_id == identifier]
+        complete = all(session.cleanup_complete and not session.holds_resources for session in owned)
+        await self.save(record | {"cleanup": {"complete": complete, "blocked": not complete}})
 
 
 def install_external_evaluations(app, evaluator, agents, runtime_records, role_for):

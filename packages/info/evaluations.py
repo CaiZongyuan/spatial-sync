@@ -62,6 +62,13 @@ class EvaluationStore:
                 durable_json(path, record)
             elif record["status"] in ("queued", "running"):
                 record.update(status="failed", error={"code": "gateway_restarted"})
+                if record.get("layer") == "agent":
+                    for case in record["cases"]:
+                        if case["status"] in ("starting", "running", "finishing"):
+                            case.update(status="invalid", error={"code": "gateway_restarted"})
+                    # External v1 only owns in-process Synthetic Sources; none can
+                    # survive the gateway process. Grants are deliberately ephemeral.
+                    record["cleanup"] = {"complete": True, "blocked": False}
                 durable_json(path, record)
             self.records[record["evaluationId"]] = record
 
