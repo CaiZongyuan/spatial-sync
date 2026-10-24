@@ -547,10 +547,10 @@ class ExternalEvaluations:
                     session.evaluation_audit = audit
                     case.update(status="running", sessionId=session.session_id)
                     grant = CaseGrant(identifier, case, session, deadline, audit)
-                    self.active[identifier] = self.grants[grant.token] = grant
                     self.signals[case["caseRunId"]] = asyncio.Event()
                     self.finalized[case["caseRunId"]] = asyncio.Event()
                     await self.save(run)
+                    self.active[identifier] = self.grants[grant.token] = grant
                     await self.signals[case["caseRunId"]].wait()
                     await self._finalize_case(run, grant, suite)
                     run["episodes"].append(
