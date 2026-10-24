@@ -10,6 +10,7 @@ from packages.info.plans import PlanError
 from packages.info.recording import recording_metadata
 from packages.info.store import StateStore
 from packages.library.archive import package_files, relative_path
+from packages.library.common import content_hash
 from packages.protocol.schema import EntityObservations, EntitySnapshot, InvocationUpdate
 
 
@@ -25,6 +26,7 @@ def recording_evidence(directory, task):
     """Completion is storage status; success comes from recorded Task observations."""
     try:
         files = set(package_files(directory))
+        digest = content_hash(directory)
         metadata = recording_metadata(json.loads((directory / "recording.json").read_bytes()))
         definition = task["task"]
         if metadata.get("kind") != "session" or metadata.get("status") != "complete":
@@ -97,8 +99,11 @@ def recording_evidence(directory, task):
         if success is not True:
             _reject("demo_success_unknown" if success is None else "demo_not_successful",
                     "Recorded observations do not establish Task success")
+        if content_hash(directory) != digest:
+            _reject("demo_recording_changed", "Recording changed while establishing success")
         return {
             "recordingId": metadata["sessionId"],
+            "recordingContentHash": digest,
             "task": task["id"],
             "taskContentHash": task["contentHash"],
             "scene": definition["scene"],
