@@ -146,7 +146,8 @@ COMMANDS = (
             ), actor=True),
     Command(path=("runtime", "ingest"), help="Import native runtime record objects from a JSON array.",
             method="runtime_import_records", mcp_name="runtime_import", arguments=(
-                Argument("records", ("records",), list[dict[str, Any]], "Native objects or local JSON array"),
+                Argument("records", ("records",), list[dict[str, Any]],
+                         "Array of native objects (CLI: local JSON-array file)"),
                 *runtime_import_options(),
             ), actor=True),
     Command(path=("runtime", "ls"), help="List imported runtime sessions and reported usage.",
