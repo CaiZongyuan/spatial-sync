@@ -726,10 +726,29 @@ class GatewayClient:
         return (await self.request("GET", "/api/v1/policies"))["policies"]
 
     async def policy_show(self, id):
+        return await self.request("GET", self._policy_path(id))
+
+    @staticmethod
+    def _policy_path(id):
         match = re.fullmatch(r"policy/([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)", id)
         if not match:
             raise ValueError("Select an exact policy/name@revision")
-        return await self.request("GET", f"/api/v1/policies/{match[1]}/{match[2]}")
+        return f"/api/v1/policies/{match[1]}/{match[2]}"
+
+    async def policy_check_observations(self, id, artifact, *, actor="cli:lw"):
+        return await self.request("POST", self._policy_path(id) + "/observation-checks",
+                                  actor=actor, json={"artifact": artifact})
+
+    async def policy_observation_checks(self, id):
+        return (await self.request("GET", self._policy_path(id) + "/observation-checks"))["checks"]
+
+    async def policy_observation_check_show(self, id, check):
+        path = self._policy_path(id) + "/observation-checks/" + quote(check, safe="")
+        return await self.request("GET", path)
+
+    async def policy_observation_check_verify_source(self, id, check, artifact, *, actor="cli:lw"):
+        path = self._policy_path(id) + "/observation-checks/" + quote(check, safe="") + "/verify-source"
+        return await self.request("POST", path, actor=actor, json={"artifact": artifact})
 
     async def cost_query(self, since="7d", by=None, view="summary", agent=None, model=None,
                          node=None, goal=None, plan=None, start=None, end=None):

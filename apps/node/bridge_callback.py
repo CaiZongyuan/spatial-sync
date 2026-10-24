@@ -127,20 +127,17 @@ def install():
         runner.export_policy_to_onnx(str(output), filename="policy.onnx")
         with (output / "policy.onnx").open("rb") as stream:
             policy_hash = hashlib.file_digest(stream, "sha256").hexdigest()
-        (output / "export.json").write_text(
-            json.dumps(
-                {
-                    "checkpoint": "checkpoints/" + relative.as_posix(),
-                    "checkpointSha256": checkpoint_hash,
-                    "policy": "policy.onnx",
-                    "policySha256": policy_hash,
-                    "externalData": external_files(output / "policy.onnx", output),
-                    "iteration": runner.current_learning_iteration,
-                    "afterLearn": True,
-                }
-            ),
-            encoding="utf-8",
-        )
+        export = {
+            "checkpoint": "checkpoints/" + relative.as_posix(), "checkpointSha256": checkpoint_hash,
+            "policy": "policy.onnx", "policySha256": policy_hash,
+            "externalData": external_files(output / "policy.onnx", output),
+            "iteration": runner.current_learning_iteration, "afterLearn": True,
+        }
+        (output / "export.json").write_text(json.dumps(export), encoding="utf-8")
+        if getattr(runner, "env", None) is not None:
+            from lw_observation_capture import capture_observations
+
+            capture_observations(runner, output, inputs, export, versions)
         return result
 
     OnPolicyRunner.learn = learn
