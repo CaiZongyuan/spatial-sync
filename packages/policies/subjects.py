@@ -8,10 +8,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from packages.info.declarations import EntityBindingDeclaration
-from packages.library.common import LibraryError
+from packages.library.common import LibraryError, document
 from packages.programs.robot_arm.policy import PolicyProgram
 
 from .library import read_json
+from .observations import ObservationSpec
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Text = Annotated[str, Field(min_length=1)]
@@ -58,6 +59,20 @@ class PolicySubject(Schema):
 
     def document(self):
         return self.model_dump(mode="json")
+
+
+class PolicyExecution(Schema):
+    kind: Literal["policy"]
+    policy: Text
+    policyContentHash: Hash
+    onnxSha256: Hash
+    observationSha256: Hash
+    providers: list[Literal["CPUExecutionProvider"]] = Field(min_length=1, max_length=1)
+    runtimeVersion: Text
+    actionStarts: int = Field(ge=0)
+    inferenceCalls: int = Field(ge=0)
+    validOutputs: int = Field(ge=0)
+    observationDigest: Hash
 
 
 def fingerprint(value):
@@ -118,6 +133,7 @@ def resolve_policy_subject(manager, requested, suite, scene):
     if (
         suite.metadata["layer"] != "embodied"
         or suite.metadata["source"] != "newton"
+        or "newton" not in scene.metadata["sources"]
         or scene.id != suite.metadata["scene"]
         or scene.content_hash != suite.metadata["sceneContentHash"]
     ):
@@ -145,6 +161,13 @@ def resolve_policy_subject(manager, requested, suite, scene):
     }
     config["policy"] = policy["id"]
     config = PolicyProgram.Config.model_validate(config).model_dump(mode="json")
+    spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
+    allowed = set(config["jointKeys"] + config["fingerKeys"])
+    units = ["m" if key in config["fingerKeys"] else "rad" for key in spec.action.jointKeys]
+    if not set(spec.action.jointKeys) <= allowed or spec.action.units != units:
+        raise _invalid(
+            "Policy action channels do not match the fixed robot binding", "policy_action_binding_mismatch"
+        )
     replacement = base | {"program": PolicyProgram.id, "config": config}
     candidate = {name: policy[name] for name in CandidateIdentity.model_fields if name in policy}
     return PolicySubject(
@@ -194,3 +217,40 @@ def validate_policy_catalog(catalog, subject):
     if actual != expected or fingerprint(subject.binding) != subject.bindingHash:
         raise _invalid("Actual policy override is missing or differs", "policy_binding_not_applied")
     return subject
+
+
+def apply_policy_catalog(catalog, subject, scene):
+    """Evaluator-only initialization hook, applied independently by gateway and Runner."""
+    subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
+    if (
+        scene is None
+        or scene.id != subject.evaluationScene.id
+        or scene.content_hash != subject.evaluationScene.contentHash
+    ):
+        raise _invalid("Policy override belongs to another fixed evaluation Scene")
+    validate_base_catalog(catalog, subject)
+    catalog.replace_program(subject.target.entityKey, PolicyProgram, subject.binding["config"])
+    validate_policy_catalog(catalog, subject)
+    return catalog
+
+
+def validate_policy_execution(subject, evidence):
+    subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
+    try:
+        value = PolicyExecution.model_validate(evidence)
+        identity = subject.candidateIdentity
+        if (
+            value.policy != identity.id
+            or value.policyContentHash != identity.contentHash
+            or value.onnxSha256 != identity.onnxSha256
+            or value.observationSha256 != identity.observationSha256
+            or value.validOutputs > value.inferenceCalls
+            or value.inferenceCalls > 0
+            and value.actionStarts == 0
+        ):
+            raise ValueError("Actual native policy identity/counters differ")
+        return value.model_dump(mode="json")
+    except (ValueError, TypeError) as exc:
+        raise _invalid(
+            "Native policy execution evidence is unavailable or differs", "policy_execution_unavailable"
+        ) from exc

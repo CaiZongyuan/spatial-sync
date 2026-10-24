@@ -51,6 +51,17 @@ class Catalog(BaseModel):
     def program_config(self, entity_key):
         return self._configs[entity_key]
 
+    def replace_program(self, entity_key, program, config):
+        """Replace one validated implementation while preserving its type and interlocks."""
+        binding = self.entities[entity_key]
+        if binding["type"] != program.type:
+            raise ValueError("Replacement Program must implement the existing entity type")
+        parsed = program.Config.model_validate(config)
+        self.entities = self.entities | {
+            entity_key: binding | {"program": program.id, "config": parsed.model_dump(mode="json")}
+        }
+        self._configs = self._configs | {entity_key: parsed}
+
     def alerts(self):
         return self._alerts
 

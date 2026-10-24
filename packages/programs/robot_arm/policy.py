@@ -1,5 +1,7 @@
 """Feed-forward CPU policy Program. Actuation and facts use only PhysicsPort."""
 
+import hashlib
+
 import numpy as np
 from pydantic import Field
 
@@ -54,6 +56,8 @@ class PolicyProgram:
             external=export["externalData"],
         )
         self.handle, self.references = None, {}
+        self.action_starts = 0
+        self.observation_digest = hashlib.sha256(b"lw.physics-policy-observations/1")
         self.previous = np.zeros(len(self.spec.action.jointKeys))
         self._facts(ctx)
         ctx.set(phase="idle")
@@ -170,6 +174,7 @@ class PolicyProgram:
             inv.succeed()
             return
         self.references = self._references(inv, ctx)
+        self.action_starts += 1
         self.handle, self.started, self.next_inference = inv, ctx.sim_time, ctx.sim_time
         self.previous[:] = 0
         # The black box has no trusted pick/place stage; reserve before its first target.
@@ -233,6 +238,7 @@ class PolicyProgram:
             observation = assemble(
                 self.spec, self._state(ctx.physics), previous_action=self.previous, references=self.references
             )
+            self.observation_digest.update(observation.tobytes())
             output = self.model.infer(observation)
             positions = [ctx.physics.joint_q(self.joints[key])[0] for key in self.spec.action.jointKeys]
             targets = joint_targets(self.spec, positions, output)
@@ -246,3 +252,19 @@ class PolicyProgram:
             inv.fail("policy_inference_failed", str(exc))
             self.handle = None
             ctx.set(phase="fault")
+
+    def execution_evidence(self):
+        """Read-only native receipt; all counts originate at the actual CPU runtime."""
+        return {
+            "kind": "policy",
+            "policy": self.record["id"],
+            "policyContentHash": self.record["contentHash"],
+            "onnxSha256": self.record["onnxSha256"],
+            "observationSha256": self.record["observationSha256"],
+            "providers": self.model.session.get_providers(),
+            "runtimeVersion": self.model.runtime_version,
+            "actionStarts": self.action_starts,
+            "inferenceCalls": self.model.inference_calls,
+            "validOutputs": self.model.valid_outputs,
+            "observationDigest": self.observation_digest.hexdigest(),
+        }
