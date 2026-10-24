@@ -65,6 +65,11 @@
 .gpu-chart-line { stroke: var(--accent); fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .gpu-chart-point { fill: var(--accent); }
 .gpu-history .resource-note { font-size: 10px; line-height: 1.6; }
+.gpu-history-data > summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.gpu-history-table { max-width: 100%; max-height: 300px; overflow: auto; margin-top: 10px; }
+.gpu-history-table table { min-width: 650px; font-size: 11px; }
+.gpu-history-table th, .gpu-history-table td { padding: 8px; text-align: left; white-space: nowrap; }
+.gpu-history-table td:last-child { min-width: 150px; white-space: normal; overflow-wrap: anywhere; }
 .compute-leases { display: grid; gap: 12px; margin-top: 18px; }
 .compute-lease { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; }
 .compute-lease > small { color: var(--muted); font-size: 11px; }

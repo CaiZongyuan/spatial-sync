@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { request } from '../lib/api';
 import { getJob, type TrainingJob } from '../lib/jobs';
+import { remainingSeconds } from '../lib/training-presentation';
 import type { TrainingPlanDocument } from '../lib/training';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
 import '../job-detail.css';
@@ -69,7 +70,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   const iterations = plan?.hyperparameters.max_iterations;
   const total = typeof iterations === 'number' ? iterations : undefined;
   const elapsed = job.metrics.elapsedSeconds;
-  const remaining = job.estimatedWallSeconds != null && elapsed != null ? Math.max(0, job.estimatedWallSeconds - elapsed) : null;
+  const remaining = remainingSeconds(job.status, job.estimatedWallSeconds, elapsed);
   const checkpoints = job.artifacts.filter(artifact => artifact.path.endsWith('.pt'));
   return <main className="job-detail" data-testid="job-detail">
     <header className="page-header"><div><p className="eyebrow">TRAINING JOB</p><h1>训练作业详情</h1>
@@ -87,7 +88,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         <tbody>{checkpoints.map(artifact => <tr key={artifact.path}><td><code>{artifact.path}</code></td><td>{artifact.size.toLocaleString()} B</td>
           <td><code title={artifact.sha256}>{artifact.sha256.slice(0, 12)}</code></td></tr>)}</tbody></table>
         : <p>{job.status === 'queued' || job.status === 'running' ? '等待训练产物。' : '该作业未产生检查点。'}</p>}</section>
-      <section className="panel"><h2>日志 <small>{logsComplete ? '完整' : '跟随中'}</small></h2>
+      <section className="panel"><h2>日志 <small>最近最多 2000 行 · {logsComplete ? '已读至末尾' : '跟随中'}</small></h2>
         {logsError && <p role="alert">{logsError}</p>}<pre className="job-log" aria-label="作业日志">{logs.join('\n') || '等待节点日志。'}</pre></section>
       <section className="panel"><h2>作业产物</h2>{job.artifacts.length ? <ul>{job.artifacts.map(artifact =>
         <li key={artifact.path}><code>{artifact.path}</code> · {artifact.size.toLocaleString()} B</li>)}</ul> : <p>暂无已上传产物。</p>}</section>

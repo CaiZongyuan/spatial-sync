@@ -43,10 +43,10 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
     if (request.method() !== 'GET' && /\/api\/v1\/(sessions|recordings)(\/|$)/.test(new URL(request.url()).pathname))
       forbidden.push(`${request.method()} ${request.url()}`);
   });
-  const heartbeat = async (utilization: number | null, observedAt: number, reports: object[] = []) => {
+  const heartbeat = async (utilization: number | null, observedAt: number | null, reports: object[] = []) => {
     const response = await http.post(`${api}/api/v1/nodes/local/heartbeat`, { headers, data: { ...node,
       gpus: [{ id: 'GPU-training-resources-fixture', name: 'Browser fixture GPU', memoryTotalMb: 8192,
-        utilization, memoryUsedMb: utilization == null ? null : 0, observedAt,
+        utilization, memoryUsedMb: utilization == null ? null : utilization === 0 ? 0 : 512, observedAt,
         unavailableReason: utilization == null ? 'Driver sample is unavailable' : null }], reports } });
     expect(response.ok(), await response.text()).toBe(true);
     return response.json();
@@ -93,7 +93,7 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
     expect(first.status(), await first.text()).toBe(202); job = await first.json();
     const second = await http.post(`${api}/api/v1/jobs`, { data: { planId: plan.id, seed: 43 } });
     expect(second.status(), await second.text()).toBe(202); queued = await second.json();
-    await heartbeat(null, now, [{ jobId: job!.jobId, leaseId: job!.leaseId, status: 'running', iteration: 2,
+    await heartbeat(null, null, [{ jobId: job!.jobId, leaseId: job!.leaseId, status: 'running', iteration: 2,
       elapsedSeconds: 12, meanReward: 0, trainSuccess: null, memoryUsedMb: 512 }]);
     await page.getByRole('button', { name: '刷新作业与节点' }).click();
     const rows = page.getByRole('table', { name: '训练作业表' });
@@ -131,6 +131,25 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
     const snapshot = await (await http.get(`${api}/api/v1/nodes`)).json();
     expect(snapshot.nodes[0].gpus[0].history.samples.some((sample: { utilization: number | null }) => sample.utilization === 0)).toBe(true);
     expect(snapshot.nodes[0].gpus[0].history.samples.some((sample: { utilization: number | null }) => sample.utilization === null)).toBe(true);
+    const historyTable = panel.getByRole('table', { name: 'Browser fixture GPU 保留样本' });
+    await expect(historyTable).toBeHidden();
+    const expandHistory = panel.locator('.gpu-history-data > summary');
+    await expandHistory.focus(); await expandHistory.press('Enter');
+    await expect(historyTable).toBeVisible();
+    await expect(historyTable.getByRole('columnheader')).toHaveText(['记录时间', '实际观测时间', 'GPU 使用率', '显存', '原因']);
+    await expect(historyTable.getByRole('row')).toHaveCount(snapshot.nodes[0].gpus[0].history.samples.length + 1);
+    const zeroSample = historyTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '0%', exact: true }) });
+    await expect(zeroSample).toContainText('0 MiB');
+    await expect(zeroSample.getByRole('cell').nth(1)).not.toHaveText('未知');
+    await expect(historyTable.getByRole('row').filter({ has: page.getByRole('cell', { name: '65%', exact: true }) })).toContainText('512 MiB');
+    const unknownSample = historyTable.getByRole('row').last();
+    await expect(unknownSample.getByRole('cell').nth(0)).not.toHaveText('未知');
+    await expect(unknownSample.getByRole('cell').nth(1)).toHaveText('未知');
+    await expect(unknownSample.getByRole('cell').nth(2)).toHaveText('未知');
+    await expect(unknownSample.getByRole('cell').nth(3)).toHaveText('未知');
+    await expect(unknownSample.getByRole('cell').nth(4)).toHaveText('Driver sample is unavailable');
+    await panel.getByRole('region', { name: 'Browser fixture GPU 历史样本' }).focus();
+    await expect(panel.getByRole('region', { name: 'Browser fixture GPU 历史样本' })).toBeFocused();
     await heartbeat(0, Date.now() / 1000); await page.getByRole('button', { name: '刷新资源' }).click();
     await expect(panel).toContainText('使用率 0%');
     await expect(panel.getByRole('meter', { name: 'Browser fixture GPU 显存使用' })).toHaveAttribute('value', '0');

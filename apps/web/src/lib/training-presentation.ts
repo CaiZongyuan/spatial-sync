@@ -23,6 +23,11 @@ export function elapsed(seconds: number | null | undefined) {
   const minutes = Math.floor(seconds / 60), remainder = Math.floor(seconds % 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : `${minutes} 分 ${remainder} 秒`;
 }
+export function remainingSeconds(status: JobStatus, estimate: number | null | undefined, used: number | null | undefined) {
+  if (status === 'succeeded' || status === 'failed' || status === 'cancelled') return 0;
+  if (estimate == null || used == null || !Number.isFinite(estimate) || !Number.isFinite(used)) return null;
+  return Math.max(0, estimate - used);
+}
 export function releaseEstimate(job: TrainingJob | undefined, now = Date.now() / 1000) {
   if (!job || job.startedAt == null || job.estimatedWallSeconds == null)
     return { value: '未知', reason: jobReason(job?.reason) ?? '尚无已开始作业的实测耗时估计' };

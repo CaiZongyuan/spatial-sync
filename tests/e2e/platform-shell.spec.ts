@@ -10,9 +10,10 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(10);
+  await expect(navigation.getByRole('link')).toHaveCount(11);
   expect(await navigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))))
-    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Evaluation', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Training', 'Evaluation', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+  await expect(navigation.getByRole('link', { name: 'Training', exact: true })).toHaveAttribute('href', '/train');
   await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
   await expect(navigation.getByRole('link', { name: 'Evaluation', exact: true })).toHaveAttribute('href', '/eval');
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -31,6 +32,9 @@ test('platform navigation, persistent preferences, system theme and local assets
   await navigation.getByRole('link', { name: 'Evaluation', exact: true }).click();
   await expect(page).toHaveURL(/\/eval$/);
   await expect(navigation.getByRole('link', { name: 'Evaluation', exact: true })).toHaveAttribute('aria-current', 'page');
+  await navigation.getByRole('link', { name: 'Training', exact: true }).click();
+  await expect(page).toHaveURL(/\/train$/);
+  await expect(navigation.getByRole('link', { name: 'Training', exact: true })).toHaveAttribute('aria-current', 'page');
   await navigation.getByRole('link', { name: 'Resources', exact: true }).click();
   await expect(page).toHaveURL(/\/resources\/gpu$/);
   await page.reload();
