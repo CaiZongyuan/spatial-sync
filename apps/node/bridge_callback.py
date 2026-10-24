@@ -89,6 +89,14 @@ def install():
     original_learn = OnPolicyRunner.learn
 
     def learn(runner, *args, **kwargs):
+        from contextlib import nullcontext
+
+        if os.getenv("LW_NODE_VIEW_IPC"):
+            from lw_view_bridge import observe_training
+
+            observer = observe_training(runner, inputs)
+        else:
+            observer = nullcontext()
         original_log = runner.logger.log
         started = time.monotonic()
 
@@ -106,7 +114,11 @@ def install():
             return result
 
         runner.logger.log = log
-        result = original_learn(runner, *args, **kwargs)
+        try:
+            with observer:
+                result = original_learn(runner, *args, **kwargs)
+        finally:
+            runner.logger.log = original_log
         checkpoint = Path(runner.logger.log_dir) / f"model_{runner.current_learning_iteration}.pt"
         relative = checkpoint.resolve().relative_to((Path.cwd() / "logs").resolve())
         with checkpoint.open("rb") as stream:

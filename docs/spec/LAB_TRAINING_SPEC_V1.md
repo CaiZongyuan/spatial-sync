@@ -168,7 +168,12 @@ interview: interview.md                # lab-training-plan 产出的完整问答
 
 ### 5.4 指标
 
-- 完整曲线看 TensorBoard：平台在需要时启动一个本地 `tensorboard --logdir <库>/jobs` 进程，作业页提供链接。不需要部署服务。
+- 完整曲线看 TensorBoard：平台按需从已配置的冻结 Node Python 运行时启动一个本地进程，读取
+  `<库>/jobs` 的正式事件文件，并以独立 `live-<jobId>` 名称读取运行中 local Job 的精确训练
+  `logs` 目录，不扫描其他环境。作业页与 `lw tensorboard` 返回地址。
+  进程使用随机 loopback 端口、独立 URL 前缀且禁用 CUDA。相同输入集合重复调用复用同一进程；
+  新作业改变输入集合时，下一次调用只重启自身进程并返回新地址。启动等待不占用会话、心跳或取消锁，
+  调用者断开不丢失创建任务；Gateway 关闭时通过原创建 handle 回收进程树。
 - 平台只存储并显示心跳里的标题指标。
 - 第三方实验管理（SwanLab、W&B）不在 v1 范围，可以由 Task 包自己配置 rsl_rl 的日志写入器接入。
 
@@ -194,6 +199,8 @@ spatial-v2 `SceneManifest` 与 `TransformFrame`，不修改 NSYN-v1、`entityKey
 
 每条封装有 `schema`、`type`、`jobId`、`attemptId`、`viewId`；环境消息另有 `envIndex`。
 类型为 `hello`、`manifest`、`frame`、`status`、`ended`、`error`。
+身份尚未建立时，`status` / `error` / `ended` 的 `attemptId`、`viewId` 可为明确的 null；
+不能由此创建环境 source。实际 `hello` / `manifest` / `frame` 必须携带非空身份。
 未知版本/类型、身份不符、越界环境、非有限或非法位姿均拒绝。
 生产者通过 `/jobs/{id}/view-frames` WebSocket 推送，由节点令牌、节点实例与当前 dispatch
 认证；浏览器端不接受生产者输入。
@@ -204,6 +211,12 @@ spatial-v2 `SceneManifest` 与 `TransformFrame`，不修改 NSYN-v1、`entityKey
 
 `hello` 绑定确切 Task/Scene/Asset 内容哈希、选定环境、canonical descriptor digest、
 实际生产者的来源/版本/solver/physicsDt，以及最多 10 Hz 的发布率。
+所有类型的数据放在 `payload`：hello 使用 `task`、`taskContentHash`、`scene`、
+`sceneContentHash`、`assets`、`descriptorDigest`、`mappingDigest`、`environments`、`source`、
+`maxRateHz`，可附 `capture.source`；manifest/frame 分别承载原空间消息。
+status 使用 `state: waiting | live | stale` 与可选 message；error 使用 code/message；
+ended 使用真实 Job status/reason。空间 `sceneRevision` 为 `training-scene-{descriptorDigest}`，
+`revisionNumericId=1`，不依赖捕获时的临时流身份。
 每个环境先收到验证后的 Manifest 与一份**真实完整快照**，再接收后续帧。
 v1 每次发布完整刚体位姿表，不保留增量历史；Site 按 canonical 父体与固定 localPose 推导。
 
@@ -242,6 +255,14 @@ Manifest.source 使用实际 trainer 的 SourceInfo（真实 Newton 版本、sol
 Articulation 而遗漏 tube/lid/rotor。编译、固定关节合并或 clone 后，消费 Task 的 hash-bound
 canonical/world map；从真实保留父体与固定变换恢复 canonical frame。普通模型也必须用实际
 label/world membership 证明映射，不能猜索引或任意剥除 env 前缀。
+
+Task 通过实际 unwrapped env 的 `lw_training_view()` 提供 `lw.training-view-map/1` 数据：
+`taskContentHash`、`sceneContentHash`、`assets[{id,contentHash}]`、实际 `solver`，以及按真实
+env 0–3 选择的 `environments[{envIndex,world,cloneTransform,bodies}]`。
+每个 body 必须给出 canonical `entityKey`、实际 `bodyIndex/bodyLabel` 和保留父体到该 canonical
+frame 的 `localTransform`；两个 transform 均为 Newton 的 `[x,y,z,qx,qy,qz,qw]`。
+桥接核对固定输入 hash、完整 body closure 与实际 model label/world membership，固定变换和
+clone 变换必须来自 Task 建模时保留的数据。该 SPI 不替代旧空间协议，也不赋予 Task 节点凭据。
 
 传输前移除该环境**实际完整 clone rigid transform**，恢复固定场景的 canonical 世界坐标。
 平铺只改变相机/视口，不改实体 key、几何、坐标约定或物理位置。映射或 descriptor 缺失/歧义时

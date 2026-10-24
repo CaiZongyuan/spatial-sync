@@ -534,6 +534,9 @@ class GatewayClient:
         return await self.request("GET", "/api/v1/jobs/" + quote(id, safe="") + "/logs",
                                   params={"after": after, "timeoutSeconds": 10 if follow else 0}, timeout=15)
 
+    async def tensorboard(self, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/tensorboard", actor=actor, timeout=40)
+
     async def node_list(self):
         return (await self.request("GET", "/api/v1/nodes"))["nodes"]
 
