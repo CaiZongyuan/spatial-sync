@@ -196,7 +196,7 @@ function SiteMarker({
   );
 }
 
-function SceneContents({
+export function SceneContents({
   manifest,
   client,
   selected,
@@ -208,7 +208,7 @@ function SceneContents({
   rendered,
   inspectVisuals,
   recorder,
-  renderContinuously = true,
+  renderContinuously = true, diagnostics = true,
   cameraPreset = 'perspective', annotations, highlightedKeys, onLabelLayout, capture, compact, axesElement,
   preview, previewFocus = false, inspectPreview, reducedMotion, framingPending = false, fitRequest, onFramed,
 }: ViewportProps & { axesElement: React.RefObject<SVGSVGElement | null>; reducedMotion: boolean;
@@ -451,12 +451,12 @@ function SceneContents({
   });
   return (
     <>
-      <SceneDiagnostics
+      {diagnostics && <SceneDiagnostics
         counts={registrationCounts}
         mode={useInstances ? 'instanced' : 'individual'}
         extraBounds={extraBounds}
         inspectVisuals={inspectGeometry}
-      />
+      />}
       <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} ready={framingReady}
         fitRequest={fitRequest} onFit={() => { fitted.current = true; onFramed(); }}
         maxRadius={SCENE_FRAMING_RADIUS} maxDistance={SCENE_CAMERA_DISTANCE} />
@@ -547,6 +547,7 @@ interface ViewportProps {
   inspectVisuals: React.RefObject<InspectVisuals | undefined>;
   recorder: FrameRecorder;
   renderContinuously?: boolean;
+  diagnostics?: boolean;
   cameraPreset?: CameraPreset;
   annotations?: DeviceAnnotation[];
   highlightedKeys?: Set<string>;

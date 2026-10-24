@@ -1,0 +1,22 @@
+.training-view { min-width: 0; }
+.training-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.training-view-heading h2 { margin: 0; font-size: 15px; }
+.training-view-heading h2 small { margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.training-view-heading > span, .training-view-message { color: var(--muted); font-size: 12px; }
+.training-view-content { position: relative; margin-top: 12px; min-width: 0; }
+.training-view-canvas { z-index: 1; }
+.training-view-environments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.training-view-environments.is-single { grid-template-columns: minmax(0, 1fr); }
+.training-environment { min-width: 0; border: 1px solid var(--line); border-radius: var(--r2); overflow: hidden; background: var(--surface); }
+.training-environment > header, .training-environment > footer { position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 9px 10px; font-size: 10px; background: var(--surface); }
+.training-environment > header strong { font-size: 12px; font-weight: 500; white-space: nowrap; }
+.training-environment > header span { color: var(--muted); }
+.training-environment > header button { margin-left: auto; padding: 4px 6px; font-size: 10px; white-space: nowrap; }
+.training-environment-stage { position: relative; height: clamp(190px, 22vw, 300px); }
+.training-environment-view { position: relative; z-index: 2; width: 100%; height: 100%; touch-action: none; }
+.training-environment-placeholder { display: grid; align-content: center; min-height: 190px; padding: 15px; color: var(--muted); font-size: 12px; }
+.training-environment-stage > .training-environment-placeholder { position: absolute; inset: 0; z-index: 2; margin: 0; pointer-events: none; text-align: center; }
+.training-environment > footer { justify-content: space-between; flex-wrap: wrap; border-top: 1px solid var(--line); color: var(--muted); }
+.training-environment > footer label { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.training-environment > footer select { min-width: 0; max-width: 160px; padding: 4px; font-size: 10px; }
+.training-environment-warning { position: relative; z-index: 2; margin: 0; padding: 8px 10px; background: var(--surface); color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
