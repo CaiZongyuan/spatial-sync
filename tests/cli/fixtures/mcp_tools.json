@@ -4,7 +4,14 @@
       "type": "object",
       "properties": {
         "query": {
-          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": null,
           "title": "Query"
         }
@@ -14,12 +21,17 @@
     "output": {
       "properties": {
         "result": {
-          "items": {"additionalProperties": true, "type": "object"},
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
           "title": "Result",
           "type": "array"
         }
       },
-      "required": ["result"],
+      "required": [
+        "result"
+      ],
       "title": "model_lsOutput",
       "type": "object"
     }
@@ -644,6 +656,89 @@
       "additionalProperties": true,
       "title": "acquisition_retryDictOutput",
       "type": "object"
+    }
+  },
+  "authoring_submit": {
+    "input": {
+      "properties": {
+        "document": {
+          "additionalProperties": true,
+          "title": "Document",
+          "type": "object"
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "type": "object",
+      "title": "authoring_submitArguments"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "title": "authoring_submitDictOutput"
+    }
+  },
+  "authoring_list": {
+    "input": {
+      "properties": {
+        "scene": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft"
+        },
+        "limit": {
+          "default": 20,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "title": "authoring_listArguments"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "title": "authoring_listDictOutput"
+    }
+  },
+  "authoring_show": {
+    "input": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "title": "authoring_showArguments"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "title": "authoring_showDictOutput"
     }
   }
 }

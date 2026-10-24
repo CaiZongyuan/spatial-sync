@@ -255,6 +255,31 @@ class GatewayClient:
     async def acquisition_retry(self, id, *, actor="cli:lw"):
         return await self.request("POST", self._acquisition_path(id) + "/retry", actor=actor)
 
+    @staticmethod
+    def _authoring_path(submission_id=None):
+        path = "/api/v1/library/authoring-reports"
+        return path if submission_id is None else path + "/" + quote(submission_id, safe="")
+
+    async def authoring_submit(self, document, *, actor="cli:lw"):
+        """Submit one external report; a duplicate submissionId returns its first receipt."""
+        return await self.request(
+            "POST", self._authoring_path(), json=document, actor=actor
+        )
+
+    async def authoring_list(self, scene=None, asset=None, draft=None, limit=20):
+        params = {
+            name: value
+            for name, value in {
+                "scene": scene, "asset": asset, "draft": draft,
+                "limit": limit if limit != 20 else None,
+            }.items()
+            if value is not None
+        }
+        return await self.request("GET", self._authoring_path(), params=params)
+
+    async def authoring_show(self, id):
+        return await self.request("GET", self._authoring_path(id))
+
     async def library_describe(self, id, view="summary", section=None, offset=0, documentDigest=None):
         params = {"view": view, "offset": offset}
         if section is not None:

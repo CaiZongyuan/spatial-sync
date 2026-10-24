@@ -7,19 +7,54 @@ from typing import Literal
 import anyio
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import ValidationError
 
 from apps.api.app.info_routes import actor_from_headers
 from apps.api.app.library_validation import program_schemas
 from packages.catalog import AssetCatalog
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
+from packages.library.authoring import LIST_DEFAULT, invalid_authoring
 from packages.library.description_views import description_view
 from packages.library.imports import LibraryImports
 from packages.library.validation import StructuralValidator
 
 
-def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for, catalog=None):
+def install_library_routes(
+    app, assets: AssetLibrary, scenes, manager, role_for, catalog=None, authoring=None
+):
     validator = StructuralValidator(assets.jobs_root.parent, program_schemas)
     catalog = catalog if catalog is not None else AssetCatalog(None)
+
+    @app.post("/api/v1/library/authoring-reports")
+    async def submit_authoring_report(request: Request):
+        length = request.headers.get("content-length")
+        if length is not None and (not length.isdecimal() or int(length) > 1024 * 1024):
+            raise invalid_authoring("Authoring report body exceeds 1 MiB")
+        try:
+            document = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            raise invalid_authoring("Provide one JSON authoring report object") from None
+        if not isinstance(document, dict):
+            raise invalid_authoring("Provide one JSON authoring report object")
+        try:
+            report, created = await anyio.to_thread.run_sync(authoring.submit, document)
+        except ValidationError:
+            raise invalid_authoring("Authoring report does not match its required fields") from None
+        return JSONResponse(report, status_code=201 if created else 200)
+
+    @app.get("/api/v1/library/authoring-reports")
+    async def list_authoring_reports(
+        scene: str | None = None, asset: str | None = None,
+        draft: str | None = None, limit: str = str(LIST_DEFAULT),
+    ):
+        values = await anyio.to_thread.run_sync(
+            functools.partial(authoring.list, scene=scene, asset=asset, draft=draft, limit=limit)
+        )
+        return {"reports": values}
+
+    @app.get("/api/v1/library/authoring-reports/{submission_id}")
+    async def show_authoring_report(submission_id: str):
+        return await anyio.to_thread.run_sync(authoring.show, submission_id)
 
     async def request_deletion(kind, identifier, request):
         if role_for(request.headers) != "operator":

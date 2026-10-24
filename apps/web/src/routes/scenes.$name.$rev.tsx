@@ -7,6 +7,7 @@ import { ValidationReport, ValidationStatus } from '../components/ValidationRepo
 import { deviceKey } from '../lib/info/binding';
 import { LibraryDeletionRequest } from '../components/LibraryDeletion';
 import { SessionLaunchButton } from '../components/SessionLaunchButton';
+import { AssetDependencies, CopyFailureSummary, SceneAuthoringReports, SceneVersions } from '../components/SceneAuthoringResults';
 
 export const Route = createFileRoute('/scenes/$name/$rev')({
   validateSearch: (value: Record<string, unknown>): { source?: SceneSource } => ({ source: value.source === 'synthetic' || value.source === 'newton' ? value.source : undefined }),
@@ -52,6 +53,7 @@ function Detail({ scene }: { scene: SceneDetail }) {
         {scene.preview.status === 'available' && <p className="scene-capture-note">采集时间 {new Date(scene.preview.capturedAt!).toLocaleString()} · 仿真时间 {(scene.preview.simTime ?? 0).toFixed(3)} s。读数来自此快照，动作需启动会话。</p>}
         {error && <p role="alert" className="scene-failure">{error}</p>}
       </section>
+      <SceneAuthoringReports sceneId={scene.id} />
       <section className="reference-panel"><header><h2>实体</h2><span className="scene-note">{scene.entityCount ?? '—'} 实体 · {scene.deviceCount ?? '—'} 绑定</span></header>
         {physical && catalog ? <><div className="scene-table-wrap scene-entity-table"><table><thead><tr><th>实体</th><th>类型 / 绑定</th><th>空间节点</th></tr></thead><tbody>{physical.map(node => {
           const owner = deviceKey(manifest!, catalog, node.entityKey);
@@ -69,14 +71,17 @@ function Detail({ scene }: { scene: SceneDetail }) {
         <SessionLaunchButton sceneVersion={scene.id} source={source} disabled={!scene.launchable} />
         <p className="scene-note">启动固定版本 <code>{scene.id}</code></p>{!scene.launchable && <p className="scene-failure">{scene.launchReason}</p>}
       </div></section>
-      <section className="reference-panel"><header><h2>验证报告</h2><ValidationStatus status={scene.validationStatus} /></header>
+      <SceneVersions scene={scene} />
+      <AssetDependencies scene={scene} />
+      <section className="reference-panel" aria-label="验证报告"><header><h2>验证报告</h2><ValidationStatus status={scene.validationStatus} /></header>
+        <CopyFailureSummary scene={scene} />
         <ValidationReport report={scene.validation} />
       </section>
       <section className="reference-panel"><header><h2>属性</h2></header><div className="scene-panel-body"><dl className="reference-kv">
         <div><dt>场景</dt><dd><code>{scene.id}</code></dd></div><div><dt>物理源</dt><dd>{sourceLabel(source)}</dd></div><div><dt>构建方式</dt><dd title={scene.metadata.stage}>{scene.metadata.stage.startsWith('python:') ? 'Python 构建器' : scene.metadata.stage}</dd></div><div><dt>来源</dt><dd>{rootLabel(scene.root)}</dd></div><div><dt>求解器</dt><dd>{scene.metadata.simulation?.solver ?? '未声明'}</dd></div><div><dt>预热</dt><dd>{scene.metadata.simulation?.warmupSteps == null ? '未声明' : `${scene.metadata.simulation.warmupSteps} 步`}</dd></div><div><dt>尺寸</dt><dd>{scene.preview.bounds ? scene.preview.bounds.max.map((max, index) => `${(max - scene.preview.bounds!.min[index]).toFixed(2)}`).join(' × ') + ' m' : '未测量'}</dd></div>
         <div><dt>内容摘要</dt><dd><code className="scene-content-hash" title={scene.contentHash}>{scene.contentHash.slice(0, 12)}…</code></dd></div></dl></div>
       </section>
-      <section className="reference-panel"><header><h2>相关录制</h2><span className="scene-note">{scene.recordings.length}</span></header><div className="scene-panel-body scene-related-recordings">{scene.recordings.length ? scene.recordings.map(recording => <Link key={recording.sessionId} to="/replay/$recordingId" params={{ recordingId: recording.sessionId }} search={{ src: undefined }}>
+      <section className="reference-panel" aria-label="相关录制"><header><h2>相关录制</h2><span className="scene-note">{scene.recordings.length}</span></header><div className="scene-panel-body scene-related-recordings">{scene.recordings.length ? scene.recordings.map(recording => <Link key={recording.sessionId} to="/replay/$recordingId" params={{ recordingId: recording.sessionId }} search={{ src: undefined }}>
         <code>{recording.sessionId}</code><span>{new Date(recording.createdAt).toLocaleString()} · {recording.status === 'recording' ? '录制中' : `${((recording.durationMs ?? 0) / 1000).toFixed(1)} s`}</span><small className={recording.sceneContentHash && recording.sceneContentHash !== scene.contentHash ? 'scene-failure' : 'scene-note'}>{recording.sceneContentHash === scene.contentHash ? '内容摘要一致' : recording.sceneContentHash ? '同版本名，内容摘要不同' : '旧版录制 · 内容摘要未知'}</small></Link>) : <p className="scene-note">此版本还没有录制。会话会自动记录。</p>}</div></section>
       <LibraryDeletionRequest resource="scene" id={scene.id} root={scene.root} />
     </aside></div>

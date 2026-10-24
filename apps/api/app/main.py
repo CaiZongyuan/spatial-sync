@@ -64,6 +64,7 @@ from packages.assets.registry import AssetRegistry
 from packages.catalog import AssetCatalog
 from packages.info.invocations import HistoryUnavailable
 from packages.info.plans import PlanError
+from packages.library.authoring import AuthoringReports
 from packages.library.common import REPO_ROOT
 from packages.library.deletions import LibraryDeletions
 from packages.library.description_views import description_view
@@ -217,6 +218,9 @@ def create_app(
             )
         ),
     )
+    authoring = AuthoringReports(
+        settings.state_root, library_assets, lambda: manager.library
+    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -305,6 +309,7 @@ def create_app(
     app.state.library_assets = library_assets
     app.state.catalog = catalog
     app.state.acquisitions = acquisitions
+    app.state.authoring_reports = authoring
     app.state.training_views = views
     app.state.notebooks = notebooks
     app.state.demonstrations = demonstrations
@@ -337,7 +342,7 @@ def create_app(
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
-                           lambda headers: _role(headers, settings), catalog)
+                           lambda headers: _role(headers, settings), catalog, authoring)
     install_acquisition_routes(app, acquisitions)
     request_times = defaultdict(deque)
 
@@ -470,6 +475,17 @@ def create_app(
         )
         related = await asyncio.to_thread(recordings.list)
         detail["recordings"] = [item for item in related if item.get("sceneVersion") == detail["id"]]
+        versions = []
+        for candidate in manager.library.versions.values():
+            if candidate.name != name:
+                continue
+            value = candidate.with_templates(manager.library.roots).summary()
+            versions.append({
+                key: value[key]
+                for key in ("id", "rev", "contentHash", "launchable", "launchReason",
+                            "validationStatus")
+            })
+        detail["versions"] = sorted(versions, key=lambda item: item["rev"], reverse=True)
         return description_view(detail, "scene", selector, view=view, section=section, offset=offset,
                                 document_digest=documentDigest)
 
