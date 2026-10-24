@@ -174,9 +174,16 @@ class LoopBudgets:
         self.manager.jobs._require_available()
         records = self._records(goal)
         approved = [(at, record) for record in records for at in self._ever_approved(record)]
-        authority = min(approved, key=lambda item: (item[0], item[1].plan.id)) if approved else None
+        by_approval = {record.approvalId: record for _, record in approved}
+        try:
+            ordered = self.manager.approvals.first_decision(by_approval, "approve")
+        except (OSError, ValueError, KeyError) as error:
+            raise PlanError("loop_budget_unavailable", "Approval audit is unavailable", status=503) from error
+        authority = (ordered[1].atMs / 1000, by_approval[ordered[0]]) if ordered is not None else None
         legacy_evidence = None
-        if authority is None:
+        if authority is None and approved:
+            limit, limit_source = None, "unknown"
+        elif authority is None:
             limit, limit_source = deepcopy(declared), "proposed-task-snapshot" if declared else "unknown"
         elif authority[1].goalContext is not None:
             limit, limit_source = (
@@ -186,7 +193,7 @@ class LoopBudgets:
         else:
             limit, legacy_evidence = self._legacy_limit(authority[1])
             limit_source = "legacy-immutable-task" if limit is not None else "unknown"
-        first_at = min((at for at, _ in approved), default=None)
+        first_at = authority[0] if authority is not None else None
         deadline = first_at + limit["days"] * 86400 if first_at is not None and limit else None
         expired = deadline is not None and self.clock() >= deadline
         pools = self._pools(records, proposed, reserve_proposed=reserve_proposed)
@@ -222,7 +229,11 @@ class LoopBudgets:
             "goalId": goal,
             "limit": limit,
             "limitSource": limit_source,
-            "limitReason": "first_approval_budget_evidence_unavailable"
+            "authority": basis["authority"],
+            "limitEvidence": legacy_evidence,
+            "limitReason": "approval_order_unavailable"
+            if approved and authority is None
+            else "first_approval_budget_evidence_unavailable"
             if authority and limit is None
             else None,
             "actual": actual,

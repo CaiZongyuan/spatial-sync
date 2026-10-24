@@ -186,3 +186,28 @@ def test_repeated_failed_evaluation_projection_never_double_charges_or_drops_att
     one, two = budgets.summary("goal/probe"), budgets.summary("goal/probe")
     assert one["actual"]["episodes"] == two["actual"]["episodes"] == 3
     assert one["effective"]["episodes"] == two["effective"]["episodes"] == 10
+
+
+@pytest.mark.parametrize("later_time", [100.0, 99.0])
+def test_first_limit_and_anchor_follow_durable_approval_order_not_random_id_or_wallclock(domain, later_time):
+    manager, budgets, clock, task, submit, approve = domain
+    task["task"]["loopBudget"]["gpuHours"] = 4.0
+    first = submit("plan-z-first", gpu=1.0)
+    approve(first)
+    anchor = manager.approvals.records[first.approvalId].decisions[0].atMs / 1000
+    clock[0] = later_time
+    task["task"]["loopBudget"] = {"gpuHours": 999.0, "episodes": 9999, "days": 999.0}
+    second = submit("plan-a-later", gpu=1.0, task="task/probe@2")
+    assert second.goalContext["review"]["limit"]["gpuHours"] == 4
+    approve(second)
+    summary = budgets.summary("goal/probe")
+    assert summary["limit"]["gpuHours"] == 4
+    assert summary["limit"]["days"] == 1
+    assert summary["firstApprovedAt"] == anchor
+    assert summary["deadline"] == anchor + 86400
+    manager.approvals.records.clear()
+    manager.approvals._started = False
+    manager.approvals.startup()
+    restored = budgets.summary("goal/probe")
+    assert restored["authority"] == {"planId": "plan-z-first", "revision": 1}
+    assert restored["firstApprovedAt"] == anchor and restored["limit"]["gpuHours"] == 4
