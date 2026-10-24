@@ -29,7 +29,15 @@ test('real model resources mask a local credential and persist audited human pri
   });
   await page.goto('/resources/gpu');
   const tabs = page.getByRole('navigation', { name: '资源标签' });
-  await tabs.getByRole('link', { name: '算力', exact: true }).focus();
+  const compute = tabs.locator('a[href="/resources/gpu"]');
+  const nodeCount = (await (await request.get(`${api}/api/v1/nodes`)).json()).nodes.length;
+  await expect(compute.locator('small')).toHaveText(`${nodeCount} 节点`);
+  await testInfo.attach('resource-tab-count-readiness.json', { contentType: 'application/json', body: JSON.stringify({
+    nodeCount, href: await compute.getAttribute('href'), snapshot: await tabs.ariaSnapshot(),
+  }) });
+  await expect(compute).toHaveAccessibleName(new RegExp(`^算力\\s*${nodeCount} 节点$`));
+  await compute.focus();
+  await expect(compute).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(tabs.getByRole('link', { name: /^模型/ })).toBeFocused();
   await page.keyboard.press('Enter');

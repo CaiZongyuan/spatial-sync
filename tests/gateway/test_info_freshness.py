@@ -6,6 +6,7 @@ import time
 from itertools import count
 from pathlib import Path
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 from ws_messages import receive_message
@@ -34,7 +35,10 @@ class SparseSensor:
         inv.succeed()
 
 
-def test_same_value_refresh_expiry_once_pause_and_stale_action_rejection(tmp_path, monkeypatch):
+@pytest.mark.parametrize("startup_stale", [False, True])
+def test_same_value_refresh_expiry_once_pause_and_stale_action_rejection(
+    tmp_path, monkeypatch, startup_stale
+):
     root = Path(__file__).resolve().parents[2]
     devices = tmp_path / "devices"
     shutil.copytree(root / "devices", devices)
@@ -85,6 +89,7 @@ def test_same_value_refresh_expiry_once_pause_and_stale_action_rejection(tmp_pat
                 json={"requestId": f"control-{next(requests)}", "command": name, "args": args},
             )
             assert result.json()["ack"]["status"] == "applied", result.text
+            return result.json()["state"]
 
         def state(stale):
             deadline = time.monotonic() + 1
@@ -95,8 +100,11 @@ def test_same_value_refresh_expiry_once_pause_and_stale_action_rejection(tmp_pat
                 assert time.monotonic() < deadline, value
                 time.sleep(0.005)
 
+        if startup_stale:
+            assert state(True)["meta"]["reading"]["simTime"] == 0
         command("pause")
-        command("reset")
+        reset_state = command("reset")
+        assert reset_state["epoch"] == created.json()["epoch"] + 1
         assert state(False)["values"]["reading"] == 37
         command("step", count=40)
         refreshed = client.post(
@@ -133,14 +141,20 @@ def test_same_value_refresh_expiry_once_pause_and_stale_action_rejection(tmp_pat
                 raise AssertionError("WebSocket did not expose the authoritative stale snapshot")
         command("step", count=80)
         events = client.get(route + "/events", params={"after": 0, "timeoutSeconds": 0}).json()["events"]
-        transitions = [
-            change
-            for event in events
-            if event["message"]["type"] == "entity.observations"
-            for change in event["message"]["changes"]
-            if change["key"] == KEY and change.get("meta", {}).get("reading", {}).get("stale")
-        ]
-        assert len(transitions) == 1
+        def stale_transitions(epoch):
+            return [
+                change
+                for event in events
+                if event["message"]["type"] == "entity.observations"
+                and event["message"]["sceneRevision"] == reset_state["sceneRevision"]
+                and event["message"]["epoch"] == epoch
+                for change in event["message"]["changes"]
+                if change["key"] == KEY and change.get("meta", {}).get("reading", {}).get("stale")
+            ]
+
+        if startup_stale:
+            assert len(stale_transitions(created.json()["epoch"])) == 1
+        assert len(stale_transitions(reset_state["epoch"])) == 1
         time.sleep(0.21)
         assert state(True)["rev"] == expired["rev"]  # Paused wall time never advances freshness.
         client.post(route + "/actions", json={"requestId": "recover", "entityKey": KEY, "action": "refresh"})
