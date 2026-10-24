@@ -155,6 +155,14 @@ class ActionPipeline:
         invocation = self._new(request, actor)
         try:
             error = self._check(invocation)
+            if getattr(self.session, "evaluation_deny_high_risk", False):
+                try:
+                    definition = self.catalog.action(invocation.entityKey, invocation.action)
+                    high = definition.get("risk", "normal") == "high"
+                except KeyError:
+                    high = False
+                if high:
+                    error = ("approval_denied", "Evaluation policy denies human-gated actions", {})
             plan_grant, force_approval = False, False
             if supports_plans and (not error or error[0] in ("precondition_failed", "busy")):
                 try:

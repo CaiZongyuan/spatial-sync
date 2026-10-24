@@ -182,8 +182,12 @@ A versioned, trained controller produced by a training Job for one Task, which a
 _Avoid_: Model, checkpoint (a training-time snapshot), weights
 
 **Evaluation** (评估):
-A recorded series of episodes that runs a Policy or Device Program on the platform against its Task's success condition; the platform's result is the one that counts.
+A recorded series of platform-owned cases: an embodied Evaluation runs a Policy or Device Program against its Task's success condition; an Agent Evaluation hands public cases to an external runtime and grades the platform's own observations. The platform's result is the one that counts.
 _Avoid_: Benchmark, play, test
+
+**Agent Case Run** (Agent 逐题运行):
+One fixed public Agent Suite case and repetition, with its own laboratory Session, fresh declared native runtime conversation, trusted Trace and final observations. It can be a valid scored negative or an infrastructure-invalid attempt; only a complete valid train scope publishes a reported Evaluation result.
+_Avoid_: Job, Task, physical episode, Imported Runtime Session
 
 **Session Request** (会话启动请求):
 An accepted intent to start an interactive Session when the platform's single session slot becomes available. It can wait or be cancelled before a Session is handed over.

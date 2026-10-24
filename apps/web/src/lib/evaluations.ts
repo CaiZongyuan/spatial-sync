@@ -37,20 +37,23 @@ export interface EvaluationScore {
   key: EvaluationConditions;
   conditionsGroup?: string;
   split: 'train';
-  successes: number;
+  successes?: number;
   episodes: number;
   score: number;
   ci95: [number, number] | null;
-  decision: 'baseline' | 'accepted' | 'rejected';
-  reference: string | null;
-  phases: Record<string, { passed: number; episodes: number; rate: number }>;
+  decision: 'baseline' | 'accepted' | 'rejected' | 'reported';
+  reference?: string | null;
+  phases?: Record<string, { passed: number; episodes: number; rate: number }>;
   recordings: string[];
-  cost?: { gpuHours?: number | null };
+  cost?: { gpuHours?: number | null; source?: string; observationBasis?: string; llmUsd?: number | null;
+    tokens?: number | null; requests?: number | null;
+    costSource?: 'runtime-reported' | 'runtime-estimate' | 'runtime-mixed' | 'unknown'; runtimeRecordIds?: string[] };
   durationSeconds: number;
   at: string;
 }
 
 export interface EvaluationRecord {
+  layer?: 'agent' | 'embodied';
   evaluationId: string;
   suite: string;
   subject: string;
@@ -110,6 +113,8 @@ export function currentReference(rows: EvaluationScore[]) {
 
 export const successRate = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? '未知' : `${(value * 100).toFixed(1)}%`;
+export const agentScore = (value: number | null | undefined) =>
+  value == null || !Number.isFinite(value) ? '未知' : `${value.toFixed(1)} / 100`;
 export const shortVersion = (value: string | number) => String(value).length > 14 ? `${String(value).slice(0, 10)}…` : String(value);
 export const evaluationDate = (value: string) => {
   const date = new Date(value);

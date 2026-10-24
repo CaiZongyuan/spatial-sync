@@ -42,7 +42,7 @@ class GatewayClient:
     def __init__(self, url=None, token=None, session=None, *, http=None):
         self.url = (url or os.getenv("LW_URL", "http://127.0.0.1:8000")).rstrip("/")
         self.token = token if token is not None else os.getenv("LW_TOKEN")
-        self._session_id = session or os.getenv("LW_SESSION")
+        self._session_id = session or os.getenv("LW_SESSION") or None
         self._session_explicit = self._session_id is not None
         self._invocation_targets = {}
         try:
@@ -139,6 +139,8 @@ class GatewayClient:
         return await self.request("GET", await self.route() + "/catalog")
 
     async def catalog_if_active(self):
+        if self.token and self.token.startswith("lw-case-"):
+            return await self.catalog()
         health = await self.request("GET", "/api/v1/health")
         if any(session["state"] in ("RUNNING", "PAUSED") and not session.get("evaluationId")
                for session in health["sessions"]):
@@ -281,6 +283,38 @@ class GatewayClient:
 
     async def agent_show(self, id):
         return await self.request("GET", self._agent_path(id))
+
+    async def agent_run_create(self, id, suite, harnessVersion, runtime, model, thinking,
+                               runtimeVersion=None, purpose="train", caseId=None, wallSeconds=900,
+                               requestId=None, *, actor="cli:lw"):
+        payload = {"requestId": requestId or uuid.uuid4().hex, "suite": suite,
+                   "harnessVersion": harnessVersion, "purpose": purpose, "wallSeconds": wallSeconds,
+                   "runtime": {"name": runtime, "version": runtimeVersion, "model": model,
+                               "thinking": thinking}}
+        if caseId is not None:
+            payload["caseId"] = caseId
+        return await self.request("POST", self._agent_path(id) + "/runs", json=payload, actor=actor)
+
+    async def agent_run_list(self, agent=None):
+        params = {"agent": agent} if agent is not None else {}
+        return (await self.request("GET", "/api/v1/agent-runs", params=params))["runs"]
+
+    async def agent_run_show(self, id):
+        return await self.request("GET", "/api/v1/agent-runs/" + quote(id, safe=""))
+
+    async def agent_run_next(self, id, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/agent-runs/" + quote(id, safe="") + "/next", actor=actor)
+
+    async def agent_run_complete(self, id, caseRunId, nativeSessionId, runtimeRecordId=None,
+                                 *, actor="cli:lw"):
+        payload = {"caseRunId": caseRunId, "nativeSessionId": nativeSessionId}
+        if runtimeRecordId is not None:
+            payload["runtimeRecordId"] = runtimeRecordId
+        return await self.request("POST", "/api/v1/agent-runs/" + quote(id, safe="") + "/complete",
+                                  json=payload, actor=actor)
+
+    async def agent_run_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/agent-runs/" + quote(id, safe="") + "/cancel", actor=actor)
 
     async def agent_versions(self, id):
         return (await self.request("GET", self._agent_path(id) + "/versions"))["versions"]
@@ -512,6 +546,8 @@ class GatewayClient:
         return result
 
     async def invocation_route(self, invocation_id):
+        if self.token and self.token.startswith("lw-case-"):
+            return await self.route()
         if invocation_id in self._invocation_targets:
             return self._invocation_targets[invocation_id]
         path = "/api/v1/live/invocations/" + quote(invocation_id, safe="")
@@ -658,8 +694,11 @@ class GatewayClient:
                                   params={"revision": revision} if revision is not None else {})
 
     async def plan_list(self, status=None):
+        params = {"status": status} if status is not None else {}
+        if self.token and self.token.startswith("lw-case-") and self._session_explicit:
+            params["sessionId"] = self._session_id
         return (await self.request("GET", "/api/v1/plans",
-                                   params={"status": status} if status is not None else {}))["plans"]
+                                   params=params))["plans"]
 
     async def session_control(self, action, *, count=1, actor="cli:lw"):
         return await self.request(

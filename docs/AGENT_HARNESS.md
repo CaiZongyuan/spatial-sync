@@ -139,22 +139,81 @@ Install the [product skills](../skills/README.md) to use `lab-runtime-records` i
 an existing runtime. See the [first-delivery specification](spec/LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)
 for the record and accounting boundary.
 
-## Full Agent evaluations
+## External Agent evaluations
 
-The Web evaluation center lists the Agent suite, its ten public train statements,
-fixed environment and three-runs-per-case requirement. Its held-out row stays
-locked. Until the Agent runner produces real results, the page shows no formal
-baseline, score curve, Trace or cost.
+An external runtime executes each Target. The controller interface freezes an
+Agent/Harness version, Suite/Scene identities, exact locked skill bytes, declared
+runtime/model/thinking context and a finite platform deadline. It shares the
+existing evaluator queue and single active laboratory Session. The first source
+is Synthetic; admission needs no model process, credential or provider price.
+
+```powershell
+lw agent-run create lab-operator --suite suite/lab-ops-basic@1 --harness-version 1 --runtime claude-code --runtime-version 2.1.306 --model claude-opus-5-5 --thinking high --purpose verification --case pause-reset --wall-seconds 120 --request-id my-verification --json
+lw agent-run next <run-id> --json
+lw agent-run complete <run-id> --case-run <case-run-id> --native-session <native-session-id> --runtime-record <runtime-record-id> --json
+lw agent-run show <run-id> --json
+lw agent-run cancel <run-id> --json
+```
+
+Creation starts only platform CPU work. The example model/runtime strings are
+declarations, not a model invocation or proof of execution. Runtime model work
+remains separately authorized. The controller polls `next` for public work and
+supplies its exact public Harness/skill contents to a fresh Target conversation.
+It sets that Target's `LW_TOKEN` and `LW_SESSION` from the case connection. The
+runtime owns context, authentication, tools and native metering; the supported
+Target configuration exposes the scoped platform MCP. Additional Shell/raw HTTP
+capabilities remain the runtime's configuration responsibility. Private grading
+and held-out material never enter the work package.
+
+Only controller `next` returns case connection credentials. Public reads and
+artifacts omit them, and known case-token literals in imported messages are
+redacted. Use the existing remote/operator-token gateway mode for authentication
+separation from the global operator, keeping controller credentials outside
+Target. Missing or forged case credentials there grant no operator control.
+Anonymous local development retains its ordinary operator behavior. These
+interfaces do not attest or sandbox a runtime's other files or networks.
+
+Completion is a controller signal with a fresh native conversation identity and
+optional explicit imported A record. Native identity/context links are validated
+and labelled with their provenance. Duplicate completion returns its saved case
+outcome; independent repetitions cannot reuse a native conversation identity.
 
 The internal evaluator uses weighted final-state conditions and trusted process
 evidence: tool steps, monotonic elapsed time, rejected high-risk actions and
 whether a relevant operation Plan preceded the first action or command. Plan
 credit requires matching session, scene revision, epoch, Plan, step, device,
 action and parameters. Each task can choose its applicable dimensions; session
-control and inspection tasks do not require a device operation Plan. The Target
-cannot submit counters, elapsed time or grades through a public endpoint.
-Submitting an Agent suite to the embodied evaluation endpoint returns
-`agent_runner_unavailable` before creating or queuing a Session. Real Agent runs,
-their trusted execution evidence and scoreboard writes remain later work.
-Imported runtime messages and their typed usage receipts do not create scores,
-approvals, Notebook outcomes or completed evaluations.
+control and inspection tasks do not require a device operation Plan. Target
+cannot submit counters, elapsed time, authoritative state or grades. Evaluation
+policy denies high-risk actions and human-gated operation Plans, including Plan
+grant bypass attempts. Pause/reset remain scoped to the owned Session. Grading
+is sealed before cleanup and retains genuine running invocation observations
+when a later stop cancels the action.
+
+Required physical grading observations must be present, fresh, typed and in the
+same Session/scene/epoch scope. Unavailable evidence is an invalid attempt with
+retained Trace/native links; a fresh known-false result stays a valid negative.
+Derived absence of an action or alert is not a Source failure.
+
+`verification` runs one public case once and publishes no complete evaluation.
+`train` requires every public case at its fixed repeats (ten × three in the
+bundled Suite). Only a complete valid scope appends a `reported` 0–100 mean with
+`ci95: null`; it changes no Reference, acceptance, promotion or R3 Notebook
+decision. The Web Agent suite shows frozen conditions, case evidence, recordings
+and native cost snapshots. Held-out remains locked.
+
+Cancellation/expiry revokes grants and closes only the platform's owned Source;
+it never kills an external runtime. Unconfirmed cleanup blocks the shared slot.
+An operator retries `POST /api/v1/evaluations/{id}/cleanup`; public cleanup facts
+update after confirmation. Gateway restart invalidates unfinished in-process
+Synthetic work and old grants never revive effects.
+
+Native metering stays in A. A case snapshots an explicit record ID/content hash
+at completion. Missing counters remain unknown; later A updates cannot regrade
+or change that snapshot. Capture totals are not added to contained message
+totals or duplicated across repetitions. Imported messages alone still create
+no scores, approvals or Notebook outcomes.
+
+Install [lab-agent-evaluate](../skills/lab-agent-evaluate/SKILL.md) for the shared
+CLI/MCP workflow. See the [external evaluation specification](spec/LAB_EXTERNAL_AGENT_EVALUATION_SPEC_V1.md)
+for the fixed contract and delivery checks.

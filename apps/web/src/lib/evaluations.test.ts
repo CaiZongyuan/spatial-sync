@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { compareEvaluations, currentReference, readEvaluationCenter, scoreGroups, suitePath, type EvaluationScore } from './evaluations';
+import { agentScore, compareEvaluations, currentReference, readEvaluationCenter, scoreGroups, successRate, suitePath, type EvaluationScore } from './evaluations';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -22,6 +22,9 @@ it('keeps complete server condition groups and subjects separate even when publi
   ]);
   expect(currentReference(groups[0])).toBe(accepted);
   expect(currentReference([rejected])).toBeUndefined();
+  expect(currentReference([score('external-result', 'first', 'reported')])).toBeUndefined();
+  expect(agentScore(82.5)).toBe('82.5 / 100');
+  expect(successRate(.825)).toBe('82.5%');
 });
 
 it('uses canonical Suite REST paths, public reads and the caller cancellation signal', async () => {

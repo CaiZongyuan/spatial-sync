@@ -11,6 +11,8 @@ LW = Path(sys.executable).parent / ("lw.exe" if os.name == "nt" else "lw")
 TOOLS = {
     "robot_list", "robot_show", "robot_model_list", "robot_model_show", "controller_show",
     "policy_create", "policy_list", "policy_show",
+    "agent_run_create", "agent_run_list", "agent_run_show", "agent_run_next",
+    "agent_run_complete", "agent_run_cancel",
     "runtime_import", "runtime_list", "runtime_show",
     "demo_add", "demo_list",
     "notebook_show", "loop_show",

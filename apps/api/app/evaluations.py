@@ -121,6 +121,10 @@ class EvaluationService:
         )
 
     def require_interactive(self):
+        from packages.agent_evaluation.scope import current_scope
+        scope = current_scope()
+        if scope is not None and scope.run_id == self._active_evaluation:
+            return
         if self._active_evaluation or self._starting_request or self._blocked:
             raise HTTPException(409, {"code": "evaluation_busy", "message": "The session slot is reserved"})
 
@@ -287,9 +291,16 @@ class EvaluationService:
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
             if notebooks else None
         )
+        await self.admit(record, context)
+        return deepcopy(record)
+
+    async def admit(self, record, notebook_context=None):
+        """Persist one intent on the shared queue, including a disconnected submitter."""
+        identifier = record["evaluationId"]
         async with self._admission:
+            notebooks = getattr(self.manager, "notebooks", None)
             if notebooks is not None:
-                record.update(notebooks.admit_evaluation(context))
+                record.update(notebooks.admit_evaluation(notebook_context))
             self._admitting[identifier] = record
             try:
                 try:
@@ -304,7 +315,6 @@ class EvaluationService:
                 self.wake()
             finally:
                 self._admitting.pop(identifier, None)
-        return deepcopy(record)
 
     async def _run(self):
         while not self._closing:
@@ -340,7 +350,9 @@ class EvaluationService:
                     else:
                         self._active_evaluation = identifier
                         running = self._running = asyncio.create_task(
-                            self._evaluate(identifier),
+                            self.external.evaluate(identifier)
+                            if self.store.records[identifier].get("layer") == "agent"
+                            else self._evaluate(identifier),
                             name=identifier,
                         )
                     self.wake()
@@ -696,6 +708,8 @@ class EvaluationService:
             if session.evaluation_id == identifier:
                 await session.close()
         self._blocked.discard(identifier)
+        if self.store.records[identifier].get("layer") == "agent":
+            await self.external.refreshed_cleanup(identifier)
         self.wake()
         return self.status()
 

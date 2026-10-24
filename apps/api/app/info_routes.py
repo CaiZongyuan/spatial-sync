@@ -16,6 +16,10 @@ from packages.protocol.schema import ActionRequest, Actor, Catalog, JsonValue, M
 
 
 def actor_from_headers(headers):
+    from packages.agent_evaluation.scope import current_scope
+    scope = current_scope()
+    if scope is not None:
+        return Actor(kind="agent", name=scope.actor_name)
     kind, separator, name = headers.get("x-actor", "user:local").partition(":")
     if not separator or kind not in ("user", "cli", "agent") or not name.strip():
         raise HTTPException(422, {"code": "invalid_actor", "message": "Use X-Actor: user|cli|agent:name"})
@@ -168,7 +172,11 @@ def install_info_routes(app, manager, role_for, *, prefix="/api/v1/sessions/{ses
     async def states(keys: str | None = None, session=Depends(resolve_target)):
         selected = dict.fromkeys(keys.split(",")) if keys else session.catalog.entities.keys()
         entries = (encode(key) + ":" + state_json(session, key) for key in selected)
-        return Response(content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json")
+        return Response(
+            content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json",
+            headers={"X-Spatial-Scene-Revision": session.info.scene_revision,
+                     "X-Spatial-Epoch": str(session.info.epoch)},
+        )
 
     @app.post(prefix + "/actions")
     async def action(body: HttpAction, request: Request, session=Depends(resolve_target)):

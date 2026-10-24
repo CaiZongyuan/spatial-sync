@@ -554,6 +554,9 @@ class Session:
         )
 
     def broadcast_info(self, message):
+        audit = getattr(self, "evaluation_audit", None)
+        if audit is not None and isinstance(message, InvocationUpdate):
+            audit.invocation(message)
         if self.inbox is not None:
             self.inbox.session_message(self.session_id, message)
         payload = self.info.record(message)
@@ -1073,6 +1076,9 @@ class Session:
                 self.on_closed()
 
     def require_interactive(self):
+        from packages.agent_evaluation.scope import owns_session
+        if owns_session(self):
+            return
         if self.evaluation_id:
             raise HTTPException(409, {
                 "code": "evaluation_busy", "message": "This session is evaluator-owned",
