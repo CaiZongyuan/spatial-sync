@@ -540,6 +540,15 @@ class GatewayClient:
     async def node_list(self):
         return (await self.request("GET", "/api/v1/nodes"))["nodes"]
 
+    async def cost_query(self, since="7d", by=None, view="summary", agent=None, model=None,
+                         node=None, goal=None, plan=None, start=None, end=None):
+        projection = "breakdown" if by else view
+        params = {key: value for key, value in {"range": since, "by": by, "agent": agent, "model": model,
+                                                "node": node, "goal": goal, "plan": plan,
+                                                "start": start, "end": end}.items() if value is not None}
+        return await self.request("GET", f"/api/v1/cost/{projection}",
+                                  params={} if projection == "anomalies" else params)
+
     async def plan_show(self, id, revision=None):
         return await self.request("GET", "/api/v1/plans/" + quote(id, safe=""),
                                   params={"revision": revision} if revision is not None else {})

@@ -166,3 +166,4 @@ input, select, textarea { border-radius: var(--r2); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+.cost-nav-dot { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: var(--warn, #bb893d); flex-shrink: 0; }

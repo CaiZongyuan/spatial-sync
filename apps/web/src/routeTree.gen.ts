@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as AssetsRouteImport } from './routes/assets'
+import { Route as CostRouteImport } from './routes/cost'
 import { Route as EvalRouteImport } from './routes/eval'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as PlansRouteImport } from './routes/plans'
@@ -48,6 +49,11 @@ const ApprovalsRoute = ApprovalsRouteImport.update({
 const AssetsRoute = AssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CostRoute = CostRouteImport.update({
+  id: '/cost',
+  path: '/cost',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EvalRoute = EvalRouteImport.update({
@@ -165,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/approvals': typeof ApprovalsRoute
   '/assets': typeof AssetsRouteWithChildren
+  '/cost': typeof CostRoute
   '/eval': typeof EvalRouteWithChildren
   '/live': typeof LiveRoute
   '/plans': typeof PlansRouteWithChildren
@@ -191,6 +198,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/approvals': typeof ApprovalsRoute
+  '/cost': typeof CostRoute
   '/live': typeof LiveRoute
   '/recordings': typeof RecordingsRoute
   '/eval/$suiteId': typeof EvalSuiteIdRoute
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/approvals': typeof ApprovalsRoute
   '/assets': typeof AssetsRouteWithChildren
+  '/cost': typeof CostRoute
   '/eval': typeof EvalRouteWithChildren
   '/live': typeof LiveRoute
   '/plans': typeof PlansRouteWithChildren
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/'
     | '/approvals'
     | '/assets'
+    | '/cost'
     | '/eval'
     | '/live'
     | '/plans'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/approvals'
+    | '/cost'
     | '/live'
     | '/recordings'
     | '/eval/$suiteId'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/'
     | '/approvals'
     | '/assets'
+    | '/cost'
     | '/eval'
     | '/live'
     | '/plans'
@@ -319,6 +331,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApprovalsRoute: typeof ApprovalsRoute
   AssetsRoute: typeof AssetsRouteWithChildren
+  CostRoute: typeof CostRoute
   EvalRoute: typeof EvalRouteWithChildren
   LiveRoute: typeof LiveRoute
   PlansRoute: typeof PlansRouteWithChildren
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       path: '/assets'
       fullPath: '/assets'
       preLoaderRoute: typeof AssetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cost': {
+      id: '/cost'
+      path: '/cost'
+      fullPath: '/cost'
+      preLoaderRoute: typeof CostRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/eval': {
@@ -591,6 +611,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApprovalsRoute: ApprovalsRoute,
   AssetsRoute: AssetsRouteWithChildren,
+  CostRoute: CostRoute,
   EvalRoute: EvalRouteWithChildren,
   LiveRoute: LiveRoute,
   PlansRoute: PlansRouteWithChildren,

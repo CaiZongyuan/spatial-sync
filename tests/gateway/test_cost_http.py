@@ -9,12 +9,13 @@ from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.training.jobs import profile_key
 from tests.fixtures.training_task import task_archive, training_plan
+from tests.gateway.test_evaluation_center import documents as evaluation_documents
 
 TOKEN = "cost-contract-fake-node-token"
 HEADERS = {"X-Node-Token": TOKEN, "X-Node-Instance": "cost-worker"}
 
 
-def admitted(http, clock, *, device="cuda", budget=10):
+def admitted(http, clock, *, device="cuda", budget=10, connect=True):
     task = http.post(
         "/api/v1/tasks", content=task_archive(), headers={"Content-Type": "application/x-tar"}
     ).json()
@@ -46,11 +47,12 @@ def admitted(http, clock, *, device="cuda", budget=10):
             }
         ],
     }
-    assert http.post("/api/v1/nodes/local/heartbeat", headers=HEADERS, json=body).status_code == 200
+    if connect:
+        assert http.post("/api/v1/nodes/local/heartbeat", headers=HEADERS, json=body).status_code == 200
     result = http.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42})
     assert result.status_code == 202, result.text
     job = result.json()
-    assert job["leaseId"], job
+    assert bool(job["leaseId"]) == connect, job
     return plan, body, job
 
 
@@ -145,8 +147,10 @@ def test_bucket_allocation_conserves_accepted_gpu_seconds_across_an_hour():
     app.state.jobs.clock = lambda: clock[0]
     with TestClient(app) as http:
         _, body, job = admitted(http, clock)
-        clock[0] = 7200.0
-        assert report(http, body, job, 600).status_code == 200
+        for sample in range(1, 61):
+            # Stay within the real node-liveness boundary while crossing all twelve buckets.
+            clock[0] = 3600 + sample * 60
+            assert report(http, body, job, sample * 10).status_code == 200
         result = http.get("/api/v1/cost/series", params={"range": "1h"})
         assert result.status_code == 200, result.text
         buckets = result.json()["buckets"]
@@ -279,11 +283,10 @@ def test_a_job_queued_for_an_hour_does_not_allocate_gpu_seconds_before_its_lease
     clock = [1000.0]
     app.state.jobs.clock = lambda: clock[0]
     with TestClient(app) as http:
-        plan, body, first = admitted(http, clock)
-        queued = http.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 43}).json()
-        assert queued["leaseId"] is None and queued["reason"] == "gpu_busy"
+        _, body, queued = admitted(http, clock, connect=False)
+        assert queued["leaseId"] is None and queued["reason"] == "estimate_unavailable"
         clock[0] += 3600
-        assert report(http, body, first, 0, "failed").status_code == 200
+        assert http.post("/api/v1/nodes/local/heartbeat", headers=HEADERS, json=body).status_code == 200
         active = http.get(f"/api/v1/jobs/{queued['jobId']}").json()
         assert active["leaseId"]
         clock[0] += 10
@@ -292,3 +295,52 @@ def test_a_job_queued_for_an_hour_does_not_allocate_gpu_seconds_before_its_lease
         assert [bucket["gpuSeconds"] for bucket in series[:-1]] == [0] * (len(series) - 1)
         assert series[-1]["gpuSeconds"] == pytest.approx(10)
         assert sum(bucket["gpuSeconds"] for bucket in series) == pytest.approx(totals(http)["gpuSeconds"])
+
+
+def test_timeout_anomalies_respect_public_evaluation_visibility_and_operator_read_audit():
+    settings = Settings(remote=True, operator_token="cost-operator", viewer_token="cost-viewer")
+    app = create_app(settings)
+    with TestClient(app) as http:
+        _, record = evaluation_documents()
+        record.update(status="failed", result=None,
+                      error={"code": "episode_timeout", "message": "PRIVATE_GRADING_NOT_A_COST_DETAIL"})
+        app.state.manager.evaluations.store.save(record)
+        app.state.manager.evaluations.store.save(record | {"evaluationId": "eval-held-out", "split": "test"})
+        viewer = {"Authorization": "Bearer cost-viewer"}
+        result = http.get("/api/v1/cost/anomalies", headers=viewer)
+        assert result.status_code == 200 and "PRIVATE_GRADING" not in result.text
+        assert "eval-held-out" not in result.text
+        listed = result.json()
+        assert listed["unreadCount"] == 1 and listed["canAcknowledge"] is False
+        identity = listed["anomalies"][0]["id"]
+        assert http.post(f"/api/v1/cost/anomalies/{identity}/read", headers=viewer).status_code == 403
+        operator = {"Authorization": "Bearer cost-operator", "X-Actor": "user:cost-reader"}
+        first = http.post(f"/api/v1/cost/anomalies/{identity}/read", headers=operator)
+        assert first.status_code == 200 and first.json()["actor"] == {"kind": "user", "name": "cost-reader"}
+        assert http.post(f"/api/v1/cost/anomalies/{identity}/read", headers=operator).json() == first.json()
+
+
+def test_cost_reads_do_not_publish_an_uncommitted_counter_after_job_persistence_fails():
+    settings = Settings(node_token=TOKEN)
+    app = create_app(settings)
+    clock = [1000.0]
+    app.state.jobs.clock = lambda: clock[0]
+    with TestClient(app) as http:
+        _, body, job = admitted(http, clock)
+        clock[0] += 10
+        assert report(http, body, job, 10).status_code == 200
+        path = settings.state_root / "jobs.json"
+        backup = settings.state_root / "retained-jobs.json"
+        path.rename(backup)
+        path.mkdir()  # Atomic file replacement cannot replace an existing directory.
+        try:
+            clock[0] += 10
+            assert report(http, body, job, 20).status_code == 503
+            assert http.get("/api/v1/cost/summary").status_code == 503
+        finally:
+            path.rmdir()
+            backup.rename(path)
+    reopened = create_app(settings)
+    reopened.state.jobs.clock = lambda: clock[0]
+    with TestClient(reopened) as http:
+        assert totals(http)["gpuSeconds"] == pytest.approx(10)

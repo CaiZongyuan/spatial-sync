@@ -12,7 +12,7 @@ TOOLS = {
     "tensorboard",
     "job_start", "job_list", "job_show", "job_cancel", "job_logs", "node_ls",
     "task_push", "task_list", "task_show", "plan_submit",
-    "model_ls",
+    "model_ls", "cost_query",
     "agent_list", "agent_show", "agent_versions", "agent_snapshot", "agent_export", "agent_import",
     "agent_create", "harness_diff",
     "suite_list", "suite_show", "evaluation_run", "evaluation_show", "evaluation_list",

@@ -6,6 +6,7 @@ import { AlertContext, useAlerts } from '../lib/live';
 import '../live.css';
 import { Icon } from './Icon';
 import { PlatformRuntimeContext } from '../lib/platform-runtime';
+import { CostAnomalyContext, useCostAnomalies } from '../lib/cost';
 
 type Theme = 'system' | 'light' | 'dark';
 const themeKey = 'lab.theme';
@@ -27,6 +28,7 @@ const pages = [
   { to: '/plans', label: 'Plans', text: '计划', icon: 'plans' },
   { to: '/train', label: 'Training', text: '训练', icon: 'training' },
   { to: '/eval', label: 'Evaluation', text: '评估', icon: 'evaluation' },
+  { to: '/cost', label: 'Cost', text: '成本', icon: 'cost' },
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
   { to: '/approvals', label: 'Approvals', text: '待审批', icon: 'approvals' },
   { to: '/sessions', label: 'Sessions', text: '会话', icon: 'sessions' },
@@ -38,6 +40,7 @@ export function PlatformShell() {
   const replay = pathname.startsWith('/replay/');
   const approvals = useApprovalInbox(!replay);
   const alertState = useAlerts(!replay);
+  const costAnomalies = useCostAnomalies(!replay);
   const activeAlerts = alertState.active?.length;
   const alertCount = alertState.activeCapped ? '≥1000' : activeAlerts;
   const pendingCount = replay || approvals.error ? undefined : approvals.inbox?.pendingCount;
@@ -78,6 +81,8 @@ export function PlatformShell() {
             <span className="live-nav-count" data-testid="live-alert-badge" aria-label={`${alertCount} 条活动告警`}>{alertCount}</span>}
           {page.to === '/approvals' && pendingCount !== undefined && pendingCount > 0 &&
             <span className="approval-nav-count" data-testid="approval-pending-badge" aria-label={`${pendingCount} 条待审批`}>{pendingCount}</span>}
+          {page.to === '/cost' && Boolean(costAnomalies.data?.unreadCount) && <span className="cost-nav-dot" data-testid="cost-unread-badge"
+            aria-label={`${costAnomalies.data!.unreadCount} 条未读成本异常`} />}
           <span className="nav-tooltip" role="tooltip">{page.text}</span>
         </Link>)}
       </nav>
@@ -111,7 +116,7 @@ export function PlatformShell() {
         {!replay && activeAlerts !== undefined && activeAlerts > 0 && <Link to="/live" className="live-topbar-chip">告警 {alertCount}</Link>}
         {!replay && alertState.error && <span className="approval-topbar-chip" role="status">告警暂不可用</span>}
       </header>
-      <div id="page-content" tabIndex={-1}><PlatformRuntimeContext.Provider value={reportSource}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><Outlet /></ApprovalInboxContext.Provider></AlertContext.Provider></PlatformRuntimeContext.Provider></div>
+      <div id="page-content" tabIndex={-1}><PlatformRuntimeContext.Provider value={reportSource}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><CostAnomalyContext.Provider value={costAnomalies}><Outlet /></CostAnomalyContext.Provider></ApprovalInboxContext.Provider></AlertContext.Provider></PlatformRuntimeContext.Provider></div>
     </div>
   </div>;
 }

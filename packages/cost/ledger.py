@@ -129,6 +129,7 @@ class CostLedger:
         }
 
     def _jobs(self, filters):
+        self.manager.jobs._require_available()
         return [
             job
             for job in self.manager.jobs.records.values()
@@ -267,6 +268,7 @@ class CostLedger:
         return json.loads(self.read_path.read_text(encoding="utf-8")) if self.read_path.exists() else {}
 
     def anomalies(self):
+        self.manager.jobs._require_available()
         reads, rows = self._reads(), []
         for job in self.manager.jobs.records.values():
             if job["status"] != "failed":
@@ -286,8 +288,8 @@ class CostLedger:
         service = self.manager.evaluations
         for evaluation in service.store.records.values() if service else ():
             code = (evaluation.get("error") or {}).get("code", "")
-            if evaluation["status"] == "failed" and "timeout" in code:
-                timestamp = evaluation.get("endedAt") or evaluation["createdAt"]
+            if evaluation["split"] == "train" and evaluation["status"] == "failed" and "timeout" in code:
+                timestamp = evaluation.get("endedAt") or evaluation["at"]
                 rows.append(
                     {
                         "id": f"evaluation:{evaluation['evaluationId']}",

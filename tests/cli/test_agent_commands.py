@@ -115,6 +115,14 @@ async def test_agent_snapshot_commands_share_http_and_mcp_without_active_session
             assert not any("vault" in name or "approv" in name for name in tools)
             models = http.get("/api/v1/models").json()["models"]
             assert lw("model", "ls") == await result(mcp, "model_ls") == models == []
+            expected_cost = http.get("/api/v1/cost/summary", params={"range": "7d"}).json()
+            cli_cost = lw("cost", "--since", "7d")
+            mcp_cost = await result(mcp, "cost_query", since="7d")
+            assert cli_cost["totals"] == mcp_cost["totals"] == expected_cost["totals"]
+            assert cli_cost["totals"]["gpuSeconds"] == 0 and cli_cost["totals"]["tokens"] is None
+            assert lw("cost", "--by", "node")["rows"] == (
+                await result(mcp, "cost_query", by="node")
+            )["rows"] == []
             model = lw("model", "add", "fixture.local/org/model:stable@1", "--thinking", "high")
             assert lw("model", "default", model["ref"]) == {"defaultRef": model["ref"]}
             expected_models = http.get("/api/v1/models?q=fixture.local").json()["models"]
