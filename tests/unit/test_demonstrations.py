@@ -49,6 +49,9 @@ def test_new_version_keeps_old_manifest_and_recording_references_immutable(tmp_p
     metadata = json.loads(path.read_bytes())
     metadata["sessionId"] = "session-another-success"
     path.write_text(json.dumps(metadata), encoding="utf-8")
+    manifest_path = source / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest_path.write_text(json.dumps(manifest | {"sessionId": metadata["sessionId"]}), encoding="utf-8")
     second = demos.add(recording_evidence(source, task), source, ACTOR)
     assert second["set"]["id"] == "demoset/recorded-demo-probe@2"
     assert demos.show(first["set"]["id"]) == old

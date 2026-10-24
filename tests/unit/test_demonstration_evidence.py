@@ -177,3 +177,19 @@ def test_success_action_and_spatial_state_must_belong_to_the_same_episode(tmp_pa
     with pytest.raises(PlanError) as error:
         recording_evidence(target, recorded_task())
     assert error.value.detail["code"] == code
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_replay_manifest_is_present_and_identifies_the_same_recorded_episode(tmp_path, missing):
+    target = tmp_path / "recording"
+    shutil.copytree(FIXTURE, target)
+    path = target / "manifest.json"
+    if missing:
+        path.unlink()
+    else:
+        manifest = json.loads(path.read_bytes())
+        manifest["revisionNumericId"] += 1
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(PlanError) as error:
+        recording_evidence(target, recorded_task())
+    assert error.value.detail["code"] == "demo_recording_invalid"

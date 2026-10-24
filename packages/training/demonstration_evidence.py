@@ -11,7 +11,7 @@ from packages.info.recording import recording_metadata
 from packages.info.store import StateStore
 from packages.library.archive import package_files, relative_path
 from packages.library.common import content_hash
-from packages.protocol.schema import EntityObservations, EntitySnapshot, InvocationUpdate
+from packages.protocol.schema import EntityObservations, EntitySnapshot, InvocationUpdate, SceneManifest
 from packages.transport import FrameCodec
 
 
@@ -43,8 +43,16 @@ def recording_evidence(directory, task):
         if not segments or len(revisions) != 1 or None in revisions:
             _reject("demo_episode_ambiguous", "Select a recording with one complete episode revision")
         revision = next(iter(revisions))
-        reference = metadata.get("revisions", {}).get(revision, {}).get("catalog", "catalog.json")
-        catalog_name = relative_path(reference)
+        reference = metadata["revisions"][revision]
+        manifest = SceneManifest.model_validate(json.loads(
+            (directory / relative_path(reference.get("manifest", "manifest.json"))).read_bytes()
+        ))
+        if (
+            manifest.sessionId != metadata["sessionId"] or manifest.sceneRevision != revision
+            or manifest.revisionNumericId != reference["revisionNumericId"]
+        ):
+            _reject("demo_recording_invalid", "Replay Manifest and recorded episode identities disagree")
+        catalog_name = relative_path(reference.get("catalog", "catalog.json"))
         catalog = json.loads((directory / catalog_name).read_bytes())
         binding = catalog["entities"][definition["robot"]]
         interface, action = definition["implements"].rsplit(".", 1)
