@@ -1,0 +1,21 @@
+id: openvla-7b
+title: OpenVLA 7B
+family: vla
+source: openvla/openvla-7b
+license: MIT
+parameters: 7000000000
+embodiments: []
+upstreamEmbodiments: [Open X-Embodiment training domains, WidowX in BridgeV2]
+actionSpace: 7-DoF end-effector deltas (x, y, z, roll, pitch, yaw, gripper); per-dataset unnormalization
+compute: {inference: 'CUDA / BF16 in upstream example; not integrated'}
+runnable: false
+capability:
+  program: null
+  sources: []
+  requirements: [Robot-specific data statistics and adaptation]
+  notes: Registration only. Upstream support does not establish a local FR3 binding or platform inference.
+quality: {status: not-evaluated, evaluationId: null}
+sources:
+  - title: Official OpenVLA checkpoint model card
+    url: https://huggingface.co/openvla/openvla-7b
+    retrievedOn: '2026-10-24'

@@ -1,0 +1,9 @@
+id: fr3-sim
+title: Franka Research 3 + Franka Hand（仿真）
+kind: sim
+asset: robot/fr3@1
+controller: fr3-arm
+bindings:
+  - scene: robot-and-tubes@2
+    entity: /World/Lab/RobotA
+    source: newton

@@ -29,6 +29,7 @@ import { Route as PlansPlanIdRouteImport } from './routes/plans.$planId'
 import { Route as ReplayRecordingIdRouteImport } from './routes/replay.$recordingId'
 import { Route as ResourcesGpuRouteImport } from './routes/resources.gpu'
 import { Route as ResourcesModelsRouteImport } from './routes/resources.models'
+import { Route as ResourcesRobotsRouteImport } from './routes/resources.robots'
 import { Route as RuntimeSessionsIndexRouteImport } from './routes/runtime-sessions.index'
 import { Route as RuntimeSessionsIdRouteImport } from './routes/runtime-sessions.$id'
 import { Route as ScenesIndexRouteImport } from './routes/scenes.index'
@@ -139,6 +140,11 @@ const ResourcesModelsRoute = ResourcesModelsRouteImport.update({
   path: '/resources/models',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResourcesRobotsRoute = ResourcesRobotsRouteImport.update({
+  id: '/resources/robots',
+  path: '/resources/robots',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RuntimeSessionsIndexRoute = RuntimeSessionsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -203,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/resources/models': typeof ResourcesModelsRoute
+  '/resources/robots': typeof ResourcesRobotsRoute
   '/runtime-sessions/$id': typeof RuntimeSessionsIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets/': typeof AssetsIndexRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/resources/models': typeof ResourcesModelsRoute
+  '/resources/robots': typeof ResourcesRobotsRoute
   '/runtime-sessions/$id': typeof RuntimeSessionsIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets': typeof AssetsIndexRoute
@@ -259,6 +267,7 @@ export interface FileRoutesById {
   '/replay/$recordingId': typeof ReplayRecordingIdRoute
   '/resources/gpu': typeof ResourcesGpuRoute
   '/resources/models': typeof ResourcesModelsRoute
+  '/resources/robots': typeof ResourcesRobotsRoute
   '/runtime-sessions/$id': typeof RuntimeSessionsIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
   '/assets/': typeof AssetsIndexRoute
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/resources/models'
+    | '/resources/robots'
     | '/runtime-sessions/$id'
     | '/sessions/$sessionId'
     | '/assets/'
@@ -316,6 +326,7 @@ export interface FileRouteTypes {
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/resources/models'
+    | '/resources/robots'
     | '/runtime-sessions/$id'
     | '/sessions/$sessionId'
     | '/assets'
@@ -347,6 +358,7 @@ export interface FileRouteTypes {
     | '/replay/$recordingId'
     | '/resources/gpu'
     | '/resources/models'
+    | '/resources/robots'
     | '/runtime-sessions/$id'
     | '/sessions/$sessionId'
     | '/assets/'
@@ -377,6 +389,7 @@ export interface RootRouteChildren {
   ReplayRecordingIdRoute: typeof ReplayRecordingIdRoute
   ResourcesGpuRoute: typeof ResourcesGpuRoute
   ResourcesModelsRoute: typeof ResourcesModelsRoute
+  ResourcesRobotsRoute: typeof ResourcesRobotsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -519,6 +532,13 @@ declare module '@tanstack/react-router' {
       path: '/resources/models'
       fullPath: '/resources/models'
       preLoaderRoute: typeof ResourcesModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/resources/robots': {
+      id: '/resources/robots'
+      path: '/resources/robots'
+      fullPath: '/resources/robots'
+      preLoaderRoute: typeof ResourcesRobotsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/runtime-sessions/': {
@@ -693,6 +713,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReplayRecordingIdRoute: ReplayRecordingIdRoute,
   ResourcesGpuRoute: ResourcesGpuRoute,
   ResourcesModelsRoute: ResourcesModelsRoute,
+  ResourcesRobotsRoute: ResourcesRobotsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

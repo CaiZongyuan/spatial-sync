@@ -3,6 +3,8 @@ import { request } from '../lib/api';
 import { dollars, priceFields, priceLabels } from '../lib/model-resources';
 import type { LlmModel, PriceTable } from '../lib/model-resources';
 import { ResourceTabs } from './ResourceTabs';
+import { RobotModelCatalog } from './RobotModelCatalog';
+import { useRobotResources } from '../lib/robot-resources';
 
 function PriceEditor({ models, table, saved, cancel }: {
   models: LlmModel[]; table: PriceTable; saved: (table: PriceTable) => void; cancel: () => void;
@@ -60,6 +62,7 @@ function PriceEditor({ models, table, saved, cancel }: {
 }
 
 export function ModelResources() {
+  const robots = useRobotResources();
   const [data, setData] = useState<{ models: LlmModel[]; names: string[]; prices: PriceTable }>();
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
@@ -96,8 +99,8 @@ export function ModelResources() {
   const prices = new Map(data?.prices.models.map(price => [`${price.provider}/${price.modelId}`, price]));
   return <main className="model-resources">
     <header className="page-heading"><div><h1>资源</h1><p>算力节点、LLM 与机器人模型、机器人本体及其控制器</p></div>
-      <button type="button" disabled={editing} onClick={() => { setNotice(''); void load(); }}>刷新</button></header>
-    <ResourceTabs current="models" modelCount={data?.models.length} />
+      <button type="button" disabled={editing} onClick={() => { setNotice(''); void load(); robots.refresh(); }}>刷新</button></header>
+    <ResourceTabs current="models" modelCount={data?.models.length} robotModelCount={robots.data?.models.length} embodimentCount={robots.data?.embodiments.length} />
     {error && <p className="resource-error" role="alert">{error}</p>}
     {!data && !error && <p role="status">正在读取模型与价格表…</p>}
     {notice && <p className="resource-save-notice" role="status">{notice}</p>}
@@ -137,13 +140,7 @@ export function ModelResources() {
           </details>}
         </div>
       </section>
-      <section className="resource-panel is-unconnected" aria-labelledby="robot-models-title">
-        <header><h2 id="robot-models-title">机器人模型目录</h2><span className="resource-unknown">未接入</span></header>
-        <div className="resource-panel-body"><div className="resource-table-scroll"><table>
-          <thead><tr>{['模型', '类型', '来源', '许可', '支持本体', '动作空间', '推理算力', '状态'].map(title => <th key={title}>{title}</th>)}</tr></thead>
-          <tbody><tr><td colSpan={8} className="resource-empty">机器人模型目录尚未接入，当前没有可展示的登记数据。</td></tr></tbody>
-        </table></div><p className="resource-note">目录用于登记机器人基础模型与策略架构。VLA 仅登记，v1 不在平台内推理；许可与参数以来源为准。</p></div>
-      </section>
+      <RobotModelCatalog query={robots} />
     </div>
   </main>;
 }

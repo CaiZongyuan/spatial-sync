@@ -1,0 +1,24 @@
+id: groot-n1-5-3b
+title: NVIDIA Isaac GR00T N1.5 3B
+family: vla
+source: nvidia/GR00T-N1.5-3B
+license: NVIDIA licence (non-commercial use limitation)
+parameters: 3000000000
+embodiments: []
+upstreamEmbodiments: [Humanoid cross-embodiment; robot-specific post-training]
+actionSpace: Continuous motor-control vectors / action chunks; dimensions depend on embodiment
+compute: {inference: 'NVIDIA GPU / PyTorch, Linux (upstream); not integrated'}
+runnable: false
+capability:
+  program: null
+  sources: []
+  requirements: [Robot-specific post-training and embodiment configuration]
+  notes: Registration only. NVIDIA checkpoint licence differs from a code repository licence; no platform inference or local compatibility is claimed.
+quality: {status: not-evaluated, evaluationId: null}
+sources:
+  - title: Official GR00T N1.5 3B model card
+    url: https://huggingface.co/nvidia/GR00T-N1.5-3B
+    retrievedOn: '2026-10-24'
+  - title: Checkpoint licence including non-commercial limitation
+    url: https://huggingface.co/nvidia/GR00T-N1.5-3B/blob/main/LICENSE
+    retrievedOn: '2026-10-24'

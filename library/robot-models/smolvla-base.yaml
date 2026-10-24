@@ -1,0 +1,24 @@
+id: smolvla-base
+title: SmolVLA 450M
+family: vla
+source: lerobot/smolvla_base
+license: Apache-2.0
+parameters: 450000000
+embodiments: []
+upstreamEmbodiments: [SO100, SO101, LeKiwi (upstream examples; adaptation required)]
+actionSpace: Continuous action chunks; robot-specific normalization and postprocessing
+compute: {inference: 'CPU or CUDA in upstream example; not integrated'}
+runnable: false
+capability:
+  program: null
+  sources: []
+  requirements: [LeRobot configuration, Robot-specific fine-tuning and preprocessing]
+  notes: Registration only. No local embodiment adapter, weights or inference runtime is installed by this catalog.
+quality: {status: not-evaluated, evaluationId: null}
+sources:
+  - title: Official SmolVLA checkpoint model card and licence
+    url: https://huggingface.co/lerobot/smolvla_base
+    retrievedOn: '2026-10-24'
+  - title: Official 450M architecture and embodiment examples
+    url: https://huggingface.co/blog/smolvla
+    retrievedOn: '2026-10-24'

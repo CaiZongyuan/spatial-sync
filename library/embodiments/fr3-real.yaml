@@ -1,0 +1,6 @@
+id: fr3-real
+title: Franka Research 3（真机，未接入）
+kind: real
+asset: robot/fr3@1
+controller: null
+bindings: []
