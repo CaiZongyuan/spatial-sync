@@ -2,13 +2,14 @@ import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../lib/api';
 import { useEvaluationCenter } from '../lib/evaluation-hooks';
-import { compareEvaluations, currentReference, evaluationDate, scoreGroups, shortVersion, successRate, suiteSegment,
+import { agentScore, compareEvaluations, currentReference, evaluationDate, scoreGroups, shortVersion, successRate, suiteSegment,
   type AgentEvaluationSuite, type EmbodiedEvaluationSuite, type EvaluationConditions, type EvaluationRecord,
   type EvaluationScore, type EvaluationSuite } from '../lib/evaluations';
 import { Icon } from './Icon';
+import { AgentEvaluations } from './AgentEvaluations';
 import '../evaluations.css';
 
-const decisionLabels = { baseline: '正式基线', accepted: '已接受', rejected: '未接受' };
+const decisionLabels = { baseline: '正式基线', accepted: '已接受', rejected: '未接受', reported: '已报告' };
 const statusLabels: Record<string, string> = { queued: '排队中', running: '评估中', completed: '已完成', failed: '失败', cancelled: '已取消' };
 const roles = [
   { name: 'Builder', task: '构建评估集', reads: '本地包内的全部题目、评分条件与被测对象。', hidden: '由 Builder 直接编辑本地包；公共 API 不提供私有内容。' },
@@ -29,7 +30,7 @@ function AcceptanceRules({ layer }: { layer?: EvaluationSuite['layer'] }) {
   return <section className="eval-panel eval-rules"><span className="eyebrow">ACCEPTANCE</span><h2>接受规则</h2>
     {layer !== 'agent' && <p>具身 Candidate 的 Wilson 95% 置信区间下界，必须严格高于同条件 Reference 的成功率点估计。</p>}
     {layer !== 'embodied' && <p>Agent Candidate 的 train 均分必须严格高于同条件 Reference，且每题至少运行 3 次。可比较条件包括评估集版本、模型与思考等级。</p>}
-    <p>首次完整评估成为正式基线。后续已接受版本成为新的参照；未接受的候选仍保留在计分板。</p>
+    <p>{layer === 'agent' ? '完整有效的 train 评估追加为已报告结果。Reference、接受与提升保持独立。' : '首次完整评估成为正式基线。后续已接受版本成为新的参照；未接受的候选仍保留在计分板。'}</p>
     <div className="eval-rule-formula">{layer === 'agent' ? <>mean(Candidate) &gt; mean(Reference)</> : <>CI<sub>95%, lower</sub>(Candidate) &gt; score(Reference)</>}</div>
     <small>held-out test 仅在申请提升时运行并揭示。本页只读取 train；提升流程尚未接入。</small>
   </section>;
@@ -52,9 +53,9 @@ function SuiteCard({ suite, rows }: { suite: EvaluationSuite; rows: EvaluationSc
       <><p>实验室操作任务，依据最终状态与过程指标加权评分，满分 100。</p>
         <dl className="eval-metadata"><div><dt>被测对象</dt><dd>{suite.target}</dd></div><div><dt>环境</dt><dd>{suite.scene} · {suite.source}</dd></div>
           <div><dt>公开划分</dt><dd>{suite.cases.length} 个 train 题目 · test 锁定</dd></div>
-          <div><dt>运行要求</dt><dd>每题 {suite.runsPerCase} 次</dd></div><div><dt>当前参照</dt><dd>尚无正式基线</dd></div>
-          <div><dt>执行状态</dt><dd>Agent 运行器尚未接入</dd></div></dl>
-        <div className="eval-version-trail">版本轨迹等待首次完整评估</div></>}
+          <div><dt>运行要求</dt><dd>每题 {suite.runsPerCase} 次</dd></div><div><dt>当前参照</dt><dd>{references.length ? `${references.length} 组条件各自保留参照` : '尚无正式基线'}</dd></div>
+          <div><dt>执行方式</dt><dd>外部 runtime 交接</dd></div><div><dt>最近报告</dt><dd>{rows.length ? agentScore(rows.at(-1)?.score) : '尚无完整评估'}</dd></div></dl>
+        <div className="eval-version-trail">{rows.length ? `${rows.length} 条平台评分记录` : '等待首次完整 train 评估'}</div></>}
     <Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(suite.id) }} className="eval-open">打开计分板 <Icon name="chevron" /></Link>
   </article>;
 }
@@ -62,10 +63,10 @@ function SuiteCard({ suite, rows }: { suite: EvaluationSuite; rows: EvaluationSc
 function RecentEvaluations({ evaluations }: { evaluations: EvaluationRecord[] }) {
   return <section className="eval-panel"><header><div><span className="eyebrow">RECENT RUNS</span><h2>最近评估</h2></div><span>{evaluations.length} 次</span></header>
     {!evaluations.length ? <p className="eval-empty">尚无 train 评估。完成一次固定评估集运行后，结果会出现在这里。</p> :
-      <div className="eval-table-scroll"><table aria-label="最近评估"><thead><tr><th>评估 / 评估集</th><th>被测程序</th><th>状态</th><th>成功率</th><th>日期</th></tr></thead><tbody>
+      <div className="eval-table-scroll"><table aria-label="最近评估"><thead><tr><th>评估 / 评估集</th><th>被测对象</th><th>状态</th><th>评分</th><th>日期</th></tr></thead><tbody>
         {[...evaluations].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12).map(value => <tr key={value.evaluationId}><td><Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(value.suite) }}>{value.evaluationId}</Link><small>{value.suite}</small></td>
           <td><code>{value.subject}</code></td><td>{statusLabels[value.status] ?? value.status}{value.error && <small>{value.error.code}</small>}</td>
-          <td className="numeric">{value.result ? successRate(value.result.score) : '—'}</td><td>{evaluationDate(value.at)}</td></tr>)}</tbody></table></div>}
+          <td className="numeric">{value.result ? (value.layer === 'agent' || value.subject.startsWith('agent/') ? agentScore(value.result.score) : successRate(value.result.score)) : '—'}</td><td>{evaluationDate(value.at)}</td></tr>)}</tbody></table></div>}
   </section>;
 }
 
@@ -81,20 +82,21 @@ function Conditions({ suite, row }: { suite: EvaluationSuite; row?: EvaluationSc
   </section>;
 }
 
-function ScoreCurve({ rows }: { rows: EvaluationScore[] }) {
+function ScoreCurve({ rows, layer = 'embodied' }: { rows: EvaluationScore[]; layer?: EvaluationSuite['layer'] }) {
   const groups = scoreGroups(rows);
-  return <section className="eval-panel"><header><div><span className="eyebrow">VERSION HISTORY</span><h2>分数曲线</h2></div><span>成功率 · train</span></header>
+  const format = layer === 'agent' ? agentScore : successRate, maximum = layer === 'agent' ? 100 : 1;
+  return <section className="eval-panel"><header><div><span className="eyebrow">VERSION HISTORY</span><h2>分数曲线</h2></div><span>{layer === 'agent' ? '均分 / 100' : '成功率'} · train</span></header>
     {!groups.length ? <p className="eval-empty">尚无完整评估，暂无分数曲线。</p> : <div className="eval-curves">{groups.map((group, index) => {
       const x = (i: number) => group.length === 1 ? 280 : 44 + i * 492 / (group.length - 1);
-      const y = (score: number) => 164 - score * 140;
+      const y = (score: number) => 164 - score / maximum * 140;
       return <figure key={group[0].evaluationId}><figcaption><b>条件 {index + 1}</b> · {group[0].subject}<small>{group[0].key.scene} · {group[0].key.source} · {group.length} 次评估</small></figcaption>
-        <svg viewBox="0 0 560 200" role="img" aria-label={`条件 ${index + 1} 的成功率曲线，${group.length} 次评估`}>
-          {[0, .5, 1].map(value => <g key={value}><line x1="40" x2="540" y1={y(value)} y2={y(value)} className="eval-chart-grid" /><text x="2" y={y(value) + 4}>{value * 100}%</text></g>)}
+        <svg viewBox="0 0 560 200" role="img" aria-label={`条件 ${index + 1} 的${layer === 'agent' ? '评分' : '成功率'}曲线，${group.length} 次评估`}>
+          {[0, maximum / 2, maximum].map(value => <g key={value}><line x1="40" x2="540" y1={y(value)} y2={y(value)} className="eval-chart-grid" /><text x="2" y={y(value) + 4}>{layer === 'agent' ? value : `${value * 100}%`}</text></g>)}
           <path d={group.map((row, i) => `${i ? 'L' : 'M'}${x(i)},${y(row.score)}`).join(' ')} className="eval-chart-line" />
           {group.map((row, i) => <circle key={row.evaluationId} cx={x(i)} cy={y(row.score)} r="4" className={`eval-chart-point ${row.decision}`}>
-            <title>{`${row.evaluationId} · ${shortVersion(row.version)} · ${successRate(row.score)} · ${decisionLabels[row.decision]}`}</title></circle>)}
+            <title>{`${row.evaluationId} · ${shortVersion(row.version)} · ${format(row.score)} · ${decisionLabels[row.decision]}`}</title></circle>)}
           <text x="40" y="190">第 1 次</text><text x="540" y="190" textAnchor="end">{group.length > 1 ? `第 ${group.length} 次` : '单次观测'}</text>
-        </svg><details><summary>查看曲线数值</summary><ol>{group.map(row => <li key={row.evaluationId}><code>{row.evaluationId}</code> · {successRate(row.score)}</li>)}</ol></details>
+        </svg><details><summary>查看曲线数值</summary><ol>{group.map(row => <li key={row.evaluationId}><code>{row.evaluationId}</code> · {format(row.score)}</li>)}</ol></details>
       </figure>;
     })}</div>}
     <p className="eval-footnote">横轴按本组评估的追加顺序。每个条件组单独绘制，版本与 95% CI 见计分板。</p>
@@ -154,7 +156,7 @@ function Scoreboard({ suite, rows, selected, select }: { suite: EvaluationSuite;
 function EpisodeDetails({ suite, row, record }: { suite: EmbodiedEvaluationSuite; row?: EvaluationScore; record?: EvaluationRecord }) {
   return <section className="eval-panel"><header><div><span className="eyebrow">EMBODIED BREAKDOWN</span><h2>分阶段通过率与评估回合</h2></div><span>{row ? shortVersion(row.version) : '等待评估'}</span></header>
     {row ? <><code className="eval-selected-id">{row.evaluationId}</code><div className="eval-phases">{suite.milestones.map(stage => {
-      const phase = row.phases[stage];
+      const phase = row.phases?.[stage];
       return <div key={stage}><label htmlFor={`phase-${stage}`}>{stage}</label><progress id={`phase-${stage}`} max={1} value={phase?.rate ?? 0} />
         <span>{phase ? `${phase.passed}/${phase.episodes} · ${successRate(phase.rate)}` : '未记录'}</span></div>;
     })}</div>
@@ -172,16 +174,9 @@ function EpisodeDetails({ suite, row, record }: { suite: EmbodiedEvaluationSuite
 const gradingLabels: Record<string, string> = { finalState: '最终状态', rejectedHighRisk: '被拒的高风险动作',
   steps: '步数', elapsed: '用时', planFirst: '先提交相关操作计划' };
 
-function AgentSuiteDetails({ suite }: { suite: AgentEvaluationSuite }) {
+function AgentSuiteDetails({ suite, rows }: { suite: AgentEvaluationSuite; rows: EvaluationScore[] }) {
   return <><Conditions suite={suite} />
-    <section className="eval-panel"><header><div><span className="eyebrow">AGENT · TRAIN</span><h2>Agent 计分板</h2></div><span>尚无正式基线</span></header>
-      <p className="eval-empty">Agent 运行器尚未接入，暂无评估分数、Trace 或成本。正式基线需由首次完整评估建立。</p>
-      <div className="eval-table-scroll"><table aria-label="Agent 评估计分板"><thead><tr><th>Harness 版本</th><th>模型 / 思考等级</th><th>均分</th><th>运行范围</th><th>成本</th><th>时长</th><th>日期</th><th>判定</th></tr></thead><tbody>
-        <tr><td colSpan={8} className="eval-empty">尚无 Agent train 运行记录。</td></tr>
-        <tr className="eval-locked" data-testid="held-out-test-row"><th scope="row"><Icon name="lock" /> held-out test</th><td colSpan={7}>锁定 · 仅在申请提升时运行并揭示；题目与结果不公开。</td></tr>
-      </tbody></table></div>
-      <p className="eval-footnote">Harness 版本独立记录。评估基线、分数曲线与逐题得分等待真实运行结果。</p>
-    </section>
+    <AgentEvaluations suite={suite} rows={rows} /><ScoreCurve rows={rows} layer="agent" />
     <section className="eval-panel"><header><div><span className="eyebrow">PUBLIC STATEMENTS</span><h2>公开 train 题目</h2></div><span>{suite.cases.length} 题 · 每题 {suite.runsPerCase} 次</span></header>
       <div className="eval-agent-cases">{suite.cases.map(item => <details key={item.id}><summary><code>{item.id}</code></summary><p>{item.statement}</p></details>)}</div>
     </section>
@@ -194,7 +189,7 @@ function AgentSuiteDetails({ suite }: { suite: AgentEvaluationSuite }) {
 
 function SuiteDetails({ suite, rows, evaluations }: { suite: EvaluationSuite; rows: EvaluationScore[]; evaluations: EvaluationRecord[] }) {
   const [subject, setSubject] = useState(''), [selected, select] = useState('');
-  if (suite.layer === 'agent') return <AgentSuiteDetails suite={suite} />;
+  if (suite.layer === 'agent') return <AgentSuiteDetails suite={suite} rows={rows} />;
   const subjects = [...new Set(rows.map(row => row.subject))];
   const filtered = rows.filter(row => !subject || row.subject === subject);
   const row = filtered.find(value => value.evaluationId === selected) ?? filtered.at(-1);

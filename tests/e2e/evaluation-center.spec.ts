@@ -37,7 +37,7 @@ test('real embodied Suite opens from Evaluation navigation with public condition
   expect(errors).toEqual([]);
 });
 
-test('real Agent Suite exposes public tasks while actual runs and formal baseline remain unavailable', async ({ page, request }, info) => {
+test('real Agent Suite exposes public tasks, external evaluation inputs and a locked test split', async ({ page, request }, info) => {
   const response = await request.get(`${api}/api/v1/suites/lab-ops-basic/1`);
   expect(response.ok(), await response.text()).toBe(true);
   const suite = await response.json();
@@ -53,11 +53,14 @@ test('real Agent Suite exposes public tasks while actual runs and formal baselin
   await expect(card).toContainText('10 个 train 题目');
   await expect(card).toContainText(suite.target);
   await expect(card).toContainText('尚无正式基线');
-  await expect(card).toContainText('Agent 运行器尚未接入');
+  await expect(card).toContainText('外部 runtime 交接');
   await card.getByRole('link', { name: '打开计分板' }).click();
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname)).toBe('/eval/lab-ops-basic@1');
   await expect(page.getByRole('heading', { name: suite.title, exact: true })).toBeVisible();
-  await expect(page.getByRole('table', { name: 'Agent 评估计分板', exact: true })).toContainText('尚无 Agent train 运行记录');
+  await expect(page.getByRole('table', { name: 'Agent 评估计分板', exact: true })).toContainText('尚无完整有效的 Agent train 运行记录');
+  await expect(page.getByRole('heading', { name: '创建 Agent 评估', exact: true })).toBeVisible();
+  await expect(page.getByLabel('评估 Harness 版本')).toContainText('v1');
+  await expect(page.getByLabel('模型声明')).toHaveValue('');
   await expect(page.getByTestId('held-out-test-row')).toContainText('锁定');
   const cases = page.locator('.eval-agent-cases details');
   await expect(cases).toHaveCount(10);
@@ -126,7 +129,7 @@ test('failed public read can retry and an Agent Suite without runs stays readabl
   unavailable = false;
   await page.getByRole('button', { name: '重试', exact: true }).click();
   await page.getByRole('link', { name: '打开计分板' }).click();
-  await expect(page.getByText('Agent 运行器尚未接入，暂无评估分数、Trace 或成本。正式基线需由首次完整评估建立。', { exact: true })).toBeVisible();
+  await expect(page.getByText('尚无完整有效的 Agent train 运行记录。', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '角色与可见性', exact: true })).toBeVisible();
   await expect(page.getByTestId('held-out-test-row')).toContainText('锁定');
   expect(errors).toEqual([]);

@@ -284,6 +284,38 @@ class GatewayClient:
     async def agent_show(self, id):
         return await self.request("GET", self._agent_path(id))
 
+    async def agent_run_create(self, id, suite, harnessVersion, runtime, model, thinking,
+                               runtimeVersion=None, purpose="train", caseId=None, wallSeconds=900,
+                               requestId=None, *, actor="cli:lw"):
+        payload = {"requestId": requestId or uuid.uuid4().hex, "suite": suite,
+                   "harnessVersion": harnessVersion, "purpose": purpose, "wallSeconds": wallSeconds,
+                   "runtime": {"name": runtime, "version": runtimeVersion, "model": model,
+                               "thinking": thinking}}
+        if caseId is not None:
+            payload["caseId"] = caseId
+        return await self.request("POST", self._agent_path(id) + "/runs", json=payload, actor=actor)
+
+    async def agent_run_list(self, agent=None):
+        params = {"agent": agent} if agent is not None else {}
+        return (await self.request("GET", "/api/v1/agent-runs", params=params))["runs"]
+
+    async def agent_run_show(self, id):
+        return await self.request("GET", "/api/v1/agent-runs/" + quote(id, safe=""))
+
+    async def agent_run_next(self, id, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/agent-runs/" + quote(id, safe="") + "/next", actor=actor)
+
+    async def agent_run_complete(self, id, caseRunId, nativeSessionId, runtimeRecordId=None,
+                                 *, actor="cli:lw"):
+        payload = {"caseRunId": caseRunId, "nativeSessionId": nativeSessionId}
+        if runtimeRecordId is not None:
+            payload["runtimeRecordId"] = runtimeRecordId
+        return await self.request("POST", "/api/v1/agent-runs/" + quote(id, safe="") + "/complete",
+                                  json=payload, actor=actor)
+
+    async def agent_run_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/agent-runs/" + quote(id, safe="") + "/cancel", actor=actor)
+
     async def agent_versions(self, id):
         return (await self.request("GET", self._agent_path(id) + "/versions"))["versions"]
 
