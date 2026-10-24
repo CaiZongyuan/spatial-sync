@@ -90,6 +90,7 @@ test('existing native runtime file imports, grows and retries with messages and 
     await expect(page.getByTestId('cost-selected-llm')).toContainText('运行时估算（原样）');
     await expect(page.getByTestId('token-cost-chart').getByRole('img', { name: /四类 Token 堆叠柱/ })).toBeVisible();
     await expect(page.getByRole('table', { name: '按 RSI 目标分摊' })).toContainText('未关联');
+    await page.screenshot({ path: info.outputPath('runtime-cost.png'), fullPage: true });
     await page.getByRole('link', { name: '查看运行记录与来源', exact: true }).click();
     await page.getByRole('table', { name: 'Runtime 会话列表' }).getByRole('link', { name: 'native-capture.jsonl', exact: true }).click();
     await page.reload(); await expect(detail).toContainText('$0.3244434');
