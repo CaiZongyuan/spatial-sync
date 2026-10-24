@@ -216,7 +216,7 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
     }
 
 
-def bind_source_identity(frozen, session):
+def bind_source_identity(frozen, session, *, execution_facts=None):
     """Use actual loaded Source/engine facts; declarations alone prove no equality."""
     source = session.manifest.source
     actual = {
@@ -234,6 +234,33 @@ def bind_source_identity(frozen, session):
         "apps.api.app.sources.newton_source.NewtonSource",
     )
     reason = frozen.get("unknownReason")
+    if execution_facts is not None:
+        version = execution_facts.get("runtimeVersion") if isinstance(execution_facts, dict) else None
+        providers = execution_facts.get("availableProviders") if isinstance(execution_facts, dict) else None
+        unavailable = execution_facts == {
+            "available": False,
+            "runtimeVersion": None,
+            "availableProviders": [],
+        }
+        if unavailable or (
+            isinstance(execution_facts, dict)
+            and (
+                set(execution_facts) == {"runtimeVersion", "availableProviders"}
+                or set(execution_facts) == {"available", "runtimeVersion", "availableProviders"}
+                and execution_facts["available"] is True
+            )
+            and isinstance(version, str)
+            and version
+            and isinstance(providers, list)
+            and all(isinstance(item, str) and item for item in providers)
+        ):
+            actual["observationRuntime"] = {
+                "available": not unavailable,
+                "runtimeVersion": version,
+                "availableProviders": sorted(set(providers)),
+            }
+        else:
+            reason = "execution_runtime_unknown"
     if not supported or source.kind == "newton" and not source.newtonVersion:
         reason = "source_implementation_unknown"
     slot = frozen.get("programSlot")

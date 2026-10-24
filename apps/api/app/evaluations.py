@@ -97,6 +97,8 @@ class EvaluationService:
 
     async def freeze_identity(self, identifier, suite, scene, subject, *, candidate=None):
         try:
+            if await asyncio.to_thread(runtime_fingerprint) != self._runtime_hash:
+                return None
             return await asyncio.to_thread(
                 self.identity_producer,
                 identifier,
@@ -110,12 +112,12 @@ class EvaluationService:
             return None  # Running is allowed; missing proof never creates comparability.
 
     @staticmethod
-    def bind_identity(record, session):
+    def bind_identity(record, session, *, execution_facts=None):
         frozen = record.get("identitySnapshot")
         if frozen is None:
             record.update(comparisonIdentity=None, comparisonState="unknown")
             return {}
-        identity, actual, reason = bind_source_identity(frozen, session)
+        identity, actual, reason = bind_source_identity(frozen, session, execution_facts=execution_facts)
         if record.get("comparisonIdentity") and record["comparisonIdentity"] != identity:
             raise HTTPException(409, {"code": "evaluation_conditions_changed"})
         record.update(
