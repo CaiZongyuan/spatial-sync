@@ -36,6 +36,7 @@ export interface EvaluationScore {
   version: string | number;
   key: EvaluationConditions;
   conditionsGroup?: string;
+  comparisonState?: 'known' | 'unknown';
   split: 'train';
   successes?: number;
   episodes: number;
@@ -100,7 +101,7 @@ export const compareEvaluations = (suite: string, compare: string, against: stri
 export function scoreGroups(rows: EvaluationScore[]) {
   const groups = new Map<string, EvaluationScore[]>();
   for (const row of rows) {
-    const id = JSON.stringify([row.suite, row.subject, row.conditionsGroup ?? row.evaluationId]);
+    const id = JSON.stringify([row.suite, row.comparisonState === 'known' ? row.conditionsGroup ?? row.evaluationId : row.evaluationId]);
     const group = groups.get(id) ?? [];
     group.push(row); groups.set(id, group);
   }
@@ -108,7 +109,7 @@ export function scoreGroups(rows: EvaluationScore[]) {
 }
 
 export function currentReference(rows: EvaluationScore[]) {
-  return [...rows].reverse().find(row => row.decision === 'baseline' || row.decision === 'accepted');
+  return [...rows].reverse().find(row => row.comparisonState === 'known' && (row.decision === 'baseline' || row.decision === 'accepted'));
 }
 
 export const successRate = (value: number | null | undefined) =>

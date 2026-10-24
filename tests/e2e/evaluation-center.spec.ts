@@ -80,7 +80,7 @@ test('condition fixture with identical public tags keeps separate curves and sur
   const suite = await (await request.get(`${api}/api/v1/suites/lab-demo-pick-place/1`)).json();
   const key = { suite: suite.id, scene: suite.scene, source: suite.source, target: suite.target };
   const baseline = { evaluationId: 'fixture-baseline', suite: suite.id, subject: 'robot_arm.virtual', version: 'fixture-runtime-a',
-    key, conditionsGroup: 'fixture-baseline', split: 'train', successes: 1, episodes: 2, score: .5, ci95: [.09, .91],
+    key, conditionsGroup: 'fixture-baseline', comparisonState: 'known', split: 'train', successes: 1, episodes: 2, score: .5, ci95: [.09, .91],
     decision: 'baseline', reference: null, phases: { grasp: { passed: 1, episodes: 2, rate: .5 }, place: { passed: 1, episodes: 2, rate: .5 } },
     recordings: [], durationSeconds: 4, at: '2026-10-23T00:00:00Z' };
   const candidate = { ...baseline, evaluationId: 'fixture-candidate', version: 'fixture-runtime-b', score: 1, successes: 2,

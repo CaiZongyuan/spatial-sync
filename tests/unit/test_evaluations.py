@@ -71,7 +71,13 @@ def test_store_is_append_only_and_recovers_commit_before_receipt(tmp_path):
     restarted.startup()
     assert restarted.records["eval-a"]["status"] == "completed"
     assert restarted.reference({"source": "newton"}) is None
-    assert restarted.reference({"source": "synthetic"}) == row
+    assert restarted.reference({"source": "synthetic"}) is None
+    assert restarted.rows == [row]  # Legacy score/decision remain intact, with unknown comparability.
+    identity = {"environment": "observed-environment", "judge": "observed-judge"}
+    known = row | {"evaluationId": "eval-b", "key": row["key"] | identity, "comparisonIdentity": identity}
+    restarted.append(known)
+    assert restarted.reference(known["key"]) == known
+    assert restarted.rows[0] == row
 
 
 def test_private_parser_diagnostics_and_changed_package_do_not_return_private_values(tmp_path):

@@ -21,6 +21,7 @@ from packages.agent_evaluation.evidence import require_case_evidence
 from packages.agent_evaluation.scope import CaseGrant, observation_scope
 from packages.info.agent_grading import final_observations, grade_agent_case
 from packages.info.evaluation_evidence import EvidenceUnavailable
+from packages.info.evaluation_identity import verify_identity
 from packages.info.plans import PlanError
 from packages.library.transactions import durable_json
 from packages.protocol.internal import SessionOptions
@@ -69,7 +70,7 @@ class ExternalEvaluations:
         return record
 
     def document(self, record):
-        return public_agent_run(record)
+        return public_agent_run(record, self.evaluator.store.rows)
 
     async def save(self, record):
         await persist(self.evaluator.store.save, record)
@@ -186,6 +187,17 @@ class ExternalEvaluations:
                 },
             }
             directory = self.directory(record)
+            record["candidateIdentity"] = {
+                "kind": "agent-harness",
+                "agentId": agent,
+                "harnessVersion": body.harnessVersion,
+                "contentHash": harness["contentHash"],
+                "archiveHash": harness["archiveHash"],
+                "skills": harness["skills"],
+            }
+            record["identitySnapshot"] = await self.evaluator.freeze_identity(
+                identifier, suite, selected, agent, candidate=record["candidateIdentity"]
+            )
             directory.mkdir(parents=True, exist_ok=False)
             archive = await asyncio.to_thread(self.agents.export, agent, body.harnessVersion)
             if hashlib.sha256(archive).hexdigest() != harness["archiveHash"]:
@@ -518,6 +530,16 @@ class ExternalEvaluations:
                 for case in run["cases"]:
                     suite = self.evaluator.suites.resolve(run["suite"])
                     suite.verify()
+                    try:
+                        await asyncio.to_thread(
+                            verify_identity,
+                            run.get("identitySnapshot"),
+                            directory=self.evaluator.store.root / "identity-inputs",
+                        )
+                    except (OSError, ValueError):
+                        raise PlanError(
+                            "evaluation_conditions_changed", "Fixed implementation inputs changed", status=409
+                        ) from None
                     if suite.content_hash != run["pins"]["suiteContentHash"]:
                         raise PlanError("suite_changed", "Pinned Agent Suite changed", status=409)
                     selected = await asyncio.to_thread(
@@ -541,6 +563,7 @@ class ExternalEvaluations:
                         evaluation_id=identifier,
                     )
                     session.evaluation_deny_high_risk = True
+                    run["key"].update(self.evaluator.bind_identity(run, session))
                     case.update(sessionId=session.session_id, recordingId=session.session_id)
                     if (
                         not session.recording
@@ -573,6 +596,16 @@ class ExternalEvaluations:
                     self.active.pop(identifier, None)
                     grant = None
                 if run["purpose"] == "train":
+                    try:
+                        await asyncio.to_thread(
+                            verify_identity,
+                            run.get("identitySnapshot"),
+                            directory=self.evaluator.store.root / "identity-inputs",
+                        )
+                    except (OSError, ValueError):
+                        raise PlanError(
+                            "evaluation_conditions_changed", "Fixed implementation inputs changed", status=409
+                        ) from None
                     row = {
                         "evaluationId": identifier,
                         "suite": run["suite"],
@@ -581,6 +614,9 @@ class ExternalEvaluations:
                         "key": run["key"],
                         "split": "train",
                         "layer": "agent",
+                        "candidateIdentity": run.get("candidateIdentity"),
+                        "comparisonIdentity": run.get("comparisonIdentity"),
+                        "comparisonState": run.get("comparisonState", "unknown"),
                         "score": sum(case["score"] for case in run["cases"]) / len(run["cases"]),
                         "decision": "reported",
                         "ci95": None,
