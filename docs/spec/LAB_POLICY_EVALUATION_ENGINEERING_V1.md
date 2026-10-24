@@ -82,9 +82,11 @@ not modify old recording bytes or add a spatial protocol field.
 
 Read-only native execution evidence uses the existing private Runner request/
 reply transport. It records the actually loaded policy/content/ONNX/observation
-identities, CPU provider, action-start and inference-call counts, and a digest of
-the PhysicsPort-derived observations/actions. No model output is accepted as a
-success flag. Zero/unknown inference counts remain explicit; they do not become
+identities, CPU provider, invocation-start and inference-call counts, and a digest
+of the PhysicsPort-derived observations. `validOutputs` counts finite model
+outputs with the expected shape; it does not assert accepted/committed joint
+targets or physical movement. No model output is accepted as a success flag.
+Zero/unknown inference counts remain explicit; they do not become
 claims that a controller performed a physical action. Evaluation success and
 milestones remain the platform's frozen Suite conditions.
 
@@ -112,6 +114,11 @@ all programs or mix a candidate-specific binding into a supposedly fixed
 environment. The helper exposes candidate/base binding facts to that owner;
 shared producer signatures are coordinated before editing evaluations.py.
 
+`candidateIdentity.task` is the training Task provenance. The fixed evaluation
+Task is the Suite's frozen `task.yaml`, covered by its Suite content hash. A new
+training Task/reward/observation version alone must not create a different
+evaluation environment; the platform still grades the fixed evaluation Task.
+
 ## Immutable observation evidence
 
 Persist observation checks beside policy evidence, not by mutating the frozen
@@ -129,6 +136,38 @@ source: jobId, task, taskContentHash, scene, sceneContentHash, versions
 capture: declared producer/method and independent-training-observation provenance
 samples[]: unique sourceStateId, state, trainingObservation, previousAction, references
 ```
+
+The owned training Bridge calls optional
+`runner.env.unwrapped.lw_policy_observation_samples(256)` after exporting the
+exact learned checkpoint/ONNX. This follows the existing Task-owned
+`lw_training_view()` boundary; the platform does not guess Isaac task fields or
+assemble the training-side observations. The synchronous hook returns
+`{method, samples}`. Missing hooks leave evidence absent, preserving old Tasks.
+An invalid hook return fails export rather than inventing samples.
+
+The Bridge records the actual hook return, module/qualname and one matching
+frozen Task source file/code hash, runner class, versions, model/observation
+hashes, distinct state IDs, opaque fenced-dispatch attempt identity and exact
+sample artifact bytes. A separate `lw.policy-observation-capture/1` receipt
+binds these facts to the sample hash/count/ID digest. It does not assert learned
+quality or independent observation semantics merely because256 entries exist.
+
+Public endpoints use the existing exact policy reference:
+
+| Endpoint | Intent |
+| --- | --- |
+| POST `/policies/{name}/{rev}/observation-checks` `{artifact}` | recompute/freeze an existing source-Job artifact |
+| GET `/policies/{name}/{rev}/observation-checks` | list immutable report summaries |
+| GET `/policies/{name}/{rev}/observation-checks/{id}` | read one frozen report and source-verification state |
+| POST `/policies/{name}/{rev}/observation-checks/{id}/verify-source` `{artifact}` | verify an existing same-Job native capture receipt and persist the evidence-bound result |
+
+Verification derives the trainer return-code fact from the succeeded fenced Job,
+and checks the actual owned exporter/Task source, versions, weights, unique IDs
+and input hashes. Hook/Job provenance validation and actual trained/independent
+observation semantics remain separate fields. There is no arbitrary qualified
+setter. The source-verification operation and readback are the executable seam
+for a later authorized real capture; controlled samplers retain their provenance
+and never establish real policy quality.
 
 `state` and the numerical comparison keep the shipped obs_spec/1 conventions.
 The gateway checks the exact source Job/Task/Scene/export/observation and artifact

@@ -154,6 +154,29 @@ COMMANDS = (
             method="policy_show", mcp_name="policy_show", arguments=(
                 Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
             )),
+    Command(path=("policy", "check-observations"), help="Freeze source-Job samples and a numerical check.",
+            method="policy_check_observations", mcp_name="policy_check_observations", actor=True, arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
+                Argument("artifact", ("--artifact",), str, "Existing source-Job artifact path"),
+            )),
+    Command(path=("policy", "observation-checks"), help="List numerical reports without qualifying a policy.",
+            method="policy_observation_checks", mcp_name="policy_observation_checks",
+            output_type=list[dict[str, Any]], arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
+            )),
+    Command(path=("policy", "observation-check"), help="Read a frozen observation report and source status.",
+            method="policy_observation_check_show", mcp_name="policy_observation_check_show", arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
+                Argument("check", ("check-id",), str, "Immutable observation check ID"),
+            )),
+    Command(path=("policy", "verify-observation-source"), help="Verify an existing native capture receipt.",
+            method="policy_observation_check_verify_source",
+            mcp_name="policy_observation_check_verify_source",
+            actor=True, arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
+                Argument("check", ("check-id",), str, "Immutable observation check ID"),
+                Argument("artifact", ("--artifact",), str, "Existing source-Job capture receipt artifact"),
+            )),
     Command(path=("runtime", "import"), help="Import an explicitly selected local runtime capture file.",
             method="runtime_import_file", arguments=(
                 Argument("file", ("file",), str, "Explicit local UTF-8 capture, uploaded as content"),
