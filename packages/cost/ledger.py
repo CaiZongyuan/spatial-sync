@@ -123,7 +123,7 @@ class CostLedger:
             "agent": actor["name"] if actor["kind"] == "agent" else None,
             "model": None,
             "node": job["nodeId"],
-            "goal": job["plan"].get("goal"),
+            "goal": job["plan"].get("goalId") or job["plan"].get("goal"),
             "plan": f"{job['planId']}@{job['planRevision']}",
             "job": job["jobId"],
         }

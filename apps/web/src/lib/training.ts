@@ -5,6 +5,7 @@ export interface TrainingPlanDocument {
   kind: 'training';
   title: string;
   goal: string;
+  goalId?: string | null;
   task: string;
   previous: string | null;
   algorithm: Record<string, unknown>;

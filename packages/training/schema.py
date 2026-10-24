@@ -14,6 +14,7 @@ class Schema(BaseModel):
 Text = Annotated[str, Field(min_length=1, max_length=4000, pattern=r"\S")]
 SceneRef = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
 TaskRef = Annotated[str, Field(pattern=r"^task/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
+GoalRef = Annotated[str, Field(pattern=r"^goal/[a-z0-9]+(?:-[a-z0-9]+)*$")]
 
 
 class Evaluation(Schema):
@@ -140,6 +141,7 @@ class TrainingPlan(Schema):
     kind: Literal["training"] = "training"
     title: Text
     goal: Text
+    goalId: GoalRef | None = None
     task: TaskRef
     previous: str | None = None
     algorithm: dict[str, JsonValue] = Field(min_length=1)

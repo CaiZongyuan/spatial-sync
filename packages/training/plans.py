@@ -21,6 +21,7 @@ class StoredTrainingPlan(BaseModel):
     createdAtMs: float
     approvalId: str | None = None
     changes: list[dict] = Field(default_factory=list)
+    goalContext: dict | None = None
     # The shared attention journal supports plans that have no session context.
     sessionId: None = None
     sceneRevision: None = None
@@ -35,6 +36,8 @@ class TrainingPlanStore:
         self.history: dict[str, dict[int, StoredTrainingPlan]] = {}
         self._lock = threading.RLock()
         self.job_in_use = lambda identity, revision: False
+        self.additional_in_use = lambda identity, revision: False
+        self.loop_budgets = None
 
     def startup(self):
         if self.path.exists():
@@ -78,10 +81,15 @@ class TrainingPlanStore:
         status = {"pending": "submitted", "approved": "approved", "denied": "rejected",
                   "revoked": "draft", "unavailable": "abandoned"}.get(
                       approval.status if approval else None, "abandoned")
-        return {**record.plan.model_dump(mode="json", by_alias=True), "status": status,
+        document = {**record.plan.model_dump(mode="json", by_alias=True), "status": status,
                 "requestedBy": record.requestedBy.model_dump(), "createdAtMs": record.createdAtMs,
                 "approvalId": record.approvalId, "approvalStatus": approval.status if approval else None,
                 "approvalMode": "human", "changes": record.changes}
+        if record.goalContext is not None:
+            from copy import deepcopy
+
+            document["loopBudget"] = deepcopy(record.goalContext["review"])
+        return document
 
     def _notify(self, record):
         if self.on_change:
@@ -99,7 +107,8 @@ class TrainingPlanStore:
                 plan = TrainingPlan.model_validate(value)
                 if plan.status != "draft" or (plan_id and plan.id != plan_id):
                     raise ValueError("Submit draft content; identity and lifecycle are server-owned")
-                task = self.tasks.show(plan.task)["task"]
+                task_snapshot = self.tasks.show(plan.task)
+                task = task_snapshot["task"]
                 if plan.evaluation.scene != task["scene"]:
                     raise ValueError("Plan evaluation must use the pinned Task scene")
                 previous = previous_revision or (self.get(plan.previous) if plan.previous else None)
@@ -114,21 +123,25 @@ class TrainingPlanStore:
                            for item in exc.errors(include_input=False, include_url=False)]
                           if isinstance(exc, ValidationError) else [{"message": str(exc)}])
                 raise PlanError("invalid_plan", "Invalid training plan", status=422, errors=errors) from exc
-            old = previous.plan.model_dump(mode="json", by_alias=True) if previous else {}
             fresh = plan.model_dump(mode="json", by_alias=True)
+            goal_context = self.loop_budgets.prepare(fresh, task_snapshot) if self.loop_budgets else None
+            plan = TrainingPlan.model_validate(fresh)
+            old = previous.plan.model_dump(mode="json", by_alias=True) if previous else {}
             changes = [{"field": key, "before": old.get(key), "after": item}
                        for key, item in fresh.items()
                        if key not in ("id", "revision", "status", "previous") and old.get(key) != item]
             plan.status = "submitted"
             record = StoredTrainingPlan(plan=plan, requestedBy=actor, createdAtMs=time.time() * 1000,
-                                        changes=changes)
+                                        changes=changes, goalContext=goal_context)
             self._save(record)
             try:
                 approval = self.approvals.submit(subject="plan", subject_id=plan.id, requester=actor,
                                                  title=plan.title,
                                                  details={"revision": plan.revision,
                                                           "plan": plan.model_dump(mode="json", by_alias=True),
-                                                          "changes": changes})
+                                                          "changes": changes,
+                                                          **({"loopBudget": goal_context["review"]}
+                                                             if goal_context is not None else {})})
             except OSError as exc:
                 raise PlanError("plan_persistence_unavailable", "Training approval save failed",
                                 status=503) from exc
@@ -149,7 +162,8 @@ class TrainingPlanStore:
         record = self.records.get(approval.subjectId)
         return bool(record and record.approvalId == approval.approvalId
                     and approval.status in ("approved", "denied")
-                    and not self.job_in_use(record.plan.id, record.plan.revision))
+                    and not self.job_in_use(record.plan.id, record.plan.revision)
+                    and not self.additional_in_use(record.plan.id, record.plan.revision))
 
     def decide(self, approval, decision, actor, note):
         with self._lock:
@@ -164,5 +178,7 @@ class TrainingPlanStore:
                 decision != "revoke" and current.status != "pending"
             ):
                 raise ApprovalConflict("This training plan approval has already been processed")
+            if decision == "approve" and self.loop_budgets is not None:
+                self.loop_budgets.require_fresh_approval(record)
             self.approvals.decide(approval.approvalId, decision, actor, note)
             self._notify(record)
