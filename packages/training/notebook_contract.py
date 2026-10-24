@@ -156,7 +156,7 @@ class AgentNotebookEntry(Schema):
     score: RecordedAgentScore | None
     partialCases: list[dict]
     attemptedCases: int = Field(ge=0)
-    reportedDecision: Literal["accepted", "rejected", "inconclusive"]
+    reportedDecision: Literal["accepted", "rejected", "inconclusive", "contaminated"]
     acceptanceRule: Literal["agent-train-mean-strictly-higher-min3/1"] = (
         "agent-train-mean-strictly-higher-min3/1"
     )

@@ -62,6 +62,12 @@ class NativeBinding(Schema):
     nativeSessionId: str = Field(min_length=1, max_length=4096)
 
 
+class ExposureRequest(RunRequest):
+    runtimeRecordId: Text
+    eventId: Text
+    eventHash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 def install_agent_rsi_routes(app, manager, agents, external, role_for):
     service = AgentRSI(manager, agents, external)
     app.state.agent_rsi = manager.agent_rsi = service
@@ -172,6 +178,14 @@ def install_agent_rsi_routes(app, manager, agents, external, role_for):
         actor = operator(request)
         async with promotion_submission:
             return await request_promotion(service, identifier, body, actor)
+
+    @app.post("/api/v1/plans/{identifier}/contamination")
+    async def contamination(identifier: str, body: ExposureRequest, request: Request):
+        from packages.agent_rsi.contamination import controller_intent, finish
+
+        actor = operator(request)
+        await asyncio.to_thread(controller_intent, service, identifier, body, actor)
+        return await finish(service, identifier)
 
     @app.get("/api/v1/agent-promotions/{identifier}")
     async def promotion(identifier: str):

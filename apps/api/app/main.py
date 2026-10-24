@@ -232,6 +232,9 @@ def create_app(
             await evaluations.startup()
             await asyncio.to_thread(agent_rsi.startup)
             await asyncio.to_thread(notebooks.startup)
+            from packages.agent_rsi.contamination import recover
+
+            await recover(agent_rsi)
             await monitor.start()
             await views.start()
             if manager.live:

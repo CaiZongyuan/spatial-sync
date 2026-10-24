@@ -44,6 +44,9 @@ class AgentRSI:
 
     def startup(self):
         with self._lock:
+            from packages.agent_rsi.grants import recover_trace
+
+            recover_trace(self)
             self.recovery = self.agents.recover()
             if self.path.exists():
                 value = json.loads(self.path.read_bytes())
@@ -146,6 +149,12 @@ class AgentRSI:
                 for value in self.promotions.values()
                 if value["planId"] == record.plan.id
             ],
+            "stop": {
+                key: deepcopy(value)
+                for key, value in record.context.get("contamination", {}).items()
+                if key in ("application", "cleanup", "files", "errorCode")
+            }
+            or None,
             "recovery": [
                 deepcopy(value) for value in self.recovery if value["agentId"] == record.plan.agentId
             ],
@@ -446,6 +455,12 @@ class AgentRSI:
             if decision == "approve":
                 from packages.agent_rsi.budgets import authority
 
+                if record.plan.budgetException is not None and not note.strip():
+                    raise PlanError(
+                        "agent_budget_exception_reason_required",
+                        "A person must record a reason for this finite budget exception",
+                        status=409,
+                    )
                 original, _ = authority(self, record.plan.goalId)
                 if original is not None and original.plan.goalBudget != record.plan.goalBudget:
                     raise PlanError(
@@ -695,6 +710,14 @@ class AgentRSI:
         )
 
     def native_associations(self, identity):
+        capture = self.external.runtime_records.records.get(identity, {})
+        context = capture.get("privateContext", {})
+        if context:
+            return {
+                key: context[key]
+                for key in ("agentId", "harnessVersion", "planId", "planRevision", "goalId")
+                if key in context
+            }
         for run in tuple(self.manager.evaluations.store.records.values()):
             if (run.get("agentRound") is not None or run.get("agentPromotion") is not None) and any(
                 case.get("runtimeRecordId") == identity for case in run["cases"]
@@ -709,6 +732,9 @@ class AgentRSI:
         return {}
 
     def private_native_context(self, native_session_id):
+        optimizer = self.optimizer_sessions.get(native_session_id, {})
+        if optimizer.get("contaminationContext") is not None:
+            return deepcopy(optimizer["contaminationContext"])
         for promotion in tuple(self.promotions.values()):
             context = promotion.get("nativeBindings", {}).get(native_session_id)
             if context is not None:

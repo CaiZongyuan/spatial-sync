@@ -26,6 +26,8 @@ def connection(grant):
 
 def issue_optimizer(service, identifier, body):
     with service._lock:
+        if service.audit_error:
+            raise PlanError("agent_trace_unavailable", "Workflow Trace is unavailable", status=503)
         agent = service.agents.show(identifier)
         known = service.optimizer_sessions.get(body.nativeSessionId)
         if known is not None:
@@ -119,13 +121,51 @@ def record_tool(service, grant, method, path, status, *, request_id=None):
 
 
 def tool_trace(service, agent_id, goal):
+    if service.audit_error:
+        raise PlanError("agent_trace_unavailable", "Workflow Trace is unavailable", status=503)
     path = service.manager.settings.state_root / "agent-rsi-tools.jsonl"
     if not path.exists():
         return []
     with service._audit_lock:
-        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        try:
+            if path.is_symlink() or path.is_junction() or path.stat().st_nlink != 1:
+                raise OSError("Workflow Trace is not a regular file")
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        except (OSError, ValueError, UnicodeError) as error:
+            service.audit_error = True
+            raise PlanError("agent_trace_unavailable", "Workflow Trace is unavailable", status=503) from error
     return [
         row
         for row in rows
         if row["agentId"] == agent_id and row["goalId"] == goal and row["principal"] == "optimizer"
     ][-1000:]
+
+
+def recover_trace(service):
+    path = service.manager.settings.state_root / "agent-rsi-tools.jsonl"
+    if not path.exists():
+        return
+    try:
+        with service._audit_lock:
+            if path.is_symlink() or path.is_junction() or path.stat().st_nlink != 1:
+                raise OSError("Workflow Trace is not a regular file")
+            offset = 0
+            for line in path.read_bytes().splitlines(keepends=True):
+                if not line.endswith(b"\n"):
+                    # An interrupted append proves no output or completed call.
+                    with path.open("r+b") as stream:
+                        stream.truncate(offset)
+                    break
+                row = json.loads(line)
+                if (
+                    not isinstance(row, dict)
+                    or row.get("principal") not in ("optimizer", "promotion-controller")
+                    or row.get("phase") not in ("begin", "end")
+                    or not all(
+                        isinstance(row.get(key), str) for key in ("at", "agentId", "goalId", "principalId")
+                    )
+                ):
+                    raise ValueError("Invalid Workflow Trace")
+                offset += len(line)
+    except (OSError, ValueError, UnicodeError):
+        service.audit_error = True

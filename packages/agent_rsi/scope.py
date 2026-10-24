@@ -186,8 +186,17 @@ class WorkflowAuthority:
 
             try:
                 self.service.record_tool(grant, request.method, request.url.path, None, request_id=audit_id)
+                from packages.agent_rsi.contamination import observe_input
+
+                await observe_input(self.service, grant, body, audit_id)
                 async with asyncio.timeout_at(grant.deadline):
                     await self.app(scope, replay, capture)
+            except PlanError as error:
+                status = error.status
+                raise
+            except TimeoutError:
+                status = 403
+                raise
             finally:
                 try:
                     self.service.record_tool(

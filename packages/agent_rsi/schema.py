@@ -34,6 +34,19 @@ class GoalBudget(Schema):
     llmUsd: float | None = Field(default=None, ge=0)
 
 
+class BudgetException(Schema):
+    reason: Text
+    additionalCases: int = Field(default=0, ge=0, le=1000000)
+    additionalDays: float = Field(default=0, ge=0, le=365)
+    additionalLlmUsd: float = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def finite_extension(self):
+        if not (self.additionalCases or self.additionalDays or self.additionalLlmUsd):
+            raise ValueError("Specify a finite extension")
+        return self
+
+
 class AgentPlan(Schema):
     id: str = Field(pattern=r"^plan-[A-Za-z0-9-]+$")
     kind: Literal["training"] = "training"
@@ -54,6 +67,7 @@ class AgentPlan(Schema):
     interview: str = Field(min_length=1, max_length=128000)
     budget: Budget
     goalBudget: GoalBudget
+    budgetException: BudgetException | None = None
     previous: Text | None = None
     revision: int = Field(default=1, ge=1)
     status: Text = "draft"

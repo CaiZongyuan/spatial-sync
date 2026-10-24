@@ -94,6 +94,18 @@ def budget(service, goal, *, proposed=None):
         "remainingCases": max(0, limits["cases"] - cases["committedCases"]) if limits else None,
         "usdEnforcement": "Observed native reports stop future admissions; "
         "no external pre-call hard USD guarantee",
+        "approvedExceptions": [
+            {
+                "planId": record.plan.id,
+                "revision": record.plan.revision,
+                "extension": record.plan.budgetException.model_dump(mode="json"),
+            }
+            for record in service.history.values()
+            if record.plan.goalId == goal
+            and record.plan.budgetException is not None
+            and (approval := service.manager.approvals.records.get(record.approvalId)) is not None
+            and approval.status == "approved"
+        ],
     }
 
 
@@ -106,14 +118,22 @@ def require_budget(service, record, proposed=None, *, additional_cases=0):
         attempts(service, plan=record.plan.id, proposed=proposed),
         native_total(service, plan=record.plan.id),
     )
+    extension = record.plan.budgetException
+    limits = dict(view["limits"])
+    deadline = view["basis"]["startedAtMs"] / 1000 + limits["days"] * 86400
+    if extension is not None:
+        limits["cases"] += extension.additionalCases
+        deadline += extension.additionalDays * 86400
+        if limits["llmUsd"] is not None:
+            limits["llmUsd"] += extension.additionalLlmUsd
     if (
-        view["expired"]
-        or view["committedCases"] + additional_cases > view["limits"]["cases"]
+        service.clock() >= deadline
+        or view["committedCases"] + additional_cases > limits["cases"]
         or own_cases["committedCases"] + additional_cases > record.plan.budget.cases
         or record.plan.budget.llmUsd is not None
         and (own_cost.get("knownLlmUsd") or 0) > record.plan.budget.llmUsd
-        or view["limits"]["llmUsd"] is not None
-        and (view["usage"].get("knownLlmUsd") or 0) > view["limits"]["llmUsd"]
+        or limits["llmUsd"] is not None
+        and (view["usage"].get("knownLlmUsd") or 0) > limits["llmUsd"]
     ):
         raise PlanError(
             "agent_budget_exhausted", "The existing Plan/Goal pool cannot admit this work", status=409
