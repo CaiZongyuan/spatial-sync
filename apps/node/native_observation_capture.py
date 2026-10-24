@@ -39,7 +39,7 @@ class NativeObservationCapture:
         self.runner, self.observer, self.inputs = runner, observer, inputs
         self.profile = json.loads(json.dumps(profile, allow_nan=False))
         self.samples, self.witnesses, self.unique = [], [], set()
-        self.previous, self.original, self.handle = None, None, None
+        self.previous, self.previous_scopes, self.original, self.handle = None, None, None, None
         self.collecting, self.error, self.runtime = False, None, None
 
     def __enter__(self):
@@ -63,6 +63,7 @@ class NativeObservationCapture:
                 "boundary": "rsl-mlp-pre-normalizer",
                 "normalization": "inside-exported-graph",
                 "previousAction": "raw-native-algorithm-output",
+                "previousActionReset": "zero-on-environment-epoch",
             }
             for key in self.runtime:
                 if self.profile[key] != self.runtime[key]:
@@ -82,6 +83,9 @@ class NativeObservationCapture:
                 if self.error is None and len(self.samples) < 256:
                     try:
                         self.previous = selected_rows(result, self.indices)
+                        self.previous_scopes = [
+                            (epoch, self.observer.physics_count) for epoch in self.observer.epochs
+                        ]
                     except Exception as error:
                         self.error = str(error)
                 return result
@@ -118,10 +122,17 @@ class NativeObservationCapture:
                 ):
                     raise ValueError("Actual native dimensions differ from the exported policy")
                 snapshot = json.loads(json.dumps(physical, allow_nan=False))
+                epoch, step = self.observer.epochs[slot], self.observer.physics_count
+                previous_epoch, previous_step = self.previous_scopes[slot]
+                if epoch == previous_epoch and step <= previous_step:
+                    continue  # No new actual physics state has consumed that action yet.
+                previous = (
+                    self.previous[slot] if epoch == previous_epoch else [0.0] * self.profile["actionWidth"]
+                )
                 sample = {
                     "state": snapshot["state"],
                     "references": snapshot.get("references", {}),
-                    "previousAction": self.previous[slot],
+                    "previousAction": previous,
                     "trainingObservation": vector,
                 }
                 state_hash = canonical_hash(
@@ -129,7 +140,6 @@ class NativeObservationCapture:
                 )
                 if state_hash in self.unique:
                     continue
-                epoch, step = self.observer.epochs[slot], self.observer.physics_count
                 identity = f"env-{index}/epoch-{epoch}/step-{step}"
                 if any(row["sourceStateId"] == identity for row in self.samples):
                     raise ValueError("Actual native sampling scope did not advance")

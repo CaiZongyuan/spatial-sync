@@ -100,6 +100,7 @@ def setup(tmp_path, monkeypatch):
         "boundary": "rsl-mlp-pre-normalizer",
         "normalization": "inside-exported-graph",
         "previousAction": "raw-native-algorithm-output",
+        "previousActionReset": "zero-on-environment-epoch",
         "inputWidth": 1,
         "actionWidth": 1,
     }
@@ -165,3 +166,20 @@ def test_task_returned_actor_vector_and_unreviewed_implementation_never_make_a_n
     profile["actor"] = profile["actor"] | {"sha256": "f" * 64}
     with NativeObservationCapture(runner, observer, profile, inputs) as unknown:
         assert unknown.error and runner.alg.actor.obs_normalizer.hooks == []
+
+
+def test_an_action_without_a_step_is_not_a_witness_and_reset_uses_zero_previous_action(tmp_path, monkeypatch):
+    runner, env, observer, profile, inputs = setup(tmp_path, monkeypatch)
+    with NativeObservationCapture(runner, observer, profile, inputs) as capture:
+        runner.alg.act(Tensor([[0.0]]))
+        runner.alg.act(Tensor([[0.0]]))
+        assert not capture.samples
+        observer.physics_count = 1
+        env.state["joints"]["/World/Joint"]["q"] = 0.1
+        runner.alg.act(Tensor([[0.2]]))
+        observer.epochs[0] += 1
+        env.state["joints"]["/World/Joint"]["q"] = 0.0
+        runner.alg.act(Tensor([[0.0]]))
+    assert capture.error is None and len(capture.samples) == 2
+    assert capture.samples[0]["previousAction"] == [0.25]
+    assert capture.samples[1]["previousAction"] == [0.0]
