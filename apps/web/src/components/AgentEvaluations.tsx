@@ -159,7 +159,8 @@ export function AgentEvaluations({ suite, rows }: { suite: AgentEvaluationSuite;
           <td>{row.key.model ?? '未知'}<small>{row.key.thinking ?? '未知'} · 声明条件</small><small>条件组 {row.conditionsGroup ?? row.evaluationId}</small></td>
           <td className="numeric">{agentScore(row.score)}<small>CI 不适用</small></td><td>{row.episodes} 次实验<small>每题 {suite.runsPerCase} 次</small></td>
           <td className="numeric">{runtimeMoney(row.cost?.llmUsd)}<small>{row.cost?.costSource === 'runtime-mixed' ? '运行时报告 / 估算混合' : runtimeCostSource[row.cost?.costSource ?? 'unknown']}</small>
-            <small>Token {runtimeCount(row.cost?.tokens)} · 请求 {runtimeCount(row.cost?.requests)}</small><small>完成时快照 · 原生记录去重</small></td>
+            <small>Token {runtimeCount(row.cost?.tokens)} · 请求 {runtimeCount(row.cost?.requests)}</small>
+            <small>{row.cost?.observationBasis === 'completion-snapshot' ? '完成时快照 · 原生记录去重' : '观测口径未提供'}</small></td>
           <td>{evaluationDate(row.at)}</td><td>已报告<small>接受 / Reference / 提升独立</small></td></tr>)}
         {!rows.length && <tr><td colSpan={7} className="eval-empty">尚无完整有效的 Agent train 运行记录。</td></tr>}
         <tr className="eval-locked" data-testid="held-out-test-row"><th scope="row"><Icon name="lock" /> held-out test</th><td colSpan={6}>锁定 · 仅在申请提升时运行并揭示；题目与结果不公开。</td></tr>

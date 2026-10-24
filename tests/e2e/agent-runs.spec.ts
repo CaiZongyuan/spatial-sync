@@ -110,7 +110,12 @@ test('external evaluation freezes inputs, exposes real Synthetic evidence and ke
     const fixture = { ...outcome.run, id: row.evaluationId, evaluationId: row.evaluationId, status: 'completed', result: row,
       cleanup: { complete: true, blocked: false }, cases: [outcome.case], error: null };
     await page.route('**/api/v1/suites/lab-ops-basic/1/scoreboard', route => route.fulfill({ json: { rows: [row] } }));
-    await page.route('**/api/v1/agent-runs', route => route.fulfill({ json: { runs: [fixture] } }));
+    let showInvalid = false;
+    const invalid = { ...fixture, id: 'controlled-invalid-fixture', evaluationId: 'controlled-invalid-fixture',
+      status: 'failed', result: null, cleanup: { complete: false, blocked: true }, error: { code: 'source_cleanup_unconfirmed' },
+      cases: [{ ...outcome.case, score: null, status: 'invalid', usage: null, runtimeRecordId: null, runtimeRecordHash: null,
+        nativeSessionId: null, error: { code: 'evidence_unavailable' } }] };
+    await page.route('**/api/v1/agent-runs', route => route.fulfill({ json: { runs: [showInvalid ? invalid : fixture] } }));
     await page.reload();
     const scoreboard = page.getByRole('table', { name: 'Agent 评估计分板', exact: true });
     await expect(scoreboard).toContainText('82.5 / 100'); await expect(scoreboard).not.toContainText('8250');
@@ -123,10 +128,18 @@ test('external evaluation freezes inputs, exposes real Synthetic evidence and ke
     await page.screenshot({ path: info.outputPath('controlled-reported-score-dark.png'), fullPage: true });
     await page.setViewportSize({ width: 900, height: 1000 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    showInvalid = true;
+    await page.getByRole('button', { name: '刷新运行', exact: true }).click();
+    await expect(detail).toContainText('未确认，单活跃 Session 槽仍被占用');
+    await expect(detail).toContainText('基础设施无效'); await expect(detail).toContainText('evidence_unavailable');
+    await expect(detail).toContainText('此运行没有完整有效的 train 评分');
+    await expect(detail).toContainText('未关联运行时记录，用量未知');
+    await expect(detail.getByRole('button', { name: '取消评估', exact: true })).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath('controlled-invalid-cleanup.png'), fullPage: true });
     expect(errors).toEqual([]);
     await writeFile(info.outputPath('agent-runs-receipt.json'), JSON.stringify({ created, outcome, errors,
       actualScope: 'Real HTTP freeze/handoff, one actual Synthetic graded case, explicit native-format fixture metering, cancel and cleanup; no external model execution',
-      controlledScope: '82.5/100 completed train scoreboard and chart are labelled UI contract fixtures, not 10×3 execution evidence' }));
+      controlledScope: '82.5/100 completed scoreboard/chart and invalid/blocked-cleanup states are labelled UI contract fixtures, not 10×3 execution evidence' }));
   } catch (error) { original.push(error); }
   finally {
     const cleanup = await cleanupOwnedProcesses(processes, { python, script, original, outputPath: name => info.outputPath(name),
