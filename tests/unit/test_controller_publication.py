@@ -15,6 +15,18 @@ from packages.training.deployment_publication import DeploymentPlan, DeploymentP
 from tests.unit.test_policy_subjects import policy_client, policy_inputs  # noqa: F401
 
 
+class ControlledPublicationValidator(StructuralValidator):
+    """Transaction fixture only: real structural checks, explicitly unproved physics."""
+
+    def run(self, *args, **kwargs):
+        report = self.run_structure(*args, **kwargs)
+        report["checks"].append({
+            "id": "P2", "tier": "physics", "status": "warn", "notApplicable": True,
+            "message": "Controlled fixture: physical stability and learned quality are not asserted",
+        })
+        return report
+
+
 @pytest.fixture
 def publication_inputs(policy_inputs, policy_client, tmp_path):  # noqa: F811
     manager, policy, scene, suite, _ = policy_inputs
@@ -29,7 +41,8 @@ def publication_inputs(policy_inputs, policy_client, tmp_path):  # noqa: F811
     user = manager.library_assets.roots["user"]
     durable_json(user / "robot-models/controlled-policy.yaml", model)
     importer = LibraryImports(
-        manager.library_assets, manager.library, StructuralValidator(tmp_path / "validation", program_schemas)
+        manager.library_assets, manager.library,
+        ControlledPublicationValidator(tmp_path / "validation", program_schemas)
     )
     plan = DeploymentPlan(
         promotion_id="promotion-controlled", scene=scene, subject=subject,

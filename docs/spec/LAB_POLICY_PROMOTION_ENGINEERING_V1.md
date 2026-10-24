@@ -233,3 +233,12 @@ Platform Skill. Final Native/Scene changes require the four Newton CPU checks,
 one stable affected-preview capture batch, exact-head full CI, non-author review
 and integrated-tree equality. Keep genuine training/contact/256-state quality
 unmet until its actual evidence exists.
+
+The bundled `robot-and-tubes@2` initial state also fails the existing full P2
+physics validator:16 free tubes move193.755–314.789mm against the unchanged5mm
+limit. Read-only original/derived validation produced identical measurements and
+left the base package hash unchanged. Transaction fixtures therefore inject an
+explicit controlled structural/physical-evidence adapter; they do not certify
+this physical scene. An actual full-validator refusal counter remains, and
+production uses complete ordinary validation. No geometry, warmup, exclusion or
+threshold is changed to make a derived Scene pass.
