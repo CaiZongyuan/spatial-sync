@@ -392,6 +392,35 @@ class AgentLibrary:
 
         return recover(self)
 
+    def files(self, identifier, version):
+        record, archive = self._read_version(identifier, version)
+        with tempfile.TemporaryDirectory(prefix="lw-harness-files-") as temporary:
+            root = Path(temporary)
+            names = unpack_harness(archive, root)
+            files = [{"path": name, "content": (root / name).read_text(encoding="utf-8")} for name in names]
+        return record | {"agentId": "agent/" + agent_name(identifier), "files": files}
+
+    def stage(self, identifier, data, *, reference_version):
+        """Publish an immutable candidate without changing the editor or either current pointer."""
+        with import_lock(self.user_root):
+            path = self._writable(identifier)
+            metadata = self._metadata(path)
+            if metadata["referenceVersion"] != reference_version:
+                raise invalid_agent("harness_conflict", 409)
+            with tempfile.TemporaryDirectory(prefix=".candidate-", dir=path) as temporary:
+                staged = Path(temporary)
+                unpack_harness(data, staged)
+                value_hash = content_hash(staged)
+                if value_hash == self.version(identifier, reference_version)["contentHash"]:
+                    raise invalid_agent("harness_unchanged", 422)
+                existing = next((record for record in self.versions(identifier)
+                                 if record["baseVersion"] == reference_version
+                                 and record["contentHash"] == value_hash
+                                 and record["decision"] == "candidate"), None)
+                if existing is not None:
+                    return existing
+                return self._publish(path, staged, self._reserve(path), reference_version)
+
     def create(self, identifier, data, title=None):
         name = agent_name(identifier)
         title = title or name

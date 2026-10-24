@@ -17,7 +17,8 @@ def rejected():
 
 
 def validate_change(agents, identifier, reference, candidate, change):
-    before, after = agents.export(identifier, reference), agents.export(identifier, candidate)
+    before = agents.export(identifier, reference)
+    after = candidate if isinstance(candidate, bytes) else agents.export(identifier, candidate)
     with tempfile.TemporaryDirectory(prefix="lw-agent-change-") as temporary:
         left, right = Path(temporary) / "before", Path(temporary) / "after"
         left.mkdir()

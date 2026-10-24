@@ -10,6 +10,7 @@ from pydantic import Field, JsonValue, model_validator
 from packages.info.plans import PlanError
 from packages.library.transactions import durable_json
 from packages.runtime_records.native import digest, merge_metric, normalize, redacted, usage_summary
+from packages.training.dispatch import training_store, training_stores
 from packages.training.schema import Schema
 
 MAX_BYTES = 16 * 1024 * 1024
@@ -70,15 +71,15 @@ class RuntimeRecords:
         if (body.planId is None) != (body.planRevision is None):
             raise PlanError("invalid_runtime_association", "Supply both Plan ID and revision", status=422)
         if body.planId is not None:
-            if body.planId in self.manager.training_plans.records:
-                self.manager.training_plans.get(body.planId, body.planRevision)
+            if any(body.planId in selected.records for selected in training_stores(self.manager)):
+                training_store(self.manager, identifier=body.planId).get(body.planId, body.planRevision)
             else:
                 self.manager.plans.get(body.planId, body.planRevision)
         if body.goalId is not None and body.goalId not in self.manager.notebooks.goals():
             raise PlanError("invalid_runtime_association", "Select an existing Goal", status=422)
         return values
 
-    def ingest(self, body):
+    def ingest(self, body, *, private_context=None):
         native = body.records
         if body.content is not None:
             if len(body.content.encode()) > MAX_BYTES:
@@ -100,6 +101,16 @@ class RuntimeRecords:
         if len(serialized) > MAX_BYTES:
             raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
         parsed = normalize(body.format, native)
+        rsi = getattr(self.manager, "agent_rsi", None)
+        bound = rsi.private_native_context(parsed["nativeSessionId"]) if rsi is not None else None
+        if private_context is None and bound is not None:
+            raise PlanError(
+                "runtime_capture_restricted", "Use the owning promotion capture intake", status=409
+            )
+        if private_context is not None and private_context != bound:
+            raise PlanError(
+                "runtime_capture_scope_conflict", "Capture is not bound to this private case", status=409
+            )
         references = self.references(body.associations)
         identity = (
             "runtime-session-"
@@ -115,6 +126,10 @@ class RuntimeRecords:
                         status=409,
                     )
             prior = self.records.get(identity)
+            if prior and prior.get("visibility") == "private" and private_context is None:
+                raise PlanError(
+                    "runtime_capture_restricted", "Capture has restricted evaluation scope", status=409
+                )
             record = (
                 deepcopy(prior)
                 if prior
@@ -132,6 +147,8 @@ class RuntimeRecords:
                     "receipts": {},
                 }
             )
+            if private_context is not None:
+                record.update(visibility="private", privateContext=deepcopy(private_context))
             if record["format"] != parsed["format"]:
                 raise PlanError(
                     "runtime_capture_scope_conflict",
@@ -249,7 +266,7 @@ class RuntimeRecords:
                     ) from error
                 self.records = records
             return {
-                "session": self.document(record),
+                "session": self.document(record, private=private_context is not None),
                 "addedEvents": added,
                 "updatedEvents": updated,
                 "idempotent": identical,
@@ -261,7 +278,9 @@ class RuntimeRecords:
             raise PlanError("unknown_runtime_session", "Unknown imported runtime session", status=404)
         return record
 
-    def artifact(self, record, identity):
+    def artifact(self, record, identity, *, private=False):
+        if record.get("visibility") == "private" and not private:
+            raise PlanError("unknown_runtime_session", "Unknown imported runtime session", status=404)
         if identity == "transcript":
             return (
                 "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in record["events"])
@@ -273,13 +292,19 @@ class RuntimeRecords:
             ).encode(), "application/json"
         raise PlanError("unknown_runtime_artifact", "Unknown normalized runtime evidence", status=404)
 
-    def document(self, record, *, detail=False):
+    def document(self, record, *, detail=False, private=False):
         import hashlib
 
+        if record.get("visibility") == "private" and not private:
+            raise PlanError("unknown_runtime_session", "Unknown imported runtime session", status=404)
         result = deepcopy({key: value for key, value in record.items() if key not in {"events", "receipts"}})
+        rsi = getattr(self.manager, "agent_rsi", None)
+        execution = rsi.native_associations(record["id"]) if rsi is not None else {}
+        if execution:
+            result["executionAssociations"] = execution
         result["artifacts"] = []
         for identity, kind in (("transcript", "runtime-transcript"), ("usage", "runtime-usage")):
-            content, _ = self.artifact(record, identity)
+            content, _ = self.artifact(record, identity, private=private)
             result["artifacts"].append(
                 {
                     "id": identity,
@@ -293,3 +318,15 @@ class RuntimeRecords:
         if detail:
             result["events"] = deepcopy(record["events"])
         return result
+
+    def mark_private(self, native_session_id, context):
+        """Trusted case binding also restricts an earlier explicit capture of that native conversation."""
+        with self._lock:
+            records = dict(self.records)
+            for identity, record in records.items():
+                if record["nativeSessionId"] == native_session_id:
+                    records[identity] = record | {
+                        "visibility": "private", "privateContext": deepcopy(context)
+                    }
+            durable_json(self.path, {"version": 1, "sessions": records})
+            self.records = records

@@ -128,6 +128,9 @@ def _role(headers, settings: Settings):
     from packages.agent_evaluation.scope import current_scope
     if current_scope() is not None:
         return "operator"
+    from packages.agent_rsi.scope import current_principal
+    if current_principal() is not None:
+        return "operator"
     if not settings.remote:
         return "operator"
     authorization = headers.get("authorization", "")
@@ -768,6 +771,8 @@ def create_app(
 
     from packages.agent_evaluation.scope import CaseAuthority
     app.add_middleware(CaseAuthority, service=external_evaluations)
+    from packages.agent_rsi.scope import WorkflowAuthority
+    app.add_middleware(WorkflowAuthority, service=agent_rsi)
     return app
 
 

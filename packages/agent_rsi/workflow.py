@@ -1,7 +1,9 @@
 """Durable Agent intent consumes existing approvals, Harness and evaluator facts."""
 
 import hashlib
+import io
 import json
+import tarfile
 import threading
 import time
 import uuid
@@ -32,10 +34,13 @@ class AgentRSI:
     def __init__(self, manager, agents, external):
         self.manager, self.agents, self.external = manager, agents, external
         self.path = manager.settings.state_root / "agent-rsi.json"
-        self.records, self.history, self.baselines, self.promotions = {}, {}, {}, {}
+        self.records, self.history, self.baselines, self.promotions, self.proposals = {}, {}, {}, {}, {}
+        self.optimizer_sessions, self.grants = {}, {}
+        self.audit_error, self._audit_lock = False, threading.Lock()
         self.recovery = []
         self._lock = threading.RLock()
         self.identities = comparison_identity
+        self.clock = time.time
 
     def startup(self):
         with self._lock:
@@ -45,6 +50,8 @@ class AgentRSI:
                 if value["version"] != 1:
                     raise ValueError("Unsupported Agent RSI records")
                 self.baselines, self.promotions = value["baselines"], value["promotions"]
+                self.proposals = value.get("proposals", {})
+                self.optimizer_sessions = value.get("optimizerSessions", {})
                 self.history = {
                     key: StoredAgentPlan.model_validate(record) for key, record in value["plans"].items()
                 }
@@ -64,10 +71,14 @@ class AgentRSI:
             for record in self.records.values():
                 self._notify(record)
 
-    def _write(self, *, history=None, baselines=None, promotions=None):
+    def _write(
+        self, *, history=None, baselines=None, promotions=None, proposals=None, optimizer_sessions=None
+    ):
         history = self.history if history is None else history
         baselines = self.baselines if baselines is None else baselines
         promotions = self.promotions if promotions is None else promotions
+        proposals = self.proposals if proposals is None else proposals
+        optimizer_sessions = self.optimizer_sessions if optimizer_sessions is None else optimizer_sessions
         try:
             durable_json(
                 self.path,
@@ -75,6 +86,8 @@ class AgentRSI:
                     "version": 1,
                     "baselines": baselines,
                     "promotions": promotions,
+                    "proposals": proposals,
+                    "optimizerSessions": optimizer_sessions,
                     "plans": {key: value.model_dump(mode="json") for key, value in history.items()},
                 },
             )
@@ -83,6 +96,8 @@ class AgentRSI:
                 "agent_rsi_unavailable", "Agent RSI publication is unavailable", status=503
             ) from error
         self.history, self.baselines, self.promotions = history, baselines, promotions
+        self.proposals = proposals
+        self.optimizer_sessions = optimizer_sessions
 
     def _save(self, record):
         self._write(history=self.history | {f"{record.plan.id}:{record.plan.revision}": record})
@@ -240,6 +255,61 @@ class AgentRSI:
             "conditions": deepcopy(value["comparison"]["conditions"]),
         }
 
+    def propose(self, identifier, body):
+        with self._lock:
+            agent = self.agents.show(identifier)
+            key = digest({"agent": agent["id"], "request": body.requestId})
+            inputs_hash = digest(body.model_dump(mode="json"))
+            previous = self.proposals.get(key)
+            if previous is not None and previous["inputsHash"] != inputs_hash:
+                raise PlanError(
+                    "idempotency_conflict", "Candidate request changed its fixed input", status=409
+                )
+            if previous is not None and previous.get("version") is not None:
+                return self.proposal_document(identifier, previous["version"])
+            if agent["referenceVersion"] != body.referenceVersion:
+                raise PlanError("agent_reference_mismatch", "Select the current Reference", status=409)
+            original = {
+                item["path"]: item["content"]
+                for item in self.agents.files(identifier, body.referenceVersion)["files"]
+            }
+            output = io.BytesIO()
+            with tarfile.open(fileobj=output, mode="w") as archive:
+                for item in body.files:
+                    text = item.content
+                    if item.path in original and "\r\n" in original[item.path]:
+                        text = text.replace("\r\n", "\n").replace("\n", "\r\n")
+                    content = text.encode()
+                    entry = tarfile.TarInfo(item.path)
+                    entry.size = len(content)
+                    archive.addfile(entry, io.BytesIO(content))
+            archive = output.getvalue()
+            validate_change(self.agents, identifier, body.referenceVersion, archive, body.change)
+            intent = {
+                "agentId": agent["id"],
+                "inputsHash": inputs_hash,
+                "referenceVersion": body.referenceVersion,
+                "status": "prepared",
+                "change": body.change.model_dump(mode="json"),
+            }
+            self._write(proposals=self.proposals | {key: intent})
+            version = self.agents.stage(identifier, archive, reference_version=body.referenceVersion)
+            self._write(
+                proposals=self.proposals | {key: intent | {"status": "staged", "version": version["version"]}}
+            )
+            return self.proposal_document(identifier, version["version"])
+
+    def proposal_document(self, identifier, version):
+        from packages.library.agent_transitions import workspace_hash
+
+        record = self.agents.version(identifier, version)
+        current = self.agents.show(identifier)["currentVersion"]
+        applied = (
+            current == version
+            and workspace_hash(self.agents._path(identifier) / "harness") == record["contentHash"]
+        )
+        return record | {"staged": True, "applied": applied}
+
     def submit(self, document, actor, *, plan_id=None):
         with self._lock:
             previous = self.get(plan_id) if plan_id else None
@@ -260,6 +330,17 @@ class AgentRSI:
                     raise ValueError("Plan identity already exists")
                 if previous and previous.plan.goalId != plan.goalId:
                     raise ValueError("A revision cannot change its Goal")
+                peers = [item for item in self.history.values() if item.plan.goalId == plan.goalId]
+                if any(item.plan.agentId != plan.agentId or item.plan.suite != plan.suite for item in peers):
+                    raise ValueError("A Goal keeps its Agent and fixed Suite")
+                if plan.previous:
+                    ancestor = self.get(plan.previous)
+                    if (
+                        ancestor.plan.id == plan.id
+                        or ancestor.plan.agentId != plan.agentId
+                        or ancestor.plan.goalId != plan.goalId
+                    ):
+                        raise ValueError("Previous round must address this Agent and Goal")
                 reference = next(
                     (
                         value
@@ -284,7 +365,7 @@ class AgentRSI:
                 candidate = self.agents.version(plan.agentId, plan.candidateVersion)
                 if (
                     agent["referenceVersion"] != plan.referenceVersion
-                    or agent["currentVersion"] != plan.candidateVersion
+                    or agent["currentVersion"] not in (plan.referenceVersion, plan.candidateVersion)
                     or plan.candidateVersion <= plan.referenceVersion
                 ):
                     raise ValueError("Select the current candidate and unchanged Reference")
@@ -357,6 +438,14 @@ class AgentRSI:
                 decision != "revoke" and current.status != "pending"
             ):
                 raise ApprovalConflict("This Agent Plan approval has already been processed")
+            if decision == "approve":
+                from packages.agent_rsi.budgets import authority
+
+                original, _ = authority(self, record.plan.goalId)
+                if original is not None and original.plan.goalBudget != record.plan.goalBudget:
+                    raise PlanError(
+                        "agent_goal_budget_changed", "Goal limits cannot reset on a new Plan", status=409
+                    )
             self.manager.approvals.decide(approval.approvalId, decision, actor, note)
             self._notify(record)
 
@@ -387,9 +476,9 @@ class AgentRSI:
                     "agent_budget_exhausted", "Plan cannot cover the complete train scope", status=409
                 )
             agent = self.agents.show(record.plan.agentId)
-            if (
-                agent["referenceVersion"] != record.plan.referenceVersion
-                or agent["currentVersion"] != record.plan.candidateVersion
+            if agent["referenceVersion"] != record.plan.referenceVersion or agent["currentVersion"] not in (
+                record.plan.referenceVersion,
+                record.plan.candidateVersion,
             ):
                 raise PlanError(
                     "agent_reference_mismatch", "Agent versions changed before admission", status=409
@@ -399,6 +488,29 @@ class AgentRSI:
             record.plan.status = "evaluating"
             self._save(record)
             self._notify(record)
+            from packages.library.agent_transitions import workspace_hash
+
+            current = self.agents.show(record.plan.agentId)
+            if current["currentVersion"] == record.plan.referenceVersion:
+                reference_hash = record.context["reference"]["harnessHash"]
+                self.agents.transition(
+                    record.plan.agentId,
+                    target_version=record.plan.candidateVersion,
+                    expected_version=record.plan.referenceVersion,
+                    expected_hash=reference_hash,
+                    request_id="activate-" + digest({"planId": identifier, "revision": revision}),
+                    outcome=None,
+                )
+            path = self.agents._path(record.plan.agentId) / "harness"
+            if (
+                self.agents.show(record.plan.agentId)["currentVersion"] != record.plan.candidateVersion
+                or workspace_hash(path) != record.context["candidateHash"]
+            ):
+                raise PlanError(
+                    "harness_transition_conflict",
+                    "Candidate editor bytes changed before dispatch",
+                    status=409,
+                )
             return {
                 "requestId": "rsi-"
                 + digest({"plan": identifier, "revision": revision, "request": request_id}),
@@ -431,6 +543,9 @@ class AgentRSI:
                 raise PlanError(
                     "plan_not_approved", "Agent execution no longer matches approved intent", status=409
                 )
+            from packages.agent_rsi.budgets import require_budget
+
+            require_budget(self, record, run)
 
     def retain_run(self, identifier, revision, run_id):
         with self._lock:
@@ -481,6 +596,10 @@ class AgentRSI:
                     "cost": self.external.cost(run["cases"]),
                     "at": run.get("endedAt"),
                 }
+                from packages.agent_rsi.budgets import native_total
+
+                record.result["executionCost"] = record.result["cost"]
+                record.result["cost"] = native_total(self, plan=record.plan.id)
                 record.plan.status = "retaining" if decision == "accepted" else "restoring"
                 self._save(record)  # Decision intent precedes the first filesystem effect.
             accepted = record.result["decision"] == "accepted"
@@ -492,7 +611,7 @@ class AgentRSI:
                     ),
                     expected_version=record.plan.candidateVersion,
                     expected_hash=record.context["candidateHash"],
-                    request_id=f"{identifier}-r{revision}-settle",
+                    request_id="settle-" + digest({"planId": identifier, "revision": revision}),
                     outcome_version=record.plan.candidateVersion,
                     outcome="accepted" if accepted else "rejected",
                 )
@@ -525,12 +644,64 @@ class AgentRSI:
                 self.publish_notebook(record)
 
     def goals(self):
-        return sorted({record.plan.goalId for record in self.history.values()})
+        return sorted(
+            {record.plan.goalId for record in self.history.values()}
+            | {value["goalId"] for value in self.optimizer_sessions.values()}
+        )
+
+    def record_tool(self, grant, method, path, status, request_id=None):
+        from packages.agent_rsi.grants import record_tool
+
+        return record_tool(self, grant, method, path, status, request_id=request_id)
+
+    def public_recordings(self, agent_id):
+        return {
+            case["recordingId"]
+            for run in self.manager.evaluations.store.records.values()
+            if run.get("layer") == "agent" and run.get("split") == "train" and run["agentId"] == agent_id
+            for case in run["cases"]
+            if case.get("recordingId")
+        }
+
+    def private_recording(self, recording_id):
+        session = self.manager.sessions.get(recording_id)
+        if session is not None:
+            record = self.manager.evaluations.store.records.get(session.evaluation_id, {})
+            if record.get("split") == "test":
+                return True
+        return any(
+            run.get("split") == "test"
+            and any(case.get("recordingId") == recording_id for case in run.get("cases", []))
+            for run in self.manager.evaluations.store.records.values()
+        )
+
+    def native_associations(self, identity):
+        for run in tuple(self.manager.evaluations.store.records.values()):
+            if (run.get("agentRound") is not None or run.get("agentPromotion") is not None) and any(
+                case.get("runtimeRecordId") == identity for case in run["cases"]
+            ):
+                return {
+                    "agentId": run["agentId"],
+                    "harnessVersion": run["harnessVersion"],
+                    "planId": run["planId"],
+                    "planRevision": run["planRevision"],
+                    "goalId": run["goalId"],
+                }
+        return {}
+
+    def private_native_context(self, native_session_id):
+        for promotion in tuple(self.promotions.values()):
+            context = promotion.get("nativeBindings", {}).get(native_session_id)
+            if context is not None:
+                return deepcopy(context)
+        return None
 
     def loop(self, goal):
         self.reconcile()
         entries = self.manager.notebooks.store.list(goal)
         rounds = [entry | {"round": index + 1} for index, entry in enumerate(entries)]
+        from packages.agent_rsi.budgets import budget
+
         return {
             "layer": "agent",
             "goalId": goal,
@@ -541,4 +712,5 @@ class AgentRSI:
             "reference": entries[-1]["comparison"] if entries else None,
             "candidate": entries[-1] if entries else None,
             "deployment": entries[-1]["deployment"] if entries else {"status": "not_requested"},
+            "budget": budget(self, goal),
         }

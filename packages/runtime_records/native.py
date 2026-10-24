@@ -17,7 +17,8 @@ TOKEN_FIELDS = {
     "tokens": "total_tokens",
 }
 SECRET = re.compile(
-    r"(?i)\b(?:lw-case-|sk-ant-|sk-|ghp_|github_pat_|xox[baprs]-)[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]{8,}"
+    r"(?i)\b(?:lw-case-|lw-rsi-|sk-ant-|sk-|ghp_|github_pat_|xox[baprs]-)[A-Za-z0-9_-]{12,}"
+    r"|Bearer\s+[A-Za-z0-9._~+/-]{8,}"
 )
 SENSITIVE = {
     "api_key",

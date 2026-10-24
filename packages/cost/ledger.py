@@ -150,7 +150,12 @@ class CostLedger:
 
     def _all_items(self):
         runtime = getattr(self.manager, "runtime_records", None)
-        return [*self.manager.jobs.records.values(), *(runtime.records.values() if runtime else ())]
+        imported = []
+        for record in runtime.records.values() if runtime else ():
+            rsi = getattr(self.manager, "agent_rsi", None)
+            execution = rsi.native_associations(record["id"]) if rsi is not None else {}
+            imported.append(record | {"associations": record["associations"] | execution})
+        return [*self.manager.jobs.records.values(), *imported]
 
     def window(self, key, *, start=None, end=None):
         earliest = min(
@@ -296,8 +301,13 @@ class CostLedger:
                             **self.aggregate([record], window),
                         }
                         for record in jobs
-                        if record.get("source") == "runtime-import"
+                        if record.get("source") == "runtime-import" and record.get("visibility") != "private"
                     ],
+                    "restrictedRuntimeSessionCount": sum(
+                        record.get("visibility") == "private" for record in jobs
+                    ),
+                    "runtimeDetailsCoverage": "Totals include restricted native usage; "
+                    "private capture details are hidden",
                 }
             )
         total = sum(row["gpuSeconds"] for row in rows)

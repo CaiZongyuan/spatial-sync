@@ -73,28 +73,50 @@ def recover_path(agents, path):
         intent = json.loads(file.read_bytes())
         if intent["status"] != "committed":
             finish(agents, path, directory, intent)
-            results.append({"agentId": "agent/" + path.name, "requestId": intent["requestId"],
-                            "status": "committed"})
+            results.append(
+                {"agentId": "agent/" + path.name, "requestId": intent["requestId"], "status": "committed"}
+            )
     return results
 
 
-def transition(agents, identifier, *, target_version, expected_version, expected_hash, request_id,
-               outcome_version=None, outcome="rejected", advance_reference=False):
+def transition(
+    agents,
+    identifier,
+    *,
+    target_version,
+    expected_version,
+    expected_hash,
+    request_id,
+    outcome_version=None,
+    outcome="rejected",
+    advance_reference=False,
+):
     from packages.library.agents import confined, unpack_harness
     from packages.library.archive import import_lock
 
-    if (not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", request_id)
-            or outcome not in ("accepted", "rejected")
-            or not isinstance(expected_hash, str) or not re.fullmatch(r"[a-f0-9]{64}", expected_hash)):
+    if (
+        not isinstance(request_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", request_id)
+        or outcome not in ("accepted", "rejected", None)
+        or outcome_version is not None
+        and outcome is None
+        or not isinstance(expected_hash, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", expected_hash)
+    ):
         raise LibraryError("invalid_harness_transition", "Invalid Harness transition", 422)
     with import_lock(agents.user_root):
         path = agents._writable(identifier)
         directory = confined(path, ("transitions", request_id), create=True)
         file = directory / "intent.json"
-        requested = {"requestId": request_id, "targetVersion": target_version,
-                     "expectedVersion": expected_version, "expectedHash": expected_hash,
-                     "outcomeVersion": outcome_version, "outcome": outcome,
-                     "advanceReference": advance_reference}
+        requested = {
+            "requestId": request_id,
+            "targetVersion": target_version,
+            "expectedVersion": expected_version,
+            "expectedHash": expected_hash,
+            "outcomeVersion": outcome_version,
+            "outcome": outcome,
+            "advanceReference": advance_reference,
+        }
         try:
             if file.exists():
                 if file.is_symlink() or file.is_junction() or file.stat().st_nlink != 1:
@@ -120,8 +142,12 @@ def transition(agents, identifier, *, target_version, expected_version, expected
             after = metadata | {"currentVersion": target_version}
             if advance_reference:
                 after["referenceVersion"] = target_version
-            intent = requested | {"status": "prepared", "targetHash": target["contentHash"],
-                                  "beforeMetadata": metadata, "targetMetadata": after}
+            intent = requested | {
+                "status": "prepared",
+                "targetHash": target["contentHash"],
+                "beforeMetadata": metadata,
+                "targetMetadata": after,
+            }
             durable_json(file, intent)
             return finish(agents, path, directory, intent)
         except OSError as error:
@@ -142,6 +168,7 @@ def recover(agents):
                 results.extend(recover_path(agents, path))
             except (LibraryError, OSError, ValueError, KeyError):
                 for file in confined(path, ("transitions",)).glob("*/intent.json"):
-                    results.append({"agentId": "agent/" + path.name, "requestId": file.parent.name,
-                                    "status": "blocked"})
+                    results.append(
+                        {"agentId": "agent/" + path.name, "requestId": file.parent.name, "status": "blocked"}
+                    )
     return results

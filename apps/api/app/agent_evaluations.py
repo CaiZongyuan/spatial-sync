@@ -251,6 +251,14 @@ class ExternalEvaluations:
         if body.runtimeRecordId is None:
             return {}
         record = self.runtime_records.get(body.runtimeRecordId)
+        if run.get("agentRound") is not None or run.get("agentPromotion") is not None:
+            expected = {"agentId": run["agentId"], "harnessVersion": run["harnessVersion"],
+                        "planId": run["planId"], "planRevision": run["planRevision"], "goalId": run["goalId"]}
+            if any(key in record["associations"] and record["associations"][key] != value
+                   for key, value in expected.items()):
+                raise PlanError(
+                    "runtime_association_mismatch", "Native attribution differs from this round", status=409
+                )
         if (
             record["nativeSessionId"] != body.nativeSessionId
             or record["runtime"] != run["runtime"]["name"]
@@ -533,6 +541,8 @@ class ExternalEvaluations:
             await self.save(run)
             async with asyncio.timeout(max(0, remaining)):
                 for case in run["cases"]:
+                    if run.get("agentRound") is not None:
+                        self.manager.agent_rsi.require_admission(run)
                     suite = self.evaluator.suites.resolve(run["suite"])
                     suite.verify()
                     try:
