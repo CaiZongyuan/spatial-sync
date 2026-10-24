@@ -18,6 +18,8 @@ from packages.library.transactions import durable_json
 from packages.policies.subjects import fixed_bindings
 from packages.programs.subjects import SimulationSubject, fingerprint
 
+from .deployment_authority import read_committed_permit  # noqa: F401
+
 
 def _json_bytes(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
@@ -34,8 +36,18 @@ class DeploymentPlan:
 
 
 class DeploymentPublication:
-    def __init__(self, assets, scenes, resources, importer, state_root, *, validate_context,
-                 commit_context, after_effect=None):
+    def __init__(
+        self,
+        assets,
+        scenes,
+        resources,
+        importer,
+        state_root,
+        *,
+        validate_context,
+        commit_context,
+        after_effect=None,
+    ):
         self.assets, self.scenes, self.resources, self.importer = assets, scenes, resources, importer
         self.root = Path(state_root) / "controller-publications"
         if self.root.is_symlink() or self.root.is_junction():
@@ -72,19 +84,27 @@ class DeploymentPublication:
                     hashes.add(value["contentHash"])
             if len(hashes) != 1:
                 raise PlanError("controller_current_changed", "Current Controller snapshot is unavailable")
-        return {"metadataHash": metadata["contentHash"], "version": version,
-                "versionHash": next(iter(hashes), None)}
+        return {
+            "metadataHash": metadata["contentHash"],
+            "version": version,
+            "versionHash": next(iter(hashes), None),
+        }
 
     def _reserve_controller(self, identifier):
         ledger = self.library / ".controller-revisions.json"
         if ledger.is_symlink() or ledger.is_junction():
             raise PlanError("publication_unavailable", "Controller reservations cannot be a filesystem link")
         values = document(ledger) if ledger.exists() else {}
-        if any(not NAME.fullmatch(key) or type(value) is not int or value < 1
-               for key, value in values.items()):
+        if any(
+            not NAME.fullmatch(key) or type(value) is not int or value < 1 for key, value in values.items()
+        ):
             raise PlanError("publication_unavailable", "Controller revision reservations are invalid")
-        existing = [int(file.stem) for root in self.resources.roots.values()
-                    for file in (root / "controllers" / identifier).glob("*.yaml") if file.stem.isdecimal()]
+        existing = [
+            int(file.stem)
+            for root in self.resources.roots.values()
+            for file in (root / "controllers" / identifier).glob("*.yaml")
+            if file.stem.isdecimal()
+        ]
         version = max([values.get(identifier, 0), *existing]) + 1
         durable_json(ledger, values | {identifier: version})
         return version
@@ -93,9 +113,11 @@ class DeploymentPublication:
     def _derived_bindings(scene, subject, bindings):
         result, changed = [], 0
         for authored in bindings["entities"]:
-            selected = [key for key in subject.baseBindings
-                        if key == authored.get("key") or authored.get("match")
-                        and fnmatchcase(key, authored["match"])]
+            selected = [
+                key
+                for key in subject.baseBindings
+                if key == authored.get("key") or authored.get("match") and fnmatchcase(key, authored["match"])
+            ]
             if subject.target.entityKey not in selected:
                 result.append(deepcopy(authored))
                 continue
@@ -116,9 +138,14 @@ class DeploymentPublication:
     def prepare(self, plan: DeploymentPlan):
         with self._lock:
             directory = self._directory(plan.promotion_id, create=True)
-            intent = {"baseScene": {"id": plan.scene.id, "contentHash": plan.scene.content_hash},
-                      "subject": plan.subject.document(), "controller": plan.controller,
-                      "versionFields": plan.version_fields, "contextHash": plan.context_hash}
+            intent = {
+                "baseScene": {"id": plan.scene.id, "contentHash": plan.scene.content_hash},
+                "subject": plan.subject.document(),
+                "controller": plan.controller,
+                "versionFields": plan.version_fields,
+                "contextHash": plan.context_hash,
+                "libraryRoot": str(self.library),
+            }
             if (directory / "record.json").exists():
                 previous = self.read(plan.promotion_id)
                 if previous["intentHash"] != fingerprint(intent):
@@ -126,7 +153,8 @@ class DeploymentPublication:
                 return previous
             plan.scene.require_launchable()
             if (plan.scene.id, plan.scene.content_hash) != (
-                plan.subject.evaluationScene.id, plan.subject.evaluationScene.contentHash
+                plan.subject.evaluationScene.id,
+                plan.subject.evaluationScene.contentHash,
             ):
                 raise PlanError("publication_scene_changed", "Subject does not belong to the base Scene")
             fields = plan.version_fields
@@ -137,11 +165,13 @@ class DeploymentPublication:
             artifact = {key: candidate[key] for key in ("id", "contentHash")}
             policy = candidate["id"] if candidate["kind"] == "policy" else None
             program_artifact = artifact if candidate["kind"] == "program" else None
-            if (not required <= set(fields) <= allowed
-                    or fields["embodiment"] != plan.controller["embodiment"]
-                    or fields["program"] != plan.subject.binding["program"]
-                    or fields["policy"] != policy
-                    or fields.get("programArtifact") != program_artifact):
+            if (
+                not required <= set(fields) <= allowed
+                or fields["embodiment"] != plan.controller["embodiment"]
+                or fields["program"] != plan.subject.binding["program"]
+                or fields["policy"] != policy
+                or fields.get("programArtifact") != program_artifact
+            ):
                 raise PlanError("publication_material_changed", "Controller and Subject composition differ")
             stage = directory / "scene"
             stage.mkdir()
@@ -162,11 +192,17 @@ class DeploymentPublication:
                 if expected_current["metadataHash"] != plan.controller["contentHash"]:
                     raise PlanError("controller_current_changed", "Controller changed during preparation")
                 version = self._reserve_controller(metadata["id"])
-            record = {"schema": "lw.controller-publication/1", "id": plan.promotion_id,
-                      "intentHash": fingerprint(intent), "intent": intent, "phase": "prepared",
-                      "sceneUploadHash": content_hash(stage), "controllerVersion": version,
-                      "expectedCurrent": expected_current,
-                      "newCurrent": metadata | {"currentVersion": version}}
+            record = {
+                "schema": "lw.controller-publication/1",
+                "id": plan.promotion_id,
+                "intentHash": fingerprint(intent),
+                "intent": intent,
+                "phase": "prepared",
+                "sceneUploadHash": content_hash(stage),
+                "controllerVersion": version,
+                "expectedCurrent": expected_current,
+                "newCurrent": metadata | {"currentVersion": version},
+            }
             return self._save(record)
 
     def _scene(self, record):
@@ -222,12 +258,14 @@ class DeploymentPublication:
                     record["scene"] = {"id": result["sceneVersion"], "contentHash": result["contentHash"]}
                     self._scene(record)
                     version = record["intent"]["versionFields"] | {
-                        "controller": record["newCurrent"]["id"], "version": record["controllerVersion"],
+                        "controller": record["newCurrent"]["id"],
+                        "version": record["controllerVersion"],
                         "scene": record["scene"]["id"],
                     }
                     version = ControllerVersion.model_validate(version).model_dump()
                     record["controller"] = {
-                        "document": version, "contentHash": sha256(_json_bytes(version)).hexdigest()
+                        "document": version,
+                        "contentHash": sha256(_json_bytes(version)).hexdigest(),
                     }
                     record["phase"] = "scene_published"
                     self._save(record)
