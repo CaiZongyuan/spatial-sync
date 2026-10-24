@@ -100,6 +100,7 @@ export class TrainingViewClient {
   private terminal = false;
   private reconnectDelay = 500;
   private identity?: { attemptId: string; viewId: string };
+  private attemptId?: string;
   private pinnedInputs?: string;
   constructor(readonly jobId: string) {}
   getSnapshot = () => this.state;
@@ -162,11 +163,14 @@ export class TrainingViewClient {
     };
   }
   private matches(message: { attemptId: string | null; viewId: string | null }) {
-    return message.attemptId == null && message.viewId == null || this.identity?.attemptId === message.attemptId
+    return message.viewId == null || this.identity?.attemptId === message.attemptId
       && this.identity?.viewId === message.viewId;
   }
   private accept(message: TrainingViewMessage, wireBytes: number) {
+    // The gateway can bind the immutable Job dispatch before any view exists.
+    if (this.attemptId != null && message.attemptId != null && this.attemptId !== message.attemptId) return;
     if (message.type === 'hello') {
+      this.attemptId = message.attemptId;
       const inputs = stable({ task: message.payload.task, taskContentHash: message.payload.taskContentHash,
         scene: message.payload.scene, sceneContentHash: message.payload.sceneContentHash,
         assets: [...message.payload.assets].sort((a, b) => a.id.localeCompare(b.id)) });
@@ -183,6 +187,7 @@ export class TrainingViewClient {
     }
     if (message.type === 'manifest' || message.type === 'frame') ensure(this.identity, '训练空间消息早于 Hello');
     if (!this.matches(message)) return;
+    if (message.attemptId != null) this.attemptId = message.attemptId;
     if (message.type === 'manifest' || message.type === 'frame') {
       const hello = this.state.hello;
       ensure(hello && this.identity && hello.environments.includes(message.envIndex), '空间消息没有对应的环境描述');

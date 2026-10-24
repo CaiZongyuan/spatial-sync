@@ -84,7 +84,6 @@ class ViewDescriptors:
     def __init__(self, manager, previews):
         self.manager, self.previews = manager, previews
         self.root = manager.settings.state_root / "training-view-assets"
-        self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._cache = {}
         self._retired = set()
@@ -101,6 +100,7 @@ class ViewDescriptors:
                     if cached.scope != scope:
                         raise ValueError("Job descriptor inputs changed")
                     return cached
+                self.root.mkdir(parents=True, exist_ok=True)
                 directory = destination_parent(self.root, (job["jobId"],), create=True)
                 record = directory / "descriptor.json"
                 if record.is_file():

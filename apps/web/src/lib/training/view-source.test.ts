@@ -24,8 +24,8 @@ const hello: TrainingHelloPayload = {
   source: { ...fixture.source, kind: 'newton', newtonVersion: 'fixture-actual-version', solver: 'fixture-actual-solver', basePublishHz: 10, sampleTimeClock: 'runner-monotonic' },
   maxRateHz: 10,
 };
-function envelope(type: string, payload: unknown, envIndex?: number, viewId = 'view-1') {
-  return { schema: TRAINING_VIEW_SCHEMA, type, jobId: 'job-1', attemptId: 'attempt-1', viewId, payload,
+function envelope(type: string, payload: unknown, envIndex?: number, viewId = 'view-1', attemptId = 'attempt-1') {
+  return { schema: TRAINING_VIEW_SCHEMA, type, jobId: 'job-1', attemptId, viewId, payload,
     ...(envIndex == null ? {} : { envIndex }) };
 }
 function manifest(envIndex: number, viewId = 'view-1'): SceneManifest {
@@ -41,9 +41,9 @@ function frame(envIndex: number, x: number, seq = 5, epoch = 0, type: TransformF
     sceneRevision: `training-scene-${digest}`, epoch, seq, simTime: seq / 10, sampleTimeMs: seq * 100,
     poses: [[7, x, 2, 3, 0, 0, 0, 1]] };
 }
-function prepare(socket: Socket, viewId = 'view-1') {
-  socket.open(); socket.emit(envelope('hello', hello, undefined, viewId));
-  for (const env of hello.environments) socket.emit(envelope('manifest', manifest(env, viewId), env, viewId));
+function prepare(socket: Socket, viewId = 'view-1', attemptId = 'attempt-1') {
+  socket.open(); socket.emit(envelope('hello', hello, undefined, viewId, attemptId));
+  for (const env of hello.environments) socket.emit(envelope('manifest', manifest(env, viewId), env, viewId, attemptId));
 }
 
 describe('Job training view transport', () => {
@@ -55,6 +55,55 @@ describe('Job training view transport', () => {
     client = new TrainingViewClient('job-1'); client.start();
   });
   afterEach(() => { client.stop(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  const actualAttempt = `attempt-${'b'.repeat(64)}`;
+  const jobMessage = (type: string, payload: unknown, attemptId = actualAttempt) => ({
+    schema: TRAINING_VIEW_SCHEMA, type, jobId: 'job-1', attemptId, viewId: null, payload,
+  });
+
+  it.each([false, true])('accepts the broker partial-null Job status before/after hello: %s', configured => {
+    const socket = Socket.instances[0];
+    if (configured) prepare(socket, 'view-1', actualAttempt); else socket.open();
+    socket.emit(jobMessage('status', { state: 'stale', message: 'Actual producer is unavailable' }));
+    expect(client.getSnapshot()).toMatchObject({ state: 'stale', message: 'Actual producer is unavailable' });
+    expect(client.getSnapshot().sources.size).toBe(configured ? 2 : 0);
+    if (!configured) expect(client.getSnapshot().hello).toBeUndefined();
+  });
+
+  it.each([
+    [false, 'training_view_mapping_unavailable'], [true, 'training_view_mapping_unavailable'],
+    [false, 'training_view_manifest_unavailable'], [true, 'training_view_manifest_unavailable'],
+  ])('shows a real broker Job error (configured=%s, code=%s)', (configured, code) => {
+    const socket = Socket.instances[0];
+    if (configured) prepare(socket, 'view-1', actualAttempt); else socket.open();
+    socket.emit(jobMessage('error', { code, message: 'Explicit view-only failure' }));
+    expect(client.getSnapshot()).toMatchObject({ state: 'error', error: `${code}: Explicit view-only failure` });
+    expect(client.getSnapshot().sources.size).toBe(0); expect(socket.closed).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts already-terminal partial-null ended before hello and never reconnects', () => {
+    const socket = Socket.instances[0]; socket.open();
+    socket.emit(jobMessage('ended', { status: 'succeeded', reason: null }));
+    expect(client.getSnapshot().state).toBe('ended'); expect(client.getSnapshot().sources.size).toBe(0);
+    expect(client.getSnapshot().hello).toBeUndefined(); expect(socket.closed).toBe(true);
+    vi.advanceTimersByTime(30_000); expect(Socket.instances).toHaveLength(1);
+  });
+
+  it('fences another attempt after Job-level status and keeps old-view messages out', () => {
+    const socket = Socket.instances[0]; socket.open();
+    socket.emit(jobMessage('status', { state: 'waiting' }));
+    const wrongAttempt = `attempt-${'c'.repeat(64)}`;
+    socket.emit(jobMessage('error', { code: 'old_attempt', message: 'Must be ignored' }, wrongAttempt));
+    expect(client.getSnapshot().state).toBe('waiting');
+    socket.emit(envelope('hello', hello, undefined, 'old-attempt-view', wrongAttempt));
+    expect(client.getSnapshot().hello).toBeUndefined();
+    prepare(socket, 'view-2', actualAttempt);
+    socket.emit(jobMessage('ended', { status: 'failed', reason: 'Old attempt' }, wrongAttempt));
+    socket.emit(envelope('error', { code: 'old_view', message: 'Must be ignored' }, undefined, 'view-1', actualAttempt));
+    expect(client.getSnapshot()).toMatchObject({ state: 'waiting', viewId: 'view-2' });
+    expect(client.getSnapshot().sources.size).toBe(2); expect(socket.closed).toBe(false);
+  });
 
   it('uses one Job socket and isolates identical keys/sequence numbers and an independent reset', () => {
     const socket = Socket.instances[0];
