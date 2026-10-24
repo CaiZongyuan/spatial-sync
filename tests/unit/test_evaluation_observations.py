@@ -102,7 +102,9 @@ async def test_public_event_endpoint_delivers_a_timeout_boundary_publication(pre
     }
 
 
-@pytest.mark.parametrize("grasp", ["observed", "never", "stale", "gap-after-grasp"])
+@pytest.mark.parametrize(
+    "grasp", ["observed", "never", "stale", "gap-after-grasp", "epoch-drift-after-grasp"]
+)
 @pytest.mark.parametrize("success", [True, False])
 async def test_episode_latches_only_observed_fresh_transients_independently_of_final_success(grasp, success):
     initial = EntitySnapshot(
@@ -131,7 +133,11 @@ async def test_episode_latches_only_observed_fresh_transients_independently_of_f
     async def events_after(after, timeout):
         nonlocal reads
         if reads:
-            publish(recovered)
+            if grasp == "epoch-drift-after-grasp":
+                session.epoch = 1
+                publish(initial.model_copy(update={"epoch": 1, "sampleTimeMs": 200000000}))
+            else:
+                publish(recovered)
             invocation.status = "succeeded"
         result = await original_read(after, timeout)
         if grasp == "gap-after-grasp" and reads:
@@ -175,14 +181,14 @@ async def test_episode_latches_only_observed_fresh_transients_independently_of_f
         ),
         lambda: publish(transient),
     )
-    if grasp in ("stale", "gap-after-grasp"):
+    if grasp in ("stale", "gap-after-grasp", "epoch-drift-after-grasp"):
         with pytest.raises(HTTPException) as unavailable:
             await evaluated
         assert unavailable.value.detail["code"] == (
             "evaluation_observation_gap"
             if grasp == "gap-after-grasp" else "evaluation_observation_unavailable"
         )
-        assert attempt["milestones"]["grasp"] is (grasp == "gap-after-grasp")
+        assert attempt["milestones"]["grasp"] is (grasp != "stale")
         assert "success" not in attempt
         return
     outcome = await evaluated

@@ -140,6 +140,9 @@ establish a new Reference. Notebook reads expose historical comparisons as
 `recordedComparison` when current evidence differs, preserving the original
 automatic result and human audit. Private recoverable inputs live under the
 owned state's `evaluations/identity-inputs/`, outside public API projections.
+Snapshots include the platform's actual library resolvers, HTTP action/control
+boundary and `lw` tool/schema/client implementation. External runtime/client
+SDK code and context remain unattested, with declaration provenance retained.
 
 Healthy task deadlines retain valid failed episodes and continue the fixed
 protocol. Invalid observations or Source failures retain partial attempts,

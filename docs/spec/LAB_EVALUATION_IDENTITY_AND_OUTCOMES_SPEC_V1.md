@@ -25,6 +25,11 @@ promotion policy, runtime sandbox scope, model billing or #132C/D decisions.
 - Freeze Suite/Scene/evaluation-Task/binding/dependency inputs, actual supported
   Source/engine facts, observation implementation and judge/conditions/timeout/
   grading implementation. Distinguish observed implementation from declarations.
+  The platform's actual Scene/template/binding resolvers, HTTP session commands,
+  operation Plan/alert projections and `lw` MCP schemas/descriptions/client
+  routing are fixed implementation inputs. External client/runtime SDK code
+  and context remain unattested; existing runtime-declaration provenance is
+  retained rather than presented as a platform implementation measurement.
   A trusted common runtime probe can bind actual inference runtime/provider
   availability for both Program and policy candidates; actual policy execution
   must agree with that probe. Candidate weights and call counts stay separate.
