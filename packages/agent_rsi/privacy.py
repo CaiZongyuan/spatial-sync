@@ -11,4 +11,7 @@ def visible_session(manager, session):
 
 def visible_session_id(manager, identity):
     session = manager.sessions.get(identity)
-    return session is None or visible_session(manager, session)
+    if session is not None:
+        return visible_session(manager, session)
+    service = getattr(manager, "agent_rsi", None)
+    return service is None or not service.private_recording(identity)
