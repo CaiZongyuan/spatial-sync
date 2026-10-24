@@ -71,6 +71,8 @@ def public_score(value, rows=()):
         (str,),
     )
     result.update(fields(value, ("version",), (str, int)))
+    result.update(fields(value, ("layer",), (str,)))
+    result.update(numbers(value, ("runs", "caseRuns")))
     result.update(fields(value, ("planRevision",), (int,)))
     result.update(numbers(value, ("successes", "episodes", "score", "durationSeconds")))
     if "ci95" in value:
@@ -131,6 +133,10 @@ def public_evaluation(value, rows=()):
         (str,),
     )
     result.update(fields(value, ("planRevision", "allocatedEpisodes", "attemptedEpisodes"), (int,)))
+    result.update(fields(value, ("layer", "jobId"), (str,)))
+    result.update(numbers(value, ("allocatedCaseRuns", "attemptedCaseRuns")))
+    if value.get("layer") == "agent":
+        result["caseRuns"] = [public_case_run(case) for case in value.get("caseRuns", [])]
     if isinstance(value.get("episodes"), list):
         result["episodes"] = [
             public_episode(episode) for episode in value["episodes"] if isinstance(episode, dict)
@@ -139,6 +145,22 @@ def public_evaluation(value, rows=()):
         result["key"] = public_conditions(value["key"])
     if isinstance(value.get("result"), dict):
         result["result"] = public_score(value["result"], rows)
+    if isinstance(value.get("error"), dict):
+        result["error"] = fields(value["error"], ("code",), (str,))
+    return result
+
+
+def public_case_run(value):
+    result = fields(value, ("caseRunId", "caseId", "status", "traceId", "recordingId"), (str,))
+    result.update(numbers(value, ("repetition", "score", "elapsedSeconds")))
+    if isinstance(value.get("dimensions"), dict):
+        result["dimensions"] = numbers(value["dimensions"], tuple(value["dimensions"]))
+    if isinstance(value.get("metrics"), dict):
+        result["metrics"] = {
+            key: item
+            for key, item in value["metrics"].items()
+            if type(item) in (int, float, bool, str) and (type(item) is not float or math.isfinite(item))
+        }
     if isinstance(value.get("error"), dict):
         result["error"] = fields(value["error"], ("code",), (str,))
     return result

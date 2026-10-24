@@ -73,7 +73,7 @@ class ExternalAdapter:
         return {"score": 999999, "tokens": 0, "finalState": {"claimed": True}}
 
 
-async def configured(http, app):
+async def configured(http, app, document=None):
     manager = app.state.manager
     resources = ModelResources(manager.settings.state_root)
     resources.add(ModelConfig(provider="anthropic", modelId="fixture-model", credentialName="llm/fixture"))
@@ -93,7 +93,7 @@ async def configured(http, app):
         ),
         {"kind": "user", "name": "fixture"},
     )
-    submitted = await http.post("/api/v1/plans", json=agent_plan())
+    submitted = await http.post("/api/v1/plans", json=agent_plan() if document is None else document)
     assert submitted.status_code == 201, submitted.text
     plan = submitted.json()
     approved = await http.post(
@@ -147,3 +147,16 @@ async def test_complete_train_scope_has_durable_run_real_case_sessions_trace_sco
             duplicate = await http.post("/api/v1/agents/lab-operator/runs", json=request)
             assert duplicate.status_code == 202 and duplicate.json()["jobId"] == job["jobId"]
             assert len(adapter.calls) == 30 and len(app.state.agent_runs.records) == 1
+            costs = await http.get("/api/v1/cost/summary", params={"range": "all"})
+            assert costs.status_code == 200, costs.text
+            totals = costs.json()["totals"]
+            assert costs.json()["availability"]["llm"] is True
+            assert totals["requests"] == 30 and totals["tokens"] == 1050 and totals["llmUsd"] == 0.00105
+            assert totals["inputTokens"] == 600 and totals["outputTokens"] == 300
+            assert totals["cacheReadTokens"] == 60 and totals["cacheWriteTokens"] == 90
+            assert totals["successRate"] == 1 and totals["cacheHitRate"] == 0.08 and totals["gpuHours"] == 0
+            series = (await http.get("/api/v1/cost/series", params={"range": "all"})).json()["buckets"]
+            assert sum(bucket["requests"] for bucket in series) == 30
+            assert sum(bucket["agents"][0]["tokens"] for bucket in series) == 1050
+            plans = (await http.get("/api/v1/cost/breakdown", params={"range": "all", "by": "plan"})).json()
+            assert plans["rows"][0]["key"] == plan["id"] + "@1" and plans["rows"][0]["llmUsd"] == 0.00105

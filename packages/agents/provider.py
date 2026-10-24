@@ -112,6 +112,43 @@ def _observe_usage(content, content_type):
     )
 
 
+def usage_snapshot(rows, stop_reason=None):
+    not_forwarded = [row for row in rows if row.get("dispatchState") == "not_forwarded"]
+    attempted = [row for row in rows if row.get("dispatchState") != "not_forwarded"]
+    pending = [row for row in attempted if row.get("dispatchState") == "reserved"]
+    unknown_outcome = [row for row in attempted if row["status"] in ("pending", "incomplete")]
+    failures = sum(row["status"] == "failed" for row in rows)
+    unknown = [row for row in rows if not row.get("usageComplete")]
+    tokens = sum(sum(row["usage"].values()) for row in rows)
+    costs = {
+        row["id"]: ProviderQuote(row["quoteRevision"], row["rates"]).cost(row["usage"]) for row in rows
+    }
+    money = sum(costs.values(), Decimal(0))
+    return {
+        "requests": None if pending else len(attempted),
+        "knownRequests": len(attempted) - len(pending),
+        "reservedRequests": len(pending),
+        "notForwardedRequests": len(not_forwarded),
+        "failures": None if unknown_outcome else failures,
+        "knownFailures": failures,
+        "unknownOutcomeRequests": len(unknown_outcome),
+        "tokens": None if unknown else tokens,
+        "knownTokens": tokens,
+        "llmUsd": None if unknown else float(money),
+        "knownLlmUsd": float(money),
+        "reservedTokens": sum(max(0, row["boundTokens"] - sum(row["usage"].values())) for row in unknown),
+        "reservedUsd": float(
+            sum(
+                (max(Decimal(0), Decimal(str(row["boundUsd"])) - costs[row["id"]]) for row in unknown),
+                Decimal(0),
+            )
+        ),
+        "unknownUsageRequests": len(unknown),
+        "priceRevisions": sorted({row["quoteRevision"] for row in rows}),
+        "stopReason": stop_reason,
+    }
+
+
 class BudgetedProvider:
     def __init__(
         self,
@@ -170,41 +207,7 @@ class BudgetedProvider:
 
     def snapshot(self):
         self._available()
-        rows = self.state["requests"]
-        not_forwarded = [row for row in rows if row.get("dispatchState") == "not_forwarded"]
-        attempted = [row for row in rows if row.get("dispatchState") != "not_forwarded"]
-        pending = [row for row in attempted if row.get("dispatchState") == "reserved"]
-        unknown_outcome = [row for row in attempted if row["status"] in ("pending", "incomplete")]
-        failures = sum(row["status"] == "failed" for row in rows)
-        unknown = [row for row in rows if not row.get("usageComplete")]
-        tokens = sum(sum(row["usage"].values()) for row in rows)
-        costs = {
-            row["id"]: ProviderQuote(row["quoteRevision"], row["rates"]).cost(row["usage"]) for row in rows
-        }
-        money = sum(costs.values(), Decimal(0))
-        return {
-            "requests": None if pending else len(attempted),
-            "knownRequests": len(attempted) - len(pending),
-            "reservedRequests": len(pending),
-            "notForwardedRequests": len(not_forwarded),
-            "failures": None if unknown_outcome else failures,
-            "knownFailures": failures,
-            "unknownOutcomeRequests": len(unknown_outcome),
-            "tokens": None if unknown else tokens,
-            "knownTokens": tokens,
-            "llmUsd": None if unknown else float(money),
-            "knownLlmUsd": float(money),
-            "reservedTokens": sum(max(0, row["boundTokens"] - sum(row["usage"].values())) for row in unknown),
-            "reservedUsd": float(
-                sum(
-                    (max(Decimal(0), Decimal(str(row["boundUsd"])) - costs[row["id"]]) for row in unknown),
-                    Decimal(0),
-                )
-            ),
-            "unknownUsageRequests": len(unknown),
-            "priceRevisions": sorted({row["quoteRevision"] for row in rows}),
-            "stopReason": self.state.get("stopReason"),
-        }
+        return usage_snapshot(self.state["requests"], self.state.get("stopReason"))
 
     def _reserve(self, payload):
         self._request_allowed()

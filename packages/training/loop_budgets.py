@@ -184,7 +184,7 @@ class LoopBudgets:
         service = getattr(self.manager, "agent_runs", None)
         runs = ([run for run in tuple(service.records.values()) if run["planId"] == identity]
                 if service else [])
-        held = [run for run in runs if run["status"] in ("queued", "running", "cancelling")
+        held = [run for run in runs if run["status"] in ("admitting", "queued", "running", "cancelling")
                 or run.get("cleanupIncomplete")]
         held_revisions = {run["planRevision"] for run in held}
         rights = [plan_budget(record.plan.model_dump(mode="json")) for record in versions

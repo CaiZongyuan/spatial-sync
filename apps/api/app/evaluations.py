@@ -707,6 +707,22 @@ class EvaluationService:
         self.wake()
         return self.status()
 
+    async def cancel_evaluation(self, identifier):
+        record = self.store.records.get(identifier)
+        if record is None or record["split"] != "train":
+            raise HTTPException(404, {"code": "unknown_evaluation"})
+        if self._active_evaluation == identifier and self._running:
+            if identifier not in self._cancellation_requested and not self._running.done():
+                self._cancellation_requested.add(identifier)
+                self._running.cancel()
+        elif record["status"] == "queued":
+            self._queue = deque(item for item in self._queue if item != ("evaluation", identifier))
+            cancelled = record | {"status": "cancelled", "endedAt": now()}
+            self._capture_completion(cancelled)
+            await persist(self.store.save, cancelled)
+        self.wake()
+        return public_evaluation(self.store.records[identifier], self.store.rows)
+
     async def close(self):
         self._closing = True
         if self._worker is not None:
@@ -787,17 +803,10 @@ def install_evaluation_routes(app, service, role_for):
         record = service.store.records.get(identifier)
         if record is None or record["split"] != "train":
             raise HTTPException(404, {"code": "unknown_evaluation"})
-        if service._active_evaluation == identifier and service._running:
-            if identifier not in service._cancellation_requested and not service._running.done():
-                service._cancellation_requested.add(identifier)
-                service._running.cancel()
-        elif record["status"] == "queued":
-            service._queue = deque(item for item in service._queue if item != ("evaluation", identifier))
-            cancelled = record | {"status": "cancelled", "endedAt": now()}
-            service._capture_completion(cancelled)
-            await persist(service.store.save, cancelled)
-        service.wake()
-        return public_evaluation(service.store.records[identifier], service.store.rows)
+        if record.get("layer") == "agent":
+            await service.manager.agent_runs.cancel(record["jobId"])
+            return public_evaluation(service.store.records[identifier], service.store.rows)
+        return await service.cancel_evaluation(identifier)
 
     @app.post("/api/v1/evaluations/{identifier}/cleanup")
     async def cleanup(identifier: str, request: Request):

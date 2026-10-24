@@ -68,6 +68,8 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.post("/api/v1/jobs/{identity}/cancel")
     async def cancel(identity: str, request: Request):
         operator(request)
+        if identity in manager.agent_runs.records:
+            return await manager.agent_runs.cancel(identity)
         return jobs.cancel(identity)
 
     @app.get("/api/v1/jobs/{identity}/logs")

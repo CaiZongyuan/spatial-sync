@@ -6,6 +6,7 @@ import secrets
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import asdict
 from decimal import Decimal
@@ -86,13 +87,26 @@ class AgentRuns:
             }
         )
 
-    def plan_in_use(self, identity, revision):
+    def plan_in_use(self, identity, revision=None):
         return any(
             record["planId"] == identity
-            and record["planRevision"] == revision
+            and (revision is None or record["planRevision"] == revision)
             and (record["status"] not in TERMINAL or record.get("cleanupIncomplete"))
             for record in self.records.values()
         )
+
+    async def cancel(self, identity):
+        evaluations = self.manager.evaluations
+        async with evaluations._admission:
+            record = self.get(identity)
+            if record["status"] in TERMINAL:
+                return self.document(record)
+            self.update(identity, status="cancelling", reason="cancel_requested")
+            self.manager.agent_grants.revoke(identity)
+            await evaluations.cancel_evaluation(record["evaluationId"])
+            if record["status"] == "queued":
+                self.update(identity, status="cancelled", finishedAt=time.time(), reason="cancelled")
+            return self.document(self.get(identity))
 
     async def request(self, identifier, body, actor):
         from apps.api.app.evaluations import now, persist
@@ -141,18 +155,14 @@ class AgentRuns:
                 raise PlanError(
                     "agent_input_mismatch", "Agent run inputs differ from the approved Plan", status=409
                 )
-            if self.plan_in_use(plan["id"], plan["revision"]):
+            if self.plan_in_use(plan["id"]):
                 raise PlanError("agent_plan_busy", "This Plan already has an admitted Agent Run", status=409)
             frozen = self.inputs.verify(stored)
             goal = self.manager.loop_budgets.summary(plan["goalId"])
             if goal["deadline"] is not None and time.time() >= goal["deadline"]:
                 raise PlanError("goal_budget_exhausted", "The Goal deadline expired", status=409)
-            for name in ("caseRuns", "llmUsd"):
-                limit = (goal["limit"] or {}).get(name)
-                if limit is not None and goal["effective"].get(name, 0) > limit:
-                    raise PlanError(
-                        "goal_budget_exhausted", "The Goal's known capacity is exceeded", status=409
-                    )
+            # The fresh human approval grants this finite envelope, including any
+            # overage shown on its card, without changing the original Goal limit.
             peers = [value for value in self.records.values() if value["planId"] == plan["id"]]
             used_cases = sum(value["attemptedCaseRuns"] for value in peers)
             required = frozen["caseRunsRequired"]
@@ -163,6 +173,11 @@ class AgentRuns:
                     status=409,
                 )
             budget = dict(plan["budget"])
+            budget["wallSeconds"] -= sum(self.wall_commitment(value) for value in peers)
+            if budget["wallSeconds"] <= 0:
+                raise PlanError(
+                    "agent_wall_budget_exhausted", "The Plan's execution seconds are exhausted", status=409
+                )
             for name, known, reserved in (
                 ("requests", "knownRequests", "reservedRequests"),
                 ("tokens", "knownTokens", "reservedTokens"),
@@ -219,6 +234,9 @@ class AgentRuns:
                 "attemptedCaseRuns": 0,
                 "allocatedCaseRuns": required,
                 "allocatedLlmUsd": budget["llmUsd"],
+                "allocatedWallSeconds": budget["wallSeconds"],
+                "executionSeconds": 0.0,
+                "cleanupSeconds": 0.0,
                 "goalDeadline": goal["deadline"],
                 "budget": budget,
                 "plan": plan,
@@ -269,12 +287,16 @@ class AgentRuns:
             try:
                 await persist(evaluations.store.save, evaluation)
                 await persist(lambda: self.update(identity, status="queued", admissionState="queued"))
-            except BaseException:
+            except BaseException as error:
                 self.update(identity, status="failed", reason="admission_interrupted", finishedAt=time.time())
                 if evaluation_id in evaluations.store.records:
                     evaluations.store.save(
                         evaluation | {"status": "failed", "error": {"code": "admission_interrupted"}}
                     )
+                if isinstance(error, OSError):
+                    raise PlanError(
+                        "agent_admission_unavailable", "Agent admission could not be committed", status=503
+                    ) from error
                 raise
             evaluations._queue.append(("evaluation", evaluation_id))
             evaluations.wake()
@@ -293,6 +315,38 @@ class AgentRuns:
             and (record["goalDeadline"] is None or time.time() < record["goalDeadline"])
         )
 
+    @staticmethod
+    def wall_commitment(record):
+        allocated = record.get("allocatedWallSeconds", record["budget"]["wallSeconds"])
+        if record["status"] not in TERMINAL or record.get("cleanupIncomplete"):
+            return allocated
+        if record.get("startedAt") is None:
+            return 0.0
+        if record.get("executionSeconds") is not None:
+            return record["executionSeconds"]
+        return allocated  # Unknown/restarted execution does not manufacture free seconds.
+
+    @asynccontextmanager
+    async def execution_transport(self, record, started):
+        ended = None
+        try:
+            async with self.adapter.open(
+                record, self._deadlines[record["jobId"]], self.root / record["jobId"]
+            ) as transport:
+                try:
+                    yield transport
+                finally:
+                    ended = time.monotonic()
+        finally:
+            now = time.monotonic()
+            execution = min(record["allocatedWallSeconds"], max(0, (ended or now) - started))
+            self.update(
+                record["jobId"],
+                executionSeconds=execution,
+                cleanupSeconds=max(0, now - ended) if ended is not None else None,
+                executionTiming="measured" if ended is not None else "conservative-upper-bound",
+            )
+
     async def evaluate(self, evaluation_id):
         from lw.scoped import ScopedGatewayClient
 
@@ -304,10 +358,18 @@ class AgentRuns:
         original = self.get(identity)
         plan = original["plan"]
         started = time.monotonic()
-        self._deadlines[identity] = started + plan["budget"]["wallSeconds"]
+        self._deadlines[identity] = started + original["budget"]["wallSeconds"]
         gate, transport, session, audit = None, None, None, None
+        current_case = None
         try:
-            self.update(identity, status="running", startedAt=time.time(), admissionState="running")
+            self.update(
+                identity,
+                status="running",
+                startedAt=time.time(),
+                admissionState="running",
+                executionSeconds=None,
+                cleanupSeconds=None,
+            )
             evaluation.update(status="running", startedAt=now())
             await persist(evaluations.store.save, evaluation)
             self.inputs.verify(self.manager.training_plans.get(plan["id"], plan["revision"]))
@@ -315,9 +377,7 @@ class AgentRuns:
             suite = evaluations.suites.resolve(plan["suite"])
             if runtime_fingerprint() != evaluations._runtime_hash:
                 raise PlanError("agent_inputs_changed", "Evaluation runtime changed", status=409)
-            async with self.adapter.open(
-                original, self._deadlines[identity], self.root / identity
-            ) as transport:
+            async with self.execution_transport(original, started) as transport:
                 limits = ProviderLimits(
                     original["budget"]["requests"],
                     original["budget"]["tokens"],
@@ -354,7 +414,13 @@ class AgentRuns:
                         current = self.get(identity)
                         number = current["attemptedCaseRuns"] + 1
                         case_id = f"case-{number:04d}"
-                        self.update(identity, attemptedCaseRuns=number)
+                        current_case = {
+                            "caseRunId": case_id,
+                            "caseId": case["id"],
+                            "repetition": repetition,
+                            "status": "attempting",
+                        }
+                        self.update(identity, attemptedCaseRuns=number, currentCase=current_case)
                         evaluation["attemptedCaseRuns"] = number
                         await persist(evaluations.store.save, evaluation)
                         session = await self.manager.create(
@@ -446,10 +512,11 @@ class AgentRuns:
                         durable_json(directory / "final.json", {"state": final.json(), "session": summary})
                         durable_json(directory / "score.json", outcome)
                         runs = self.get(identity)["caseRuns"] + [outcome]
-                        self.update(identity, caseRuns=runs)
+                        self.update(identity, caseRuns=runs, currentCase=None)
                         evaluation["caseRuns"] = runs
                         await persist(evaluations.store.save, evaluation)
                         session, audit = None, None
+                        current_case = None
                 if len(self.get(identity)["caseRuns"]) != original["allocatedCaseRuns"]:
                     raise PlanError(
                         "agent_evaluation_incomplete", "Required repetitions are incomplete", status=503
@@ -512,12 +579,36 @@ class AgentRuns:
                 else "agent_run_failed"
             )
             cancelled = isinstance(error, asyncio.CancelledError)
-            self.update(
-                identity, status="cancelled" if cancelled else "failed", reason=code, finishedAt=time.time()
+            committed = next(
+                (row for row in evaluations.store.rows if row["evaluationId"] == evaluation_id), None
             )
-            evaluation.update(
-                status="cancelled" if cancelled else "failed", error={"code": code}, endedAt=now()
-            )
+            if committed is not None:
+                self.update(
+                    identity, status="succeeded", finishedAt=time.time(), reason=None, result=committed
+                )
+                evaluation.update(status="completed", result=committed, endedAt=now())
+            else:
+                if current_case is not None:
+                    outcome = current_case | {
+                        "status": "cancelled" if cancelled else "invalid",
+                        "error": {"code": code},
+                    }
+                    if session is not None:
+                        outcome["recordingId"] = session.session_id
+                    if audit is not None:
+                        outcome["traceId"] = f"trace-{identity}-{current_case['caseRunId']}"
+                    runs = self.get(identity)["caseRuns"] + [outcome]
+                    self.update(identity, caseRuns=runs, currentCase=None)
+                    evaluation["caseRuns"] = runs
+                self.update(
+                    identity,
+                    status="cancelled" if cancelled else "failed",
+                    reason=code,
+                    finishedAt=time.time(),
+                )
+                evaluation.update(
+                    status="cancelled" if cancelled else "failed", error={"code": code}, endedAt=now()
+                )
         finally:
             await persist(evaluations.store.save, evaluation)
             self._deadlines.pop(identity, None)

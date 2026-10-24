@@ -6,6 +6,7 @@ from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
 
+from packages.agents.provider import TOKEN_KEYS, usage_snapshot
 from packages.cost.ranges import overlap_fraction, reporting_window
 from packages.info.plans import PlanError
 from packages.library.transactions import durable_json
@@ -17,6 +18,7 @@ LLM_FIELDS = (
     "inputTokens",
     "outputTokens",
     "cacheReadTokens",
+    "cacheWriteTokens",
     "tokens",
     "llmUsd",
     "successRate",
@@ -120,8 +122,10 @@ class CostLedger:
     def attribution(job):
         actor = job["requestedBy"]
         return {
-            "agent": actor["name"] if actor["kind"] == "agent" else None,
-            "model": None,
+            "agent": job["agent"] if job.get("kind") == "agent-run" else (
+                actor["name"] if actor["kind"] == "agent" else None
+            ),
+            "model": job.get("model") if job.get("kind") == "agent-run" else None,
             "node": job["nodeId"],
             "goal": job["plan"].get("goalId") or job["plan"].get("goal"),
             "plan": f"{job['planId']}@{job['planRevision']}",
@@ -132,19 +136,26 @@ class CostLedger:
         self.manager.jobs._require_available()
         return [
             job
-            for job in self.manager.jobs.records.values()
+            for job in self._all_jobs()
             if all(self.attribution(job)[key] == value for key, value in filters.items() if value is not None)
         ]
 
+    def _all_jobs(self):
+        service = getattr(self.manager, "agent_runs", None)
+        if service and getattr(service, "_failure", False):
+            raise PlanError("agent_usage_unavailable", "Managed Agent accounting is unavailable", status=503)
+        return [*self.manager.jobs.records.values(), *(service.records.values() if service else ())]
+
     def window(self, key, *, start=None, end=None):
-        earliest = min((job["createdAt"] for job in self.manager.jobs.records.values()), default=None)
+        earliest = min((job["createdAt"] for job in self._all_jobs()), default=None)
         return reporting_window(key, self.manager.jobs.clock(), start=start, end=end, earliest=earliest)
 
-    @staticmethod
-    def aggregate(jobs, window, *, include_end=True):
+    def aggregate(self, jobs, window, *, include_end=True):
         seconds = reported = historical = unpriced = known_usd = 0.0
         peak, revisions, warnings = None, set(), set()
         for job in jobs:
+            if job.get("kind") == "agent-run":
+                continue
             state = job["costLedger"]
             for entry in state["entries"]:
                 fraction = overlap_fraction(entry, window.start, window.end, include_end=include_end)
@@ -170,7 +181,7 @@ class CostLedger:
             for sample in state["memorySamples"]:
                 if window.start <= sample["at"] <= window.end:
                     peak = max(peak or 0, sample["memoryUsedMb"])
-        return {
+        result = {
             **dict.fromkeys(LLM_FIELDS),
             "gpuSeconds": seconds,
             "gpuHours": seconds / 3600,
@@ -184,6 +195,29 @@ class CostLedger:
             "priceRevisions": sorted(revisions),
             "priceWarnings": sorted(warnings),
         }
+        service = getattr(self.manager, "agent_runs", None)
+        if service and service.records:
+            rows = [row for job in jobs if job.get("kind") == "agent-run"
+                    for row in job["provider"]["requests"]
+                    if window.start <= row["at"] < window.end or include_end and row["at"] == window.end]
+            snapshot = usage_snapshot(rows)
+            unknown = snapshot["unknownUsageRequests"] > 0
+            token_fields = ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
+            known = {name: sum(row["usage"].get(key, 0) for row in rows)
+                     for name, key in zip(token_fields, TOKEN_KEYS, strict=True)}
+            result.update({name: None if unknown else value for name, value in known.items()})
+            result.update({"known" + name[0].upper() + name[1:]: value for name, value in known.items()})
+            result.update({name: snapshot[name] for name in ("requests", "failures", "tokens", "llmUsd",
+                            "knownRequests", "knownFailures", "knownTokens", "knownLlmUsd",
+                            "unknownUsageRequests", "unknownOutcomeRequests", "notForwardedRequests",
+                            "reservedRequests")})
+            result.update(reservedLlmUsd=snapshot["reservedUsd"], reservedTokens=snapshot["reservedTokens"])
+            count, failed = snapshot["requests"], snapshot["failures"]
+            result["successRate"] = (count - failed) / count if count and failed is not None else None
+            inputs = known["inputTokens"] + known["cacheReadTokens"] + known["cacheWriteTokens"]
+            result["cacheHitRate"] = known["cacheReadTokens"] / inputs if inputs and not unknown else None
+            result["priceRevisions"] = sorted(revisions | set(snapshot["priceRevisions"]))
+        return result
 
     def summary(self, window, filters):
         jobs = self._jobs(filters)
@@ -191,7 +225,7 @@ class CostLedger:
             dimension: sorted(
                 {
                     self.attribution(job)[dimension]
-                    for job in self.manager.jobs.records.values()
+                    for job in self._all_jobs()
                     if self.attribution(job)[dimension] is not None
                 }
             )
@@ -205,8 +239,10 @@ class CostLedger:
             "cards": {key: self.aggregate(jobs, self.window(key)) for key in ("today", "7d", "all")},
             "choices": choices,
             "availability": {
-                "llm": False,
-                "reason": "LLM usage is not connected; no requests or tokens are inferred",
+                "llm": bool(getattr(self.manager, "agent_runs", None) and self.manager.agent_runs.records),
+                "reason": "Managed Agent provider observations; interactive client usage is not inferred"
+                if getattr(self.manager, "agent_runs", None) and self.manager.agent_runs.records
+                else "No managed Agent usage has been recorded; no requests or tokens are inferred",
             },
             "pricingPolicy": (
                 "Each GPU increment retains the price revision observed when it was committed; "
@@ -227,6 +263,11 @@ class CostLedger:
                         type(window)(window.key, start, end, window.bucket_seconds),
                         include_end=end == window.end,
                     ),
+                    "agents": [{"agent": agent, **self.aggregate(
+                        [job for job in jobs if job.get("agent") == agent],
+                        type(window)(window.key, start, end, window.bucket_seconds),
+                        include_end=end == window.end,
+                    )} for agent in sorted({job["agent"] for job in jobs if job.get("kind") == "agent-run"})],
                 }
                 for start, end in window.buckets()
             ],
