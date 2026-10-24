@@ -28,11 +28,22 @@ def runtime_identity():
         raise PlanError(
             "agent_runtime_unavailable", "Install the pinned optional Agent runtime", status=422
         ) from None
+    root = Path(__file__).resolve().parents[2]
+    sources = [
+        *(root / "packages/agents").glob("*.py"),
+        *(root / "apps/cli/lw").glob("*.py"),
+        root / "apps/node/process.py",
+        root / "apps/node/job_launcher.py",
+    ]
+    implementation = hashlib.sha256()
+    for source in sorted(sources):
+        implementation.update(source.relative_to(root).as_posix().encode() + b"\0" + source.read_bytes())
     return {
         "adapter": "claude-agent-sdk",
         "sdkVersion": distribution.version,
         "bundledCliSha256": digest,
         "pythonVersion": sys.version.split()[0],
+        "adapterSha256": implementation.hexdigest(),
     }
 
 

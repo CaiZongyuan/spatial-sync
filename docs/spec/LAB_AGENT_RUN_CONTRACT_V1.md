@@ -15,6 +15,18 @@ Suite/Scene identities, public train scope and repeats, registered model/thinkin
 execution profile/runtime identity, limits and Goal context. Secret values are never Plan fields.
 Mutable current Agent files, SDK defaults or later catalog changes cannot replace those inputs at dispatch.
 
+Agent Plans explicitly declare both `budget` (this Plan's caseRuns, requests, tokens, llmUsd,
+wallSeconds and maxOutputTokensPerRequest) and `goalBudget: {caseRuns, llmUsd, days}`.
+Goal values are finite human declarations; caseRuns is a positive integer, llmUsd is nonnegative and days is positive.
+The Goal source snapshot is `{kind: "agent-plan", immutablePlanInputHash, humanDeclaredLimit: goalBudget}`.
+The first human approval fixes that source and the Goal's clock anchor. A later declaration cannot replace it.
+Execution wallSeconds starts with the owned execution and includes setup/tools; Goal.days starts at the first
+human approval. Never derive days from execution wallSeconds or reset either clock between cases/restarts.
+An existing Goal keeps its original authority. A missing Agent/LLM axis remains unknown, including on the human
+approval card; approving this Plan authorizes only its finite known envelope and does not manufacture a global
+Goal limit or free balance. Requests/tokens/execution seconds are per-Plan axes, not additional Goal dimensions.
+Agent case runs and physical episodes remain distinct; Synthetic CPU execution has actual GPU use0.
+
 The CLI prototype is extended with its approved parent Plan:
 
 ```text
@@ -43,6 +55,8 @@ never a successful run that silently omits legal authoring content.
   The runtime constructs the trusted platform transport; it does not execute candidate PATH commands.
 - SDK built-in Shell, file, web, Agent/subagent and other general execution tools are unavailable.
   User/project/local settings, hooks, plugins, extra MCP discovery and global skill discovery are not loaded.
+  Fixed metadata about skills/plugins built into the pinned CLI may still be listed; that is not an executable
+  tool grant or user plugin discovery. Actual available tools and MCP servers must match the frozen profile.
   Platform-owned enforcement hooks/transport code are part of the frozen runtime, not candidate hooks.
 - Target sees its active public statement, its frozen Harness and skills, plus explicitly granted platform data.
   Grading/test/Vault/repository/user-configuration files are not staged or exposed through tools/artifacts.

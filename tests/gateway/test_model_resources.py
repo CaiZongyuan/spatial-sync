@@ -95,6 +95,7 @@ def test_human_prices_keep_unknown_distinct_from_zero_audit_and_reject_stale_edi
         assert saved["revision"] == 1
         assert saved["models"][0]["inputUsdPerMillion"] == 0
         assert saved["models"][0]["cacheReadUsdPerMillion"] is None
+        assert saved["models"][0]["cacheWriteUsdPerMillion"] is None
         assert saved["gpus"] == incoming["gpus"]
         assert saved["audit"][0]["actor"] == {"kind": "user", "name": "price-editor"}
         assert saved["audit"][0]["revision"] == 1

@@ -11,7 +11,7 @@ function PriceEditor({ models, table, saved, cancel }: {
     const existing = new Map(table.models.map(price => [`${price.provider}/${price.modelId}`, price]));
     for (const model of models) if (!existing.has(model.ref)) existing.set(model.ref, {
       provider: model.provider, modelId: model.modelId,
-      inputUsdPerMillion: null, outputUsdPerMillion: null, cacheReadUsdPerMillion: null,
+      inputUsdPerMillion: null, outputUsdPerMillion: null, cacheReadUsdPerMillion: null, cacheWriteUsdPerMillion: null,
     });
     return [...existing.values()];
   });
@@ -109,7 +109,7 @@ export function ModelResources() {
           <div className="resource-table-scroll"><table data-testid="llm-models-table">
             <caption className="sr-only">已登记的 LLM 模型</caption>
             <thead><tr><th>提供方</th><th>model_id</th><th>默认 thinking</th><th>凭据</th><th>健康</th>
-              <th className="numeric">延迟 p50</th><th className="numeric">价格 $/MTok · 输入 / 输出 / 缓存读</th><th>使用者</th></tr></thead>
+              <th className="numeric">延迟 p50</th><th className="numeric">价格 $/MTok · 输入 / 输出 / 缓存读 / 缓存写</th><th>使用者</th></tr></thead>
             <tbody>{data?.models.map(model => <tr key={model.ref}>
               <td>{model.provider}</td><td><code>{model.modelId}</code>{model.isDefault && <span className="resource-tag">默认</span>}</td>
               <td>{model.defaultThinking === 'default' ? '提供方默认' : model.defaultThinking}</td>

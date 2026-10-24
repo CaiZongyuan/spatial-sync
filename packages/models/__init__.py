@@ -57,6 +57,7 @@ class ModelPrice(Document):
     inputUsdPerMillion: Rate | None = None
     outputUsdPerMillion: Rate | None = None
     cacheReadUsdPerMillion: Rate | None = None
+    cacheWriteUsdPerMillion: Rate | None = None
 
 
 class GpuPrice(Document):

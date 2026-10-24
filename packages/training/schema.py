@@ -212,6 +212,12 @@ class AgentBudget(Schema):
     maxOutputTokensPerRequest: int = Field(ge=1)
 
 
+class AgentGoalBudget(Schema):
+    caseRuns: int = Field(ge=1)
+    llmUsd: float = Field(ge=0)
+    days: float = Field(gt=0)
+
+
 class AgentTrainingPlan(PlanIntent):
     layer: Literal["agent"]
     goalId: GoalRef
@@ -222,6 +228,7 @@ class AgentTrainingPlan(PlanIntent):
     credentialRef: str = Field(min_length=1, max_length=128)
     executionProfile: Literal["lw.agent-restricted/1"]
     budget: AgentBudget
+    goalBudget: AgentGoalBudget
 
     @field_validator("credentialRef")
     @classmethod

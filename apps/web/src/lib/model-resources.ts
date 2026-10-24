@@ -16,6 +16,7 @@ export interface ModelPrice {
   inputUsdPerMillion: number | null;
   outputUsdPerMillion: number | null;
   cacheReadUsdPerMillion: number | null;
+  cacheWriteUsdPerMillion: number | null;
 }
 export interface GpuPrice { nodeId: string; usdPerHour: number | null }
 export interface PriceAudit { revision: number; at: string; actor: { kind: string; name: string } }
@@ -27,8 +28,8 @@ export interface PriceTable {
   audit: PriceAudit[];
   canEdit: boolean;
 }
-export const priceFields = ['inputUsdPerMillion', 'outputUsdPerMillion', 'cacheReadUsdPerMillion'] as const;
-export const priceLabels = ['输入', '输出', '缓存读'] as const;
+export const priceFields = ['inputUsdPerMillion', 'outputUsdPerMillion', 'cacheReadUsdPerMillion', 'cacheWriteUsdPerMillion'] as const;
+export const priceLabels = ['输入', '输出', '缓存读', '缓存写'] as const;
 export function dollars(value: number | null | undefined) {
   return value == null ? '*' : `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
 }

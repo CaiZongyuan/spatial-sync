@@ -20,6 +20,7 @@ def agent_plan():
         "model": {"ref": "anthropic/fixture-model", "thinking": "high"},
         "credentialRef": "llm/fixture",
         "executionProfile": PROFILE,
+        "goalBudget": {"caseRuns": 90, "llmUsd": 6.0, "days": 7.0},
         "budget": {
             "caseRuns": 30,
             "requests": 120,
@@ -65,3 +66,23 @@ def test_agent_branch_round_trips_no_dummy_task_ppo_or_episodes():
 def test_agent_plan_refuses_ambiguous_or_cross_layer_authority(change):
     with pytest.raises(ValidationError):
         PLAN_DOCUMENT.validate_python(agent_plan() | change)
+
+
+@pytest.mark.parametrize(
+    "budget",
+    [
+        None,
+        {"caseRuns": 30, "llmUsd": 2.0, "days": 0.0},
+        {"caseRuns": 30, "llmUsd": float("nan"), "days": 1.0},
+    ],
+)
+def test_agent_goal_authority_requires_its_own_finite_days_and_budget(budget):
+    with pytest.raises(ValidationError):
+        PLAN_DOCUMENT.validate_python(agent_plan() | {"goalBudget": budget})
+
+
+def test_agent_goal_days_is_independent_of_execution_deadline():
+    document = agent_plan()
+    document["budget"]["wallSeconds"] = 1.0
+    parsed = PLAN_DOCUMENT.validate_python(document)
+    assert parsed.goalBudget.days == 7 and parsed.budget.wallSeconds == 1
