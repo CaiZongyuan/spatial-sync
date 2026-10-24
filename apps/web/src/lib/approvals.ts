@@ -2,6 +2,7 @@ import { createContext, useEffect, useState } from 'react';
 import { request } from './api';
 import type { DeletionDetails } from './library-deletions';
 import type { TrainingPlanChange } from './training';
+import type { LoopBudget } from './notebooks';
 
 export type ApprovalActor = { kind: 'user' | 'cli' | 'agent'; name: string };
 export type ApprovalDecision = 'approve' | 'deny' | 'revoke';
@@ -11,7 +12,7 @@ export interface ApprovalRecord {
   subjectId: string;
   sessionId: string | null;
   title: string;
-  details: { entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number; changes?: TrainingPlanChange[]; estimatedGpuHours?: number; remainingGpuHours?: number; planId?: string; planRevision?: number } & Partial<DeletionDetails>;
+  details: { entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number; changes?: TrainingPlanChange[]; estimatedGpuHours?: number; remainingGpuHours?: number; planId?: string; planRevision?: number; loopBudget?: LoopBudget } & Partial<DeletionDetails>;
   requestedBy: ApprovalActor;
   createdAtMs: number;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' | 'unavailable';

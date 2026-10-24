@@ -117,7 +117,7 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
     }
     await page.getByRole('navigation', { name: '具身层阶段' }).getByRole('link', { name: /策略版本/ }).click();
     await expect(page).toHaveURL(/#policies$/);
-    await expect(page.getByRole('heading', { name: '策略与改进记录尚未接入' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '策略提升尚未接入' })).toBeVisible();
     await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Resources', exact: true }).click();
     const panel = page.getByTestId('compute-node-local');
     await expect(panel).toContainText('使用率 未知'); await expect(panel).toContainText('Driver sample is unavailable');

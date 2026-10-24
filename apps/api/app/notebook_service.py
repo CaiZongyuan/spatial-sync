@@ -104,6 +104,11 @@ class NotebookService:
                 "goal": plan["goal"],
                 "title": plan["title"],
                 "changedFields": [change["field"] for change in record.changes],
+                "targetSuccessRate": (
+                    plan["evaluation"]["threshold"] / plan["evaluation"]["episodes"]
+                    if plan["evaluation"].get("threshold") is not None
+                    else None
+                ),
             },
             "hypotheses": deepcopy(plan["hypotheses"]),
             "ruleVersion": RULE_VERSION,
@@ -354,6 +359,8 @@ class NotebookService:
             rounds.setdefault(entry["plan"]["id"], len(rounds) + 1)
             plans.append({"round": rounds[entry["plan"]["id"]], **entry})
         latest = entries[-1] if entries else None
+        original = self.manager.evaluations.store.records.get(latest["evaluationId"], {}) if latest else {}
+        scene = original.get("notebookContext", {}).get("comparisonInputs", {}).get("scene")
         return {
             "goalId": goal,
             "rounds": plans,
@@ -369,4 +376,11 @@ class NotebookService:
             if latest
             else None,
             "deployment": latest["deployment"] if latest else {"status": "not_requested"},
+            "defaultProgram": {
+                "program": latest["subject"],
+                "scene": scene,
+                "evaluationId": latest["evaluationId"],
+            }
+            if latest
+            else None,
         }

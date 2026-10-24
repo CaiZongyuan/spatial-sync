@@ -115,6 +115,24 @@ def description_arguments(default, metavar="id"):
 
 
 COMMANDS = (
+    Command(path=("notebook", "show"), help="Read train-only Hypotheses and human judgement audit.",
+            method="notebook_show", arguments=(
+                Argument("goal", ("goal",), str, "Goal ID or default Task goal"),
+                Argument("refuted", ("--refuted",), bool, "Only refuted effective Hypotheses", False)),
+            mcp_name="notebook_show"),
+    Command(path=("loop", "show"), help="Read Goal rounds, comparison evidence and actual/committed budget.",
+            method="loop_show", arguments=(Argument("goal", ("goal",), str, "Goal ID or default Task goal"),),
+            mcp_name="loop_show"),
+    Command(path=("notebook", "override"), help="Record a person's Hypothesis judgement and audit.",
+            method="notebook_override", arguments=(
+                Argument("goal", ("goal",), str, "Goal resource"),
+                Argument("entry", ("entry",), str, "Entry ID"),
+                Argument("hypothesisId", ("hypothesis",), str, "Hypothesis ID"),
+                Argument("verdict", ("verdict",), Literal["confirmed", "refuted", "inconclusive"],
+                         "Human judgement"),
+                Argument("note", ("--note",), str, "Reason for changing the effective judgement"),
+                Argument("requestId", ("--request-id",), str | None, "Stable retry identity", None),
+            ), human_only=True, actor=True),
     Command(path=("tensorboard",), help="Start or return the owned local TensorBoard service.",
             method="tensorboard", mcp_name="tensorboard", actor=True),
     Command(path=("job", "start"), help="Queue a declared seed of an approved training plan.",
@@ -222,6 +240,8 @@ COMMANDS = (
         method="evaluation_run", arguments=(
             Argument("subject", ("program",), str, "Existing program ID, such as robot_arm.virtual"),
             Argument("suite", ("--suite",), str, "Exact suite/name@revision"),
+            Argument("planId", ("--plan",), str | None, "Approved training Plan for Goal accounting", None),
+            Argument("planRevision", ("--revision",), int | None, "Expected fixed Plan revision", None),
         ), mcp_name="evaluation_run", actor=True,
     ),
     Command(

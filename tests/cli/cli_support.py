@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 LW = Path(sys.executable).parent / ("lw.exe" if os.name == "nt" else "lw")
 TOOLS = {
+    "notebook_show", "loop_show",
     "tensorboard",
     "job_start", "job_list", "job_show", "job_cancel", "job_logs", "node_ls",
     "task_push", "task_list", "task_show", "plan_submit",

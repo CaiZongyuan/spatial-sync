@@ -6,6 +6,7 @@ import { LibraryDeletionApproval } from './LibraryDeletion';
 import type { DeletionDetails } from '../lib/library-deletions';
 import type { TrainingPlanDocument } from '../lib/training';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
+import { LoopBudgetSummary } from './training/LoopBudgetSummary';
 
 const statusText: Record<ApprovalRecord['status'], string> = {
   pending: '待审批', approved: '已批准', denied: '已驳回', revoked: '已撤销', expired: '已超时', unavailable: '已关闭',
@@ -44,6 +45,7 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
         <div><dt>计划剩余 GPU 小时</dt><dd>{record.details.remainingGpuHours}</dd></div></>}
     </dl>
     {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
+    {training && record.details.loopBudget && <LoopBudgetSummary budget={record.details.loopBudget} review />}
     {training ? <TrainingPlanDetails plan={record.details.plan as unknown as TrainingPlanDocument} changes={record.details.changes} /> :
       record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}

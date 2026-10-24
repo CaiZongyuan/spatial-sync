@@ -43,6 +43,7 @@ class RecordedPlan(Schema):
     goal: Text
     title: Text
     changedFields: list[Text]
+    targetSuccessRate: float | None = Field(default=None, ge=0, le=1)
 
 
 class ScoreCounts(Schema):
