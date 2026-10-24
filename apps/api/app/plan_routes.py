@@ -102,11 +102,14 @@ def install_plan_routes(app, manager, role_for):
 
     @app.get("/api/v1/plans")
     async def plans(kind: str | None = None, status: str | None = None, sessionId: str | None = None):
+        from packages.agent_rsi.privacy import visible_session_id
+
         store.require_started()
         await store.flush()
         documents = [
                 store.document(record)
                 for record in store.records.values()
+                if visible_session_id(manager, record.sessionId)
             ] + [selected.document(record) for selected in training_stores(manager)
                  for record in selected.records.values()]
         return {"plans": [value for value in documents
@@ -120,7 +123,12 @@ def install_plan_routes(app, manager, role_for):
         if any(plan_id in selected.records for selected in training_stores(manager)):
             selected = training_store(manager, identifier=plan_id)
             return selected.document(selected.get(plan_id, revision))
-        return store.document(store.get(plan_id, revision))
+        record = store.get(plan_id, revision)
+        from packages.agent_rsi.privacy import visible_session_id
+
+        if not visible_session_id(manager, record.sessionId):
+            raise PlanError("unknown_plan", "Unknown public Plan", status=404)
+        return store.document(record)
 
     @app.get("/api/v1/plans/{plan_id}/steps/{step_id}/preview")
     async def preview(plan_id: str, step_id: int = Path(ge=1), revision: int | None = Query(None, ge=1)):

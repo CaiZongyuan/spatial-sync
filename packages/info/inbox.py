@@ -130,6 +130,8 @@ class InboxStore:
             logging.getLogger(__name__).warning("Inbox history publication unavailable")
 
     def approval(self, record):
+        if record.sessionId and getattr(self, "is_restricted_session", lambda _: False)(record.sessionId):
+            return
         with self._lock:
             try:
                 self._require_available()
@@ -143,6 +145,8 @@ class InboxStore:
                 self._failed_publication(error)
 
     def plan(self, record):
+        if record.sessionId and getattr(self, "is_restricted_session", lambda _: False)(record.sessionId):
+            return
         with self._lock:
             try:
                 self._require_available()
@@ -156,6 +160,8 @@ class InboxStore:
                 self._failed_publication(error)
 
     def session_message(self, session_id, message):
+        if getattr(self, "is_restricted_session", lambda _: False)(session_id):
+            return
         kind = getattr(message, "type", None)
         if kind == "entity.alert" and message.state in ("raised", "cleared"):
             selected, event = "alert", message.state

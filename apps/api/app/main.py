@@ -409,17 +409,20 @@ def create_app(
 
     @app.get("/api/v1/health")
     async def health():
+        from packages.agent_rsi.privacy import visible_session
+
+        sessions = [session for session in manager.sessions.values() if visible_session(manager, session)]
         return {
             "status": "ok",
             "protocolVersion": PROTOCOL_VERSION,
             "protocolMinorVersion": PROTOCOL_MINOR_VERSION,
-            "sessionCount": len(manager.sessions),
+            "sessionCount": len(sessions),
             "live": {"enabled": manager.live is not None,
                      "state": manager.live.state if manager.live else "DISABLED"},
             "sessions": [
                 {"sessionId": s.session_id, "state": s.state, "source": s.kind,
                  **({"evaluationId": s.evaluation_id} if s.evaluation_id else {})}
-                for s in manager.sessions.values()
+                for s in sessions
             ],
             "evaluation": evaluations.status(),
         }

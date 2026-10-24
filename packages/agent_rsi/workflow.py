@@ -141,6 +141,11 @@ class AgentRSI:
             },
             "runId": record.runId,
             "result": deepcopy(record.result),
+            "promotions": [
+                {key: value.get(key) for key in ("id", "status", "approvalId")}
+                for value in self.promotions.values()
+                if value["planId"] == record.plan.id
+            ],
             "recovery": [
                 deepcopy(value) for value in self.recovery if value["agentId"] == record.plan.agentId
             ],
@@ -475,6 +480,14 @@ class AgentRSI:
                 raise PlanError(
                     "agent_budget_exhausted", "Plan cannot cover the complete train scope", status=409
                 )
+            from packages.agent_rsi.budgets import require_budget
+
+            dispatch_id = "rsi-" + digest({"plan": identifier, "revision": revision, "request": request_id})
+            admitted = any(
+                run.get("agentRound", {}).get("planId") == identifier and run.get("requestId") == dispatch_id
+                for run in self.manager.loop_budgets._evaluation_records()
+            )
+            require_budget(self, record, additional_cases=0 if admitted else required)
             agent = self.agents.show(record.plan.agentId)
             if agent["referenceVersion"] != record.plan.referenceVersion or agent["currentVersion"] not in (
                 record.plan.referenceVersion,
@@ -512,8 +525,7 @@ class AgentRSI:
                     status=409,
                 )
             return {
-                "requestId": "rsi-"
-                + digest({"plan": identifier, "revision": revision, "request": request_id}),
+                "requestId": dispatch_id,
                 "suite": record.plan.suite,
                 "harnessVersion": record.plan.candidateVersion,
                 "runtime": record.plan.runtime.model_dump(mode="json"),
@@ -522,6 +534,10 @@ class AgentRSI:
             }, {"planId": identifier, "planRevision": revision, "goalId": record.plan.goalId}
 
     def require_admission(self, run):
+        if run.get("agentPromotion") is not None:
+            from packages.agent_rsi.promotions import require_admission
+
+            return require_admission(self, run)
         context = run.get("agentRound")
         if context is None:
             return
@@ -665,6 +681,9 @@ class AgentRSI:
 
     def private_recording(self, recording_id):
         session = self.manager.sessions.get(recording_id)
+        starting = getattr(self.manager, "_starting_session", None)
+        if session is None and starting is not None and starting.session_id == recording_id:
+            session = starting
         if session is not None:
             record = self.manager.evaluations.store.records.get(session.evaluation_id, {})
             if record.get("split") == "test":
@@ -702,6 +721,10 @@ class AgentRSI:
         rounds = [entry | {"round": index + 1} for index, entry in enumerate(entries)]
         from packages.agent_rsi.budgets import budget
 
+        latest_promotion = next(
+            (value for value in reversed(tuple(self.promotions.values())) if value["goalId"] == goal), None
+        )
+
         return {
             "layer": "agent",
             "goalId": goal,
@@ -711,6 +734,8 @@ class AgentRSI:
             ],
             "reference": entries[-1]["comparison"] if entries else None,
             "candidate": entries[-1] if entries else None,
-            "deployment": entries[-1]["deployment"] if entries else {"status": "not_requested"},
+            "deployment": {key: latest_promotion.get(key) for key in ("id", "status", "approvalId")}
+            if latest_promotion
+            else {"status": "not_requested"},
             "budget": budget(self, goal),
         }

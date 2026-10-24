@@ -54,10 +54,15 @@ def install_history_routes(app, manager, repository):
             if session is None:
                 raise HTTPException(409, {"code": "history_unavailable",
                                           "message": "No active session recording"})
+            if getattr(repository, "is_restricted", lambda _: False)(session.session_id):
+                raise HTTPException(404, {"code": "unknown_recording"})
             if session.recording is None:
                 raise HTTPException(409, {"code": "history_unavailable", "message": "Recording is disabled"})
             recording = session.recording.metadata["sessionId"] if live_query else session.session_id
         else:
+            # Active recordings take a direct log path, so enforce the repository guard here too.
+            if getattr(repository, "is_restricted", lambda _: False)(recording):
+                raise HTTPException(404, {"code": "unknown_recording"})
             session = manager.sessions.get(recording)
             live = getattr(manager, "live", None)
             if (live is not None and live.recording is not None

@@ -97,7 +97,7 @@ def budget(service, goal, *, proposed=None):
     }
 
 
-def require_budget(service, record, proposed):
+def require_budget(service, record, proposed=None, *, additional_cases=0):
     view = budget(service, record.plan.goalId, proposed=proposed)
     original, _ = authority(service, record.plan.goalId)
     if original is None or original.plan.goalBudget != record.plan.goalBudget:
@@ -108,8 +108,8 @@ def require_budget(service, record, proposed):
     )
     if (
         view["expired"]
-        or view["committedCases"] > view["limits"]["cases"]
-        or own_cases["committedCases"] > record.plan.budget.cases
+        or view["committedCases"] + additional_cases > view["limits"]["cases"]
+        or own_cases["committedCases"] + additional_cases > record.plan.budget.cases
         or record.plan.budget.llmUsd is not None
         and (own_cost.get("knownLlmUsd") or 0) > record.plan.budget.llmUsd
         or view["limits"]["llmUsd"] is not None

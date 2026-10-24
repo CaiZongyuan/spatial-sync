@@ -2,8 +2,13 @@
 
 
 def information_targets(manager):
+    from packages.agent_rsi.privacy import visible_session
+
     live = getattr(manager, "live", None)
-    return (*manager.sessions.values(), *((live,) if live is not None else ()))
+    return (
+        *(session for session in manager.sessions.values() if visible_session(manager, session)),
+        *((live,) if live is not None else ()),
+    )
 
 
 def information_target(manager, identity):

@@ -67,7 +67,7 @@ def install_approval_routes(app, manager, role_for):
 
     def get_record(approval_id):
         record = store.records.get(approval_id)
-        if record is None:
+        if record is None or record.sessionId and manager.agent_rsi.private_recording(record.sessionId):
             raise HTTPException(404, {"code": "unknown_approval"})
         return record
 
@@ -80,7 +80,8 @@ def install_approval_routes(app, manager, role_for):
         limit: int = Query(100, ge=1, le=1000),
     ):
         records = sorted(
-            store.records.values(),
+            (record for record in store.records.values()
+             if not record.sessionId or not manager.agent_rsi.private_recording(record.sessionId)),
             key=lambda record: (record.status == "pending", record.createdAtMs),
             reverse=True,
         )
@@ -110,6 +111,12 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.details.get("agentPromotionId"):
+            from packages.agent_rsi.promotions import decide
+
+            return await anyio.to_thread.run_sync(
+                decide, manager.agent_rsi, record, body.decision, actor, body.note
+            )
         if record.subject == "job":
             try:
                 manager.jobs.decide(record, body.decision, actor, body.note)

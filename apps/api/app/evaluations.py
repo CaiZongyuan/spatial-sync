@@ -183,8 +183,9 @@ class EvaluationService:
             raise HTTPException(409, {"code": "evaluation_busy", "message": "The session slot is reserved"})
 
     def status(self):
+        record = self.store.records.get(self._active_evaluation, {})
         return {
-            "evaluationId": self._active_evaluation,
+            "evaluationId": None if record.get("split") == "test" else self._active_evaluation,
             "blocked": bool(self._blocked),
             "queued": len(self._queue),
         }
@@ -376,7 +377,7 @@ class EvaluationService:
         identifier = record["evaluationId"]
         async with self._admission:
             notebooks = getattr(self.manager, "notebooks", None)
-            if record.get("agentRound") is not None:
+            if record.get("agentRound") is not None or record.get("agentPromotion") is not None:
                 self.manager.agent_rsi.require_admission(record)
             if notebooks is not None:
                 record.update(notebooks.admit_evaluation(notebook_context))
@@ -908,8 +909,10 @@ class EvaluationService:
             **({"reason": "task_timeout"} if timed_out else {}),
         }
 
-    async def cleanup(self, identifier):
-        if identifier not in self.store.records or self.store.records[identifier]["split"] != "train":
+    async def cleanup(self, identifier, *, private=False):
+        if identifier not in self.store.records or (
+            self.store.records[identifier]["split"] != "train" and not private
+        ):
             raise HTTPException(404, {"code": "unknown_evaluation"})
         if self._active_evaluation == identifier:
             raise HTTPException(409, {"code": "evaluation_busy"})

@@ -70,6 +70,7 @@ class WorkflowGrant:
                 base + "/bind-native",
                 base + "/runtime-records/import",
                 base + "/cancel",
+                base + "/cleanup",
             )
         base = "/api/v1/agents/" + agent_name(self.agent_id)
         if method == "GET":
