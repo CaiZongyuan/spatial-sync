@@ -31,7 +31,7 @@ STAGE_UP = "Z"
 
 
 @dataclass(frozen=True)
-class Candidate:
+class SourceCandidate:
     package: str
     asset_id: str
     title: str
@@ -41,8 +41,8 @@ class Candidate:
     role: str
 
 
-CANDIDATES = (
-    Candidate(
+SOURCE_CANDIDATES = (
+    SourceCandidate(
         "container_recycle_square_blue_a02",
         "environment/recycle-container",
         "Blue square recycling container",
@@ -51,7 +51,7 @@ CANDIDATES = (
         8482999,
         "dressing and static collision prop",
     ),
-    Candidate(
+    SourceCandidate(
         "bucket_utility_gray_a01",
         "environment/utility-bucket",
         "Gray utility bucket",
@@ -60,7 +60,7 @@ CANDIDATES = (
         15683159,
         "dressing and static collision prop",
     ),
-    Candidate(
+    SourceCandidate(
         "box_cardboard_a01",
         "environment/cardboard-box",
         "Cardboard box",
@@ -69,7 +69,7 @@ CANDIDATES = (
         21530693,
         "dressing and static collision prop",
     ),
-    Candidate(
+    SourceCandidate(
         "equipment_utility_cart_e01",
         "environment/utility-cart",
         "Utility equipment cart",
@@ -78,7 +78,7 @@ CANDIDATES = (
         171038176,
         "dressing and static collision prop",
     ),
-    Candidate(
+    SourceCandidate(
         "desk_a01",
         "environment/desk",
         "Laboratory desk",
@@ -88,7 +88,7 @@ CANDIDATES = (
         "dressing and static collision prop",
     ),
 )
-CANDIDATE_BY_PACKAGE = {candidate.package: candidate for candidate in CANDIDATES}
+SOURCE_BY_PACKAGE = {candidate.package: candidate for candidate in SOURCE_CANDIDATES}
 
 
 class SourceError(Exception):
@@ -303,6 +303,15 @@ def inspect_source(candidate, source_dir):
     license_name = manifest.get("license")
     if license_name not in ALLOWED_LICENSES:
         raise SourceError(f"Unsupported package license: {license_name!r}")
+    bom = _load_json(bom_path)
+    license_in_bom = any(
+        item.get("relative_path") == ".metadata/LICENSE.txt" for item in bom.get("items", [])
+    )
+    obligations = (
+        ["attribution", "retain license and notices", "mark modifications"]
+        if license_name == "CC-BY-4.0"
+        else []
+    )
     root_relative, root_path = _root_usds(source_dir)
     stage = Usd.Stage.Open(str(root_path))
     if stage is None:
@@ -322,8 +331,11 @@ def inspect_source(candidate, source_dir):
             "sha256": sha256_file(license_path),
             "bytes": license_path.stat().st_size,
             "manifestSha256": sha256_file(manifest_path),
+            "inBom": license_in_bom,
+            "attribution": f"NVIDIA SimReady asset {package}",
+            "obligations": obligations,
         },
-        "bom": _bom_report(source_dir, _load_json(bom_path)),
+        "bom": _bom_report(source_dir, bom),
         "rootUsd": root_relative,
         "mdl": _mdl_imports(source_dir),
         "upstreamValidation": _upstream_validation(stage),
@@ -369,45 +381,6 @@ def _uninstance(stage):
             prim.SetInstanceable(False)
             count += 1
     return count
-
-
-def _rigid_ancestor(stage, path):
-    prim = stage.GetPrimAtPath(path)
-    while prim and prim.GetPath() != Sdf.Path("/"):
-        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
-            return prim.GetPath()
-        prim = prim.GetParent()
-    return None
-
-
-def _normalize_joint_endpoints(stage):
-    """Point joint endpoints at their rigid bodies; keep unresolved endpoints visible."""
-    changes, unresolved = [], []
-    for prim in stage.Traverse():
-        if not prim.IsA(UsdPhysics.Joint):
-            continue
-        joint = UsdPhysics.Joint(prim)
-        for name, relationship in (("body0", joint.GetBody0Rel()), ("body1", joint.GetBody1Rel())):
-            targets = list(relationship.GetTargets())
-            replacements = []
-            for target in targets:
-                body = _rigid_ancestor(stage, target)
-                if body is None:
-                    unresolved.append({"joint": str(prim.GetPath()), "endpoint": name, "target": str(target)})
-                    replacements.append(target)
-                else:
-                    replacements.append(body)
-            if replacements != targets:
-                relationship.SetTargets(replacements)
-                changes.append(
-                    {
-                        "joint": str(prim.GetPath()),
-                        "endpoint": name,
-                        "from": [str(value) for value in targets],
-                        "to": [str(value) for value in replacements],
-                    }
-                )
-    return changes, unresolved
 
 
 def _material_for(prim):
@@ -923,12 +896,12 @@ def _preview(source_dir, output_dir):
     return "previews/thumbnail.png"
 
 
-def _notice(candidate):
+def _notice(candidate, license_name):
     return (
         f"NVIDIA SimReady asset: {candidate.package}\n"
         f"Source: {source_url(candidate.package)}\n"
         f"Revision: {REVISION}\n"
-        "License: CC-BY-4.0 (see LICENSE.txt)\n\n"
+        f"License: {license_name} (see LICENSE.txt)\n\n"
         "Modifications: selected the Newton physics variant, disabled the other physics variants, "
         "flattened the composition under /Asset, derived visual.glb from UsdPreviewSurface materials, "
         "and copied referenced textures. The package keeps the original license text.\n\n"
@@ -1006,18 +979,7 @@ def adapt(candidate, source_dir, output_dir):
     source_stage.SetEditTarget(source_stage.GetSessionLayer())
     report["variant"] = _select_newton(source_stage)
     report["uninstanced"] = _uninstance(source_stage)
-    joint_changes, joint_unresolved = _normalize_joint_endpoints(source_stage)
-    report["jointEndpointNormalization"] = joint_changes
-    report["unresolvedJointEndpoints"] = joint_unresolved
     gaps, approximations = report["gaps"], report["approximations"]
-    if joint_changes:
-        approximations.append(
-            "Joint endpoints that named collision shapes were moved to their rigid-body ancestors."
-        )
-    for item in joint_unresolved:
-        gaps.append(
-            f"Joint endpoint has no rigid-body ancestor: {item['joint']} {item['endpoint']} {item['target']}"
-        )
     texture_names, texture_map, image_cache = {}, {}, {}
     try:
         geometries, skipped, materials = _collect_geometry(
@@ -1085,7 +1047,9 @@ def adapt(candidate, source_dir, output_dir):
         yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
     shutil.copyfile(Path(source_dir) / ".metadata/LICENSE.txt", output_dir / "LICENSE.txt")
-    (output_dir / "NOTICE").write_text(_notice(candidate), encoding="utf-8")
+    (output_dir / "NOTICE").write_text(
+        _notice(candidate, source["license"]["name"]), encoding="utf-8"
+    )
     preview = _preview(source_dir, output_dir)
     report["output"] = {
         "preview": preview,
@@ -1114,8 +1078,6 @@ def adapt(candidate, source_dir, output_dir):
         "gaps": report["gaps"],
         "textures": sorted(texture_names),
         "skippedGeometry": skipped,
-        "jointEndpointNormalization": joint_changes,
-        "unresolvedJointEndpoints": joint_unresolved,
     }
     _write_provenance(output_dir, candidate, source, derivation)
     from packages.library.metadata import asset_metadata
@@ -1199,6 +1161,7 @@ def import_package(package_dir, state_root, library_root, *, structural_only=Fal
     except LibraryError as exc:
         return {"status": "fail", "reason": exc.detail.get("message", str(exc)), "detail": exc.detail}
     checks = job["validation"].get("checks", [])
+    physics_status = (job["validation"].get("physics") or {}).get("status")
     structural_failures = [
         check for check in checks if check["id"].startswith("S") and check["status"] == "fail"
     ]
@@ -1206,6 +1169,11 @@ def import_package(package_dir, state_root, library_root, *, structural_only=Fal
     structural = {check["id"]: check["status"] for check in checks if check["id"].startswith("S")}
     physics = {check["id"]: check["status"] for check in checks if check["id"].startswith("P")}
     usable = all(structural.get(f"S{index}") == "pass" for index in (1, 2, 4, 6))
+    static = (
+        usable and all(physics.get(identifier) == "pass" for identifier in ("P1", "P3"))
+        if physics_status == "completed"
+        else "unknown"
+    )
     return {
         "status": "pass" if not structural_failures else "fail",
         "reason": "; ".join(check["message"] for check in structural_failures),
@@ -1216,10 +1184,10 @@ def import_package(package_dir, state_root, library_root, *, structural_only=Fal
         "checks": checks,
         "structural": structural,
         "physics": physics,
+        "physicsStatus": physics_status,
         "validationFailures": [
             {"id": check["id"], "message": check["message"]} for check in validation_failures
         ],
         "dressingUsable": usable,
-        "staticCollisionUsable": usable
-        and all(physics.get(identifier) == "pass" for identifier in ("P1", "P3")),
+        "staticCollisionUsable": static,
     }

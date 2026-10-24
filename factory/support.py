@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from factory.simready import CANDIDATES, DATASET, REVISION
+from factory.simready import DATASET, REVISION, SOURCE_CANDIDATES
 
 REQUIRED_LIMITS = {
     "sourcePackageBytes": 512 * 1024 * 1024,
@@ -17,6 +17,13 @@ REQUIRED_LIMITS = {
     "existingUploadBytes": 128 * 1024 * 1024,
     "existingUnpackBytes": 256 * 1024 * 1024,
 }
+BLENDER_VERSION = "4.5.9"
+MCP_VERSION = "2.2.2"
+MCP_COMMIT = "5a3618fccb2d982d0dd61e7a1879912c3100073b"
+BLENDER_DOWNLOAD = (
+    "https://download.blender.org/release/Blender4.5/blender-4.5.9-windows-x64.zip"
+)
+ADDON_VERSION = "1.8"
 
 
 def empty(checked_at):
@@ -26,10 +33,10 @@ def empty(checked_at):
         "source": {"dataset": DATASET, "revision": REVISION},
         "limits": dict(REQUIRED_LIMITS),
         "blender": {
-            "version": "4.5.9",
-            "mcpForBlender": "2.2.2",
-            "mcpCommit": "5a3618fccb2d982d0dd61e7a1879912c3100073b",
-            "blenderDownload": "https://download.blender.org/release/Blender4.5/blender-4.5.9-windows-x64.zip",
+            "version": BLENDER_VERSION,
+            "mcpForBlender": MCP_VERSION,
+            "mcpCommit": MCP_COMMIT,
+            "blenderDownload": BLENDER_DOWNLOAD,
             "configuration": {
                 "safeMode": "BLENDER_MCP_SAFE_MODE=1",
                 "telemetry": "DISABLE_TELEMETRY=true",
@@ -74,8 +81,6 @@ def empty(checked_at):
             "command": "uv run --no-sync python factory/verify.py check",
             "lane": "core",
             "expectedAddedSeconds": 10,
-            "actualAddedSeconds": 3,
-            "measured": "2026-10-24 local Windows check and unit test, structural-only path",
         },
     }
 
@@ -95,17 +100,25 @@ def validate(data):
     if data.get("limits") != REQUIRED_LIMITS:
         errors.append("budget limits differ from the specification")
     blender = data.get("blender") or {}
-    if blender.get("version") != "4.5.9" or blender.get("mcpForBlender") != "2.2.2":
+    if blender.get("version") != BLENDER_VERSION or blender.get("mcpForBlender") != MCP_VERSION:
         errors.append("Blender/MCP versions are not the pinned support combination")
-    if (blender.get("addon") or {}).get("version") != "1.8":
+    if blender.get("mcpCommit") != MCP_COMMIT:
+        errors.append("the paired MCP commit is not recorded")
+    if (blender.get("addon") or {}).get("version") != ADDON_VERSION:
         errors.append("the paired addon version is not recorded")
+    configuration = blender.get("configuration") or {}
+    if (
+        configuration.get("autoStartServer") is not False
+        or configuration.get("autoStartServerDefault") is not True
+    ):
+        errors.append("the addon auto-start baseline is not recorded honestly")
     candidates = data.get("candidates")
     if not isinstance(candidates, list):
         return errors + ["candidates must be a list"]
     names = [item.get("package") for item in candidates]
-    if sorted(names) != sorted(candidate.package for candidate in CANDIDATES):
+    if sorted(names) != sorted(candidate.package for candidate in SOURCE_CANDIDATES):
         errors.append("support list must contain exactly the five pinned candidates")
-    expected = {candidate.package: candidate for candidate in CANDIDATES}
+    expected = {candidate.package: candidate for candidate in SOURCE_CANDIDATES}
     for item in candidates:
         prefix = str(item.get("package"))
         candidate = expected.get(prefix)
@@ -126,11 +139,17 @@ def validate(data):
             errors.append(f"{prefix}: license decision is missing")
         if not isinstance(license_info.get("sha256"), str) or len(license_info["sha256"]) != 64:
             errors.append(f"{prefix}: license evidence hash is missing")
+        if not isinstance(license_info.get("inBom"), bool):
+            errors.append(f"{prefix}: license BOM membership is not recorded")
+        if not isinstance(license_info.get("obligations"), list):
+            errors.append(f"{prefix}: license obligations are not recorded")
         if source.get("bomVerified") != source.get("bomItems"):
             errors.append(f"{prefix}: BOM closure is not fully verified")
         adaptation = item.get("adaptation") or {}
         if adaptation.get("status") not in ("pass", "gap", "fail"):
             errors.append(f"{prefix}: adaptation status is invalid")
+        if (adaptation.get("variant") or {}).get("selected") != "Newton/Enabled":
+            errors.append(f"{prefix}: Newton variant selection is not recorded")
         if adaptation.get("status") == "pass":
             output = adaptation.get("output") or {}
             visual = adaptation.get("visual") or {}
@@ -141,6 +160,8 @@ def validate(data):
         import_info = item.get("import") or {}
         if import_info.get("status") not in ("pass", "gap", "fail"):
             errors.append(f"{prefix}: import status is invalid")
+        if import_info.get("physicsStatus") not in ("completed", "skipped", None):
+            errors.append(f"{prefix}: physics runtime status is not recorded")
         if adaptation.get("status") == "pass" and import_info.get("status") == "fail":
             errors.append(f"{prefix}: adapted package failed the existing import")
         structure = import_info.get("structural") or {}

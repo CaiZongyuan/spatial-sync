@@ -25,9 +25,9 @@ if str(REPO_ROOT) not in sys.path:
 from factory import support as support_schema  # noqa: E402
 from factory.fixture import build_source  # noqa: E402
 from factory.simready import (  # noqa: E402
-    CANDIDATE_BY_PACKAGE,
-    CANDIDATES,
     REVISION,
+    SOURCE_BY_PACKAGE,
+    SOURCE_CANDIDATES,
     adapt,
     download_package,
     import_package,
@@ -78,8 +78,7 @@ def _entry(candidate, report, imported):
         "visual": report.get("visual"),
         "dimensionsM": report.get("dimensionsM"),
         "physics": report.get("physics"),
-        "jointEndpointNormalization": report.get("jointEndpointNormalization", []),
-        "unresolvedJointEndpoints": report.get("unresolvedJointEndpoints", []),
+        "variant": report.get("variant"),
     }
     imported = imported or {"status": "gap", "reason": "Adaptation did not produce a package"}
     usage = {
@@ -104,6 +103,7 @@ def _entry(candidate, report, imported):
             "bomVerified": (source.get("bom") or {}).get("verified"),
             "bomMissing": (source.get("bom") or {}).get("missing"),
             "bomMismatched": (source.get("bom") or {}).get("mismatched"),
+            "bomNotInBom": (source.get("bom") or {}).get("notInBom"),
         },
         "license": source.get("license"),
         "mdl": {
@@ -123,6 +123,7 @@ def _entry(candidate, report, imported):
             "uploadBytes": imported.get("uploadBytes"),
             "structural": imported.get("structural"),
             "physics": imported.get("physics"),
+            "physicsStatus": imported.get("physicsStatus"),
             "validationFailures": imported.get("validationFailures"),
         },
         "usage": usage,
@@ -153,9 +154,9 @@ def evidence(args):
     report_root = output / "reports"
     report_root.mkdir(exist_ok=True)
     selected = (
-        [CANDIDATE_BY_PACKAGE[name] for name in args.package]
+        [SOURCE_BY_PACKAGE[name] for name in args.package]
         if args.package
-        else list(CANDIDATES)
+        else list(SOURCE_CANDIDATES)
     )
     entries = []
     for candidate in selected:
@@ -225,7 +226,9 @@ def main(argv=None):
     evidence_parser = commands.add_parser("evidence", help="Pinned real-source evidence run")
     evidence_parser.add_argument("--cache", default=".scratch/sf0/cache")
     evidence_parser.add_argument("--out", default=".scratch/sf0/evidence")
-    evidence_parser.add_argument("--package", action="append", choices=[item.package for item in CANDIDATES])
+    evidence_parser.add_argument(
+        "--package", action="append", choices=[item.package for item in SOURCE_CANDIDATES]
+    )
     evidence_parser.add_argument("--skip-download", action="store_true")
     evidence_parser.add_argument("--blender-evidence")
     evidence_parser.add_argument("--support-out")

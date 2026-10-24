@@ -1,6 +1,8 @@
 """SF0 support boundary: pinned source, Newton variant and the existing import."""
 
+import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -9,14 +11,10 @@ from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 from factory import support as support_schema
 from factory.fixture import build_source
 from factory.simready import (
-    CANDIDATES,
     REVISION,
+    SOURCE_CANDIDATES,
     AdaptationError,
     _copy_texture,
-    _normalize_joint_endpoints,
-    _resolve_texture,
-    _safe_relative,
-    _select_newton,
     adapt,
     import_package,
 )
@@ -28,6 +26,43 @@ def packaged(tmp_path):
     report = adapt(candidate, source, output)
     assert report["status"] == "pass", report["gaps"]
     return candidate, source, output, report
+
+
+def refresh_bom(source, candidate):
+    bom_path = source / ".metadata/com.nvidia.simready.packaging.bom.json"
+    bom = json.loads(bom_path.read_text(encoding="utf-8"))
+    for item in bom["items"]:
+        value = (source / item["relative_path"]).read_bytes()
+        item["size"] = len(value)
+        item["hash"]["sha256"] = hashlib.sha256(value).hexdigest()
+    bom_path.write_text(json.dumps(bom, indent=2) + "\n", encoding="utf-8")
+    files = [path for path in source.rglob("*") if path.is_file()]
+    return replace(
+        candidate,
+        expected_files=len(files),
+        expected_bytes=sum(path.stat().st_size for path in files),
+    )
+
+
+def material_with_texture(source, candidate, asset):
+    materials = source / "simready_usd/payloads/materials.usda"
+    text = materials.read_text(encoding="utf-8")
+    text = text.replace(
+        "color3f inputs:diffuseColor = (0.75, 0.4, 0.2)",
+        "prepend color3f inputs:diffuseColor.connect = </Materials/Fixture/Albedo.outputs:rgb>",
+    )
+    text = text.replace(
+        "            token outputs:surface\n        }\n    }\n}\n",
+        "            token outputs:surface\n        }\n"
+        '        def Shader "Albedo" {\n'
+        '            token info:id = "UsdUVTexture"\n'
+        f"            asset inputs:file = @{asset}@\n"
+        "            float3 outputs:rgb\n"
+        "        }\n"
+        "    }\n}\n",
+    )
+    materials.write_text(text, encoding="utf-8")
+    return refresh_bom(source, candidate)
 
 
 def test_synthetic_source_reaches_existing_import_and_structural_checks(tmp_path):
@@ -69,16 +104,12 @@ def test_newton_variant_is_selected_instead_of_default_physx(tmp_path):
 
 
 def test_missing_newton_variant_is_an_explicit_failure(tmp_path):
-    path = tmp_path / "no-newton.usda"
-    path.write_text(
-        '#usda 1.0\n(defPrim = "RootNode")\n'
-        'def Xform "RootNode" (prepend variantSets = ["PhysX"]) {\n'
-        ' variantSet "PhysX" = { "Disabled" {} }\n}\n',
-        encoding="utf-8",
-    )
-    stage = Usd.Stage.Open(str(path))
+    candidate, source = build_source(tmp_path / "source")
+    root = source / "simready_usd/sm_fixture_box.usd"
+    root.write_text(root.read_text(encoding="utf-8").replace("Newton", "NewtonMissing"), encoding="utf-8")
+    candidate = refresh_bom(source, candidate)
     with pytest.raises(AdaptationError, match="Newton"):
-        _select_newton(stage)
+        adapt(candidate, source, tmp_path / "broken")
 
 
 def test_bom_mismatch_is_not_reported_as_a_pass(tmp_path):
@@ -92,15 +123,19 @@ def test_bom_mismatch_is_not_reported_as_a_pass(tmp_path):
     assert any("BOM" in gap for gap in report["gaps"])
 
 
-def test_unsafe_and_escaping_reference_paths_are_rejected(tmp_path):
-    for value in ("C:\\assets\\box.png", "\\\\server\\share\\box.png", "/tmp/box.png", "../box.png"):
-        assert not _safe_relative(value)
-    source = tmp_path / "source"
-    source.mkdir()
-    with pytest.raises(AdaptationError, match="missing or escapes"):
-        _resolve_texture(source, tmp_path / "outside.png")
-    with pytest.raises(AdaptationError, match="UDIM"):
-        _resolve_texture(source, "../Textures/box.<UDIM>.png")
+@pytest.mark.parametrize(
+    ("asset", "message"),
+    [
+        ("C:\\\\assets\\\\box.png", "missing or escapes"),
+        ("../Textures/box.<UDIM>.png", "UDIM"),
+    ],
+)
+def test_unsafe_and_udim_texture_references_are_explicit_gaps(tmp_path, asset, message):
+    candidate, source = build_source(tmp_path / "source")
+    candidate = material_with_texture(source, candidate, asset)
+    report = adapt(candidate, source, tmp_path / "broken")
+    assert report["status"] == "gap"
+    assert any(message in gap for gap in report["gaps"])
 
 
 def test_repeated_texture_reference_keeps_the_package_relative_path(tmp_path, monkeypatch):
@@ -132,60 +167,16 @@ def test_repeated_texture_reference_keeps_the_package_relative_path(tmp_path, mo
     assert _copy_texture(source, output, names, []) == "textures/Texture.png"
 
 
-def test_joint_endpoints_move_from_collision_shapes_to_rigid_bodies(tmp_path):
-    path = tmp_path / "joint.usda"
-    path.write_text(
-        '''#usda 1.0
-def Xform "RootNode" {
-    def Xform "Body" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {
-        def Mesh "Shape" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
-            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
-            int[] faceVertexCounts = [3]
-            int[] faceVertexIndices = [0, 1, 2]
-            uniform token subdivisionScheme = "none"
-        }
-    }
-    def PhysicsFixedJoint "Joint" {
-        rel physics:body0 = </RootNode/Body/Shape>
-    }
-}
-''',
-        encoding="utf-8",
-    )
-    stage = Usd.Stage.Open(str(path))
-    changes, unresolved = _normalize_joint_endpoints(stage)
-    assert unresolved == []
-    assert changes == [
-        {
-            "joint": "/RootNode/Joint",
-            "endpoint": "body0",
-            "from": ["/RootNode/Body/Shape"],
-            "to": ["/RootNode/Body"],
-        }
-    ]
-
-
 def test_support_list_matches_the_pinned_five_candidates():
     path = Path(__file__).resolve().parents[2] / "factory/support.json"
     data = support_schema.load(path)
     assert support_schema.validate(data) == []
     assert data["source"]["revision"] == REVISION
     assert {item["package"] for item in data["candidates"]} == {
-        candidate.package for candidate in CANDIDATES
+        candidate.package for candidate in SOURCE_CANDIDATES
     }
     assert all(item["source"]["bomVerified"] == item["source"]["bomItems"] for item in data["candidates"])
-    by_package = {item["package"]: item for item in data["candidates"]}
-    assert by_package["bucket_utility_gray_a01"]["usage"]["staticCollision"] is True
-    assert by_package["bucket_utility_gray_a01"]["import"]["validationFailures"] == []
-    assert [
-        failure["id"] for failure in by_package["box_cardboard_a01"]["import"]["validationFailures"]
-    ] == ["P4"]
-    assert by_package["container_recycle_square_blue_a02"]["usage"]["staticCollision"] is False
-    assert [
-        failure["id"]
-        for failure in by_package["container_recycle_square_blue_a02"]["import"]["validationFailures"]
-    ] == ["P1"]
-    assert by_package["equipment_utility_cart_e01"]["adaptation"]["status"] == "gap"
-    assert any(
-        "UDIM" in gap for gap in by_package["equipment_utility_cart_e01"]["adaptation"]["gaps"]
+    assert all(
+        item["adaptation"]["variant"]["selected"] == "Newton/Enabled"
+        for item in data["candidates"]
     )

@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from factory.simready import Candidate
+from factory.simready import SourceCandidate
 
 LICENSE = (
     "CC0-1.0 synthetic fixture. Geometry, materials and metadata in this package "
@@ -181,7 +181,7 @@ def build_source(root):
         json.dumps({"format_version": "1.0", "items": items}, indent=2) + "\n",
     )
     files = [path for path in root.rglob("*") if path.is_file()]
-    candidate = Candidate(
+    candidate = SourceCandidate(
         package="fixture_synthetic_box",
         asset_id="environment/fixture-box",
         title="Synthetic fixture box",

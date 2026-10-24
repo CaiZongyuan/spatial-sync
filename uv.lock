@@ -583,6 +583,7 @@ usd = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pillow" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
@@ -614,6 +615,7 @@ provides-extras = ["simulation", "usd"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pillow", specifier = ">=12,<13" },
     { name = "pytest", specifier = ">=8.3,<10" },
     { name = "pytest-asyncio", specifier = ">=0.25,<2" },
     { name = "pytest-xdist", specifier = ">=3.8,<4" },

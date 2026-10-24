@@ -30,6 +30,9 @@ uv run --no-sync python factory/verify.py blender \
 `evidence` writes raw reports under `<out>/reports/`, adapted packages under
 `<out>/adapted/`, and a sanitized support list at `<out>/support.json`. Raw
 probe output and downloaded packages stay in `.scratch/` and are not committed.
+Real source evidence needs the dev group with the simulation and USD extras
+(`uv sync --frozen --group dev --extra simulation --extra usd`) because texture
+handling uses Pillow and the usage decision comes from real Newton CPU checks.
 
 ## Restricted derivation
 
@@ -38,10 +41,8 @@ revision `524747d9b5e1f21b5b18b56041788c01d745f1a1`. The adapter:
 
 - verifies the package manifest, BOM hashes, license file and declared root USD;
 - selects the `Newton` variant and disables MuJoCo/PhysX;
-- normalizes joint endpoints that name collision shapes to their rigid-body
-  ancestors, recording every change;
 - flattens the composition under `/Asset`, checks Z-up and metersPerUnit=1, and
-  rewrites texture paths to package-relative files;
+  rewrites all asset paths to package-relative files;
 - derives `visual.glb` from `UsdPreviewSurface` materials and the ORM texture
   convention (G roughness, B metallic);
 - preserves collision, mass, inertia, joints and the original license text, and
@@ -61,7 +62,7 @@ unpack limits. The last two are SF2 prerequisites, not silently relaxed here.
 | Addon `bl_info` | 1.8 in the same commit |
 | Safe mode | `BLENDER_MCP_SAFE_MODE=1` |
 | Telemetry | `DISABLE_TELEMETRY=true`; addon content telemetry consent false |
-| Auto-start | disabled; the addon socket runs only during authoring |
+| Auto-start | addon default is true; the factory baseline disables it and the socket runs only during authoring |
 | Third-party providers | Poly Haven, Hyper3D, Hunyuan3D, Sketchfab, Tripo, Meshy and Poly Pizza all off |
 
 The MCP probe uses the official client and asserts that `execute_blender_code`

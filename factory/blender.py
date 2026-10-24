@@ -10,8 +10,8 @@ from pathlib import Path
 
 from pxr import Usd
 
-MCP_COMMIT = "5a3618fccb2d982d0dd61e7a1879912c3100073b"
-BLENDER_DOWNLOAD = "https://download.blender.org/release/Blender4.5/blender-4.5.9-windows-x64.zip"
+from factory.support import BLENDER_DOWNLOAD, MCP_COMMIT
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -83,6 +83,7 @@ def verify(blender, mcp, output):
         "evidence": {},
         "notes": [
             "The server package is 2.2.2; the addon bl_info version is 1.8 in the same pinned commit.",
+            "The addon defaults to auto-start; the factory baseline explicitly disables it.",
             "The installed 2.2.2 wheel omits blender_mcp.config, so telemetry cannot initialize; "
             "the disable flag is still checked with a stub config.",
             "The addon socket is not auto-started; Blender background mode refuses the interactive server.",
@@ -123,6 +124,9 @@ def verify(blender, mcp, output):
             blender_result = json.loads(blender_out.read_text(encoding="utf-8"))
             result["version"] = blender_result.get("blenderVersion")
             result["addon"] = blender_result.get("addon")
+            result["configuration"]["autoStartServerDefault"] = blender_result.get(
+                "autoStartServerDefault"
+            )
             result["evidence"]["blenderResult"] = blender_result
             exported = Path((blender_result.get("usd") or {}).get("path") or "")
             if not exported.is_absolute():
@@ -145,6 +149,11 @@ def verify(blender, mcp, output):
         if mcp_out.is_file():
             mcp_result = json.loads(mcp_out.read_text(encoding="utf-8"))
             result["mcpForBlender"] = mcp_result.get("serverVersion")
+            result["configuration"]["telemetryRuntime"] = (
+                "unavailable (wheel omits blender_mcp.config)"
+                if mcp_result.get("telemetryPackagingGap")
+                else "checked"
+            )
             result["evidence"]["mcpResult"] = mcp_result
             result["verified"]["safeMode"] = bool(
                 mcp_result.get("safeModeRejected") and mcp_result.get("allowedReachedConnection")
