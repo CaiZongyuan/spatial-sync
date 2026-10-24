@@ -71,6 +71,8 @@ def install_plan_routes(app, manager, role_for):
         async with publication:
             body = dict(body)
             body.setdefault("id", "plan-" + uuid.uuid4().hex[:16])
+            if not isinstance(body["id"], str):
+                raise PlanError("invalid_plan", "Plan ID must be a string", status=422)
             if any(body["id"] in selected.records for selected in (store, *training_stores(manager))):
                 raise PlanError("plan_exists", "Plan ID already exists")
             if body.get("kind") == "training":

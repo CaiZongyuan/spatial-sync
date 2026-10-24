@@ -286,3 +286,17 @@ def test_all_plan_layers_share_atomic_namespace_for_explicit_and_generated_ids(m
             "/api/v1/plans", json={key: value for key, value in operation.items() if key != "id"}
         )
         assert generated_collision.status_code == 409
+
+
+@pytest.mark.parametrize("identity", [[], {}, None, 42, True])
+@pytest.mark.parametrize("variant", [{}, {"kind": "training"}, {"kind": "training", "layer": "agent"}])
+def test_invalid_plan_id_is_rejected_before_any_variant_or_source_effect(identity, variant):
+    def no_source(*args):
+        raise AssertionError("Malformed Plan identity must not create or resolve a Source")
+
+    with TestClient(create_app(source_factory=no_source)) as http:
+        response = http.post("/api/v1/plans", json=variant | {"id": identity})
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["code"] == "invalid_plan"
+        assert http.get("/api/v1/plans").json()["plans"] == []
+        assert http.get("/api/v1/health").json()["sessionCount"] == 0
