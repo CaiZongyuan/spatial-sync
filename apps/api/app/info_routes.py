@@ -16,6 +16,10 @@ from packages.protocol.schema import ActionRequest, Actor, Catalog, JsonValue, M
 
 
 def actor_from_headers(headers):
+    from packages.agent_evaluation.scope import current_scope
+    scope = current_scope()
+    if scope is not None:
+        return Actor(kind="agent", name=scope.actor_name)
     kind, separator, name = headers.get("x-actor", "user:local").partition(":")
     if not separator or kind not in ("user", "cli", "agent") or not name.strip():
         raise HTTPException(422, {"code": "invalid_actor", "message": "Use X-Actor: user|cli|agent:name"})

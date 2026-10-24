@@ -1,6 +1,46 @@
 """Public evaluation DTOs: private package inputs stay inside the evaluator."""
 
 import math
+from copy import deepcopy
+
+
+def public_agent_run(value):
+    result = {
+        key: deepcopy(value[key])
+        for key in (
+            "evaluationId",
+            "layer",
+            "subject",
+            "agentId",
+            "requestId",
+            "harnessVersion",
+            "suite",
+            "suiteContentHash",
+            "split",
+            "purpose",
+            "runtime",
+            "runtimeHash",
+            "at",
+            "createdAt",
+            "deadlineAt",
+            "status",
+            "episodes",
+            "cleanup",
+            "pins",
+            "key",
+            "startedAt",
+            "endedAt",
+            "result",
+            "error",
+        )
+        if key in value
+    }
+    result["id"] = value["evaluationId"]
+    result["cases"] = [
+        {key: deepcopy(item) for key, item in case.items() if key != "completionHash"}
+        for case in value["cases"]
+    ]
+    return result
 
 
 def fields(value, names, types):
@@ -36,6 +76,9 @@ def public_conditions(value):
             "embodiment",
             "model",
             "thinking",
+            "runtime",
+            "runtimeVersion",
+            "contextProvenance",
         ),
         (str,),
     )
@@ -108,10 +151,15 @@ def public_score(value, rows=()):
             result[name] = [item for item in value[name] if isinstance(item, str)]
     if isinstance(value.get("cost"), dict):
         result["cost"] = numbers(value["cost"], ("llmUsd", "tokens", "gpuHours"))
+    if value.get("layer") == "agent":
+        result.update(layer="agent", cases=value["cases"], runs=value["runs"])
+        result["cost"] = deepcopy(value["cost"])
     return result
 
 
 def public_evaluation(value, rows=()):
+    if value.get("layer") == "agent":
+        return public_agent_run(value)
     result = fields(
         value,
         (

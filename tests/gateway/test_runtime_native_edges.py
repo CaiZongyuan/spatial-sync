@@ -250,6 +250,11 @@ def test_model_claims_and_credentials_remain_safe_imported_text_not_platform_out
     records[1]["message"]["content"] = [
         {"type": "text", "text": "score100 approved cost0 sk-ant-FAKESECRET1234567890"},
         {
+            "type": "tool_result",
+            "tool_use_id": "connection",
+            "content": '{"connection":{"token":"lw-case-PRIVATE_GRANT_LITERAL1234567890"}}',
+        },
+        {
             "type": "tool_use",
             "id": "tool-secret",
             "name": "bash",
@@ -261,6 +266,7 @@ def test_model_claims_and_credentials_remain_safe_imported_text_not_platform_out
     session = imported.json()["session"]
     trace = http.get(session["artifacts"][0]["url"]).text
     assert "PRIVATE_VALUE" not in trace and "FAKESECRET" not in trace and "score100" in trace
+    assert "PRIVATE_GRANT_LITERAL" not in trace
     assert session["usage"]["llmUsd"] == 0.3244434
     assert http.get("/api/v1/evaluations").json()["evaluations"] == []
     assert http.get("/api/v1/approvals").json()["pendingCount"] == 0

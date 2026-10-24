@@ -121,6 +121,10 @@ class EvaluationService:
         )
 
     def require_interactive(self):
+        from packages.agent_evaluation.scope import current_scope
+        scope = current_scope()
+        if scope is not None and scope.run_id == self._active_evaluation:
+            return
         if self._active_evaluation or self._starting_request or self._blocked:
             raise HTTPException(409, {"code": "evaluation_busy", "message": "The session slot is reserved"})
 
@@ -340,7 +344,9 @@ class EvaluationService:
                     else:
                         self._active_evaluation = identifier
                         running = self._running = asyncio.create_task(
-                            self._evaluate(identifier),
+                            self.external.evaluate(identifier)
+                            if self.store.records[identifier].get("layer") == "agent"
+                            else self._evaluate(identifier),
                             name=identifier,
                         )
                     self.wake()

@@ -139,6 +139,8 @@ class GatewayClient:
         return await self.request("GET", await self.route() + "/catalog")
 
     async def catalog_if_active(self):
+        if self.token and self.token.startswith("lw-case-"):
+            return await self.catalog()
         health = await self.request("GET", "/api/v1/health")
         if any(session["state"] in ("RUNNING", "PAUSED") and not session.get("evaluationId")
                for session in health["sessions"]):
@@ -512,6 +514,8 @@ class GatewayClient:
         return result
 
     async def invocation_route(self, invocation_id):
+        if self.token and self.token.startswith("lw-case-"):
+            return await self.route()
         if invocation_id in self._invocation_targets:
             return self._invocation_targets[invocation_id]
         path = "/api/v1/live/invocations/" + quote(invocation_id, safe="")
@@ -658,8 +662,11 @@ class GatewayClient:
                                   params={"revision": revision} if revision is not None else {})
 
     async def plan_list(self, status=None):
+        params = {"status": status} if status is not None else {}
+        if self.token and self.token.startswith("lw-case-") and self._session_explicit:
+            params["sessionId"] = self._session_id
         return (await self.request("GET", "/api/v1/plans",
-                                   params={"status": status} if status is not None else {}))["plans"]
+                                   params=params))["plans"]
 
     async def session_control(self, action, *, count=1, actor="cli:lw"):
         return await self.request(

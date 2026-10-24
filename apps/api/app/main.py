@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
+from apps.api.app.agent_evaluations import install_external_evaluations
 from apps.api.app.agent_routes import install_agent_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
@@ -116,6 +117,9 @@ class CreateSession(Model):
 
 
 def _role(headers, settings: Settings):
+    from packages.agent_evaluation.scope import current_scope
+    if current_scope() is not None:
+        return "operator"
     if not settings.remote:
         return "operator"
     authorization = headers.get("authorization", "")
@@ -258,6 +262,9 @@ def create_app(
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     runtime_records = install_runtime_routes(
         app, manager, app.state.agents, lambda headers: _role(headers, settings)
+    )
+    external_evaluations = install_external_evaluations(
+        app, evaluations, app.state.agents, runtime_records, lambda headers: _role(headers, settings)
     )
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
@@ -709,6 +716,8 @@ def create_app(
                     finally:
                         await connection.finish()
 
+    from packages.agent_evaluation.scope import CaseAuthority
+    app.add_middleware(CaseAuthority, service=external_evaluations)
     return app
 
 
