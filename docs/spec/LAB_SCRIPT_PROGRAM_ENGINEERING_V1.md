@@ -22,7 +22,6 @@ configSchema:
   type: object
   properties: {speed: {type: number, minimum: 0, maximum: 1}}
   required: [speed]
-  additionalProperties: false
 config: {speed: 0.2}
 ```
 
@@ -30,7 +29,8 @@ config: {speed: 0.2}
 client-supplied provenance, qualification, scores, bytecode, native extensions,
 dependency installation and filesystem links are unsupported. Source paths and
 the top-level entry class are checked without executing the module. Declarative
-config is validated by the platform's JSON-schema subset. AST import checks
+config is validated by the platform's JSON-schema subset (objects reject
+undeclared properties). AST import checks
 permit the Program interface, PhysicsPort interface, supported pure numerical/
 standard-library helpers and package-relative helpers; direct Newton/internal
 runtime imports reject. These checks enforce the authoring contract, not an OS

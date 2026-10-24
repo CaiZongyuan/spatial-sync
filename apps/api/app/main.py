@@ -50,6 +50,7 @@ from apps.api.app.notebook_service import NotebookService
 from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.policy_routes import install_policy_routes
+from apps.api.app.program_routes import install_program_routes
 from apps.api.app.recordings import install_recording_routes
 from apps.api.app.resource_routes import install_resource_routes
 from apps.api.app.robot_resource_routes import install_robot_resource_routes
@@ -340,6 +341,7 @@ def create_app(
     install_policy_routes(
         app, manager, lambda headers: _role(headers, settings), profiles=observation_profiles
     )
+    install_program_routes(app, manager, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))
