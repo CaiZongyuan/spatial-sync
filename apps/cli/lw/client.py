@@ -171,6 +171,49 @@ class GatewayClient:
             params["gaps"] = True
         return (await self.request("GET", "/api/v1/library/" + resource, params=params))[resource]
 
+    async def catalog_search(self, query=None, scope="all", kind=None, provider=None, usage=None,
+                             license=None, installed=False, minSourceBytes=None,
+                             maxSourceBytes=None, minDimensionM=None, maxDimensionM=None,
+                             approximate=False, sort="relevance", limit=10, cursor=None):
+        params = {name: value for name, value in {
+            "q": query,
+            "scope": scope if scope != "all" else None,
+            "kind": kind,
+            "provider": provider,
+            "usage": usage,
+            "licenseAdmitted": None if license is None else license == "admitted",
+            "installed": True if installed else None,
+            "minSourceBytes": minSourceBytes,
+            "maxSourceBytes": maxSourceBytes,
+            "minDimensionM": minDimensionM,
+            "maxDimensionM": maxDimensionM,
+            "approximate": True if approximate else None,
+            "sort": sort if sort != "relevance" else None,
+            "limit": limit if limit != 10 else None,
+            "cursor": cursor,
+        }.items() if value is not None}
+        return await self.request("GET", "/api/v1/library/search", params=params)
+
+    @staticmethod
+    def _catalog_path(id):
+        value = id.removeprefix("catalog:")
+        provider, separator, rest = value.partition("/")
+        package, revision_separator, revision = rest.partition("@")
+        if not separator or not revision_separator or not provider or not package or not revision:
+            raise ValueError("Select a catalog entry provider/package@revision")
+        return "/api/v1/library/catalog/entries/" + "/".join(
+            quote(part, safe="") for part in (provider, package, revision)
+        )
+
+    async def catalog_show(self, id, view="summary", documentDigest=None):
+        params = {"view": view}
+        if documentDigest is not None:
+            params["documentDigest"] = documentDigest
+        return await self.request("GET", self._catalog_path(id), params=params)
+
+    async def catalog_estimate(self, id):
+        return await self.request("GET", self._catalog_path(id) + "/estimate")
+
     async def library_describe(self, id, view="summary", section=None, offset=0, documentDigest=None):
         params = {"view": view, "offset": offset}
         if section is not None:

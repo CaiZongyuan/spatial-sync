@@ -58,10 +58,15 @@ class Argument:
         else:
             # Omitted nullable options stay None; supplied values use their concrete type.
             kinds = get_args(self.annotation)
-            options["type"] = str if get_origin(self.annotation) in (dict, list) else (
-                next(kind for kind in kinds if kind is not type(None))
-                if type(None) in kinds else self.annotation
-            )
+            literal = next((kind for kind in kinds if get_origin(kind) is Literal), None)
+            if literal is not None:
+                options["choices"] = get_args(literal)
+                options["type"] = type(get_args(literal)[0])
+            else:
+                options["type"] = str if get_origin(self.annotation) in (dict, list) else (
+                    next(kind for kind in kinds if kind is not type(None))
+                    if type(None) in kinds else self.annotation
+                )
         parser.add_argument(*flags, **options)
 
 
@@ -478,6 +483,76 @@ COMMANDS = (
         method="library_describe",
         arguments=description_arguments("summary"),
         mcp_name="library_describe",
+    ),
+    Command(
+        path=("catalog", "search"),
+        help=(
+            "Search local assets and online catalog candidates in one bounded response; source "
+            "sizes are bytes and dimensions are metres. scope is all|local|online, usage is "
+            "dressing|staticCollision, license is admitted|not_admitted, sort is "
+            "relevance|name|sourceBytes, and limit is 1..50 (default 10). cursor continues the "
+            "next page. Unknown attributes never satisfy a hard filter."
+        ),
+        method="catalog_search",
+        arguments=(
+            Argument("query", ("--query", "-q"), str | None,
+                     "Text found in names, aliases, tags or descriptions (Chinese or English)", None),
+            Argument("scope", ("--scope",), Literal["all", "local", "online"],
+                     "Search local assets, online candidates, or both", "all"),
+            Argument("kind", ("--kind",), str | None,
+                     "Exact asset kind, such as environment, device or labware", None),
+            Argument("provider", ("--provider",), str | None, "Exact catalog provider", None),
+            Argument("usage", ("--usage",), Literal["dressing", "staticCollision"] | None,
+                     "Only candidates eligible for dressing or staticCollision", None),
+            Argument("license", ("--license",), Literal["admitted", "not_admitted"] | None,
+                     "License admission; sent as licenseAdmitted=true|false", None),
+            Argument("installed", ("--installed",), bool,
+                     "Only candidates with a correlated installed local version", False),
+            Argument("minSourceBytes", ("--min-source-bytes",), int | None,
+                     "Minimum source package size in bytes", None),
+            Argument("maxSourceBytes", ("--max-source-bytes",), int | None,
+                     "Maximum source package size in bytes", None),
+            Argument("minDimensionM", ("--min-dimension-m",), float | None,
+                     "Minimum largest bounding-box extent in metres", None),
+            Argument("maxDimensionM", ("--max-dimension-m",), float | None,
+                     "Maximum largest bounding-box extent in metres", None),
+            Argument("approximate", ("--approximate",), bool,
+                     "Append query matches that fail or have unknown hard filters", False),
+            Argument("sort", ("--sort",), Literal["relevance", "name", "sourceBytes"],
+                     "Exact-match ordering; approximate results follow", "relevance"),
+            Argument("limit", ("--limit",), int, "Page size from 1 to 50; default 10", 10),
+            Argument("cursor", ("--cursor",), str | None,
+                     "Opaque nextCursor from the previous page; limit may change", None),
+        ),
+        mcp_name="catalog_search",
+    ),
+    Command(
+        path=("catalog", "show"),
+        help=(
+            "Read one catalog entry by provider/package@revision or catalog: ref; summary is "
+            "bounded and full is the complete catalog document. A documentDigest mismatch fails "
+            "with catalog_changed."
+        ),
+        method="catalog_show",
+        arguments=(
+            Argument("id", ("provider/package@revision",), str,
+                     "Catalog entry ID, with or without the catalog: prefix"),
+            Argument("view", ("--view",), Literal["summary", "full"],
+                     "Bounded summary or complete catalog document", "summary"),
+            Argument("documentDigest", ("--document-digest",), str | None,
+                     "Digest from a summary; restart on catalog_changed", None),
+        ),
+        mcp_name="catalog_show",
+    ),
+    Command(
+        path=("catalog", "estimate"),
+        help="Estimate source transfer and required disk for a catalog entry; no download is made.",
+        method="catalog_estimate",
+        arguments=(
+            Argument("id", ("provider/package@revision",), str,
+                     "Catalog entry ID, with or without the catalog: prefix"),
+        ),
+        mcp_name="catalog_estimate",
     ),
     Command(
         path=("asset", "ls"),
