@@ -57,6 +57,7 @@ class AgentRuns:
         if self.path.exists():
             self.records = json.loads(self.path.read_bytes())
         for record in list(self.records.values()):
+            started_unsettled = record.get("startedAt") is not None and record["status"] not in TERMINAL
             committed = next(
                 (
                     row
@@ -72,7 +73,7 @@ class AgentRuns:
                     record["jobId"], status="failed", reason="gateway_restarted", finishedAt=time.time()
                 )
             confirmed = self.resources_confirmed(record)
-            if record.get("cleanupIncomplete") and self.owner_alive_or_unknown(record):
+            if (record.get("cleanupIncomplete") or started_unsettled) and self.owner_alive_or_unknown(record):
                 confirmed = False
             if not confirmed:
                 self.update(record["jobId"], cleanupIncomplete=True)
@@ -80,7 +81,9 @@ class AgentRuns:
             else:
                 if record.get("cleanupIncomplete"):
                     self.update(record["jobId"], cleanupIncomplete=False)
-                self.reconcile_usage(record["jobId"])
+            # Prefix observations increase retained actual usage; they never clear
+            # an owner fence or grant work, even while old cleanup is unconfirmed.
+            self.reconcile_usage(record["jobId"])
 
     def update(self, identity, **changes):
         with self._lock:
@@ -741,7 +744,8 @@ class AgentRuns:
             self.update(identity, status="succeeded", finishedAt=time.time(), result=row)
         except BaseException as error:
             self.manager.agent_grants.revoke(identity)
-            if isinstance(error, CleanupIncomplete):
+            resources = getattr(self.adapter, "release_confirmed", None)
+            if isinstance(error, CleanupIncomplete) or resources is not None and not resources(identity):
                 evaluations._blocked.add(evaluation_id)
                 self.update(identity, cleanupIncomplete=True)
             if session is not None:
@@ -761,6 +765,8 @@ class AgentRuns:
                 else "agent_run_failed"
             )
             cancelled = isinstance(error, asyncio.CancelledError)
+            if cancelled:
+                code = "cancelled"
             committed = next(
                 (row for row in evaluations.store.rows if row["evaluationId"] == evaluation_id), None
             )

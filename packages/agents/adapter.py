@@ -10,7 +10,13 @@ from fastapi import FastAPI
 
 from apps.node.process import CleanupIncomplete
 from packages.agents.provider import install_provider_route
-from packages.agents.runtime import AgentWorker, clean_environment, runtime_identity, sdk_configuration
+from packages.agents.runtime import (
+    AgentWorker,
+    clean_environment,
+    complete_cleanup,
+    runtime_identity,
+    sdk_configuration,
+)
 from packages.agents.transport import CredentialRelay
 from packages.info.plans import PlanError
 from packages.vault import Vault
@@ -45,6 +51,10 @@ async def model_server(gate, *, registered=lambda handle: None):
 
 
 async def close_model_server(handle):
+    await complete_cleanup(stop_model_server(handle))
+
+
+async def stop_model_server(handle):
     server, task, listener = handle
     server.should_exit = True
     requests = tuple(server.server_state.tasks)

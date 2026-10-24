@@ -12,7 +12,7 @@ import httpx
 import psutil
 
 from apps.node.process import OwnedProcess
-from packages.agents.runtime import clean_process_environment
+from packages.agents.runtime import clean_process_environment, complete_cleanup
 from packages.info.plans import PlanError
 
 
@@ -99,17 +99,16 @@ class CredentialRelay:
         reconcile_observations(self.root / "observations.jsonl", gate)
 
     async def close(self):
-        self.revoke()
-        if self.client is not None:
-            await self.client.aclose()
-        if self.process is not None:
-            cleanup = asyncio.create_task(asyncio.to_thread(self.process.close))
-            cancelled = False
-            while not cleanup.done():
+        async def finish():
+            try:
+                self.revoke()
+            finally:
                 try:
-                    await asyncio.shield(cleanup)
-                except asyncio.CancelledError:
-                    cancelled = True
-            cleanup.result()
-            if cancelled:
-                raise asyncio.CancelledError
+                    if self.process is not None:
+                        await asyncio.to_thread(self.process.close)
+                finally:
+                    if self.client is not None:
+                        async with asyncio.timeout(2):
+                            await self.client.aclose()
+
+        await complete_cleanup(finish())

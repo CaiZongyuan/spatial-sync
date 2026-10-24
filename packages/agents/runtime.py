@@ -14,6 +14,23 @@ from apps.node.process import OwnedProcess
 from packages.info.plans import PlanError
 
 
+async def complete_cleanup(awaitable):
+    task = asyncio.create_task(awaitable)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        try:
+            task.result()
+        except BaseException as error:
+            raise asyncio.CancelledError from error
+        raise asyncio.CancelledError
+    return task.result()
+
+
 def runtime_identity():
     try:
         distribution = importlib.metadata.distribution("claude-agent-sdk")
@@ -195,14 +212,4 @@ class AgentWorker:
         finally:
             self.on_cleanup()
             if self.process is not None:
-                # Cancellation cannot let the lease go before owned descendant cleanup finishes.
-                cleanup = asyncio.create_task(asyncio.to_thread(self.process.close))
-                cancelled = False
-                while not cleanup.done():
-                    try:
-                        await asyncio.shield(cleanup)
-                    except asyncio.CancelledError:
-                        cancelled = True
-                cleanup.result()
-                if cancelled:
-                    raise asyncio.CancelledError
+                await complete_cleanup(asyncio.to_thread(self.process.close))
