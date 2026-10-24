@@ -115,6 +115,8 @@ def description_arguments(default, metavar="id"):
 
 
 COMMANDS = (
+    Command(path=("tensorboard",), help="Start or return the owned local TensorBoard service.",
+            method="tensorboard", mcp_name="tensorboard", actor=True),
     Command(path=("job", "start"), help="Queue a declared seed of an approved training plan.",
             method="job_start", arguments=(
                 Argument("planId", ("planId",), str, "Current approved training plan ID"),

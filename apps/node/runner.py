@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import io
 import json
@@ -17,6 +18,7 @@ import httpx
 import psutil
 
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
+from apps.node.view_relay import relay_views
 from packages.library.archive import extract_package, relative_path
 from packages.library.common import content_hash
 from packages.training.inputs import pack_package
@@ -103,6 +105,8 @@ class OwnedRun:
         self.node, self.assignment = node, assignment
         identity = hashlib.sha256((assignment["jobId"] + assignment["leaseId"]).encode()).hexdigest()[:24]
         self.root = node.root / "work" / identity
+        self.view_directory = self.root / "view-state"
+        self.view_active = threading.Event()
         self.cancel = threading.Event()
         self.status, self.reason = "running", None
         self.started, self.log_cursor = time.monotonic(), 0
@@ -223,9 +227,13 @@ class OwnedRun:
                 shutil.copyfile(
                     Path(__file__).with_name("bridge_callback.py"), bridge / "lw_training_bridge.py"
                 )
+                shutil.copyfile(Path(__file__).with_name("view_bridge.py"), bridge / "lw_view_bridge.py")
+                self.view_directory.mkdir()
+                self.view_active.set()
                 env.update(
                     LW_NODE_INPUTS=str(manifest),
                     LW_NODE_OUTPUT=str(output),
+                    LW_NODE_VIEW_IPC=str(self.view_directory),
                     LW_TASK_PACKAGE=task_package["directory"],
                     LW_SCENE_PACKAGE=scene_package["directory"],
                     LW_ASSET_PACKAGES=json.dumps(
@@ -324,6 +332,11 @@ class OwnedRun:
             else:
                 self.status = "cancelled" if self.cancel.is_set() else "failed"
         finally:
+            self.view_active.clear()
+            if not self.uncertain_owner and self.view_directory.exists():
+                for name in ("latest.json", "latest.tmp"):
+                    with contextlib.suppress(OSError):
+                        (self.view_directory / name).unlink(missing_ok=True)
             if self.status in ("succeeded", "failed", "cancelled"):
                 self.finished = time.monotonic()
                 if self.root.exists():
@@ -445,6 +458,7 @@ class LocalNode:
         self.process_memory = {}
 
     async def run(self):
+        view_worker = asyncio.create_task(relay_views(self), name="node-view-relays")
         async with httpx.AsyncClient(
             base_url=self.url, headers=self.headers, trust_env=False, timeout=10
         ) as http:
@@ -510,6 +524,8 @@ class LocalNode:
                         pass  # Preserve process ownership and retry the same reports after gateway recovery.
                     await asyncio.sleep(self.interval)
             finally:
+                view_worker.cancel()
+                await asyncio.gather(view_worker, return_exceptions=True)
                 for owned in self.active.values():
                     owned.cancel.set()
                 await asyncio.gather(

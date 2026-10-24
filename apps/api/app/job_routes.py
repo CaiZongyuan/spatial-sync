@@ -13,7 +13,7 @@ from packages.training.inputs import export_input, input_packages, store_artifac
 from packages.training.job_contract import NodeHeartbeat, StartJob
 
 
-def install_job_routes(app, manager, role_for):
+def install_job_routes(app, manager, role_for, views=None):
     jobs = manager.jobs
     app.state.jobs = jobs
 
@@ -89,6 +89,7 @@ def install_job_routes(app, manager, role_for):
             "job": jobs.document(job),
             "plan": job["plan"],
             "packages": await anyio.to_thread.run_sync(input_packages, manager, job),
+            **({"view": await views.inputs_hint(job)} if views is not None else {}),
         }
 
     @app.get("/api/v1/jobs/{identity}/inputs/packages/{index}")
@@ -113,3 +114,8 @@ def install_job_routes(app, manager, role_for):
             job.update(artifacts=records, versions=versions)
             jobs._save()
         return {"artifacts": records, "versions": versions}
+
+    if views is not None:
+        from apps.api.app.training_view_routes import install_training_view_routes
+
+        install_training_view_routes(app, manager, views, role_for, node)

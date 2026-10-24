@@ -220,6 +220,7 @@ class TrainingJobs:
             "cancelRequested": False,
             "reason": "estimate_unavailable",
             "metrics": {},
+            "metricsHistory": [],
             "artifacts": [],
         }
         self.records[job["jobId"]] = job
@@ -422,6 +423,12 @@ class TrainingJobs:
                 with self.manager._resource_lock:
                     del node["leases"][job["resourceId"]]
             job["lastNodeReport"] = report.model_dump()
+            history = job.setdefault("metricsHistory", [])
+            history.append({
+                "receivedAt": now, "reportedStatus": report.status, "reason": report.reason,
+                **job["metrics"],
+            })
+            del history[:-900]
             self._event(job)
         self.reconcile()
         self._save()

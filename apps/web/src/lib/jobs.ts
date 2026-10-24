@@ -9,6 +9,11 @@ export interface JobMetrics {
   trainSuccess?: number | null;
   memoryUsedMb?: number | null;
 }
+export interface JobMetricSample extends JobMetrics {
+  receivedAt: number;
+  reportedStatus: JobStatus | 'cleaned';
+  reason: string | null;
+}
 export interface TimingProfile {
   key: string;
   iterationSeconds: number;
@@ -63,6 +68,7 @@ export interface TrainingJob {
   cancelRequested: boolean;
   reason: string | null;
   metrics: JobMetrics;
+  metricsHistory?: JobMetricSample[];
   artifacts: JobArtifact[];
   versions?: JobVersions;
   code?: string;

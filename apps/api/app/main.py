@@ -73,6 +73,8 @@ from packages.protocol.schema import (
     SessionSeed,
     Subscribe,
 )
+from packages.training.tensorboard import TensorBoardService
+from packages.training.views import TrainingViews
 
 CLIENT_MESSAGE = TypeAdapter(ClientMessage)
 
@@ -138,6 +140,8 @@ def create_app(
     recordings = EvaluationRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
+    views = TrainingViews(manager, previews)
+    tensorboard = TensorBoardService(manager)
     if settings.live_bindings is not None:
         manager.live = DeviceHost(
             load_bindings(settings.live_bindings), manager.approvals, manager.plans,
@@ -171,12 +175,19 @@ def create_app(
             await recordings.startup()
             await evaluations.startup()
             await monitor.start()
+            await views.start()
             if manager.live:
                 await manager.live.start()
             yield
         finally:
             try:
-                await monitor.close()
+                try:
+                    await views.close()
+                finally:
+                    try:
+                        await tensorboard.close()
+                    finally:
+                        await monitor.close()
             finally:
                 try:
                     if manager.live:
@@ -188,6 +199,13 @@ def create_app(
                         await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
+    app.state.tensorboard = tensorboard
+
+    @app.post("/api/v1/tensorboard")
+    async def start_tensorboard(request: Request):
+        if _role(request.headers, settings) != "operator":
+            raise PlanError("not_permitted", "Operator permission is required", status=403)
+        return await tensorboard.start()
 
     @app.exception_handler(LibraryError)
     async def library_error(request, error):
@@ -210,6 +228,7 @@ def create_app(
     app.state.manager, app.state.settings = manager, settings
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
+    app.state.training_views = views
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_live_routes(app, manager, settings, lambda headers: _role(headers, settings))
 
@@ -217,7 +236,7 @@ def create_app(
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
-    install_job_routes(app, manager, lambda headers: _role(headers, settings))
+    install_job_routes(app, manager, lambda headers: _role(headers, settings), views)
     install_task_routes(app, manager.tasks, lambda headers: _role(headers, settings))
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
