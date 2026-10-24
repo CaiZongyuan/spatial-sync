@@ -1,16 +1,22 @@
 """Agent intent uses real Synthetic grades, exact Harness bytes and human approvals."""
 
+import asyncio
 import io
 import tarfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from threading import Event
+from types import SimpleNamespace
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.library.common import BUILTIN_ROOT
+from tests.fixtures.training_task import task_archive, training_plan
 from tests.gateway.test_external_agent_evaluation import BASE, DECLARATION, create, work
 
 
@@ -154,6 +160,8 @@ def test_real_suite_three_recordings_baseline_fail_closed_and_agent_plan_survive
         saved = http.get("/api/v1/plans/" + plan["id"]).json()
         assert saved["status"] == "submitted" and saved["context"] == plan["context"]
         decision = "/api/v1/approvals/" + plan["approvalId"] + "/decision"
+        start_path = "/api/v1/plans/" + plan["id"] + "/agent-runs"
+        assert http.post(start_path, json={"revision": 1, "requestId": "round-one"}).status_code == 409
         assert (
             http.post(
                 decision, json={"decision": "approve"}, headers={"X-Actor": "agent:optimizer"}
@@ -168,3 +176,113 @@ def test_real_suite_three_recordings_baseline_fail_closed_and_agent_plan_survive
             ).status_code
             == 422
         )
+        response = http.post(start_path, json={"revision": 1, "requestId": "round-one"})
+        assert response.status_code == 202, response.text
+        candidate_run = response.json()
+        assert candidate_run["planId"] == plan["id"] and candidate_run["goalId"] == plan["goalId"]
+        item = work(http, candidate_run)
+        target = {"Authorization": "Bearer " + item["connection"]["token"]}
+        collision = http.post(
+            "/api/v1/plans",
+            headers=target,
+            json={
+                "id": plan["id"],
+                "title": "Attempt to shadow the parent Agent Plan",
+                "sessionId": item["sessionId"],
+                "target": "session",
+                "steps": [{"id": 1, "do": {"entity": "/World/Lab/RobotA", "action": "home", "params": {}}}],
+            },
+        )
+        assert collision.status_code == 409, collision.text
+        assert http.get("/api/v1/plans/" + plan["id"], headers=target).status_code == 403
+        final = complete_scope(http, candidate_run)
+        assert final["result"]["score"] == baseline["score"]
+        settled = http.post("/api/v1/plans/" + plan["id"] + "/settle", json={"revision": 1})
+        assert settled.status_code == 200, settled.text
+        assert settled.json()["result"]["decision"] == "rejected"
+        assert settled.json()["result"]["files"]["status"] == "committed"
+        assert http.get("/api/v1/agents/lab-operator").json()["currentVersion"] == 1
+        from packages.library.agents import pack_harness
+
+        directory = restarted_app.state.agents.user_root / "agents/lab-operator/harness"
+        assert pack_harness(directory) == original
+        assert http.get("/api/v1/agents/lab-operator/versions/2/snapshot").content != original
+        notebook = http.get("/api/v1/notebooks/goal/rsi-fixture").json()["entries"]
+        assert len(notebook) == 1 and notebook[0]["layer"] == "agent"
+        assert notebook[0]["score"]["score"] == baseline["score"] and notebook[0]["score"]["ci95"] is None
+        assert notebook[0]["cost"]["llmUsd"] is None
+
+
+def test_all_plan_layers_share_atomic_namespace_for_explicit_and_generated_ids(monkeypatch):
+    app = create_app()
+    with TestClient(app) as http:
+        suite = http.post(
+            "/api/v1/suites", content=suite_archive(), headers={"Content-Type": "application/x-tar"}
+        ).json()
+        run, _ = create(http, suite=suite["id"], purpose="train", caseId=None)
+        complete_scope(http, run)
+        app.state.agent_rsi.identities = controlled_identity
+        baseline = http.post(
+            "/api/v1/agents/lab-operator/baseline",
+            json={
+                "evaluationId": run["id"],
+                "requestId": "namespace-baseline",
+            },
+        ).json()
+        original = http.get("/api/v1/agents/lab-operator/versions/1/snapshot").content
+        candidate = http.post(
+            "/api/v1/agents/lab-operator/snapshots",
+            content=candidate_archive(original),
+            headers={"Content-Type": "application/x-tar"},
+        ).json()
+        task = http.post(
+            "/api/v1/tasks", content=task_archive(), headers={"Content-Type": "application/x-tar"}
+        ).json()
+        session = http.post(
+            "/api/v1/sessions", json={"sceneVersion": "lab-demo@3", "source": "synthetic"}
+        ).json()
+        identity = "plan-0123456789abcdef"
+        operation = {
+            "id": identity,
+            "title": "Operation namespace owner",
+            "sessionId": session["sessionId"],
+            "steps": [{"id": 1, "do": {"entity": "/World/Lab/RobotA", "action": "home", "params": {}}}],
+        }
+        # These are separately valid embodied and Agent intents, sharing only the malicious new ID.
+        embodied = training_plan(task["id"]) | {"id": identity}
+        agent = agent_plan(baseline, candidate) | {"id": identity}
+        entered, release = Event(), Event()
+        publish = app.state.manager.plans.create
+
+        async def pending_operation(*args, **kwargs):
+            entered.set()
+            assert await asyncio.to_thread(release.wait, 10)
+            return await publish(*args, **kwargs)
+
+        monkeypatch.setattr(app.state.manager.plans, "create", pending_operation)
+        with ThreadPoolExecutor(3) as pool:
+            first = pool.submit(http.post, "/api/v1/plans", json=operation)
+            assert entered.wait(5)
+            competitors = [
+                pool.submit(http.post, "/api/v1/plans", json=payload) for payload in (embodied, agent)
+            ]
+            try:
+                for future in competitors:
+                    with pytest.raises(TimeoutError):
+                        future.result(timeout=0.1)
+            finally:
+                release.set()
+            results = [first.result(timeout=5), *(future.result(timeout=5) for future in competitors)]
+        assert [result.status_code for result in results] == [201, 409, 409], [
+            result.text for result in results
+        ]
+        assert (
+            len([plan for plan in http.get("/api/v1/plans").json()["plans"] if plan["id"] == identity]) == 1
+        )
+        monkeypatch.setattr(
+            "apps.api.app.plan_routes.uuid.uuid4", lambda: SimpleNamespace(hex="0123456789abcdef")
+        )
+        generated_collision = http.post(
+            "/api/v1/plans", json={key: value for key, value in operation.items() if key != "id"}
+        )
+        assert generated_collision.status_code == 409

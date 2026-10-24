@@ -1,5 +1,7 @@
 """Operation-plan HTTP resources; every device action still uses ActionPipeline."""
 
+import asyncio
+import uuid
 from typing import Any
 
 from fastapi import Path, Query, Request
@@ -26,6 +28,7 @@ def plan_context(plan_id=None, step_id=None, revision=None):
 def install_plan_routes(app, manager, role_for):
     store = manager.plans
     training = manager.training_plans
+    publication = asyncio.Lock()
 
     @app.exception_handler(PlanError)
     async def plan_error(request, error):
@@ -64,32 +67,36 @@ def install_plan_routes(app, manager, role_for):
     @app.post("/api/v1/plans", status_code=201)
     async def create_plan(body: dict[str, Any], request: Request):
         actor = operator(request)
-        if body.get("kind") == "training":
-            if body.get("id") in store.records:
+        # All variants share one HTTP namespace, including async operation publication.
+        async with publication:
+            body = dict(body)
+            body.setdefault("id", "plan-" + uuid.uuid4().hex[:16])
+            if any(body["id"] in selected.records for selected in (store, *training_stores(manager))):
                 raise PlanError("plan_exists", "Plan ID already exists")
-            selected = training_store(manager, document=body)
-            if selected is training:
-                body = {key: value for key, value in body.items() if key != "layer"}
-            return selected.submit(body, actor)
-        payload, session = target(body)
-        await session.action_pipeline()
-        if payload.get("id") in training.records:
-            raise PlanError("plan_exists", "Plan ID already exists")
-        return store.document(await store.create(payload, session, actor))
+            if body.get("kind") == "training":
+                selected = training_store(manager, document=body)
+                if selected is training:
+                    body = {key: value for key, value in body.items() if key != "layer"}
+                return selected.submit(body, actor)
+            payload, session = target(body)
+            await session.action_pipeline()
+            return store.document(await store.create(payload, session, actor))
 
     @app.post("/api/v1/plans/{plan_id}/revisions", status_code=201)
     async def revise_plan(plan_id: str, body: dict[str, Any], request: Request):
         actor = operator(request)
-        if any(plan_id in selected.records for selected in training_stores(manager)):
-            selected = training_store(manager, identifier=plan_id)
-            if body.get("layer", "embodied") != ("agent" if selected is manager.agent_rsi else "embodied"):
-                raise PlanError("invalid_plan_layer", "A Plan revision cannot change layer", status=422)
-            if selected is training:
-                body = {key: value for key, value in body.items() if key != "layer"}
-            return selected.submit(body, actor, plan_id=plan_id)
-        payload, session = target(body)
-        await session.action_pipeline()
-        return store.document(await store.create(payload, session, actor, plan_id=plan_id))
+        async with publication:
+            if any(plan_id in selected.records for selected in training_stores(manager)):
+                selected = training_store(manager, identifier=plan_id)
+                layer = "agent" if selected is manager.agent_rsi else "embodied"
+                if body.get("layer", "embodied") != layer:
+                    raise PlanError("invalid_plan_layer", "A Plan revision cannot change layer", status=422)
+                if selected is training:
+                    body = {key: value for key, value in body.items() if key != "layer"}
+                return selected.submit(body, actor, plan_id=plan_id)
+            payload, session = target(body)
+            await session.action_pipeline()
+            return store.document(await store.create(payload, session, actor, plan_id=plan_id))
 
     @app.get("/api/v1/plans")
     async def plans(kind: str | None = None, status: str | None = None, sessionId: str | None = None):
