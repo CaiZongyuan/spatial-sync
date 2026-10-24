@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import httpx
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 pytest.importorskip("newton")
@@ -15,6 +16,7 @@ pytestmark = pytest.mark.newton
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from tests.fixtures.policy_evaluation import finger_probe_inputs, native_suite
+from tests.gateway.test_controller_promotions import controlled_qualification
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
 
@@ -172,3 +174,69 @@ async def test_known_policy_keeps_completed_and_partial_evidence_when_comparison
             assert service.store.reference(service.store.records[completed[0]["evaluationId"]]["key"]) is None
             assert all(not session.holds_resources for session in app.state.manager.sessions.values())
             record_property("unknown_comparison_policy_evaluations", json.dumps(values, sort_keys=True))
+
+
+async def test_actual_newton_private_scopes_keep_train_reference_and_recordings_private(
+    tmp_path, record_property
+):
+    settings = Settings(node_token=TOKEN)
+    with TestClient(create_app(settings)) as seed:
+        spec, task = finger_probe_inputs()
+        job = uploaded_job(seed, tmp_path, spec=spec, task_document=task)
+        created = seed.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"})
+        assert created.status_code == 201, created.text
+        policy = created.json()
+        manager = seed.app.state.manager
+        scene = manager.library.resolve(policy["scene"], launch=True, source="newton")
+        suite = native_suite(manager, scene, name="promotion-native-private", timeout=5.0, heldout=True)
+        grading = deepcopy(suite.task)
+        goal = {"property": "gripperWidth", "lte": 0.06}
+        grading.update(success=goal, milestones=[{"id": "closed", "when": goal}])
+        (suite.path / "task.yaml").write_text(yaml.safe_dump(grading), encoding="utf-8")
+    # Actual CPU Sources/actions/grades. Only the separately unmet native-training
+    # qualification gate is replaced by this explicitly controlled constructor adapter.
+    app = create_app(settings, controller_promotion_qualification=controlled_qualification)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://owned") as client:
+            teacher = await evaluate(client, suite, "robot_arm.newton")
+            candidate = await evaluate(client, suite, policy["id"])
+            assert teacher["result"]["successes"] == 0, teacher
+            assert candidate["result"]["decision"] == "accepted", candidate
+            response = await client.post("/api/v1/controller-promotions", json={
+                "subject": policy["id"], "scene": scene.id, "requestId": "actual-newton-private-scopes",
+            })
+            assert response.status_code == 202, response.text
+            promotion = response.json()
+            route = "/api/v1/controller-promotions/" + promotion["id"]
+            deadline = time.monotonic() + 60
+            while True:
+                progress = (await client.get(route)).json()
+                if progress["status"] != "testing":
+                    assert progress["status"] == "awaiting_human", progress
+                    break
+                assert time.monotonic() < deadline, progress
+                await asyncio.sleep(0.05)
+            service = app.state.controller_promotions
+            frozen = service.get(promotion["id"])
+            store = app.state.manager.evaluations.store
+            assert store.reference(store.records[candidate["evaluationId"]]["key"])["evaluationId"] == (
+                candidate["evaluationId"])
+            recordings = []
+            for side, identity in frozen["runs"].items():
+                record = store.records[identity]
+                assert record["result"]["decision"] == "test" and record["result"]["split"] == "test"
+                assert record["observedSource"]["implementation"].endswith("NewtonSource")
+                assert (await client.get("/api/v1/evaluations/" + identity)).status_code == 404
+                for episode in record["episodes"]:
+                    assert episode["cleanupComplete"] and episode["status"] == "valid"
+                    recordings.append(episode["recordingId"])
+                    recording = await client.get("/recordings/" + episode["recordingId"] + "/recording.json")
+                    assert recording.status_code == 404
+            review = (await client.get(route + "/review")).json()
+            assert review["qualification"]["evidenceMode"] == "controlled"
+            assert set(review["test"]) == {"reference", "candidate"}
+            assert all(not session.holds_resources for session in app.state.manager.sessions.values())
+            record_property("actual_newton_private_scopes", json.dumps({
+                "promotion": promotion["id"], "runs": frozen["runs"], "recordings": recordings,
+                "qualification": "controlled-constructor; no actual native trainer proof",
+            }, sort_keys=True))
