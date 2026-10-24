@@ -61,13 +61,15 @@ class EvaluationRequest(Model):
     subject: StrictStr = Field(min_length=1)
     suite: StrictStr = Field(min_length=1)
     split: StrictStr = "train"
+    planId: StrictStr | None = None
+    planRevision: int | None = Field(default=None, ge=1)
 
 
 class EvaluationService:
     def __init__(self, manager):
         self.manager = manager
         self.suites = SuiteLibrary(manager.library_assets.roots)
-        self.store = EvaluationStore(manager.settings.state_root)
+        self.store = EvaluationStore(manager.settings.state_root, on_change=self._changed)
         self.requests = {}
         self._options = {}
         self._queue = deque()
@@ -82,6 +84,16 @@ class EvaluationService:
         self._runtime_hash = runtime_fingerprint()
         self._admission = asyncio.Lock()
         self._cancellation_requested = set()
+
+    def _changed(self, record):
+        notebooks = getattr(self.manager, "notebooks", None)
+        if notebooks is not None:
+            notebooks.observe(record)
+
+    def _capture_completion(self, record):
+        notebooks = getattr(self.manager, "notebooks", None)
+        if notebooks is not None:
+            notebooks.complete_evaluation(record)
 
     async def startup(self):
         await asyncio.to_thread(self.suites.refresh)
@@ -269,7 +281,14 @@ class EvaluationService:
             "at": now(),
             "runtimeHash": self._runtime_hash,
         }
+        notebooks = getattr(self.manager, "notebooks", None)
+        context = (
+            await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
+            if notebooks else None
+        )
         async with self._admission:
+            if notebooks is not None:
+                record.update(notebooks.admit_evaluation(context))
             await persist(self.store.save, record)
             self._queue.append(("evaluation", identifier))
             self.wake()
@@ -423,6 +442,18 @@ class EvaluationService:
                 )
                 if selected.content_hash != suite.metadata["sceneContentHash"]:
                     raise HTTPException(409, {"code": "scene_changed"})
+                if "attemptedEpisodes" in record:
+                    # Admitted attempts include invalid/cancelled starts for budget
+                    # accounting; they never replace the statistical denominator.
+                    before_attempt = record["attemptedEpisodes"]
+                    record["attemptedEpisodes"] = before_attempt + 1
+                    try:
+                        await persist(self.store.save, record)
+                    except BaseException:
+                        # No Source attempt has been issued yet. Preserve the failed
+                        # evaluation, but do not manufacture an executed episode.
+                        record["attemptedEpisodes"] = before_attempt
+                        raise
                 session = await self.manager.create(
                     None,
                     suite.metadata["source"],
@@ -489,12 +520,15 @@ class EvaluationService:
                 "durationSeconds": time.monotonic() - started,
                 "at": now(),
             }
+            row.update({name: record[name] for name in ("planId", "planRevision", "goalId")
+                        if name in record})
             await persist(self.store.append, row)
             record.update(status="completed", result=row, endedAt=now())
         except BaseException as exc:
             committed = next((row for row in self.store.rows if row["evaluationId"] == identifier), None)
             if committed is not None:
                 record.update(status="completed", result=committed, endedAt=now())
+                self._capture_completion(record)
                 await persist(self.store.save, record)
                 if isinstance(exc, asyncio.CancelledError) and self._closing:
                     raise
@@ -527,8 +561,10 @@ class EvaluationService:
                     self._blocked.add(identifier)
                     record["error"] = {"code": "cleanup_failed"}
             if isinstance(exc, asyncio.CancelledError) and self._closing:
+                self._capture_completion(record)
                 await persist(self.store.save, record)
                 raise
+        self._capture_completion(record)
         await persist(self.store.save, record)
 
     @staticmethod
@@ -737,7 +773,9 @@ def install_evaluation_routes(app, service, role_for):
                 service._running.cancel()
         elif record["status"] == "queued":
             service._queue = deque(item for item in service._queue if item != ("evaluation", identifier))
-            await persist(service.store.save, record | {"status": "cancelled", "endedAt": now()})
+            cancelled = record | {"status": "cancelled", "endedAt": now()}
+            service._capture_completion(cancelled)
+            await persist(service.store.save, cancelled)
         service.wake()
         return public_evaluation(service.store.records[identifier], service.store.rows)
 

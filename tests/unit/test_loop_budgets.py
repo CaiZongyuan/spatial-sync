@@ -21,6 +21,10 @@ def domain(tmp_path, monkeypatch):
     approvals = ApprovalStore(tmp_path / "approvals.jsonl")
     approvals.startup()
     plans = SimpleNamespace(records={}, history=defaultdict(dict))
+    plans.snapshot = lambda: (
+        tuple(record for versions in plans.history.values() for record in versions.values()),
+        dict(plans.records),
+    )
     manager = SimpleNamespace(
         training_plans=plans,
         approvals=approvals,

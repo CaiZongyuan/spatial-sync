@@ -1109,6 +1109,7 @@ class SessionManager:
         self._startup_lock = asyncio.Lock()
         self._information_started = False
         self.evaluations = None
+        self.notebooks = None
         self.jobs = TrainingJobs(self)
         from packages.cost.ledger import CostLedger
 

@@ -35,12 +35,8 @@ class LoopBudgets:
         self.manager, self.clock = manager, clock
 
     def _records(self, goal):
-        return [
-            record
-            for versions in self.manager.training_plans.history.values()
-            for record in versions.values()
-            if goal_id(record.plan.model_dump(mode="json")) == goal
-        ]
+        records, current = self.manager.training_plans.snapshot()
+        return [record for record in records if goal_id(record.plan.model_dump(mode="json")) == goal], current
 
     def _approval(self, record):
         return self.manager.approvals.records.get(record.approvalId)
@@ -69,7 +65,7 @@ class LoopBudgets:
                 return None, None
             original_hashes = {
                 job["taskContentHash"]
-                for job in self.manager.jobs.records.values()
+                for job in tuple(self.manager.jobs.records.values())
                 if job["planId"] == record.plan.id
                 and job["planRevision"] == record.plan.revision
                 and job.get("taskContentHash") is not None
@@ -86,8 +82,8 @@ class LoopBudgets:
             return True
         return any(
             lease["jobId"] == job["jobId"] and lease["leaseId"] == job["leaseId"]
-            for node in self.manager.jobs.nodes.values()
-            for lease in node["leases"].values()
+            for node in tuple(self.manager.jobs.nodes.values())
+            for lease in tuple(node["leases"].values())
         )
 
     def _held_evaluation(self, record):
@@ -98,7 +94,7 @@ class LoopBudgets:
             and record["evaluationId"] in service._blocked
         )
 
-    def _pools(self, records, proposed=None, *, reserve_proposed=True):
+    def _pools(self, records, current_plans, proposed=None, *, reserve_proposed=True):
         grouped = defaultdict(list)
         for record in records:
             grouped[record.plan.id].append(record)
@@ -120,7 +116,7 @@ class LoopBudgets:
             held_revisions = {job["planRevision"] for job in held_jobs} | {
                 value["planRevision"] for value in held_evaluations
             }
-            current = self.manager.training_plans.records.get(identity)
+            current = current_plans.get(identity)
             rights = []
             for version in versions:
                 approval = self._approval(version)
@@ -172,7 +168,7 @@ class LoopBudgets:
 
     def summary(self, goal, *, proposed=None, declared=None, reserve_proposed=True):
         self.manager.jobs._require_available()
-        records = self._records(goal)
+        records, current_plans = self._records(goal)
         approved = [(at, record) for record in records for at in self._ever_approved(record)]
         by_approval = {record.approvalId: record for _, record in approved}
         try:
@@ -196,7 +192,7 @@ class LoopBudgets:
         first_at = authority[0] if authority is not None else None
         deadline = first_at + limit["days"] * 86400 if first_at is not None and limit else None
         expired = deadline is not None and self.clock() >= deadline
-        pools = self._pools(records, proposed, reserve_proposed=reserve_proposed)
+        pools = self._pools(records, current_plans, proposed, reserve_proposed=reserve_proposed)
         actual = {name: sum(pool["actual"][name] for pool in pools) for name in ("gpuHours", "episodes")}
         effective = {name: sum(pool["effective"][name] for pool in pools) for name in actual}
         unspent = {name: effective[name] - actual[name] for name in actual}

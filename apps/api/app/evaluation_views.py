@@ -65,10 +65,13 @@ def public_score(value, rows=()):
             "reference",
             "at",
             "plan",
+            "planId",
+            "goalId",
         ),
         (str,),
     )
     result.update(fields(value, ("version",), (str, int)))
+    result.update(fields(value, ("planRevision",), (int,)))
     result.update(numbers(value, ("successes", "episodes", "score", "durationSeconds")))
     if "ci95" in value:
         interval = value["ci95"]
@@ -122,9 +125,12 @@ def public_evaluation(value, rows=()):
             "runtimeHash",
             "startedAt",
             "endedAt",
+            "planId",
+            "goalId",
         ),
         (str,),
     )
+    result.update(fields(value, ("planRevision", "allocatedEpisodes", "attemptedEpisodes"), (int,)))
     if isinstance(value.get("episodes"), list):
         result["episodes"] = [
             public_episode(episode) for episode in value["episodes"] if isinstance(episode, dict)

@@ -76,6 +76,12 @@ class TrainingPlanStore:
             raise PlanError("unknown_plan", "Unknown training plan or revision", status=404)
         return record
 
+    def snapshot(self):
+        """Stable membership for worker-thread projections; no disk work under this lock."""
+        with self._lock:
+            records = tuple(record for versions in self.history.values() for record in versions.values())
+            return records, dict(self.records)
+
     def document(self, record):
         approval = self.approvals.records.get(record.approvalId)
         status = {"pending": "submitted", "approved": "approved", "denied": "rejected",
