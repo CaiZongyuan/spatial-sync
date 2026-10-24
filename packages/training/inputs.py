@@ -41,6 +41,10 @@ def input_packages(manager, job):
         },
     ]
     values.extend({"kind": "asset", **item} for item in job["assets"])
+    for item in {item["id"]: item for item in job.get("demonstrationSets", [])}.values():
+        manager.demonstrations.set_package(item["id"], item["contentHash"])
+        values.append({"kind": "demoset", "id": item["id"], "contentHash": item["contentHash"]})
+    values.extend({"kind": "recording", **item} for item in job.get("demonstrationRecordings", []))
     for index, value in enumerate(values):
         value["url"] = f"/api/v1/jobs/{job['jobId']}/inputs/packages/{index}"
     return values
@@ -53,6 +57,10 @@ def export_input(manager, job, index):
     selected = values[index]
     if selected["kind"] == "task":
         return manager.tasks.export(selected["id"])
+    if selected["kind"] == "demoset":
+        return pack_package(manager.demonstrations.set_package(selected["id"], selected["contentHash"]))
+    if selected["kind"] == "recording":
+        return pack_package(manager.demonstrations.recording(selected["id"], selected["contentHash"]))
     package = (
         manager.library.resolve(selected["id"])
         if selected["kind"] == "scene"
@@ -90,6 +98,7 @@ def _store_artifacts(manager, job, stream):
                     for key in ("jobId", "task", "taskContentHash", "scene", "sceneContentHash")
                 )
                 or versions["hardware"]["device"] != job["executionDevice"]
+                or versions.get("demonstrationSets", []) != job.get("demonstrationSets", [])
             ):
                 raise ValueError("Artifact versions do not identify the approved inputs/device")
             if any(

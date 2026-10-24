@@ -53,6 +53,8 @@ def test_new_version_keeps_old_manifest_and_recording_references_immutable(tmp_p
     assert second["set"]["id"] == "demoset/recorded-demo-probe@2"
     assert demos.show(first["set"]["id"]) == old
     assert len(demos.show(second["set"]["id"])["demonstrations"]) == 2
+    repeated = demos.add(recording_evidence(FIXTURE, task), FIXTURE, ACTOR)
+    assert repeated["set"] == first["set"]  # A lost first reply must not silently select the newer dataset.
     declarations = [{"set": first["set"]["id"], "purpose": "reset"}]
     target = task["task"] | {"sceneContentHash": task["sceneContentHash"]}
     assert demos.resolve_inputs(declarations, target) == [first["set"] | {"purpose": "reset"}]
@@ -139,3 +141,34 @@ def test_recording_mutated_after_success_validation_cannot_publish_or_satisfy_a_
     with pytest.raises(PlanError) as corrupted:
         demos.resolve_inputs([{"set": admitted["set"]["id"], "purpose": "reset"}], target)
     assert corrupted.value.detail["code"] == "demo_recording_changed"
+
+
+@pytest.mark.parametrize("split,expected", [("train", "demo_source_unsupported"),
+                                          ("test", "demo_private_source")])
+def test_agent_scores_are_not_physical_success_and_heldout_takes_precedence(tmp_path, split, expected):
+    identifier = json.loads((FIXTURE / "recording.json").read_bytes())["sessionId"]
+    demos, task, calls = service(tmp_path, {
+        "eval-agent-train": {"evaluationId": "eval-agent-train", "layer": "agent", "split": "train",
+                             "recordings": [identifier],
+                             "caseRuns": [{"recordingId": identifier, "score": 100}]},
+        "eval-agent-later": {"evaluationId": "eval-agent-later", "layer": "agent", "split": split,
+                             "caseRuns": [{"recordingId": identifier, "score": 100}]},
+    })
+    with pytest.raises(PlanError) as error:
+        demos.add(identifier, task["id"], ACTOR)
+    assert error.value.detail["code"] == expected
+    assert not calls and not demos.library.list()
+
+
+def test_legacy_association_with_an_agent_plan_does_not_access_a_missing_task(tmp_path):
+    identifier = json.loads((FIXTURE / "recording.json").read_bytes())["sessionId"]
+    demos, _, calls = service(tmp_path, {
+        "eval-legacy-agent": {"evaluationId": "eval-legacy-agent", "split": "train", "planId": "plan-agent",
+                              "planRevision": 1, "result": {"recordings": [identifier]}},
+    })
+    demos.manager.training_plans = SimpleNamespace(get=lambda *args: SimpleNamespace(
+        plan=SimpleNamespace(layer="agent")
+    ))
+    with pytest.raises(PlanError) as error:
+        demos.add(identifier, None, ACTOR)
+    assert error.value.detail["code"] == "demo_source_unsupported" and not calls

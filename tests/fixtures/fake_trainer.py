@@ -34,11 +34,26 @@ def main():
     versions = {
         "versions": {key: "fixture-only" for key in ("isaaclab", "newton", "warp", "torch", "rsl_rl")},
         "hardware": inputs["hardware"],
+        "demonstrationSets": inputs["job"].get("demonstrationSets", []),
         **{
             key: inputs["job"][key]
             for key in ("jobId", "task", "taskContentHash", "scene", "sceneContentHash", "seed")
         },
     }
+    demonstration_inputs = json.loads(os.environ.get("LW_DEMONSTRATION_SETS", "[]"))
+    assert [item["id"] for item in demonstration_inputs] == [
+        item["id"] for item in inputs["job"].get("demonstrationSets", [])
+    ]
+    for item in demonstration_inputs:
+        manifest = json.loads((Path(item["directory"]) / "manifest.json").read_bytes())
+        assert manifest["id"] == item["id"]
+        for entry in manifest["demonstrations"]:
+            recording = Path(item["recordings"][entry["recordingId"]])
+            metadata = json.loads((recording / "recording.json").read_bytes())
+            assert metadata["sessionId"] == entry["recordingId"]
+            assert list(recording.glob("seg-*.bin"))
+    if demonstration_inputs:
+        (output / "demonstration-inputs.json").write_text(json.dumps(demonstration_inputs), encoding="utf-8")
     (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
     (output / "policy.onnx").write_bytes(b"fake ONNX contract payload")
     logs = Path.cwd() / "logs"

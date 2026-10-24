@@ -1096,6 +1096,10 @@ class SessionManager:
         self._library = None
         self.library_assets = AssetLibrary(settings.state_root)
         self.tasks = TaskLibrary(self.library_assets, lambda: self.library)
+        from packages.training.demonstrations import Demonstrations
+
+        self.demonstrations = Demonstrations(self.library_assets)
+        self.tasks.demonstrations = self.demonstrations
         self.training_plans = TrainingPlanStore(
             settings.state_root / "training-plans.json", self.approvals, self.tasks,
             on_change=self.inbox.plan,

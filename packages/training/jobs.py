@@ -184,6 +184,10 @@ class TrainingJobs:
             raise PlanError(
                 "task_scene_input_unsupported", "Python builder inputs need a scene-package Task", status=422
             )
+        demonstrations = self.manager.demonstrations.resolve_inputs(
+            task["task"].get("demonstrations", []),
+            task["task"] | {"sceneContentHash": task["sceneContentHash"]},
+        )
         job = {
             "jobId": "job-" + uuid.uuid4().hex,
             "kind": "training",
@@ -201,6 +205,8 @@ class TrainingJobs:
                     item["id"]: item for item in (*scene.asset_dependencies(), *scene.template_dependencies())
                 }.values()
             ),
+            "demonstrationSets": demonstrations,
+            "demonstrationRecordings": self.manager.demonstrations.recording_inputs(demonstrations),
             "seed": seed,
             "requestId": request_id,
             "requestedBy": actor.model_dump(),

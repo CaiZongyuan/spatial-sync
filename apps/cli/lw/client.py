@@ -318,6 +318,15 @@ class GatewayClient:
         return (await self.request("GET", self._suite_path(suite) + "/scoreboard",
                                    params={"subject": subject} if subject else {}))["rows"]
 
+    async def demo_add(self, recordingId, task=None, *, actor="cli:lw"):
+        body = {"recordingId": recordingId}
+        if task is not None:
+            body["task"] = task
+        return await self.request("POST", "/api/v1/demos", json=body, actor=actor)
+
+    async def demo_list(self, task=None):
+        return (await self.request("GET", "/api/v1/demos", params={"task": task} if task else {}))["demos"]
+
     async def evaluation_run(self, subject, suite, planId=None, planRevision=None, *, actor="cli:lw"):
         payload = {"subject": subject, "suite": suite, "split": "train"}
         if planId is not None:

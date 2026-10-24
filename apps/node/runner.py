@@ -184,6 +184,10 @@ class OwnedRun:
                     ("task", job["task"]): job["taskContentHash"],
                     ("scene", job["scene"]): job["sceneContentHash"],
                     **{("asset", item["id"]): item["contentHash"] for item in job["assets"]},
+                    **{("demoset", item["id"]): item["contentHash"]
+                       for item in job.get("demonstrationSets", [])},
+                    **{("recording", item["id"]): item["contentHash"]
+                       for item in job.get("demonstrationRecordings", [])},
                 }
                 actual = {(item["kind"], item["id"]): item["contentHash"] for item in inputs["packages"]}
                 if (
@@ -212,6 +216,23 @@ class OwnedRun:
                 inputs["task"] = yaml.safe_load(
                     (Path(task_package["directory"]) / "task.yaml").read_text(encoding="utf-8")
                 )
+                demonstration_inputs = []
+                for reference in job.get("demonstrationSets", []):
+                    dataset = next(item for item in inputs["packages"]
+                                   if item["kind"] == "demoset" and item["id"] == reference["id"])
+                    manifest = json.loads((Path(dataset["directory"]) / "manifest.json").read_bytes())
+                    recordings = {}
+                    for entry in manifest["demonstrations"]:
+                        recording = next(
+                            item for item in inputs["packages"]
+                            if item["kind"] == "recording" and item["id"] == entry["recordingId"]
+                        )
+                        if recording["contentHash"] != entry["recordingContentHash"]:
+                            raise ValueError("DemoSet refers to another recording package")
+                        recordings[recording["id"]] = recording["directory"]
+                    demonstration_inputs.append(reference | {
+                        "directory": dataset["directory"], "recordings": recordings,
+                    })
                 inputs["hardware"] = {
                     "device": inputs["job"]["executionDevice"],
                     "gpu": ({"uuid": self.assignment["gpuId"], "name": inputs["job"]["resourceModel"]}
@@ -243,6 +264,7 @@ class OwnedRun:
                             if item["kind"] == "asset"
                         }
                     ),
+                    LW_DEMONSTRATION_SETS=json.dumps(demonstration_inputs),
                     PYTHONPATH=str(bridge),
                     CUDA_VISIBLE_DEVICES="-1"
                     if inputs["job"]["executionDevice"] == "cpu"

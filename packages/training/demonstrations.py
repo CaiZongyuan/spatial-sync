@@ -76,6 +76,12 @@ class Demonstrations:
     def find(self, recording_id):
         return next((entry for entry in self.list() if entry["recordingId"] == recording_id), None)
 
+    def retry(self, entry):
+        original = self.show(entry["addedInSet"])
+        return deepcopy(entry) | {
+            "set": {"id": original["id"], "contentHash": original["contentHash"]}, "idempotent": True,
+        }
+
     def _recording_path(self, identifier):
         if not RECORDING_ID.fullmatch(identifier):
             raise PlanError("unknown_demo_recording", "Unknown Demonstration recording", status=404)
@@ -100,7 +106,7 @@ class Demonstrations:
             if existing is not None:
                 if existing["task"] != evidence["task"]:
                     raise PlanError("demo_task_conflict", "This recording already has a fixed source Task")
-                return existing | {"idempotent": True}
+                return self.retry(existing)
             files = package_files(source)
             if not files:
                 raise PlanError("demo_recording_changed", "Recording package is empty", status=409)
@@ -122,15 +128,17 @@ class Demonstrations:
             name = evidence["task"].split("/", 1)[1].rsplit("@", 1)[0]
             previous = self._latest().get(name)
             revision = previous["revision"] + 1 if previous else 1
+            set_id = f"demoset/{name}@{revision}"
             entry = deepcopy(evidence) | {
                 "id": "demo-" + uuid.uuid4().hex,
                 "recordingContentHash": digest,
                 "recordingUrl": f"/api/v1/demos/recordings/{evidence['recordingId']}/recording.json",
                 "markedAt": datetime.now(UTC).isoformat(),
                 "markedBy": actor.model_dump(mode="json"),
+                "addedInSet": set_id,
             }
             manifest = {
-                "schemaVersion": 1, "id": f"demoset/{name}@{revision}", "name": name, "revision": revision,
+                "schemaVersion": 1, "id": set_id, "name": name, "revision": revision,
                 "demonstrations": [*(previous["demonstrations"] if previous else []), entry],
             }
             parent = destination_parent(self.root, ("demonstrations", "sets", name), create=True)
@@ -156,3 +164,22 @@ class Demonstrations:
             values.append({"id": dataset["id"], "contentHash": dataset["contentHash"],
                            "purpose": declaration["purpose"]})
         return values
+
+    def set_package(self, identifier, expected_hash):
+        dataset = self.show(identifier)
+        if dataset["contentHash"] != expected_hash:
+            raise PlanError("demo_set_changed", "Pinned Demonstration Set content changed")
+        match = SET_ID.fullmatch(identifier)
+        return destination_parent(self.root, ("demonstrations", "sets", match[1], match[2]))
+
+    def recording_inputs(self, references):
+        values = {}
+        for reference in references:
+            self.set_package(reference["id"], reference["contentHash"])
+            for entry in self.show(reference["id"])["demonstrations"]:
+                identifier, digest = entry["recordingId"], entry["recordingContentHash"]
+                if identifier in values and values[identifier]["contentHash"] != digest:
+                    raise PlanError("demo_recording_changed", "DemoSet recording identities disagree")
+                self.recording(identifier, digest)
+                values[identifier] = {"id": identifier, "contentHash": digest}
+        return list(values.values())

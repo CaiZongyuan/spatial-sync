@@ -23,24 +23,27 @@ class AddDemonstration(Schema):
 class DemonstrationService:
     def __init__(self, manager):
         self.manager = manager
-        self.library = Demonstrations(manager.library_assets)
+        self.library = getattr(manager, "demonstrations", None) or Demonstrations(manager.library_assets)
 
     def _associations(self, identifier):
         matches = []
         session = self.manager.sessions.get(identifier)
         for record in tuple(self.manager.evaluations.store.records.values()):
-            episodes = [episode for episode in record.get("episodes", [])
+            episodes = [episode for episode in record.get("episodes") or []
                         if episode.get("recordingId") == identifier]
-            listed = identifier in record.get("result", {}).get("recordings", [])
+            listed = (identifier in (record.get("result") or {}).get("recordings", [])
+                      or identifier in (record.get("recordings") or [])
+                      or any(case.get("recordingId") == identifier for case in record.get("caseRuns") or []))
             if episodes or listed or session and session.evaluation_id == record["evaluationId"]:
-                if record.get("split") != "train":
-                    raise PlanError(
-                        "demo_private_source", "Held-out or unknown-split data cannot enter training"
-                    )
-                for episode in episodes:
-                    if episode.get("success") is not True:
-                        raise PlanError("demo_not_successful", "The platform episode is not a known success")
                 matches.append((record, episodes))
+        # Classify all associations first: a train receipt cannot mask a known held-out source.
+        if any(record.get("split") != "train" for record, _ in matches):
+            raise PlanError("demo_private_source", "Held-out or unknown-split data cannot enter training")
+        if any(record.get("layer") == "agent" for record, _ in matches):
+            raise PlanError("demo_source_unsupported", "Agent scores do not prove physical Task success")
+        for _, episodes in matches:
+            if any(episode.get("success") is not True for episode in episodes):
+                raise PlanError("demo_not_successful", "The platform episode is not a known success")
         return matches
 
     def add(self, recording_id, task_id, actor):
@@ -51,14 +54,16 @@ class DemonstrationService:
         if existing is not None:
             if task_id not in (None, existing["task"]):
                 raise PlanError("demo_task_conflict", "This recording already has a fixed source Task")
-            return existing | {"idempotent": True}
+            return self.library.retry(existing)
         inferred = set()
         for record, _ in associations:
             context = record.get("notebookContext") or {}
             reference = context.get("plan", {}).get("task")
             if reference is None and record.get("planId") and record.get("planRevision"):
                 stored = self.manager.training_plans.get(record["planId"], record["planRevision"])
-                reference = stored.plan.task
+                if getattr(stored.plan, "layer", None) == "agent":
+                    raise PlanError("demo_source_unsupported", "Agent Plans have no physical Task episode")
+                reference = getattr(stored.plan, "task", None)
             if reference is not None:
                 inferred.add(reference)
         if len(inferred) > 1 or task_id is not None and inferred and task_id not in inferred:
@@ -82,7 +87,8 @@ class DemonstrationService:
                 raise PlanError("demo_task_conflict", "Fixed source Task content changed")
             original, completed = context.get("implementations"), record.get("notebookExecution")
             if (
-                original and original == completed
+                isinstance(original, dict) and original == completed
+                and isinstance(original.get("candidate"), str)
                 and re.fullmatch(r"[a-f0-9]{64}", original.get("candidate", ""))
             ):
                 evidence["sourceProgram"].update(
@@ -117,7 +123,10 @@ def install_demonstration_routes(app, service, role_for):
             if entry is None:
                 raise PlanError("unknown_demo_recording", "Unknown Demonstration recording", status=404)
             root = service.library.recording(identifier, entry["recordingContentHash"])
-            file = root / relative_path(relative)
+            try:
+                file = root / relative_path(relative)
+            except ValueError:
+                raise PlanError("unknown_demo_recording", "Unknown Demonstration file", status=404) from None
             if not file.is_file():
                 raise PlanError("unknown_demo_recording", "Unknown Demonstration file", status=404)
             return file
