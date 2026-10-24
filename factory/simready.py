@@ -24,6 +24,8 @@ from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, UsdUtils
 from trimesh.visual import TextureVisuals
 from trimesh.visual.material import PBRMaterial
 
+from packages.acquisition.cache import CACHE_MARKER
+
 DATASET = "nvidia/simready-assets"
 REVISION = "524747d9b5e1f21b5b18b56041788c01d745f1a1"
 RECIPE = "simready-newton-usdpreview-v1"
@@ -262,7 +264,7 @@ def _package_files(source_dir):
     return sorted(
         path.relative_to(source_dir).as_posix()
         for path in source_dir.rglob("*")
-        if path.is_file()
+        if path.is_file() and path.relative_to(source_dir).as_posix() != CACHE_MARKER
     )
 
 
@@ -398,13 +400,14 @@ def inspect_source(candidate, source_dir):
     stage = Usd.Stage.Open(str(root_path))
     if stage is None:
         raise SourceError(f"Cannot open root USD: {root_relative}")
+    source_files = _package_files(source_dir)
     report = {
         "package": package,
         "localAssetId": candidate.asset_id,
         "source": source_url(package),
         "revision": REVISION,
-        "files": len(_package_files(source_dir)),
-        "bytes": sum(path.stat().st_size for path in source_dir.rglob("*") if path.is_file()),
+        "files": len(source_files),
+        "bytes": sum((source_dir / name).stat().st_size for name in source_files),
         "expectedFiles": candidate.expected_files,
         "expectedBytes": candidate.expected_bytes,
         "license": {

@@ -221,7 +221,13 @@ def _fixture_files(source_root):
 
 
 def _tree_totals(root):
-    files = [path for path in Path(root).rglob("*") if path.is_file() and not path.is_symlink()]
+    files = [
+        path
+        for path in Path(root).rglob("*")
+        if path.is_file()
+        and not path.is_symlink()
+        and path.relative_to(root).as_posix() != CACHE_MARKER
+    ]
     return len(files), sum(path.stat().st_size for path in files)
 
 

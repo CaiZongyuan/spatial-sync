@@ -73,9 +73,7 @@ class AcquisitionService:
         self._runner = runner or SubprocessRunner(
             self.state_root, self.library_root, catalog=catalog, source_root=source_root
         )
-        self._disk_usage = disk_usage or (
-            lambda: shutil.disk_usage(self.state_root).free
-        )
+        self._disk_usage = disk_usage or self._free_disk
         self._clock = clock
         self._progress_interval = progress_interval
         self._records: dict[str, AcquisitionRecord] = {}
@@ -84,6 +82,10 @@ class AcquisitionService:
         self._semaphore = asyncio.Semaphore(self._limits.concurrent_acquisitions)
         self._budget = self._ledger()
         self._closed = False
+
+    def _free_disk(self):
+        roots = [self.state_root, self.library_root]
+        return min(shutil.disk_usage(root).free for root in roots if root.exists())
 
     @property
     def limits(self):
@@ -99,6 +101,7 @@ class AcquisitionService:
 
     async def startup(self):
         self.state_root.mkdir(parents=True, exist_ok=True)
+        self.library_root.mkdir(parents=True, exist_ok=True)
         for directory in (self.records_root, self.cache_root, self.work_root):
             directory.mkdir(parents=True, exist_ok=True)
         if (
@@ -595,7 +598,7 @@ class AcquisitionService:
         self._persist(record)
 
     def _fail(self, record, code, message, retryable):
-        released = self._budget.release(record.id)
+        released = self._budget.release(record.id, release_charge=not retryable)
         record.touch(
             status="failed",
             error={"code": code, "message": message, "retryable": bool(retryable)},
