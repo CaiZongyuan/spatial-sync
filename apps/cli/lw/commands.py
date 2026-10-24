@@ -144,6 +144,264 @@ def runtime_import_options():
 
 
 COMMANDS = (
+    Command(
+        path=("suite", "push"),
+        help="Publish an explicitly selected Agent Suite directory.",
+        method="suite_push",
+        mcp_name="suite_push",
+        actor=True,
+        arguments=(Argument("directory", ("dir",), str, "Selected confined Suite directory"),),
+    ),
+    *(
+        Command(
+            path=("agent", verb),
+            help=help_text,
+            method=method,
+            mcp_name=method,
+            human_only=human,
+            arguments=(Argument("id", ("agent",), str, "Agent name or agent/name"),),
+        )
+        for verb, method, help_text, human in (
+            ("rsi", "agent_rsi", "Read measured baselines, Agent rounds and file recovery.", False),
+        )
+    ),
+    Command(
+        path=("agent", "harness"),
+        help="Read exact confined Harness text and locked skills.",
+        method="agent_harness",
+        mcp_name="agent_harness",
+        arguments=(
+            Argument("id", ("agent",), str, "Agent name or agent/name"),
+            Argument("version", ("version",), int, "Immutable Harness version"),
+        ),
+    ),
+    Command(
+        path=("agent", "baseline"),
+        help="Establish a measured Reference from complete train evidence.",
+        method="agent_baseline",
+        mcp_name="agent_baseline",
+        actor=True,
+        arguments=(
+            Argument("id", ("agent",), str, "Agent name or agent/name"),
+            Argument("evaluationId", ("--evaluation",), str, "Exact complete train evaluation"),
+            Argument("requestId", ("--request-id",), str | None, "Stable exact retry identity", None),
+        ),
+    ),
+    *(
+        Command(
+            path=("agent", verb),
+            help=help_text,
+            method=method,
+            mcp_name=method,
+            human_only=human,
+            actor=True,
+            arguments=(
+                Argument("id", ("agent",), str, "Agent name or agent/name"),
+                Argument("document", ("document.yaml",), dict[str, Any], "Structured request or local YAML"),
+            ),
+        )
+        for verb, method, help_text, human in (
+            (
+                "candidate",
+                "agent_candidate",
+                "Stage a bounded candidate without editing current files.",
+                False,
+            ),
+            (
+                "optimizer-grant",
+                "agent_optimizer_grant",
+                "Issue scoped Optimizer credentials to its controller.",
+                True,
+            ),
+        )
+    ),
+    Command(
+        path=("agent", "tool-trace"),
+        help="Read public Optimizer interface/status audit without payloads.",
+        method="agent_tool_trace",
+        mcp_name="agent_tool_trace",
+        arguments=(
+            Argument("id", ("agent",), str, "Agent name or agent/name"),
+            Argument("goal", ("--goal",), str, "Exact Goal"),
+        ),
+    ),
+    *(
+        Command(
+            path=("agent-round", verb),
+            help=help_text,
+            method=method,
+            mcp_name=method,
+            actor=True,
+            arguments=(
+                Argument("id", ("plan",), str, "Approved Agent Plan"),
+                Argument("revision", ("--revision",), int, "Exact approved revision"),
+                *(
+                    (
+                        Argument(
+                            "requestId", ("--request-id",), str | None, "Stable exact retry identity", None
+                        ),
+                    )
+                    if verb == "start"
+                    else ()
+                ),
+            ),
+        )
+        for verb, method, help_text in (
+            (
+                "start",
+                "agent_round_start",
+                "Activate exact approved files and dispatch the shared evaluator.",
+            ),
+            (
+                "settle",
+                "agent_round_settle",
+                "Decide from platform evidence and retain or restore real files.",
+            ),
+        )
+    ),
+    Command(
+        path=("agent-round", "show"),
+        help="Read the durable Agent Plan and round.",
+        method="plan_show",
+        arguments=(
+            Argument("id", ("plan",), str, "Agent Plan"),
+            Argument("revision", ("--revision",), int | None, "Exact revision", None),
+        ),
+    ),
+    Command(
+        path=("agent-round", "contamination"),
+        help="Report a fixed Optimizer native exposure event.",
+        method="agent_contamination",
+        mcp_name="agent_contamination",
+        actor=True,
+        arguments=(
+            Argument("id", ("plan",), str, "Exact exposed Agent Plan"),
+            Argument(
+                "document",
+                ("evidence.yaml",),
+                dict[str, Any],
+                "Fixed revision, request and native event hashes",
+            ),
+        ),
+    ),
+    Command(
+        path=("agent-promotion", "request"),
+        help="Request bounded private evaluation after train acceptance.",
+        method="agent_promotion_request",
+        mcp_name="agent_promotion_request",
+        actor=True,
+        arguments=(
+            Argument("id", ("plan",), str, "Accepted Agent Plan"),
+            Argument("revision", ("--revision",), int, "Exact accepted revision"),
+            Argument("requestId", ("--request-id",), str | None, "Stable exact retry identity", None),
+        ),
+    ),
+    *(
+        Command(
+            path=("agent-promotion", verb),
+            help=help_text,
+            method=method,
+            mcp_name=method,
+            human_only=human,
+            actor=write,
+            arguments=(Argument("id", ("promotion",), str, "Exact promotion identity"),),
+        )
+        for verb, method, help_text, human, write in (
+            (
+                "show",
+                "agent_promotion_show",
+                "Read safe promotion status without test evidence.",
+                False,
+                False,
+            ),
+            ("review", "agent_promotion_review", "Read the private human promotion card.", True, False),
+            (
+                "next",
+                "agent_promotion_next",
+                "Claim opaque pending-native work, then bound private Target work.",
+                False,
+                True,
+            ),
+            ("cancel", "agent_promotion_cancel", "Cancel only the promotion's owned work.", False, True),
+            (
+                "cleanup",
+                "agent_promotion_cleanup",
+                "Retry the promotion's retained cleanup blocks.",
+                False,
+                True,
+            ),
+        )
+    ),
+    Command(
+        path=("agent-promotion", "controller-grant"),
+        help="Issue a separate private-controller capability.",
+        method="agent_promotion_grant",
+        mcp_name="agent_promotion_grant",
+        human_only=True,
+        actor=True,
+        arguments=(
+            Argument("id", ("promotion",), str, "Exact promotion identity"),
+            Argument("wallSeconds", ("--wall-seconds",), int, "Finite permission duration", 900),
+        ),
+    ),
+    *(
+        Command(
+            path=("agent-promotion", verb),
+            help=help_text,
+            method=method,
+            mcp_name=method,
+            actor=True,
+            arguments=(
+                Argument("id", ("promotion",), str, "Exact promotion identity"),
+                Argument("caseRunId", ("--case-run",), str, "Opaque private work identity"),
+                Argument("nativeSessionId", ("--native-session",), str, "Fresh bound Target conversation"),
+                *(
+                    (
+                        Argument(
+                            "runtimeRecordId",
+                            ("--runtime-record",),
+                            str | None,
+                            "Private imported native record",
+                            None,
+                        ),
+                    )
+                    if verb == "complete"
+                    else ()
+                ),
+            ),
+        )
+        for verb, method, help_text in (
+            (
+                "bind-native",
+                "agent_promotion_bind",
+                "Bind a fresh native conversation before receiving private input.",
+            ),
+            ("complete", "agent_promotion_complete", "Signal completion of this exact bound private Target."),
+        )
+    ),
+    Command(
+        path=("agent-promotion", "capture"),
+        help="Import the bound private native capture with trusted ownership.",
+        method="agent_promotion_capture",
+        mcp_name="agent_promotion_capture",
+        actor=True,
+        arguments=(
+            Argument("id", ("promotion",), str, "Exact promotion identity"),
+            Argument(
+                "records",
+                ("records.json",),
+                list[dict[str, Any]],
+                "Structured native records or local JSON array",
+            ),
+            Argument(
+                "format",
+                ("--format",),
+                Literal["claude-code-stream-json", "claude-code-session-jsonl"],
+                "Native capture format",
+                "claude-code-stream-json",
+            ),
+        ),
+    ),
     Command(path=("policy", "create"), help="Freeze a validated Job export as a policy candidate.",
             method="policy_create", mcp_name="policy_create", actor=True, arguments=(
                 Argument("checkpoint", ("job/checkpoint",), str, "Job ID/checkpoint relative path"),

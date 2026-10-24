@@ -292,6 +292,9 @@ class GatewayClient:
     async def task_push(self, directory, *, actor="cli:lw"):
         return await self._upload_directory(directory, "/api/v1/tasks", actor)
 
+    async def suite_push(self, directory, *, actor="cli:lw"):
+        return await self._upload_directory(directory, "/api/v1/suites", actor)
+
     async def tasks_list(self):
         return (await self.request("GET", "/api/v1/tasks"))["tasks"]
 
@@ -368,13 +371,139 @@ class GatewayClient:
     async def agent_show(self, id):
         return await self.request("GET", self._agent_path(id))
 
-    async def agent_run_create(self, id, suite, harnessVersion, runtime, model, thinking,
-                               runtimeVersion=None, purpose="train", caseId=None, wallSeconds=900,
-                               requestId=None, *, actor="cli:lw"):
-        payload = {"requestId": requestId or uuid.uuid4().hex, "suite": suite,
-                   "harnessVersion": harnessVersion, "purpose": purpose, "wallSeconds": wallSeconds,
-                   "runtime": {"name": runtime, "version": runtimeVersion, "model": model,
-                               "thinking": thinking}}
+    async def agent_harness(self, id, version):
+        return await self.request("GET", self._agent_path(id) + f"/harness/{version}")
+
+    async def agent_rsi(self, id):
+        return await self.request("GET", self._agent_path(id) + "/rsi")
+
+    async def agent_tool_trace(self, id, goal):
+        return await self.request(
+            "GET", self._agent_path(id) + "/tool-trace", params={"goal": self._goal(goal)}
+        )
+
+    async def agent_baseline(self, id, evaluationId, requestId=None, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            self._agent_path(id) + "/baseline",
+            actor=actor,
+            json={"evaluationId": evaluationId, "requestId": requestId or uuid.uuid4().hex},
+        )
+
+    async def agent_candidate(self, id, document, *, actor="cli:lw"):
+        return await self.request("POST", self._agent_path(id) + "/candidates", actor=actor, json=document)
+
+    async def agent_optimizer_grant(self, id, document, *, actor="cli:lw"):
+        return await self.request(
+            "POST", self._agent_path(id) + "/optimizer-grant", actor=actor, json=document
+        )
+
+    async def agent_round_start(self, id, revision, requestId=None, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            "/api/v1/plans/" + quote(id, safe="") + "/agent-runs",
+            actor=actor,
+            json={"revision": revision, "requestId": requestId or uuid.uuid4().hex},
+        )
+
+    async def agent_round_settle(self, id, revision, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            "/api/v1/plans/" + quote(id, safe="") + "/settle",
+            actor=actor,
+            json={"revision": revision},
+        )
+
+    async def agent_contamination(self, id, document, *, actor="cli:lw"):
+        return await self.request(
+            "POST", "/api/v1/plans/" + quote(id, safe="") + "/contamination", actor=actor, json=document
+        )
+
+    async def agent_promotion_request(self, id, revision, requestId=None, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            "/api/v1/plans/" + quote(id, safe="") + "/promotions",
+            actor=actor,
+            json={"revision": revision, "requestId": requestId or uuid.uuid4().hex},
+        )
+
+    @staticmethod
+    def _promotion_path(id):
+        return "/api/v1/agent-promotions/" + quote(id, safe="")
+
+    async def agent_promotion_show(self, id):
+        return await self.request("GET", self._promotion_path(id))
+
+    async def agent_promotion_review(self, id):
+        return await self.request("GET", self._promotion_path(id) + "/review")
+
+    async def agent_promotion_grant(self, id, wallSeconds=900, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            self._promotion_path(id) + "/controller-grant",
+            actor=actor,
+            json={"wallSeconds": wallSeconds},
+        )
+
+    async def agent_promotion_next(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._promotion_path(id) + "/next", actor=actor)
+
+    async def agent_promotion_bind(self, id, caseRunId, nativeSessionId, *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            self._promotion_path(id) + "/bind-native",
+            actor=actor,
+            json={"caseRunId": caseRunId, "nativeSessionId": nativeSessionId},
+        )
+
+    async def agent_promotion_complete(
+        self, id, caseRunId, nativeSessionId, runtimeRecordId=None, *, actor="cli:lw"
+    ):
+        body = {
+            "caseRunId": caseRunId,
+            "nativeSessionId": nativeSessionId,
+            "runtimeRecordId": runtimeRecordId,
+        }
+        return await self.request("POST", self._promotion_path(id) + "/complete", actor=actor, json=body)
+
+    async def agent_promotion_capture(self, id, records, format="claude-code-stream-json", *, actor="cli:lw"):
+        return await self.request(
+            "POST",
+            self._promotion_path(id) + "/runtime-records/import",
+            actor=actor,
+            json={"format": format, "records": records},
+        )
+
+    async def agent_promotion_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._promotion_path(id) + "/cancel", actor=actor)
+
+    async def agent_promotion_cleanup(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._promotion_path(id) + "/cleanup", actor=actor)
+
+    async def agent_run_create(
+        self,
+        id,
+        suite,
+        harnessVersion,
+        runtime,
+        model,
+        thinking,
+        runtimeVersion=None,
+        purpose="train",
+        caseId=None,
+        wallSeconds=900,
+        requestId=None,
+        *,
+        actor="cli:lw",
+    ):
+        payload = {
+            "requestId": requestId or uuid.uuid4().hex,
+            "suite": suite,
+            "harnessVersion": harnessVersion,
+            "purpose": purpose,
+            "wallSeconds": wallSeconds,
+            "runtime": {"name": runtime, "version": runtimeVersion, "model": model, "thinking": thinking},
+        }
         if caseId is not None:
             payload["caseId"] = caseId
         return await self.request("POST", self._agent_path(id) + "/runs", json=payload, actor=actor)

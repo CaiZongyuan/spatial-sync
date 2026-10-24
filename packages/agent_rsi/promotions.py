@@ -173,6 +173,8 @@ def require_admission(service, run):
 
 def issue_controller(service, identifier, seconds):
     with service._lock:
+        if service.audit_error:
+            raise PlanError("agent_trace_unavailable", "Workflow Trace is unavailable", status=503)
         value = get(service, identifier)
         if value["status"] not in ("preparing", "evaluating"):
             raise PlanError("agent_promotion_stopped", "This private handoff is stopped", status=409)

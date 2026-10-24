@@ -40,6 +40,8 @@ def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_pat
     names = [
         "lab",
         "lab-agent-evaluate",
+        "lab-eval-build",
+        "lab-harness-optimize",
         "lab-library",
         "lab-operate",
         "lab-runtime-records",
