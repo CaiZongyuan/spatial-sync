@@ -590,8 +590,13 @@ class EvaluationService:
                     or session.recording.metadata["status"] != "recording"
                 ):
                     raise HTTPException(503, {"code": "recording_unavailable"})
+                execution_facts = None
+                if session.kind == "newton":
+                    probe = getattr(session.source, "observation_runtime", None)
+                    execution_facts = await probe() if callable(probe) else {}
+                    record["executionFacts"] = deepcopy(execution_facts)
                 key = self._validate_session(session, suite, case, record["subject"], policy_subject)
-                key.update(self.bind_identity(record, session))
+                key.update(self.bind_identity(record, session, execution_facts=execution_facts))
                 if record.get("key", key) != key:
                     raise HTTPException(409, {"code": "not_comparable"})
                 record["key"] = key
@@ -600,7 +605,7 @@ class EvaluationService:
                 if policy_subject is not None:
                     execution = await session.source.program_execution(policy_subject.target.entityKey)
                     outcome["policyExecution"] = validate_policy_execution(
-                        policy_subject, execution
+                        policy_subject, execution, runtime=execution_facts
                     )
                 await session.close()
                 if session.holds_resources:

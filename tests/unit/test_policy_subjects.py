@@ -153,6 +153,14 @@ def test_native_receipt_must_match_the_exact_loaded_model_and_keep_zero_counts_h
         "observationDigest": "a" * 64,
     }
     assert validate_policy_execution(subject, receipt)["inferenceCalls"] == 0
+    common = {
+        "available": True,
+        "runtimeVersion": "fixture-counter-contract",
+        "availableProviders": ["CPUExecutionProvider"],
+    }
+    assert validate_policy_execution(subject, receipt, runtime=common)["inferenceCalls"] == 0
+    with pytest.raises(LibraryError):
+        validate_policy_execution(subject, receipt, runtime=common | {"runtimeVersion": "other"})
     for change in (
         {"onnxSha256": "b" * 64},
         {"providers": ["CUDAExecutionProvider"]},
