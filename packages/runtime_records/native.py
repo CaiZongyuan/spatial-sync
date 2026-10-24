@@ -50,8 +50,28 @@ def redacted(value):
 
 
 def number(value, *, integer=False):
-    if type(value) not in ((int,) if integer else (int, float)) or not math.isfinite(value) or value < 0:
+    if value is None:
         return None
+    if (
+        type(value) not in ((int,) if integer else (int, float))
+        or value < 0
+        or type(value) is int
+        and value > 2**63 - 1
+        or not math.isfinite(value)
+    ):
+        raise PlanError(
+            "invalid_runtime_usage", "Native usage must be finite nonnegative reported numbers", status=422
+        )
+    return value
+
+
+def text(value, *, required=False):
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or required and not value or len(value) > 4096:
+        raise PlanError(
+            "invalid_runtime_record", "A native identity or text field has an invalid type", status=422
+        )
     return value
 
 
@@ -80,7 +100,7 @@ def safe_content(content):
     for block in content:
         if not isinstance(block, dict):
             continue
-        selected = fields.get(block.get("type"))
+        selected = fields.get(text(block.get("type"), required=True))
         blocks.append(
             redacted({key: block[key] for key in selected if key in block})
             if selected
@@ -100,7 +120,7 @@ def metric(usage, value=None):
     )
     models = value.get("modelUsage") if isinstance(value.get("modelUsage"), dict) else {}
     estimated = any(
-        isinstance(model, dict) and model.get("costBasis") in {"list", "estimate", "unknown"}
+        isinstance(model, dict) and text(model.get("costBasis")) in {"list", "estimate", "unknown"}
         for model in models.values()
     )
     result["costSource"] = (
@@ -126,7 +146,7 @@ def normalize(format_name, records):
             "unsupported_runtime_format", "Select a supported Claude native JSONL capture", status=422
         )
     key = "session_id" if format_name == "claude-code-stream-json" else "sessionId"
-    sessions = {record[key] for record in records if isinstance(record.get(key), str) and record[key]}
+    sessions = {text(record[key], required=True) for record in records if key in record}
     if len(sessions) != 1:
         raise PlanError(
             "ambiguous_runtime_session", "Import one native runtime session per capture", status=422
@@ -141,22 +161,38 @@ def normalize(format_name, records):
             "Stream JSON requires its single native system/init identity",
             status=422,
         )
-    capture = initial[0]["uuid"] if initial else native_session
-    result_ids = {record.get("uuid") for record in records if record.get("type") == "result"}
+    capture = text(initial[0]["uuid"], required=True) if initial else native_session
+    result_ids = {
+        text(record.get("uuid"), required=True) for record in records if record.get("type") == "result"
+    }
     if len(result_ids) > 1 or None in result_ids:
         raise PlanError(
             "unsupported_runtime_counter_scope",
             "Split captures with distinct result totals before importing",
             status=422,
         )
+    if format_name == "claude-code-stream-json":
+        final = next((index for index, record in enumerate(records) if record.get("type") == "result"), None)
+        if final is not None and any(
+            record.get("type") in {"assistant", "user"} for record in records[final + 1 :]
+        ):
+            raise PlanError(
+                "unsupported_runtime_counter_scope",
+                "Split post-result conversation captures before importing",
+                status=422,
+            )
     events, receipts = [], {}
     for record in records:
-        native_type = record.get("type")
+        native_type = text(record.get("type"), required=True)
         if native_type not in {"assistant", "user", "system", "result", "rate_limit_event"}:
             continue
-        native_id = record.get("uuid")
-        if not isinstance(native_id, str) or not native_id:
-            raise PlanError("runtime_event_identity_required", "A native event UUID is required", status=422)
+        native_id = text(record.get("uuid"), required=True)
+        if native_type == "result" and "is_error" in record and type(record["is_error"]) is not bool:
+            raise PlanError(
+                "invalid_runtime_record", "Native result error status must be boolean", status=422
+            )
+        if native_type in {"assistant", "user"} and not isinstance(record.get("message"), dict):
+            raise PlanError("invalid_runtime_record", "A native message mapping is required", status=422)
         message = record.get("message") if isinstance(record.get("message"), dict) else {}
         content = safe_content(message.get("content"))
         if native_type == "result":
@@ -175,13 +211,14 @@ def normalize(format_name, records):
             else "message"
             if message
             else "metadata",
-            "role": message.get("role"),
+            "role": text(message.get("role")),
             "timestamp": timestamp(record.get("timestamp")),
-            "parentId": record.get("parentUuid"),
+            "parentId": text(record.get("parentUuid")),
             "content": content,
-            "model": message.get("model"),
-            "messageId": message.get("id"),
-            "subtype": record.get("subtype"),
+            "model": text(message.get("model"))
+            or (text(record.get("model")) if native_type == "system" else None),
+            "messageId": text(message.get("id")),
+            "subtype": text(record.get("subtype")),
         }
         event["contentHash"] = digest(event)
         events.append(event)
@@ -193,7 +230,7 @@ def normalize(format_name, records):
                     status=422,
                 )
             if message.get("id"):
-                identity = "message:" + message["id"]
+                identity = "message:" + text(message["id"], required=True)
                 receipts[identity] = merge_metric(receipts.get(identity), metric(message.get("usage")))
         if native_type == "result":
             identity = "capture:" + capture
@@ -205,9 +242,18 @@ def normalize(format_name, records):
         "format": format_name,
         "nativeSessionId": native_session,
         "captureId": capture,
-        "runtimeVersion": initial[0].get("claude_code_version") if initial else None,
+        "runtimeVersion": text(initial[0].get("claude_code_version")) if initial else None,
         "events": events,
         "receipts": receipts,
+        "models": sorted(
+            {event["model"] for event in events if event["model"] is not None}
+            | {
+                text(model, required=True)
+                for record in records
+                if record.get("type") == "result" and isinstance(record.get("modelUsage"), dict)
+                for model in record["modelUsage"]
+            }
+        ),
         "status": "error"
         if any(record.get("is_error") for record in records if record.get("type") == "result")
         else "completed"

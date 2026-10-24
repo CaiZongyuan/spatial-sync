@@ -10,6 +10,7 @@ from packages.cost.ranges import overlap_fraction, reporting_window
 from packages.info.plans import PlanError
 from packages.library.transactions import durable_json
 from packages.models import ModelResources
+from packages.runtime_records.costs import aggregate_imported, observed_at
 
 LLM_FIELDS = (
     "requests",
@@ -17,6 +18,7 @@ LLM_FIELDS = (
     "inputTokens",
     "outputTokens",
     "cacheReadTokens",
+    "cacheWriteTokens",
     "tokens",
     "llmUsd",
     "successRate",
@@ -118,6 +120,16 @@ class CostLedger:
 
     @staticmethod
     def attribution(job):
+        if job.get("source") == "runtime-import":
+            refs = job["associations"]
+            return {
+                "agent": refs.get("agentId"),
+                "model": job["models"][0] if len(job["models"]) == 1 else None,
+                "node": None,
+                "goal": refs.get("goalId"),
+                "plan": f"{refs['planId']}@{refs['planRevision']}" if refs.get("planId") else None,
+                "job": None,
+            }
         actor = job["requestedBy"]
         return {
             "agent": actor["name"] if actor["kind"] == "agent" else None,
@@ -132,19 +144,30 @@ class CostLedger:
         self.manager.jobs._require_available()
         return [
             job
-            for job in self.manager.jobs.records.values()
+            for job in self._all_items()
             if all(self.attribution(job)[key] == value for key, value in filters.items() if value is not None)
         ]
 
+    def _all_items(self):
+        runtime = getattr(self.manager, "runtime_records", None)
+        return [*self.manager.jobs.records.values(), *(runtime.records.values() if runtime else ())]
+
     def window(self, key, *, start=None, end=None):
-        earliest = min((job["createdAt"] for job in self.manager.jobs.records.values()), default=None)
+        earliest = min(
+            (
+                observed_at(item) if item.get("source") == "runtime-import" else item["createdAt"]
+                for item in self._all_items()
+            ),
+            default=None,
+        )
         return reporting_window(key, self.manager.jobs.clock(), start=start, end=end, earliest=earliest)
 
-    @staticmethod
-    def aggregate(jobs, window, *, include_end=True):
+    def aggregate(self, jobs, window, *, include_end=True):
         seconds = reported = historical = unpriced = known_usd = 0.0
         peak, revisions, warnings = None, set(), set()
         for job in jobs:
+            if job.get("source") == "runtime-import":
+                continue
             state = job["costLedger"]
             for entry in state["entries"]:
                 fraction = overlap_fraction(entry, window.start, window.end, include_end=include_end)
@@ -170,7 +193,7 @@ class CostLedger:
             for sample in state["memorySamples"]:
                 if window.start <= sample["at"] <= window.end:
                     peak = max(peak or 0, sample["memoryUsedMb"])
-        return {
+        result = {
             **dict.fromkeys(LLM_FIELDS),
             "gpuSeconds": seconds,
             "gpuHours": seconds / 3600,
@@ -184,6 +207,14 @@ class CostLedger:
             "priceRevisions": sorted(revisions),
             "priceWarnings": sorted(warnings),
         }
+        runtime = getattr(self.manager, "runtime_records", None)
+        if runtime and runtime.records:
+            result.update(
+                aggregate_imported(
+                    [job for job in jobs if job.get("source") == "runtime-import"], window, include_end
+                )
+            )
+        return result
 
     def summary(self, window, filters):
         jobs = self._jobs(filters)
@@ -191,7 +222,7 @@ class CostLedger:
             dimension: sorted(
                 {
                     self.attribution(job)[dimension]
-                    for job in self.manager.jobs.records.values()
+                    for job in self._all_items()
                     if self.attribution(job)[dimension] is not None
                 }
             )
@@ -205,8 +236,12 @@ class CostLedger:
             "cards": {key: self.aggregate(jobs, self.window(key)) for key in ("today", "7d", "all")},
             "choices": choices,
             "availability": {
-                "llm": False,
-                "reason": "LLM usage is not connected; no requests or tokens are inferred",
+                "llm": bool(
+                    getattr(self.manager, "runtime_records", None) and self.manager.runtime_records.records
+                ),
+                "reason": "Imported runtime reports only; missing counters remain unknown"
+                if getattr(self.manager, "runtime_records", None) and self.manager.runtime_records.records
+                else "No runtime usage has been imported; no requests or tokens are inferred",
             },
             "pricingPolicy": (
                 "Each GPU increment retains the price revision observed when it was committed; "
@@ -254,6 +289,17 @@ class CostLedger:
                             **self.aggregate([job], window),
                         }
                         for job in jobs
+                        if job.get("source") != "runtime-import"
+                    ],
+                    "runtimeSessions": [
+                        {
+                            "id": record["id"],
+                            "runtime": record["runtime"],
+                            "status": record["status"],
+                            **self.aggregate([record], window),
+                        }
+                        for record in jobs
+                        if record.get("source") == "runtime-import"
                     ],
                 }
             )

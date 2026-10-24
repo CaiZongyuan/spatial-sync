@@ -85,13 +85,19 @@ class RuntimeRecords:
                 raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
             try:
                 native = [json.loads(line) for line in body.content.splitlines() if line.strip()]
-            except ValueError as error:
+            except (ValueError, RecursionError) as error:
                 raise PlanError(
                     "invalid_runtime_jsonl",
                     "A complete JSON object is required on each native line",
                     status=422,
                 ) from error
-        if len(json.dumps(native, ensure_ascii=False).encode()) > MAX_BYTES:
+        try:
+            serialized = json.dumps(native, ensure_ascii=False, allow_nan=False).encode()
+        except (ValueError, TypeError, OverflowError, RecursionError) as error:
+            raise PlanError(
+                "invalid_runtime_record", "Native capture contains invalid JSON values", status=422
+            ) from error
+        if len(serialized) > MAX_BYTES:
             raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
         parsed = normalize(body.format, native)
         references = self.references(body.associations)
@@ -175,9 +181,7 @@ class RuntimeRecords:
                         if block.get("type") == "tool_use" and block.get("id")
                     }
                 ),
-                models=sorted(
-                    {event["model"] for event in record["events"] if isinstance(event["model"], str)}
-                ),
+                models=sorted(set(record.get("models", [])) | set(parsed["models"])),
                 thinking=None,
             )
             record["contentHash"] = digest(

@@ -51,6 +51,17 @@ def test_actual_claude_capture_persists_reads_and_reimports_without_double_count
         assert http.get("/api/v1/health").json()["sessionCount"] == 0
         assert http.get("/api/v1/evaluations").json()["evaluations"] == []
         assert http.get("/api/v1/approvals").json()["pendingCount"] == 0
+        costs = http.get("/api/v1/cost/summary", params={"range": "all"}).json()
+        assert costs["availability"]["llm"] and costs["totals"]["llmUsd"] == 0.3244434
+        assert costs["totals"]["costSource"] == "runtime-estimate"
+        assert costs["totals"]["timeBasis"] == "importedAt"
+        assert costs["totals"]["requests"] is None and costs["totals"]["tokens"] is None
+        assert costs["choices"]["model"] == ["claude-opus-5-5"] and costs["choices"]["goal"] == []
+        buckets = http.get("/api/v1/cost/series", params={"range": "all"}).json()["buckets"]
+        assert sum(bucket["llmUsd"] for bucket in buckets) == 0.3244434
+        goals = http.get("/api/v1/cost/breakdown", params={"range": "all", "by": "goal"}).json()["rows"]
+        assert goals[0]["key"] is None and goals[0]["jobs"] == []
+        assert goals[0]["runtimeSessions"][0]["id"] == session["id"]
         for artifact in session["artifacts"]:
             assert http.get(artifact["url"]).status_code == 200
         assert http.get(f"/api/v1/runtime-sessions/{session['id']}/artifacts/config").status_code == 404
