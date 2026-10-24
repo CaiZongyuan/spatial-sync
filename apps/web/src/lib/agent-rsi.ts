@@ -5,8 +5,10 @@ import type { TrainingPlanDocument } from './training';
 
 export interface AgentReference {
   agentId: string; evaluationId: string; harnessVersion: number; harnessHash: string;
-  archiveHash: string; suite: string; runtime: RuntimeDeclaration; score: number;
+  archiveHash: string; suite: string; runtime: RuntimeDeclaration; score: number | null;
+  recordedScore?: number; comparisonState?: 'known' | 'unknown'; comparisonReason?: string | null;
   conditionsGroup: string; at: string;
+  conditions: Record<string, string | null>;
 }
 export interface NativeObservation {
   llmUsd: number | null; knownLlmUsd?: number; requests: number | null; tokens: number | null;

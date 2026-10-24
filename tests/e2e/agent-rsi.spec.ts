@@ -110,6 +110,12 @@ test('Agent training shows actual ranges rejection restore private human promoti
     await expect(panel.locator(`.agent-score-point[data-version="${lateRound.version}"]`)).toHaveCount(0);
     await expect(panel.locator('.agent-score-point')).toHaveCount(2);
     expect(await panel.textContent()).not.toContain('CONTROLLED-PRIVATE-RSI-CANARY-45');
+    const unavailable = await http.post(`${api}/e2e/agent-reference-invalid`);
+    expect(unavailable.ok(), await unavailable.text()).toBe(true);
+    await page.reload();
+    await expect(panel.getByTestId('agent-current-reference')).toContainText('当前条件待重新评估');
+    await expect(panel.getByTestId('agent-current-reference').locator('strong')).toHaveText('未知');
+    await expect(panel.locator('.agent-reference')).toHaveCount(0);
     await page.getByLabel('Color theme').selectOption('dark');
     await panel.screenshot({ path: info.outputPath('agent-rsi-dark.png') });
     await page.setViewportSize({ width: 1000, height: 1000 });

@@ -291,15 +291,29 @@ class AgentRSI:
             self._write(baselines=self.baselines | {key: value})
             return self.public_baseline(value)
 
-    @staticmethod
-    def public_baseline(value):
+    def public_baseline(self, value, *, current=False):
         from apps.api.app.evaluation_views import public_conditions
 
         # Internal environment/judge IDs can bind private inputs; expose safe equivalence only.
-        return {key: deepcopy(item) for key, item in value.items() if key != "comparison"} | {
+        result = {key: deepcopy(item) for key, item in value.items() if key != "comparison"} | {
             "conditionsGroup": value["evaluationId"],
             "conditions": public_conditions(value["comparison"]["conditions"]),
         }
+        if current:
+            try:
+                actual = self.current_identity(self.external.get(value["evaluationId"]))
+                if actual != value["comparison"]:
+                    raise PlanError("not_comparable", "Fixed Reference conditions changed", status=409)
+            except (PlanError, LibraryError):
+                result.update(
+                    score=None,
+                    recordedScore=value["score"],
+                    comparisonState="unknown",
+                    comparisonReason="not_comparable",
+                )
+            else:
+                result.update(recordedScore=value["score"], comparisonState="known", comparisonReason=None)
+        return result
 
     def propose(self, identifier, body):
         with self._lock:

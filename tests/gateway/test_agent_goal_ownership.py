@@ -137,3 +137,13 @@ def test_agent_gap_read_projection_preserves_a_legacy_automatic_snapshot():
             assert value["comparison"]["remainingGapReduction"] == pytest.approx(5 / 9)
             assert value["recordedComparison"]["gapReason"] == "agent_mean_scale"
         assert store.path.read_bytes() == before
+        reference = app.state.agent_rsi.external.get(plan["referenceEvaluationId"])
+        reference["identitySnapshot"]["files"]["packages/agent_rsi/workflow.py"] = "0" * 64
+        workflow = http.get("/api/v1/agents/lab-operator/rsi").json()
+        baseline = next(
+            value for value in workflow["baselines"] if value["evaluationId"] == reference["evaluationId"]
+        )
+        assert baseline["comparisonState"] == "unknown" and baseline["score"] is None
+        assert baseline["recordedScore"] == 40
+        historical = http.get("/api/v1/plans/" + plan["id"]).json()["context"]["reference"]
+        assert historical["score"] == 40

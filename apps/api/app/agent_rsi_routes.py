@@ -139,7 +139,7 @@ def install_agent_rsi_routes(app, manager, agents, external, role_for):
             "agent": agent,
             "layer": "agent",
             "baselines": [
-                service.public_baseline(value)
+                service.public_baseline(value, current=True)
                 for value in service.baselines.values()
                 if value["agentId"] == agent["id"]
             ],

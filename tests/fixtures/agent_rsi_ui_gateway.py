@@ -239,6 +239,16 @@ async def late_contaminated_round(request: Request):
     return await asyncio.to_thread(late_contaminate, str(request.base_url).rstrip("/"))
 
 
+@app.post("/e2e/agent-reference-invalid")
+async def invalidate_reference():
+    service = app.state.agent_rsi
+    version = service.agents.show("lab-operator")["referenceVersion"]
+    baseline = next(value for value in service.baselines.values() if value["harnessVersion"] == version)
+    run = service.external.get(baseline["evaluationId"])
+    run["identitySnapshot"]["files"]["packages/agent_rsi/workflow.py"] = "0" * 64
+    return {"version": version, "recordedScore": baseline["score"]}
+
+
 @app.get("/e2e/storage-roots")
 async def roots():
     settings = app.state.settings
