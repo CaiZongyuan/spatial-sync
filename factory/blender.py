@@ -68,6 +68,11 @@ def verify(blender, mcp, output):
         "mcpCommit": MCP_COMMIT,
         "blenderDownload": BLENDER_DOWNLOAD,
         "addon": None,
+        "license": {
+            "blender": "GPL-3.0-or-later",
+            "mcpForBlender": "MIT",
+            "addon": "MIT",
+        },
         "configuration": {
             "safeMode": "BLENDER_MCP_SAFE_MODE=1",
             "telemetry": "DISABLE_TELEMETRY=true",
@@ -85,7 +90,8 @@ def verify(blender, mcp, output):
             "The server package is 2.2.2; the addon bl_info version is 1.8 in the same pinned commit.",
             "The addon defaults to auto-start; the factory baseline explicitly disables it.",
             "The installed 2.2.2 wheel omits blender_mcp.config, so telemetry cannot initialize; "
-            "the disable flag is still checked with a stub config.",
+            "telemetry is recorded as unavailable rather than verified.",
+            "The Blender binary is GPL-3.0-or-later; MCP for Blender and its addon are MIT.",
             "The addon socket is not auto-started; Blender background mode refuses the interactive server.",
             "BLENDER_MCP_SAFE_MODE covers the MCP path only; "
             "the addon socket accepts local code from any process.",
@@ -159,8 +165,10 @@ def verify(blender, mcp, output):
                 mcp_result.get("safeModeRejected") and mcp_result.get("allowedReachedConnection")
             )
             result["verified"]["telemetryDisabled"] = bool(
-                mcp_result.get("telemetryDisabled")
-                and (result["evidence"].get("blenderResult") or {}).get("contentTelemetryConsent") is False
+                not mcp_result.get("telemetryPackagingGap")
+                and mcp_result.get("telemetryDisabled")
+                and (result["evidence"].get("blenderResult") or {}).get("contentTelemetryConsent")
+                is False
             )
     except (OSError, RuntimeError, subprocess.TimeoutExpired, ValueError) as exc:
         result["evidence"]["error"] = f"{type(exc).__name__}: {exc}"

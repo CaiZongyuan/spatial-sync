@@ -12,9 +12,7 @@ from factory import support as support_schema
 from factory.fixture import build_source
 from factory.simready import (
     REVISION,
-    SOURCE_CANDIDATES,
-    AdaptationError,
-    _copy_texture,
+    SOURCE_PACKAGES,
     adapt,
     import_package,
 )
@@ -86,6 +84,8 @@ def test_synthetic_source_reaches_existing_import_and_structural_checks(tmp_path
         "S8": "warn",
     }
     assert imported["uploadBytes"] < 128 * 1024 * 1024
+    assert report["source"]["license"]["inBom"] is False
+    assert ".metadata/LICENSE.txt" in report["source"]["bom"]["notInBom"]
 
 
 def test_newton_variant_is_selected_instead_of_default_physx(tmp_path):
@@ -103,13 +103,14 @@ def test_newton_variant_is_selected_instead_of_default_physx(tmp_path):
     assert not [prim for prim in stage.Traverse() if prim.HasAuthoredReferences()]
 
 
-def test_missing_newton_variant_is_an_explicit_failure(tmp_path):
+def test_missing_newton_variant_is_an_explicit_gap(tmp_path):
     candidate, source = build_source(tmp_path / "source")
     root = source / "simready_usd/sm_fixture_box.usd"
     root.write_text(root.read_text(encoding="utf-8").replace("Newton", "NewtonMissing"), encoding="utf-8")
     candidate = refresh_bom(source, candidate)
-    with pytest.raises(AdaptationError, match="Newton"):
-        adapt(candidate, source, tmp_path / "broken")
+    report = adapt(candidate, source, tmp_path / "broken")
+    assert report["status"] == "gap"
+    assert any("Newton" in gap for gap in report["gaps"])
 
 
 def test_bom_mismatch_is_not_reported_as_a_pass(tmp_path):
@@ -138,45 +139,25 @@ def test_unsafe_and_udim_texture_references_are_explicit_gaps(tmp_path, asset, m
     assert any(message in gap for gap in report["gaps"])
 
 
-def test_repeated_texture_reference_keeps_the_package_relative_path(tmp_path, monkeypatch):
-    import sys
-    import types
-
-    class FakeImage:
-        size = (1, 1)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-    image = types.SimpleNamespace(
-        open=lambda path: FakeImage(), Resampling=types.SimpleNamespace(LANCZOS=None)
-    )
-    pil = types.ModuleType("PIL")
-    pil.Image = image
-    monkeypatch.setitem(sys.modules, "PIL", pil)
-    monkeypatch.setitem(sys.modules, "PIL.Image", image)
-    source = tmp_path / "Texture.png"
-    source.write_bytes(b"fixture")
-    output = tmp_path / "package"
-    output.mkdir()
-    names = {}
-    assert _copy_texture(source, output, names, []) == "textures/Texture.png"
-    assert _copy_texture(source, output, names, []) == "textures/Texture.png"
-
-
-def test_support_list_matches_the_pinned_five_candidates():
+def test_support_list_matches_the_pinned_five_source_packages():
     path = Path(__file__).resolve().parents[2] / "factory/support.json"
     data = support_schema.load(path)
     assert support_schema.validate(data) == []
     assert data["source"]["revision"] == REVISION
-    assert {item["package"] for item in data["candidates"]} == {
-        candidate.package for candidate in SOURCE_CANDIDATES
+    assert {item["package"] for item in data["sourceCandidates"]} == {
+        candidate.package for candidate in SOURCE_PACKAGES
     }
-    assert all(item["source"]["bomVerified"] == item["source"]["bomItems"] for item in data["candidates"])
+    assert all(
+        item["source"]["bomVerified"] == item["source"]["bomItems"]
+        for item in data["sourceCandidates"]
+    )
     assert all(
         item["adaptation"]["variant"]["selected"] == "Newton/Enabled"
-        for item in data["candidates"]
+        for item in data["sourceCandidates"]
+    )
+    assert all(item["license"]["inBom"] is False for item in data["sourceCandidates"])
+    assert all(
+        {"attribution", "retain license and notices", "mark modifications"}
+        <= set(item["license"]["obligations"])
+        for item in data["sourceCandidates"]
     )

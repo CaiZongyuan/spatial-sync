@@ -15,6 +15,7 @@ import argparse
 import json
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,8 +27,8 @@ from factory import support as support_schema  # noqa: E402
 from factory.fixture import build_source  # noqa: E402
 from factory.simready import (  # noqa: E402
     REVISION,
-    SOURCE_BY_PACKAGE,
-    SOURCE_CANDIDATES,
+    SOURCE_PACKAGE_BY_NAME,
+    SOURCE_PACKAGES,
     adapt,
     download_package,
     import_package,
@@ -35,8 +36,9 @@ from factory.simready import (  # noqa: E402
 )
 
 
-def check():
-    """Run the synthetic end-to-end journey and validate the committed support list."""
+def _synthetic():
+    """Run the synthetic journey and return its errors and wall-clock seconds."""
+    started = time.perf_counter()
     errors = []
     with tempfile.TemporaryDirectory(prefix="sf0-check-") as temporary:
         root = Path(temporary)
@@ -55,12 +57,29 @@ def check():
                 errors.append(f"synthetic package did not pass {identifier}")
         if report.get("variant", {}).get("selected") != "Newton/Enabled":
             errors.append("adapter did not select the Newton variant")
+    return errors, round(time.perf_counter() - started, 2)
+
+
+def check():
+    """Run the synthetic end-to-end journey and validate the committed support list."""
+    errors, seconds = _synthetic()
     support_path = REPO_ROOT / "factory" / "support.json"
-    if support_path.is_file():
-        errors.extend(support_schema.validate(support_schema.load(support_path)))
+    if not support_path.is_file():
+        errors.append("factory/support.json is missing")
+    else:
+        data = support_schema.load(support_path)
+        errors.extend(support_schema.validate(data))
+        candidates = data.get("sourceCandidates") or []
+        if not any(
+            item.get("adaptation", {}).get("status") == "pass"
+            and item.get("import", {}).get("status") == "pass"
+            for item in candidates
+        ):
+            errors.append("support list has no source package that completed adaptation and import")
     result = {
         "command": "check",
         "synthetic": "pass" if not errors else "fail",
+        "syntheticSeconds": seconds,
         "supportList": "checked" if support_path.is_file() else "missing",
         "errors": errors,
     }
@@ -70,6 +89,7 @@ def check():
 
 def _entry(candidate, report, imported):
     source = report.get("source") or {}
+    bom = source.get("bom") or {}
     adaptation = {
         "status": report.get("status"),
         "gaps": report.get("gaps", []),
@@ -84,7 +104,10 @@ def _entry(candidate, report, imported):
     usage = {
         "dressing": imported.get("dressingUsable", "unknown"),
         "staticCollision": imported.get("staticCollisionUsable", "unknown"),
-        "note": "Static collision follows S1/S2/S4/S6 plus Newton P1/P3; other failing checks stay visible.",
+        "note": (
+            "Static collision follows S1/S2/S4/S6, an authored collision body "
+            "and Newton P1/P3; other failing checks stay visible."
+        ),
     }
     return {
         "package": candidate.package,
@@ -99,15 +122,18 @@ def _entry(candidate, report, imported):
             "expectedFiles": source.get("expectedFiles"),
             "expectedBytes": source.get("expectedBytes"),
             "rootUsd": source.get("rootUsd"),
-            "bomItems": (source.get("bom") or {}).get("items"),
-            "bomVerified": (source.get("bom") or {}).get("verified"),
-            "bomMissing": (source.get("bom") or {}).get("missing"),
-            "bomMismatched": (source.get("bom") or {}).get("mismatched"),
-            "bomNotInBom": (source.get("bom") or {}).get("notInBom"),
+            "bomItems": bom.get("items"),
+            "bomVerified": bom.get("verified"),
+            "bomMissing": bom.get("missing"),
+            "bomMismatched": bom.get("mismatched"),
+            "bomNotInBom": bom.get("notInBom"),
+            "bomSha256": bom.get("sha256"),
+            "bomBytes": bom.get("bytes"),
         },
         "license": source.get("license"),
         "mdl": {
             "externalImports": (source.get("mdl") or {}).get("externalImports", []),
+            "licenseEvidence": (source.get("mdl") or {}).get("licenseEvidence", []),
             "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path.",
         },
         "upstreamValidation": {
@@ -138,6 +164,7 @@ def _blender_summary(data):
         "mcpCommit",
         "blenderDownload",
         "addon",
+        "license",
         "configuration",
         "verified",
         "notes",
@@ -154,9 +181,9 @@ def evidence(args):
     report_root = output / "reports"
     report_root.mkdir(exist_ok=True)
     selected = (
-        [SOURCE_BY_PACKAGE[name] for name in args.package]
+        [SOURCE_PACKAGE_BY_NAME[name] for name in args.package]
         if args.package
-        else list(SOURCE_CANDIDATES)
+        else list(SOURCE_PACKAGES)
     )
     entries = []
     for candidate in selected:
@@ -195,7 +222,9 @@ def evidence(args):
             )
         entries.append(_entry(candidate, report, imported))
     result = support_schema.empty(datetime.now(UTC).isoformat(timespec="seconds"))
-    result["candidates"] = sorted(entries, key=lambda item: item["package"])
+    result["sourceCandidates"] = sorted(entries, key=lambda item: item["package"])
+    _, seconds = _synthetic()
+    result["ci"]["actualAddedSeconds"] = seconds
     blender_evidence = Path(args.blender_evidence) if args.blender_evidence else output / "blender.json"
     if blender_evidence.is_file():
         result["blender"] = _blender_summary(support_schema.load(blender_evidence))
@@ -207,7 +236,7 @@ def evidence(args):
         Path(args.support_out).write_text(
             json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-    print(json.dumps({"support": str(support_path), "candidates": len(entries)}, indent=2))
+    print(json.dumps({"support": str(support_path), "sourceCandidates": len(entries)}, indent=2))
     return 0 if all(item["adaptation"]["status"] != "fail" for item in entries) else 1
 
 
@@ -216,7 +245,13 @@ def blender(args):
 
     result = verify(Path(args.blender), Path(args.mcp), Path(args.out))
     print(json.dumps(result, indent=2))
-    return 0 if all(result["verified"].values()) else 1
+    required = all(
+        result["verified"].get(field) for field in ("backgroundScript", "safeMode", "providersDisabled")
+    )
+    telemetry = result["verified"].get("telemetryDisabled") or "unavailable" in str(
+        result["configuration"].get("telemetryRuntime")
+    )
+    return 0 if required and telemetry else 1
 
 
 def main(argv=None):
@@ -227,7 +262,7 @@ def main(argv=None):
     evidence_parser.add_argument("--cache", default=".scratch/sf0/cache")
     evidence_parser.add_argument("--out", default=".scratch/sf0/evidence")
     evidence_parser.add_argument(
-        "--package", action="append", choices=[item.package for item in SOURCE_CANDIDATES]
+        "--package", action="append", choices=[item.package for item in SOURCE_PACKAGES]
     )
     evidence_parser.add_argument("--skip-download", action="store_true")
     evidence_parser.add_argument("--blender-evidence")

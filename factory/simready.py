@@ -28,6 +28,8 @@ REVISION = "524747d9b5e1f21b5b18b56041788c01d745f1a1"
 RECIPE = "simready-newton-usdpreview-v1"
 ALLOWED_LICENSES = {"CC0-1.0", "CC-BY-4.0"}
 STAGE_UP = "Z"
+USABLE_STRUCTURE = (1, 2, 4, 6)
+STATIC_PHYSICS = ("P1", "P3")
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ class SourceCandidate:
     role: str
 
 
-SOURCE_CANDIDATES = (
+SOURCE_PACKAGES = (
     SourceCandidate(
         "container_recycle_square_blue_a02",
         "environment/recycle-container",
@@ -88,7 +90,7 @@ SOURCE_CANDIDATES = (
         "dressing and static collision prop",
     ),
 )
-SOURCE_BY_PACKAGE = {candidate.package: candidate for candidate in SOURCE_CANDIDATES}
+SOURCE_PACKAGE_BY_NAME = {candidate.package: candidate for candidate in SOURCE_PACKAGES}
 
 
 class SourceError(Exception):
@@ -238,18 +240,26 @@ def _safe_relative(value):
 
 def _mdl_imports(source_dir):
     source_dir = Path(source_dir)
-    files, external = [], []
+    files, external, license_evidence = [], [], []
     for path in sorted(source_dir.rglob("*.mdl")):
         relative = path.relative_to(source_dir).as_posix()
         files.append(relative)
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        header = text[:4096]
+        if "NVIDIA Corporation" in header and "Redistributions of source code" in header:
+            license_evidence.append(
+                {"file": relative, "license": "BSD-3-Clause (NVIDIA header)", "evidence": "header"}
+            )
+        else:
+            license_evidence.append({"file": relative, "license": "unknown", "evidence": "header"})
+        for line in text.splitlines():
             statement = line.strip()
             if not statement.startswith("import "):
                 continue
             target = statement.removeprefix("import ").split(";", 1)[0].strip()
             if target.startswith("::"):
                 external.append({"file": relative, "import": target})
-    return {"files": files, "externalImports": external}
+    return {"files": files, "externalImports": external, "licenseEvidence": license_evidence}
 
 
 def _upstream_validation(stage):
@@ -335,7 +345,8 @@ def inspect_source(candidate, source_dir):
             "attribution": f"NVIDIA SimReady asset {package}",
             "obligations": obligations,
         },
-        "bom": _bom_report(source_dir, bom),
+        "bom": _bom_report(source_dir, bom)
+        | {"sha256": sha256_file(bom_path), "bytes": bom_path.stat().st_size},
         "rootUsd": root_relative,
         "mdl": _mdl_imports(source_dir),
         "upstreamValidation": _upstream_validation(stage),
@@ -977,7 +988,12 @@ def adapt(candidate, source_dir, output_dir):
     if source_stage is None:
         raise AdaptationError(f"Cannot open {source['rootUsd']}")
     source_stage.SetEditTarget(source_stage.GetSessionLayer())
-    report["variant"] = _select_newton(source_stage)
+    try:
+        report["variant"] = _select_newton(source_stage)
+    except AdaptationError as exc:
+        report["gaps"].append(str(exc))
+        report["status"] = "gap"
+        return report
     report["uninstanced"] = _uninstance(source_stage)
     gaps, approximations = report["gaps"], report["approximations"]
     texture_names, texture_map, image_cache = {}, {}, {}
@@ -1162,15 +1178,19 @@ def import_package(package_dir, state_root, library_root, *, structural_only=Fal
         return {"status": "fail", "reason": exc.detail.get("message", str(exc)), "detail": exc.detail}
     checks = job["validation"].get("checks", [])
     physics_status = (job["validation"].get("physics") or {}).get("status")
+    metadata = yaml.safe_load((Path(package_dir) / "asset.yaml").read_text(encoding="utf-8"))
+    collision = (metadata.get("physics") or {}).get("collision") == "authored"
     structural_failures = [
         check for check in checks if check["id"].startswith("S") and check["status"] == "fail"
     ]
     validation_failures = [check for check in checks if check["status"] == "fail"]
     structural = {check["id"]: check["status"] for check in checks if check["id"].startswith("S")}
     physics = {check["id"]: check["status"] for check in checks if check["id"].startswith("P")}
-    usable = all(structural.get(f"S{index}") == "pass" for index in (1, 2, 4, 6))
+    usable = all(structural.get(f"S{index}") == "pass" for index in USABLE_STRUCTURE)
     static = (
-        usable and all(physics.get(identifier) == "pass" for identifier in ("P1", "P3"))
+        usable
+        and collision
+        and all(physics.get(identifier) == "pass" for identifier in STATIC_PHYSICS)
         if physics_status == "completed"
         else "unknown"
     )
@@ -1185,6 +1205,7 @@ def import_package(package_dir, state_root, library_root, *, structural_only=Fal
         "structural": structural,
         "physics": physics,
         "physicsStatus": physics_status,
+        "collisionAuthored": collision,
         "validationFailures": [
             {"id": check["id"], "message": check["message"]} for check in validation_failures
         ],

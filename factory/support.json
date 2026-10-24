@@ -1,6 +1,6 @@
 {
   "spec": "LAB_SCENE_FACTORY_SPEC_V1",
-  "checkedAt": "2026-10-24T13:35:44+00:00",
+  "checkedAt": "2026-10-24T13:53:52+00:00",
   "source": {
     "dataset": "nvidia/simready-assets",
     "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1"
@@ -24,6 +24,11 @@
       "name": "MCP for Blender",
       "version": "1.8"
     },
+    "license": {
+      "blender": "GPL-3.0-or-later",
+      "mcpForBlender": "MIT",
+      "addon": "MIT"
+    },
     "configuration": {
       "safeMode": "BLENDER_MCP_SAFE_MODE=1",
       "telemetry": "DISABLE_TELEMETRY=true",
@@ -35,19 +40,20 @@
     "verified": {
       "backgroundScript": true,
       "safeMode": true,
-      "telemetryDisabled": true,
+      "telemetryDisabled": false,
       "providersDisabled": true
     },
     "notes": [
       "The server package is 2.2.2; the addon bl_info version is 1.8 in the same pinned commit.",
       "The addon defaults to auto-start; the factory baseline explicitly disables it.",
-      "The installed 2.2.2 wheel omits blender_mcp.config, so telemetry cannot initialize; the disable flag is still checked with a stub config.",
+      "The installed 2.2.2 wheel omits blender_mcp.config, so telemetry cannot initialize; telemetry is recorded as unavailable rather than verified.",
+      "The Blender binary is GPL-3.0-or-later; MCP for Blender and its addon are MIT.",
       "The addon socket is not auto-started; Blender background mode refuses the interactive server.",
       "BLENDER_MCP_SAFE_MODE covers the MCP path only; the addon socket accepts local code from any process."
     ],
     "evidence": "Blender and MCP probe output is kept in the delivery evidence directory."
   },
-  "candidates": [
+  "sourceCandidates": [
     {
       "package": "box_cardboard_a01",
       "localAssetId": "environment/cardboard-box",
@@ -72,7 +78,9 @@
           ".metadata/com.nvidia.simready.packaging.bom.json",
           ".metadata/com.nvidia.simready.root_usds.json",
           "com.nvidia.simready.packaging.json"
-        ]
+        ],
+        "bomSha256": "2e84f1414884ec776cb8fa67021688b87c1ab79a3b0083ce5eba3abb3679fecc",
+        "bomBytes": 7116
       },
       "license": {
         "name": "CC-BY-4.0",
@@ -199,6 +207,23 @@
             "import": "::anno::*"
           }
         ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
         "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
       },
       "upstreamValidation": {
@@ -264,7 +289,7 @@
         "status": "pass",
         "reason": "",
         "assetVersion": "environment/cardboard-box@1",
-        "contentHash": "ebc50f69cff2d7f58c83e4bdd5c29b270d96c2748bd2b527e01f195e33e8fc43",
+        "contentHash": "bb22bf60b7cb31cfa11554115143f9721f475ca78467870212a61f80e0bb0745",
         "uploadBytes": 19097600,
         "structural": {
           "S1": "pass",
@@ -295,7 +320,7 @@
       "usage": {
         "dressing": true,
         "staticCollision": true,
-        "note": "Static collision follows S1/S2/S4/S6 plus Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
       },
       "evidence": "reports/box_cardboard_a01.json"
     },
@@ -323,7 +348,9 @@
           ".metadata/com.nvidia.simready.packaging.bom.json",
           ".metadata/com.nvidia.simready.root_usds.json",
           "com.nvidia.simready.packaging.json"
-        ]
+        ],
+        "bomSha256": "c3cd440ceb50f2d85b4b52adbfb2b825298679bc9a402477844eeeb959f264c2",
+        "bomBytes": 9682
       },
       "license": {
         "name": "CC-BY-4.0",
@@ -450,6 +477,23 @@
             "import": "::anno::*"
           }
         ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
         "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
       },
       "upstreamValidation": {
@@ -518,7 +562,7 @@
         "status": "pass",
         "reason": "",
         "assetVersion": "environment/utility-bucket@1",
-        "contentHash": "f7ceae614f2d4dc0452d5020693b750d94ca59ad8613b1b904e36c0c000add61",
+        "contentHash": "36dde4c8b9c34ed5909d8f0d754255fd720c52c58319797446df6ead7b42063b",
         "uploadBytes": 16261120,
         "structural": {
           "S1": "pass",
@@ -544,7 +588,7 @@
       "usage": {
         "dressing": true,
         "staticCollision": true,
-        "note": "Static collision follows S1/S2/S4/S6 plus Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
       },
       "evidence": "reports/bucket_utility_gray_a01.json"
     },
@@ -572,7 +616,9 @@
           ".metadata/com.nvidia.simready.packaging.bom.json",
           ".metadata/com.nvidia.simready.root_usds.json",
           "com.nvidia.simready.packaging.json"
-        ]
+        ],
+        "bomSha256": "a72f1055a5ec153b6fb1c8f575fb2ee695db824e64c2beacaf7ad02228a21ccf",
+        "bomBytes": 6419
       },
       "license": {
         "name": "CC-BY-4.0",
@@ -699,6 +745,23 @@
             "import": "::anno::*"
           }
         ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
         "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
       },
       "upstreamValidation": {
@@ -761,7 +824,7 @@
         "status": "pass",
         "reason": "",
         "assetVersion": "environment/recycle-container@1",
-        "contentHash": "5f1350e3f4f5fd8ad89ccb6642ff9b8078a3fc147342ad1f0f4a7bf326cfc9c3",
+        "contentHash": "e7a89c02d21e41234c064a087838681070b1353e424caadfdd41cec255a3c151",
         "uploadBytes": 8816640,
         "structural": {
           "S1": "pass",
@@ -792,7 +855,7 @@
       "usage": {
         "dressing": true,
         "staticCollision": false,
-        "note": "Static collision follows S1/S2/S4/S6 plus Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
       },
       "evidence": "reports/container_recycle_square_blue_a02.json"
     },
@@ -820,7 +883,9 @@
           ".metadata/com.nvidia.simready.packaging.bom.json",
           ".metadata/com.nvidia.simready.root_usds.json",
           "com.nvidia.simready.packaging.json"
-        ]
+        ],
+        "bomSha256": "23a7c08852ccd14232957dd261e1a614d655e185fc35b250f2b895c8d82c001b",
+        "bomBytes": 10702
       },
       "license": {
         "name": "CC-BY-4.0",
@@ -947,6 +1012,23 @@
             "import": "::anno::*"
           }
         ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
         "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
       },
       "upstreamValidation": {
@@ -1029,7 +1111,7 @@
       "usage": {
         "dressing": "unknown",
         "staticCollision": "unknown",
-        "note": "Static collision follows S1/S2/S4/S6 plus Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
       },
       "evidence": "reports/desk_a01.json"
     },
@@ -1057,7 +1139,9 @@
           ".metadata/com.nvidia.simready.packaging.bom.json",
           ".metadata/com.nvidia.simready.root_usds.json",
           "com.nvidia.simready.packaging.json"
-        ]
+        ],
+        "bomSha256": "7d3b7c9550d5b1037df44080c95d12965f110fd61b93ea85ada1eb26bbb157a4",
+        "bomBytes": 15040
       },
       "license": {
         "name": "CC-BY-4.0",
@@ -1184,6 +1268,23 @@
             "import": "::anno::*"
           }
         ],
+        "licenseEvidence": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause (NVIDIA header)",
+            "evidence": "header"
+          }
+        ],
         "note": "MDL rendering is not supported; UsdPreviewSurface fallback is the supported path."
       },
       "upstreamValidation": {
@@ -1233,7 +1334,7 @@
       "usage": {
         "dressing": "unknown",
         "staticCollision": "unknown",
-        "note": "Static collision follows S1/S2/S4/S6 plus Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
       },
       "evidence": "reports/equipment_utility_cart_e01.json"
     }
@@ -1257,6 +1358,7 @@
   "ci": {
     "command": "uv run --no-sync python factory/verify.py check",
     "lane": "core",
-    "expectedAddedSeconds": 10
+    "expectedAddedSeconds": 10,
+    "actualAddedSeconds": 1.52
   }
 }

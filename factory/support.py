@@ -5,7 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from factory.simready import DATASET, REVISION, SOURCE_CANDIDATES
+from factory.simready import (
+    DATASET,
+    REVISION,
+    SOURCE_PACKAGES,
+    STATIC_PHYSICS,
+    USABLE_STRUCTURE,
+)
 
 REQUIRED_LIMITS = {
     "sourcePackageBytes": 512 * 1024 * 1024,
@@ -24,6 +30,11 @@ BLENDER_DOWNLOAD = (
     "https://download.blender.org/release/Blender4.5/blender-4.5.9-windows-x64.zip"
 )
 ADDON_VERSION = "1.8"
+BLENDER_LICENSES = {
+    "blender": "GPL-3.0-or-later",
+    "mcpForBlender": "MIT",
+    "addon": "MIT",
+}
 
 
 def empty(checked_at):
@@ -37,11 +48,15 @@ def empty(checked_at):
             "mcpForBlender": MCP_VERSION,
             "mcpCommit": MCP_COMMIT,
             "blenderDownload": BLENDER_DOWNLOAD,
+            "addon": {"name": "MCP for Blender", "version": ADDON_VERSION},
+            "license": dict(BLENDER_LICENSES),
             "configuration": {
                 "safeMode": "BLENDER_MCP_SAFE_MODE=1",
                 "telemetry": "DISABLE_TELEMETRY=true",
                 "autoStartServer": False,
+                "autoStartServerDefault": True,
                 "providersEnabled": False,
+                "telemetryRuntime": "unavailable (wheel omits blender_mcp.config)",
             },
             "verified": {
                 "backgroundScript": False,
@@ -51,7 +66,7 @@ def empty(checked_at):
             },
             "evidence": None,
         },
-        "candidates": [],
+        "sourceCandidates": [],
         "limitations": [
             "Only the pinned NVIDIA SimReady package family is prepared; "
             "this is not a general converter.",
@@ -81,6 +96,7 @@ def empty(checked_at):
             "command": "uv run --no-sync python factory/verify.py check",
             "lane": "core",
             "expectedAddedSeconds": 10,
+            "actualAddedSeconds": None,
         },
     }
 
@@ -106,19 +122,21 @@ def validate(data):
         errors.append("the paired MCP commit is not recorded")
     if (blender.get("addon") or {}).get("version") != ADDON_VERSION:
         errors.append("the paired addon version is not recorded")
+    if blender.get("license") != BLENDER_LICENSES:
+        errors.append("the separate Blender/MCP/addon licenses are not recorded")
     configuration = blender.get("configuration") or {}
     if (
         configuration.get("autoStartServer") is not False
         or configuration.get("autoStartServerDefault") is not True
     ):
         errors.append("the addon auto-start baseline is not recorded honestly")
-    candidates = data.get("candidates")
+    candidates = data.get("sourceCandidates")
     if not isinstance(candidates, list):
-        return errors + ["candidates must be a list"]
+        return errors + ["sourceCandidates must be a list"]
     names = [item.get("package") for item in candidates]
-    if sorted(names) != sorted(candidate.package for candidate in SOURCE_CANDIDATES):
-        errors.append("support list must contain exactly the five pinned candidates")
-    expected = {candidate.package: candidate for candidate in SOURCE_CANDIDATES}
+    if sorted(names) != sorted(candidate.package for candidate in SOURCE_PACKAGES):
+        errors.append("support list must contain exactly the five pinned source packages")
+    expected = {candidate.package: candidate for candidate in SOURCE_PACKAGES}
     for item in candidates:
         prefix = str(item.get("package"))
         candidate = expected.get(prefix)
@@ -134,6 +152,29 @@ def validate(data):
             errors.append(f"{prefix}: source size does not match the pinned package")
         if not isinstance(source.get("url"), str) or not source["url"].startswith("https://"):
             errors.append(f"{prefix}: source URL is missing")
+        if not isinstance(source.get("bomSha256"), str) or len(source["bomSha256"]) != 64:
+            errors.append(f"{prefix}: BOM digest is missing")
+        adaptation = item.get("adaptation") or {}
+        status = adaptation.get("status")
+        if status not in ("pass", "gap", "fail"):
+            errors.append(f"{prefix}: adaptation status is invalid")
+        if status == "pass" and (
+            source.get("bomVerified") != source.get("bomItems")
+            or source.get("bomMissing")
+            or source.get("bomMismatched")
+        ):
+            errors.append(f"{prefix}: pass has an incomplete BOM closure")
+        if status == "pass" and (adaptation.get("variant") or {}).get("selected") != "Newton/Enabled":
+            errors.append(f"{prefix}: Newton variant selection is not recorded")
+        if status == "pass":
+            output = adaptation.get("output") or {}
+            visual = adaptation.get("visual") or {}
+            if not output.get("bytes") or not visual.get("triangles"):
+                errors.append(f"{prefix}: pass has no measured output")
+            if adaptation.get("gaps"):
+                errors.append(f"{prefix}: pass still lists gaps")
+        elif not adaptation.get("gaps"):
+            errors.append(f"{prefix}: a non-passing adaptation must name its gap")
         license_info = item.get("license") or {}
         if license_info.get("name") not in ("CC0-1.0", "CC-BY-4.0"):
             errors.append(f"{prefix}: license decision is missing")
@@ -141,47 +182,55 @@ def validate(data):
             errors.append(f"{prefix}: license evidence hash is missing")
         if not isinstance(license_info.get("inBom"), bool):
             errors.append(f"{prefix}: license BOM membership is not recorded")
-        if not isinstance(license_info.get("obligations"), list):
+        obligations = license_info.get("obligations")
+        if not isinstance(obligations, list):
             errors.append(f"{prefix}: license obligations are not recorded")
-        if source.get("bomVerified") != source.get("bomItems"):
-            errors.append(f"{prefix}: BOM closure is not fully verified")
-        adaptation = item.get("adaptation") or {}
-        if adaptation.get("status") not in ("pass", "gap", "fail"):
-            errors.append(f"{prefix}: adaptation status is invalid")
-        if (adaptation.get("variant") or {}).get("selected") != "Newton/Enabled":
-            errors.append(f"{prefix}: Newton variant selection is not recorded")
-        if adaptation.get("status") == "pass":
-            output = adaptation.get("output") or {}
-            visual = adaptation.get("visual") or {}
-            if not output.get("bytes") or not visual.get("triangles"):
-                errors.append(f"{prefix}: pass has no measured output")
-            if adaptation.get("gaps"):
-                errors.append(f"{prefix}: pass still lists gaps")
+        elif license_info.get("name") == "CC-BY-4.0" and not {
+            "attribution",
+            "retain license and notices",
+            "mark modifications",
+        }.issubset(obligations):
+            errors.append(f"{prefix}: CC-BY obligations are incomplete")
+        mdl = item.get("mdl") or {}
+        if not isinstance(mdl.get("licenseEvidence"), list):
+            errors.append(f"{prefix}: MDL attachment license evidence is missing")
         import_info = item.get("import") or {}
         if import_info.get("status") not in ("pass", "gap", "fail"):
             errors.append(f"{prefix}: import status is invalid")
         if import_info.get("physicsStatus") not in ("completed", "skipped", None):
             errors.append(f"{prefix}: physics runtime status is not recorded")
-        if adaptation.get("status") == "pass" and import_info.get("status") == "fail":
+        if status == "pass" and import_info.get("status") == "fail":
             errors.append(f"{prefix}: adapted package failed the existing import")
         structure = import_info.get("structural") or {}
         physics = import_info.get("physics") or {}
         usage = item.get("usage") or {}
+        if usage.get("dressing") not in (True, False, "unknown"):
+            errors.append(f"{prefix}: dressing usage is not measured or unknown")
         if usage.get("staticCollision") not in (True, False, "unknown"):
             errors.append(f"{prefix}: staticCollision usage is not measured or unknown")
         if usage.get("staticCollision") is True:
-            if not all(structure.get(f"S{index}") == "pass" for index in (1, 2, 4, 6)):
+            if not all(structure.get(f"S{index}") == "pass" for index in USABLE_STRUCTURE):
                 errors.append(f"{prefix}: staticCollision claims S1/S2/S4/S6")
-            if not all(physics.get(identifier) == "pass" for identifier in ("P1", "P3")):
+            if not (adaptation.get("physics") or {}).get("collision") == "authored":
+                errors.append(f"{prefix}: staticCollision claims an authored collision body")
+            if not all(physics.get(identifier) == "pass" for identifier in STATIC_PHYSICS):
                 errors.append(f"{prefix}: staticCollision claims Newton P1/P3")
         if usage.get("dressing") is True and not all(
-            structure.get(f"S{index}") == "pass" for index in (1, 2, 4, 6)
+            structure.get(f"S{index}") == "pass" for index in USABLE_STRUCTURE
         ):
             errors.append(f"{prefix}: dressing claims S1/S2/S4/S6")
     verified = blender.get("verified") or {}
-    for field in ("backgroundScript", "safeMode", "telemetryDisabled", "providersDisabled"):
+    for field in ("backgroundScript", "safeMode", "providersDisabled"):
         if verified.get(field) is not True:
             errors.append(f"blender.{field} must be verified true")
+    if verified.get("telemetryDisabled") is not True and "unavailable" not in str(
+        configuration.get("telemetryRuntime")
+    ):
+        errors.append("blender.telemetryDisabled must be verified or explicitly unavailable")
+    ci = data.get("ci") or {}
+    actual = ci.get("actualAddedSeconds")
+    if not isinstance(actual, (int, float)) or actual <= 0:
+        errors.append("ci.actualAddedSeconds must record the measured check time")
     if not isinstance(data.get("unknowns"), list) or not data["unknowns"]:
         errors.append("unknowns must be explicitly recorded")
     if not isinstance(data.get("limitations"), list) or not data["limitations"]:
