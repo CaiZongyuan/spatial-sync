@@ -17,7 +17,6 @@ from tests.gateway.test_agent_rsi import (
     archive,
     candidate_archive,
     complete_scope,
-    controlled_identity,
     suite_archive,
 )
 from tests.gateway.test_external_agent_evaluation import BASE, CENTRIFUGE, create, work
@@ -54,9 +53,11 @@ def accepted_round(http, app):
     assert suite.status_code == 201 and MARKER not in suite.text, suite.text
     run, _ = create(http, suite=suite.json()["id"], purpose="train", caseId=None, runtime=DECLARATION)
     complete_scope(http, run)
-    app.state.agent_rsi.identities = controlled_identity
+    assert app.state.agent_rsi.external.get(run["id"])["comparisonState"] == "known"
     baseline_body = {"evaluationId": run["id"], "requestId": "accepted-baseline"}
     baseline = http.post("/api/v1/agents/lab-operator/baseline", json=baseline_body).json()
+    actual_identity = app.state.agent_rsi.external.get(run["id"])["comparisonIdentity"]
+    assert all(value not in json.dumps(baseline) for value in actual_identity.values())
     original = http.get("/api/v1/agents/lab-operator/versions/1/snapshot").content
     candidate_bytes = candidate_archive(original)
     candidate = http.post(

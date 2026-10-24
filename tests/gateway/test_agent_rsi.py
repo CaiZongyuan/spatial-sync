@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from packages.agent_rsi.workflow import comparison_identity
 from packages.library.common import BUILTIN_ROOT
 from tests.fixtures.training_task import task_archive, training_plan
 from tests.gateway.test_external_agent_evaluation import BASE, DECLARATION, create, work
@@ -132,10 +133,15 @@ def test_real_suite_three_recordings_baseline_fail_closed_and_agent_plan_survive
         completed = complete_scope(http, run)
         assert completed["status"] == "completed" and completed["result"]["episodes"] == 3
         request = {"evaluationId": run["id"], "requestId": "formal-baseline"}
+        # Actual provenance exists; independently prove unavailable producer facts still fail closed.
+        assert app.state.agent_rsi.external.get(run["id"])["comparisonState"] == "known"
+        app.state.agent_rsi.identities = lambda value: comparison_identity(
+            value | {"comparisonIdentity": None}
+        )
         blocked = http.post("/api/v1/agents/lab-operator/baseline", json=request)
         assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "not_comparable"
         assert http.get("/api/v1/agents/lab-operator/rsi").json()["baselines"] == []
-        app.state.agent_rsi.identities = controlled_identity
+        app.state.agent_rsi.identities = comparison_identity
         response = http.post("/api/v1/agents/lab-operator/baseline", json=request)
         assert response.status_code == 200, response.text
         baseline = response.json()
@@ -156,7 +162,6 @@ def test_real_suite_three_recordings_baseline_fail_closed_and_agent_plan_survive
         assert http.get("/api/v1/health").json()["sessionCount"] == 3
     restarted_app = create_app(settings)
     with TestClient(restarted_app) as http:
-        restarted_app.state.agent_rsi.identities = controlled_identity
         saved = http.get("/api/v1/plans/" + plan["id"]).json()
         assert saved["status"] == "submitted" and saved["context"] == plan["context"]
         decision = "/api/v1/approvals/" + plan["approvalId"] + "/decision"

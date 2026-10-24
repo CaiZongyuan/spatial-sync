@@ -263,10 +263,12 @@ class AgentRSI:
 
     @staticmethod
     def public_baseline(value):
+        from apps.api.app.evaluation_views import public_conditions
+
         # Internal environment/judge IDs can bind private inputs; expose safe equivalence only.
         return {key: deepcopy(item) for key, item in value.items() if key != "comparison"} | {
             "conditionsGroup": value["evaluationId"],
-            "conditions": deepcopy(value["comparison"]["conditions"]),
+            "conditions": public_conditions(value["comparison"]["conditions"]),
         }
 
     def propose(self, identifier, body):

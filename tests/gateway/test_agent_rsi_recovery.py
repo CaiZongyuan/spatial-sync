@@ -13,7 +13,6 @@ from tests.gateway.test_agent_rsi import (
     agent_plan,
     candidate_archive,
     complete_scope,
-    controlled_identity,
     suite_archive,
 )
 from tests.gateway.test_external_agent_evaluation import create
@@ -27,7 +26,7 @@ def test_budget_preflight_finite_exception_and_historical_activation_cannot_over
         ).json()
         run, _ = create(http, suite=suite["id"], purpose="train", caseId=None)
         complete_scope(http, run)
-        app.state.agent_rsi.identities = controlled_identity
+        assert app.state.agent_rsi.external.get(run["id"])["comparisonState"] == "known"
         baseline = http.post(
             "/api/v1/agents/lab-operator/baseline",
             json={"evaluationId": run["id"], "requestId": "preflight-baseline"},

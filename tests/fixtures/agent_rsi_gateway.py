@@ -1,6 +1,4 @@
-"""Actual Synthetic transport fixture with an explicitly controlled comparison producer."""
-
-from copy import deepcopy
+"""Actual Synthetic transport fixture using the production comparison identity producer."""
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
@@ -10,15 +8,3 @@ app = create_app(
 )
 
 
-def controlled_identity(run):
-    # Exercises R3 clients independently of #132's producer; no provenance claim is made here.
-    return {
-        "conditions": deepcopy(run["key"]),
-        "implementation": {
-            "environment": "controlled-client-environment",
-            "judge": "controlled-client-judge",
-        },
-    }
-
-
-app.state.agent_rsi.identities = controlled_identity
