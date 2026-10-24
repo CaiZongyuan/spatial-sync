@@ -29,13 +29,17 @@ async def test_installed_runtime_file_grows_and_mcp_retries_without_double_count
         "cacheWriteTokens": 26878, "tokens": None, "requests": None, "turns": 20,
         "llmUsd": 0.3244434, "costSource": "runtime-estimate",
     }
-    assert full["session"]["usage"] | expected == full["session"]["usage"]
+    for key, value in expected.items():
+        assert full["session"]["usage"][key] == value
     assert full["session"]["thinking"] is None
     assert invoke(env, "runtime", "import", str(growing))["idempotent"]
     objects = [json.loads(line) for line in lines]
     array_file = tmp_path / "records.json"
     array_file.write_text(json.dumps(objects), encoding="utf-8")
     assert invoke(env, "runtime", "ingest", str(array_file))["idempotent"]
+    linked = invoke(env, "runtime", "import", str(growing), "--agent", "agent/lab-operator",
+                    "--harness-version", "1")
+    assert linked["session"]["associations"] == {"agentId": "agent/lab-operator", "harnessVersion": 1}
     async with Client(StdioServerParameters(command=str(LW), args=["mcp"], env=env), mode="legacy") as mcp:
         tools = {tool.name: tool for tool in (await mcp.list_tools()).tools}
         assert {"runtime_import", "runtime_list", "runtime_show"} <= tools.keys()
@@ -44,6 +48,9 @@ async def test_installed_runtime_file_grows_and_mcp_retries_without_double_count
         assert schema["properties"]["records"]["type"] == "array"
         repeated = await result(mcp, "runtime_import", records=objects)
         assert repeated["idempotent"] and repeated["addedEvents"] == repeated["updatedEvents"] == 0
+        assert repeated["session"]["associations"] == linked["session"]["associations"]
+        cleared = await result(mcp, "runtime_import", records=objects, clearAssociations=True)
+        assert cleared["session"]["associations"] == {}
         detail = await result(mcp, "runtime_show", id=identifier)
         assert detail["usage"] == full["session"]["usage"]
         assert len(detail["events"]) == 4 and detail["toolCallCount"] == 1
