@@ -49,6 +49,7 @@ def test_actual_core_reference_survives_candidate_only_restart_but_not_helper_or
         "devices",
         "library",
         "assets",
+        "catalog",
         "skills",
     ):
         destination = project / relative
@@ -79,14 +80,22 @@ def test_actual_core_reference_survives_candidate_only_restart_but_not_helper_or
     def stop_all():
         for process, identities in reversed(owned):
             if process.poll() is None:
-                result = subprocess.run(
+                with subprocess.Popen(
                     [sys.executable, str(helper), "stop", identities],
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    check=True,
-                )
-                assert json.loads(result.stdout)["alive"] == []
-                process.wait(timeout=5)
+                ) as stopping:
+                    # The creating parent must reap its child while the verified
+                    # helper waits; a POSIX zombie cannot disappear otherwise.
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                    stdout, stderr = stopping.communicate(timeout=10)
+                    assert stopping.returncode == 0, stderr
+                    assert json.loads(stdout)["alive"] == []
 
     def start(http):
         process = subprocess.Popen(
