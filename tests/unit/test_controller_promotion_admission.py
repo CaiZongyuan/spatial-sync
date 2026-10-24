@@ -49,6 +49,16 @@ def test_current_accepted_candidate_is_compared_to_its_prior_reference_not_itsel
     assert proof.decision == "accepted"
 
 
+def test_native_builtin_teacher_keeps_its_existing_scene_program_identity(tmp_path):
+    store, reference, candidate = accepted_pair(tmp_path)
+    teacher = {"kind": "scene-program", "programId": "robot_arm.newton", "contentHash": "1" * 64}
+    reference["candidateIdentity"] = teacher
+    store.records[reference["evaluationId"]]["result"]["candidateIdentity"] = deepcopy(teacher)
+    proof = accepted_train_evidence(store, CANDIDATE, SCENE)
+    assert proof.prior_reference["candidateIdentity"] == teacher
+    assert proof.current_accepted == candidate
+
+
 def test_later_accepted_candidate_makes_the_old_promotion_stale(tmp_path):
     store, _, candidate = accepted_pair(tmp_path, successes=7)
     result(store, "eval-later", CANDIDATE | {"id": "policy/probe@2", "contentHash": "c" * 64},

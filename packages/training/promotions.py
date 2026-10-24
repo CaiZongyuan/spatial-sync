@@ -43,13 +43,16 @@ def _refuse(code, *, label="unverified", **facts):
 
 def _complete_train(store, row):
     record = store.records.get(row.get("evaluationId"), {})
+    candidate = row.get("candidateIdentity") or {}
+    identity_key = "programId" if candidate.get("kind") == "scene-program" else "id"
     if (
         row.get("split") != "train" or row.get("layer", "embodied") != "embodied"
         or record.get("status") != "completed" or record.get("result") != row
         or record.get("split", "train") != "train"
         or not comparison_identity(row)
         or not isinstance(row.get("candidateIdentity"), dict)
-        or not all(row["candidateIdentity"].get(key) for key in ("kind", "id", "contentHash"))
+        or candidate.get("kind") not in ("policy", "program", "scene-program")
+        or not all(candidate.get(key) for key in (identity_key, "contentHash"))
     ):
         _refuse("incomplete_train_evidence")
     try:
@@ -113,6 +116,7 @@ class ControllerPromotions:
         self.root = Path(manager.settings.state_root) / "controller-promotions"
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._commit_local = threading.local()
         self.qualify = qualification or manager.policy_evidence.qualification
         self.publication = DeploymentPublication(
             manager.library_assets, manager.library, resources, importer, self.root,
@@ -207,8 +211,13 @@ class ControllerPromotions:
                 _refuse("promotion_subject_unavailable")
             suite = self.manager.evaluations.suites.resolve(template["suite"])
             verify_simulation_subject(self.manager, subject, suite, scene)
+            if (subject.document()["candidateIdentity"] != train.current_accepted["candidateIdentity"]
+                    or subject.candidateIdentity.id != body.subject):
+                _refuse("promotion_subject_changed")
             qualification = (self.qualify(body.subject, body.observationCheck)
                              if subject.candidateIdentity.kind == "policy" else {"gate": "exact-code-plan"})
+            if subject.candidateIdentity.kind == "policy" and qualification.get("qualified") is not True:
+                _refuse("observation_evidence_required")
             count = sum(case["split"] == "test" for case in suite.metadata["episodes"])
             if not count:
                 _refuse("promotion_test_unavailable")
@@ -434,13 +443,44 @@ class ControllerPromotions:
                 or approval.details.get("contextHash") != value["contextHash"]
                 or record["intent"]["contextHash"] != value["contextHash"]):
             _refuse("promotion_approval_changed")
-        self._validate(value)
+        if not getattr(self._commit_local, "active", False):
+            self._validate(value)
+            return
+        # The expensive immutable material/qualification checks already ran before
+        # this short guard. Only mutable admission facts can advance under it.
+        context = value["context"]
+        subject = parse_subject(context["subject"])
+        scene = SimpleNamespace(id=context["baseScene"]["id"],
+                                content_hash=context["baseScene"]["contentHash"])
+        proof = accepted_train_evidence(self.manager.evaluations.store,
+            subject.document()["candidateIdentity"], scene,
+            evaluation_id=context["currentAccepted"]["evaluationId"])
+        funding = context["funding"]
+        if (proof.current_accepted != context["currentAccepted"]
+                or proof.prior_reference != context["priorReference"]):
+            _refuse("promotion_context_changed")
+        plans = [(funding["planId"], funding["planRevision"], funding["planApprovalId"])]
+        if subject.candidateIdentity.kind == "program":
+            code = subject.codeApproval
+            plans.append((code.planId, code.planRevision, code.approvalId))
+        for identifier, revision, approval_id in plans:
+            plan = self.manager.training_plans.get(identifier)
+            current = self.manager.training_plans.document(plan)
+            if (current["status"] != "approved" or current["revision"] != revision
+                    or plan.approvalId != approval_id):
+                _refuse("promotion_context_changed")
 
     @contextmanager
     def _commit_context(self, record):
-        with self._lock, self.manager.training_plans._lock, self.manager.evaluations.store.reference_guard():
+        with self._lock:
             self._publication_context(record)
-            yield
+            with self.manager.training_plans._lock, self.manager.evaluations.store.reference_guard():
+                self._commit_local.active = True
+                try:
+                    self._publication_context(record)
+                    yield
+                finally:
+                    self._commit_local.active = False
 
     def _publish(self, value):
         try:

@@ -1,5 +1,6 @@
 """Controlled scores/qualification prove the actual promotion transaction, never learned quality."""
 
+import threading
 from collections import deque
 from copy import deepcopy
 
@@ -160,10 +161,15 @@ def test_private_review_warning_human_decision_and_exact_committed_authority(pro
     assert permit["controller"]["document"]["evaluationId"] == "eval-controlled-candidate"
     assert service.resources.controller("fr3-arm")["current"]["scene"] == deployed.id
     assert client.post(decision, json={"decision": "revoke"}).status_code == 409
+    funding = service.get(promotion["id"])["context"]["funding"]
+    revoke = client.post("/api/v1/approvals/" + funding["planApprovalId"] + "/decision",
+                         json={"decision": "revoke"})
+    assert revoke.status_code == 200, revoke.text
+    assert service.authorize_scene(deployed) == permit
     assert not starts and policy["qualified"] is False
 
 
-def test_publication_interruption_resumes_same_scene_and_controller_revision(promotion_inputs):
+def test_publication_interruption_resumes_same_scene_and_controller_revision(promotion_inputs, tmp_path):
     client, service, policy, scene, starts = promotion_inputs
     promotion = request(client, policy, scene)
     complete_controlled_tests(service, promotion)
@@ -180,12 +186,20 @@ def test_publication_interruption_resumes_same_scene_and_controller_revision(pro
     interrupted = service.publication.read(promotion["id"])
     assert interrupted["phase"] == "scene_published"
     assert service.resources.controller("fr3-arm")["currentVersion"] is None
-    service.publication.after_effect = lambda *_: None
-    recovered = client.get("/api/v1/controller-promotions/" + promotion["id"]).json()
-    assert recovered["status"] == "published", recovered
-    assert recovered["deployment"]["scene"] == interrupted["scene"]
-    assert recovered["deployment"]["controller"]["document"]["version"] == interrupted["controllerVersion"]
-    assert len(service.resources.controller("fr3-arm")["versions"]) == 1 and not starts
+    settings, factory = service.manager.settings, service.manager.factory
+    client.__exit__(None, None, None)  # End this owned gateway before reopening its durable roots.
+    app = create_app(settings, source_factory=factory,
+                     controller_promotion_qualification=controlled_qualification,
+                     controller_publication_validator=ControlledPublicationValidator(
+                         tmp_path / "restart-validation", program_schemas
+                     ))
+    with TestClient(app) as restarted:
+        recovered = restarted.get("/api/v1/controller-promotions/" + promotion["id"]).json()
+        assert recovered["status"] == "published", recovered
+        assert recovered["deployment"]["scene"] == interrupted["scene"]
+        assert recovered["deployment"]["controller"]["document"]["version"] == (
+            interrupted["controllerVersion"])
+        assert len(app.state.robot_resources.controller("fr3-arm")["versions"]) == 1 and not starts
 
 
 def test_new_reference_before_human_decision_blocks_old_intent(promotion_inputs):
@@ -225,3 +239,39 @@ def test_competing_controller_before_current_commit_is_preserved(promotion_input
     assert response.json()["status"] == "blocked"
     assert service.resources.controller("fr3-arm")["currentVersion"] == 99 and not starts
     assert service.publication.read(promotion["id"])["phase"] == "blocked"
+
+
+def test_reference_append_waits_for_the_actual_controller_current_commit(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
+    store = service.manager.evaluations.store
+    later = deepcopy(store.rows[1]) | {"evaluationId": "eval-after-commit"}
+    started, appended = threading.Event(), threading.Event()
+
+    def append_after_current():
+        started.set()
+        store.append(later)
+        appended.set()
+
+    thread = threading.Thread(target=append_after_current, name="owned-reference-append")
+
+    def concurrent(effect, _):
+        if effect == "current_written":
+            thread.start()
+            assert started.wait(1)
+            assert not appended.wait(0.05), "Reference advanced inside the Controller commit guard"
+
+    service.publication.after_effect = concurrent
+    try:
+        response = client.post("/api/v1/approvals/" + review["approvalId"] + "/decision",
+                               json={"decision": "approve"})
+        assert response.status_code == 200 and response.json()["status"] == "published", response.text
+    finally:
+        if thread.ident is not None:
+            thread.join(timeout=2)
+    assert appended.is_set() and not thread.is_alive() and not starts
+    deployed = service.manager.library.resolve(response.json()["deployment"]["scene"]["id"],
+                                               launch=True, source="newton")
+    assert service.authorize_scene(deployed)["candidateIdentity"]["id"] == policy["id"]
