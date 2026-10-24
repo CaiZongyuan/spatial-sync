@@ -46,13 +46,13 @@ async def prepared():
             ),
             {"kind": "user", "name": "fixture-price-editor"},
         )
-        yield service, PLAN_DOCUMENT.validate_python(agent_plan()), descriptor
+        yield service, PLAN_DOCUMENT.validate_python(agent_plan()), descriptor, app
 
 
 async def test_frozen_inputs_use_complete_train_scope_exact_archives_and_no_credential_value(
     prepared, monkeypatch
 ):
-    service, plan, _ = prepared
+    service, plan, _, _ = prepared
 
     def no_secret_resolution(*args):
         raise AssertionError("Plan submission may check credential names only")
@@ -75,7 +75,7 @@ async def test_frozen_inputs_use_complete_train_scope_exact_archives_and_no_cred
 
 
 async def test_new_prices_do_not_reprice_a_stored_quote_or_mutate_immutable_input_identity(prepared):
-    service, plan, _ = prepared
+    service, plan, _, _ = prepared
     frozen = service.freeze(plan)
     old = deepcopy(frozen)
     table = service.resources.prices()
@@ -91,7 +91,7 @@ async def test_new_prices_do_not_reprice_a_stored_quote_or_mutate_immutable_inpu
 
 
 async def test_changed_runtime_or_unknown_bound_cannot_reuse_approved_inputs(prepared):
-    service, plan, descriptor = prepared
+    service, plan, descriptor, _ = prepared
     frozen = service.freeze(plan)
     descriptor["runtimeHash"] = "b" * 64
     with pytest.raises(PlanError, match="Frozen Agent inputs"):
@@ -102,7 +102,7 @@ async def test_changed_runtime_or_unknown_bound_cannot_reuse_approved_inputs(pre
 
 
 async def test_missing_cache_write_price_or_incomplete_case_envelope_never_means_free(prepared):
-    service, plan, _ = prepared
+    service, plan, _, _ = prepared
     table = service.resources.prices()
     table["models"][0]["cacheWriteUsdPerMillion"] = None
     service.resources.put_prices(

@@ -70,7 +70,6 @@ def options(configuration):
         mcp["lab"] = {
             "command": sys.executable,
             "args": ["-I", "-m", "lw", "mcp"],
-            "env": {key: os.environ[key] for key in ("LW_URL", "LW_SESSION", "LW_AGENT_RUN", "LW_TOKEN")},
         }
     thinking = configuration["thinking"]
     return ClaudeAgentOptions(

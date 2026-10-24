@@ -72,6 +72,10 @@ class NotebookService:
         plan = self.manager.training_plans.document(record)
         if plan["status"] != "approved" or body.planRevision not in (None, plan["revision"]):
             raise PlanError("plan_not_approved", "Select the current approved Plan revision", status=409)
+        if plan.get("layer", "embodied") != "embodied":
+            raise PlanError(
+                "evaluation_plan_mismatch", "Embodied evaluation requires an embodied Plan", status=409
+            )
         task = self.manager.tasks.show(plan["task"])
         metadata = task["task"]
         if (

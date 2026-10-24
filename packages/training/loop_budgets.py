@@ -20,6 +20,8 @@ def goal_id(plan):
 
 
 def plan_budget(plan):
+    if plan.get("layer") == "agent":
+        return {name: plan["budget"][name] for name in ("caseRuns", "llmUsd")}
     return {
         "gpuHours": plan["budget"]["gpuHours"],
         "episodes": plan["budget"].get("episodes") or plan["evaluation"]["episodes"],
@@ -61,7 +63,8 @@ class LoopBudgets:
         """Use only the first approval's own immutable Task, never a later declaration."""
         approval = self._approval(record)
         tasks = getattr(self.manager, "tasks", None)
-        if tasks is None or approval.details.get("plan", {}).get("task") != record.plan.task:
+        if (record.plan.layer == "agent" or tasks is None
+                or approval.details.get("plan", {}).get("task") != record.plan.task):
             return None, None
         try:
             task = tasks.show(record.plan.task)  # TaskLibrary verifies immutable package bytes/hash.
@@ -108,6 +111,13 @@ class LoopBudgets:
         evaluations = self._evaluation_records()
         pools = []
         for identity, versions in grouped.items():
+            selected = proposed if proposed is not None and proposed["id"] == identity else (
+                versions[-1].plan.model_dump(mode="json") if versions else {}
+            )
+            if selected.get("layer") == "agent":
+                pools.append(self._agent_pool(identity, versions, current_plans.get(identity),
+                                               proposed if reserve_proposed else None))
+                continue
             matching_jobs = [job for job in jobs if job["planId"] == identity]
             matching_evaluations = [value for value in evaluations if value.get("planId") == identity]
             actual_gpu = sum(job["chargedGpuHours"] for job in matching_jobs)
@@ -170,6 +180,37 @@ class LoopBudgets:
             )
         return pools
 
+    def _agent_pool(self, identity, versions, current, proposed):
+        service = getattr(self.manager, "agent_runs", None)
+        runs = ([run for run in tuple(service.records.values()) if run["planId"] == identity]
+                if service else [])
+        held = [run for run in runs if run["status"] in ("queued", "running", "cancelling")
+                or run.get("cleanupIncomplete")]
+        held_revisions = {run["planRevision"] for run in held}
+        rights = [plan_budget(record.plan.model_dump(mode="json")) for record in versions
+                  if record.plan.revision in held_revisions or (
+                      record is current and (proposed is None or proposed["id"] != identity)
+                      and self._approval(record) and self._approval(record).status == "approved")]
+        if proposed is not None and proposed["id"] == identity:
+            rights.append(plan_budget(proposed))
+        case_runs = sum(run.get("attemptedCaseRuns", 0) for run in runs)
+        money = sum(run.get("usage", {}).get("knownLlmUsd", 0) for run in runs)
+        unknown = any(run.get("usage", {}).get("llmUsd") is None
+                      and run.get("usage", {}).get("unknownUsageRequests", 0) for run in runs)
+        # Provider snapshot reserves only the unspent suffix of an uncertain call.
+        in_flight = sum(run.get("usage", {}).get("reservedUsd", 0) for run in runs)
+        future_money = sum(max(0, run["allocatedLlmUsd"] - run.get("usage", {}).get("knownLlmUsd", 0)
+                               - run.get("usage", {}).get("reservedUsd", 0)) for run in held)
+        future_cases = sum(max(0, run["allocatedCaseRuns"] - run.get("attemptedCaseRuns", 0)) for run in held)
+        effective = {"caseRuns": max([case_runs + future_cases, *(value["caseRuns"] for value in rights)]),
+                     "llmUsd": max([money + in_flight + future_money,
+                                    *(value["llmUsd"] for value in rights)])}
+        return {"planId": identity, "actual": {"caseRuns": case_runs, "llmUsd": None if unknown else money},
+                "knownActual": {"caseRuns": case_runs, "llmUsd": money}, "effective": effective,
+                "unspentCommitment": {"caseRuns": effective["caseRuns"] - case_runs,
+                                      "llmUsd": effective["llmUsd"] - money},
+                "heldJobs": [run["jobId"] for run in held]}
+
     def summary(self, goal, *, proposed=None, declared=None, reserve_proposed=True):
         self.manager.jobs._require_available()
         records, current_plans = self._records(goal)
@@ -184,11 +225,16 @@ class LoopBudgets:
         if authority is None and approved:
             limit, limit_source = None, "unknown"
         elif authority is None:
-            limit, limit_source = deepcopy(declared), "proposed-task-snapshot" if declared else "unknown"
+            agent_source = proposed is not None and proposed.get("layer") == "agent"
+            limit, limit_source = deepcopy(declared), (
+                "proposed-agent-plan" if agent_source else "proposed-task-snapshot"
+            ) if declared else "unknown"
         elif authority[1].goalContext is not None:
             limit, limit_source = (
                 deepcopy(authority[1].goalContext["declaredBudget"]),
-                "approved-task-snapshot",
+                "approved-agent-plan"
+                if authority[1].goalContext.get("sourceSnapshot", {}).get("kind") == "agent-plan"
+                else "approved-task-snapshot",
             )
         else:
             limit, legacy_evidence = self._legacy_limit(authority[1])
@@ -197,17 +243,20 @@ class LoopBudgets:
         deadline = first_at + limit["days"] * 86400 if first_at is not None and limit else None
         expired = deadline is not None and self.clock() >= deadline
         pools = self._pools(records, current_plans, proposed, reserve_proposed=reserve_proposed)
-        actual = {name: sum(pool["actual"][name] for pool in pools) for name in ("gpuHours", "episodes")}
-        effective = {name: sum(pool["effective"][name] for pool in pools) for name in actual}
-        unspent = {name: effective[name] - actual[name] for name in actual}
+        names = [name for name in ("gpuHours", "episodes", "caseRuns", "llmUsd")
+                 if any(name in pool["actual"] for pool in pools)] if pools else ["gpuHours", "episodes"]
+        known = {name: sum(pool.get("knownActual", pool["actual"]).get(name, 0) for pool in pools)
+                 for name in names}
+        actual = {name: None if any(pool["actual"].get(name, 0) is None for pool in pools) else known[name]
+                  for name in names}
+        effective = {name: sum(pool["effective"].get(name, 0) for pool in pools) for name in actual}
+        unspent = {name: effective[name] - known[name] for name in actual}
         exhausted = []
         if limit:
-            if effective["gpuHours"] > limit["gpuHours"] or (
-                limit["gpuHours"] > 0 and effective["gpuHours"] >= limit["gpuHours"]
-            ):
-                exhausted.append("gpuHours")
-            if effective["episodes"] >= limit["episodes"]:
-                exhausted.append("episodes")
+            for name in names:
+                bound = limit.get(name)
+                if bound is not None and (effective[name] > bound or bound > 0 and effective[name] >= bound):
+                    exhausted.append(name)
             if expired:
                 exhausted.append("days")
         basis = {
@@ -239,7 +288,9 @@ class LoopBudgets:
             "actual": actual,
             "unspentCommitment": unspent,
             "effective": effective,
-            "remaining": {name: max(0, limit[name] - effective[name]) if limit else None for name in actual},
+            "remaining": {name: max(0, limit[name] - effective[name])
+                          if limit and limit.get(name) is not None and actual[name] is not None else None
+                          for name in actual},
             "firstApprovedAt": first_at,
             "deadline": deadline,
             "elapsedDays": max(0, (self.clock() - first_at) / 86400) if first_at is not None else 0,
@@ -250,7 +301,8 @@ class LoopBudgets:
             "coverage": {
                 "gpuHours": "Job charged high-water counters; other GPU usage is not metered here",
                 "episodes": "Explicitly linked admitted evaluation attempts, including invalid attempts",
-                "llmUsd": "unavailable: managed Agent execution is outside this issue",
+                "llmUsd": "Managed Agent provider observations and unspent reservations"
+                if "llmUsd" in names else "unavailable: no managed Agent usage is linked to this Goal",
             },
         }
 
@@ -262,14 +314,15 @@ class LoopBudgets:
             raise PlanError(
                 "goal_changed", "A Plan revision cannot move actual usage to another Goal", status=422
             )
-        declared = deepcopy(task["task"]["loopBudget"])
+        agent = task.get("kind") == "agent-plan"
+        declared = deepcopy(task["humanDeclaredLimit"] if agent else task["task"]["loopBudget"])
         review = self.summary(goal, proposed=plan, declared=declared)
         before = self.summary(goal, proposed=plan, declared=declared, reserve_proposed=False)
         review.update(exhaustedBefore=before["exhausted"], remainingBefore=before["remaining"])
         return {
             "version": 1,
             "goalId": goal,
-            "taskContentHash": task["contentHash"],
+            **({"sourceSnapshot": deepcopy(task)} if agent else {"taskContentHash": task["contentHash"]}),
             "declaredBudget": declared,
             "review": review,
         }

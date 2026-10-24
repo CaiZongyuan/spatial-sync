@@ -146,6 +146,10 @@ class TrainingJobs:
         value = self.manager.training_plans.document(record)
         if value["status"] != "approved":
             raise PlanError("plan_not_approved", "The current training plan revision must be approved")
+        if value.get("layer", "embodied") != "embodied":
+            raise PlanError(
+                "agent_run_required", "Start an Agent Plan through its Agent run admission", status=422
+            )
         return value
 
     def request(self, plan_id, seed, actor, request_id, revision=None):

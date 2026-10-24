@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from copy import deepcopy
 from decimal import Decimal
 
 from packages.agents.bundle import prepare_harness
@@ -67,7 +68,7 @@ class AgentPlanInputs:
                 "The Plan cannot cover the complete pinned train scope",
                 status=422,
             )
-        adapter = self.describe_adapter(model, plan.model.thinking)
+        adapter = deepcopy(self.describe_adapter(model, plan.model.thinking))
         context = adapter.get("contextTokens")
         if (
             type(context) is not int

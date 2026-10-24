@@ -3,6 +3,7 @@
 import threading
 import time
 import uuid
+from copy import deepcopy
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
@@ -12,16 +13,17 @@ from packages.info.plans import PlanError
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
 from packages.protocol.schema import Actor
-from packages.training.schema import TrainingPlan
+from packages.training.schema import PLAN_DOCUMENT, PlanDocument
 
 
 class StoredTrainingPlan(BaseModel):
-    plan: TrainingPlan
+    plan: PlanDocument
     requestedBy: Actor
     createdAtMs: float
     approvalId: str | None = None
     changes: list[dict] = Field(default_factory=list)
     goalContext: dict | None = None
+    frozenInputs: dict | None = None
     # The shared attention journal supports plans that have no session context.
     sessionId: None = None
     sceneRevision: None = None
@@ -38,6 +40,7 @@ class TrainingPlanStore:
         self.job_in_use = lambda identity, revision: False
         self.additional_in_use = lambda identity, revision: False
         self.loop_budgets = None
+        self.agent_inputs = None
 
     def startup(self):
         if self.path.exists():
@@ -92,9 +95,9 @@ class TrainingPlanStore:
                 "approvalId": record.approvalId, "approvalStatus": approval.status if approval else None,
                 "approvalMode": "human", "changes": record.changes}
         if record.goalContext is not None:
-            from copy import deepcopy
-
             document["loopBudget"] = deepcopy(record.goalContext["review"])
+        if record.frozenInputs is not None:
+            document["frozenInputs"] = deepcopy(record.frozenInputs)
         return document
 
     def _notify(self, record):
@@ -110,16 +113,26 @@ class TrainingPlanStore:
             value.setdefault("id", plan_id or "plan-" + uuid.uuid4().hex[:16])
             value["revision"] = previous_revision.plan.revision + 1 if previous_revision else 1
             try:
-                plan = TrainingPlan.model_validate(value)
+                plan = PLAN_DOCUMENT.validate_python(value)
                 if plan.status != "draft" or (plan_id and plan.id != plan_id):
                     raise ValueError("Submit draft content; identity and lifecycle are server-owned")
-                task_snapshot = self.tasks.show(plan.task)
-                task = task_snapshot["task"]
-                if plan.evaluation.scene != task["scene"]:
-                    raise ValueError("Plan evaluation must use the pinned Task scene")
                 previous = previous_revision or (self.get(plan.previous) if plan.previous else None)
-                if previous and previous.plan.task.split("@")[0] != plan.task.split("@")[0]:
-                    raise ValueError("Previous plan must address the same Task")
+                if previous and previous.plan.layer != plan.layer:
+                    raise ValueError("A Plan and its revisions cannot change layer")
+                frozen_inputs = None
+                if plan.layer == "agent":
+                    if self.agent_inputs is None:
+                        raise PlanError("agent_runtime_unavailable", "Managed Agent admission is unavailable")
+                    if previous and previous.plan.agent.id != plan.agent.id:
+                        raise ValueError("Previous plan must address the same Agent")
+                    frozen_inputs = self.agent_inputs.freeze(plan)
+                    source_snapshot = self.agent_inputs.source_snapshot(plan, frozen_inputs)
+                else:
+                    source_snapshot = self.tasks.show(plan.task)
+                    if plan.evaluation.scene != source_snapshot["task"]["scene"]:
+                        raise ValueError("Plan evaluation must use the pinned Task scene")
+                    if previous and previous.plan.task.split("@")[0] != plan.task.split("@")[0]:
+                        raise ValueError("Previous plan must address the same Task")
                 if plan.previous == plan.id:
                     raise ValueError("A plan cannot name itself as the previous round")
                 if not plan_id and plan.id in self.records:
@@ -130,15 +143,15 @@ class TrainingPlanStore:
                           if isinstance(exc, ValidationError) else [{"message": str(exc)}])
                 raise PlanError("invalid_plan", "Invalid training plan", status=422, errors=errors) from exc
             fresh = plan.model_dump(mode="json", by_alias=True)
-            goal_context = self.loop_budgets.prepare(fresh, task_snapshot) if self.loop_budgets else None
-            plan = TrainingPlan.model_validate(fresh)
+            goal_context = self.loop_budgets.prepare(fresh, source_snapshot) if self.loop_budgets else None
+            plan = PLAN_DOCUMENT.validate_python(fresh)
             old = previous.plan.model_dump(mode="json", by_alias=True) if previous else {}
             changes = [{"field": key, "before": old.get(key), "after": item}
                        for key, item in fresh.items()
                        if key not in ("id", "revision", "status", "previous") and old.get(key) != item]
             plan.status = "submitted"
             record = StoredTrainingPlan(plan=plan, requestedBy=actor, createdAtMs=time.time() * 1000,
-                                        changes=changes, goalContext=goal_context)
+                                        changes=changes, goalContext=goal_context, frozenInputs=frozen_inputs)
             self._save(record)
             try:
                 approval = self.approvals.submit(subject="plan", subject_id=plan.id, requester=actor,
@@ -146,6 +159,8 @@ class TrainingPlanStore:
                                                  details={"revision": plan.revision,
                                                           "plan": plan.model_dump(mode="json", by_alias=True),
                                                           "changes": changes,
+                                                          **({"frozenInputs": frozen_inputs}
+                                                             if frozen_inputs is not None else {}),
                                                           **({"loopBudget": goal_context["review"]}
                                                              if goal_context is not None else {})})
             except OSError as exc:
@@ -186,5 +201,12 @@ class TrainingPlanStore:
                 raise ApprovalConflict("This training plan approval has already been processed")
             if decision == "approve" and self.loop_budgets is not None:
                 self.loop_budgets.require_fresh_approval(record)
+            if decision == "approve" and record.plan.layer == "agent":
+                fresh = self.agent_inputs.verify(record)
+                if fresh["priceQuote"] != record.frozenInputs["priceQuote"]:
+                    raise PlanError(
+                        "agent_prices_changed", "Model prices changed; submit a fresh Plan revision",
+                        status=409,
+                    )
             self.approvals.decide(approval.approvalId, decision, actor, note)
             self._notify(record)
