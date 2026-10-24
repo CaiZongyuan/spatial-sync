@@ -67,22 +67,8 @@ def sdk_configuration(harness, *, model, thinking, statement, requests, max_outp
     }
 
 
-def clean_environment(root, *, gateway_url, session_id, run_id, tool_token, provider_url, provider_token):
-    """Build from an allowlist before the SDK can merge its parent's environment."""
-    for url in (gateway_url, provider_url):
-        endpoint = urlsplit(url)
-        if (
-            endpoint.scheme != "http"
-            or endpoint.hostname not in {"127.0.0.1", "::1"}
-            or endpoint.username
-            or endpoint.password
-            or endpoint.path not in {"", "/"}
-            or endpoint.query
-            or endpoint.fragment
-        ):
-            raise PlanError(
-                "agent_transport_unavailable", "Managed transports require owned loopback URLs", status=422
-            )
+def clean_process_environment(root):
+    """Only owned homes and required OS paths are inherited by managed processes."""
     root = Path(root).resolve()
     home, temporary = root / "home", root / "tmp"
     home.mkdir(parents=True, exist_ok=True)
@@ -106,6 +92,30 @@ def clean_environment(root, *, gateway_url, session_id, run_id, tool_token, prov
             "TMPDIR": str(temporary),
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
+        }
+    )
+    return environment
+
+
+def clean_environment(root, *, gateway_url, session_id, run_id, tool_token, provider_url, provider_token):
+    """Build from an allowlist before the SDK can merge its parent's environment."""
+    for url in (gateway_url, provider_url):
+        endpoint = urlsplit(url)
+        if (
+            endpoint.scheme != "http"
+            or endpoint.hostname not in {"127.0.0.1", "::1"}
+            or endpoint.username
+            or endpoint.password
+            or endpoint.path not in {"", "/"}
+            or endpoint.query
+            or endpoint.fragment
+        ):
+            raise PlanError(
+                "agent_transport_unavailable", "Managed transports require owned loopback URLs", status=422
+            )
+    environment = clean_process_environment(root)
+    environment.update(
+        {
             "LW_URL": gateway_url,
             "LW_SESSION": session_id,
             "LW_AGENT_RUN": run_id,
@@ -123,7 +133,7 @@ def clean_environment(root, *, gateway_url, session_id, run_id, tool_token, prov
 
 class AgentWorker:
     def __init__(self, root, configuration, environment, *, files=(), deadline, active=lambda: True):
-        self.root, self.configuration, self.environment = Path(root), configuration, environment
+        self.root, self.configuration, self.environment = Path(root).resolve(), configuration, environment
         self.files = files
         self.deadline, self.active = deadline, active
         self.process = None

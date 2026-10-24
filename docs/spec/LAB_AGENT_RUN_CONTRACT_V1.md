@@ -104,6 +104,16 @@ Agent Goal context has an explicit source and mandatory goalId. It extends the e
 per-PlanID pool after #37; it does not fabricate a Task or silently replace an existing Goal anchor/unknown LLM axis.
 New authority/over-budget exceptions remain explicit human Plan decisions. Model credentialRef names are frozen;
 actual secret resolution is confined to a task-owned adapter process environment and excluded from context/logs/artifacts.
+The API may act as the trusted injector while constructing that child environment; it does not retain the running
+provider credential in its budget gate. A task-owned credential relay receives the real key only through its clean
+environment. The SDK receives a separate local gate grant, while the API gate uses another relay grant. Neither
+grant nor the actual credential enters argv/config/Trace. The API retains the single durable reserve/settle ledger;
+the relay owns no second budget or usage ledger and forwards only the fixed model-message method/destination.
+It checks the original deadline and live owner/cancellation marker before the external effect, and redacts any
+credential reflected by the provider before returning data. A signed relay control proof can establish that an
+attempt was not forwarded; provider response text/headers cannot establish that fact. Timeout/interrupted streams
+retain complete observed usage prefixes plus unspent uncertain reservations. Worker and relay trees use their
+creating OwnedProcess handles, and cleanup failure retains ownership/accounting obligations.
 
 Normal evaluation completes each pinned public train case at the declared repetitions (at least3) in owned sequential
 Sessions using the existing single-Session admission. A valid negative and an infrastructure-invalid attempt remain

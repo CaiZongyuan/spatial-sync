@@ -128,12 +128,14 @@ class BudgetedProvider:
         transport_token,
         is_active=lambda: True,
         clock=time.monotonic,
+        trusted_relay=False,
     ):
         self.run_id, self.model, self.limits = run_id, model, limits
         self.quote, self.context_tokens = quote, context_tokens
         self.state, self.save, self.upstream = state, save, upstream
         self._api_key = api_key
         self._transport_token, self._is_active = transport_token, is_active
+        self._trusted_relay = trusted_relay
         self.state.setdefault("requests", [])
         self._clock, self._started = clock, clock()
         self._lock = asyncio.Lock()
@@ -305,7 +307,38 @@ class BudgetedProvider:
                         "/v1/messages",
                         json=body,
                         timeout=timeout,
-                        headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01"},
+                        headers={"x-api-key": self._api_key, "anthropic-version": "2023-06-01"}
+                        | ({"x-lw-attempt": record["id"]} if self._trusted_relay else {}),
+                    )
+                proof = response.headers.get("x-lw-not-forwarded", "")
+                if (
+                    self._trusted_relay
+                    and response.is_error
+                    and proof.isascii()
+                    and hmac.compare_digest(
+                        proof, hmac.digest(self._api_key.encode(), record["id"].encode(), "sha256").hex()
+                    )
+                ):
+                    record.update(
+                        status="not_forwarded",
+                        dispatchState="not_forwarded",
+                        usage=dict.fromkeys(TOKEN_KEYS, 0),
+                        usageComplete=True,
+                        usd=0.0,
+                    )
+                    self._save()
+                    return Response(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "type": "agent_not_forwarded",
+                                    "message": "This model attempt was not forwarded",
+                                },
+                            }
+                        ),
+                        status_code=response.status_code,
+                        media_type="application/json",
                     )
                 content_type = response.headers.get("content-type", "application/json")
                 message_id, usage, complete, outcome = _observe_usage(response.content, content_type)

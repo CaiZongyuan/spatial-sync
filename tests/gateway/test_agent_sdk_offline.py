@@ -11,7 +11,8 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 
 from apps.api.app.main import create_app
 from packages.agents.bundle import prepare_harness
@@ -23,7 +24,9 @@ from packages.agents.provider import (
     install_provider_route,
 )
 from packages.agents.runtime import AgentWorker, clean_environment, sdk_configuration
+from packages.agents.transport import CredentialRelay
 from packages.library.transactions import durable_json
+from packages.vault import Vault
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("claude_agent_sdk") is None,
@@ -95,6 +98,9 @@ async def test_real_sdk_cannot_execute_forced_builtin_and_uses_only_fixed_sessio
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", sentinel)
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://must-not-reach.invalid")
     marker = tmp_path / "forbidden-built-in"
+    upstream_key = "GENERATED_LOCAL_UPSTREAM_CREDENTIAL_35ad"
+    vault = Vault(tmp_path / "private-upstream")
+    vault.set("llm/offline-generated", upstream_key)
     private_context = "PRIVATE_ANCESTOR_CONTEXT_2f0a"
     private_user = "PRIVATE_USER_CONTEXT_6b31"
     (tmp_path / "CLAUDE.md").write_text(private_context, encoding="utf-8")
@@ -163,15 +169,35 @@ async def test_real_sdk_cannot_execute_forced_builtin_and_uses_only_fixed_sessio
                 "input": {"keys": ["/World/Lab/Centrifuge"]},
             }
         else:
-            block = {"type": "text", "text": "Finished the offline fixture."}
+            block = {"type": "text", "text": "Finished the offline fixture. " + upstream_key}
         return httpx.Response(
             200,
             text=stream(index, block, "end_turn" if index >= 3 else "tool_use"),
             headers={"content-type": "text/event-stream"},
         )
 
-    app, transport_app = create_app(), FastAPI()
-    async with httpx.AsyncClient(transport=httpx.MockTransport(external), base_url="http://fake") as upstream:
+    app, transport_app, external_app = create_app(), FastAPI(), FastAPI()
+
+    @external_app.post("/v1/messages")
+    async def fake_upstream(request: Request):
+        assert request.headers["x-api-key"] == upstream_key
+        response = await external(
+            httpx.Request("POST", "http://fake/v1/messages", content=await request.body())
+        )
+        return Response(response.content, media_type="text/event-stream")
+
+    deadline = time.monotonic() + 45
+    async with (
+        serving(external_app) as upstream_url,
+        CredentialRelay(
+            tmp_path / "credential-relay",
+            vault,
+            "llm/offline-generated",
+            "fixture-model",
+            deadline=deadline,
+            upstream_origin=upstream_url,
+        ) as credential_relay,
+    ):
         gate = BudgetedProvider(
             "job-offline",
             "fixture-model",
@@ -180,9 +206,10 @@ async def test_real_sdk_cannot_execute_forced_builtin_and_uses_only_fixed_sessio
             32000,
             state,
             lambda: durable_json(tmp_path / "usage.json", state),
-            upstream,
-            "FAKE_UPSTREAM_ONLY",
+            credential_relay.client,
+            credential_relay.grant,
             transport_token="local-provider-only",
+            trusted_relay=True,
         )
         install_provider_route(transport_app, gate)
         async with serving(app) as gateway_url, serving(transport_app) as provider_url:
@@ -216,7 +243,7 @@ async def test_real_sdk_cannot_execute_forced_builtin_and_uses_only_fixed_sessio
                     configuration,
                     environment,
                     files=harness.files,
-                    deadline=time.monotonic() + 45,
+                    deadline=deadline,
                 )
                 receipt = await worker.run()
                 trace = receipt["trace"].read_text(encoding="utf-8")
@@ -246,7 +273,14 @@ async def test_real_sdk_cannot_execute_forced_builtin_and_uses_only_fixed_sessio
                     for row in rows
                 )
                 assert sentinel not in trace and grant not in trace and "local-provider-only" not in trace
-                for private in (sentinel, private_context, private_user, grant, "local-provider-only"):
+                for private in (
+                    sentinel,
+                    private_context,
+                    private_user,
+                    grant,
+                    "local-provider-only",
+                    upstream_key,
+                ):
                     assert private not in json.dumps(calls)
                     assert all(
                         private.encode() not in file.read_bytes()
@@ -255,3 +289,4 @@ async def test_real_sdk_cannot_execute_forced_builtin_and_uses_only_fixed_sessio
                     )
                 assert gate.snapshot()["tokens"] == 69
                 app.state.agent_grants.revoke("job-offline")
+    assert credential_relay.process.cleanup.read_text(encoding="ascii") == "clean"
