@@ -7,6 +7,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
+from packages.info.evaluation_identity import comparison_identity
 from packages.library.transactions import durable_json
 
 
@@ -79,11 +80,16 @@ class EvaluationStore:
             self.on_change(self.records[record["evaluationId"]])
 
     def reference(self, key):
+        requested = {name: key.get(name) for name in ("environment", "judge")}
+        if not all(isinstance(value, str) and value for value in requested.values()):
+            return None
         return next(
             (
                 row
                 for row in reversed(self.rows)
-                if row["key"] == key and row["decision"] in ("baseline", "accepted")
+                if row["key"] == key
+                and row["decision"] in ("baseline", "accepted")
+                and comparison_identity(row) == requested
             ),
             None,
         )

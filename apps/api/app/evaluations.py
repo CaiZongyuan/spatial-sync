@@ -17,10 +17,21 @@ from pydantic import Field, StrictStr
 from apps.api.app.evaluation_views import public_evaluation, public_score
 from packages.info.conditions import CompiledConditions, condition_state, validate_conditions
 from packages.info.evaluation_evidence import EvidenceUnavailable, require_physical
+from packages.info.evaluation_identity import (
+    ENVIRONMENT,
+    JUDGE,
+    bind_source_identity,
+    code_digest,
+    comparable,
+    freeze_identity,
+    verify_identity,
+)
+from packages.info.evaluation_identity import (
+    fingerprint as identity_fingerprint,
+)
 from packages.info.evaluations import EvaluationStore, evaluation_decision, wilson_interval
 from packages.info.invocations import TERMINAL
 from packages.info.store import StateStore
-from packages.library.common import REPO_ROOT
 from packages.library.suites import SuiteLibrary
 from packages.library.transactions import durable_json
 from packages.protocol.internal import SessionOptions
@@ -36,11 +47,7 @@ def fingerprint(value):
 
 
 def runtime_fingerprint():
-    digest = hashlib.sha256()
-    for directory in ("packages/programs", "packages/info", "packages/sim_runtime", "apps/api/app/sources"):
-        for path in sorted((REPO_ROOT / directory).rglob("*.py")):
-            digest.update(path.relative_to(REPO_ROOT).as_posix().encode() + b"\0" + path.read_bytes())
-    return digest.hexdigest()
+    return code_digest((*ENVIRONMENT, *JUDGE))
 
 
 async def persist(call, *arguments):
@@ -86,6 +93,38 @@ class EvaluationService:
         self._admission = asyncio.Lock()
         self._admitting = {}
         self._cancellation_requested = set()
+        self.identity_producer = freeze_identity
+
+    async def freeze_identity(self, identifier, suite, scene, subject, *, candidate=None):
+        try:
+            return await asyncio.to_thread(
+                self.identity_producer,
+                identifier,
+                suite,
+                scene,
+                subject,
+                self.store.root / "identity-inputs",
+                candidate=candidate,
+            )
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None  # Running is allowed; missing proof never creates comparability.
+
+    @staticmethod
+    def bind_identity(record, session):
+        frozen = record.get("identitySnapshot")
+        if frozen is None:
+            record.update(comparisonIdentity=None, comparisonState="unknown")
+            return {}
+        identity, actual, reason = bind_source_identity(frozen, session)
+        if record.get("comparisonIdentity") and record["comparisonIdentity"] != identity:
+            raise HTTPException(409, {"code": "evaluation_conditions_changed"})
+        record.update(
+            comparisonIdentity=identity,
+            observedSource=actual,
+            comparisonState="known" if identity else "unknown",
+            comparisonReason=reason,
+        )
+        return identity or {}
 
     def _changed(self, record):
         notebooks = getattr(self.manager, "notebooks", None)
@@ -289,6 +328,8 @@ class EvaluationService:
             "at": now(),
             "runtimeHash": self._runtime_hash,
         }
+        record["identitySnapshot"] = await self.freeze_identity(identifier, suite, selected, body.subject)
+        record["candidateIdentity"] = (record["identitySnapshot"] or {}).get("candidateIdentity")
         notebooks = getattr(self.manager, "notebooks", None)
         context = (
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
@@ -460,6 +501,14 @@ class EvaluationService:
                 if case["split"] != "train":
                     continue
                 suite.verify()
+                try:
+                    await asyncio.to_thread(
+                        verify_identity,
+                        record.get("identitySnapshot"),
+                        directory=self.store.root / "identity-inputs",
+                    )
+                except (OSError, ValueError):
+                    raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
                 if runtime_fingerprint() != self._runtime_hash:
                     raise HTTPException(409, {"code": "runtime_changed"})
                 selected = await asyncio.to_thread(
@@ -500,6 +549,7 @@ class EvaluationService:
                 ):
                     raise HTTPException(503, {"code": "recording_unavailable"})
                 key = self._validate_session(session, suite, case, record["subject"])
+                key.update(self.bind_identity(record, session))
                 if record.get("key", key) != key:
                     raise HTTPException(409, {"code": "not_comparable"})
                 record["key"] = key
@@ -515,6 +565,14 @@ class EvaluationService:
             if runtime_fingerprint() != self._runtime_hash:
                 raise HTTPException(409, {"code": "runtime_changed"})
             successes = sum(episode["success"] for episode in record["episodes"])
+            try:
+                await asyncio.to_thread(
+                    verify_identity,
+                    record.get("identitySnapshot"),
+                    directory=self.store.root / "identity-inputs",
+                )
+            except (OSError, ValueError):
+                raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
             episodes = len(record["episodes"])
             reference = self.store.reference(record["key"])
             decision = evaluation_decision(
@@ -522,11 +580,16 @@ class EvaluationService:
                 episodes,
                 None if reference is None else reference["score"],
             )
+            if not record.get("comparisonIdentity"):
+                decision = "reported"
             row = {
                 "evaluationId": identifier,
                 "suite": suite.id,
                 "subject": record["subject"],
-                "version": self._runtime_hash,
+                "version": (record.get("candidateIdentity") or {}).get("contentHash") or self._runtime_hash,
+                "candidateIdentity": record.get("candidateIdentity"),
+                "comparisonIdentity": record.get("comparisonIdentity"),
+                "comparisonState": record.get("comparisonState", "unknown"),
                 "key": record["key"],
                 "split": "train",
                 "successes": successes,
@@ -630,7 +693,7 @@ class EvaluationService:
             "newtonVersion": source.newtonVersion,
             "solver": source.solver,
             "target": task["robot"],
-            "bindingHash": fingerprint(binding),
+            "bindingHash": identity_fingerprint(binding),
         }
 
     async def _episode(self, session, suite, case):
@@ -805,7 +868,7 @@ def install_evaluation_routes(app, service, role_for):
             if any(row is None for row in selected):
                 raise HTTPException(404, {"code": "unknown_evaluation"})
             first, second = selected
-            if first["key"] != second["key"]:
+            if not comparable(first, second):
                 raise HTTPException(
                     409, {"code": "not_comparable", "message": "Evaluation conditions differ"}
                 )

@@ -95,7 +95,9 @@ def until(read, predicate, seconds=10):
     raise AssertionError(value)
 
 
-def controlled_receipt(app, plan, *, successes=2, reference=None, split="train", identifier=None):
+def controlled_receipt(
+    app, plan, *, successes=2, reference=None, split="train", identifier=None, legacy=False
+):
     """Owned fixture adapter; actual stores/decision function/projection, no physics claim."""
     service = app.state.manager.evaluations
     body = type("Request", (), {"planId": plan["id"], "planRevision": plan["revision"]})()
@@ -104,6 +106,7 @@ def controlled_receipt(app, plan, *, successes=2, reference=None, split="train",
     context = app.state.notebooks.prepare_evaluation(body, suite, scene)
     identifier = identifier or "eval-" + uuid.uuid4().hex
     score = successes / 2
+    identity = {name: context["implementations"][name] for name in ("environment", "judge")}
     key = {
         "suite": SUITE,
         "suiteContentHash": suite.content_hash,
@@ -114,6 +117,7 @@ def controlled_receipt(app, plan, *, successes=2, reference=None, split="train",
         "bindingHash": "a" * 64,
         "newtonVersion": None,
         "solver": None,
+        **identity,
     }
     row = {
         "evaluationId": identifier,
@@ -121,6 +125,7 @@ def controlled_receipt(app, plan, *, successes=2, reference=None, split="train",
         "subject": "robot_arm.virtual",
         "version": "v1",
         "key": key,
+        "comparisonIdentity": identity,
         "split": split,
         "successes": successes,
         "episodes": 2,
@@ -142,6 +147,11 @@ def controlled_receipt(app, plan, *, successes=2, reference=None, split="train",
         "at": row["at"],
         "endedAt": row["at"],
         "key": key,
+        "comparisonIdentity": identity,
+        "candidateIdentity": {
+            "kind": "owned-fixture",
+            "contentHash": context["implementations"]["candidate"],
+        },
         "result": row,
         "episodes": [],
         "attemptedEpisodes": 2,
@@ -153,10 +163,41 @@ def controlled_receipt(app, plan, *, successes=2, reference=None, split="train",
         "privateConditions": CANARY,
         "privateSeed": CANARY,
     }
+    if legacy:
+        for name in ("environment", "judge"):
+            key.pop(name)
+        row.pop("comparisonIdentity")
+        record.pop("comparisonIdentity")
+        record.pop("candidateIdentity")
     service.store.append(row)
     app.state.notebooks.complete_evaluation(record)
     service.store.save(record)
     return record
+
+
+def test_legacy_receipt_keeps_its_decision_but_cannot_establish_a_current_reference(tmp_path):
+    app = create_app(Settings())
+    with TestClient(app) as client:
+        plan = prepare(client, tmp_path / "task")
+        legacy = controlled_receipt(app, plan, successes=0, legacy=True)
+        current = controlled_receipt(app, plan, successes=2)
+        [old_entry, new_entry] = client.get("/api/v1/notebooks/goal/notebook-probe").json()["entries"]
+        entries = {entry["evaluationId"]: entry for entry in (old_entry, new_entry)}
+        assert entries[legacy["evaluationId"]]["comparison"]["state"] == "unknown"
+        assert entries[legacy["evaluationId"]]["score"]["score"] == 0
+        assert entries[legacy["evaluationId"]]["reportedDecision"] == "baseline"
+        assert entries[current["evaluationId"]]["comparison"]["state"] == "baseline"
+        assert entries[current["evaluationId"]]["comparison"]["referenceEvaluationId"] is None
+        service = app.state.manager.evaluations
+        assert service.store.reference(current["key"])["evaluationId"] == current["evaluationId"]
+        response = client.get(
+            "/api/v1/suites/lab-demo-pick-place/1/scoreboard",
+            params={"compare": legacy["evaluationId"], "against": current["evaluationId"]},
+        )
+        assert response.status_code == 409 and response.json()["detail"]["code"] == "not_comparable"
+        retained = client.get("/api/v1/evaluations/" + legacy["evaluationId"]).json()["result"]
+        assert retained["score"] == 0 and retained["decision"] == "baseline"
+        assert "comparisonIdentity" not in service.store.records[legacy["evaluationId"]]
 
 
 def test_actual_evaluation_is_bound_to_plan_and_private_inputs_never_enter_notebook(tmp_path):
