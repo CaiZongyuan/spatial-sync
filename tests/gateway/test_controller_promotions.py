@@ -1,0 +1,227 @@
+"""Controlled scores/qualification prove the actual promotion transaction, never learned quality."""
+
+from collections import deque
+from copy import deepcopy
+
+import pytest
+from fastapi.testclient import TestClient
+
+from apps.api.app.library_validation import program_schemas
+from apps.api.app.main import create_app
+from apps.api.app.settings import Settings
+from packages.info.evaluations import wilson_interval
+from packages.library.transactions import durable_json
+from packages.policies.subjects import resolve_policy_subject
+from tests.fixtures.policy import observation_spec
+from tests.fixtures.policy_evaluation import native_suite
+from tests.gateway.test_policies import uploaded_job
+from tests.gateway.test_training_jobs import TOKEN
+from tests.unit.test_controller_publication import ControlledPublicationValidator
+
+
+def controlled_qualification(policy, check=None):
+    return {"qualified": True, "check": check or "controlled-observation-check",
+            "evidenceMode": "controlled", "policy": policy}
+
+
+@pytest.fixture
+def promotion_inputs(tmp_path, monkeypatch):
+    starts = []
+
+    def no_source(*args, **kwargs):
+        starts.append((args, kwargs))
+        raise AssertionError("This controlled transaction fixture must start no physical Source")
+
+    app = create_app(
+        Settings(node_token=TOKEN), source_factory=no_source,
+        controller_promotion_qualification=controlled_qualification,
+        controller_publication_validator=ControlledPublicationValidator(
+            tmp_path / "validation", program_schemas
+        ),
+    )
+    manager = app.state.manager
+    monkeypatch.setattr(manager.evaluations, "_busy", lambda: True)
+    with TestClient(app) as client:
+        spec = observation_spec()
+        spec["observations"][0]["keys"] = spec["action"]["jointKeys"] = [
+            "/World/Lab/RobotA/fr3/fr3_joint1"
+        ]
+        job = uploaded_job(client, tmp_path, spec=spec)
+        created = client.post(
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+        )
+        assert created.status_code == 201, created.text
+        policy = created.json()
+        scene = manager.library.resolve(policy["scene"], launch=True, source="newton")
+        suite = native_suite(manager, scene, name="promotion-controlled", heldout=True)
+        manager.evaluations.suites.refresh()
+        subject = resolve_policy_subject(manager, policy["id"], suite, scene)
+        store = manager.evaluations.store
+        identity = {"environment": "controlled-environment", "judge": "controlled-judge"}
+        key = {"suite": suite.id, "suiteContentHash": suite.content_hash,
+               "scene": scene.id, "sceneContentHash": scene.content_hash, **identity}
+        for label, candidate, successes, decision in (
+            ("reference", {"kind": "program", "id": "robot_arm.newton", "contentHash": "1" * 64},
+             0, "baseline"),
+            ("candidate", subject.document()["candidateIdentity"], 10, "accepted"),
+        ):
+            identifier = "eval-controlled-" + label
+            row = {"evaluationId": identifier, "suite": suite.id, "subject": candidate["id"],
+                   "candidateIdentity": candidate, "key": deepcopy(key), "split": "train",
+                   "comparisonIdentity": deepcopy(identity), "decision": decision,
+                   "reference": "eval-controlled-reference" if label == "candidate" else None,
+                   "episodes": 10, "successes": successes, "score": successes / 10,
+                   "ci95": wilson_interval(successes, 10), "at": "2026-10-25T00:00:00+00:00"}
+            record = {"evaluationId": identifier, "suite": suite.id, "suiteContentHash": suite.content_hash,
+                      "subject": candidate["id"], "candidateIdentity": candidate,
+                      "split": "train", "status": "completed", "result": row,
+                      "identitySnapshot": None, "runtimeHash": manager.evaluations._runtime_hash,
+                      "episodes": [{"status": "valid", "success": index < successes,
+                                    "cleanupComplete": True} for index in range(10)], "at": row["at"]}
+            if label == "candidate":
+                record.update(policySubject=subject.document(), planId=job["planId"])
+            store.append(row)
+            store.save(record)
+        yield client, app.state.controller_promotions, policy, scene, starts
+
+
+def request(client, policy, scene, request_id="controlled-request"):
+    response = client.post("/api/v1/controller-promotions", json={
+        "subject": policy["id"], "scene": scene.id, "requestId": request_id,
+    })
+    assert response.status_code == 202, response.text
+    return response.json()
+
+
+def complete_controlled_tests(service, promotion):
+    value = service.get(promotion["id"])
+    store = service.manager.evaluations.store
+    for side, identifier in value["runs"].items():
+        record = deepcopy(store.records[identifier])
+        train = value["context"]["currentAccepted" if side == "candidate" else "priorReference"]
+        success = side == "reference"
+        row = train | {"evaluationId": identifier, "split": "test", "decision": "test",
+                       "episodes": 1, "successes": int(success), "score": float(success),
+                       "ci95": wilson_interval(int(success), 1)}
+        record.update(status="completed", result=row, attemptedEpisodes=1,
+                      episodes=[{"caseId": "test-one", "status": "valid", "success": success,
+                                 "cleanupComplete": True}])
+        store.append(row)
+        store.save(record)
+    service.manager.evaluations._queue = deque(
+        entry for entry in service.manager.evaluations._queue if entry[1] not in value["runs"].values()
+    )
+
+
+def test_refuses_unqualified_or_noncurrent_train_before_any_private_work(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    service.qualify = service.manager.policy_evidence.qualification
+    before = set(service.manager.evaluations.store.records)
+    response = client.post("/api/v1/controller-promotions", json={"subject": policy["id"], "scene": scene.id})
+    assert response.status_code == 409, response.text
+    assert set(service.manager.evaluations.store.records) == before and not starts
+    assert not list(service.root.glob("promotion-*.json"))
+
+
+def test_private_review_warning_human_decision_and_exact_committed_authority(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    assert request(client, policy, scene) == promotion
+    value = service.get(promotion["id"])
+    assert len(value["runs"]) == 2 and not starts
+    for identity in value["runs"].values():
+        record = service.manager.evaluations.store.records[identity]
+        assert record["split"] == "test" and record["allocatedEpisodes"] == 1
+        assert client.get("/api/v1/evaluations/" + identity).status_code == 404
+    complete_controlled_tests(service, promotion)
+    route = "/api/v1/controller-promotions/" + promotion["id"]
+    assert client.get(route + "/review", headers={"X-Actor": "agent:optimizer"}).status_code == 403
+    review = client.get(route + "/review")
+    assert review.status_code == 200, review.text
+    review = review.json()
+    assert review["candidateBelowReference"] and review["qualification"]["evidenceMode"] == "controlled"
+    public = client.get(route).json()
+    assert "test" not in public and "candidateBelowReference" not in public
+    approval = client.get("/api/v1/approvals/" + review["approvalId"]).json()
+    assert set(approval["details"]) == {"controllerPromotionId", "contextHash", "reviewUrl"}
+    decision = "/api/v1/approvals/" + approval["approvalId"] + "/decision"
+    assert client.post(
+        decision, headers={"X-Actor": "agent:optimizer"}, json={"decision": "approve"}
+    ).status_code == 403
+    published = client.post(decision, json={"decision": "approve"})
+    assert published.status_code == 200, published.text
+    published = published.json()
+    assert published["status"] == "published", published
+    deployed = service.manager.library.resolve(
+        published["deployment"]["scene"]["id"], launch=True, source="newton"
+    )
+    permit = service.authorize_scene(deployed)
+    assert permit["candidateIdentity"]["id"] == policy["id"]
+    assert permit["controller"]["document"]["evaluationId"] == "eval-controlled-candidate"
+    assert service.resources.controller("fr3-arm")["current"]["scene"] == deployed.id
+    assert client.post(decision, json={"decision": "revoke"}).status_code == 409
+    assert not starts and policy["qualified"] is False
+
+
+def test_publication_interruption_resumes_same_scene_and_controller_revision(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
+
+    def interrupt(effect, _):
+        if effect == "scene_published":
+            raise OSError("Controlled interruption after actual Scene import")
+
+    service.publication.after_effect = interrupt
+    route = "/api/v1/approvals/" + review["approvalId"] + "/decision"
+    with pytest.raises(OSError, match="Controlled interruption"):
+        client.post(route, json={"decision": "approve"})
+    interrupted = service.publication.read(promotion["id"])
+    assert interrupted["phase"] == "scene_published"
+    assert service.resources.controller("fr3-arm")["currentVersion"] is None
+    service.publication.after_effect = lambda *_: None
+    recovered = client.get("/api/v1/controller-promotions/" + promotion["id"]).json()
+    assert recovered["status"] == "published", recovered
+    assert recovered["deployment"]["scene"] == interrupted["scene"]
+    assert recovered["deployment"]["controller"]["document"]["version"] == interrupted["controllerVersion"]
+    assert len(service.resources.controller("fr3-arm")["versions"]) == 1 and not starts
+
+
+def test_new_reference_before_human_decision_blocks_old_intent(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
+    store = service.manager.evaluations.store
+    later = deepcopy(store.rows[1])
+    later.update(evaluationId="eval-controlled-later", reference=later["evaluationId"])
+    store.append(later)
+    response = client.post("/api/v1/approvals/" + review["approvalId"] + "/decision",
+                           json={"decision": "approve"})
+    assert response.status_code == 409, response.text
+    assert service.resources.controller("fr3-arm")["currentVersion"] is None
+    assert not starts and not list(service.publication.root.glob("*/record.json"))
+
+
+def test_competing_controller_before_current_commit_is_preserved(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
+
+    def compete(effect, record):
+        if effect == "scene_published":
+            user = service.manager.library_assets.roots["user"]
+            current = record["newCurrent"] | {"currentVersion": 99}
+            version = record["controller"]["document"] | {"version": 99, "scene": scene.id}
+            durable_json(user / "controllers/fr3-arm/99.yaml", version)
+            durable_json(user / "controllers/fr3-arm/controller.yaml", current)
+
+    service.publication.after_effect = compete
+    response = client.post("/api/v1/approvals/" + review["approvalId"] + "/decision",
+                           json={"decision": "approve"})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "blocked"
+    assert service.resources.controller("fr3-arm")["currentVersion"] == 99 and not starts
+    assert service.publication.read(promotion["id"])["phase"] == "blocked"

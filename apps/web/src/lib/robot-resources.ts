@@ -11,7 +11,8 @@ export interface RobotModel {
 }
 export interface ControllerVersion {
   controller: string; version: number; embodiment: string; robotModel: string; policy: string | null;
-  program: string; action: { space: string; hz: number | null }; observation: string | null;
+  program: string; programArtifact?: { id: string; contentHash: string } | null;
+  action: { space: string; hz: number | null }; observation: string | null;
   task: string | null; scene: string; evaluationId: string | null; contentHash: string;
 }
 export interface RobotEmbodiment {
@@ -20,6 +21,8 @@ export interface RobotEmbodiment {
     robotModel: string | null; graspMode: string | null }[];
   visualUrl: string | null; assetContentHash: string; connection: 'not-connected' | 'simulation';
   currentController: ControllerVersion | null; controllerHistory: ControllerVersion[];
+  activeSessions?: { sessionId: string; scene: string; sceneContentHash: string;
+    controller: { id: string; version: number; contentHash: string } | null }[];
 }
 export function useRobotResources() {
   const [data, setData] = useState<{ models: RobotModel[]; embodiments: RobotEmbodiment[] }>();

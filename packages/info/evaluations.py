@@ -4,6 +4,8 @@ import json
 import math
 import os
 import re
+import threading
+from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
@@ -47,6 +49,13 @@ class EvaluationStore:
         self.records = {}
         self.rows = []
         self.on_change = on_change
+        self._reference_lock = threading.RLock()
+
+    @contextmanager
+    def reference_guard(self):
+        """Keep a promotion's final Reference check atomic with its Controller commit."""
+        with self._reference_lock:
+            yield
 
     def startup(self):
         self.root.mkdir(parents=True, exist_ok=True)
@@ -100,6 +109,10 @@ class EvaluationStore:
         )
 
     def append(self, row):
+        with self._reference_lock:
+            self._append(row)
+
+    def _append(self, row):
         previous = next((item for item in self.rows if item["evaluationId"] == row["evaluationId"]), None)
         if previous is not None:
             if previous != row:

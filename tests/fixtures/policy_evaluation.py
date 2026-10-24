@@ -22,7 +22,7 @@ def finger_probe_inputs():
     return spec, task
 
 
-def native_suite(manager, scene, *, name="policy-probe", timeout=5.0):
+def native_suite(manager, scene, *, name="policy-probe", timeout=5.0, heldout=False):
     root = manager.library_assets.roots["user"] / "suites" / name / "1"
     (root / "private").mkdir(parents=True)
     metadata = {
@@ -36,6 +36,11 @@ def native_suite(manager, scene, *, name="policy-probe", timeout=5.0):
             {"id": "train-one", "split": "train", "params": {"from": "rack.A1", "to": "centrifuge.slot1"}}
         ],
     }
+    seeds = {"train-one": 7}
+    if heldout:
+        metadata["episodes"].append({"id": "test-one", "split": "test",
+                                     "params": {"from": "rack.A2", "to": "centrifuge.slot2"}})
+        seeds["test-one"] = 11
     goal = {
         "entity": "/World/Lab/Tubes/Tube01",
         "property": "location",
@@ -53,7 +58,7 @@ def native_suite(manager, scene, *, name="policy-probe", timeout=5.0):
     for name, value in (
         ("suite.yaml", metadata),
         ("task.yaml", task),
-        ("private/seeds.yaml", {"train-one": 7}),
+        ("private/seeds.yaml", seeds),
     ):
         (root / name).write_text(yaml.safe_dump(value), encoding="utf-8")
     suites = SuiteLibrary(manager.library_assets.roots)

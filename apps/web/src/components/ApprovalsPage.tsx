@@ -10,6 +10,7 @@ import { LoopBudgetSummary } from './training/LoopBudgetSummary';
 import { isAgentPlan } from '../lib/agent-rsi';
 import { AgentPlanDetails } from './AgentPlanDetails';
 import { AgentPromotionReview } from './AgentPromotionReview';
+import { ControllerPromotionReview } from './ControllerPromotionReview';
 
 const statusText: Record<ApprovalRecord['status'], string> = {
   pending: '待审批', approved: '已批准', denied: '已驳回', revoked: '已撤销', expired: '已超时', unavailable: '已关闭',
@@ -28,7 +29,7 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
   const processed = record.status !== 'pending';
   const last = record.decisions.at(-1);
   const training = record.details.plan?.kind === 'training';
-  const promotion = record.details.agentPromotionId;
+  const promotion = record.details.agentPromotionId || record.details.controllerPromotionId;
   const [promotionReady, setPromotionReady] = useState(false);
   const [promotionStatus, setPromotionStatus] = useState('');
   const retryPromotion = promotion && record.status === 'approved' && promotionStatus === 'applying';
@@ -57,7 +58,8 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
     {training ? isAgentPlan(record.details.plan) ? <AgentPlanDetails plan={record.details.plan} /> : <TrainingPlanDetails plan={record.details.plan as unknown as TrainingPlanDocument} changes={record.details.changes} /> :
       record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}
-    {promotion && <AgentPromotionReview id={promotion} canRead={canDecide} ready={setPromotionReady} reportStatus={setPromotionStatus} refreshKey={`${record.status}:${busy}`} />}
+    {record.details.agentPromotionId && <AgentPromotionReview id={record.details.agentPromotionId} canRead={canDecide} ready={setPromotionReady} reportStatus={setPromotionStatus} refreshKey={`${record.status}:${busy}`} />}
+    {record.details.controllerPromotionId && <ControllerPromotionReview id={record.details.controllerPromotionId} canRead={canDecide} ready={setPromotionReady} reportStatus={setPromotionStatus} refreshKey={`${record.status}:${busy}`} />}
     {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}
     {(!processed || record.canRevoke || retryPromotion) && <label className="approval-note">备注
       <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)}

@@ -143,6 +143,11 @@ class EvaluationService:
         notebooks = getattr(self.manager, "notebooks", None)
         if notebooks is not None:
             notebooks.observe(record)
+        promotions = getattr(self.manager, "controller_promotions", None)
+        if promotions is not None and record.get("controllerPromotion") and record["status"] in (
+            "completed", "failed", "cancelled"
+        ):
+            promotions.refresh(record["controllerPromotion"]["id"])
 
     def _capture_completion(self, record):
         notebooks = getattr(self.manager, "notebooks", None)
@@ -396,6 +401,33 @@ class EvaluationService:
             finally:
                 self._admitting.pop(identifier, None)
 
+    async def admit_controller_tests(self, records, context):
+        """Reserve both private sides in the existing budget and queue before either Source starts."""
+        async with self._admission:
+            fresh = [record for record in records if record["evaluationId"] not in self.store.records]
+            if not fresh:
+                return
+            for record in fresh:
+                self.manager.controller_promotions.require_evaluation(record)
+            allocation = sum(record["allocatedEpisodes"] for record in fresh)
+            funding = self.manager.notebooks.admit_evaluation(context | {"allocatedEpisodes": allocation})
+            confirmed = []
+            try:
+                for record in fresh:
+                    record.update(funding | {"allocatedEpisodes": record["allocatedEpisodes"]})
+                    self._admitting[record["evaluationId"]] = record
+                    await persist(self.store.save, record)
+                    confirmed.append(record["evaluationId"])
+            finally:
+                for record in fresh:
+                    identity = record["evaluationId"]
+                    self._admitting.pop(identity, None)
+                    if identity in self.store.records and identity not in confirmed:
+                        confirmed.append(identity)
+                for identity in confirmed:
+                    self._queue.append(("evaluation", identity))
+                self.wake()
+
     async def _run(self):
         while not self._closing:
             try:
@@ -530,12 +562,17 @@ class EvaluationService:
         started = time.monotonic()
         try:
             await persist(self.store.save, record)
+            split = record.get("split", "train")
+            if split == "test" and not record.get("controllerPromotion"):
+                raise HTTPException(403, {"code": "test_requires_promotion"})
             suite = self.suites.resolve(record["suite"])
             if suite.content_hash != record["suiteContentHash"]:
                 raise HTTPException(409, {"code": "suite_changed"})
             for case in suite.metadata["episodes"]:
-                if case["split"] != "train":
+                if case["split"] != split:
                     continue
+                if record.get("controllerPromotion"):
+                    await asyncio.to_thread(self.manager.controller_promotions.require_evaluation, record)
                 suite.verify()
                 try:
                     await asyncio.to_thread(
@@ -586,6 +623,7 @@ class EvaluationService:
                     ),
                     scene_version=selected.id,
                     evaluation_id=identifier,
+                    private_evaluation=split == "test",
                     **({"policy_subject": policy_subject.document()} if policy_subject else {}),
                 )
                 if attempt is not None:
@@ -646,6 +684,7 @@ class EvaluationService:
                 successes,
                 episodes,
                 None if reference is None else reference["score"],
+                split=split,
             )
             if not record.get("comparisonIdentity"):
                 decision = "reported"
@@ -659,7 +698,7 @@ class EvaluationService:
                 "comparisonState": record.get("comparisonState", "unknown"),
                 "comparisonReason": record.get("comparisonReason"),
                 "key": record["key"],
-                "split": "train",
+                "split": split,
                 "successes": successes,
                 "episodes": episodes,
                 "score": successes / episodes,

@@ -417,6 +417,22 @@ COMMANDS = (
             method="policy_show", mcp_name="policy_show", arguments=(
                 Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
             )),
+    Command(path=("policy", "promote"), help="Request private tests and human deployment review.",
+            method="policy_promote", mcp_name="policy_promote", actor=True, arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact accepted immutable policy"),
+                Argument("scene", ("--scene",), str, "Exact fixed Scene name@revision"),
+                Argument("evaluation", ("--evaluation",), str | None,
+                         "Exact current accepted train row", None),
+                Argument("observation_check", ("--observation-check",), str | None,
+                         "Trusted native observation check", None),
+                Argument("plan", ("--plan",), str | None, "Current approved funding Plan", None),
+                Argument("revision", ("--revision",), int | None, "Exact funding Plan revision", None),
+                Argument("request_id", ("--request-id",), str | None, "Retry identity", None),
+            )),
+    Command(path=("promotion", "show"), help="Read public Controller promotion progress.",
+            method="controller_promotion_show", mcp_name="controller_promotion_show", arguments=(
+                Argument("id", ("promotion-id",), str, "Controller promotion ID"),
+            )),
     Command(path=("policy", "check-observations"), help="Freeze source-Job samples and a numerical check.",
             method="policy_check_observations", mcp_name="policy_check_observations", actor=True, arguments=(
                 Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),

@@ -44,9 +44,13 @@ def install_approval_routes(app, manager, role_for):
         )
         plan_can_revoke = bool(plan_current
                                and all(step.status == "pending" for step in plan.plan.steps))
+        promotion = record.details.get("controllerPromotionId")
+        promotion_revoke = bool(promotion and record.status in ("approved", "denied")
+                                and manager.controller_promotions.get(promotion)["status"] != "published")
         return {
             **record.model_dump(mode="json"),
-            "canRevoke": (record.subject == "job" and manager.jobs.can_revoke(record)) or (
+            "canRevoke": promotion_revoke or (
+                          record.subject == "job" and manager.jobs.can_revoke(record)) or (
                           training
                           and training_store(manager, identifier=record.subjectId).can_revoke(record)) or (
                           record.subject == "deletion" and record.status in ("approved", "denied")
@@ -115,6 +119,13 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.details.get("controllerPromotionId"):
+            try:
+                return await anyio.to_thread.run_sync(
+                    manager.controller_promotions.decide, record, body.decision, actor, body.note
+                )
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
         if record.details.get("agentPromotionId"):
             from packages.agent_rsi.promotions import decide
 

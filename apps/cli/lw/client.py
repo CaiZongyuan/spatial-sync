@@ -923,6 +923,25 @@ class GatewayClient:
     async def policy_show(self, id):
         return await self.request("GET", self._policy_path(id))
 
+    async def policy_promote(self, id, scene, evaluation=None, observation_check=None,
+                             plan=None, revision=None, request_id=None, *, actor="cli:lw"):
+        self._policy_path(id)
+        return await self.controller_promotion_request(
+            id, scene, evaluation, observation_check, plan, revision, request_id, actor=actor
+        )
+
+    async def controller_promotion_request(self, subject, scene, evaluation=None, observation_check=None,
+                                          plan=None, revision=None, request_id=None, *, actor="cli:lw"):
+        body = {key: value for key, value in {
+            "subject": subject, "scene": scene, "evaluationId": evaluation,
+            "observationCheck": observation_check, "planId": plan, "planRevision": revision,
+            "requestId": request_id,
+        }.items() if value is not None}
+        return await self.request("POST", "/api/v1/controller-promotions", actor=actor, json=body)
+
+    async def controller_promotion_show(self, id):
+        return await self.request("GET", "/api/v1/controller-promotions/" + quote(id, safe=""))
+
     @staticmethod
     def _policy_path(id):
         match = re.fullmatch(r"policy/([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)", id)
