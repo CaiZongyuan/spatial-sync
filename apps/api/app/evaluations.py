@@ -15,11 +15,23 @@ from fastapi import HTTPException, Request
 from pydantic import Field, StrictStr
 
 from apps.api.app.evaluation_views import public_evaluation, public_score
-from packages.info.conditions import condition_state, validate_conditions
+from packages.info.conditions import CompiledConditions, condition_state, validate_conditions
+from packages.info.evaluation_evidence import EvidenceUnavailable, require_physical
+from packages.info.evaluation_identity import (
+    ENVIRONMENT,
+    JUDGE,
+    bind_source_identity,
+    code_digest,
+    comparable,
+    freeze_identity,
+    verify_identity,
+)
+from packages.info.evaluation_identity import (
+    fingerprint as identity_fingerprint,
+)
 from packages.info.evaluations import EvaluationStore, evaluation_decision, wilson_interval
 from packages.info.invocations import TERMINAL
 from packages.info.store import StateStore
-from packages.library.common import REPO_ROOT
 from packages.library.suites import SuiteLibrary
 from packages.library.transactions import durable_json
 from packages.protocol.internal import SessionOptions
@@ -35,11 +47,7 @@ def fingerprint(value):
 
 
 def runtime_fingerprint():
-    digest = hashlib.sha256()
-    for directory in ("packages/programs", "packages/info", "packages/sim_runtime", "apps/api/app/sources"):
-        for path in sorted((REPO_ROOT / directory).rglob("*.py")):
-            digest.update(path.relative_to(REPO_ROOT).as_posix().encode() + b"\0" + path.read_bytes())
-    return digest.hexdigest()
+    return code_digest((*ENVIRONMENT, *JUDGE))
 
 
 async def persist(call, *arguments):
@@ -85,6 +93,44 @@ class EvaluationService:
         self._admission = asyncio.Lock()
         self._admitting = {}
         self._cancellation_requested = set()
+        self.identity_producer = freeze_identity
+
+    async def freeze_identity(self, identifier, suite, scene, subject, *, candidate=None):
+        try:
+            if await asyncio.to_thread(runtime_fingerprint) != self._runtime_hash:
+                return None
+            return await asyncio.to_thread(
+                self.identity_producer,
+                identifier,
+                suite,
+                scene,
+                subject,
+                self.store.root / "identity-inputs",
+                candidate=candidate,
+            )
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None  # Running is allowed; missing proof never creates comparability.
+
+    @staticmethod
+    def bind_identity(record, session, *, execution_facts=None):
+        frozen = record.get("identitySnapshot")
+        if frozen is None:
+            record.update(
+                comparisonIdentity=None,
+                comparisonState="unknown",
+                comparisonReason="implementation_evidence_unavailable",
+            )
+            return {}
+        identity, actual, reason = bind_source_identity(frozen, session, execution_facts=execution_facts)
+        if record.get("comparisonIdentity") and record["comparisonIdentity"] != identity:
+            raise HTTPException(409, {"code": "evaluation_conditions_changed"})
+        record.update(
+            comparisonIdentity=identity,
+            observedSource=actual,
+            comparisonState="known" if identity else "unknown",
+            comparisonReason=reason,
+        )
+        return identity or {}
 
     def _changed(self, record):
         notebooks = getattr(self.manager, "notebooks", None)
@@ -122,6 +168,7 @@ class EvaluationService:
 
     def require_interactive(self):
         from packages.agent_evaluation.scope import current_scope
+
         scope = current_scope()
         if scope is not None and scope.run_id == self._active_evaluation:
             return
@@ -252,8 +299,9 @@ class EvaluationService:
             )
         suite = self.suites.resolve(body.suite)
         if suite.metadata["layer"] != "embodied":
-            raise HTTPException(422, {"code": "agent_runner_unavailable",
-                                      "message": "Agent SDK execution is not available"})
+            raise HTTPException(
+                422, {"code": "agent_runner_unavailable", "message": "Agent SDK execution is not available"}
+            )
         selected = await asyncio.to_thread(
             self.manager.library.resolve,
             suite.metadata["scene"],
@@ -283,13 +331,17 @@ class EvaluationService:
             "split": "train",
             "status": "queued",
             "episodes": [],
+            "attemptedEpisodes": 0,
             "at": now(),
             "runtimeHash": self._runtime_hash,
         }
+        record["identitySnapshot"] = await self.freeze_identity(identifier, suite, selected, body.subject)
+        record["candidateIdentity"] = (record["identitySnapshot"] or {}).get("candidateIdentity")
         notebooks = getattr(self.manager, "notebooks", None)
         context = (
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
-            if notebooks else None
+            if notebooks
+            else None
         )
         await self.admit(record, context)
         return deepcopy(record)
@@ -446,6 +498,7 @@ class EvaluationService:
         record = deepcopy(self.store.records[identifier])
         record.update(status="running", startedAt=now())
         session = None
+        attempt = None
         started = time.monotonic()
         try:
             await persist(self.store.save, record)
@@ -456,6 +509,14 @@ class EvaluationService:
                 if case["split"] != "train":
                     continue
                 suite.verify()
+                try:
+                    await asyncio.to_thread(
+                        verify_identity,
+                        record.get("identitySnapshot"),
+                        directory=self.store.root / "identity-inputs",
+                    )
+                except (OSError, ValueError):
+                    raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
                 if runtime_fingerprint() != self._runtime_hash:
                     raise HTTPException(409, {"code": "runtime_changed"})
                 selected = await asyncio.to_thread(
@@ -471,12 +532,16 @@ class EvaluationService:
                     # accounting; they never replace the statistical denominator.
                     before_attempt = record["attemptedEpisodes"]
                     record["attemptedEpisodes"] = before_attempt + 1
+                    attempt = {"caseId": case["id"], "status": "starting", "milestones": {}}
+                    record["episodes"].append(attempt)
                     try:
                         await persist(self.store.save, record)
                     except BaseException:
                         # No Source attempt has been issued yet. Preserve the failed
                         # evaluation, but do not manufacture an executed episode.
                         record["attemptedEpisodes"] = before_attempt
+                        record["episodes"].pop()
+                        attempt = None
                         raise
                 session = await self.manager.create(
                     None,
@@ -489,6 +554,9 @@ class EvaluationService:
                     scene_version=selected.id,
                     evaluation_id=identifier,
                 )
+                if attempt is not None:
+                    self._attempt_session(attempt, session)
+                    attempt["status"] = "running"
                 if (
                     not session.recording
                     or not session._recording_revision_ready
@@ -496,21 +564,38 @@ class EvaluationService:
                 ):
                     raise HTTPException(503, {"code": "recording_unavailable"})
                 key = self._validate_session(session, suite, case, record["subject"])
+                key.update(self.bind_identity(record, session))
                 if record.get("key", key) != key:
                     raise HTTPException(409, {"code": "not_comparable"})
                 record["key"] = key
-                outcome = await self._episode(session, suite, case)
+                await persist(self.store.save, record)
+                outcome = await self._episode(session, suite, case, attempt=attempt)
                 await session.close()
+                if session.holds_resources:
+                    raise HTTPException(503, {"code": "cleanup_failed"})
                 if session.recording.metadata["status"] != "complete":
                     raise HTTPException(503, {"code": "recording_incomplete"})
                 outcome["recordingId"] = session.session_id
-                record["episodes"].append(outcome)
+                if attempt is None:
+                    record["episodes"].append(outcome)
+                else:
+                    attempt.update(outcome, status="valid")
+                    self._attempt_session(attempt, session)
+                attempt = None
                 session = None
                 await persist(self.store.save, record)
             suite.verify()
             if runtime_fingerprint() != self._runtime_hash:
                 raise HTTPException(409, {"code": "runtime_changed"})
             successes = sum(episode["success"] for episode in record["episodes"])
+            try:
+                await asyncio.to_thread(
+                    verify_identity,
+                    record.get("identitySnapshot"),
+                    directory=self.store.root / "identity-inputs",
+                )
+            except (OSError, ValueError):
+                raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
             episodes = len(record["episodes"])
             reference = self.store.reference(record["key"])
             decision = evaluation_decision(
@@ -518,11 +603,17 @@ class EvaluationService:
                 episodes,
                 None if reference is None else reference["score"],
             )
+            if not record.get("comparisonIdentity"):
+                decision = "reported"
             row = {
                 "evaluationId": identifier,
                 "suite": suite.id,
                 "subject": record["subject"],
-                "version": self._runtime_hash,
+                "version": (record.get("candidateIdentity") or {}).get("contentHash") or self._runtime_hash,
+                "candidateIdentity": record.get("candidateIdentity"),
+                "comparisonIdentity": record.get("comparisonIdentity"),
+                "comparisonState": record.get("comparisonState", "unknown"),
+                "comparisonReason": record.get("comparisonReason"),
                 "key": record["key"],
                 "split": "train",
                 "successes": successes,
@@ -544,8 +635,9 @@ class EvaluationService:
                 "durationSeconds": time.monotonic() - started,
                 "at": now(),
             }
-            row.update({name: record[name] for name in ("planId", "planRevision", "goalId")
-                        if name in record})
+            row.update(
+                {name: record[name] for name in ("planId", "planRevision", "goalId") if name in record}
+            )
             await persist(self.store.append, row)
             record.update(status="completed", result=row, endedAt=now())
         except BaseException as exc:
@@ -566,6 +658,12 @@ class EvaluationService:
                 },
                 endedAt=now(),
             )
+            if attempt is not None:
+                attempt.update(
+                    status="cancelled" if isinstance(exc, asyncio.CancelledError) else "invalid",
+                    reason=record["error"]["code"],
+                )
+                attempt.pop("success", None)
             # A failed start may still own a discoverable source even if create raised.
             owned = [
                 item
@@ -575,21 +673,38 @@ class EvaluationService:
             for item in owned:
                 try:
                     await item.close()
+                    if item.holds_resources:
+                        raise RuntimeError("Source cleanup is unconfirmed")
                 except BaseException:
                     self._blocked.add(identifier)
                     record["error"] = {"code": "cleanup_failed"}
+                finally:
+                    if attempt is not None:
+                        self._attempt_session(attempt, item)
             if session is not None and session not in owned:
                 try:
                     await session.close()
+                    if session.holds_resources:
+                        raise RuntimeError("Source cleanup is unconfirmed")
                 except BaseException:
                     self._blocked.add(identifier)
                     record["error"] = {"code": "cleanup_failed"}
+                finally:
+                    if attempt is not None:
+                        self._attempt_session(attempt, session)
             if isinstance(exc, asyncio.CancelledError) and self._closing:
                 self._capture_completion(record)
                 await persist(self.store.save, record)
                 raise
         self._capture_completion(record)
         await persist(self.store.save, record)
+
+    @staticmethod
+    def _attempt_session(attempt, session):
+        attempt["sessionId"] = session.session_id
+        attempt["cleanupComplete"] = session.cleanup_complete
+        if session.recording is not None:
+            attempt["recordingId"] = session.session_id
 
     @staticmethod
     def _validate_session(session, suite, case, subject):
@@ -625,16 +740,48 @@ class EvaluationService:
             "newtonVersion": source.newtonVersion,
             "solver": source.solver,
             "target": task["robot"],
-            "bindingHash": fingerprint(binding),
+            "bindingHash": identity_fingerprint(binding),
         }
 
-    async def _episode(self, session, suite, case):
+    async def _episode(self, session, suite, case, *, attempt=None):
         task = suite.task
         mirror = StateStore(session.manifest.sceneRevision, session.epoch)
-        mirror.apply(session.info_snapshot())
+        scope = {
+            "sessionId": session.session_id,
+            "sceneRevision": session.manifest.sceneRevision,
+            "epoch": session.epoch,
+        }
         stages = {stage["id"]: False for stage in task["milestones"]}
 
-        def observe():
+        def observe(message=None):
+            if message is not None:
+                if message.sceneRevision != scope["sceneRevision"] or message.epoch != scope["epoch"]:
+                    raise HTTPException(503, {"code": "evaluation_observation_unavailable"})
+                mirror.apply(message)
+            conditions = CompiledConditions(
+                [task["success"], *(stage["when"] for stage in task["milestones"])]
+            )
+            conditions = [
+                condition | {"entity": condition.get("entity", task["robot"])} for condition in conditions
+            ]
+            if (
+                session.session_id != scope["sessionId"]
+                or session.manifest.sceneRevision != scope["sceneRevision"]
+                or session.epoch != scope["epoch"]
+            ):
+                raise HTTPException(503, {"code": "evaluation_observation_unavailable"})
+            sample = {
+                "scope": scope | {"sceneRevision": mirror.scene_revision, "epoch": mirror.epoch},
+                "state": {
+                    "entities": {
+                        key: entity.model_dump(mode="json") for key, entity in mirror.entities.items()
+                    }
+                },
+            }
+            try:
+                require_physical(conditions, sample, scope, session.catalog)
+            except EvidenceUnavailable:
+                raise HTTPException(503, {"code": "evaluation_observation_unavailable"}) from None
             for stage in task["milestones"]:
                 stages[stage["id"]] |= (
                     condition_state(
@@ -645,8 +792,10 @@ class EvaluationService:
                     )
                     is True
                 )
+            if attempt is not None:
+                attempt["milestones"] = dict(stages)
 
-        observe()
+        observe(session.info_snapshot())
         cursor = session.info.event_seq
         pipeline = await session.action_pipeline()
         actor = Actor(kind="user", name="platform-evaluator")
@@ -664,7 +813,10 @@ class EvaluationService:
             invocation = await pipeline.approve(
                 invocation.invocationId, "deny", "operator", actor, "Human gates are denied during evaluation"
             )
+        if attempt is not None:
+            attempt.update(invocationId=invocation.invocationId, invocationStatus=invocation.status)
         deadline = time.monotonic() + task["timeoutSeconds"]
+        timed_out = False
         while True:
             events = await session.info.events_after(cursor, 0 if invocation.status in TERMINAL else 0.1)
             if events["gap"]:
@@ -673,18 +825,24 @@ class EvaluationService:
                 value = event["message"]
                 if value["type"] in ("entity.snapshot", "entity.observations"):
                     model = EntitySnapshot if value["type"] == "entity.snapshot" else EntityObservations
-                    mirror.apply(model.model_validate(value))
-                    observe()
+                    observe(model.model_validate(value))
             cursor = events["lastSeq"]
             invocation = pipeline.table.get(invocation.invocationId)
+            if attempt is not None:
+                attempt["invocationStatus"] = invocation.status
             if session.state not in ("RUNNING", "PAUSED"):
                 raise HTTPException(503, {"code": "source_unavailable"})
+            if invocation.error and invocation.error.code in ("source_unavailable", "device_unavailable"):
+                raise HTTPException(503, {"code": invocation.error.code})
             if invocation.status in TERMINAL:
                 break
             if time.monotonic() >= deadline:
                 await pipeline.cancel(invocation.invocationId, "operator")
-                raise HTTPException(504, {"code": "episode_timeout"})
-        success = (
+                invocation = pipeline.table.get(invocation.invocationId)
+                timed_out = True
+                break
+        observe()
+        success = not timed_out and (
             condition_state([task["success"]], task["robot"], session.info.values(), session.info.metadata())
             is True
         )
@@ -697,6 +855,7 @@ class EvaluationService:
             ),
             "invocationId": invocation.invocationId,
             "invocationStatus": invocation.status,
+            **({"reason": "task_timeout"} if timed_out else {}),
         }
 
     async def cleanup(self, identifier):
@@ -742,28 +901,43 @@ def install_evaluation_routes(app, service, role_for):
         return service.suites.resolve(f"suite/{name}@{revision}").public()
 
     @app.get("/api/v1/suites/{name}/{revision}/scoreboard")
-    async def scoreboard(name: str, revision: str, subject: str | None = None,
-                         compare: str | None = None, against: str | None = None):
+    async def scoreboard(
+        name: str,
+        revision: str,
+        subject: str | None = None,
+        compare: str | None = None,
+        against: str | None = None,
+    ):
         version = service.suites.resolve(f"suite/{name}@{revision}")
-        rows = [row for row in service.store.rows if row["suite"] == version.id and row["split"] == "train"
-                and (subject is None or row["subject"] == subject)]
+        rows = [
+            row
+            for row in service.store.rows
+            if row["suite"] == version.id
+            and row["split"] == "train"
+            and (subject is None or row["subject"] == subject)
+        ]
         if (compare is None) != (against is None):
             raise HTTPException(
                 422, {"code": "invalid_comparison", "message": "Provide compare and against together"}
             )
         result = {"rows": [public_score(row, rows) for row in rows]}
         if compare is not None:
-            selected = [next((row for row in rows if row["evaluationId"] == identifier), None)
-                        for identifier in (compare, against)]
+            selected = [
+                next((row for row in rows if row["evaluationId"] == identifier), None)
+                for identifier in (compare, against)
+            ]
             if any(row is None for row in selected):
                 raise HTTPException(404, {"code": "unknown_evaluation"})
             first, second = selected
-            if first["key"] != second["key"]:
+            if not comparable(first, second):
                 raise HTTPException(
                     409, {"code": "not_comparable", "message": "Evaluation conditions differ"}
                 )
-            result["comparison"] = {"compare": compare, "against": against,
-                                    "scoreDelta": first["score"] - second["score"]}
+            result["comparison"] = {
+                "compare": compare,
+                "against": against,
+                "scoreDelta": first["score"] - second["score"],
+            }
         return result
 
     @app.post("/api/v1/evaluations", status_code=202)
@@ -776,7 +950,8 @@ def install_evaluation_routes(app, service, role_for):
         return {
             "evaluations": [
                 public_evaluation(value, service.store.rows)
-                for value in service.store.records.values() if value["split"] == "train"
+                for value in service.store.records.values()
+                if value["split"] == "train"
             ]
         }
 

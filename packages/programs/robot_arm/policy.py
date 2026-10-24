@@ -15,6 +15,7 @@ from .newton import HOME
 
 class PolicyProgram:
     id, type, tick_priority = "robot_arm.policy", "robot-arm/v1", 10
+    evaluation_implementation_role = "fixed-runtime"
 
     class Config(ProgramConfig):
         policy: str = Field(pattern=r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")

@@ -5,24 +5,26 @@ afterEach(() => vi.unstubAllGlobals());
 
 const score = (id: string, conditionsGroup?: string, decision: EvaluationScore['decision'] = 'baseline') => ({
   evaluationId: id, suite: 'suite/real@1', subject: 'robot_arm.virtual', version: 'runtime', key: { source: 'synthetic' },
-  conditionsGroup, split: 'train', score: .5, decision, reference: null, successes: 1, episodes: 2,
+  conditionsGroup, comparisonState: 'known', split: 'train', score: .5, decision, reference: null, successes: 1, episodes: 2,
   ci95: [.09, .91], durationSeconds: 5, recordings: [], phases: {}, at: '2026-10-23T00:00:00Z',
 } satisfies EvaluationScore);
 
-it('keeps complete server condition groups and subjects separate even when public tags are identical', () => {
+it('uses complete server groups across candidates and keeps unknown legacy evidence separate', () => {
   const original = score('first', 'first');
   const accepted = score('second', 'first', 'accepted');
   const rejected = score('third', 'first', 'rejected');
   const different = score('private-difference', 'private-difference');
-  const anotherSubject = { ...score('other-subject', 'first'), subject: 'another-program' };
+  const anotherSubject = { ...score('other-subject', 'first', 'rejected'), subject: 'another-program' };
   const unclassified = score('older-gateway');
-  const groups = scoreGroups([original, different, accepted, anotherSubject, rejected, unclassified, score('unknown')]);
+  const legacy = { ...score('legacy', 'first'), comparisonState: undefined };
+  const groups = scoreGroups([original, different, accepted, anotherSubject, rejected, unclassified, score('unknown'), legacy]);
   expect(groups.map(group => group.map(row => row.evaluationId))).toEqual([
-    ['first', 'second', 'third'], ['private-difference'], ['other-subject'], ['older-gateway'], ['unknown'],
+    ['first', 'second', 'other-subject', 'third'], ['private-difference'], ['older-gateway'], ['unknown'], ['legacy'],
   ]);
   expect(currentReference(groups[0])).toBe(accepted);
   expect(currentReference([rejected])).toBeUndefined();
   expect(currentReference([score('external-result', 'first', 'reported')])).toBeUndefined();
+  expect(currentReference([legacy])).toBeUndefined();
   expect(agentScore(82.5)).toBe('82.5 / 100');
   expect(successRate(.825)).toBe('82.5%');
 });

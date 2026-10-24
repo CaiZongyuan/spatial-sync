@@ -35,9 +35,8 @@ def test_missing_required_implementation_input_never_hashes_as_a_complete_empty_
             path = tmp_path / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("value = 1\n")
-    monkeypatch.setattr("apps.api.app.notebook_service.REPO_ROOT", tmp_path)
     with pytest.raises(OSError):
-        implementation_identities()
+        implementation_identities(root=tmp_path)
 
 
 @pytest.mark.parametrize("save_fails", [False, True])

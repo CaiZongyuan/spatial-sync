@@ -78,7 +78,7 @@ function Conditions({ suite, row }: { suite: EvaluationSuite; row?: EvaluationSc
   return <section className="eval-conditions" aria-label="可比较条件"><div><span className="eyebrow">COMPARABLE CONDITIONS</span><h2>可比较条件</h2></div>
     <div className="eval-condition-tags">{Object.entries(conditions).map(([name, value]) => <span key={name} className={`eval-tag ${['model', 'thinking'].includes(name) ? 'accent' : ''}`} title={`${conditionNames[name] ?? name}: ${value ?? '未声明'}`}>
       {conditionNames[name] ?? name} <b>{value == null ? name === 'newtonVersion' && suite.source === 'synthetic' ? '不适用（Synthetic）' : '未声明' : name.endsWith('Hash') ? shortVersion(value) : value}</b></span>)}</div>
-    <p>{row ? `当前条件组 ${row.conditionsGroup ?? row.evaluationId}` : '尚无运行条件；以上为评估集固定配置。'} · {suite.layer === 'agent' ? 'Agent 分数仅在评估集版本、模型与思考等级相同时可比较。模型与思考等级随实际运行记录。' : '只有完整条件相同的记录才可比较，并绘制在同一条曲线上。Embodiment 未注册时以实际目标与绑定记录为准。'}</p>
+    <p>{row ? row.comparisonState === 'known' ? `当前条件组 ${row.conditionsGroup ?? row.evaluationId}` : '比较证据未知，当前记录不能用作新参照。' : '尚无运行条件；以上为评估集固定配置。'} · {suite.layer === 'agent' ? 'Agent 分数仅在评估集版本、模型与思考等级相同时可比较。模型与思考等级随实际运行记录。' : '只有完整条件相同的记录才可比较，并绘制在同一条曲线上。Embodiment 未注册时以实际目标与绑定记录为准。'}</p>
   </section>;
 }
 
@@ -89,14 +89,14 @@ function ScoreCurve({ rows, layer = 'embodied' }: { rows: EvaluationScore[]; lay
     {!groups.length ? <p className="eval-empty">尚无完整评估，暂无分数曲线。</p> : <div className="eval-curves">{groups.map((group, index) => {
       const x = (i: number) => group.length === 1 ? 280 : 44 + i * 492 / (group.length - 1);
       const y = (score: number) => 164 - score / maximum * 140;
-      return <figure key={group[0].evaluationId}><figcaption><b>条件 {index + 1}</b> · {group[0].subject}<small>{group[0].key.scene} · {group[0].key.source} · {group.length} 次评估</small></figcaption>
+      return <figure key={group[0].evaluationId}><figcaption><b>{group[0].comparisonState === 'known' ? `条件 ${index + 1}` : '条件未知'}</b> · {[...new Set(group.map(row => row.subject))].join(' / ')}<small>{group[0].key.scene} · {group[0].key.source} · {group.length} 次评估</small></figcaption>
         <svg viewBox="0 0 560 200" role="img" aria-label={`条件 ${index + 1} 的${layer === 'agent' ? '评分' : '成功率'}曲线，${group.length} 次评估`}>
           {[0, maximum / 2, maximum].map(value => <g key={value}><line x1="40" x2="540" y1={y(value)} y2={y(value)} className="eval-chart-grid" /><text x="2" y={y(value) + 4}>{layer === 'agent' ? value : `${value * 100}%`}</text></g>)}
           <path d={group.map((row, i) => `${i ? 'L' : 'M'}${x(i)},${y(row.score)}`).join(' ')} className="eval-chart-line" />
           {group.map((row, i) => <circle key={row.evaluationId} cx={x(i)} cy={y(row.score)} r="4" className={`eval-chart-point ${row.decision}`}>
-            <title>{`${row.evaluationId} · ${shortVersion(row.version)} · ${format(row.score)} · ${decisionLabels[row.decision]}`}</title></circle>)}
+            <title>{`${row.evaluationId} · ${row.subject} · ${shortVersion(row.version)} · ${format(row.score)} · ${decisionLabels[row.decision]}`}</title></circle>)}
           <text x="40" y="190">第 1 次</text><text x="540" y="190" textAnchor="end">{group.length > 1 ? `第 ${group.length} 次` : '单次观测'}</text>
-        </svg><details><summary>查看曲线数值</summary><ol>{group.map(row => <li key={row.evaluationId}><code>{row.evaluationId}</code> · {format(row.score)}</li>)}</ol></details>
+        </svg><details><summary>查看曲线数值</summary><ol>{group.map(row => <li key={row.evaluationId}><code>{row.evaluationId}</code> · {row.subject} · {format(row.score)}</li>)}</ol></details>
       </figure>;
     })}</div>}
     <p className="eval-footnote">横轴按本组评估的追加顺序。每个条件组单独绘制，版本与 95% CI 见计分板。</p>
@@ -159,13 +159,13 @@ function EpisodeDetails({ suite, row, record }: { suite: EmbodiedEvaluationSuite
       const phase = row.phases?.[stage];
       return <div key={stage}><label htmlFor={`phase-${stage}`}>{stage}</label><progress id={`phase-${stage}`} max={1} value={phase?.rate ?? 0} />
         <span>{phase ? `${phase.passed}/${phase.episodes} · ${successRate(phase.rate)}` : '未记录'}</span></div>;
-    })}</div>
-      {record?.episodes.length ? <div className="eval-table-scroll"><table aria-label="评估回合"><thead><tr><th>train 回合</th><th>任务成功</th>{suite.milestones.map(stage => <th key={stage}>{stage}</th>)}<th>失败阶段</th><th>动作结果</th><th>录制</th></tr></thead><tbody>
-        {record.episodes.map((episode, i) => <tr key={`${episode.caseId}:${i}`}><th scope="row">{episode.caseId}</th><td>{episode.success ? '成功' : '失败'}</td>
+    })}</div></> : <p className="eval-empty">本次评估没有完整成绩；已发生的尝试和观测保留在下方。</p>}
+      {record?.episodes.length ? <div className="eval-table-scroll"><table aria-label="评估回合"><thead><tr><th>train 回合</th><th>任务成功</th>{suite.milestones.map(stage => <th key={stage}>{stage}</th>)}<th>失败阶段</th><th>动作结果</th><th>录制</th><th>资源清理</th></tr></thead><tbody>
+        {record.episodes.map((episode, i) => <tr key={`${episode.caseId}:${i}`}><th scope="row">{episode.caseId}</th><td>{episode.status === 'invalid' ? '实验无效' : episode.status === 'cancelled' ? '已取消' : episode.success === true ? '成功' : episode.success === false ? '失败' : '未知'}{episode.reason && <small>{episode.reason === 'task_timeout' ? '任务时限耗尽' : episode.reason}</small>}</td>
           {suite.milestones.map(stage => <td key={stage}>{episode.milestones[stage] === undefined ? '未记录' : episode.milestones[stage] ? '通过' : '未通过'}</td>)}
-          <td>{episode.failedStage ?? '—'}</td><td>{episode.invocationStatus}<small>{episode.invocationId}</small></td>
-          <td>{episode.recordingId ? <Link to="/replay/$recordingId" params={{ recordingId: episode.recordingId }}>查看回放 ↗</Link> : '未记录'}</td></tr>)}</tbody></table></div> : <p className="eval-empty">此计分记录暂无公开回合明细。</p>}
-    </> : <p className="eval-empty">完成评估后显示阶段观测与逐回合结果。</p>}
+          <td>{episode.failedStage ?? '—'}</td><td>{episode.invocationStatus ?? '未知'}<small>{episode.invocationId}</small></td>
+          <td>{episode.recordingId ? <Link to="/replay/$recordingId" params={{ recordingId: episode.recordingId }}>查看回放 ↗</Link> : '未记录'}</td>
+          <td>{episode.cleanupComplete === true ? '已确认' : episode.cleanupComplete === false ? '未确认' : '未知'}</td></tr>)}</tbody></table></div> : <p className="eval-empty">此评估暂无公开回合明细。</p>}
     <details className="eval-public-cases"><summary>公开 train 回合与覆盖</summary><ul>{suite.episodes.map(episode => <li key={episode.id}><code>{episode.id}</code> · {Object.entries(episode.params).map(([name, value]) => `${name}: ${JSON.stringify(value)}`).join(' → ')}</li>)}</ul>
       <dl>{Object.entries(suite.coverage).map(([name, values]) => <div key={name}><dt>{name}</dt><dd>{values.map(value => JSON.stringify(value)).join(', ')}</dd></div>)}</dl></details>
   </section>;
@@ -190,12 +190,16 @@ function AgentSuiteDetails({ suite, rows }: { suite: AgentEvaluationSuite; rows:
 function SuiteDetails({ suite, rows, evaluations }: { suite: EvaluationSuite; rows: EvaluationScore[]; evaluations: EvaluationRecord[] }) {
   const [subject, setSubject] = useState(''), [selected, select] = useState('');
   if (suite.layer === 'agent') return <AgentSuiteDetails suite={suite} rows={rows} />;
-  const subjects = [...new Set(rows.map(row => row.subject))];
+  const subjects = [...new Set([...rows, ...evaluations].map(row => row.subject))];
   const filtered = rows.filter(row => !subject || row.subject === subject);
-  const row = filtered.find(value => value.evaluationId === selected) ?? filtered.at(-1);
-  const record = evaluations.find(value => value.evaluationId === row?.evaluationId);
+  const attempts = evaluations.filter(value => !subject || value.subject === subject);
+  const selectedId = selected || filtered.at(-1)?.evaluationId || attempts.at(-1)?.evaluationId;
+  const row = filtered.find(value => value.evaluationId === selectedId);
+  const record = attempts.find(value => value.evaluationId === selectedId);
   return <><Conditions suite={suite} row={row} /><div className="eval-detail-toolbar"><label>被测程序<select aria-label="被测程序筛选" value={subject} onChange={event => { setSubject(event.target.value); select(''); }}>
-    <option value="">全部程序</option>{subjects.map(value => <option key={value}>{value}</option>)}</select></label><span>目标 <code>{suite.target}</code> · {suite.implements}</span></div>
+    <option value="">全部程序</option>{subjects.map(value => <option key={value}>{value}</option>)}</select></label>
+    {!!attempts.length && <label>评估明细<select aria-label="评估明细" value={selectedId} onChange={event => select(event.target.value)}>{attempts.map(value => <option key={value.evaluationId} value={value.evaluationId}>{value.evaluationId} · {statusLabels[value.status] ?? value.status}</option>)}</select></label>}
+    <span>目标 <code>{suite.target}</code> · {suite.implements}</span></div>
     <Scoreboard suite={suite} rows={filtered} selected={row?.evaluationId} select={select} /><ScoreCurve rows={filtered} />
     <EpisodeDetails suite={suite} row={row} record={record} /><div className="eval-bottom-grid"><section className="eval-panel eval-scoring"><span className="eyebrow">SCORING</span><h2>评分方式</h2>
       <p>分数为固定评估集的任务成功率。任务成功依据本次状态判定，与动作调用是否成功分别记录。</p>

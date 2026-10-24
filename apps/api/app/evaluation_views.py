@@ -3,8 +3,10 @@
 import math
 from copy import deepcopy
 
+from packages.info.evaluation_identity import comparable, comparison_identity
 
-def public_agent_run(value):
+
+def public_agent_run(value, rows=()):
     result = {
         key: deepcopy(value[key])
         for key in (
@@ -30,16 +32,21 @@ def public_agent_run(value):
             "key",
             "startedAt",
             "endedAt",
-            "result",
             "error",
+            "comparisonState",
+            "comparisonReason",
         )
         if key in value
     }
     result["id"] = value["evaluationId"]
+    if isinstance(value.get("key"), dict):
+        result["key"] = public_conditions(value["key"])
     result["cases"] = [
         {key: deepcopy(item) for key, item in case.items() if key != "completionHash"}
         for case in value["cases"]
     ]
+    if isinstance(value.get("result"), dict):
+        result["result"] = public_score(value["result"], rows)
     return result
 
 
@@ -86,9 +93,20 @@ def public_conditions(value):
 
 def public_episode(value):
     result = fields(
-        value, ("caseId", "failedStage", "invocationId", "invocationStatus", "recordingId"), (str,)
+        value,
+        (
+            "caseId",
+            "status",
+            "failedStage",
+            "invocationId",
+            "invocationStatus",
+            "sessionId",
+            "recordingId",
+            "reason",
+        ),
+        (str,),
     )
-    result.update(fields(value, ("success",), (bool,)))
+    result.update(fields(value, ("success", "cleanupComplete"), (bool,)))
     if isinstance(value.get("milestones"), dict):
         result["milestones"] = {
             key: passed for key, passed in value["milestones"].items() if type(passed) is bool
@@ -110,9 +128,12 @@ def public_score(value, rows=()):
             "plan",
             "planId",
             "goalId",
+            "comparisonState",
+            "comparisonReason",
         ),
         (str,),
     )
+    result["comparisonState"] = "known" if comparison_identity(value) else "unknown"
     result.update(fields(value, ("version",), (str, int)))
     result.update(fields(value, ("planRevision",), (int,)))
     result.update(numbers(value, ("successes", "episodes", "score", "durationSeconds")))
@@ -134,8 +155,7 @@ def public_score(value, rows=()):
                 for row in rows
                 if row.get("split") == "train"
                 and row.get("suite") == value.get("suite")
-                and row.get("subject") == value.get("subject")
-                and row.get("key") == value["key"]
+                and comparable(row, value)
             ),
             value,
         )
@@ -159,7 +179,7 @@ def public_score(value, rows=()):
 
 def public_evaluation(value, rows=()):
     if value.get("layer") == "agent":
-        return public_agent_run(value)
+        return public_agent_run(value, rows)
     result = fields(
         value,
         (
