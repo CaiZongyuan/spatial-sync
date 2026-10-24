@@ -18,6 +18,7 @@ export class TrainingEnvSource extends SessionClient {
   hasSnapshot = false;
   lastFrameAt = 0;
   private manifestIdentity: string;
+  private transportState: number = WebSocket.OPEN;
 
   constructor(readonly jobId: string, readonly viewId: string, readonly envIndex: number,
     manifest: SceneManifest, readonly hello: TrainingHelloPayload) {
@@ -47,7 +48,7 @@ export class TrainingEnvSource extends SessionClient {
     this.verify(manifest);
     ensure(stable({ ...manifest, epoch: 0 }) === this.manifestIdentity, '同一视图的几何描述发生变化');
   }
-  accept(frame: TransformFrame, received = performance.now()) {
+  accept(frame: TransformFrame, received = performance.now(), wireBytes = 0) {
     const manifest = this.getSnapshot().manifest!;
     ensure(frame.sessionId === this.sessionId && frame.sceneRevision === manifest.sceneRevision, '训练空间帧身份不匹配');
     const ids = new Set(manifest.nodes.flatMap(node => node.kind === 'body' ? [node.streamId] : []));
@@ -57,17 +58,28 @@ export class TrainingEnvSource extends SessionClient {
     this.lastFrameAt = received;
     this.buffer.paused = false;
     this.update({ connection: 'connected', sessionState: 'TRAINING', simTime: frame.simTime,
-      receivedFrames: this.getSnapshot().receivedFrames + 1, publishedRateHz: this.hello.maxRateHz, error: undefined });
+      receivedFrames: this.getSnapshot().receivedFrames + 1, payloadBytes: this.getSnapshot().payloadBytes + wireBytes,
+      publishedRateHz: this.hello.maxRateHz, error: undefined });
     return true;
   }
   freeze(reconnecting = false) {
     this.buffer.applyLatest();
     this.buffer.paused = true;
-    if (reconnecting) this.buffer.expectSnapshot();
+    if (reconnecting) { this.buffer.expectSnapshot(); this.transportState = WebSocket.CLOSED; }
     this.update({ connection: 'disconnected', sessionState: 'TRAINING_STALE' });
   }
   override async start() { /* The owning Job transport supplies data. */ }
+  transportOpened() { this.transportState = WebSocket.OPEN; }
+  override getStreamMetrics = () => ({
+    timeMs: performance.now(), receivedFrames: this.getSnapshot().receivedFrames, payloadBytes: this.getSnapshot().payloadBytes,
+    skippedNonFinite: this.buffer.skippedNonFinite, discardedFrames: this.buffer.discardedFrames,
+    invalidBinaryFrames: this.buffer.invalidBinaryFrames, frameFormat: 'json', revision: this.buffer.revision,
+    epoch: this.buffer.epoch, seq: this.buffer.lastSeq, sessionState: this.getSnapshot().sessionState,
+    connection: this.getSnapshot().connection,
+    socketReadyState: this.transportState,
+  });
   override stop() {
+    this.transportState = WebSocket.CLOSED;
     this.buffer.paused = true; this.info.dispose();
     this.update({ connection: 'disconnected', sessionState: 'TRAINING_ENDED' });
   }
@@ -127,13 +139,14 @@ export class TrainingViewClient {
     socket.onopen = () => {
       if (this.socket !== socket || this.stopped) return;
       this.reconnectDelay = 500;
+      this.sources.forEach(source => source.transportOpened());
       this.update({ state: this.sources.size ? 'stale' : 'waiting', error: undefined, message: '等待完整训练采样' });
     };
     socket.onmessage = event => {
       if (this.socket !== socket || this.stopped || this.terminal) return;
       try {
         ensure(typeof event.data === 'string', '训练视图需要版本化 JSON 消息');
-        this.accept(parseTrainingViewMessage(event.data, this.jobId));
+        this.accept(parseTrainingViewMessage(event.data, this.jobId), new TextEncoder().encode(event.data).byteLength);
       } catch (error) { this.fail((error as Error).message); }
     };
     socket.onerror = () => {
@@ -152,7 +165,7 @@ export class TrainingViewClient {
     return message.attemptId == null && message.viewId == null || this.identity?.attemptId === message.attemptId
       && this.identity?.viewId === message.viewId;
   }
-  private accept(message: TrainingViewMessage) {
+  private accept(message: TrainingViewMessage, wireBytes: number) {
     if (message.type === 'hello') {
       const inputs = stable({ task: message.payload.task, taskContentHash: message.payload.taskContentHash,
         scene: message.payload.scene, sceneContentHash: message.payload.sceneContentHash,
@@ -168,6 +181,7 @@ export class TrainingViewClient {
       this.update({ hello: message.payload, viewId: message.viewId, state: 'waiting', error: undefined });
       return;
     }
+    if (message.type === 'manifest' || message.type === 'frame') ensure(this.identity, '训练空间消息早于 Hello');
     if (!this.matches(message)) return;
     if (message.type === 'manifest' || message.type === 'frame') {
       const hello = this.state.hello;
@@ -181,7 +195,7 @@ export class TrainingViewClient {
         }
       } else {
         ensure(source, '训练空间帧早于 Manifest');
-        if (!source.accept(message.payload)) return;
+        if (!source.accept(message.payload, performance.now(), wireBytes)) return;
         const live = hello.environments.every(index => {
           const current = this.sources.get(index);
           return current?.hasSnapshot && !current.buffer.awaitingSnapshot && current.getSnapshot().connection === 'connected';
