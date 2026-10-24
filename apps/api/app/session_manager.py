@@ -1109,6 +1109,9 @@ class SessionManager:
         self._information_started = False
         self.evaluations = None
         self.jobs = TrainingJobs(self)
+        from packages.cost.ledger import CostLedger
+
+        self.costs = CostLedger(self)
 
     async def startup(self):
         async with self._startup_lock:

@@ -27,6 +27,7 @@ from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 from apps.api.app.agent_routes import install_agent_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
+from apps.api.app.cost_routes import install_cost_routes
 from apps.api.app.device_host import DeviceHost
 from apps.api.app.evaluation_recordings import EvaluationRecordingRepository
 from apps.api.app.evaluations import EvaluationService, install_evaluation_routes
@@ -241,6 +242,7 @@ def create_app(
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))
+    install_cost_routes(app, manager, lambda headers: _role(headers, settings))
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
