@@ -1,13 +1,13 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
-import { agentCaseStatus, agentRunStatus, cancelAgentRun, createAgentRun, listAgentRuns, listAgents, listHarnessVersions,
-  type AgentRun, type AgentRunInput, type AgentSummary, type HarnessVersion } from '../lib/agent-runs';
+import { agentCaseStatus, agentRunStatus, cancelAgentRun, createAgentRun, listAgentRuns, listHarnessVersions,
+  type AgentRun, type AgentRunInput, type HarnessVersion } from '../lib/agent-runs';
 import { agentScore, evaluationDate, shortVersion, type AgentEvaluationSuite, type EvaluationScore } from '../lib/evaluations';
 import { runtimeCostSource, runtimeCount, runtimeMoney } from '../lib/runtime-records';
 import { Icon } from './Icon';
 
 function CreateRun({ suite, created }: { suite: AgentEvaluationSuite; created: (run: AgentRun) => void }) {
-  const [agents, setAgents] = useState<AgentSummary[]>(), [agent, setAgent] = useState(suite.target);
+  const agent = suite.target;
   const [versions, setVersions] = useState<HarnessVersion[]>(), [version, setVersion] = useState('');
   const [runtime, setRuntime] = useState(''), [runtimeVersion, setRuntimeVersion] = useState('');
   const [model, setModel] = useState(''), [thinking, setThinking] = useState('');
@@ -16,14 +16,6 @@ function CreateRun({ suite, created }: { suite: AgentEvaluationSuite; created: (
   const request = useRef<{ content: string; id: string } | undefined>(undefined);
   const mutation = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => mutation.current?.abort(), []);
-  useEffect(() => {
-    let disposed = false;
-    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
-    void listAgents(controller.signal).then(values => { if (!disposed) setAgents(values); }).catch(error => {
-      if (!disposed) setLoadError(controller.signal.aborted ? '读取 Agent 超时，请重试。' : (error as Error).message);
-    }).finally(() => clearTimeout(timeout));
-    return () => { disposed = true; controller.abort(); };
-  }, [attempt]);
   useEffect(() => {
     let disposed = false;
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
@@ -58,11 +50,9 @@ function CreateRun({ suite, created }: { suite: AgentEvaluationSuite; created: (
     <span>{suite.cases.length} 题 × {suite.runsPerCase} 次 · public train</span></header>
     <form className="eval-agent-form" onSubmit={event => void submit(event)}>
       <p>平台固定题目、Harness 与实验 Session，并记录受信证据和评分。外部 runtime 使用自身的模型、上下文与认证执行。</p>
-      {loadError && <p role="alert">读取 Agent / Harness 失败：{loadError} <button type="button" onClick={() => setAttempt(value => value + 1)}>重读版本</button></p>}
+      {loadError && <p role="alert">读取 Harness 失败：{loadError} <button type="button" onClick={() => setAttempt(value => value + 1)}>重读版本</button></p>}
       <fieldset disabled={pending}><legend>固定评估输入</legend><div className="eval-agent-fields">
-        <label>Agent<select aria-label="评估 Agent" value={agent} onChange={event => setAgent(event.target.value)}>
-          {!agents?.some(item => item.id === agent) && <option value={agent}>{agent}</option>}
-          {agents?.map(item => <option key={item.id} value={item.id}>{item.title} · {item.id}</option>)}</select></label>
+        <label>Agent<input aria-label="评估 Agent" value={agent} readOnly /></label>
         <label>Harness 版本<select aria-label="评估 Harness 版本" required value={version} onChange={event => setVersion(event.target.value)}>
           <option value="">{versions ? '选择固定版本' : '正在读取版本…'}</option>
           {versions?.map(item => <option key={item.version} value={item.version}>v{item.version} · {shortVersion(item.contentHash)}</option>)}</select></label>

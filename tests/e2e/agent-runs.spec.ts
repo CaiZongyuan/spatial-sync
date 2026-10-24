@@ -101,7 +101,8 @@ test('external evaluation freezes inputs, exposes real Synthetic evidence and ke
     await expect(detail).toContainText('已取消');
     await expect(detail).toContainText('已确认完成');
     await expect(page.getByRole('table', { name: 'Agent 评估计分板', exact: true })).toContainText('尚无完整有效');
-    expect((await (await http.get(`${api}/api/v1/health`)).json()).sessionCount).toBe(0);
+    const health = await (await http.get(`${api}/api/v1/health`)).json();
+    expect(health.sessions.every((session: { state: string }) => session.state === 'STOPPED')).toBe(true);
     await page.screenshot({ path: info.outputPath('actual-synthetic-partial-cancel.png'), fullPage: true });
 
     // These final records are explicitly controlled UI contracts, not a completed runtime evaluation.

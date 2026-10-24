@@ -75,16 +75,22 @@ async def test_installed_controller_and_scoped_target_share_the_actual_evaluatio
             repeated = await result(controller, "agent_run_complete", id=identifier,
                                     caseRunId=work["caseRunId"], nativeSessionId=native["nativeSessionId"],
                                     runtimeRecordId=native["id"])
-            assert repeated == final
-            assert final["run"]["status"] == "completed" and final["run"].get("result") is None
-            assert final["run"]["cleanup"]["complete"]
+            assert repeated["case"] == case
+            for _ in range(100):
+                retained = await result(controller, "agent_run_show", id=identifier)
+                if retained["status"] == "completed":
+                    break
+                await asyncio.sleep(.02)
+            else:
+                raise AssertionError("Finalized verification did not finish its parent run")
+            assert retained.get("result") is None and retained["cleanup"]["complete"]
             assert (await result(controller, "agent_run_next", id=identifier))["status"] == "finished"
         with httpx.Client(base_url=gateway_url, trust_env=False) as http:
             assert http.get("/api/v1/suites/lab-ops-basic/1/scoreboard").json()["rows"] == []
             for artifact in case["artifacts"]:
                 response = http.get(artifact["url"])
                 assert response.is_success and work["connection"]["token"] not in response.text
-            assert http.get("/api/v1/health").json()["sessionCount"] == 0
+            assert all(item["state"] == "STOPPED" for item in http.get("/api/v1/health").json()["sessions"])
     finally:
         with httpx.Client(base_url=gateway_url, trust_env=False) as http:
             retained = http.get("/api/v1/agent-runs/" + identifier).json()
@@ -109,4 +115,5 @@ async def test_controller_cancel_is_retained_without_a_score_or_training_approva
     transport = StdioServerParameters(command=str(LW), args=["mcp"], env=env)
     async with Client(transport, mode="legacy") as controller:
         assert (await result(controller, "agent_run_cancel", id=identifier))["status"] == "cancelled"
-    assert lab[0].get("/api/v1/health").json()["sessionCount"] == 1
+    assert [item["sessionId"] for item in lab[0].get("/api/v1/health").json()["sessions"]
+            if item["state"] in ("RUNNING", "PAUSED")] == [lab[2]["LW_SESSION"]]

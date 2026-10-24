@@ -10,6 +10,16 @@ def identity(process):
     return {"pid": process.pid, "created": process.create_time(), "command": process.cmdline()}
 
 
+def identities(processes):
+    values = []
+    for process in processes:
+        try:
+            values.append(identity(process))
+        except psutil.NoSuchProcess:
+            pass
+    return values
+
+
 def verified(value):
     try:
         process = psutil.Process(value["pid"])
@@ -21,7 +31,7 @@ def verified(value):
 if sys.argv[1] == "snapshot":
     try:
         root = psutil.Process(int(sys.argv[2]))
-        values = [identity(process) for process in [root, *root.children(recursive=True)]]
+        values = identities([root, *root.children(recursive=True)])
     except psutil.NoSuchProcess:
         values = []
     print(json.dumps(values))
@@ -30,7 +40,10 @@ else:
     # The root was captured while its current Node ChildProcess handle was live.
     # Capture later descendants only while that same root identity still exists.
     if values and (root := verified(values[0])) is not None:
-        values += [identity(process) for process in root.children(recursive=True)]
+        try:
+            values += identities(root.children(recursive=True))
+        except psutil.NoSuchProcess:
+            pass
     values = list({(value["pid"], value["created"]): value for value in values}.values())
     processes = []
     for value in reversed(values):
