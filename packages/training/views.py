@@ -270,15 +270,26 @@ class TrainingViews:
                         await self.send(reader.websocket, self.envelope(job, "status", {"state": "waiting"}))
                         reader.status = "waiting"
                     continue
+
+                def obsolete():
+                    changed = job["status"] in TERMINAL or self.states.get(identity) is not state
+                    if changed:
+                        reader.event.set()
+                    return changed
+
                 if reader.view_id != state.hello.viewId:
                     reader.view_id = state.hello.viewId
                     reader.sent.clear()
                     await self.send(reader.websocket, state.hello.model_dump(mode="json"))
                     for index, manifest in state.manifests.items():
+                        if obsolete():
+                            break
                         await self.send(
                             reader.websocket,
                             self.envelope(job, "manifest", manifest, view_id=reader.view_id, env_index=index),
                         )
+                if obsolete():
+                    continue
                 status = (
                     "live" if state.connected and state.latest else "waiting" if state.connected else "stale"
                 )
@@ -288,9 +299,11 @@ class TrainingViews:
                         self.envelope(job, "status", {"state": status}, view_id=reader.view_id),
                     )
                     reader.status = status
-                if not state.connected:
+                if obsolete() or not state.connected:
                     continue
                 for index, sample in tuple(state.latest.items()):
+                    if obsolete() or not state.connected:
+                        break
                     if reader.sent.get(index, -1) >= sample["payload"]["seq"]:
                         continue
                     outgoing = deepcopy(sample)

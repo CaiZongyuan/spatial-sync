@@ -1,5 +1,6 @@
 """Public Job sockets preserve canonical/env/reset identity and cannot acquire Session ownership."""
 
+import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -84,6 +85,81 @@ def receive(socket, kind, *, index=None):
         if value["type"] == kind and (index is None or value.get("envIndex") == index):
             return value
     raise AssertionError(f"Expected {kind} env{index}")
+
+
+def test_terminal_during_slow_reader_send_does_not_admit_the_remaining_old_frame_batch():
+    app = create_app(Settings(node_token=TOKEN))
+    entered, release = threading.Event(), threading.Event()
+    views = app.state.training_views
+    send = views.send
+
+    async def blocked(websocket, message):
+        if message["type"] == "frame" and message["envIndex"] == 0:
+            entered.set()
+            await asyncio.to_thread(release.wait, 3)
+        await send(websocket, message)
+
+    views.send = blocked
+    with TestClient(app) as client:
+        plan, task, job, report, headers, hint = start(client)
+        identity = job["jobId"]
+        with client.websocket_connect(f"/api/v1/jobs/{identity}/view-frames", headers=headers) as sender:
+            binding = hello(job, hint)
+            sender.send_json(binding)
+            for index in range(4):
+                sender.send_json(frame(binding, hint, index))
+            deadline = time.monotonic() + 2
+            while len(views.states.get(identity).latest if identity in views.states else {}) != 4:
+                assert time.monotonic() < deadline
+                time.sleep(0.005)
+            with client.websocket_connect(f"/api/v1/jobs/{identity}/view") as viewer:
+                assert entered.wait(2)
+                report["status"] = "cancelled"
+                terminal = client.post(HEARTBEAT, headers=NODE, json=heartbeat(plan, task, [report]))
+                assert terminal.status_code == 200
+                release.set()
+                delivered = []
+                while True:
+                    try:
+                        message = viewer.receive_json()
+                        delivered.append(message)
+                    except WebSocketDisconnect as closed:
+                        assert closed.code == 1000
+                        break
+                # Env0's send was already admitted before terminal; no next old env may start.
+                assert [message["envIndex"] for message in delivered if message["type"] == "frame"] == [0]
+                assert delivered[-1]["type"] == "ended"
+
+
+def test_competing_public_hello_cannot_revive_a_superseded_descriptor_waiter():
+    app = create_app(Settings(node_token=TOKEN))
+    views = app.state.training_views
+    entered, release = threading.Event(), threading.Event()
+    with TestClient(app) as client:
+        _, _, job, _, headers, hint = start(client)
+        descriptor, calls = views._descriptor, []
+
+        async def blocked_descriptor(value):
+            calls.append(True)
+            if len(calls) == 1:
+                entered.set()
+                await asyncio.to_thread(release.wait, 3)
+            return await descriptor(value)
+
+        views._descriptor = blocked_descriptor
+        url = f"/api/v1/jobs/{job['jobId']}/view"
+        with (
+            client.websocket_connect(url) as viewer,
+            client.websocket_connect(url + "-frames", headers=headers) as old,
+            client.websocket_connect(url + "-frames", headers=headers) as new,
+        ):
+            old.send_json(hello(job, hint, "old-descriptor-waiter"))
+            assert entered.wait(2)
+            new.send_json(hello(job, hint, "new-producer"))
+            assert receive(viewer, "hello")["viewId"] == "new-producer"
+            release.set()
+            assert receive(old, "error")["payload"]["code"] == "training_view_stale_producer"
+            assert views.states[job["jobId"]].hello.viewId == "new-producer"
 
 
 @pytest.mark.parametrize("field,code", [
