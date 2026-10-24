@@ -46,6 +46,7 @@ class CredentialRelay:
                 "LW_RELAY_UPSTREAM": self.upstream_origin,
                 "LW_RELAY_CANCELLED": str(self.root / "cancelled"),
                 "LW_RELAY_READY": str(self.root / "ready.json"),
+                "LW_RELAY_OBSERVATIONS": str(self.root / "observations.jsonl"),
                 "LW_RELAY_OWNER_PID": str(owner.pid),
                 "LW_RELAY_OWNER_CREATED": str(owner.create_time()),
             }
@@ -83,6 +84,16 @@ class CredentialRelay:
     def revoke(self):
         if self.root.exists():
             (self.root / "cancelled").touch()
+
+    def reconcile(self, gate):
+        path = self.root / "observations.jsonl"
+        if not path.exists():
+            return
+        for line in path.read_bytes().splitlines(keepends=True):
+            if not line.endswith(b"\n"):
+                break
+            observation = json.loads(line)
+            gate.observe_prefix(observation["attempt"], observation["usage"], observation.get("messageId"))
 
     async def close(self):
         self.revoke()

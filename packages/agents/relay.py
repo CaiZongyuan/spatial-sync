@@ -14,6 +14,30 @@ import psutil
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
+TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+def usage_observations(pending, observed, message_id, credential):
+    packets = pending.replace(b"\r\n", b"\n").split(b"\n\n")
+    for packet in packets[:-1]:
+        for line in packet.decode().splitlines():
+            if not line.startswith("data:") or line[5:].strip() in ("", "[DONE]"):
+                continue
+            value = json.loads(line[5:])
+            if value.get("type") == "message_start":
+                message_id = value.get("message", {}).get("id")
+                usage = value.get("message", {}).get("usage", {})
+            elif value.get("type") == "message_delta":
+                usage = value.get("usage", {})
+            else:
+                continue
+            for key in TOKEN_KEYS:
+                if key in usage:
+                    if type(usage[key]) is not int or usage[key] < 0:
+                        raise ValueError("Invalid provider counter")
+                    observed[key] = max(observed.get(key, 0), usage[key])
+    return packets[-1], observed, sanitized(message_id, credential)
+
 
 def sanitized(value, credential):
     if isinstance(value, str):
@@ -36,7 +60,17 @@ def safe_content(content, content_type, credential):
     return json.dumps(sanitized(json.loads(content), credential)).encode()
 
 
-def create_relay(upstream, *, credential, grant, model, deadline, owner_alive, clock=time.monotonic):
+def create_relay(
+    upstream,
+    *,
+    credential,
+    grant,
+    model,
+    deadline,
+    owner_alive,
+    clock=time.monotonic,
+    observe=lambda attempt, usage, message_id: None,
+):
     app = FastAPI()
     lock = asyncio.Lock()
 
@@ -75,7 +109,7 @@ def create_relay(upstream, *, credential, grant, model, deadline, owner_alive, c
             remaining = deadline - clock()
             if remaining <= 0 or not owner_alive():
                 return unstarted(attempt)
-            chunks, content_type = [], "application/json"
+            chunks, content_type, pending, observed, message_id = [], "application/json", b"", {}, None
             try:
                 # No await separates the last owner/deadline check from starting the external HTTP attempt.
                 async with asyncio.timeout(remaining):
@@ -89,6 +123,13 @@ def create_relay(upstream, *, credential, grant, model, deadline, owner_alive, c
                         content_type = result.headers.get("content-type", "application/json")
                         async for chunk in result.aiter_bytes():
                             chunks.append(chunk)
+                            if "text/event-stream" in content_type:
+                                previous = dict(observed)
+                                pending, observed, message_id = usage_observations(
+                                    pending + chunk, observed, message_id, credential
+                                )
+                                if observed != previous:
+                                    observe(attempt, dict(observed), message_id)
                 content = safe_content(b"".join(chunks), content_type, credential)
                 # Provider headers never acquire the relay's private not-forwarded proof.
                 return Response(
@@ -137,6 +178,15 @@ async def main():
             return False
 
     async with httpx.AsyncClient(base_url=os.environ["LW_RELAY_UPSTREAM"], trust_env=False) as upstream:
+        observations = Path(os.environ["LW_RELAY_OBSERVATIONS"]).open("x", encoding="utf-8", newline="\n")
+
+        def observe(attempt, usage, message_id):
+            observations.write(
+                json.dumps({"attempt": attempt, "usage": usage, "messageId": message_id}) + "\n"
+            )
+            observations.flush()
+            os.fsync(observations.fileno())
+
         app = create_relay(
             upstream,
             credential=os.environ["LW_RELAY_KEY"],
@@ -144,6 +194,7 @@ async def main():
             model=os.environ["LW_RELAY_MODEL"],
             deadline=float(os.environ["LW_RELAY_DEADLINE"]),
             owner_alive=owner_alive,
+            observe=observe,
         )
         ready = Path(os.environ["LW_RELAY_READY"])
 
@@ -165,6 +216,7 @@ async def main():
             )
         finally:
             listener.close()
+            observations.close()
 
 
 if __name__ == "__main__":

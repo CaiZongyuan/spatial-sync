@@ -297,6 +297,29 @@ class BudgetedProvider:
             return ("\n".join(lines) + "\n\n").encode()
         return json.dumps(self._redact(json.loads(content))).encode()
 
+    def observe_prefix(self, attempt, usage, message_id=None):
+        """Merge only a trusted relay observation into the existing attempt, never append usage twice."""
+        self._available()
+        row = next((value for value in self.state["requests"] if value["id"] == attempt), None)
+        if row is None or row.get("dispatchState") == "not_forwarded":
+            raise PlanError("agent_usage_mismatch", "Transport evidence has no forwarded attempt", status=503)
+        merged = dict(row["usage"])
+        for key, value in usage.items():
+            if key not in TOKEN_KEYS or type(value) is not int or value < 0:
+                raise PlanError("agent_usage_mismatch", "Invalid trusted usage observation", status=503)
+            merged[key] = max(merged.get(key, 0), value)
+        if merged == row["usage"]:
+            return
+        row["usage"] = merged
+        if message_id is not None:
+            row["providerMessageId"] = self._redact(message_id)
+        quote = ProviderQuote(row["quoteRevision"], row["rates"])
+        if row.get("usageComplete"):
+            row["usd"] = float(quote.cost(merged))
+        if sum(merged.values()) > row["boundTokens"] or quote.cost(merged) > Decimal(str(row["boundUsd"])):
+            self.state["stopReason"] = "provider_bound_violated"
+        self._save()
+
     async def generate(self, payload):
         async with self._lock:
             record, quote, body = self._reserve(payload)

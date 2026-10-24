@@ -61,7 +61,10 @@ async def test_no_wait_action_merges_authoritative_terminal_evidence_without_a_s
     )
     assert completed.json()["status"] == "succeeded", completed.text
     final = await http.get(f"/api/v1/sessions/{session.session_id}/state")
-    audit.seal({"state": final.json(), "scope": audit.scope()})
+    audit.seal(
+        {"state": final.json(), "scope": audit.scope()},
+        observed_monotonic=float(final.headers["X-LW-Observed-Monotonic"]),
+    )
     events = audit.derived()
     assert len(events) == 1 and events[0]["kind"] == "action"
     action = events[0]
@@ -141,3 +144,41 @@ async def test_stop_cycle_preserves_actual_running_witness_when_the_original_act
     )
     metrics = process_metrics(events, audit.clock() - audit.started)
     assert metrics["steps"] == 4 and metrics[f"started:{CENTRIFUGE}.start"] == 1
+
+
+async def test_final_http_capture_excludes_later_cleanup_terminal_states(audited):
+    mcp, http, session, audit = audited
+    async with mcp:
+        await call(mcp, "invoke_action", key=CENTRIFUGE, action="closeLid")
+        start = await call(
+            mcp,
+            "invoke_action",
+            key=CENTRIFUGE,
+            action="start",
+            wait=False,
+            params={"rpm": 500, "durationSeconds": 30},
+        )
+        await call(
+            mcp,
+            "wait_until",
+            key=CENTRIFUGE,
+            property="phase",
+            op="equals",
+            value="running",
+            timeoutSeconds=2,
+        )
+    final = await http.get(f"/api/v1/sessions/{session.session_id}/state")
+    assert final.json()["entities"][CENTRIFUGE]["values"]["phase"] == "running"
+    audit.seal(
+        {"state": final.json(), "scope": audit.scope()},
+        observed_monotonic=float(final.headers["X-LW-Observed-Monotonic"]),
+    )
+    await session.close()
+    started = next(event for event in audit.derived() if event.get("invocationId") == start["invocationId"])
+    assert started["status"] == "running"
+    assert any(
+        record["kind"] == "invocation.observation"
+        and record["data"]["invocation"]["invocationId"] == start["invocationId"]
+        and record["data"]["invocation"]["status"] in ("failed", "cancelled")
+        for record in audit.records
+    )

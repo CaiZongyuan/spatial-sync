@@ -14,6 +14,7 @@ class CaseAudit:
         self.started = clock()
         self.records, self.requests = [], []
         self._cutoff = None
+        self._cutoff_time = None
         self.healthy = True
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._stream = self.path.open("x", encoding="utf-8", newline="\n")
@@ -80,14 +81,19 @@ class CaseAudit:
         observation = {"invocation": update.model_dump(mode="json"), "after": self.snapshot()}
         self.append("invocation.observation", observation)
 
-    def seal(self, final_observation):
+    def seal(self, final_observation, *, observed_monotonic=None):
         self.append("case.final", final_observation)
         self._cutoff = len(self.records)
+        self._cutoff_time = (
+            self.clock() if observed_monotonic is None else observed_monotonic
+        ) - self.started
 
     def derived(self):
         if not self.healthy:
             raise PlanError("agent_trace_unavailable", "Trusted case evidence is unavailable", status=503)
         records = self.records[: self._cutoff]
+        if self._cutoff_time is not None:
+            records = [record for record in records if record["atSeconds"] <= self._cutoff_time]
         observed = {}
         for record in records:
             if record["kind"] == "invocation.observation":

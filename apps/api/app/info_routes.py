@@ -1,6 +1,7 @@
 """Information-plane HTTP boundary, shared with WebSocket actions."""
 
 import asyncio
+import time
 from copy import deepcopy
 from functools import lru_cache
 from typing import Literal
@@ -173,7 +174,9 @@ def install_info_routes(app, manager, role_for, *, prefix="/api/v1/sessions/{ses
     async def states(keys: str | None = None, session=Depends(resolve_target)):
         selected = dict.fromkeys(keys.split(",")) if keys else session.catalog.entities.keys()
         entries = (encode(key) + ":" + state_json(session, key) for key in selected)
-        return Response(content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json")
+        content = '{"entities":{' + ",".join(entries) + "}}"
+        return Response(content=content, media_type="application/json",
+                        headers={"X-LW-Observed-Monotonic": repr(time.monotonic())})
 
     @app.post(prefix + "/actions")
     async def action(body: HttpAction, request: Request, session=Depends(resolve_target)):

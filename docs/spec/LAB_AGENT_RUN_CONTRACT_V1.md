@@ -114,6 +114,16 @@ credential reflected by the provider before returning data. A signed relay contr
 attempt was not forwarded; provider response text/headers cannot establish that fact. Timeout/interrupted streams
 retain complete observed usage prefixes plus unspent uncertain reservations. Worker and relay trees use their
 creating OwnedProcess handles, and cleanup failure retains ownership/accounting obligations.
+The relay may retain private append-only transport observations containing only the admitted attempt ID,
+validated nonnegative token counters and a redacted provider message ID. These are raw evidence with no prices,
+budgets, balances or authority. After reap, the API merges their high-water counters into that same attempt's
+existing record. Repeated/late observations cannot create another charge, clear uncertain suffixes or reopen work.
+The observation files are excluded from Target files, SDK context and published artifact routes.
+
+Final state HTTP responses carry their server observation instant. Case grading freezes that instant and its
+Scope, retaining later cleanup events in raw Trace while excluding them from the scoring projection. Actual
+running invocation observations remain usable when a later stop/cancel ends that invocation; they must match the
+same invocation/action/params/scene/epoch. Completion observations do not create extra target tool steps.
 
 Normal evaluation completes each pinned public train case at the declared repetitions (at least3) in owned sequential
 Sessions using the existing single-Session admission. A valid negative and an infrastructure-invalid attempt remain
