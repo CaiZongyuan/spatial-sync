@@ -343,6 +343,9 @@ class AgentLibrary:
     def snapshot(self, identifier, data=None):
         with import_lock(self.user_root):
             path = self._writable(identifier)
+            from packages.library.agent_transitions import recover_path
+
+            recover_path(self, path)
             previous = self._snapshot(path)
             if data is None:
                 return previous
@@ -366,6 +369,16 @@ class AgentLibrary:
                     os.rename(backup, path / "harness")
                     raise
                 return record
+
+    def transition(self, identifier, **request):
+        from packages.library.agent_transitions import transition
+
+        return transition(self, identifier, **request)
+
+    def recover(self):
+        from packages.library.agent_transitions import recover
+
+        return recover(self)
 
     def create(self, identifier, data, title=None):
         name = agent_name(identifier)
