@@ -357,7 +357,11 @@ class EvaluationService:
         record["identitySnapshot"] = await self.freeze_identity(
             identifier, suite, selected, body.subject, candidate=candidate
         )
-        record["candidateIdentity"] = (record["identitySnapshot"] or {}).get("candidateIdentity")
+        record["candidateIdentity"] = (
+            candidate
+            if candidate is not None
+            else (record["identitySnapshot"] or {}).get("candidateIdentity")
+        )
         notebooks = getattr(self.manager, "notebooks", None)
         context = (
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
