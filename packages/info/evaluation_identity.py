@@ -131,7 +131,7 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
     program_candidate = candidate is None
     if candidate is None:
         candidate = {"kind": "scene-program", "programId": subject, "contentHash": None}
-    if program_candidate or candidate["kind"] == "policy":
+    if program_candidate or candidate["kind"] in ("policy", "program"):
         try:
             bindings = scene.report()["effectiveBindings"][suite.metadata["source"]]
             targets = [binding for binding in bindings if binding["key"] == suite.task["robot"]]
