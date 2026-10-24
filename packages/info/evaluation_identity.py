@@ -137,11 +137,15 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
             selected = Path(inspect.getsourcefile(program)).resolve().relative_to(root.resolve()).as_posix()
             raw = original[selected]
             content, masked, location = split_program_class(raw, program.__name__)
+            role = getattr(program, "evaluation_implementation_role", "candidate")
+            if role not in ("candidate", "fixed-runtime"):
+                raise ValueError("Program provenance role is unknown")
             slot = {
                 "programId": targets[0]["program"],
                 "target": suite.task["robot"],
                 "module": selected,
                 "location": location,
+                "implementationRole": role,
             }
             shared = any(
                 binding["key"] != slot["target"]
@@ -151,7 +155,7 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
             )
             if shared:
                 reason = "shared_candidate_implementation"
-            else:
+            elif role == "candidate":
                 environment[selected] = masked
             if program_candidate:
                 candidate |= {

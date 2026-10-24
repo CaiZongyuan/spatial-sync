@@ -1,6 +1,8 @@
 """Candidate class edits cannot disguise changed shared physics or judge bytes."""
 
 import hashlib
+import importlib.util
+import sys
 from types import SimpleNamespace
 from zipfile import ZipFile
 
@@ -170,3 +172,71 @@ def test_program_and_weight_candidates_freeze_the_same_fixed_suite_program_slot(
     assert program["environmentInputs"] == policy["environmentInputs"] == second["environmentInputs"]
     assert program["judgeInputs"] == policy["judgeInputs"] == second["judgeInputs"]
     assert program["candidateIdentity"] != policy["candidateIdentity"] != second["candidateIdentity"]
+
+
+def test_fixed_runtime_slot_keeps_framework_code_in_environment_for_program_and_weight_candidates(
+    tmp_path, monkeypatch
+):
+    from packages.info import evaluation_identity
+    from packages.programs.robot_arm.policy import PolicyProgram
+
+    assert PolicyProgram.evaluation_implementation_role == "fixed-runtime"
+
+    root = tmp_path / "project"
+    for name in set(ENVIRONMENT) | set(JUDGE):
+        path = root / name
+        if not path.suffix:
+            path /= "fixture.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"# fixed owned implementation\n")
+    source = root / "packages/programs/framework.py"
+    source.write_text(
+        "class FrameworkProgram:\n    evaluation_implementation_role = 'fixed-runtime'\n"
+        "    def tick(self):\n        return 'runtime-one'\n",
+        encoding="utf-8",
+    )
+    spec = importlib.util.spec_from_file_location("owned_runtime_role", source)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        evaluation_identity, "program_registry", lambda _: {"framework": module.FrameworkProgram}
+    )
+    suite_path, scene_path = root / "suite", root / "scene"
+    suite_path.mkdir()
+    scene_path.mkdir()
+    (suite_path / "task.yaml").write_text("robot: /target\n", encoding="utf-8")
+    (scene_path / "scene.yaml").write_text("fixed: true\n", encoding="utf-8")
+    suite = SimpleNamespace(
+        id="suite/fixed@1",
+        content_hash="suite",
+        path=suite_path,
+        metadata={"source": "synthetic"},
+        task={"robot": "/target"},
+    )
+    scene = SimpleNamespace(
+        id="fixed@1",
+        content_hash="scene",
+        path=scene_path,
+        asset_dependencies=lambda: [],
+        template_dependencies=lambda: [],
+        report=lambda: {"effectiveBindings": {"synthetic": [{"key": "/target", "program": "framework"}]}},
+    )
+
+    def freeze(identifier, candidate=None):
+        return freeze_identity(
+            identifier, suite, scene, "framework", root / "snapshots", candidate=candidate, root=root
+        )
+
+    first = freeze("eval-program")
+    weights = {"kind": "policy", "contentHash": "weights-one"}
+    one = freeze("eval-weights-one", weights)
+    two = freeze("eval-weights-two", weights | {"contentHash": "weights-two"})
+    assert first["environmentInputs"] == one["environmentInputs"] == two["environmentInputs"]
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("runtime-one", "runtime-two"), encoding="utf-8"
+    )
+    changed = freeze("eval-runtime-changed", weights)
+    assert changed["unknownReason"] is None
+    assert changed["environmentInputs"] != one["environmentInputs"]
+    assert changed["candidateIdentity"] == one["candidateIdentity"]

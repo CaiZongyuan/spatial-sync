@@ -22,6 +22,10 @@ promotion policy, runtime sandbox scope, model billing or #132C/D decisions.
   All actual non-target Programs remain fixed. Shared/unknown class ownership
   stays unknown rather than claiming an unproved import closure; evaluation can
   still run, but it cannot establish a new comparable Reference.
+  Programs may declare the internal generic `fixed-runtime` provenance role.
+  Their complete class stays in environment inputs for both Program and policy
+  candidates; PolicyProgram declares this role because weights are its candidate
+  artifact and observation/target conversion code is fixed runtime behavior.
 - Freeze Suite/Scene/evaluation-Task/binding/dependency inputs, actual supported
   Source/engine facts, observation implementation and judge/conditions/timeout/
   grading implementation. Distinguish observed implementation from declarations.
