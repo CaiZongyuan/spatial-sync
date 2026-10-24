@@ -115,3 +115,61 @@ class NotebookEntry(Schema):
     errorCode: str | None
     knownJobGpuHours: float | None = Field(ge=0)
     costCoverage: Text
+
+
+class RecordedAgentPlan(Schema):
+    id: Text
+    revision: int = Field(ge=1)
+    agentId: Text
+    goalId: GoalRef
+    goal: Text
+    title: Text
+    referenceVersion: int = Field(ge=1)
+    candidateVersion: int = Field(ge=1)
+    changedFields: list[Text]
+
+
+class RecordedAgentScore(Schema):
+    score: float = Field(ge=0, le=100)
+    minimum: float = Field(ge=0, le=100)
+    maximum: float = Field(ge=0, le=100)
+    cases: int = Field(ge=1)
+    runs: int = Field(ge=3)
+    episodes: int = Field(ge=3)
+    ci95: None = None
+
+
+class AgentNotebookEntry(Schema):
+    schemaVersion: Literal[2] = 2
+    layer: Literal["agent"] = "agent"
+    entryId: str = Field(pattern=r"^entry-[a-f0-9]{32}$")
+    evaluationId: str = Field(pattern=r"^eval-[a-f0-9]{32}$")
+    goalId: GoalRef
+    split: Literal["train"] = "train"
+    plan: RecordedAgentPlan
+    suite: Text
+    subject: Text
+    candidateVersion: int = Field(ge=1)
+    status: Text
+    at: Text
+    endedAt: Text | None
+    score: RecordedAgentScore | None
+    partialCases: list[dict]
+    attemptedCases: int = Field(ge=0)
+    reportedDecision: Literal["accepted", "rejected", "inconclusive", "contaminated"]
+    acceptanceRule: Literal["agent-train-mean-strictly-higher-min3/1"] = (
+        "agent-train-mean-strictly-higher-min3/1"
+    )
+    comparison: Comparison
+    deployment: Deployment
+    hypotheses: list[RecordedHypothesis]
+    recordings: list[Text]
+    errorCode: str | None
+    cost: dict
+    costCoverage: Text
+    files: dict
+
+
+def parse_notebook_entry(value):
+    model = AgentNotebookEntry if value.get("layer") == "agent" else NotebookEntry
+    return model.model_validate(value).model_dump(mode="json", by_alias=True)

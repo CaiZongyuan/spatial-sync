@@ -6,7 +6,7 @@ async function delayGoalDiscovery(page: Page) {
   let release!: () => void, started!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   const requested = new Promise<void>(resolve => { started = resolve; });
-  await page.route('**/api/v1/loops', async route => {
+  await page.route(url => url.pathname === '/api/v1/loops' && url.searchParams.get('layer') === 'embodied', async route => {
     started(); await held;
     await route.fulfill({ json: { goals: [goal] } });
   });

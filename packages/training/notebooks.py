@@ -13,7 +13,7 @@ import yaml
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.transactions import durable_json
-from packages.training.notebook_contract import NotebookEntry, Override
+from packages.training.notebook_contract import Override, parse_notebook_entry
 
 
 class LabNotebooks:
@@ -29,7 +29,7 @@ class LabNotebooks:
             if saved["version"] != 1:
                 raise ValueError("Unsupported Lab Notebook version")
             self.entries = {
-                entry["entryId"]: NotebookEntry.model_validate(entry).model_dump(mode="json", by_alias=True)
+                entry["entryId"]: parse_notebook_entry(entry)
                 for entry in saved["entries"]
             }
         for identity in self.entries:
@@ -40,7 +40,7 @@ class LabNotebooks:
         self.entries = entries
 
     def add(self, entry):
-        entry = NotebookEntry.model_validate(entry).model_dump(mode="json", by_alias=True)
+        entry = parse_notebook_entry(entry)
         with self._lock:
             if entry["entryId"] not in self.entries:
                 self._commit(self.entries | {entry["entryId"]: entry})

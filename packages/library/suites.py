@@ -168,3 +168,60 @@ class SuiteLibrary:
 
     def list(self):
         return [version.public() for version in self.versions.values()]
+
+    def push_agent(self, data, scenes, agents):
+        """Builder publishes selected package bytes; public reads keep private files hidden."""
+        import io
+        import json
+        import os
+        import tempfile
+
+        from packages.library.archive import destination_parent, extract_package, import_lock
+        from packages.library.transactions import durable_json
+
+        root = self.roots["user"]
+        with import_lock(root), tempfile.TemporaryDirectory(prefix=".agent-suite-", dir=root) as temporary:
+            package = Path(temporary) / "package"
+            package.mkdir()
+            try:
+                extract_package(io.BytesIO(data), package)
+                metadata = document(package / "suite.yaml")
+                name = metadata["id"].removeprefix("suite/")
+                if metadata.get("layer") != "agent" or not NAME.fullmatch(name):
+                    raise ValueError
+                self.refresh()
+                prefix = "suite/" + name + "@"
+                versions = [value for identity, value in self.versions.items() if identity.startswith(prefix)]
+                ledger_path = root / ".suite-versions.json"
+                if ledger_path.is_symlink() or ledger_path.is_junction():
+                    raise ValueError
+                ledger = json.loads(ledger_path.read_bytes()) if ledger_path.exists() else {}
+                if not isinstance(ledger, dict) or any(
+                    not NAME.fullmatch(key) or type(value) is not int or value < 1
+                    for key, value in ledger.items()
+                ):
+                    raise ValueError
+                used = [int(value.id.rsplit("@", 1)[1]) for value in versions]
+                revision = max(ledger.get(name, 0), *used, 0) + 1
+                candidate = load_suite(package, prefix + str(revision), "user")
+                scene = scenes.resolve(metadata["scene"], source=metadata["source"])
+                if scene.content_hash != metadata["sceneContentHash"]:
+                    raise ValueError
+                if agents.show(metadata["target"])["id"] != metadata["target"]:
+                    raise ValueError
+                same = next((value for value in versions
+                             if value.content_hash == candidate.content_hash), None)
+                if same is not None:
+                    return same.public() | {"idempotent": True}
+                durable_json(ledger_path, ledger | {name: revision})
+                parent = destination_parent(root, ("suites", name), create=True)
+                destination = parent / str(revision)
+                if destination.exists() or destination.is_symlink() or destination.is_junction():
+                    raise ValueError
+                os.rename(package, destination)
+                self.refresh()
+                return self.resolve(candidate.id).public() | {"idempotent": False}
+            except (OSError, ValueError, KeyError, TypeError, LibraryError):
+                raise LibraryError(
+                    "invalid_agent_suite", "Invalid or unavailable Agent Suite package", 422
+                ) from None

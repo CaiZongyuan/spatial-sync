@@ -79,6 +79,7 @@ class RecordingRepository:
         self.keep = settings.recordings_keep
         self.enabled = settings.recordings_enabled
         self.asset_registry = asset_registry
+        self.is_restricted = lambda recording_id: False
 
     async def startup(self):
         await asyncio.to_thread(recover_recordings, self.root)
@@ -143,8 +144,11 @@ class RecordingRepository:
 def install_recording_routes(app, repository):
     @app.get("/api/v1/recordings")
     async def recordings():
-        return await asyncio.to_thread(repository.list)
+        values = await asyncio.to_thread(repository.list)
+        return [value for value in values if not repository.is_restricted(value["sessionId"])]
 
     @app.get("/recordings/{recording_id}/{relative:path}")
     async def recording_file(recording_id: str, relative: str):
+        if repository.is_restricted(recording_id):
+            raise HTTPException(404, {"code": "unknown_recording"})
         return await repository.read_response(recording_id, relative)

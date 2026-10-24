@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.approvals import ApprovalConflict, Subject
 from packages.info.context import information_revision
+from packages.training.dispatch import training_store
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -46,7 +47,8 @@ def install_approval_routes(app, manager, role_for):
         return {
             **record.model_dump(mode="json"),
             "canRevoke": (record.subject == "job" and manager.jobs.can_revoke(record)) or (
-                          training and manager.training_plans.can_revoke(record)) or (
+                          training
+                          and training_store(manager, identifier=record.subjectId).can_revoke(record)) or (
                           record.subject == "deletion" and record.status in ("approved", "denied")
                           and record.details.get("execution", {}).get("status")
                           in ("not_started", "blocked", "failed")) or available
@@ -65,7 +67,7 @@ def install_approval_routes(app, manager, role_for):
 
     def get_record(approval_id):
         record = store.records.get(approval_id)
-        if record is None:
+        if record is None or record.sessionId and manager.agent_rsi.private_recording(record.sessionId):
             raise HTTPException(404, {"code": "unknown_approval"})
         return record
 
@@ -78,7 +80,8 @@ def install_approval_routes(app, manager, role_for):
         limit: int = Query(100, ge=1, le=1000),
     ):
         records = sorted(
-            store.records.values(),
+            (record for record in store.records.values()
+             if not record.sessionId or not manager.agent_rsi.private_recording(record.sessionId)),
             key=lambda record: (record.status == "pending", record.createdAtMs),
             reverse=True,
         )
@@ -108,6 +111,15 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.details.get("agentPromotionId"):
+            from packages.agent_rsi.promotions import decide
+
+            try:
+                return await anyio.to_thread.run_sync(
+                    decide, manager.agent_rsi, record, body.decision, actor, body.note
+                )
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
         if record.subject == "job":
             try:
                 manager.jobs.decide(record, body.decision, actor, body.note)
@@ -116,7 +128,9 @@ def install_approval_routes(app, manager, role_for):
             return document(get_record(approval_id))
         if record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training":
             try:
-                manager.training_plans.decide(record, body.decision, actor, body.note)
+                training_store(manager, identifier=record.subjectId).decide(
+                    record, body.decision, actor, body.note
+                )
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
             return document(get_record(approval_id))

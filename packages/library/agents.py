@@ -65,6 +65,7 @@ def harness_files(path):
                 raise ValueError
             if name not in REQUIRED and not (
                 name.startswith("hooks/") and not any(part.startswith(".") for part in name.split("/"))
+                or re.fullmatch(r"skills/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\.md", name)
             ):
                 raise ValueError
             file = path / name
@@ -82,6 +83,17 @@ def harness_files(path):
             if set(skill) != {"name", "version"} or not NAME.fullmatch(skill["name"]) or not isinstance(
                 skill["version"], str
             ) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}", skill["version"]):
+                raise ValueError
+        for name in (name for name in files if name.startswith("skills/")):
+            identity = name.split("/")[1]
+            body = (path / name).read_text(encoding="utf-8")
+            header, separator, _ = body[4:].partition("\n---\n")
+            metadata = yaml.safe_load(header)
+            pins = [item for item in skills["skills"] if item["name"] == identity]
+            if (not body.startswith("---\n") or not separator or not isinstance(metadata, dict)
+                    or metadata.get("name") != identity or not isinstance(metadata.get("description"), str)
+                    or not metadata["description"].strip() or len(pins) != 1
+                    or pins[0]["version"] != hashlib.sha256(body.encode()).hexdigest()):
                 raise ValueError
         mcp = document(path / "mcp.yaml")
         if set(mcp) != {"servers"} or not isinstance(mcp["servers"], dict):
@@ -343,6 +355,9 @@ class AgentLibrary:
     def snapshot(self, identifier, data=None):
         with import_lock(self.user_root):
             path = self._writable(identifier)
+            from packages.library.agent_transitions import recover_path
+
+            recover_path(self, path)
             previous = self._snapshot(path)
             if data is None:
                 return previous
@@ -366,6 +381,45 @@ class AgentLibrary:
                     os.rename(backup, path / "harness")
                     raise
                 return record
+
+    def transition(self, identifier, **request):
+        from packages.library.agent_transitions import transition
+
+        return transition(self, identifier, **request)
+
+    def recover(self):
+        from packages.library.agent_transitions import recover
+
+        return recover(self)
+
+    def files(self, identifier, version):
+        record, archive = self._read_version(identifier, version)
+        with tempfile.TemporaryDirectory(prefix="lw-harness-files-") as temporary:
+            root = Path(temporary)
+            names = unpack_harness(archive, root)
+            files = [{"path": name, "content": (root / name).read_text(encoding="utf-8")} for name in names]
+        return record | {"agentId": "agent/" + agent_name(identifier), "files": files}
+
+    def stage(self, identifier, data, *, reference_version):
+        """Publish an immutable candidate without changing the editor or either current pointer."""
+        with import_lock(self.user_root):
+            path = self._writable(identifier)
+            metadata = self._metadata(path)
+            if metadata["referenceVersion"] != reference_version:
+                raise invalid_agent("harness_conflict", 409)
+            with tempfile.TemporaryDirectory(prefix=".candidate-", dir=path) as temporary:
+                staged = Path(temporary)
+                unpack_harness(data, staged)
+                value_hash = content_hash(staged)
+                if value_hash == self.version(identifier, reference_version)["contentHash"]:
+                    raise invalid_agent("harness_unchanged", 422)
+                existing = next((record for record in self.versions(identifier)
+                                 if record["baseVersion"] == reference_version
+                                 and record["contentHash"] == value_hash
+                                 and record["decision"] == "candidate"), None)
+                if existing is not None:
+                    return existing
+                return self._publish(path, staged, self._reserve(path), reference_version)
 
     def create(self, identifier, data, title=None):
         name = agent_name(identifier)

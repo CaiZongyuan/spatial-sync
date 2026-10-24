@@ -1162,8 +1162,10 @@ class SessionManager:
             self._library = SceneLibrary(state_root=self.settings.state_root)
         return self._library
 
-    async def create(self, scene_id, source, options, *, scene_version=None, evaluation_id=None,
-                     policy_subject=None):
+    async def create(
+        self, scene_id, source, options, *, scene_version=None, evaluation_id=None,
+        policy_subject=None, private_evaluation=False,
+    ):
         records = getattr(getattr(self.evaluations, "store", None), "records", {})
         expected = records.get(evaluation_id, {}).get("policySubject") if evaluation_id else None
         if policy_subject is not None or expected is not None:
@@ -1213,7 +1215,7 @@ class SessionManager:
                             if selected_source == "newton" and self.jobs.holds_gpu() else options,
                             self.settings, self.factory,
                             self.recordings, self.approvals, self.plans, scene_version=selected,
-                            inbox=self.inbox,
+                            inbox=None if private_evaluation else self.inbox,
                             evaluation_id=evaluation_id,
                             policy_subject=policy_subject,
                             on_closed=lambda: self.evaluations and self.evaluations.wake(),
@@ -1296,7 +1298,9 @@ class SessionManager:
             return session
 
     def get(self, session_id):
-        if session_id not in self.sessions:
+        from packages.agent_rsi.privacy import visible_session_id
+
+        if session_id not in self.sessions or not visible_session_id(self, session_id):
             raise HTTPException(404, {"code": "unknown_session"})
         return self.sessions[session_id]
 

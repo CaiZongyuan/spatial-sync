@@ -1,0 +1,39 @@
+.agent-training-page table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+.agent-training-page th, .agent-training-page td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.agent-training-page td small, .agent-training-page dd small { display: block; margin-top: 5px; color: var(--muted); }
+.agent-training-page pre { max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.7 var(--mono); }
+.agent-training-page code { overflow-wrap: anywhere; }
+.agent-training-page p { font-size: 12px; line-height: 1.7; color: var(--muted); }
+.agent-reference-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.agent-reference-pair > section { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r3); }
+.agent-reference-pair h2 { margin: 10px 0; font: 500 20px/1.4 var(--sans); }
+.agent-reference-pair strong { font: 500 28px/1.4 var(--mono); }
+.agent-reference-pair code { font-size: 10px; color: var(--faint); }
+.agent-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; }
+.agent-dashboard-grid > * { min-width: 0; }
+.agent-score-chart { margin: 0; }
+.agent-score-chart figcaption { font-size: 13px; }
+.agent-score-chart svg { width: 100%; min-height: 200px; overflow: visible; }
+.agent-score-chart text { fill: var(--muted); font: 10px var(--mono); }
+.agent-grid { stroke: var(--line); stroke-width: 1; }
+.agent-score-point line { stroke: var(--accent); stroke-width: 1.5; }
+.agent-score-point .agent-series { opacity: .45; }
+.agent-score-point circle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.agent-score-point circle[data-accepted='true'] { fill: var(--accent); }
+.agent-score-point.is-rejected circle { fill: var(--surface); stroke: var(--muted); }
+.agent-reference line { stroke: var(--muted); stroke-dasharray: 5 5; opacity: .6; }
+.agent-reference circle { fill: var(--muted); }
+.agent-budget-facts { display: grid; gap: 16px; margin: 0; }
+.agent-budget-facts dt { font-size: 11px; color: var(--muted); }
+.agent-budget-facts dd { margin: 6px 0 0; font: 13px var(--mono); }
+.agent-composition details { margin-top: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.agent-composition summary { cursor: pointer; font-size: 12px; }
+.agent-promotion-review { padding: 16px; margin: 16px 0; border: 1px solid var(--line-2); border-radius: var(--r2); }
+.agent-promotion-review table { width: 100%; text-align: left; font-size: 12px; margin: 14px 0; }
+.agent-promotion-review th, .agent-promotion-review td { padding: 8px; border-bottom: 1px solid var(--line); }
+.agent-promotion-review p, .agent-promotion-review li { font-size: 12px; line-height: 1.7; }
+.agent-promotion-review [role='alert'] { color: var(--warn); padding: 12px; border-left: 3px solid var(--warn); background: var(--ghost); }
+.agent-promotion-review .below-reference { color: var(--bad); border-left-color: var(--bad); }
+.agent-training-page .training-stages span { overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .agent-dashboard-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { .agent-reference-pair { grid-template-columns: minmax(0, 1fr); } }

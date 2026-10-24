@@ -30,6 +30,10 @@ def session_rows(manager):
     """Copy only owned state on the event loop; never retain a live Session in a worker."""
     rows = []
     for session in manager.platform_sessions():
+        from packages.agent_rsi.privacy import visible_session
+
+        if not visible_session(manager, session):
+            continue
         backend = None
         if session.kind == "newton":
             source = session._starting_source or session.source

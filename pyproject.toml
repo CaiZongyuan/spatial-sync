@@ -41,6 +41,8 @@ lw = "apps/cli/lw"
 "share/spatial-sync/skills/lab-training-plan" = ["skills/lab-training-plan/SKILL.md"]
 "share/spatial-sync/skills/lab-runtime-records" = ["skills/lab-runtime-records/SKILL.md"]
 "share/spatial-sync/skills/lab-agent-evaluate" = ["skills/lab-agent-evaluate/SKILL.md"]
+"share/spatial-sync/skills/lab-eval-build" = ["skills/lab-eval-build/SKILL.md"]
+"share/spatial-sync/skills/lab-harness-optimize" = ["skills/lab-harness-optimize/SKILL.md"]
 "share/spatial-sync/skills/archive/lab/5fea203445c6aeee93b5cdfe8cb00f49a3488cdb03f3c4b03f2c2c4ac3ba540d" = ["skills/archive/lab/5fea203445c6aeee93b5cdfe8cb00f49a3488cdb03f3c4b03f2c2c4ac3ba540d/SKILL.md"]
 
 [project.optional-dependencies]

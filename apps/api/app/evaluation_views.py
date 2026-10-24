@@ -35,6 +35,9 @@ def public_agent_run(value, rows=()):
             "error",
             "comparisonState",
             "comparisonReason",
+            "planId",
+            "planRevision",
+            "goalId",
         )
         if key in value
     }

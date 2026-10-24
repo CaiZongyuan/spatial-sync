@@ -30,6 +30,7 @@ from apps.api.app.acquisition_routes import (
 )
 from apps.api.app.agent_evaluations import install_external_evaluations
 from apps.api.app.agent_routes import install_agent_routes
+from apps.api.app.agent_rsi_routes import install_agent_rsi_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.cost_routes import install_cost_routes
@@ -127,6 +128,9 @@ def _role(headers, settings: Settings):
     from packages.agent_evaluation.scope import current_scope
     if current_scope() is not None:
         return "operator"
+    from packages.agent_rsi.scope import current_principal
+    if current_principal() is not None:
+        return "operator"
     if not settings.remote:
         return "operator"
     authorization = headers.get("authorization", "")
@@ -168,6 +172,7 @@ def create_app(
     recordings = EvaluationRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
+    manager.plan_publication = asyncio.Lock()
     views = TrainingViews(manager, previews)
     tensorboard = TensorBoardService(manager)
     if settings.live_bindings is not None:
@@ -226,7 +231,13 @@ def create_app(
             await acquisitions.startup()
             await recordings.startup()
             await evaluations.startup()
+            await asyncio.to_thread(agent_rsi.startup)
             await asyncio.to_thread(notebooks.startup)
+            from packages.agent_rsi.contamination import recover
+            from packages.agent_rsi.promotions import recover as recover_promotions
+
+            await recover(agent_rsi)
+            await recover_promotions(agent_rsi)
             await monitor.start()
             await views.start()
             if manager.live:
@@ -309,6 +320,9 @@ def create_app(
     )
     external_evaluations = install_external_evaluations(
         app, evaluations, app.state.agents, runtime_records, lambda headers: _role(headers, settings)
+    )
+    agent_rsi = install_agent_rsi_routes(
+        app, manager, app.state.agents, external_evaluations, lambda headers: _role(headers, settings)
     )
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
@@ -401,17 +415,20 @@ def create_app(
 
     @app.get("/api/v1/health")
     async def health():
+        from packages.agent_rsi.privacy import visible_session
+
+        sessions = [session for session in manager.sessions.values() if visible_session(manager, session)]
         return {
             "status": "ok",
             "protocolVersion": PROTOCOL_VERSION,
             "protocolMinorVersion": PROTOCOL_MINOR_VERSION,
-            "sessionCount": len(manager.sessions),
+            "sessionCount": len(sessions),
             "live": {"enabled": manager.live is not None,
                      "state": manager.live.state if manager.live else "DISABLED"},
             "sessions": [
                 {"sessionId": s.session_id, "state": s.state, "source": s.kind,
                  **({"evaluationId": s.evaluation_id} if s.evaluation_id else {})}
-                for s in manager.sessions.values()
+                for s in sessions
             ],
             "evaluation": evaluations.status(),
         }
@@ -763,6 +780,8 @@ def create_app(
 
     from packages.agent_evaluation.scope import CaseAuthority
     app.add_middleware(CaseAuthority, service=external_evaluations)
+    from packages.agent_rsi.scope import WorkflowAuthority
+    app.add_middleware(WorkflowAuthority, service=agent_rsi)
     return app
 
 

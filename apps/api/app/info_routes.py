@@ -20,6 +20,10 @@ def actor_from_headers(headers):
     scope = current_scope()
     if scope is not None:
         return Actor(kind="agent", name=scope.actor_name)
+    from packages.agent_rsi.scope import current_principal
+    principal = current_principal()
+    if principal is not None:
+        return Actor(kind="agent", name=principal.actor_name)
     kind, separator, name = headers.get("x-actor", "user:local").partition(":")
     if not separator or kind not in ("user", "cli", "agent") or not name.strip():
         raise HTTPException(422, {"code": "invalid_actor", "message": "Use X-Actor: user|cli|agent:name"})

@@ -69,15 +69,22 @@ class ExternalEvaluations:
             raise PlanError("unknown_agent_run", "Unknown external Agent evaluation", status=404)
         return record
 
-    def document(self, record):
+    def document(self, record, *, private=False):
+        if record.get("split") != "train" and not private:
+            raise PlanError("unknown_agent_run", "Unknown public Agent evaluation", status=404)
         return public_agent_run(record, self.evaluator.store.rows)
 
     async def save(self, record):
         await persist(self.evaluator.store.save, record)
 
-    async def submit(self, name, body):
+    async def submit(self, name, body, *, agent_round=None, agent_promotion=None):
         agent = self.agents.show(name)["id"]
-        request_hash = digest({"agentId": agent, **body.model_dump()})
+        inputs = {"agentId": agent, **body.model_dump()}
+        if agent_round is not None:
+            inputs["agentRound"] = agent_round
+        if agent_promotion is not None:
+            inputs["agentPromotion"] = agent_promotion
+        request_hash = digest(inputs)
         async with self._submission:
             previous = next(
                 (
@@ -94,7 +101,7 @@ class ExternalEvaluations:
                     raise PlanError(
                         "agent_request_conflict", "This request ID has different fixed inputs", status=409
                     )
-                return self.document(previous)
+                return self.document(previous, private=agent_promotion is not None)
             suite = self.evaluator.suites.resolve(body.suite)
             if suite.metadata["layer"] != "agent" or suite.metadata["target"] != agent:
                 raise PlanError("agent_suite_mismatch", "Select this Agent's public Agent Suite", status=422)
@@ -110,6 +117,14 @@ class ExternalEvaluations:
                 )
             public = suite.public()
             cases = public["cases"]
+            if agent_promotion is not None:
+                cases = [
+                    {"id": case["id"], "statement": suite.statements[case["id"]]}
+                    for case in suite.metadata["cases"]
+                    if case["split"] == "test"
+                ]
+                if not cases:
+                    raise PlanError("agent_test_unavailable", "This Suite has no promotion scope", status=409)
             if body.purpose == "verification":
                 cases = [case for case in cases if case["id"] == body.caseId]
                 if len(cases) != 1:
@@ -138,8 +153,8 @@ class ExternalEvaluations:
                 "harnessVersion": body.harnessVersion,
                 "suite": suite.id,
                 "suiteContentHash": suite.content_hash,
-                "split": "train",
-                "purpose": body.purpose,
+                "split": "test" if agent_promotion is not None else "train",
+                "purpose": "promotion" if agent_promotion is not None else body.purpose,
                 "runtime": body.runtime.model_dump(),
                 "runtimeHash": self.evaluator._runtime_hash,
                 "at": at,
@@ -186,6 +201,10 @@ class ExternalEvaluations:
                     "contextProvenance": "runtime-declaration",
                 },
             }
+            if agent_round is not None:
+                record.update(agentRound=deepcopy(agent_round), **agent_round)
+            if agent_promotion is not None:
+                record.update(agentPromotion=deepcopy(agent_promotion), **agent_promotion)
             directory = self.directory(record)
             record["candidateIdentity"] = {
                 "kind": "agent-harness",
@@ -204,7 +223,7 @@ class ExternalEvaluations:
                 raise PlanError("harness_changed", "The fixed Harness archive changed", status=409)
             (directory / "harness.tar").write_bytes(archive)
             await self.evaluator.admit(record)
-            return self.document(record)
+            return self.document(record, private=agent_promotion is not None)
 
     async def next(self, identifier):
         run = self.get(identifier)
@@ -216,6 +235,20 @@ class ExternalEvaluations:
             }
         grant.require()
         case = grant.case
+        if run["split"] == "test":
+            binding = self.manager.agent_rsi.private_native_context(case.get("boundNativeSessionId"))
+            if binding is None or binding["caseRunId"] != case["caseRunId"]:
+                return {
+                    "status": "pending-native",
+                    "work": {
+                        "caseRunId": case["caseRunId"],
+                        "runtime": deepcopy(run["runtime"]),
+                        "harness": deepcopy(run["publicWork"]["harness"]),
+                        "expiresAt": run["deadlineAt"],
+                    },
+                }
+            # A prior capture must be restricted before any private statement/token is released.
+            await asyncio.to_thread(self.runtime_records.mark_private, case["boundNativeSessionId"], binding)
         return {
             "runId": identifier,
             "status": "work",
@@ -246,6 +279,21 @@ class ExternalEvaluations:
         if body.runtimeRecordId is None:
             return {}
         record = self.runtime_records.get(body.runtimeRecordId)
+        if run.get("agentRound") is not None or run.get("agentPromotion") is not None:
+            expected = {
+                "agentId": run["agentId"],
+                "harnessVersion": run["harnessVersion"],
+                "planId": run["planId"],
+                "planRevision": run["planRevision"],
+                "goalId": run["goalId"],
+            }
+            if any(
+                key in record["associations"] and record["associations"][key] != value
+                for key, value in expected.items()
+            ):
+                raise PlanError(
+                    "runtime_association_mismatch", "Native attribution differs from this round", status=409
+                )
         if (
             record["nativeSessionId"] != body.nativeSessionId
             or record["runtime"] != run["runtime"]["name"]
@@ -280,6 +328,8 @@ class ExternalEvaluations:
         case = next((case for case in run["cases"] if case["caseRunId"] == body.caseRunId), None)
         if case is None:
             raise PlanError("unknown_case_run", "Unknown case repetition", status=404)
+        if run["split"] == "test" and body.nativeSessionId != case.get("boundNativeSessionId"):
+            raise PlanError("private_native_binding_required", "Complete the bound fresh Target", status=409)
         complete_hash = digest(body.model_dump())
         if "completionHash" in case:
             if case["completionHash"] != complete_hash:
@@ -301,8 +351,15 @@ class ExternalEvaluations:
                         )
                 else:
                     grant.require()
+                    if body.nativeSessionId in self.manager.agent_rsi.optimizer_sessions:
+                        raise PlanError(
+                            "native_session_reused",
+                            "Target requires a fresh conversation outside Optimizer",
+                            status=409,
+                        )
                     if any(
-                        previous.get("nativeSessionId") == body.nativeSessionId
+                        body.nativeSessionId
+                        in (previous.get("nativeSessionId"), previous.get("boundNativeSessionId"))
                         and previous["caseRunId"] != body.caseRunId
                         for record in self.evaluator.store.records.values()
                         if record.get("layer") == "agent"
@@ -344,6 +401,8 @@ class ExternalEvaluations:
     def completion_response(self, identifier, case_id):
         latest = self.get(identifier)
         outcome = next(case for case in latest["cases"] if case["caseRunId"] == case_id)
+        if latest["split"] == "test":
+            return {"status": outcome["status"], "cleanup": deepcopy(latest["cleanup"])}
         return {"case": self.public_case(outcome), "run": self.document(latest)}
 
     def _live_cases(self, identifier):
@@ -528,6 +587,8 @@ class ExternalEvaluations:
             await self.save(run)
             async with asyncio.timeout(max(0, remaining)):
                 for case in run["cases"]:
+                    if run.get("agentRound") is not None or run.get("agentPromotion") is not None:
+                        self.manager.agent_rsi.require_admission(run)
                     suite = self.evaluator.suites.resolve(run["suite"])
                     suite.verify()
                     try:
@@ -561,6 +622,7 @@ class ExternalEvaluations:
                         ),
                         scene_version=run["pins"]["scene"],
                         evaluation_id=identifier,
+                        private_evaluation=run["split"] == "test",
                     )
                     session.evaluation_deny_high_risk = True
                     run["key"].update(self.evaluator.bind_identity(run, session))
@@ -595,7 +657,7 @@ class ExternalEvaluations:
                     self.finalized[case["caseRunId"]].set()
                     self.active.pop(identifier, None)
                     grant = None
-                if run["purpose"] == "train":
+                if run["purpose"] in ("train", "promotion"):
                     try:
                         await asyncio.to_thread(
                             verify_identity,
@@ -612,7 +674,7 @@ class ExternalEvaluations:
                         "subject": run["agentId"],
                         "version": run["harnessVersion"],
                         "key": run["key"],
-                        "split": "train",
+                        "split": run["split"],
                         "layer": "agent",
                         "candidateIdentity": run.get("candidateIdentity"),
                         "comparisonIdentity": run.get("comparisonIdentity"),
@@ -689,7 +751,7 @@ class ExternalEvaluations:
     async def cancel(self, identifier):
         run = self.get(identifier)
         if run["status"] in ("completed", "failed", "cancelled"):
-            return self.document(run)
+            return self.document(run, private=run["split"] == "test")
         if self.evaluator._active_evaluation == identifier and self.evaluator._running:
             self.evaluator._running.cancel()
             try:
@@ -701,7 +763,7 @@ class ExternalEvaluations:
                 item for item in self.evaluator._queue if item != ("evaluation", identifier)
             )
             await self.save(run | {"status": "cancelled", "endedAt": now()})
-        return self.document(self.get(identifier))
+        return self.document(self.get(identifier), private=run["split"] == "test")
 
     async def refreshed_cleanup(self, identifier):
         record = self.get(identifier)
@@ -729,7 +791,9 @@ def install_external_evaluations(app, evaluator, agents, runtime_records, role_f
             "runs": [
                 service.document(run)
                 for run in evaluator.store.records.values()
-                if run.get("layer") == "agent" and (agent is None or run["agentId"] == agent)
+                if run.get("layer") == "agent"
+                and run["split"] == "train"
+                and (agent is None or run["agentId"] == agent)
             ]
         }
 
@@ -740,21 +804,25 @@ def install_external_evaluations(app, evaluator, agents, runtime_records, role_f
     @app.post("/api/v1/agent-runs/{identifier}/next")
     async def next_work(identifier: str, request: Request):
         operator(request)
+        service.document(service.get(identifier))
         return await service.next(identifier)
 
     @app.post("/api/v1/agent-runs/{identifier}/complete")
     async def complete(identifier: str, body: CompleteCase, request: Request):
         operator(request)
+        service.document(service.get(identifier))
         return await service.complete(identifier, body)
 
     @app.post("/api/v1/agent-runs/{identifier}/cancel")
     async def cancel(identifier: str, request: Request):
         operator(request)
+        service.document(service.get(identifier))
         return await service.cancel(identifier)
 
     @app.get("/api/v1/agent-runs/{identifier}/cases/{case_id}/artifacts/{name}")
     async def artifact(identifier: str, case_id: str, name: str):
         run = service.get(identifier)
+        service.document(run)
         case = next((case for case in run["cases"] if case["caseRunId"] == case_id), None)
         if case is None or not any(item["id"] == name for item in case["artifacts"]):
             raise PlanError("unknown_agent_artifact", "Unknown public Agent evidence", status=404)

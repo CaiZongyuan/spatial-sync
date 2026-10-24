@@ -88,7 +88,9 @@ async def live(tmp_path):
                                       on_change=inbox.plan)
     training_plans.startup()
     manager = SimpleNamespace(sessions={}, live=host, approvals=approvals, plans=plans, inbox=inbox,
-                              training_plans=training_plans)
+                              training_plans=training_plans, plan_publication=asyncio.Lock(),
+                              agent_rsi=SimpleNamespace(records={},
+                                                        private_recording=lambda _identity: False))
 
     def missing_session(_identity):
         raise HTTPException(404, {"code": "unknown_session"})

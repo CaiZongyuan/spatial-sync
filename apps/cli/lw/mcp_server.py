@@ -20,6 +20,17 @@ TARGET_METHODS = {
     "plan_create", "plan_revise", "plan_show", "plans_list",
 }
 
+OPTIMIZER_METHODS = {
+    "agent_show", "agent_versions", "agent_harness", "agent_rsi", "agent_candidate", "agent_tool_trace",
+    "plan_submit", "plan_revise", "plan_show", "agent_round_start", "agent_round_settle",
+    "agent_contamination", "agent_promotion_request", "suite_show", "suites_list",
+    "notebook_show", "loop_show", "cost_query", "agent_run_list", "agent_run_show", "harness_diff",
+}
+PROMOTION_CONTROLLER_METHODS = {
+    "agent_promotion_show", "agent_promotion_next", "agent_promotion_bind", "agent_promotion_complete",
+    "agent_promotion_capture", "agent_promotion_cancel", "agent_promotion_cleanup",
+}
+
 Threshold = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 
 
@@ -105,6 +116,8 @@ def command_tool(command, client):
 
 async def create_server(client: GatewayClient):
     target = bool(client.token and client.token.startswith("lw-case-"))
+    optimizer = bool(client.token and client.token.startswith("lw-rsi-opt-"))
+    promotion_controller = bool(client.token and client.token.startswith("lw-rsi-eval-"))
     human_only = {command.mcp_name for command in COMMANDS if command.human_only}
 
     async def reject_human_decisions(context, call_next):
@@ -116,6 +129,30 @@ async def create_server(client: GatewayClient):
                 is_error=True,
             )
         return await call_next(context)
+
+    if optimizer or promotion_controller:
+        methods = OPTIMIZER_METHODS if optimizer else PROMOTION_CONTROLLER_METHODS
+        instructions = (
+            (
+                "Optimize only this grant's Agent and Goal through fixed public Harness, train evidence, "
+                "Notebook and approved round tools. Propose one bounded change and await human approval. "
+                "Promotion requests reveal safe status only; private review and human decisions are separate."
+            )
+            if optimizer
+            else (
+                "Coordinate this private promotion. Pending-native has no statement or Target connection. "
+                "Bind a fresh native conversation; request next again and give its connection to Target. "
+                "Import captures through the private intake and complete that exact "
+                "bound conversation. Keep this controller credential outside every Target and Optimizer."
+            )
+        )
+        server = MCPServer("Laboratory", instructions=instructions, middleware=[reject_human_decisions])
+        for command in COMMANDS:
+            if command.mcp_name and not command.human_only and command.method in methods:
+                server.add_tool(
+                    command_tool(command, client), name=command.mcp_name, description=command.help
+                )
+        return server
 
     catalog = await client.catalog_if_active()
     instructions = catalog_instructions(catalog) if catalog is not None else (
@@ -141,6 +178,7 @@ async def create_server(client: GatewayClient):
 
     for command in COMMANDS:
         if (command.mcp_name and not command.human_only
+                and command.method not in PROMOTION_CONTROLLER_METHODS
                 and (not target or command.method in TARGET_METHODS)):
             server.add_tool(command_tool(command, client), name=command.mcp_name, description=command.help)
 

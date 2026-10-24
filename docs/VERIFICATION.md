@@ -131,6 +131,50 @@ Target receives only the case grant and scoped MCP. Runtime context/general
 tool configuration remains external. Real model execution needs a concrete
 model, budget, time limit and authorization after implementation/review.
 
+### Agent RSI
+
+The Agent training page is `/train?layer=agent&agent=agent/lab-operator&goal=goal/name`.
+It reads measured Reference/candidate versions, a 0–100 mean/range chart, rejected
+versions, exact Harness composition, public external runs, Goal budget and Lab
+Notebook. Agent Plans use `kind: training, layer: agent`; existing Plans without
+a layer remain embodied. The shared Plan and approval pages render both kinds.
+
+`lab-eval-build` publishes an explicitly selected Suite and establishes a measured
+Reference. `lab-harness-optimize` stages one change, submits a Plan and settles
+its approved evaluation. `lw mcp` selects the restricted Optimizer or separate
+promotion-controller tools from the issued token; HTTP enforces the same scope.
+Controller credentials stay outside Optimizer and Target.
+
+```powershell
+uv run --no-sync python -m pytest tests/unit/test_agent_transitions.py tests/gateway/test_agent_rsi.py tests/gateway/test_agent_promotions.py tests/gateway/test_agent_contamination.py tests/gateway/test_agent_rsi_recovery.py tests/gateway/test_agent_optimizer_scope.py tests/cli/test_agent_rsi_commands.py -q
+uv run --no-sync python tools/check_platform_skills.py
+pnpm --filter @spatial-sync/web exec playwright test agent-rsi.spec.ts
+```
+
+The complete baseline, accepted/rejected, promotion, budget and installed-client
+journeys use actual Synthetic grades and the production identity producer.
+Namespace and isolation fixtures explicitly substitute comparison identities;
+they do not substitute Source observations or grades. Publication-failure probes
+retain the failed receipt and verify actual files plus durable restart recovery.
+The browser case owns its API/Web and exercises real train/private repeats,
+human promotion, rejection restoration, contamination, native unknowns, human
+Notebook audit, network retry and layer switching. Run it with
+`SPATIAL_E2E_WEB_MODE=preview` after a build to verify the built app.
+
+Held-out work uses the same queue. An opaque pending item must bind a fresh
+native conversation before the private statement/Target token is released.
+Ordinary B/A, recording/history, Notebook, cost and approval/inbox projections
+hide private details while actual private usage stays in aggregate costs. Late
+private metering remains importable through the owning controller intake even
+after contamination stops work. Known Optimizer native conversations cannot be
+reused as Targets. A denied read alone does not establish exposure.
+
+These scripted controllers run no model, GPU training or physical device. Actual
+runtime/model execution remains a separately authorized bounded smoke; the
+platform's interface grants do not attest an external runtime's other files,
+tools, SDK or networks. Observed native reports stop future admissions; they do
+not provide an external pre-call hard USD guarantee.
+
 ### Training Goal and Lab Notebook
 
 The policy engineering journey uses actual Newton CPU/PhysicsPort, a small

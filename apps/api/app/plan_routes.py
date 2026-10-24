@@ -1,5 +1,6 @@
 """Operation-plan HTTP resources; every device action still uses ActionPipeline."""
 
+import uuid
 from typing import Any
 
 from fastapi import Path, Query, Request
@@ -8,6 +9,7 @@ from apps.api.app.info_routes import actor_from_headers
 from apps.api.app.information_targets import information_target
 from packages.info.plans import PlanError
 from packages.info.preview import PreviewRequest, SourcePreview
+from packages.training.dispatch import training_store, training_stores
 
 
 def plan_context(plan_id=None, step_id=None, revision=None):
@@ -25,6 +27,7 @@ def plan_context(plan_id=None, step_id=None, revision=None):
 def install_plan_routes(app, manager, role_for):
     store = manager.plans
     training = manager.training_plans
+    publication = manager.plan_publication
 
     @app.exception_handler(PlanError)
     async def plan_error(request, error):
@@ -63,33 +66,51 @@ def install_plan_routes(app, manager, role_for):
     @app.post("/api/v1/plans", status_code=201)
     async def create_plan(body: dict[str, Any], request: Request):
         actor = operator(request)
-        if body.get("kind") == "training":
-            if body.get("id") in store.records:
+        # All variants share one HTTP namespace, including async operation publication.
+        async with publication:
+            body = dict(body)
+            body.setdefault("id", "plan-" + uuid.uuid4().hex[:16])
+            if not isinstance(body["id"], str):
+                raise PlanError("invalid_plan", "Plan ID must be a string", status=422)
+            if any(body["id"] in selected.records for selected in (store, *training_stores(manager))):
                 raise PlanError("plan_exists", "Plan ID already exists")
-            return training.submit(body, actor)
-        payload, session = target(body)
-        await session.action_pipeline()
-        if payload.get("id") in training.records:
-            raise PlanError("plan_exists", "Plan ID already exists")
-        return store.document(await store.create(payload, session, actor))
+            if body.get("kind") == "training":
+                selected = training_store(manager, document=body)
+                if selected is training:
+                    body = {key: value for key, value in body.items() if key != "layer"}
+                return selected.submit(body, actor)
+            payload, session = target(body)
+            await session.action_pipeline()
+            return store.document(await store.create(payload, session, actor))
 
     @app.post("/api/v1/plans/{plan_id}/revisions", status_code=201)
     async def revise_plan(plan_id: str, body: dict[str, Any], request: Request):
         actor = operator(request)
-        if plan_id in training.records:
-            return training.submit(body, actor, plan_id=plan_id)
-        payload, session = target(body)
-        await session.action_pipeline()
-        return store.document(await store.create(payload, session, actor, plan_id=plan_id))
+        async with publication:
+            if any(plan_id in selected.records for selected in training_stores(manager)):
+                selected = training_store(manager, identifier=plan_id)
+                layer = "agent" if selected is manager.agent_rsi else "embodied"
+                if body.get("layer", "embodied") != layer:
+                    raise PlanError("invalid_plan_layer", "A Plan revision cannot change layer", status=422)
+                if selected is training:
+                    body = {key: value for key, value in body.items() if key != "layer"}
+                return selected.submit(body, actor, plan_id=plan_id)
+            payload, session = target(body)
+            await session.action_pipeline()
+            return store.document(await store.create(payload, session, actor, plan_id=plan_id))
 
     @app.get("/api/v1/plans")
     async def plans(kind: str | None = None, status: str | None = None, sessionId: str | None = None):
+        from packages.agent_rsi.privacy import visible_session_id
+
         store.require_started()
         await store.flush()
         documents = [
                 store.document(record)
                 for record in store.records.values()
-            ] + [training.document(record) for record in training.records.values()]
+                if visible_session_id(manager, record.sessionId)
+            ] + [selected.document(record) for selected in training_stores(manager)
+                 for record in selected.records.values()]
         return {"plans": [value for value in documents
                           if (kind is None or kind == value["kind"])
                           and (status is None or status == value["status"])
@@ -98,14 +119,20 @@ def install_plan_routes(app, manager, role_for):
     @app.get("/api/v1/plans/{plan_id}")
     async def plan(plan_id: str, revision: int | None = None):
         await store.flush()
-        if plan_id in training.records:
-            return training.document(training.get(plan_id, revision))
-        return store.document(store.get(plan_id, revision))
+        if any(plan_id in selected.records for selected in training_stores(manager)):
+            selected = training_store(manager, identifier=plan_id)
+            return selected.document(selected.get(plan_id, revision))
+        record = store.get(plan_id, revision)
+        from packages.agent_rsi.privacy import visible_session_id
+
+        if not visible_session_id(manager, record.sessionId):
+            raise PlanError("unknown_plan", "Unknown public Plan", status=404)
+        return store.document(record)
 
     @app.get("/api/v1/plans/{plan_id}/steps/{step_id}/preview")
     async def preview(plan_id: str, step_id: int = Path(ge=1), revision: int | None = Query(None, ge=1)):
         await store.flush()
-        if plan_id in training.records:
+        if any(plan_id in selected.records for selected in training_stores(manager)):
             raise PlanError("unknown_plan_step", "Training plans have no device steps", status=404)
         record = store.get(plan_id, revision)
         session = information_target(manager, record.sessionId)

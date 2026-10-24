@@ -309,12 +309,15 @@ class NotebookService:
             self.error = False
             for record in tuple(self.manager.evaluations.store.records.values()):
                 self.observe(record)
+            self.manager.agent_rsi.reconcile()
             if self.error:
                 raise PlanError("notebook_unavailable", "Lab Notebook publication is unavailable", status=503)
 
-    def goals(self):
+    def goals(self, layer=None):
         records, _ = self.manager.training_plans.snapshot()
-        return sorted({goal_id(record.plan.model_dump(mode="json")) for record in records})
+        embodied = {goal_id(record.plan.model_dump(mode="json")) for record in records}
+        agent = set(self.manager.agent_rsi.goals())
+        return sorted(agent if layer == "agent" else embodied if layer == "embodied" else agent | embodied)
 
     def notebook(self, goal, *, refuted=False):
         self.reconcile()
@@ -327,6 +330,8 @@ class NotebookService:
 
     def public_entry(self, entry):
         """Current comparison evidence is a read projection, separate from historical decisions/audits."""
+        if entry.get("layer") == "agent":
+            return self.manager.agent_rsi.public_notebook_entry(entry)
         result = deepcopy(entry)
         record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
         if record.get("notebookContext") is None:
@@ -351,6 +356,8 @@ class NotebookService:
         return result
 
     def loop(self, goal):
+        if goal in self.manager.agent_rsi.goals():
+            return self.manager.agent_rsi.loop(goal)
         entries = self.notebook(goal)["entries"]
         plans = []
         rounds = {}

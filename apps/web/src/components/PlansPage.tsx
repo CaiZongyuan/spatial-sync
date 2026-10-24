@@ -9,6 +9,8 @@ import { PlanChecklist, PlanStatus, defaultStep } from './PlanChecklist';
 import { SceneViewport, type InspectVisuals, type InspectPreview, type RenderMetrics, type RenderedPose } from './viewer/SceneViewport';
 import '../plans.css';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
+import { isAgentPlan } from '../lib/agent-rsi';
+import { AgentPlanDetails } from './AgentPlanDetails';
 
 declare global { interface Window { __planViewDebug?: () => ReturnType<InspectPreview> | undefined } }
 const planLayers = { colliders: false, sites: false, origins: false, grid: true };
@@ -129,7 +131,7 @@ export function PlansPage({ planId }: { planId?: string }) {
         <div className="plan-empty">{result.plans.length ? '没有符合筛选的计划。' : <>尚无操作计划。由 agent 使用 <code>lw plan create</code> 提交，计划会在这里显示。</>}</div>}</section>
     {selected?.kind === 'training' ? <section className="training-plan-panel" aria-label="训练计划详情">
       <h2>{selected.title} · r{selected.revision}</h2><PlanStatus status={selected.status} />
-      <TrainingPlanDetails plan={selected} changes={selected.changes} /></section> :
+      {isAgentPlan(selected) ? <AgentPlanDetails plan={selected} /> : <TrainingPlanDetails plan={selected} changes={selected.changes} />}</section> :
       planId && result.plans && <PlanConnection key={planId} id={planId} />}
   </main>;
 }
