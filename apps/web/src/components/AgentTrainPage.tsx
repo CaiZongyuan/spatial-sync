@@ -115,7 +115,10 @@ export function AgentTrainPage() {
     && value.runtime.model === latest.runtime.model && value.runtime.thinking === latest.runtime.thinking) ?? [];
   const reference = references.find(value => value.comparisonState === 'known') ?? references[0];
   const currentReference = reference?.comparisonState === 'known' && reference.score != null ? reference : undefined;
-  const pending = approvals.inbox?.approvals.filter(record => record.status === 'pending' && (
+  const pending = approvals.inbox?.approvals.filter(record => (record.status === 'pending'
+    || record.status === 'approved' && record.details.agentPromotionId && plans.some(plan => plan.promotions?.some(
+      value => value.id === record.details.agentPromotionId && value.status === 'applying'
+    ))) && (
     record.details.plan?.layer === 'agent' && record.details.plan.agentId === agent && (!search.goal || record.details.plan.goalId === search.goal)
     || record.details.agentPromotionId && record.details.agentId === agent
   ));
