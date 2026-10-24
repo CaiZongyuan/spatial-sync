@@ -22,11 +22,12 @@ def invalid(message):
     return LibraryError("program_runtime_invalid", message, 422)
 
 
-@dataclass(frozen=True)
+@dataclass
 class PreparedProgram:
     record: dict
     delegate: object
     config: ProgramConfig
+    initialized: bool = False
 
 
 class _FrozenModules(importlib.abc.MetaPathFinder, importlib.abc.Loader):

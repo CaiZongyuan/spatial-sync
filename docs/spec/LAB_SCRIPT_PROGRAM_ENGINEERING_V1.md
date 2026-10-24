@@ -118,6 +118,12 @@ load the trusted static wrapper definition and declarative config only.
    entry class/interface/config must agree with metadata. Native evidence retains
    the actually loaded artifact/code/config identity and callback activity;
    counters do not claim physical success. The fixed Suite judges actual facts.
+   The fixed wrapper owns joint/gripper/TCP/holding/location/zone feedback and
+   conservative location interlocks. The delegate receives its reviewed config
+   and may publish controller phase; it cannot replace those physical facts.
+   Control ticks run while an admitted action is active. Initialization retains
+   the fixed Scene's actuator state; stop/cancel/deadline hold the configured
+   arm/fingers and preserve an unknown or still occupied zone reservation.
 6. Failure, cancellation and cleanup retain real attempt/recording/resource
    evidence. No fallback taught Program executes when loading fails.
 
