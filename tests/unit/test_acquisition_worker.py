@@ -218,3 +218,14 @@ def test_prune_preserves_the_cache_completion_marker(tmp_path):
     assert (package / "keep.usda").is_file()
     assert not (package / "stale.usda").exists()
     assert (package / CACHE_MARKER).is_file()
+
+
+def test_marked_cache_is_not_counted_as_source(tmp_path):
+    from factory.simready import inspect_source
+
+    candidate, source = build_source(tmp_path / "source")
+    (source / ".acquisition-cache.json").write_text("{}", encoding="utf-8")
+    report = inspect_source(candidate, source)
+    assert report["status"] == "pass", report["problems"]
+    assert report["files"] == candidate.expected_files
+    assert report["bytes"] == candidate.expected_bytes
