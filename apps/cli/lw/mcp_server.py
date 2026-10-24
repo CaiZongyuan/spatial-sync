@@ -119,9 +119,12 @@ async def create_server(client: GatewayClient):
 
     catalog = await client.catalog_if_active()
     instructions = catalog_instructions(catalog) if catalog is not None else (
-        "Use library_search and library_describe to inspect assets and scenes; library_import uploads a "
-        "directory from this MCP client's filesystem. Use scene_launch to start an inspected scene. "
-        "Describe entities before acting. Approval requires a human operator."
+        "Search local and online candidates with catalog_search first; read a chosen entry with "
+        "catalog_show and size it with catalog_estimate before library inspection. Use "
+        "library_search and library_describe to inspect installed assets and scenes; "
+        "library_import uploads a directory from this MCP client's filesystem. Use scene_launch "
+        "to start an inspected scene. Describe entities before acting. Approval requires a human "
+        "operator."
     )
     if target:
         attention = "Use only this case's Session. Evaluation human gates are denied by platform policy. "

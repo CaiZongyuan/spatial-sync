@@ -368,6 +368,33 @@ any model/cost authorization in the relevant issue. Real agent calls are not par
 of ordinary CI. Factory acceptance separately checks actual Blender authoring,
 received-version isolation, real Newton CPU validation and offline use.
 
+## Scene Factory catalog (SF1a)
+
+The committed snapshot is `catalog/simready.json`; search needs no network, cache
+or Blender. Installed `lw` and `lw mcp` (`catalog_search`, `catalog_show`,
+`catalog_estimate`) read the same HTTP routes. Source sizes are bytes and
+dimensions are metres; usage is `dressing|staticCollision`, license is
+`admitted|not_admitted`, limit is 1..50 and unknown attributes never satisfy a
+hard filter. Use a returned `nextCursor` to continue, and pass a summary
+`documentDigest` to detect a changed entry:
+
+```powershell
+lw catalog search -q 纸箱 --scope all --json
+lw catalog search -q carton --usage dressing --license admitted --limit 10 --json
+lw catalog show simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1 --view full --json
+lw catalog estimate simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1 --json
+```
+
+`tests/cli/test_catalog_commands.py` compares HTTP, the installed entrypoint and
+official MCP stdio for bilingual search, filters, pages, errors and the retained
+local `library_describe` detail shape. The GPU-free gateway tests cover snapshot
+loading, correlation, bounds and estimate limits. The browser journey uses the
+same owned fixture gateway as the asset library:
+
+```powershell
+pnpm --filter @spatial-sync/web exec playwright test catalog-search.spec.ts
+```
+
 ## Ownership and cleanup
 
 Use isolated ports, processes, worktrees, build directories and evidence.

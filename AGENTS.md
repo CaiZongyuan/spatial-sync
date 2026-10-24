@@ -8,6 +8,7 @@ A local laboratory workbench. A physics source (Newton, or the GPU-free Syntheti
 - Status and next steps: the latest progress comment on #2 and the newest open `[PM交接]` issue. Read them before picking up work.
 - Area specs: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A), `LAB_TRAINING_SPEC_V1.md` (T), `LAB_LIVE_OPERATIONS_SPEC_V1.md` (L), `LAB_RSI_SPEC_V1.md` (R) and `LAB_WEB_UI_SPEC_V1.md` (page contracts), built on `LAB_INFORMATION_FOUNDATION_SPEC_V1.md` and `NEWTON_SPATIAL_SYNC_SPEC_V1.2.md`. `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only.
 - Scene Factory (SF): `docs/spec/LAB_SCENE_FACTORY_SPEC_V1.md` covers external asset discovery/acquisition, Blender authoring and received results. `factory/` holds the restricted source adapter and verification tool; `factory/support.json` is the support boundary.
+- Asset catalog: `catalog/simready.json` is the committed, offline-readable SF1a snapshot. `packages/catalog` serves unified search, bounded entry describe and read-only estimates; the gateway never imports `factory/`.
 - Launch and checks: `docs/VERIFICATION.md`. Run its mandatory checks before reporting work done.
 - Vocabulary: `GLOSSARY.md`. Architecture decisions: `docs/adr/`.
 

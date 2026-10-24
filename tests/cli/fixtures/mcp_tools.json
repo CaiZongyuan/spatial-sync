@@ -283,5 +283,247 @@
       "title": "session_controlDictOutput",
       "type": "object"
     }
+  },
+  "catalog_search": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "scope": {
+          "default": "all",
+          "enum": [
+            "all",
+            "local",
+            "online"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "enum": [
+                "dressing",
+                "staticCollision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usage"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "enum": [
+                "admitted",
+                "not_admitted"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "installed": {
+          "default": false,
+          "title": "Installed",
+          "type": "boolean"
+        },
+        "notInstalled": {
+          "default": false,
+          "title": "Notinstalled",
+          "type": "boolean"
+        },
+        "minSourceBytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minsourcebytes"
+        },
+        "maxSourceBytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxsourcebytes"
+        },
+        "minDimensionM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mindimensionm"
+        },
+        "maxDimensionM": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxdimensionm"
+        },
+        "approximate": {
+          "default": false,
+          "title": "Approximate",
+          "type": "boolean"
+        },
+        "sort": {
+          "default": "relevance",
+          "enum": [
+            "relevance",
+            "name",
+            "sourceBytes"
+          ],
+          "title": "Sort",
+          "type": "string"
+        },
+        "limit": {
+          "default": 10,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "catalog_searchArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "catalog_searchDictOutput",
+      "type": "object"
+    }
+  },
+  "catalog_show": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "view": {
+          "default": "summary",
+          "enum": [
+            "summary",
+            "full"
+          ],
+          "title": "View",
+          "type": "string"
+        },
+        "documentDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Documentdigest"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "catalog_showArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "catalog_showDictOutput",
+      "type": "object"
+    }
+  },
+  "catalog_estimate": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "catalog_estimateArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "catalog_estimateDictOutput",
+      "type": "object"
+    }
   }
 }
