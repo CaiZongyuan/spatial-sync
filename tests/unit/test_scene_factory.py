@@ -144,20 +144,20 @@ def test_support_list_matches_the_pinned_five_source_packages():
     data = support_schema.load(path)
     assert support_schema.validate(data) == []
     assert data["source"]["revision"] == REVISION
-    assert {item["package"] for item in data["sourceCandidates"]} == {
+    assert {item["package"] for item in data["sourcePackages"]} == {
         candidate.package for candidate in SOURCE_PACKAGES
     }
     assert all(
         item["source"]["bomVerified"] == item["source"]["bomItems"]
-        for item in data["sourceCandidates"]
+        for item in data["sourcePackages"]
     )
     assert all(
         item["adaptation"]["variant"]["selected"] == "Newton/Enabled"
-        for item in data["sourceCandidates"]
+        for item in data["sourcePackages"]
     )
-    assert all(item["license"]["inBom"] is False for item in data["sourceCandidates"])
+    assert all(item["license"]["inBom"] is False for item in data["sourcePackages"])
     assert all(
         {"attribution", "retain license and notices", "mark modifications"}
         <= set(item["license"]["obligations"])
-        for item in data["sourceCandidates"]
+        for item in data["sourcePackages"]
     )

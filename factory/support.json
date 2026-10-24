@@ -53,7 +53,29 @@
     ],
     "evidence": "Blender and MCP probe output is kept in the delivery evidence directory."
   },
-  "sourceCandidates": [
+  "limitations": [
+    "Only the pinned NVIDIA SimReady package family is prepared; this is not a general converter.",
+    "Only the Newton physics variant and UsdPreviewSurface fallback materials are used; MDL shading is not reproduced.",
+    "MDL files may import NVIDIA core libraries outside the source package; that render path is reported, not executed.",
+    "UDIM/UVTILE texture sets are not supported by the restricted GLB path and are gaps.",
+    "Mesh simplification is not performed. An over-budget mesh is a gap, not a deterministic adaptation.",
+    "The existing asset physics loader requires joints to belong to an articulation; SimReady prop-level fixed joints can fail P1 (recorded for the container).",
+    "The existing 128 MiB upload and 256 MiB unpack limits remain; larger adapted packages need the SF2 internal import path.",
+    "Upstream SimReady validation statements are recorded as declarations, never as platform validation."
+  ],
+  "unknowns": [
+    "Real Blender acceptance is separate from GPU-free CI.",
+    "Scene-level Newton P2/P3 behavior is not established by single-asset adaptation.",
+    "The license status of MDL core libraries outside the package is not established by the package license.",
+    "Whether SimReady prop-level joints are intended as articulations is not established by the source package."
+  ],
+  "ci": {
+    "command": "uv run --no-sync python factory/verify.py check",
+    "lane": "core",
+    "expectedAddedSeconds": 10,
+    "actualAddedSeconds": 1.52
+  },
+  "sourcePackages": [
     {
       "package": "box_cardboard_a01",
       "localAssetId": "environment/cardboard-box",
@@ -1339,26 +1361,5 @@
       "evidence": "reports/equipment_utility_cart_e01.json"
     }
   ],
-  "limitations": [
-    "Only the pinned NVIDIA SimReady package family is prepared; this is not a general converter.",
-    "Only the Newton physics variant and UsdPreviewSurface fallback materials are used; MDL shading is not reproduced.",
-    "MDL files may import NVIDIA core libraries outside the source package; that render path is reported, not executed.",
-    "UDIM/UVTILE texture sets are not supported by the restricted GLB path and are gaps.",
-    "Mesh simplification is not performed. An over-budget mesh is a gap, not a deterministic adaptation.",
-    "The existing asset physics loader requires joints to belong to an articulation; SimReady prop-level fixed joints can fail P1 (recorded for the container).",
-    "The existing 128 MiB upload and 256 MiB unpack limits remain; larger adapted packages need the SF2 internal import path.",
-    "Upstream SimReady validation statements are recorded as declarations, never as platform validation."
-  ],
-  "unknowns": [
-    "Real Blender acceptance is separate from GPU-free CI.",
-    "Scene-level Newton P2/P3 behavior is not established by single-asset adaptation.",
-    "The license status of MDL core libraries outside the package is not established by the package license.",
-    "Whether SimReady prop-level joints are intended as articulations is not established by the source package."
-  ],
-  "ci": {
-    "command": "uv run --no-sync python factory/verify.py check",
-    "lane": "core",
-    "expectedAddedSeconds": 10,
-    "actualAddedSeconds": 1.52
-  }
+  "complete": true
 }

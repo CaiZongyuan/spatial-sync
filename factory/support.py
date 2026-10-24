@@ -66,7 +66,7 @@ def empty(checked_at):
             },
             "evidence": None,
         },
-        "sourceCandidates": [],
+        "sourcePackages": [],
         "limitations": [
             "Only the pinned NVIDIA SimReady package family is prepared; "
             "this is not a general converter.",
@@ -98,6 +98,7 @@ def empty(checked_at):
             "expectedAddedSeconds": 10,
             "actualAddedSeconds": None,
         },
+        "complete": False,
     }
 
 
@@ -130,9 +131,11 @@ def validate(data):
         or configuration.get("autoStartServerDefault") is not True
     ):
         errors.append("the addon auto-start baseline is not recorded honestly")
-    candidates = data.get("sourceCandidates")
+    if data.get("complete") is not True:
+        errors.append("support list is not marked complete")
+    candidates = data.get("sourcePackages")
     if not isinstance(candidates, list):
-        return errors + ["sourceCandidates must be a list"]
+        return errors + ["sourcePackages must be a list"]
     names = [item.get("package") for item in candidates]
     if sorted(names) != sorted(candidate.package for candidate in SOURCE_PACKAGES):
         errors.append("support list must contain exactly the five pinned source packages")

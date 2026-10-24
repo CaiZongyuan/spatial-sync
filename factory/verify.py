@@ -69,7 +69,7 @@ def check():
     else:
         data = support_schema.load(support_path)
         errors.extend(support_schema.validate(data))
-        candidates = data.get("sourceCandidates") or []
+        candidates = data.get("sourcePackages") or []
         if not any(
             item.get("adaptation", {}).get("status") == "pass"
             and item.get("import", {}).get("status") == "pass"
@@ -222,7 +222,8 @@ def evidence(args):
             )
         entries.append(_entry(candidate, report, imported))
     result = support_schema.empty(datetime.now(UTC).isoformat(timespec="seconds"))
-    result["sourceCandidates"] = sorted(entries, key=lambda item: item["package"])
+    result["complete"] = True
+    result["sourcePackages"] = sorted(entries, key=lambda item: item["package"])
     _, seconds = _synthetic()
     result["ci"]["actualAddedSeconds"] = seconds
     blender_evidence = Path(args.blender_evidence) if args.blender_evidence else output / "blender.json"
@@ -236,7 +237,7 @@ def evidence(args):
         Path(args.support_out).write_text(
             json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-    print(json.dumps({"support": str(support_path), "sourceCandidates": len(entries)}, indent=2))
+    print(json.dumps({"support": str(support_path), "sourcePackages": len(entries)}, indent=2))
     return 0 if all(item["adaptation"]["status"] != "fail" for item in entries) else 1
 
 
