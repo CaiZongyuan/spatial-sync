@@ -31,6 +31,7 @@ class NewtonSource:
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.scene_package = None
+        self.policy_subject = None
         self._process = None
         self._transport = None
         self._writer = None
@@ -60,6 +61,13 @@ class NewtonSource:
     def configure_scene(self, scene_package):
         self.scene_package = scene_package
 
+    def configure_evaluation(self, policy_subject):
+        if self._process is not None or self._closed:
+            raise RuntimeError("Evaluation binding must be fixed before Source startup")
+        from packages.policies.subjects import PolicySubject
+
+        self.policy_subject = PolicySubject.model_validate(policy_subject).document()
+
     async def start(self, scene_id: str, options: SessionOptions) -> tuple[SceneManifest, Catalog]:
         from packages.sim_runtime.runner import run_runner
 
@@ -71,11 +79,12 @@ class NewtonSource:
         self.scene_id = scene_id
         parent, child = create_transport()
         self._transport = parent
+        arguments = (child, self.session_id, scene_id, options.model_dump(), self.scene_package)
+        if self.policy_subject is not None:
+            arguments += (self.policy_subject,)
         self._process = mp.get_context("spawn").Process(
             target=run_runner,
-            args=(
-                child, self.session_id, scene_id, options.model_dump(), self.scene_package
-            ),
+            args=arguments,
             name=f"newton-{self.session_id}",
         )
         self._process.start()
@@ -152,7 +161,10 @@ class NewtonSource:
                 from packages.sim_runtime.info_catalog import load_info_catalog
 
                 self.catalog = load_info_catalog(
-                    self.manifest, self.scene_id, scene_package=self.scene_package
+                    self.manifest,
+                    self.scene_id,
+                    scene_package=self.scene_package,
+                    policy_subject=self.policy_subject,
                 )
                 if self.catalog.model_dump(mode="json") != packet["catalog"]:
                     raise ValueError("Runner and gateway Catalog definitions differ")
@@ -205,6 +217,10 @@ class NewtonSource:
                     self._cache(value)
                 elif kind == "joint_result":
                     value = JointState.model_validate(packet["state"])
+                elif kind == "program_execution_result":
+                    value = packet["evidence"]
+                elif kind == "observation_runtime_result":
+                    value = packet["runtime"]
                 elif kind == "preview_result":
                     value = SourcePreview.model_validate(packet["result"])
                 elif kind == "preview_error":
@@ -346,6 +362,12 @@ class NewtonSource:
     async def query_joint_state(self, joint_key: str) -> JointState:
         return await self._request("joint", key=joint_key, timeout=0.2)
 
+    async def program_execution(self, entity_key: str):
+        return await self._request("program_execution", key=entity_key, timeout=1)
+
+    async def observation_runtime(self):
+        return await self._request("observation_runtime", timeout=1)
+
     async def preview(self, request: PreviewRequest) -> SourcePreview:
         return await self._request("preview", request=request.model_dump(mode="json"), timeout=5)
 
@@ -376,7 +398,9 @@ class NewtonSource:
         )
         if self._closed or self._failed or (process is not None and not alive):
             viewer = {
-                "status": "unavailable", "url": None, "clientCount": None,
+                "status": "unavailable",
+                "url": None,
+                "clientCount": None,
                 "reason": self._failure_reason or "Newton backend is not running",
             }
         return {

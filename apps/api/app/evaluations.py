@@ -34,6 +34,13 @@ from packages.info.invocations import TERMINAL
 from packages.info.store import StateStore
 from packages.library.suites import SuiteLibrary
 from packages.library.transactions import durable_json
+from packages.policies.observations import sim_gap
+from packages.policies.subjects import (
+    resolve_policy_subject,
+    validate_policy_catalog,
+    validate_policy_execution,
+    verify_policy_subject,
+)
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import ActionRequest, Actor, EntityObservations, EntitySnapshot, Model
 
@@ -293,7 +300,7 @@ class EvaluationService:
     async def submit(self, body):
         if body.split != "train":
             raise HTTPException(403, {"code": "test_requires_promotion"})
-        if body.subject.startswith(("policy/", "checkpoint/", "program/")):
+        if body.subject.startswith("program/"):
             raise HTTPException(
                 422, {"code": "unsupported_subject", "message": "Select an existing scene-bound program ID"}
             )
@@ -310,13 +317,18 @@ class EvaluationService:
         )
         if selected.content_hash != suite.metadata["sceneContentHash"]:
             raise HTTPException(409, {"code": "scene_changed"})
+        policy_subject = None
+        if body.subject.startswith(("policy/", "checkpoint/", "job-")):
+            policy_subject = await asyncio.to_thread(
+                resolve_policy_subject, self.manager, body.subject, suite, selected
+            )
         declarations = [
             item.binding
             for item in selected.declarations(suite.metadata["source"]).declarations
             if item.binding.get("key") == suite.task["robot"]
             or ("match" in item.binding and fnmatchcase(suite.task["robot"], item.binding["match"]))
         ]
-        if (
+        if policy_subject is None and (
             len(declarations) != 1
             or declarations[0].get("program") != body.subject
             or declarations[0].get("type") != suite.task["implements"].rsplit(".", 1)[0]
@@ -335,8 +347,21 @@ class EvaluationService:
             "at": now(),
             "runtimeHash": self._runtime_hash,
         }
-        record["identitySnapshot"] = await self.freeze_identity(identifier, suite, selected, body.subject)
-        record["candidateIdentity"] = (record["identitySnapshot"] or {}).get("candidateIdentity")
+        candidate = None
+        if policy_subject is not None:
+            record["policySubject"] = policy_subject.document()
+            candidate = policy_subject.candidateIdentity.model_dump(mode="json")
+            job = self.manager.jobs.get(policy_subject.candidateIdentity.jobId)
+            rate = job.get("metrics", {}).get("trainSuccess")
+            record["trainingSuccess"] = rate if type(rate) in (int, float) and 0 <= rate <= 1 else None
+        record["identitySnapshot"] = await self.freeze_identity(
+            identifier, suite, selected, body.subject, candidate=candidate
+        )
+        record["candidateIdentity"] = (
+            candidate
+            if candidate is not None
+            else (record["identitySnapshot"] or {}).get("candidateIdentity")
+        )
         notebooks = getattr(self.manager, "notebooks", None)
         context = (
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
@@ -527,6 +552,11 @@ class EvaluationService:
                 )
                 if selected.content_hash != suite.metadata["sceneContentHash"]:
                     raise HTTPException(409, {"code": "scene_changed"})
+                policy_subject = None
+                if record.get("policySubject") is not None:
+                    policy_subject = await asyncio.to_thread(
+                        verify_policy_subject, self.manager, record["policySubject"], suite, selected
+                    )
                 if "attemptedEpisodes" in record:
                     # Admitted attempts include invalid/cancelled starts for budget
                     # accounting; they never replace the statistical denominator.
@@ -553,6 +583,7 @@ class EvaluationService:
                     ),
                     scene_version=selected.id,
                     evaluation_id=identifier,
+                    **({"policy_subject": policy_subject.document()} if policy_subject else {}),
                 )
                 if attempt is not None:
                     self._attempt_session(attempt, session)
@@ -563,13 +594,23 @@ class EvaluationService:
                     or session.recording.metadata["status"] != "recording"
                 ):
                     raise HTTPException(503, {"code": "recording_unavailable"})
-                key = self._validate_session(session, suite, case, record["subject"])
-                key.update(self.bind_identity(record, session))
+                execution_facts = None
+                if suite.metadata["source"] == "newton":
+                    probe = getattr(session.source, "observation_runtime", None)
+                    execution_facts = await probe() if callable(probe) else {}
+                    record["executionFacts"] = deepcopy(execution_facts)
+                key = self._validate_session(session, suite, case, record["subject"], policy_subject)
+                key.update(self.bind_identity(record, session, execution_facts=execution_facts))
                 if record.get("key", key) != key:
                     raise HTTPException(409, {"code": "not_comparable"})
                 record["key"] = key
                 await persist(self.store.save, record)
                 outcome = await self._episode(session, suite, case, attempt=attempt)
+                if policy_subject is not None:
+                    execution = await session.source.program_execution(policy_subject.target.entityKey)
+                    outcome["policyExecution"] = validate_policy_execution(
+                        policy_subject, execution, runtime=execution_facts
+                    )
                 await session.close()
                 if session.holds_resources:
                     raise HTTPException(503, {"code": "cleanup_failed"})
@@ -638,6 +679,9 @@ class EvaluationService:
             row.update(
                 {name: record[name] for name in ("planId", "planRevision", "goalId") if name in record}
             )
+            if record.get("policySubject") is not None:
+                row.update(trainingSuccess=record.get("trainingSuccess"),
+                           simGap=sim_gap(record.get("trainingSuccess"), successes / episodes))
             await persist(self.store.append, row)
             record.update(status="completed", result=row, endedAt=now())
         except BaseException as exc:
@@ -707,7 +751,7 @@ class EvaluationService:
             attempt["recordingId"] = session.session_id
 
     @staticmethod
-    def _validate_session(session, suite, case, subject):
+    def _validate_session(session, suite, case, subject, policy_subject=None):
         task = suite.task
         if (
             session.scene_version.id != suite.metadata["scene"]
@@ -717,7 +761,10 @@ class EvaluationService:
             raise HTTPException(409, {"code": "scene_changed"})
         binding = session.catalog.entities.get(task["robot"])
         type_id, action = task["implements"].rsplit(".", 1)
-        if not binding or binding["program"] != subject or binding["type"] != type_id:
+        if policy_subject is not None:
+            policy_subject = validate_policy_catalog(session.catalog, policy_subject)
+        expected_program = policy_subject.binding["program"] if policy_subject else subject
+        if not binding or binding["program"] != expected_program or binding["type"] != type_id:
             raise HTTPException(422, {"code": "subject_mismatch"})
         try:
             session.catalog.validate_params(task["robot"], action, case["params"])
@@ -740,7 +787,8 @@ class EvaluationService:
             "newtonVersion": source.newtonVersion,
             "solver": source.solver,
             "target": task["robot"],
-            "bindingHash": identity_fingerprint(binding),
+            "bindingHash": policy_subject.baseBindings[task["robot"]]
+            if policy_subject else identity_fingerprint(binding),
         }
 
     async def _episode(self, session, suite, case, *, attempt=None):

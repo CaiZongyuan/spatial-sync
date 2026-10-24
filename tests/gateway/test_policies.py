@@ -14,7 +14,15 @@ from tests.gateway.test_training_jobs import HEARTBEAT, NODE, TOKEN, approve, he
 
 
 def uploaded_job(
-    client, tmp_path, *, model=None, external=None, node_headers=None, spec=None, task_document=None
+    client,
+    tmp_path,
+    *,
+    model=None,
+    external=None,
+    node_headers=None,
+    spec=None,
+    task_document=None,
+    artifact_factory=None,
 ):
     node_headers = node_headers or NODE
     task = client.post(
@@ -30,7 +38,9 @@ def uploaded_job(
     upload = client.post(
         f"/api/v1/jobs/{job['jobId']}/artifacts",
         headers=headers,
-        content=artifact_archive(job, model=model, external=external),
+        content=artifact_factory(job)
+        if artifact_factory
+        else artifact_archive(job, model=model, external=external),
     )
     assert upload.status_code == 200, upload.text
     report = {"jobId": job["jobId"], "leaseId": job["leaseId"], "status": "succeeded", "elapsedSeconds": 1.0}

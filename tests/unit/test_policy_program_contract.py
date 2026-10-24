@@ -1,5 +1,6 @@
 """Program scheduling/actuator boundary with real ONNX; no physical quality claims."""
 
+import hashlib
 from types import SimpleNamespace
 
 import numpy as np
@@ -66,6 +67,8 @@ def runtime(tmp_path):
         },
     }
     program.handle = None
+    program.action_starts = 0
+    program.observation_digest = hashlib.sha256(b"test-observations")
     program.previous = np.zeros(1)
     ctx = SimpleNamespace(
         physics=Port(),

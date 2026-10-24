@@ -26,7 +26,7 @@ def _body_targets(manifest):
 
 
 class _Runner:
-    def __init__(self, transport, session_id, scene_id, options, scene_package=None):
+    def __init__(self, transport, session_id, scene_id, options, scene_package=None, policy_subject=None):
         # Only the spawned process reaches these imports or owns a Newton State.
         import newton
         import warp as wp
@@ -96,7 +96,8 @@ class _Runner:
         from .info_host import NewtonInfoHost
 
         self.info = NewtonInfoHost(
-            self.sim, self.manifest, options, self._info_events, scene_package=scene_package
+            self.sim, self.manifest, options, self._info_events, scene_package=scene_package,
+            policy_subject=policy_subject,
         )
         self.viewer = None
         self._viewer_error = None
@@ -381,6 +382,18 @@ class _Runner:
                     positions=positions.tolist(),
                 )
                 self.control.offer({"kind": "joint_result", "token": token, "state": state.model_dump()})
+        elif kind == "observation_runtime":
+            from packages.policies.inference import runtime_facts
+
+            self.control.offer({"kind": "observation_runtime_result", "token": token,
+                                "runtime": runtime_facts()})
+        elif kind == "program_execution":
+            try:
+                evidence = self.info.program_execution(packet["key"])
+            except KeyError:
+                self.control.offer({"kind": "unknown_entity", "token": token, "key": packet["key"]})
+            else:
+                self.control.offer({"kind": "program_execution_result", "token": token, "evidence": evidence})
         elif kind == "mesh":
             try:
                 data = self.sim.meshes.read(packet["key"])
@@ -457,11 +470,13 @@ class _Runner:
             self.control.close(drain=True)
 
 
-def run_runner(transport, session_id: str, scene_id: str, options: dict, scene_package=None):
+def run_runner(transport, session_id: str, scene_id: str, options: dict,
+               scene_package=None, policy_subject=None):
     runner = None
     try:
         runner = _Runner(
-            transport, session_id, scene_id, SessionOptions.model_validate(options), scene_package
+            transport, session_id, scene_id, SessionOptions.model_validate(options),
+            scene_package, policy_subject,
         )
         runner.run()
     except BaseException as exc:

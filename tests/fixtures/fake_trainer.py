@@ -84,8 +84,9 @@ def main():
             (
                 "import json,os,signal,time,psutil;from pathlib import Path;"
                 "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
-                "Path(os.environ['LW_DESCENDANT_MARKER']).write_text(json.dumps({'pid':os.getpid(),"
-                "'createdAt':psutil.Process().create_time()}));time.sleep(120)"
+                "marker=Path(os.environ['LW_DESCENDANT_MARKER']);pending=marker.with_suffix('.pending');"
+                "pending.write_text(json.dumps({'pid':os.getpid(),"
+                "'createdAt':psutil.Process().create_time()}));pending.replace(marker);time.sleep(120)"
             ),
         ],
         env=os.environ | {"LW_DESCENDANT_MARKER": str(marker)},

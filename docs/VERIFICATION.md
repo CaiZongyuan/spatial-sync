@@ -133,6 +133,24 @@ model, budget, time limit and authorization after implementation/review.
 
 ### Training Goal and Lab Notebook
 
+The policy engineering journey uses actual Newton CPU/PhysicsPort, a small
+finite ONNX model and the existing HTTP evaluator/recording. It compares a
+measured teacher with two candidates whose training Task hashes differ while
+their fixed Suite comparison group remains the same. The deliberately
+insufficient candidate succeeds at its own gripper goal and correctly scores0
+on the Suite's tube-transfer goal. This is engineering evidence, not a learned
+contact-policy success or the actual256 trainer-state acceptance.
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_policy_observation_evidence.py tests/cli/test_policy_observation_commands.py -q
+uv run --no-sync python -m pytest tests/sim_runtime/test_policy_evaluation_api.py -q
+```
+
+The second command needs the frozen simulation/USD extras and owns its
+temporary inputs/Session/recording. Source/artifact checks retain unqualified
+fixture labels. See [policy candidates](POLICIES.md) for actual subject and
+observation-evidence commands.
+
 Evaluation comparison groups require complete server evidence for the fixed
 environment and judge. Candidate versions remain separate. Legacy scores and
 decisions stay readable; missing comparison evidence is unknown and cannot

@@ -297,6 +297,11 @@ class HostCore:
     def values(self):
         return {state.key: state.export_values() for state in self._states}
 
+    def program_execution(self, entity_key):
+        program = self._programs[self._entity_indices[entity_key]]
+        evidence = getattr(program, "execution_evidence", None)
+        return deepcopy(evidence()) if evidence is not None else None
+
     def availability(self, entity_key):
         """An optional driver check shared by fast and authoritative admission."""
         return self._availability(entity_key) if self._availability is not None else None
