@@ -67,4 +67,5 @@ select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "tools/*.py" = ["E402"] # Direct scripts add the repository root before local imports.
+"factory/verify.py" = ["E402"] # Direct script adds the repository root before local imports.
 "tests/sim_runtime/*.py" = ["E402"] # Optional Newton is skipped before importing its consumers.

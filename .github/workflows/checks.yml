@@ -65,7 +65,7 @@ jobs:
           SPATIAL_CI_PYTEST_LANE: reference
           SPATIAL_CI_PYTEST_MANIFEST_DIR: .scratch/ci-results/reference
         run: uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli --collect-only -q
-      - run: uv run --no-sync ruff check apps packages tools tests
+      - run: uv run --no-sync ruff check apps packages tools tests factory
         if: matrix.lane == 'core'
       - run: uv run --no-sync python tools/check_platform_skills.py
         if: matrix.lane == 'core'

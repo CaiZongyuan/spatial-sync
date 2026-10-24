@@ -14,7 +14,7 @@ Do not resynchronize an environment while it serves another process;
 
 ```powershell
 uv run --no-sync python -m pytest tests/contract tests/unit tests/gateway tests/cli -q
-uv run --no-sync ruff check apps packages tools tests
+uv run --no-sync ruff check apps packages tools tests factory
 pnpm protocol:check
 pnpm test:protocol:ts
 pnpm test:web
@@ -296,15 +296,40 @@ the replacement viewer, then stops it and checks backend counts. Ordinary CI
 explicitly skips this optional native case. Other operations browser cases
 separate contract mocks from the real Synthetic connection/pause/stop journey.
 
-## Scene Factory acceptance prerequisites (planned)
+## Scene Factory support baseline (SF0)
 
-The SF implementation tickets must record their supported external agent client,
-Blender version, paired MCP server/addon and configuration from the
-[Scene Factory specification](spec/LAB_SCENE_FACTORY_SPEC_V1.md).
-These tools are not prerequisites for ordinary CI. Factory acceptance separately
-checks actual Blender authoring, received-version isolation, real Newton CPU
-validation and offline use. Real agent calls require the model and bounded cost
-authorization recorded in the relevant ticket before execution.
+The gateway never imports `factory/`. Its GPU-free check uses a self-authored
+SimReady-shaped source, the restricted adapter and the existing immutable import:
+
+```powershell
+uv run --no-sync python factory/verify.py check
+```
+
+The same journey runs as `tests/unit/test_scene_factory.py` in the core lane. It
+uses only structural checks, so it stays GPU-free and independent of the
+simulation extras. The committed boundary is `factory/support.json`; `check`
+validates it for pinned identity, verified BOMs, measured outputs and honest
+usage flags. Real Newton evidence is recorded by the separate evidence run.
+
+Real source and Blender evidence is separate from CI and needs network access:
+
+```powershell
+uv run --no-sync python factory/verify.py evidence --cache .scratch/sf0/cache --out .scratch/sf0/evidence
+uv run --no-sync python factory/verify.py blender --blender <blender.exe> --mcp <mcp-for-blender.exe> --out .scratch/sf0/evidence/blender.json
+```
+
+The pinned combination is Blender 4.5.9 LTS, MCP for Blender 2.2.2 at commit
+`5a3618fccb2d982d0dd61e7a1879912c3100073b`, addon `bl_info` 1.8,
+`BLENDER_MCP_SAFE_MODE=1`, `DISABLE_TELEMETRY=true`, no auto-started socket and
+all third-party providers disabled. The Blender probe runs a background script;
+the MCP probe uses the official client to check safe-mode rejection. The addon
+socket is only for authoring and is not a sandbox. Raw downloads and probe output
+live in `.scratch/sf0/`; no NVIDIA asset, model weight or Blender binary enters Git.
+
+The SF implementation tickets record their supported external agent client and
+any model/cost authorization in the relevant issue. Real agent calls are not part
+of ordinary CI. Factory acceptance separately checks actual Blender authoring,
+received-version isolation, real Newton CPU validation and offline use.
 
 ## Ownership and cleanup
 
