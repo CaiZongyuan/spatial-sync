@@ -87,6 +87,24 @@ Collection does not invoke the platform observation assembler, repeat a step,
 read mutable physics from another thread, or edit SDK files. Final export binds
 the retained dataset to this Job's exact material.
 
+The profile must name the exact exported ONNX input boundary and normalization
+placement. For upstream RSL-RL5.4.1 MLP, native `get_latent` concatenates selected
+observation groups before `obs_normalizer`, while `_OnnxMLPModel.forward` accepts
+that concatenation and applies a copied normalizer inside the exported graph.
+Capture the actual normalizer input during the algorithm's action-collection
+call, not a Task-returned actor vector or a later training minibatch. Pin actual
+runner/actor/exporter/state-provider implementation digests, group order and
+normalizer state/material hashes. An unknown external normalization step or
+changed exporter is unverified, even if a supplied vector has the right shape.
+Record the actual raw algorithm action used as the next previous-action input;
+do not substitute a clipped/scaled Task value merely to force agreement.
+
+Primary input-boundary sources, pinned at upstream commit
+`016c7ede710e358b7d6c205642e2540804d6281f` (tag v5.4.1):
+[native/exported MLP](https://github.com/leggedrobotics/rsl_rl/blob/016c7ede710e358b7d6c205642e2540804d6281f/rsl_rl/models/mlp_model.py)
+and [runner ONNX export](https://github.com/leggedrobotics/rsl_rl/blob/016c7ede710e358b7d6c205642e2540804d6281f/rsl_rl/runners/on_policy_runner.py).
+This source inspection is not an executed training experiment.
+
 The old Task hook returning a ready sample list stays a supported unqualified
 capture contract. It cannot become a trusted native profile merely by changing
 a string or supplying a source hash. Unmatched/unsupported native sources stay
@@ -133,6 +151,11 @@ complete bindings, Embodiment, Robot Model and Controller current hash/version.
 Revalidate it on approval and before each new publication effect. Revocation or
 changed context before execution makes the old intent stale/blocked, requiring
 a new reviewed context. A completed publication is historical, not a hot swap.
+Its committed human deployment proof remains independent of later Training Plan
+revision/revocation: evaluation loading still requires the current approved
+exact Plan/hash, while deployment loading requires this committed exact
+Scene/Controller/material proof. Reverting a committed deployment requires a
+new explicit transaction; it does not silently roll back an active Session.
 
 Use the existing library validation, import lock and revision reservation. The
 transaction reserves one Scene revision and Controller version once, records
