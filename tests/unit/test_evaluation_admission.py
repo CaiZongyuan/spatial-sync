@@ -122,11 +122,15 @@ async def test_fifo_lease_transfer_cancel_and_expiry_without_running_a_source(tm
 
 
 @pytest.mark.parametrize("startup_failure", [False, True])
-async def test_failed_cleanup_keeps_slot_even_after_stopped_until_explicit_cleanup(tmp_path, startup_failure):
+@pytest.mark.parametrize("unconfirmed", [False, True])
+async def test_failed_cleanup_keeps_slot_even_after_stopped_until_explicit_cleanup(
+    tmp_path, startup_failure, unconfirmed
+):
     manager = Manager(tmp_path)
     service = EvaluationService(manager)
     permit_cleanup = False
     original_create = manager.create
+    episodes = []
 
     class Owned(Session):
         def __init__(self, identifier):
@@ -143,6 +147,8 @@ async def test_failed_cleanup_keeps_slot_even_after_stopped_until_explicit_clean
             if not startup_failure:
                 self.state, self.source = "STOPPED", None
             if not permit_cleanup:
+                if unconfirmed:
+                    return
                 raise OSError(
                     "Source cleanup failed" if startup_failure else "Recording close failed after STOPPED"
                 )
@@ -159,7 +165,8 @@ async def test_failed_cleanup_keeps_slot_even_after_stopped_until_explicit_clean
             raise HTTPException(503, {"code": "source_unavailable"})
         return session
 
-    async def episode(session, suite, case):
+    async def episode(session, suite, case, *, attempt=None):
+        episodes.append(case["id"])
         return {"caseId": case["id"], "success": False}
 
     service._validate_session = lambda *args: {"source": "synthetic"}
@@ -177,6 +184,10 @@ async def test_failed_cleanup_keeps_slot_even_after_stopped_until_explicit_clean
         assert service._blocked
         record = service.store.records[evaluation["evaluationId"]]
         assert record["status"] == "failed" and record["error"]["code"] == "cleanup_failed"
+        assert episodes == ([] if startup_failure else ["train-one"])
+        [attempt] = record["episodes"]
+        assert attempt["status"] == "invalid" and attempt.get("success") is None
+        assert attempt["cleanupComplete"] is False and record["attemptedEpisodes"] == 1
         assert not service.store.rows
         _, status = await service.create_session(
             None,

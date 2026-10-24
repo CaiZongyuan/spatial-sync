@@ -80,6 +80,25 @@ def test_store_is_append_only_and_recovers_commit_before_receipt(tmp_path):
     assert restarted.rows[0] == row
 
 
+def test_restart_retains_partial_attempt_without_claiming_success_or_cleanup(tmp_path):
+    store = EvaluationStore(tmp_path)
+    record = {
+        "evaluationId": "eval-partial", "status": "running", "attemptedEpisodes": 1,
+        "episodes": [{"caseId": "train-one", "status": "running", "recordingId": "session-owned",
+                      "milestones": {"grasp": True}, "cleanupComplete": False}],
+    }
+    store.save(record)
+    restarted = EvaluationStore(tmp_path)
+    restarted.startup()
+    result = restarted.records["eval-partial"]
+    assert result["status"] == "failed" and result["attemptedEpisodes"] == 1
+    [attempt] = result["episodes"]
+    assert attempt["status"] == "invalid" and attempt["reason"] == "gateway_restarted"
+    assert attempt["recordingId"] == "session-owned" and attempt["milestones"] == {"grasp": True}
+    assert "success" not in attempt and "cleanupComplete" not in attempt
+    assert not restarted.rows
+
+
 def test_private_parser_diagnostics_and_changed_package_do_not_return_private_values(tmp_path):
     package = tmp_path / "suites/lab-demo-pick-place/1"
     shutil.copytree(BUILTIN_ROOT / "suites/lab-demo-pick-place/1", package)

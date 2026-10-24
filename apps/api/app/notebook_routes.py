@@ -46,7 +46,7 @@ def install_notebook_routes(app, service, role_for):
             )
         await asyncio.to_thread(service.reconcile)
         try:
-            return await asyncio.to_thread(
+            entry = await asyncio.to_thread(
                 service.store.override,
                 goal(identity),
                 entry_id,
@@ -56,6 +56,7 @@ def install_notebook_routes(app, service, role_for):
                 body.note,
                 body.requestId,
             )
+            return service.public_entry(entry)
         except (OSError, ValueError, LibraryError) as error:
             raise PlanError(
                 "notebook_unavailable", "Lab Notebook publication is unavailable", status=503

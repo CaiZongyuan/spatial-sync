@@ -25,6 +25,9 @@ promotion policy, runtime sandbox scope, model billing or #132C/D decisions.
 - Freeze Suite/Scene/evaluation-Task/binding/dependency inputs, actual supported
   Source/engine facts, observation implementation and judge/conditions/timeout/
   grading implementation. Distinguish observed implementation from declarations.
+  A trusted common runtime probe can bind actual inference runtime/provider
+  availability for both Program and policy candidates; actual policy execution
+  must agree with that probe. Candidate weights and call counts stay separate.
   The fixed Suite's evaluation Task is distinct from a candidate's training Task.
 - Retain actual bytes/lock files or retrievable immutable artifacts. Dirty
   source cannot be described as recoverable using only a commit name/hash.
@@ -40,6 +43,9 @@ Old rows stay readable with their original score and decision. Missing legacy
 environment/judge proof is explicitly unknown; old records do not silently gain
 new identities or qualify as new References. Re-evaluate both versions under a
 new complete condition to establish that group's measured Reference.
+Already committed Notebook entries keep their historical comparison, score,
+automatic judgement and audit. Current reads project unknown comparisons without
+a Reference or gap reduction, and expose the prior `recordedComparison` separately.
 
 The existing public comparison request rejects unknown/different conditions.
 CLI/MCP, Notebook and curves retain the same factual distinction. Candidate-only

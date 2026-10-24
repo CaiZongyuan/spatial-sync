@@ -63,6 +63,11 @@ class EvaluationStore:
                 durable_json(path, record)
             elif record["status"] in ("queued", "running"):
                 record.update(status="failed", error={"code": "gateway_restarted"})
+                for episode in record.get("episodes", []):
+                    if episode.get("status") in ("starting", "running"):
+                        episode.update(status="invalid", reason="gateway_restarted")
+                        episode.pop("success", None)
+                        episode.pop("cleanupComplete", None)
                 if record.get("layer") == "agent":
                     for case in record["cases"]:
                         if case["status"] in ("starting", "running", "finishing"):

@@ -35,7 +35,7 @@ async def test_evaluation_lease_keeps_live_client_approval_and_mqtt_independent(
         transports.append(transport)
         return transport
 
-    async def hold_episode(session, suite, case):
+    async def hold_episode(session, suite, case, *, attempt=None):
         # Real admission, Suite validation, Source startup and recording precede this seam.
         episode_entered.set()
         await asyncio.Event().wait()

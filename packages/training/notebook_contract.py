@@ -62,9 +62,12 @@ class RecordedScore(Schema):
 
 class RecordedEpisode(Schema):
     caseId: Text | None = None
+    status: Literal["starting", "running", "valid", "invalid", "cancelled"] | None = None
     success: bool | None = None
     failedStage: str | None = None
     recordingId: str | None = None
+    sessionId: str | None = None
+    cleanupComplete: bool | None = None
     invocationId: str | None = None
     invocationStatus: str | None = None
     reason: str | None = None

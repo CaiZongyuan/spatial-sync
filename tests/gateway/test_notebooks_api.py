@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from apps.api.app.sources.synthetic_source import SyntheticSource
 from packages.info.evaluations import evaluation_decision, wilson_interval
 from packages.library.common import BUILTIN_ROOT
 from tests.fixtures.training_task import task_archive, task_directory, training_plan
@@ -200,6 +201,65 @@ def test_legacy_receipt_keeps_its_decision_but_cannot_establish_a_current_refere
         assert "comparisonIdentity" not in service.store.records[legacy["evaluationId"]]
 
 
+def test_committed_legacy_notebook_projects_unknown_after_restart_without_rewriting_history(tmp_path):
+    settings = Settings()
+    app = create_app(settings)
+    with TestClient(app) as client:
+        plan = prepare(client, tmp_path / "task")
+        baseline = controlled_receipt(app, plan, successes=0, legacy=True)
+        candidate = controlled_receipt(app, plan, successes=2, reference=baseline["result"], legacy=True)
+        entries = client.get("/api/v1/notebooks/goal/notebook-probe").json()["entries"]
+        selected = next(entry for entry in entries if entry["evaluationId"] == candidate["evaluationId"])
+        changed = client.patch(
+            "/api/v1/notebooks/goal/notebook-probe/" + selected["entryId"],
+            headers={"X-Actor": "user:historical-reviewer"},
+            json={
+                "hypothesisId": "H1",
+                "verdict": "refuted",
+                "note": "Retain the original audit",
+                "requestId": "old-audit",
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        path = app.state.notebooks.store.path
+    # This is the already committed canonical format from the old producer,
+    # not a new receipt projected with current comparison rules.
+    historical = json.loads(path.read_bytes())
+    snapshots = {}
+    for entry in historical["entries"]:
+        is_candidate = entry["evaluationId"] == candidate["evaluationId"]
+        entry["comparison"] = {
+            "state": "comparable" if is_candidate else "baseline",
+            "reason": None,
+            "conditionsGroup": baseline["evaluationId"],
+            "referenceEvaluationId": baseline["evaluationId"] if is_candidate else None,
+            "referenceScore": 0.0 if is_candidate else None,
+            "remainingGapReduction": 1.0 if is_candidate else None,
+            "gapReason": None,
+        }
+        snapshots[entry["evaluationId"]] = entry
+    path.write_text(json.dumps(historical, indent=2), encoding="utf-8")
+    canonical_bytes = path.read_bytes()
+    with TestClient(create_app(settings)) as restarted:
+        public = restarted.get("/api/v1/notebooks/goal/notebook-probe").json()["entries"]
+        for entry in public:
+            original = snapshots[entry["evaluationId"]]
+            assert entry["comparison"]["state"] == "unknown"
+            assert entry["comparison"]["remainingGapReduction"] is None
+            assert entry["comparison"]["referenceEvaluationId"] is None
+            assert entry["comparison"]["referenceScore"] is None
+            assert entry["recordedComparison"] == original["comparison"]
+            for name in ("score", "reportedDecision"):
+                assert entry[name] == original[name]
+            for current_hypothesis, historical_hypothesis in zip(entry["hypotheses"], original["hypotheses"]):
+                for name in ("automatic", "definition", "overrides"):
+                    assert current_hypothesis[name] == historical_hypothesis[name]
+        loop = restarted.get("/api/v1/loops/goal/notebook-probe").json()
+        assert loop["reference"]["state"] == "unknown" and loop["reference"]["remainingGapReduction"] is None
+        assert all(entry["comparison"]["state"] == "unknown" for entry in loop["rounds"])
+        assert path.read_bytes() == canonical_bytes
+
+
 def test_actual_evaluation_is_bound_to_plan_and_private_inputs_never_enter_notebook(tmp_path):
     app = create_app(Settings())
     with TestClient(app) as client:
@@ -291,7 +351,7 @@ def test_linked_evaluation_admission_preserves_budget_through_failure_and_refuse
     app = create_app(Settings())
     entered = threading.Event()
 
-    async def unavailable(session, suite, case):
+    async def unavailable(session, suite, case, *, attempt=None):
         entered.set()
         await asyncio.Event().wait()
 
@@ -315,6 +375,9 @@ def test_linked_evaluation_admission_preserves_budget_through_failure_and_refuse
         )
         [entry] = client.get("/api/v1/notebooks/goal/notebook-probe").json()["entries"]
         assert entry["attemptedEpisodes"] == 1 and entry["score"] is None
+        [attempt] = entry["partialEpisodes"]
+        assert attempt["status"] == "cancelled" and attempt["success"] is None
+        assert attempt["recordingId"] in entry["recordings"] and attempt["cleanupComplete"] is True
         assert entry["hypotheses"][0]["automatic"]["verdict"] == "inconclusive"
         budget = client.get("/api/v1/loops/goal/notebook-probe").json()["budget"]
         assert budget["actual"]["episodes"] == 1 and budget["effective"]["episodes"] == 2
@@ -362,6 +425,37 @@ def test_attempt_journal_failure_before_source_does_not_manufacture_an_executed_
         assert result["attemptedEpisodes"] == 0
         [entry] = client.get("/api/v1/notebooks/goal/notebook-probe").json()["entries"]
         assert entry["attemptedEpisodes"] == 0 and entry["score"] is None
+
+
+def test_invalid_source_attempt_retains_notebook_recording_and_consumed_budget(tmp_path):
+    class UnavailableSource(SyntheticSource):
+        async def invoke(self, request):
+            raise OSError("Owned unavailable transport; not an ability failure")
+
+    app = create_app(Settings(), source_factory=lambda kind, identifier: UnavailableSource(identifier))
+    with TestClient(app) as client:
+        plan = prepare(client, tmp_path / "task")
+        response = client.post(
+            "/api/v1/evaluations",
+            json={"subject": "robot_arm.virtual", "suite": SUITE, "planId": plan["id"], "planRevision": 1},
+        )
+        assert response.status_code == 202, response.text
+        identifier = response.json()["evaluationId"]
+        failed = until(
+            lambda: client.get("/api/v1/evaluations/" + identifier).json(),
+            lambda value: value["status"] == "failed",
+        )
+        assert failed.get("result") is None
+        [entry] = client.get("/api/v1/notebooks/goal/notebook-probe").json()["entries"]
+        assert entry["score"] is None and entry["attemptedEpisodes"] == 1
+        [attempt] = entry["partialEpisodes"]
+        assert attempt["status"] == "invalid" and attempt["success"] is None
+        assert attempt["reason"] == "source_unavailable" and attempt["cleanupComplete"] is True
+        assert entry["recordings"] == [attempt["recordingId"]]
+        assert client.get("/recordings/" + attempt["recordingId"] + "/recording.json").is_success
+        budget = client.get("/api/v1/loops/goal/notebook-probe").json()["budget"]
+        assert budget["actual"]["episodes"] == 1 and budget["effective"]["episodes"] == 2
+        assert client.get("/api/v1/suites/lab-demo-pick-place/1/scoreboard").json()["rows"] == []
 
 
 def test_candidate_change_judge_change_and_reference_ceiling_remain_distinct(tmp_path, monkeypatch):

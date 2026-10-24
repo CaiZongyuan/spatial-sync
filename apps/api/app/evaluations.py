@@ -115,7 +115,11 @@ class EvaluationService:
     def bind_identity(record, session, *, execution_facts=None):
         frozen = record.get("identitySnapshot")
         if frozen is None:
-            record.update(comparisonIdentity=None, comparisonState="unknown")
+            record.update(
+                comparisonIdentity=None,
+                comparisonState="unknown",
+                comparisonReason="implementation_evidence_unavailable",
+            )
             return {}
         identity, actual, reason = bind_source_identity(frozen, session, execution_facts=execution_facts)
         if record.get("comparisonIdentity") and record["comparisonIdentity"] != identity:
@@ -327,6 +331,7 @@ class EvaluationService:
             "split": "train",
             "status": "queued",
             "episodes": [],
+            "attemptedEpisodes": 0,
             "at": now(),
             "runtimeHash": self._runtime_hash,
         }
@@ -493,6 +498,7 @@ class EvaluationService:
         record = deepcopy(self.store.records[identifier])
         record.update(status="running", startedAt=now())
         session = None
+        attempt = None
         started = time.monotonic()
         try:
             await persist(self.store.save, record)
@@ -526,12 +532,16 @@ class EvaluationService:
                     # accounting; they never replace the statistical denominator.
                     before_attempt = record["attemptedEpisodes"]
                     record["attemptedEpisodes"] = before_attempt + 1
+                    attempt = {"caseId": case["id"], "status": "starting", "milestones": {}}
+                    record["episodes"].append(attempt)
                     try:
                         await persist(self.store.save, record)
                     except BaseException:
                         # No Source attempt has been issued yet. Preserve the failed
                         # evaluation, but do not manufacture an executed episode.
                         record["attemptedEpisodes"] = before_attempt
+                        record["episodes"].pop()
+                        attempt = None
                         raise
                 session = await self.manager.create(
                     None,
@@ -544,6 +554,9 @@ class EvaluationService:
                     scene_version=selected.id,
                     evaluation_id=identifier,
                 )
+                if attempt is not None:
+                    self._attempt_session(attempt, session)
+                    attempt["status"] = "running"
                 if (
                     not session.recording
                     or not session._recording_revision_ready
@@ -555,12 +568,20 @@ class EvaluationService:
                 if record.get("key", key) != key:
                     raise HTTPException(409, {"code": "not_comparable"})
                 record["key"] = key
-                outcome = await self._episode(session, suite, case)
+                await persist(self.store.save, record)
+                outcome = await self._episode(session, suite, case, attempt=attempt)
                 await session.close()
+                if session.holds_resources:
+                    raise HTTPException(503, {"code": "cleanup_failed"})
                 if session.recording.metadata["status"] != "complete":
                     raise HTTPException(503, {"code": "recording_incomplete"})
                 outcome["recordingId"] = session.session_id
-                record["episodes"].append(outcome)
+                if attempt is None:
+                    record["episodes"].append(outcome)
+                else:
+                    attempt.update(outcome, status="valid")
+                    self._attempt_session(attempt, session)
+                attempt = None
                 session = None
                 await persist(self.store.save, record)
             suite.verify()
@@ -592,6 +613,7 @@ class EvaluationService:
                 "candidateIdentity": record.get("candidateIdentity"),
                 "comparisonIdentity": record.get("comparisonIdentity"),
                 "comparisonState": record.get("comparisonState", "unknown"),
+                "comparisonReason": record.get("comparisonReason"),
                 "key": record["key"],
                 "split": "train",
                 "successes": successes,
@@ -636,6 +658,12 @@ class EvaluationService:
                 },
                 endedAt=now(),
             )
+            if attempt is not None:
+                attempt.update(
+                    status="cancelled" if isinstance(exc, asyncio.CancelledError) else "invalid",
+                    reason=record["error"]["code"],
+                )
+                attempt.pop("success", None)
             # A failed start may still own a discoverable source even if create raised.
             owned = [
                 item
@@ -645,21 +673,38 @@ class EvaluationService:
             for item in owned:
                 try:
                     await item.close()
+                    if item.holds_resources:
+                        raise RuntimeError("Source cleanup is unconfirmed")
                 except BaseException:
                     self._blocked.add(identifier)
                     record["error"] = {"code": "cleanup_failed"}
+                finally:
+                    if attempt is not None:
+                        self._attempt_session(attempt, item)
             if session is not None and session not in owned:
                 try:
                     await session.close()
+                    if session.holds_resources:
+                        raise RuntimeError("Source cleanup is unconfirmed")
                 except BaseException:
                     self._blocked.add(identifier)
                     record["error"] = {"code": "cleanup_failed"}
+                finally:
+                    if attempt is not None:
+                        self._attempt_session(attempt, session)
             if isinstance(exc, asyncio.CancelledError) and self._closing:
                 self._capture_completion(record)
                 await persist(self.store.save, record)
                 raise
         self._capture_completion(record)
         await persist(self.store.save, record)
+
+    @staticmethod
+    def _attempt_session(attempt, session):
+        attempt["sessionId"] = session.session_id
+        attempt["cleanupComplete"] = session.cleanup_complete
+        if session.recording is not None:
+            attempt["recordingId"] = session.session_id
 
     @staticmethod
     def _validate_session(session, suite, case, subject):
@@ -698,7 +743,7 @@ class EvaluationService:
             "bindingHash": identity_fingerprint(binding),
         }
 
-    async def _episode(self, session, suite, case):
+    async def _episode(self, session, suite, case, *, attempt=None):
         task = suite.task
         mirror = StateStore(session.manifest.sceneRevision, session.epoch)
         mirror.apply(session.info_snapshot())
@@ -738,6 +783,8 @@ class EvaluationService:
                     )
                     is True
                 )
+            if attempt is not None:
+                attempt["milestones"] = dict(stages)
 
         observe()
         cursor = session.info.event_seq
@@ -757,6 +804,8 @@ class EvaluationService:
             invocation = await pipeline.approve(
                 invocation.invocationId, "deny", "operator", actor, "Human gates are denied during evaluation"
             )
+        if attempt is not None:
+            attempt.update(invocationId=invocation.invocationId, invocationStatus=invocation.status)
         deadline = time.monotonic() + task["timeoutSeconds"]
         timed_out = False
         while True:
@@ -771,6 +820,8 @@ class EvaluationService:
                     observe()
             cursor = events["lastSeq"]
             invocation = pipeline.table.get(invocation.invocationId)
+            if attempt is not None:
+                attempt["invocationStatus"] = invocation.status
             if session.state not in ("RUNNING", "PAUSED"):
                 raise HTTPException(503, {"code": "source_unavailable"})
             if invocation.error and invocation.error.code in ("source_unavailable", "device_unavailable"):

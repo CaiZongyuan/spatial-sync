@@ -93,9 +93,20 @@ def public_conditions(value):
 
 def public_episode(value):
     result = fields(
-        value, ("caseId", "failedStage", "invocationId", "invocationStatus", "recordingId", "reason"), (str,)
+        value,
+        (
+            "caseId",
+            "status",
+            "failedStage",
+            "invocationId",
+            "invocationStatus",
+            "sessionId",
+            "recordingId",
+            "reason",
+        ),
+        (str,),
     )
-    result.update(fields(value, ("success",), (bool,)))
+    result.update(fields(value, ("success", "cleanupComplete"), (bool,)))
     if isinstance(value.get("milestones"), dict):
         result["milestones"] = {
             key: passed for key, passed in value["milestones"].items() if type(passed) is bool
