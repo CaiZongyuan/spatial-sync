@@ -57,14 +57,21 @@ def runtime(tmp_path):
     program.model = CpuPolicy(path, program.spec)
     program.joints = {key: key for key in program.spec.action.jointKeys}
     program.tubes = {"/tube": 0}
-    program.locations = {"rack.A1": {"site": "/from"}, "centrifuge.slot1": {"site": "/to"}}
+    program.locations = {
+        "rack.A1": {"site": "/from", "zone": "rack"},
+        "centrifuge.slot1": {
+            "site": "/to",
+            "zone": "centrifuge",
+            "requires": [{"property": "lidOpen", "equals": True}],
+        },
+    }
     program.handle = None
     program.previous = np.zeros(1)
     ctx = SimpleNamespace(
         physics=Port(),
         sim_time=0.0,
         fact_due=False,
-        check=lambda conditions: ["not yet"] if conditions else [],
+        check=lambda conditions: ["not yet"] if conditions and "all" in conditions[0] else [],
         read=lambda key, prop: "/from",
         set=lambda **values: None,
         config=SimpleNamespace(maxSeconds=1.0),
@@ -111,3 +118,44 @@ def test_ambiguous_object_out_of_coverage_and_insufficient_control_frequency_rej
     program.start(inv, ctx)
     program.tick(ctx, 1 / 15)
     assert inv.outcome == "policy_inference_failed"
+
+
+@pytest.mark.parametrize("ending", ["stop", "cancel", "timeout", "success", "inference_error"])
+def test_termination_keeps_the_reserved_zone_until_observed_safe_departure(tmp_path, ending):
+    program, ctx = runtime(tmp_path)
+    values = {}
+    ctx.set = lambda **fields: values.update(fields)
+    inv = Invocation()
+    assert program.accept(inv, ctx) is None
+    assert values["zone"] == "centrifuge"
+    program.start(inv, ctx)
+    if ending == "stop":
+        stop = Invocation()
+        stop.action = "stop"
+        program.start(stop, ctx)
+    elif ending == "cancel":
+        program.cancel(inv, ctx)
+    else:
+        if ending == "timeout":
+            ctx.sim_time = 1.0
+        elif ending == "success":
+            ctx.check = lambda _: []  # Controlled Task oracle, no physical success claim.
+        else:
+
+            def failed_inference(_):
+                raise ValueError("explicit model failure")
+
+            program.model.infer = failed_inference
+        program.tick(ctx, 1 / 60)
+    assert program.handle is None
+    assert values["zone"] == "centrifuge"
+
+
+def test_multiple_interlocked_zones_reject_without_a_permissive_reservation(tmp_path):
+    program, ctx = runtime(tmp_path)
+    values = {}
+    ctx.set = lambda **fields: values.update(fields)
+    program.locations["rack.A1"]["requires"] = [{"property": "doorOpen", "equals": True}]
+    refused = program.accept(Invocation(), ctx)
+    assert refused.code == "precondition_failed"
+    assert "zone" not in values

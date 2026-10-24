@@ -84,6 +84,20 @@ training coverage. Success uses the frozen Task condition and observed facts;
 timeout, cancellation and inference failure hold the current actuator positions.
 Task control frequency must fit the Runner's control frequency.
 
+The Program reserves the Task's unique interlocked location zone at authoritative
+admission, before any queued motion or policy target. A black box has no trusted
+pick/place stage, so the reservation persists throughout the action and through
+stop, cancellation, success, timeout or inference failure. Multiple interlocked
+zones cannot be represented by the existing single `zone` property and reject.
+For a Task without named locations, configured location zones provide the
+conservative reservation; an ambiguous zone set rejects.
+
+Idle facts update `zone`/`atLocation` only from actual seven-joint feedback that
+matches home or a known taught approach/grasp, using the existing strict
+position error <0.01 rad and velocity <0.05 rad/s bounds. Unknown feedback keeps
+the previous reservation; an unknown initial pose leaves the property UNKNOWN,
+so existing interlocks fail closed. No stop/terminal flag alone clears a zone.
+
 ## Observation comparison
 
 Export raw training states and their independently computed observations to a

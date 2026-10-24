@@ -10,6 +10,7 @@ from packages.policies.library import read_json, runtime_library
 from packages.policies.observations import ObservationSpec, assemble, coverage_failure, joint_targets
 
 from .grasp import grasp_point_in_tcp
+from .newton import HOME
 
 
 class PolicyProgram:
@@ -54,7 +55,46 @@ class PolicyProgram:
         self.handle, self.references = None, {}
         self.previous = np.zeros(len(self.spec.action.jointKeys))
         self._facts(ctx)
-        ctx.set(phase="idle", atLocation=None, zone=None)
+        ctx.set(phase="idle")
+
+    def _settled_location(self, ctx):
+        positions = np.array([ctx.physics.joint_q(self.joints[key])[0] for key in ctx.config.jointKeys])
+        speeds = np.array([ctx.physics.joint_qd(self.joints[key])[0] for key in ctx.config.jointKeys])
+        if (
+            not np.isfinite(positions).all()
+            or not np.isfinite(speeds).all()
+            or np.max(np.abs(speeds)) >= 0.05
+        ):
+            return {}
+        # Use the existing taught Program's completion bounds, not desired targets.
+        if np.max(np.abs(positions - HOME)) < 0.01:
+            return {"atLocation": None, "zone": None}
+        matches = {
+            name: location["zone"]
+            for name, location in self.locations.items()
+            if any(
+                np.max(np.abs(positions - location[pose])) < 0.01
+                for pose in ("approach", "grasp")
+                if pose in location
+            )
+        }
+        if len(set(matches.values())) != 1:
+            return {}
+        facts = {"zone": next(iter(matches.values()))}
+        if len(matches) == 1:
+            facts["atLocation"] = next(iter(matches))
+        return facts
+
+    def _motion_zone(self, params):
+        locations = [self.locations[params[key]] for key in ("location", "from", "to") if key in params]
+        # Unstaged joint-space policies may visit any configured interlocked location.
+        if not locations:
+            locations = list(self.locations.values())
+        guarded = {item["zone"] for item in locations if item.get("requires")}
+        zones = guarded or {item["zone"] for item in locations}
+        if len(zones) != 1:
+            raise ValueError("Policy motion requires one conservatively reservable zone")
+        return next(iter(zones))
 
     def _facts(self, ctx):
         port = ctx.physics
@@ -72,6 +112,9 @@ class PolicyProgram:
             tcpPose=np.r_[p, q].tolist(),
             holding=held[0] if len(held) == 1 else None,
         )
+        if self.handle is None:
+            # Unknown feedback leaves an old reservation (or initial UNKNOWN) intact.
+            ctx.set(**self._settled_location(ctx))
 
     def _references(self, inv, ctx):
         refs = {}
@@ -96,6 +139,7 @@ class PolicyProgram:
             return Reject(**failure)
         try:
             self._references(inv, ctx)
+            zone = self._motion_zone(inv.params)
         except (ValueError, KeyError) as exc:
             return Reject(code="precondition_failed", message=str(exc))
         for parameter in ("from", "to"):
@@ -107,6 +151,8 @@ class PolicyProgram:
                         message="Task location is unavailable",
                         details={"failed": failed},
                     )
+        # Authoritative intake also protects the gap before queued work starts.
+        ctx.set(zone=zone)
 
     def _hold(self, ctx):
         for key in self.spec.action.jointKeys:
@@ -124,7 +170,8 @@ class PolicyProgram:
         self.references = self._references(inv, ctx)
         self.handle, self.started, self.next_inference = inv, ctx.sim_time, ctx.sim_time
         self.previous[:] = 0
-        ctx.set(phase="moving")
+        # The black box has no trusted pick/place stage; reserve before its first target.
+        ctx.set(phase="moving", zone=self._motion_zone(inv.params))
 
     def cancel(self, inv, ctx):
         self._hold(ctx)
