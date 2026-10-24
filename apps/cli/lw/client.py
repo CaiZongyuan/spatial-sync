@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 import tarfile
 import tempfile
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -16,6 +18,7 @@ import httpx
 
 TERMINAL = {"succeeded", "rejected", "failed", "cancelled"}
 INVOCATION_STATES = TERMINAL | {"accepted", "running", "pending_approval"}
+ACQUISITION_FINAL = frozenset(("succeeded", "failed", "cancelled"))
 
 
 def plan_fields(plan_id, step_id, revision):
@@ -221,6 +224,36 @@ class GatewayClient:
 
     async def catalog_estimate(self, id):
         return await self.request("GET", self._catalog_path(id) + "/estimate")
+
+    @staticmethod
+    def _acquisition_path(id):
+        return "/api/v1/library/acquisitions/" + quote(id, safe="")
+
+    async def acquisition_start(self, ref, wait=False, *, actor="cli:lw", timeout=120):
+        """Create one acquisition from a catalog ID; ``wait`` polls the bounded record."""
+        document = await self.request(
+            "POST", "/api/v1/library/acquisitions", json={"ref": ref}, actor=actor
+        )
+        if not wait:
+            return document
+        deadline = time.monotonic() + timeout
+        while document.get("status") not in ACQUISITION_FINAL and time.monotonic() < deadline:
+            await asyncio.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+            document = await self.acquisition_show(document["id"])
+        return document
+
+    async def acquisition_list(self, status=None):
+        params = {"status": status} if status is not None else {}
+        return await self.request("GET", "/api/v1/library/acquisitions", params=params)
+
+    async def acquisition_show(self, id):
+        return await self.request("GET", self._acquisition_path(id))
+
+    async def acquisition_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._acquisition_path(id) + "/cancel", actor=actor)
+
+    async def acquisition_retry(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._acquisition_path(id) + "/retry", actor=actor)
 
     async def library_describe(self, id, view="summary", section=None, offset=0, documentDigest=None):
         params = {"view": view, "offset": offset}

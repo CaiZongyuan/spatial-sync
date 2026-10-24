@@ -1,0 +1,24 @@
+#usda 1.0
+(
+    defaultPrim = "CardboardBox"
+    upAxis = "Z"
+    metersPerUnit = 1
+)
+
+def Xform "CardboardBox" (
+    kind = "component"
+)
+{
+    double3 xformOp:translate = (0, 0, 0)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+
+    def Cube "Body" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double size = 1
+        rel physics:collisionEnabled = "enabled"
+        float3 xformOp:scale = (0.7, 0.52, 0.51)
+        uniform token[] xformOpOrder = ["xformOp:scale"]
+    }
+}

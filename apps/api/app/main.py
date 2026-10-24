@@ -24,6 +24,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
+from apps.api.app.acquisition_routes import (
+    install_acquisition_routes,
+    reject_invalid_acquisition,
+)
 from apps.api.app.agent_evaluations import install_external_evaluations
 from apps.api.app.agent_routes import install_agent_routes
 from apps.api.app.alert_routes import install_alert_routes
@@ -54,6 +58,7 @@ from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from apps.api.app.task_routes import install_task_routes
+from packages.acquisition import AcquisitionService
 from packages.assets.registry import AssetRegistry
 from packages.catalog import AssetCatalog
 from packages.info.invocations import HistoryUnavailable
@@ -147,6 +152,10 @@ def create_app(
     platform_sampler=None,
     live_transport_factory=None,
     catalog_path: Path | None = None,
+    acquisition_runner=None,
+    acquisition_limits=None,
+    acquisition_disk_usage=None,
+    acquisition_source_root: Path | None = None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
@@ -186,6 +195,23 @@ def create_app(
         jobs=manager.jobs.reference_snapshot,
     )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
+    acquisitions = AcquisitionService(
+        settings.state_root,
+        library_assets.roots["user"],
+        library_assets,
+        catalog,
+        runner=acquisition_runner,
+        limits=acquisition_limits,
+        disk_usage=acquisition_disk_usage,
+        source_root=(
+            acquisition_source_root
+            or (
+                Path(os.environ["SPATIAL_ACQUISITION_SOURCE_ROOT"])
+                if os.environ.get("SPATIAL_ACQUISITION_SOURCE_ROOT")
+                else None
+            )
+        ),
+    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -197,6 +223,7 @@ def create_app(
             manager.library.refresh()
             library_assets.startup()
             await asyncio.to_thread(catalog.startup)
+            await acquisitions.startup()
             await recordings.startup()
             await evaluations.startup()
             await asyncio.to_thread(notebooks.startup)
@@ -207,22 +234,25 @@ def create_app(
             yield
         finally:
             try:
-                try:
-                    await views.close()
-                finally:
-                    try:
-                        await tensorboard.close()
-                    finally:
-                        await monitor.close()
+                await acquisitions.close()
             finally:
                 try:
-                    if manager.live:
-                        await manager.live.close()
+                    try:
+                        await views.close()
+                    finally:
+                        try:
+                            await tensorboard.close()
+                        finally:
+                            await monitor.close()
                 finally:
                     try:
-                        await evaluations.close()
+                        if manager.live:
+                            await manager.live.close()
                     finally:
-                        await manager.close()
+                        try:
+                            await evaluations.close()
+                        finally:
+                            await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
     app.state.tensorboard = tensorboard
@@ -239,6 +269,9 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
+        acquisition = reject_invalid_acquisition(request, error)
+        if acquisition is not None:
+            return acquisition
         if request.url.path.startswith("/api/v1/runtime-sessions"):
             return JSONResponse(
                 {"detail": {"code": "invalid_runtime_import", "message": "Runtime import is invalid"}},
@@ -260,6 +293,7 @@ def create_app(
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
     app.state.catalog = catalog
+    app.state.acquisitions = acquisitions
     app.state.training_views = views
     app.state.notebooks = notebooks
     app.state.demonstrations = demonstrations
@@ -290,6 +324,7 @@ def create_app(
     install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
                            lambda headers: _role(headers, settings), catalog)
+    install_acquisition_routes(app, acquisitions)
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):

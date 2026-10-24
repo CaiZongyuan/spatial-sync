@@ -13,6 +13,14 @@ LICENSE = (
     "were authored for spatial-sync tests and contain no third-party asset.\n"
 )
 
+# Deliberately outside the BOM so the acquisition worker's SOURCE-NOTICE
+# retention path is exercised by the GPU-free checks.
+NOTICE = (
+    "NOTICE\n"
+    "Synthetic fixture authored for spatial-sync factory checks. "
+    "It contains no third-party content and is not a published asset.\n"
+)
+
 ROOT = """#usda 1.0
 (defaultPrim = "RootNode"
  metersPerUnit = 1
@@ -146,6 +154,7 @@ def build_source(root):
     _write(simready / "payloads/instances_mujoco.usda", BODY.format(name="MuJoCoBody", mass=3))
     _write(simready / "payloads/instances_physx.usda", BODY.format(name="PhysXBody", mass=9))
     _write(root / ".metadata/LICENSE.txt", LICENSE)
+    _write(root / "NOTICE", NOTICE)
     _write(
         root / ".metadata/com.nvidia.simready.root_usds.json",
         json.dumps({"format_version": "1.0", "entries": ["simready_usd/sm_fixture_box.usd"]}, indent=2)
