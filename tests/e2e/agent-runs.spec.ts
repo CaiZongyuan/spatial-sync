@@ -85,12 +85,22 @@ test('external evaluation freezes inputs, exposes real Synthetic evidence and ke
     expect(completed.ok(), await completed.text()).toBe(true);
     const outcome = await completed.json();
     expect(outcome.case.status).toBe('completed'); expect(outcome.case.score).toBeGreaterThanOrEqual(0); expect(outcome.case.score).toBeLessThanOrEqual(100);
+    // The shared evaluator can already hand off the next real repetition.
+    await expect.poll(async () => {
+      const retained = await (await http.get(`${api}/api/v1/agent-runs/${runId}`)).json();
+      return retained.cases.filter((item: { sessionId?: string }) => item.sessionId).length;
+    }).toBe(2);
     await page.getByRole('button', { name: '刷新运行', exact: true }).click();
     const cases = page.getByRole('table', { name: 'Agent 逐题结果', exact: true });
+    await expect(cases.getByRole('link', { name: '查看回放 ↗', exact: true })).toHaveCount(2);
     await expect(cases).toContainText(`${outcome.case.score.toFixed(1)} / 100`);
     await expect(cases).toContainText('$0.3244434'); await expect(cases).toContainText('完成时快照');
     await expect(cases.getByRole('link', { name: '查看原生运行记录 ↗' })).toHaveAttribute('href', `/runtime-sessions/${native.id}`);
-    await expect(cases.getByRole('link', { name: '查看回放 ↗' })).toBeVisible();
+    expect(outcome.case.recordingId).toBe(work.sessionId);
+    const completedRow = cases.getByRole('row').filter({ hasText: work.caseRunId });
+    const replay = completedRow.getByRole('link', { name: '查看回放 ↗', exact: true });
+    await expect(replay).toHaveAttribute('href', `/replay/${outcome.case.recordingId}`);
+    await expect(replay).toBeVisible();
     for (const artifact of outcome.case.artifacts) {
       const evidence = await http.get(`${api}${artifact.url}`); expect(evidence.ok()).toBe(true);
       expect(await evidence.text()).not.toContain(work.connection.token);
