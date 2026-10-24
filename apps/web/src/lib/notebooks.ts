@@ -36,6 +36,7 @@ export interface NotebookEntry {
   comparison: { state: 'baseline' | 'comparable' | 'unknown' | 'different' | 'changed_during_execution';
     reason: string | null; conditionsGroup: string; referenceEvaluationId: string | null;
     referenceScore: number | null; remainingGapReduction: number | null; gapReason: string | null };
+  recordedComparison?: NotebookEntry['comparison'];
   deployment: { status: string; approvalId?: string | null };
   hypotheses: NotebookHypothesis[]; recordings: string[]; errorCode: string | null;
   knownJobGpuHours: number | null; costCoverage: string;

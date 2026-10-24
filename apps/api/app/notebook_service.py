@@ -320,7 +320,35 @@ class NotebookService:
         self.reconcile()
         if goal not in self.goals():
             raise PlanError("unknown_goal", "Unknown improvement Goal", status=404)
-        return {"goalId": goal, "entries": self.store.list(goal, refuted=refuted)}
+        return {
+            "goalId": goal,
+            "entries": [self.public_entry(entry) for entry in self.store.list(goal, refuted=refuted)],
+        }
+
+    def public_entry(self, entry):
+        """Current comparison evidence is a read projection, separate from historical decisions/audits."""
+        result = deepcopy(entry)
+        record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
+        if record.get("notebookContext") is None:
+            current = entry["comparison"] | {
+                "state": "unknown",
+                "reason": "Complete comparison evidence is unavailable",
+                "conditionsGroup": entry["evaluationId"],
+                "remainingGapReduction": None,
+                "gapReason": "not_comparable",
+            }
+        else:
+            current = self._comparison(
+                record,
+                record.get("result") if record.get("status") == "completed" else None,
+                record.get("notebookExecution"),
+            )
+        if current["state"] not in ("baseline", "comparable"):
+            current.update(referenceEvaluationId=None, referenceScore=None)
+        if current != entry["comparison"]:
+            result["recordedComparison"] = deepcopy(entry["comparison"])
+            result["comparison"] = current
+        return result
 
     def loop(self, goal):
         entries = self.notebook(goal)["entries"]

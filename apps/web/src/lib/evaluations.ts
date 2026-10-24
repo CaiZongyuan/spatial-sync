@@ -62,8 +62,10 @@ export interface EvaluationRecord {
   status: string;
   at: string;
   runtimeHash: string;
-  episodes: { caseId: string; success: boolean; milestones: Record<string, boolean>;
-    failedStage: string | null; invocationId: string; invocationStatus: string; recordingId: string }[];
+  episodes: { caseId: string; status?: 'starting' | 'running' | 'valid' | 'invalid' | 'cancelled';
+    success?: boolean | null; milestones: Record<string, boolean>; reason?: string;
+    failedStage?: string | null; invocationId?: string; invocationStatus?: string;
+    recordingId?: string; sessionId?: string; cleanupComplete?: boolean | null }[];
   result?: EvaluationScore;
   error?: { code: string };
 }

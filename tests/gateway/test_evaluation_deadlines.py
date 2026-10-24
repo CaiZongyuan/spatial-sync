@@ -46,9 +46,11 @@ def test_healthy_real_synthetic_deadlines_keep_both_failures_and_continue_fixed_
         assert result["status"] == "completed", result.get("error")
         assert result["result"]["successes"] == 0 and result["result"]["episodes"] == 2
         assert result["result"]["score"] == 0
+        assert result["attemptedEpisodes"] == 2
         assert [episode["caseId"] for episode in result["episodes"]] == ["train-one", "train-two"]
         assert all(
-            not episode["success"] and episode["reason"] == "task_timeout" for episode in result["episodes"]
+            episode["status"] == "valid" and not episode["success"] and episode["reason"] == "task_timeout"
+            for episode in result["episodes"]
         )
         assert len(set(result["result"]["recordings"])) == 2
         for episode in result["episodes"]:
@@ -97,6 +99,12 @@ def test_unavailable_source_is_invalid_instead_of_a_healthy_task_timeout(tmp_pat
         assert result["error"]["code"] == (
             "source_unavailable" if mode == "source-crash" else "evaluation_observation_unavailable"
         )
+        assert result["attemptedEpisodes"] == 1
+        [attempt] = result["episodes"]
+        assert attempt["caseId"] == "train-one" and attempt["status"] == "invalid"
+        assert attempt.get("success") is None and attempt["reason"] == result["error"]["code"]
+        assert attempt["cleanupComplete"] is True
+        assert http.get("/recordings/" + attempt["recordingId"] + "/recording.json").is_success
         assert http.get("/api/v1/suites/healthy-deadline/1/scoreboard").json()["rows"] == []
 
 
@@ -134,5 +142,8 @@ def test_source_that_never_starts_does_not_create_a_valid_timeout_score(tmp_path
         assert response.status_code == 202
         result = finished(http, response.json()["evaluationId"])
         assert result["status"] == "failed" and result.get("result") is None
-        assert result["episodes"] == []
+        assert result["attemptedEpisodes"] == 1
+        [attempt] = result["episodes"]
+        assert attempt["status"] == "invalid" and attempt.get("success") is None
+        assert attempt.get("recordingId") is None and attempt["caseId"] == "train-one"
         assert http.get("/api/v1/suites/healthy-deadline/1/scoreboard").json()["rows"] == []

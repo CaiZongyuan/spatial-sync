@@ -5,7 +5,7 @@ from collections import deque
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from apps.api.app.evaluations import EvaluationService
@@ -102,13 +102,15 @@ async def test_public_event_endpoint_delivers_a_timeout_boundary_publication(pre
     }
 
 
-@pytest.mark.parametrize("grasp", ["observed", "never", "stale"])
+@pytest.mark.parametrize("grasp", ["observed", "never", "stale", "gap-after-grasp"])
 @pytest.mark.parametrize("success", [True, False])
 async def test_episode_latches_only_observed_fresh_transients_independently_of_final_success(grasp, success):
     initial = EntitySnapshot(
         sceneRevision="scene", epoch=0,
-        entities=[{"key": ROBOT, "rev": 1, "values": {"holding": None}},
-                  {"key": TUBE, "rev": 1, "values": {"location": "/World/Lab/Rack/A1"}}],
+        entities=[{"key": ROBOT, "rev": 1, "values": {"holding": None},
+                   "meta": {"holding": {"source": "virtual", "simTime": 0, "sampleTimeMs": 0}}},
+                  {"key": TUBE, "rev": 1, "values": {"location": "/World/Lab/Rack/A1"},
+                   "meta": {"location": {"source": "virtual", "simTime": 0, "sampleTimeMs": 0}}}],
     )
     state = StateStore("scene")
     state.apply(initial)
@@ -117,7 +119,7 @@ async def test_episode_latches_only_observed_fresh_transients_independently_of_f
     recovered.changes.append(ObservationChange(
         key=TUBE, rev=2, values={"location": SLOT if success else "/World/Lab/Rack/A1"},
     ))
-    invocation = SimpleNamespace(invocationId="inv-recorded", status="running")
+    invocation = SimpleNamespace(invocationId="inv-recorded", status="running", error=None)
 
     def publish(message):
         state.apply(message)
@@ -132,6 +134,8 @@ async def test_episode_latches_only_observed_fresh_transients_independently_of_f
             publish(recovered)
             invocation.status = "succeeded"
         result = await original_read(after, timeout)
+        if grasp == "gap-after-grasp" and reads:
+            result["gap"] = True
         reads += 1
         return result
 
@@ -146,7 +150,13 @@ async def test_episode_latches_only_observed_fresh_transients_independently_of_f
         return pipeline
 
     session = SimpleNamespace(
-        manifest=SimpleNamespace(sceneRevision="scene"), epoch=0, state="RUNNING", info=state,
+        session_id="owned-observations", manifest=SimpleNamespace(sceneRevision="scene"),
+        epoch=0, state="RUNNING", info=state,
+        catalog=SimpleNamespace(
+            entities={ROBOT: {"type": "robot-arm/v1"}, TUBE: {"type": "tube/v1"}},
+            types={"robot-arm/v1": {"properties": {"holding": {"schema": {"type": ["string", "null"]}}}},
+                   "tube/v1": {"properties": {"location": {"schema": {"type": "string"}}}}},
+        ),
         info_snapshot=lambda: initial, action_pipeline=action_pipeline,
     )
     place = {"entity": TUBE, "property": "location", "equals": SLOT}
@@ -158,10 +168,24 @@ async def test_episode_latches_only_observed_fresh_transients_independently_of_f
                                "property": "holding", "equals": "/World/Lab/Tubes/Tube02",
                            }}]}
     case = {"id": "train-one", "params": {"from": "rack.A1", "to": "centrifuge.slot1"}}
-    outcome = await PublishAfterCancellation(
-        object.__new__(EvaluationService)._episode(session, SimpleNamespace(task=task), case),
+    attempt = {"caseId": "train-one"}
+    evaluated = PublishAfterCancellation(
+        object.__new__(EvaluationService)._episode(
+            session, SimpleNamespace(task=task), case, attempt=attempt
+        ),
         lambda: publish(transient),
     )
+    if grasp in ("stale", "gap-after-grasp"):
+        with pytest.raises(HTTPException) as unavailable:
+            await evaluated
+        assert unavailable.value.detail["code"] == (
+            "evaluation_observation_gap"
+            if grasp == "gap-after-grasp" else "evaluation_observation_unavailable"
+        )
+        assert attempt["milestones"]["grasp"] is (grasp == "gap-after-grasp")
+        assert "success" not in attempt
+        return
+    outcome = await evaluated
     assert reads == 2
     assert state.values()[ROBOT]["holding"] is None
     assert outcome["success"] is success
