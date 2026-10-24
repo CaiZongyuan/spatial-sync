@@ -39,7 +39,7 @@ export function LlmCharts({ buckets, available = false }: { buckets: CostBucket[
 }
 
 const chartX = (index: number, count: number) => 44 + (index + .5) * 570 / Math.max(1, count);
-const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--accent)'];
+const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--warn)'];
 type ReportedSeries = { label: string; field: keyof CostTotals; known: keyof CostTotals };
 function ReportedBars({ buckets, series, title }: { buckets: CostBucket[]; series: ReportedSeries[]; title: string }) {
   const value = (bucket: CostBucket, item: ReportedSeries) => bucket[item.field] ?? bucket[item.known];
@@ -114,10 +114,11 @@ function ImportedLlmCharts({ buckets }: { buckets: CostBucket[] }) {
 }
 
 export function GpuChart({ breakdown, connectedNodes }: { breakdown: CostBreakdown; connectedNodes: TrainingNode[] }) {
-  const known = new Set(breakdown.rows.map(row => row.key));
-  const groups = [...breakdown.rows, ...connectedNodes.filter(node => !known.has(node.id)).map(node => ({ key: node.id, label: node.id, jobs: [] }))];
+  const recorded = breakdown.rows.filter(row => row.jobs.length);
+  const known = new Set(recorded.map(row => row.key));
+  const groups = [...recorded, ...connectedNodes.filter(node => !known.has(node.id)).map(node => ({ key: node.id, label: node.id, jobs: [] }))];
   const largest = Math.max(0, ...breakdown.rows.flatMap(row => row.jobs.map(job => job.gpuHours)));
-  return <section className="panel cost-chart"><header><h2>GPU 小时 · 按节点 / 作业</h2><span className="cost-chart-legend"><i />运行中</span></header>
+  return <section className="panel cost-chart" data-testid="gpu-cost-chart"><header><h2>GPU 小时 · 按节点 / 作业</h2><span className="cost-chart-legend"><i />运行中</span></header>
     {!groups.length && <div className="cost-empty-gpu"><strong>0 GPU 小时</strong><span>未接入计算节点</span></div>}
     <div role="group" aria-label={`GPU 用量横向条，${groups.length} 个节点；精确数值在下方数据表`} className="cost-gpu-bars">
       {groups.map(group => <div className="cost-gpu-group" key={group.key ?? 'none'}><strong>{group.label}</strong>
