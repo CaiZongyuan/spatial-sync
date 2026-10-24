@@ -123,3 +123,57 @@ def test_ambiguous_or_incomplete_episode_evidence_is_not_training_data(tmp_path,
     with pytest.raises(PlanError) as error:
         recording_evidence(target, recorded_task())
     assert error.value.detail["code"] == code
+
+
+@pytest.mark.parametrize("mutation,code", [
+    ("invocation_epoch", "demo_episode_scope_mismatch"),
+    ("snapshot_invocation_epoch", "demo_episode_scope_mismatch"),
+    ("spatial_epoch", "demo_episode_scope_mismatch"),
+    ("spatial_revision", "demo_recording_invalid"),
+])
+def test_success_action_and_spatial_state_must_belong_to_the_same_episode(tmp_path, mutation, code):
+    from packages.transport import FrameCodec
+
+    target = tmp_path / "recording"
+    shutil.copytree(FIXTURE, target)
+    path = target / "recording.json"
+    metadata = json.loads(path.read_bytes())
+    revision = metadata["sceneRevision"]
+    numeric = metadata["revisions"][revision]["revisionNumericId"]
+    codec = FrameCodec(metadata["sessionId"], revision, numeric)
+    segment = target / metadata["segments"][0]["file"]
+    records = read_segment(segment.read_bytes()).records
+    invocation = next(
+        json.loads(record.payload) for record in reversed(records)
+        if record.kind == 2 and json.loads(record.payload).get("type") == "invocation.update"
+    )
+    rewritten = []
+    for record in records:
+        if record.kind == 1 and mutation.startswith("spatial_"):
+            frame = codec.decode(record.payload)
+            replacement = codec if mutation == "spatial_epoch" else FrameCodec(
+                metadata["sessionId"], revision, numeric + 1
+            )
+            if mutation == "spatial_epoch":
+                frame = frame.model_copy(update={"epoch": frame.epoch + 1})
+            record = Record(1, record.t_ms, replacement.encode(frame))
+        elif record.kind == 2:
+            value = json.loads(record.payload)
+            if mutation == "invocation_epoch" and value.get("type") == "invocation.update":
+                value["epoch"] += 1
+                record = Record(2, record.t_ms, json.dumps(value).encode())
+            elif mutation == "snapshot_invocation_epoch" and value.get("type") == "entity.snapshot":
+                wrong = {
+                    key: item for key, item in invocation.items() if key not in ("type", "sceneRevision")
+                }
+                wrong["epoch"] += 1
+                value["invocations"] = [wrong]
+                record = Record(2, record.t_ms, json.dumps(value).encode())
+        rewritten.append(record)
+    payload = FILE_HEADER + b"".join(record.encode() for record in rewritten)
+    segment.write_bytes(payload)
+    metadata["segments"][0]["bytes"] = len(payload)
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(PlanError) as error:
+        recording_evidence(target, recorded_task())
+    assert error.value.detail["code"] == code

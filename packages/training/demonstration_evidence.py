@@ -12,6 +12,7 @@ from packages.info.store import StateStore
 from packages.library.archive import package_files, relative_path
 from packages.library.common import content_hash
 from packages.protocol.schema import EntityObservations, EntitySnapshot, InvocationUpdate
+from packages.transport import FrameCodec
 
 
 def _reject(code, message):
@@ -53,7 +54,15 @@ def recording_evidence(directory, task):
         ):
             _reject("demo_program_unknown", "Recorded Catalog does not identify the Task's Device Program")
         store = StateStore(revision)
-        invocations, epochs, seen = {}, set(), set()
+        codec = FrameCodec(
+            metadata["sessionId"], revision, metadata["revisions"][revision]["revisionNumericId"]
+        )
+        invocations, invocation_epochs, epochs, spatial_epochs, seen = {}, {}, set(), set(), set()
+
+        def retain(invocation):
+            invocations[invocation.invocationId] = invocation.model_dump(mode="json")
+            invocation_epochs.setdefault(invocation.invocationId, set()).add(invocation.epoch)
+
         for segment in segments:
             name = relative_path(segment["file"]).as_posix()
             if name not in files or name in seen:
@@ -67,6 +76,8 @@ def recording_evidence(directory, task):
             for record in result.records:
                 if record.kind == 3:
                     _reject("demo_observation_gap", "A recording gap cannot prove a successful episode")
+                if record.kind == 1:
+                    spatial_epochs.add(codec.decode(record.payload).epoch)
                 if record.kind != 2:
                     continue
                 value = json.loads(record.payload)
@@ -77,13 +88,13 @@ def recording_evidence(directory, task):
                     if message.sceneRevision != revision or not store.apply(message):
                         _reject("demo_recording_invalid", "Recorded observations are inconsistent")
                     if isinstance(message, EntitySnapshot):
-                        invocations.update({item.invocationId: item.model_dump(mode="json")
-                                            for item in message.invocations})
+                        for invocation in message.invocations:
+                            retain(invocation)
                 elif value.get("type") == "invocation.update":
                     invocation = InvocationUpdate.model_validate(value)
                     if invocation.sceneRevision != revision:
                         _reject("demo_recording_invalid", "Recorded invocation belongs to another revision")
-                    invocations[invocation.invocationId] = invocation.model_dump(mode="json")
+                    retain(invocation)
         if len(epochs) != 1:
             _reject("demo_episode_ambiguous", "Reset or absent observations need separate episode recordings")
         matches = [item for item in invocations.values()
@@ -91,6 +102,9 @@ def recording_evidence(directory, task):
         if len(matches) != 1:
             _reject("demo_episode_ambiguous", "One invocation must identify the Task episode and params")
         invocation = matches[0]
+        epoch = next(iter(epochs))
+        if spatial_epochs != {epoch} or invocation_epochs[invocation["invocationId"]] != {epoch}:
+            _reject("demo_episode_scope_mismatch", "Action and recorded state belong to different episodes")
         if invocation["status"] != "succeeded":
             _reject("demo_action_unsuccessful", "The recorded Task action did not succeed")
         success = condition_state(
@@ -122,7 +136,7 @@ def recording_evidence(directory, task):
                 "kind": "recorded_task_condition",
                 "conditionHash": _digest(definition["success"]),
                 "sceneRevision": revision,
-                "epoch": next(iter(epochs)),
+                "epoch": epoch,
             },
         }
     except (OSError, ValueError, KeyError, TypeError) as error:
