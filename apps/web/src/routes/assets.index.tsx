@@ -5,6 +5,7 @@ import { searchCatalog, type CatalogCandidate, type CatalogScope, type CatalogSe
 import { AssetThumbnails } from '../components/AssetThumbnails';
 import { AssetGapChips, CompletenessDots } from '../components/AssetCompleteness';
 import { CatalogCandidateList, CatalogDetailPanel, CatalogSnapshotBar, CatalogZeroResult } from '../components/CatalogCandidates';
+import { AcquisitionRecords } from '../components/AcquisitionPanel';
 
 type Search = {
   scope?: CatalogScope; view?: 'card' | 'list'; kind?: AssetKind; usage?: CatalogUsage;
@@ -109,6 +110,7 @@ function AssetLibrary() {
           {catalog.zeroResult ? <CatalogZeroResult response={catalog} onAction={actOnZero} />
             : <CatalogCandidateList response={catalog} onLoadMore={() => void loadMore()} loadingMore={more.loading} loadMoreError={more.error} onDetail={setDetail} />}
         </>}
+    {scope !== 'local' && <AcquisitionRecords />}
     {detail && <CatalogDetailPanel candidate={detail} onClose={() => setDetail(undefined)} />}
   </main>;
 }

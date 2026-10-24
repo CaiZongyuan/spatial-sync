@@ -106,7 +106,7 @@ test('candidate detail and estimate expose the fixed revision and desk/cart elig
   await expect(detail).toContainText('128 MiB');
   await expect(detail).toContainText('SF2');
   await expect(detail).toContainText('必须磁盘');
-  await expect(detail).toContainText('Raw cache is not implemented before SF2.');
+  await expect(detail).toContainText('acquisition preflight reports reuse');
   await expect(detail).toContainText('估算不下载主文件');
   await expect(detail).toContainText('BSD-3-Clause');
   await expect(detail).toContainText('source_assets/OmniPBR.mdl');

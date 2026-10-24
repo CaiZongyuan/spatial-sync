@@ -1,0 +1,4 @@
+CC-BY-4.0
+
+This deterministic fixture package is authored for the spatial-sync test suite
+and contains no third-party asset bytes.

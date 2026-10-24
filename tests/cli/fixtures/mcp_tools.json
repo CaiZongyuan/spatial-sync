@@ -525,5 +525,125 @@
       "title": "catalog_estimateDictOutput",
       "type": "object"
     }
+  },
+  "acquisition_start": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "wait": {
+          "default": false,
+          "title": "Wait",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "acquisition_startArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "acquisition_startDictOutput",
+      "type": "object"
+    }
+  },
+  "acquisition_list": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "queued",
+                "downloading",
+                "preparing",
+                "validating",
+                "importing",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        }
+      },
+      "title": "acquisition_listArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "acquisition_listDictOutput",
+      "type": "object"
+    }
+  },
+  "acquisition_show": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "acquisition_showArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "acquisition_showDictOutput",
+      "type": "object"
+    }
+  },
+  "acquisition_cancel": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "acquisition_cancelArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "acquisition_cancelDictOutput",
+      "type": "object"
+    }
+  },
+  "acquisition_retry": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "acquisition_retryArguments"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "acquisition_retryDictOutput",
+      "type": "object"
+    }
   }
 }

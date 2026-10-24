@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
-from packages.library.assets import AssetLibrary
+from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary
 from packages.library.scenes import BUILTIN_ROOT
 
 
@@ -361,6 +361,19 @@ def test_upload_limits_and_duplicate_entries_are_schema_errors(tmp_path, monkeyp
         monkeypatch.setattr(archive, "MAX_PACKAGE_BYTES", 1)
         assert upload(client).status_code == 422
         assert not (tmp_path / "user-library/assets").exists()
+
+
+def test_public_upload_cap_stays_128_mib():
+    with TestClient(create_app()) as client:
+        rejected = client.post(
+            "/api/v1/library/imports",
+            content=b"\0" * (MAX_UPLOAD_BYTES + 1),
+            headers={"Content-Type": "application/x-tar"},
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"]["code"] == "import_invalid"
+        assert "128 MiB" in rejected.json()["detail"]["problems"][0]["message"]
+        assert client.get("/api/v1/library/imports").json()["imports"] == []
 
 
 def test_active_content_is_downloaded_as_bytes_and_only_completed_jobs_are_indexed():

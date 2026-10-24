@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import time
@@ -30,6 +31,9 @@ ALLOWED_LICENSES = {"CC0-1.0", "CC-BY-4.0"}
 STAGE_UP = "Z"
 USABLE_STRUCTURE = (1, 2, 4, 6)
 STATIC_PHYSICS = ("P1", "P3")
+LFS_POINTER_MARKER = "version https://git-lfs.github.com/spec/v1"
+# Root-level notices are outside the BOM; they are retained next to the license.
+SOURCE_NOTICE_CANDIDATES = ("NOTICE", "NOTICE.txt", ".metadata/NOTICE", ".metadata/NOTICE.txt")
 
 
 @dataclass(frozen=True)
@@ -142,7 +146,9 @@ def fetch_tree(package, *, attempts=3):
 def fetch_file(package, relative, destination, *, attempts=4):
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(destination.name + ".part")
+    # A per-process suffix keeps two workers on the same raw cache entry from
+    # interleaving their partial files; the final replace stays atomic.
+    temporary = destination.with_name(f"{destination.name}.part-{os.getpid()}")
     request = urllib.request.Request(
         file_url(package, relative), headers={"User-Agent": "spatial-sync-scene-factory-sf0"}
     )
@@ -161,29 +167,90 @@ def fetch_file(package, relative, destination, *, attempts=4):
     raise SourceError(f"Cannot download {package}/{relative}: {last}") from last
 
 
-def download_package(package, cache_root, *, include_thumbnails=True):
-    """Download the pinned package tree and return its local path."""
+def download_package(
+    package,
+    cache_root,
+    *,
+    include_thumbnails=True,
+    progress=None,
+    max_bytes=None,
+):
+    """Download the pinned package tree and return its local path.
+
+    ``progress(completed_bytes, completed_files, total_bytes, total_files)`` is
+    called once before the first file and after every finished file. Reused
+    cache files count as completed. ``max_bytes`` bounds the declared tree
+    before any transfer and the downloaded bytes afterwards. Both options are
+    additive; existing callers keep their behavior.
+    """
     entries = [entry for entry in fetch_tree(package) if entry["type"] == "file"]
-    if not entries:
+    selected = [
+        entry
+        for entry in entries
+        if include_thumbnails
+        or not (
+            entry["path"].removeprefix(package + "/").startswith("simready_usd/.thumbs/")
+            or entry["path"].endswith("_thumbnail.png")
+        )
+    ]
+    if not selected:
         raise SourceError(f"Pinned source tree has no files for {package}")
+    total_bytes = sum(int(entry.get("size") or 0) for entry in selected)
+    total_files = len(selected)
+    if max_bytes is not None and total_bytes > max_bytes:
+        raise SourceError(
+            f"Pinned source tree for {package} declares {total_bytes} bytes, "
+            f"above the {max_bytes} byte source limit"
+        )
     root = Path(cache_root) / package
     root.mkdir(parents=True, exist_ok=True)
-    for entry in entries:
+    completed_bytes = 0
+    completed_files = 0
+    if progress is not None:
+        progress(completed_bytes, completed_files, total_bytes, total_files)
+    for entry in selected:
         relative = entry["path"].removeprefix(package + "/")
-        if not include_thumbnails and (
-            relative.startswith("simready_usd/.thumbs/") or relative.endswith("_thumbnail.png")
-        ):
-            continue
+        if not _safe_relative(relative):
+            raise SourceError(f"Pinned source tree contains an unsafe path: {relative!r}")
         destination = root / relative
         if destination.is_file() and destination.stat().st_size == entry.get("size", -1):
+            completed_bytes += destination.stat().st_size
+            completed_files += 1
+            if progress is not None:
+                progress(completed_bytes, completed_files, total_bytes, total_files)
             continue
         fetch_file(package, relative, destination)
+        completed_bytes += destination.stat().st_size
+        completed_files += 1
+        if max_bytes is not None and completed_bytes > max_bytes:
+            raise SourceError(
+                f"Downloaded {completed_bytes} bytes for {package}, above the {max_bytes} byte source limit"
+            )
+        if progress is not None:
+            progress(completed_bytes, completed_files, total_bytes, total_files)
     (Path(cache_root) / f"{package}.tree.json").write_text(
         json.dumps({"dataset": DATASET, "revision": REVISION, "package": package, "entries": entries},
                    indent=2) + "\n",
         encoding="utf-8",
     )
     return root
+
+
+def lfs_pointer_files(source_dir):
+    """Return package-relative paths whose content is a Git LFS pointer."""
+    source_dir = Path(source_dir)
+    marker = LFS_POINTER_MARKER.encode("utf-8")
+    found = []
+    for path in sorted(source_dir.rglob("*")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if path.stat().st_size > 1024:
+            continue
+        with path.open("rb") as stream:
+            head = stream.read(len(marker))
+        if head == marker:
+            found.append(path.relative_to(source_dir).as_posix())
+    return found
 
 
 def _load_json(path):
@@ -309,6 +376,11 @@ def inspect_source(candidate, source_dir):
     for path in (manifest_path, bom_path, license_path):
         if not path.is_file():
             raise SourceError(f"Missing required source metadata: {path.name}")
+    pointers = lfs_pointer_files(source_dir)
+    if pointers:
+        raise SourceError(
+            "Source package still contains Git LFS pointer content: " + ", ".join(pointers[:5])
+        )
     manifest = _load_json(manifest_path)
     license_name = manifest.get("license")
     if license_name not in ALLOWED_LICENSES:
@@ -348,6 +420,11 @@ def inspect_source(candidate, source_dir):
         "bom": _bom_report(source_dir, bom)
         | {"sha256": sha256_file(bom_path), "bytes": bom_path.stat().st_size},
         "rootUsd": root_relative,
+        "notices": [
+            relative
+            for relative in SOURCE_NOTICE_CANDIDATES
+            if (source_dir / relative).is_file() and not (source_dir / relative).is_symlink()
+        ],
         "mdl": _mdl_imports(source_dir),
         "upstreamValidation": _upstream_validation(stage),
         "up": UsdGeom.GetStageUpAxis(stage),
@@ -921,6 +998,25 @@ def _notice(candidate, license_name):
     )
 
 
+def _retain_source_notice(source_dir, output_dir):
+    """Copy a source NOTICE outside the BOM next to the generated NOTICE."""
+    source_dir = Path(source_dir)
+    for relative in SOURCE_NOTICE_CANDIDATES:
+        path = source_dir / relative
+        if not path.is_file() or path.is_symlink():
+            continue
+        destination = Path(output_dir) / "SOURCE-NOTICE"
+        shutil.copyfile(path, destination)
+        return {
+            "file": "SOURCE-NOTICE",
+            "source": relative,
+            "sha256": sha256_file(destination),
+            "bytes": destination.stat().st_size,
+            "note": "Retained source notice; the generated NOTICE is separate and not overwritten.",
+        }
+    return None
+
+
 def _write_provenance(output_dir, candidate, source, derivation):
     output_dir = Path(output_dir)
     files = {}
@@ -1066,6 +1162,7 @@ def adapt(candidate, source_dir, output_dir):
     (output_dir / "NOTICE").write_text(
         _notice(candidate, source["license"]["name"]), encoding="utf-8"
     )
+    report["sourceNotice"] = _retain_source_notice(source_dir, output_dir)
     preview = _preview(source_dir, output_dir)
     report["output"] = {
         "preview": preview,
@@ -1095,6 +1192,8 @@ def adapt(candidate, source_dir, output_dir):
         "textures": sorted(texture_names),
         "skippedGeometry": skipped,
     }
+    if report.get("sourceNotice") is not None:
+        derivation["sourceNotice"] = report["sourceNotice"]
     _write_provenance(output_dir, candidate, source, derivation)
     from packages.library.metadata import asset_metadata
 

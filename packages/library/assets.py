@@ -348,6 +348,19 @@ class AssetLibrary:
         )
         return LibraryImports(self, scenes, StructuralValidator(self.jobs_root.parent)).import_tar(stream)
 
+    def import_staged(self, path, *, allowed_root, limits=None):
+        """Publish only a server-staged directory below the configured staging root."""
+        from packages.library.imports import LibraryImports
+        from packages.library.scenes import SceneLibrary
+        from packages.library.validation import StructuralValidator
+
+        scenes = SceneLibrary(
+            builtin_root=self.roots["builtin"], user_root=self.roots["user"], state_root=self.jobs_root.parent
+        )
+        return LibraryImports(self, scenes, StructuralValidator(self.jobs_root.parent)).import_staged(
+            path, allowed_root=allowed_root, limits=limits
+        )
+
     def _complete(self, version, deduplicated, *, kind="asset"):
         job = {
             "id": uuid.uuid4().hex,
