@@ -1,6 +1,5 @@
 """Operation-plan HTTP resources; every device action still uses ActionPipeline."""
 
-import asyncio
 import uuid
 from typing import Any
 
@@ -28,7 +27,7 @@ def plan_context(plan_id=None, step_id=None, revision=None):
 def install_plan_routes(app, manager, role_for):
     store = manager.plans
     training = manager.training_plans
-    publication = asyncio.Lock()
+    publication = manager.plan_publication
 
     @app.exception_handler(PlanError)
     async def plan_error(request, error):

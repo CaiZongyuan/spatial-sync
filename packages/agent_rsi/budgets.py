@@ -1,8 +1,31 @@
 """Project existing approval, evaluation and native usage facts; no second ledger."""
 
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from packages.info.plans import PlanError
+
+
+def public_cost(service, value):
+    """Historical scalar observations stay fixed; newly private capture links stay hidden."""
+    result = deepcopy(value)
+    private = {
+        identity
+        for identity, record in service.external.runtime_records.records.items()
+        if record.get("visibility") == "private"
+    }
+    hidden = False
+    if "runtimeRecordIds" in result:
+        identifiers = result["runtimeRecordIds"]
+        result["runtimeRecordIds"] = [identity for identity in identifiers if identity not in private]
+        hidden = len(identifiers) != len(result["runtimeRecordIds"])
+    if "runtimeRecordHashes" in result:
+        hashes = result["runtimeRecordHashes"]
+        result["runtimeRecordHashes"] = {key: value for key, value in hashes.items() if key not in private}
+        hidden |= len(hashes) != len(result["runtimeRecordHashes"])
+    if hidden:
+        result["detailsCoverage"] = "restricted"
+    return result
 
 
 def native_total(service, *, goal=None, plan=None):

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from packages.agent_rsi.scope import WorkflowGrant
 from packages.info.plans import PlanError
 from packages.runtime_records.native import redacted
+from packages.training.dispatch import require_goal_owner
 
 
 def connection(grant):
@@ -29,6 +30,7 @@ def issue_optimizer(service, identifier, body):
         if service.audit_error:
             raise PlanError("agent_trace_unavailable", "Workflow Trace is unavailable", status=503)
         agent = service.agents.show(identifier)
+        require_goal_owner(service.manager, body.goalId, "agent", agent_id=agent["id"])
         known = service.optimizer_sessions.get(body.nativeSessionId)
         if known is not None:
             if (known["agentId"], known["goalId"], known["requestId"], known["referenceEvaluationId"]) != (
@@ -60,6 +62,9 @@ def issue_optimizer(service, identifier, body):
         )
         if reference is None or reference["harnessVersion"] != agent["referenceVersion"]:
             raise PlanError("agent_baseline_required", "Select a measured current Reference", status=409)
+        require_goal_owner(
+            service.manager, body.goalId, "agent", agent_id=agent["id"], suite=reference["suite"]
+        )
         if service.private_native_context(body.nativeSessionId) is not None or any(
             case.get("nativeSessionId") == body.nativeSessionId
             for run in service.manager.evaluations.store.records.values()
@@ -82,11 +87,39 @@ def issue_optimizer(service, identifier, body):
             "goalId": body.goalId,
             "requestId": body.requestId,
             "referenceEvaluationId": body.referenceEvaluationId,
+            "suite": reference["suite"],
             "contaminated": False,
         }
         service._write(optimizer_sessions=service.optimizer_sessions | {body.nativeSessionId: context})
         service.grants[grant.token] = grant
         return connection(grant)
+
+
+def public_interface(path):
+    parts = path.split("/")
+    if (
+        len(parts) >= 4
+        and parts[1:3] == ["api", "v1"]
+        and parts[3]
+        in {
+            "agents",
+            "plans",
+            "suites",
+            "notebooks",
+            "loops",
+            "cost",
+            "agent-runs",
+            "agent-promotions",
+            "approvals",
+            "inbox",
+            "vault",
+            "runtime-sessions",
+            "sessions",
+            "alerts",
+        }
+    ):
+        return "/api/v1/" + parts[3]
+    return "/recordings/{recording}/{artifact}" if path.startswith("/recordings/") else "/ungranted"
 
 
 def record_tool(service, grant, method, path, status, *, request_id=None):
@@ -99,7 +132,7 @@ def record_tool(service, grant, method, path, status, *, request_id=None):
             "agentId": grant.agent_id,
             "goalId": grant.goal_id,
             "method": method if method in ("GET", "POST", "PUT", "PATCH", "DELETE") else "OTHER",
-            "interface": "/".join(path.split("/")[:4]),
+            "interface": public_interface(path),
             "requestId": request_id,
             "phase": "begin" if status is None else "end",
             "status": status,
@@ -135,7 +168,7 @@ def tool_trace(service, agent_id, goal):
             service.audit_error = True
             raise PlanError("agent_trace_unavailable", "Workflow Trace is unavailable", status=503) from error
     return [
-        row
+        row | ({"interface": public_interface(row["interface"])} if "interface" in row else {})
         for row in rows
         if row["agentId"] == agent_id and row["goalId"] == goal and row["principal"] == "optimizer"
     ][-1000:]

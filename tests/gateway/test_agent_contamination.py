@@ -64,7 +64,10 @@ def active_round(http, app):
     return plan, run, item, optimizer, original, candidate_bytes
 
 
-@pytest.mark.parametrize("exposure", ["workflow-input", "controller-event-with-editor-conflict"])
+@pytest.mark.parametrize(
+    "exposure",
+    ["workflow-input", "workflow-publication-interruption", "controller-event-with-editor-conflict"],
+)
 def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(exposure):
     settings = Settings(
         remote=True, operator_token="owned-exposure-controller", remote_requests_per_minute=10000
@@ -79,11 +82,24 @@ def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(e
         denied = http.get("/api/v1/inbox", headers=optimizer)
         assert denied.status_code == 403
         assert http.get(base).json()["status"] == "evaluating"  # A denial alone is not exposure.
-        if exposure == "workflow-input":
+        if exposure.startswith("workflow"):
             files = http.get("/api/v1/agents/lab-operator/harness/1", headers=optimizer).json()["files"]
             suite = app.state.agent_rsi.manager.evaluations.suites.resolve(plan["suite"])
             private_statement = suite.statements["held-out-safe-sensor"]
             next(file for file in files if file["path"] == "AGENTS.md")["content"] += "\n" + private_statement
+            if exposure == "workflow-publication-interruption":
+                from packages.info.plans import PlanError
+
+                save = app.state.agent_rsi._save
+
+                def interrupted(record):
+                    if record.context.get("contamination", {}).get("application") == "complete":
+                        raise PlanError(
+                            "agent_rsi_unavailable", "Controlled stop publication failure", status=503
+                        )
+                    return save(record)
+
+                app.state.agent_rsi._save = interrupted
             response = http.post(
                 "/api/v1/agents/lab-operator/candidates",
                 headers=optimizer,
@@ -94,10 +110,12 @@ def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(e
                     "change": plan["change"],
                 },
             )
-            assert (
-                response.status_code == 409
-                and response.json()["detail"]["code"] == "agent_workflow_contaminated"
-            )
+            if exposure == "workflow-publication-interruption":
+                assert response.status_code == 503, response.text
+                assert http.get(base).json()["stop"]["application"] == "stopping"
+            else:
+                assert response.status_code == 409
+                assert response.json()["detail"]["code"] == "agent_workflow_contaminated"
             assert MARKER not in response.text
             assert len(list((settings.state_root / "agent-rsi-exposures").glob("*.json"))) == 1
         else:
@@ -131,6 +149,16 @@ def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(e
             )
             costs = http.get("/api/v1/cost/summary", params={"range": "all", "goal": plan["goalId"]}).json()
             assert costs["totals"]["llmUsd"] == 0.3244434
+            late = capture("controlled-exposed-optimizer")
+            late["records"][-1]["total_cost_usd"] = 0.5
+            late["records"][-1]["modelUsage"]["claude-opus-5-5"]["costUSD"] = 0.5
+            refreshed = http.post(base + "/contamination/runtime-records/import", json=late)
+            assert refreshed.status_code == 202 and refreshed.json()["runtimeRecordId"] == identity, (
+                refreshed.text
+            )
+            costs = http.get("/api/v1/cost/summary", params={"range": "all", "goal": plan["goalId"]}).json()
+            assert costs["totals"]["llmUsd"] == 0.5
+            assert http.get("/api/v1/runtime-sessions/" + identity).status_code == 404
         saved = http.get(base)
         assert saved.json()["status"] == "contaminated" and MARKER not in saved.text
         assert http.get(BASE + run["id"]).json()["cleanup"] == {"complete": True, "blocked": False}
@@ -150,10 +178,13 @@ def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(e
             ).status_code
             == 409
         )
-        if exposure == "workflow-input":
+        if exposure.startswith("workflow"):
             assert pack_harness(directory) == original
-            entry = http.get("/api/v1/notebooks/" + plan["goalId"]).json()["entries"][0]
-            assert entry["reportedDecision"] == "contaminated" and entry["score"] is None
+            entries = http.get("/api/v1/notebooks/" + plan["goalId"]).json()["entries"]
+            if exposure == "workflow-input":
+                assert entries[0]["reportedDecision"] == "contaminated" and entries[0]["score"] is None
+            else:
+                assert entries == []
         else:
             assert (
                 http.post(base + "/contamination", json=body).json()["stop"]["application"]
@@ -162,7 +193,7 @@ def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(e
     with TestClient(create_app(settings)) as http:
         http.headers.update(operator)
         saved = http.get(base).json()
-        if exposure != "workflow-input":
+        if not exposure.startswith("workflow"):
             assert saved["stop"]["application"] == "restore_blocked"
             assert (directory / "AGENTS.md").read_text(
                 encoding="utf-8"
@@ -178,6 +209,7 @@ def test_exposure_stops_owned_source_preserves_evidence_and_restores_reference(e
         assert http.get("/api/v1/agents/lab-operator").json()["currentVersion"] == 1
         assert http.get("/api/v1/agents/lab-operator/versions/2/snapshot").content == candidate_bytes
         assert http.get(base).json()["status"] == "contaminated"
+        assert http.get(base).json()["stop"]["application"] == "complete"
         for path in (
             base,
             "/api/v1/notebooks/" + plan["goalId"],

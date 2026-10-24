@@ -25,20 +25,20 @@ class Change(Schema):
 class Budget(Schema):
     cases: int = Field(ge=1, le=100000)
     wallSeconds: int = Field(ge=1, le=7200)
-    llmUsd: float | None = Field(default=None, ge=0)
+    llmUsd: float | None = Field(default=None, ge=0, le=1e12)
 
 
 class GoalBudget(Schema):
     cases: int = Field(ge=1, le=1000000)
-    days: float = Field(gt=0)
-    llmUsd: float | None = Field(default=None, ge=0)
+    days: float = Field(gt=0, le=36500)
+    llmUsd: float | None = Field(default=None, ge=0, le=1e12)
 
 
 class BudgetException(Schema):
     reason: Text
     additionalCases: int = Field(default=0, ge=0, le=1000000)
     additionalDays: float = Field(default=0, ge=0, le=365)
-    additionalLlmUsd: float = Field(default=0, ge=0)
+    additionalLlmUsd: float = Field(default=0, ge=0, le=1e12)
 
     @model_validator(mode="after")
     def finite_extension(self):
@@ -61,7 +61,7 @@ class AgentPlan(Schema):
     referenceVersion: int = Field(ge=1)
     candidateVersion: int = Field(ge=1)
     change: Change
-    hypotheses: list[Hypothesis] = Field(min_length=1, max_length=32)
+    hypotheses: list[Hypothesis] = Field(min_length=1, max_length=1)
     notebookRead: list[Text]
     rationale: Text
     interview: str = Field(min_length=1, max_length=128000)
@@ -71,12 +71,6 @@ class AgentPlan(Schema):
     previous: Text | None = None
     revision: int = Field(default=1, ge=1)
     status: Text = "draft"
-
-    @model_validator(mode="after")
-    def unique_hypotheses(self):
-        if len({hypothesis.id for hypothesis in self.hypotheses}) != len(self.hypotheses):
-            raise ValueError("Hypothesis identities must be distinct")
-        return self
 
 
 class StoredAgentPlan(Schema):

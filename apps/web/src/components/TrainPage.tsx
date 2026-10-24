@@ -9,6 +9,8 @@ import { useTrainingResources } from '../lib/use-training-resources';
 import { ApprovalCard } from './ApprovalsPage';
 import { ComputeNodes } from './ComputeNodes';
 import { GoalNotebookPanel } from './training/GoalNotebookPanel';
+import { AgentTrainPage } from './AgentTrainPage';
+import { isAgentPlan } from '../lib/agent-rsi';
 import '../resources.css';
 import '../training-resources.css';
 
@@ -24,6 +26,11 @@ function TrainingStages() {
 }
 
 export function TrainPage() {
+  const search = useSearch({ from: '/train' });
+  return search.layer === 'agent' ? <AgentTrainPage /> : <EmbodiedTrainPage />;
+}
+
+function EmbodiedTrainPage() {
   const resources = useTrainingResources();
   const plans = usePlansList();
   const approvals = useContext(ApprovalInboxContext);
@@ -38,13 +45,13 @@ export function TrainPage() {
   const jobs = resources.jobs?.filter(job => (!status || job.status === status)
     && `${job.jobId} ${job.task} ${job.planId}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.createdAt - a.createdAt);
-  const trainingPlans = plans.plans?.filter((plan): plan is TrainingPlanDocument => plan.kind === 'training');
+  const trainingPlans = plans.plans?.filter((plan): plan is TrainingPlanDocument => plan.kind === 'training' && !isAgentPlan(plan));
   const pending = approvals.inbox?.approvals.filter(record => record.subject === 'plan'
-    && record.status === 'pending' && record.details.plan?.kind === 'training');
+    && record.status === 'pending' && record.details.plan?.kind === 'training' && record.details.plan.layer !== 'agent');
   return <main className="training-page" data-testid="training-page"><header className="training-heading">
     <div><span className="eyebrow">LAB TRAINING</span><h1>训练</h1><p>从已批准的计划跟进作业、资源与结果。</p></div>
     <div className="training-layer"><span aria-current="page">具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</span>
-      <button disabled title="Agent 层作业尚未接入">Agent 层 · 尚未接入</button></div>
+      <Link to="/train" search={{ layer: 'agent' }}>Agent 层</Link></div>
   </header><TrainingStages />
     <GoalNotebookPanel goal={search.goal} onGoalChange={changeGoal} />
     <section className="training-job-section resource-panel" id="jobs" aria-label="训练作业">

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from packages.agent_rsi.changes import validate_change
 from packages.agent_rsi.schema import AgentPlan, StoredAgentPlan
 from packages.info.approvals import ApprovalConflict
+from packages.info.evaluation_identity import verify_identity
 from packages.info.plans import PlanError
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
@@ -119,6 +120,8 @@ class AgentRSI:
             return tuple(self.history.values()), dict(self.records)
 
     def document(self, record):
+        from packages.agent_rsi.budgets import public_cost
+
         approval = self.manager.approvals.records.get(record.approvalId)
         status = record.plan.status
         if status in ("draft", "submitted", "approved", "rejected") and record.result is None:
@@ -143,7 +146,13 @@ class AgentRSI:
                 "candidateArchiveHash": record.context["candidateArchiveHash"],
             },
             "runId": record.runId,
-            "result": deepcopy(record.result),
+            "activation": deepcopy(record.context.get("activation")),
+            "result": {
+                key: public_cost(self, value) if key in ("cost", "executionCost") else deepcopy(value)
+                for key, value in record.result.items()
+            }
+            if record.result
+            else None,
             "promotions": [
                 {key: value.get(key) for key in ("id", "status", "approvalId")}
                 for value in self.promotions.values()
@@ -164,6 +173,27 @@ class AgentRSI:
         projected = record.model_copy(deep=True)
         projected.plan.status = self.document(record)["status"]
         self.manager.inbox.plan(projected)
+
+    def current_identity(self, run):
+        try:
+            if not isinstance(run.get("identitySnapshot"), dict):
+                raise ValueError("Frozen implementation is unavailable")
+            suite = self.manager.evaluations.suites.resolve(run["suite"])
+            scene = self.manager.library.resolve(run["pins"]["scene"], source=run["pins"]["source"])
+            if (
+                suite.content_hash != run["suiteContentHash"]
+                or scene.content_hash != run["pins"]["sceneContentHash"]
+                or run["runtimeHash"] != self.manager.evaluations._runtime_hash
+            ):
+                raise ValueError("Fixed evaluation packages or runtime changed")
+            verify_identity(
+                run["identitySnapshot"], directory=self.manager.evaluations.store.root / "identity-inputs"
+            )
+        except (OSError, ValueError, KeyError, TypeError, LibraryError) as error:
+            raise PlanError(
+                "not_comparable", "Fixed implementation evidence is unavailable or changed", status=409
+            ) from error
+        return self.identities(run)
 
     def complete_train(self, evaluation_id, agent):
         run = self.external.get(evaluation_id)
@@ -209,7 +239,7 @@ class AgentRSI:
                     raise PlanError(
                         "agent_evidence_changed", "Frozen evaluation evidence changed", status=409
                     )
-        self.identities(run)
+        self.current_identity(run)
         return run
 
     def baseline(self, identifier, evaluation_id, request_id):
@@ -340,15 +370,17 @@ class AgentRSI:
             value["revision"] = previous.plan.revision + 1 if previous else 1
             try:
                 plan = AgentPlan.model_validate(value)
+                from packages.training.dispatch import require_goal_owner
+
+                require_goal_owner(
+                    self.manager, plan.goalId, "agent", agent_id=plan.agentId, suite=plan.suite
+                )
                 if plan.status != "draft" or (plan_id and plan.id != plan_id):
                     raise ValueError("Plan identity and lifecycle are server-owned")
                 if not plan_id and plan.id in self.records:
                     raise ValueError("Plan identity already exists")
                 if previous and previous.plan.goalId != plan.goalId:
                     raise ValueError("A revision cannot change its Goal")
-                peers = [item for item in self.history.values() if item.plan.goalId == plan.goalId]
-                if any(item.plan.agentId != plan.agentId or item.plan.suite != plan.suite for item in peers):
-                    raise ValueError("A Goal keeps its Agent and fixed Suite")
                 if plan.previous:
                     ancestor = self.get(plan.previous)
                     if (
@@ -515,32 +547,49 @@ class AgentRSI:
                 )
             record = record.model_copy(deep=True)
             record.context["runRequest"] = request_id
-            record.plan.status = "evaluating"
+            record.plan.status = "activating"
+            record.context["activation"] = {"status": "applying"}
             self._save(record)
             self._notify(record)
             from packages.library.agent_transitions import workspace_hash
 
-            current = self.agents.show(record.plan.agentId)
-            if current["currentVersion"] == record.plan.referenceVersion:
-                reference_hash = record.context["reference"]["harnessHash"]
-                self.agents.transition(
-                    record.plan.agentId,
-                    target_version=record.plan.candidateVersion,
-                    expected_version=record.plan.referenceVersion,
-                    expected_hash=reference_hash,
-                    request_id="activate-" + digest({"planId": identifier, "revision": revision}),
-                    outcome=None,
-                )
-            path = self.agents._path(record.plan.agentId) / "harness"
-            if (
-                self.agents.show(record.plan.agentId)["currentVersion"] != record.plan.candidateVersion
-                or workspace_hash(path) != record.context["candidateHash"]
-            ):
+            try:
+                current = self.agents.show(record.plan.agentId)
+                if current["currentVersion"] == record.plan.referenceVersion:
+                    self.agents.transition(
+                        record.plan.agentId,
+                        target_version=record.plan.candidateVersion,
+                        expected_version=record.plan.referenceVersion,
+                        expected_hash=record.context["reference"]["harnessHash"],
+                        request_id="activate-" + digest({"planId": identifier, "revision": revision}),
+                        outcome=None,
+                    )
+                path = self.agents._path(record.plan.agentId) / "harness"
+                if (
+                    self.agents.show(record.plan.agentId)["currentVersion"] != record.plan.candidateVersion
+                    or workspace_hash(path) != record.context["candidateHash"]
+                ):
+                    raise PlanError(
+                        "harness_transition_conflict",
+                        "Candidate editor bytes changed before dispatch",
+                        status=409,
+                    )
+            except (LibraryError, PlanError) as error:
+                failed = record.model_copy(deep=True)
+                failed.plan.status = "activation_blocked"
+                failed.context["activation"] = {"status": "blocked", "errorCode": error.detail["code"]}
+                self._save(failed)
+                self._notify(failed)
                 raise PlanError(
-                    "harness_transition_conflict",
-                    "Candidate editor bytes changed before dispatch",
-                    status=409,
-                )
+                    error.detail["code"],
+                    "Candidate files require recovery before dispatch",
+                    status=error.status,
+                ) from error
+            record = record.model_copy(deep=True)
+            record.plan.status = "evaluating"
+            record.context["activation"] = {"status": "complete"}
+            self._save(record)
+            self._notify(record)
             return {
                 "requestId": dispatch_id,
                 "suite": record.plan.suite,
@@ -610,13 +659,19 @@ class AgentRSI:
             if record.result is None:
                 decision, reason, score = "inconclusive", run.get("error", {}).get("code"), None
                 if run["status"] == "completed":
-                    self.complete_train(run["evaluationId"], record.plan.agentId)
-                    comparable = self.identities(run) == record.context["reference"]["comparison"]
-                    if comparable:
-                        score = run["result"]["score"]
-                        decision = "accepted" if score > record.context["reference"]["score"] else "rejected"
+                    try:
+                        self.complete_train(run["evaluationId"], record.plan.agentId)
+                        comparable = self.identities(run) == record.context["reference"]["comparison"]
+                    except (PlanError, LibraryError) as error:
+                        reason = error.detail["code"]
                     else:
-                        reason = "not_comparable"
+                        if comparable:
+                            score = run["result"]["score"]
+                            decision = (
+                                "accepted" if score > record.context["reference"]["score"] else "rejected"
+                            )
+                        else:
+                            reason = "not_comparable"
                 record = record.model_copy(deep=True)
                 record.result = {
                     "decision": decision,
@@ -682,6 +737,61 @@ class AgentRSI:
             | {value["goalId"] for value in self.optimizer_sessions.values()}
         )
 
+    def public_notebook_entry(self, entry, *, identity_cache=None):
+        from packages.agent_rsi.budgets import public_cost
+        from packages.agent_rsi.notebooks import remaining_gap
+
+        result = deepcopy(entry)
+        result["cost"] = public_cost(self, entry["cost"])
+        cache = {} if identity_cache is None else identity_cache
+
+        def identity(identifier):
+            if identifier not in cache:
+                try:
+                    cache[identifier] = self.current_identity(self.external.get(identifier))
+                except (PlanError, LibraryError):
+                    cache[identifier] = None
+            return cache[identifier]
+
+        try:
+            record = self.get(entry["plan"]["id"], entry["plan"]["revision"])
+            result["currentDisposition"] = record.plan.status
+            candidate, reference = identity(record.runId), identity(record.plan.referenceEvaluationId)
+            comparable = bool(
+                entry["comparison"]["state"] == "comparable"
+                and entry["score"] is not None
+                and entry["reportedDecision"] in ("accepted", "rejected")
+                and record.plan.status != "contaminated"
+                and candidate
+                and reference
+                and candidate == reference == record.context["reference"]["comparison"]
+            )
+        except PlanError:
+            comparable = False
+        if not comparable:
+            current = entry["comparison"] | {
+                "state": "unknown",
+                "reason": "not_comparable",
+                "referenceEvaluationId": None,
+                "referenceScore": None,
+                "remainingGapReduction": None,
+                "gapReason": "not_comparable",
+            }
+            if current != entry["comparison"]:
+                result["recordedComparison"] = deepcopy(entry["comparison"])
+                result["comparison"] = current
+        else:
+            gap, reason = remaining_gap(
+                entry["comparison"]["referenceScore"], entry["score"]["score"], comparable=True
+            )
+            if (gap, reason) != (
+                entry["comparison"]["remainingGapReduction"],
+                entry["comparison"]["gapReason"],
+            ):
+                result["recordedComparison"] = deepcopy(entry["comparison"])
+                result["comparison"].update(remainingGapReduction=gap, gapReason=reason)
+        return result
+
     def record_tool(self, grant, method, path, status, request_id=None):
         from packages.agent_rsi.grants import record_tool
 
@@ -707,7 +817,10 @@ class AgentRSI:
                 return True
         return any(
             run.get("split") == "test"
-            and any(case.get("recordingId") == recording_id for case in run.get("cases", []))
+            and any(
+                attempt.get("recordingId") == recording_id
+                for attempt in (*run.get("cases", []), *run.get("episodes", []))
+            )
             for run in self.manager.evaluations.store.records.values()
         )
 
@@ -720,6 +833,10 @@ class AgentRSI:
                 for key in ("agentId", "harnessVersion", "planId", "planRevision", "goalId")
                 if key in context
             }
+        optimizer = self.optimizer_sessions.get(capture.get("nativeSessionId"))
+        if optimizer is not None:
+            # An Optimizer grant binds its Goal; its conversation may span several Plans.
+            return {key: optimizer[key] for key in ("agentId", "goalId")}
         for run in tuple(self.manager.evaluations.store.records.values()):
             if (run.get("agentRound") is not None or run.get("agentPromotion") is not None) and any(
                 case.get("runtimeRecordId") == identity for case in run["cases"]
@@ -745,7 +862,12 @@ class AgentRSI:
 
     def loop(self, goal):
         self.reconcile()
-        entries = self.manager.notebooks.store.list(goal)
+        cache = {}
+        entries = [
+            self.public_notebook_entry(entry, identity_cache=cache)
+            for entry in self.manager.notebooks.store.list(goal)
+            if entry.get("layer") == "agent"
+        ]
         rounds = [entry | {"round": index + 1} for index, entry in enumerate(entries)]
         from packages.agent_rsi.budgets import budget
 

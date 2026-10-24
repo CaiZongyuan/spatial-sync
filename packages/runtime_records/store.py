@@ -38,6 +38,29 @@ class ImportCapture(Schema):
         return self
 
 
+def parse_capture(body):
+    """All public/private intake paths apply the same bounds before normalizing identity."""
+    native = body.records
+    if body.content is not None:
+        if len(body.content.encode()) > MAX_BYTES:
+            raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
+        try:
+            native = [json.loads(line) for line in body.content.splitlines() if line.strip()]
+        except (ValueError, RecursionError) as error:
+            raise PlanError(
+                "invalid_runtime_jsonl", "A complete JSON object is required on each native line", status=422
+            ) from error
+    try:
+        serialized = json.dumps(native, ensure_ascii=False, allow_nan=False).encode()
+    except (ValueError, TypeError, OverflowError, RecursionError) as error:
+        raise PlanError(
+            "invalid_runtime_record", "Native capture contains invalid JSON values", status=422
+        ) from error
+    if len(serialized) > MAX_BYTES:
+        raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
+    return normalize(body.format, native)
+
+
 class RuntimeRecords:
     def __init__(self, manager, agents):
         self.manager, self.agents = manager, agents
@@ -80,32 +103,12 @@ class RuntimeRecords:
         return values
 
     def ingest(self, body, *, private_context=None):
-        native = body.records
-        if body.content is not None:
-            if len(body.content.encode()) > MAX_BYTES:
-                raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
-            try:
-                native = [json.loads(line) for line in body.content.splitlines() if line.strip()]
-            except (ValueError, RecursionError) as error:
-                raise PlanError(
-                    "invalid_runtime_jsonl",
-                    "A complete JSON object is required on each native line",
-                    status=422,
-                ) from error
-        try:
-            serialized = json.dumps(native, ensure_ascii=False, allow_nan=False).encode()
-        except (ValueError, TypeError, OverflowError, RecursionError) as error:
-            raise PlanError(
-                "invalid_runtime_record", "Native capture contains invalid JSON values", status=422
-            ) from error
-        if len(serialized) > MAX_BYTES:
-            raise PlanError("runtime_capture_too_large", "Import captures up to16MiB", status=413)
-        parsed = normalize(body.format, native)
+        parsed = parse_capture(body)
         rsi = getattr(self.manager, "agent_rsi", None)
         bound = rsi.private_native_context(parsed["nativeSessionId"]) if rsi is not None else None
         if private_context is None and bound is not None:
             raise PlanError(
-                "runtime_capture_restricted", "Use the owning promotion capture intake", status=409
+                "runtime_capture_restricted", "Use the owning private capture intake", status=409
             )
         if private_context is not None and private_context != bound:
             raise PlanError(

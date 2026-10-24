@@ -12,8 +12,9 @@ from packages.agent_rsi.scope import WorkflowGrant
 from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
 from packages.library.agent_transitions import workspace_hash
-from packages.runtime_records.native import digest, normalize
-from packages.runtime_records.store import Associations
+from packages.library.common import LibraryError
+from packages.runtime_records.native import digest
+from packages.runtime_records.store import Associations, parse_capture
 
 
 def get(service, identifier):
@@ -26,7 +27,7 @@ def get(service, identifier):
 def public(value):
     return {
         key: deepcopy(value.get(key))
-        for key in ("id", "planId", "planRevision", "agentId", "goalId", "status", "approvalId")
+        for key in ("id", "planId", "planRevision", "agentId", "goalId", "status", "approvalId", "errorCode")
     }
 
 
@@ -259,15 +260,7 @@ async def bind_native(service, identifier, body):
 def ingest(service, identifier, body):
     value = get(service, identifier)
     # Normalize identity before private intake; a caller cannot choose the classification.
-    native = body.records
-    if native is None:
-        import json
-
-        try:
-            native = [json.loads(line) for line in body.content.splitlines() if line.strip()]
-        except (ValueError, RecursionError) as error:
-            raise PlanError("invalid_runtime_jsonl", "Invalid native capture", status=422) from error
-    parsed = normalize(body.format, native)
+    parsed = parse_capture(body)
     context = value["nativeBindings"].get(parsed["nativeSessionId"])
     if context is None:
         raise PlanError("private_native_binding_required", "Bind the fresh Target before capture", status=409)
@@ -315,7 +308,7 @@ def complete_evidence(service, run):
         for item in case["artifacts"]:
             if hashlib.sha256(service.external.artifact(run, case, item["id"])).hexdigest() != item["sha256"]:
                 raise PlanError("agent_evidence_changed", "Private evidence changed", status=409)
-    return service.identities(run)
+    return service.current_identity(run)
 
 
 def refresh(service, identifier):
@@ -397,18 +390,22 @@ def decide(service, approval, decision, actor, note):
         record = service.get(value["planId"])
         if record.plan.status not in ("accepted", "promoted"):
             raise ApprovalConflict("The round is stopped")
+        if decision == "deny":
+            if current.status == "pending":
+                service.manager.approvals.decide(approval.approvalId, decision, actor, note)
+            value["status"] = "denied"
+            save(service, value)
+            return public(value)
         require_candidate(service, record)
         reference, candidate = (
             service.external.get(value["runs"][side]) for side in ("reference", "candidate")
         )
         if complete_evidence(service, reference) != complete_evidence(service, candidate):
             raise PlanError("not_comparable", "Private fixed conditions differ", status=409)
-        value["status"] = "applying" if decision == "approve" else "denied"
+        value["status"] = "applying"
         save(service, value)
         if current.status == "pending":
             service.manager.approvals.decide(approval.approvalId, decision, actor, note)
-        if decision == "deny":
-            return public(value)
         receipt = service.agents.transition(
             record.plan.agentId,
             target_version=record.plan.candidateVersion,
@@ -443,7 +440,9 @@ def decide(service, approval, decision, actor, note):
         record = record.model_copy(deep=True)
         record.plan.status = "promoted"
         record.result["referenceAdvanced"] = True
+        value = deepcopy(value)
         value.update(status="promoted", files=receipt)
+        value.pop("errorCode", None)
         service._write(
             history=service.history | {f"{record.plan.id}:{record.plan.revision}": record},
             baselines=baselines,
@@ -452,3 +451,29 @@ def decide(service, approval, decision, actor, note):
         service.records = service.records | {record.plan.id: record}
         service._notify(record)
         return public(value)
+
+
+async def recover(service):
+    for original in tuple(service.promotions.values()):
+        if original["status"] not in ("waiting-human", "applying"):
+            continue
+        approval = service.manager.approvals.records.get(original.get("approvalId"))
+        if approval is None:
+            continue
+        with service._lock:
+            value = deepcopy(get(service, original["id"]))
+            if approval.status == "denied":
+                value["status"] = "denied"
+                save(service, value)
+            elif approval.status == "pending" and value["status"] == "applying":
+                value["status"] = "waiting-human"
+                save(service, value)
+        if approval.status == "approved" and value["status"] == "applying":
+            decision = next(item for item in reversed(approval.decisions) if item.decision == "approve")
+            try:
+                await asyncio.to_thread(decide, service, approval, "approve", decision.actor, decision.note)
+            except (PlanError, ApprovalConflict, LibraryError) as error:
+                with service._lock:
+                    value = deepcopy(get(service, original["id"]))
+                    value["errorCode"] = getattr(error, "detail", {}).get("code", "agent_promotion_stopped")
+                    save(service, value)

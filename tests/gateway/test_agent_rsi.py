@@ -142,6 +142,12 @@ def test_real_suite_three_recordings_baseline_fail_closed_and_agent_plan_survive
         assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "not_comparable"
         assert http.get("/api/v1/agents/lab-operator/rsi").json()["baselines"] == []
         app.state.agent_rsi.identities = comparison_identity
+        saved_run = app.state.agent_rsi.external.get(run["id"])
+        frozen = deepcopy(saved_run["identitySnapshot"])
+        saved_run["identitySnapshot"]["files"]["packages/agent_rsi/workflow.py"] = "0" * 64
+        changed = http.post("/api/v1/agents/lab-operator/baseline", json=request)
+        assert changed.status_code == 409 and changed.json()["detail"]["code"] == "not_comparable"
+        saved_run["identitySnapshot"] = frozen
         response = http.post("/api/v1/agents/lab-operator/baseline", json=request)
         assert response.status_code == 200, response.text
         baseline = response.json()
@@ -153,6 +159,9 @@ def test_real_suite_three_recordings_baseline_fail_closed_and_agent_plan_survive
             headers={"Content-Type": "application/x-tar"},
         ).json()
         payload = agent_plan(baseline, candidate)
+        two_hypotheses = deepcopy(payload)
+        two_hypotheses["hypotheses"].append(payload["hypotheses"][0] | {"id": "H2"})
+        assert http.post("/api/v1/plans", json=two_hypotheses).status_code == 422
         response = http.post("/api/v1/plans", json=payload)
         assert response.status_code == 201, response.text
         plan = response.json()

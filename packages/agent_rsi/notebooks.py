@@ -36,6 +36,14 @@ def hypothesis_result(definition, result, run):
     }
 
 
+def remaining_gap(reference, candidate, *, comparable):
+    if not comparable or reference is None or candidate is None:
+        return None, "not_comparable"
+    if reference == 100:
+        return None, "reference_at_ceiling"
+    return (candidate - reference) / (100 - reference), None
+
+
 def notebook_entry(record, run):
     plan, result = record.plan, record.result
     reference = record.context["reference"]
@@ -52,6 +60,7 @@ def notebook_entry(record, run):
             "ci95": None,
         }
     comparable = result["decision"] in ("accepted", "rejected")
+    gap, gap_reason = remaining_gap(reference["score"], result["score"], comparable=comparable)
     return AgentNotebookEntry.model_validate(
         {
             "entryId": "entry-" + run["evaluationId"].removeprefix("eval-"),
@@ -87,8 +96,8 @@ def notebook_entry(record, run):
                 "conditionsGroup": reference["evaluationId"],
                 "referenceEvaluationId": reference["evaluationId"],
                 "referenceScore": reference["score"],
-                "remainingGapReduction": None,
-                "gapReason": "agent_mean_scale",
+                "remainingGapReduction": gap,
+                "gapReason": gap_reason,
             },
             "deployment": {"status": "not_requested"},
             "hypotheses": [

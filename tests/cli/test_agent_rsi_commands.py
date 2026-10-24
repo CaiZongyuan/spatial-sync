@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import json
 import os
 import socket
 import subprocess
@@ -128,6 +129,22 @@ async def test_installed_optimizer_and_private_controller_profiles_keep_actual_a
             )
         )
         issued = invoke(env, "agent", "optimizer-grant", "lab-operator", str(grant_file))
+        native = [
+            json.loads(line)
+            for line in (ROOT / "tests/fixtures/runtime/claude-code-stream.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        for event in native:
+            event["session_id"] = "installed-fresh-optimizer"
+        capture_body = {"format": "claude-code-stream-json", "records": native}
+        http.post("/api/v1/runtime-sessions/import", json=capture_body).raise_for_status()
+        # Declared A labels cannot remove the Goal owned by the issued Optimizer conversation.
+        http.post(
+            "/api/v1/runtime-sessions/import", json=capture_body | {"associations": {}}
+        ).raise_for_status()
+        total = http.get("/api/v1/cost/summary", params={"range": "all", "goal": "goal/rsi-fixture"}).json()
+        assert total["totals"]["llmUsd"] == 0.3244434
         optimizer_env = env | {"LW_TOKEN": issued["token"]}
         transport = StdioServerParameters(command=str(LW), args=["mcp"], env=optimizer_env)
         promotion_path = None
@@ -182,6 +199,21 @@ async def test_installed_optimizer_and_private_controller_profiles_keep_actual_a
                 payload["budget"]["wallSeconds"] = 120
                 plan = await result(optimizer, "plan_submit", document=payload)
                 assert plan["requestedBy"]["name"].startswith("optimizer-")
+                attributed = http.post(
+                    "/api/v1/runtime-sessions/import",
+                    json=capture_body
+                    | {
+                        "associations": {
+                            "agentId": plan["agentId"],
+                            "goalId": plan["goalId"],
+                            "planId": plan["id"],
+                            "planRevision": 1,
+                            "harnessVersion": 1,
+                        }
+                    },
+                )
+                attributed.raise_for_status()
+                optimizer_record = attributed.json()["session"]["id"]
                 denied = await optimizer.call_tool(
                     "agent_round_start", {"id": plan["id"], "revision": 1, "requestId": "installed-round"}
                 )
@@ -192,8 +224,20 @@ async def test_installed_optimizer_and_private_controller_profiles_keep_actual_a
                 candidate_run = await result(
                     optimizer, "agent_round_start", id=plan["id"], revision=1, requestId="installed-round"
                 )
-                for _ in range(3):
+                for repeat in range(3):
                     item = work(http, candidate_run)
+                    if repeat == 0:
+                        reused = http.post(
+                            BASE + candidate_run["id"] + "/complete",
+                            json={
+                                "caseRunId": item["caseRunId"],
+                                "nativeSessionId": "installed-fresh-optimizer",
+                            },
+                        )
+                        assert (
+                            reused.status_code == 409
+                            and reused.json()["detail"]["code"] == "native_session_reused"
+                        )
                     assert action(http, item, "/World/Lab/RobotA", "home").json()["status"] == "succeeded"
                     assert (
                         action(http, item, "/World/Lab/Centrifuge", "closeLid").json()["status"]
@@ -212,6 +256,7 @@ async def test_installed_optimizer_and_private_controller_profiles_keep_actual_a
                     await asyncio.sleep(0.02)
                 settled = await result(optimizer, "agent_round_settle", id=plan["id"], revision=1)
                 assert settled["result"]["decision"] == "accepted"
+                assert optimizer_record in settled["result"]["cost"]["runtimeRecordIds"]
                 assert invoke(env, "agent", "rsi", "lab-operator")["agent"]["referenceVersion"] == 1
                 promotion = await result(
                     optimizer,
@@ -263,6 +308,35 @@ async def test_installed_optimizer_and_private_controller_profiles_keep_actual_a
                 assert (await result(optimizer, "loop_show", goal=plan["goalId"]))["deployment"][
                     "status"
                 ] == "cancelled"
+                exposed_files = [dict(file) for file in files]
+                next(file for file in exposed_files if file["path"] == "AGENTS.md")["content"] += "\n" + (
+                    suite_dir / "statements/held-out-safe-sensor.md"
+                ).read_text(encoding="utf-8")
+                exposed = http.post(
+                    "/api/v1/agents/lab-operator/candidates",
+                    headers={"Authorization": "Bearer " + issued["token"]},
+                    json={
+                        "referenceVersion": 1,
+                        "requestId": "installed-private-exposure",
+                        "files": exposed_files,
+                        "change": plan["change"],
+                    },
+                )
+                assert exposed.status_code == 409
+                assert exposed.json()["detail"]["code"] == "agent_workflow_contaminated"
+                for route in (
+                    "/api/v1/notebooks/" + plan["goalId"],
+                    "/api/v1/loops/" + plan["goalId"],
+                    "/api/v1/plans/" + plan["id"],
+                ):
+                    projected = http.get(route)
+                    assert projected.status_code == 200 and optimizer_record not in projected.text, (
+                        projected.text
+                    )
+                current = http.get("/api/v1/notebooks/" + plan["goalId"]).json()["entries"][0]
+                assert current["reportedDecision"] == "accepted"
+                assert current["currentDisposition"] == "contaminated"
+                assert current["comparison"]["state"] == "unknown"
         finally:
             if promotion_path:
                 http.post(promotion_path + "/cancel").raise_for_status()

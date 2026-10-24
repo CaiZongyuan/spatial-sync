@@ -132,6 +132,10 @@ class TrainingPlanStore:
                 raise PlanError("invalid_plan", "Invalid training plan", status=422, errors=errors) from exc
             fresh = plan.model_dump(mode="json", by_alias=True)
             goal_context = self.loop_budgets.prepare(fresh, task_snapshot) if self.loop_budgets else None
+            if self.loop_budgets is not None:
+                from packages.training.dispatch import require_goal_owner
+
+                require_goal_owner(self.loop_budgets.manager, fresh["goalId"], "embodied")
             plan = TrainingPlan.model_validate(fresh)
             old = previous.plan.model_dump(mode="json", by_alias=True) if previous else {}
             changes = [{"field": key, "before": old.get(key), "after": item}

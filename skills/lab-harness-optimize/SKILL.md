@@ -93,3 +93,8 @@ The controller can report exposure with immutable native record/event hashes
 using `agent-round contamination`. A denied read alone is not exposure evidence.
 Contamination revokes owned grants, cancels owned Sources, preserves cleanup and
 editor blocks, restores Reference files, and permanently stops that round.
+The controller can retain a later native usage report privately without resuming:
+
+```text
+lw agent-round capture <plan-id> <native-records.json> --json
+```

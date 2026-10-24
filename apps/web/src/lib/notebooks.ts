@@ -48,5 +48,6 @@ export interface GoalLoop {
   deployment: NotebookEntry['deployment'];
   defaultProgram: { program: string; scene: string | null; evaluationId: string } | null;
 }
-export const listGoals = (signal?: AbortSignal) => request<{ goals: string[] }>('/loops', { signal });
+export const listGoals = (signal?: AbortSignal, layer?: 'embodied' | 'agent') =>
+  request<{ goals: string[] }>(`/loops${layer ? `?layer=${layer}` : ''}`, { signal });
 export const getGoalLoop = (goal: string, signal?: AbortSignal) => request<GoalLoop>(`/loops/${encodeURIComponent(goal)}`, { signal });

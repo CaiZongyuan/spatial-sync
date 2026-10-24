@@ -419,6 +419,14 @@ class GatewayClient:
             "POST", "/api/v1/plans/" + quote(id, safe="") + "/contamination", actor=actor, json=document
         )
 
+    async def agent_contamination_capture(
+        self, id, records, format="claude-code-stream-json", *, actor="cli:lw"
+    ):
+        return await self.request(
+            "POST", "/api/v1/plans/" + quote(id, safe="") + "/contamination/runtime-records/import",
+            actor=actor, json={"format": format, "records": records},
+        )
+
     async def agent_promotion_request(self, id, revision, requestId=None, *, actor="cli:lw"):
         return await self.request(
             "POST",

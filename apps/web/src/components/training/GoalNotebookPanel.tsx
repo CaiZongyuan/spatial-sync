@@ -54,7 +54,7 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
   const approvals = useContext(ApprovalInboxContext);
   useEffect(() => {
     const controller = new AbortController();
-    void listGoals(controller.signal).then(result => {
+    void listGoals(controller.signal, 'embodied').then(result => {
       if (controller.signal.aborted) return;
       setGoals(result.goals); if (!goal && result.goals[0]) change.current(result.goals[0]);
     })
@@ -67,7 +67,9 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
     let disposed = false, active: AbortController | undefined;
     const refresh = async () => {
       if (active) return; const controller = new AbortController(); active = controller;
-      try { const value = await getGoalLoop(goal, controller.signal); if (!disposed) { setData(value); setError(undefined); } }
+      try { const value = await getGoalLoop(goal, controller.signal);
+        if ('layer' in value && value.layer === 'agent') throw new Error('此目标属于 Agent 层，请切换层级。');
+        if (!disposed) { setData(value); setError(undefined); } }
       catch (failure) { if (!disposed) setError((failure as Error).message); }
       finally { active = undefined; }
     };

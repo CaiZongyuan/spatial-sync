@@ -12,6 +12,7 @@ from packages.library.agent_transitions import workspace_hash
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
 from packages.runtime_records.native import digest
+from packages.runtime_records.store import parse_capture
 
 
 def private_input(service, body):
@@ -19,9 +20,10 @@ def private_input(service, body):
         if isinstance(value, str):
             yield value
         elif isinstance(value, dict):
-            for item in value.values():
+            for key, item in value.items():
+                yield from strings(key)
                 yield from strings(item)
-        elif isinstance(value, list):
+        elif isinstance(value, (list, tuple)):
             for item in value:
                 yield from strings(item)
 
@@ -50,8 +52,6 @@ def intent(service, record, native_session, evidence, request_id):
     if record.plan.status == "promoted":
         raise PlanError("agent_round_stopped", "This round has already been promoted", status=409)
     context = {
-        "planId": record.plan.id,
-        "planRevision": record.plan.revision,
         "agentId": record.plan.agentId,
         "goalId": record.plan.goalId,
         "purpose": "contamination-evidence",
@@ -127,7 +127,27 @@ def controller_intent(service, identifier, body, actor):
             "eventId": event["id"],
             "eventHash": event["contentHash"],
         }
+        previous = record.context.get("contamination", {})
+        retained = previous.get("evidence", {})
+        if previous.get("requestId") == body.requestId and all(
+            retained.get(key) == evidence[key] for key in ("kind", "runtimeRecordId", "eventId", "eventHash")
+        ):
+            evidence["runtimeRecordHash"] = retained["runtimeRecordHash"]
         return intent(service, record, capture["nativeSessionId"], evidence, body.requestId)
+
+
+def ingest(service, identifier, body):
+    record = service.get(identifier)
+    stop = record.context.get("contamination")
+    parsed = parse_capture(body)
+    if stop is None or parsed["nativeSessionId"] != stop["nativeSessionId"]:
+        raise PlanError(
+            "runtime_capture_scope_conflict", "Select this stopped Optimizer's capture", status=409
+        )
+    result = service.external.runtime_records.ingest(
+        body, private_context=service.private_native_context(stop["nativeSessionId"])
+    )
+    return {"runtimeRecordId": result["session"]["id"], "idempotent": result["idempotent"]}
 
 
 async def finish(service, identifier):
@@ -170,6 +190,8 @@ async def finish(service, identifier):
                 transition = {"expected_version": expected_version, "expected_hash": expected_hash}
                 stop["transition"] = transition
                 service._save(record)
+                record = record.model_copy(deep=True)
+                stop = record.context["contamination"]
             receipt = service.agents.transition(
                 record.plan.agentId,
                 target_version=record.plan.referenceVersion,

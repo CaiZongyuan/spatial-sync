@@ -3,6 +3,7 @@ import type { Actor } from './protocol';
 export interface TrainingPlanDocument {
   id: string;
   kind: 'training';
+  layer?: 'embodied';
   title: string;
   goal: string;
   goalId?: string | null;

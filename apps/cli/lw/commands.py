@@ -152,18 +152,10 @@ COMMANDS = (
         actor=True,
         arguments=(Argument("directory", ("dir",), str, "Selected confined Suite directory"),),
     ),
-    *(
-        Command(
-            path=("agent", verb),
-            help=help_text,
-            method=method,
-            mcp_name=method,
-            human_only=human,
-            arguments=(Argument("id", ("agent",), str, "Agent name or agent/name"),),
-        )
-        for verb, method, help_text, human in (
-            ("rsi", "agent_rsi", "Read measured baselines, Agent rounds and file recovery.", False),
-        )
+    Command(
+        path=("agent", "rsi"), help="Read measured baselines, Agent rounds and file recovery.",
+        method="agent_rsi", mcp_name="agent_rsi",
+        arguments=(Argument("id", ("agent",), str, "Agent name or agent/name"),),
     ),
     Command(
         path=("agent", "harness"),
@@ -282,6 +274,19 @@ COMMANDS = (
                 dict[str, Any],
                 "Fixed revision, request and native event hashes",
             ),
+        ),
+    ),
+    Command(
+        path=("agent-round", "capture"),
+        help="Retain late native usage privately after contamination stops work.",
+        method="agent_contamination_capture", mcp_name="agent_contamination_capture",
+        human_only=True, actor=True,
+        arguments=(
+            Argument("id", ("plan",), str, "Stopped Agent Plan"),
+            Argument("records", ("records.json",), list[dict[str, Any]],
+                     "Native record array for this stopped Optimizer"),
+            Argument("format", ("--format",), Literal["claude-code-stream-json", "claude-code-session-jsonl"],
+                     "Native capture format", "claude-code-stream-json"),
         ),
     ),
     Command(

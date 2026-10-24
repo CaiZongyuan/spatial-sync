@@ -6,12 +6,16 @@ import { useInvocations } from '../lib/info/hooks';
 import { planChanges, stepCommand, stepEntity, stepInvocationStatus, type PlanDocument, type PlanStep } from '../lib/plans/model';
 import type { PlanEntry } from '../lib/plans/store';
 
-const planStates: Record<OperationPlan['status'] | 'rejected', [string, string]> = {
+const planStates: Record<string, [string, string]> = {
   draft: ['草稿', 'na'], submitted: ['待审批', 'warn'], approved: ['已批准', 'ok'], running: ['运行中', 'run'],
   completed: ['已完成', 'ok'], abandoned: ['已终止', 'na'], rejected: ['已驳回', 'warn'],
+  evaluating: ['评估中', 'run'], accepted: ['训练接受', 'ok'], inconclusive: ['证据不足', 'na'],
+  contaminated: ['污染停止', 'warn'], promoted: ['已晋升', 'ok'], restore_blocked: ['恢复受阻', 'warn'],
+  retaining: ['保留候选中', 'run'], restoring: ['恢复参照中', 'run'],
+  activating: ['激活候选中', 'run'], activation_blocked: ['激活受阻', 'warn'],
 };
-export function PlanStatus({ status }: { status: OperationPlan['status'] | 'rejected' }) {
-  const [label, tone] = planStates[status];
+export function PlanStatus({ status }: { status: string }) {
+  const [label, tone] = planStates[status] ?? [status, 'na'];
   return <span className={`plan-chip ${tone}`}><i aria-hidden="true" />{label}</span>;
 }
 function stepLabel(step: PlanStep) {

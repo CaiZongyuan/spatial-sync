@@ -114,9 +114,12 @@ def install_approval_routes(app, manager, role_for):
         if record.details.get("agentPromotionId"):
             from packages.agent_rsi.promotions import decide
 
-            return await anyio.to_thread.run_sync(
-                decide, manager.agent_rsi, record, body.decision, actor, body.note
-            )
+            try:
+                return await anyio.to_thread.run_sync(
+                    decide, manager.agent_rsi, record, body.decision, actor, body.note
+                )
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
         if record.subject == "job":
             try:
                 manager.jobs.decide(record, body.decision, actor, body.note)

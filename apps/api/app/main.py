@@ -172,6 +172,7 @@ def create_app(
     recordings = EvaluationRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
+    manager.plan_publication = asyncio.Lock()
     views = TrainingViews(manager, previews)
     tensorboard = TensorBoardService(manager)
     if settings.live_bindings is not None:
@@ -233,8 +234,10 @@ def create_app(
             await asyncio.to_thread(agent_rsi.startup)
             await asyncio.to_thread(notebooks.startup)
             from packages.agent_rsi.contamination import recover
+            from packages.agent_rsi.promotions import recover as recover_promotions
 
             await recover(agent_rsi)
+            await recover_promotions(agent_rsi)
             await monitor.start()
             await views.start()
             if manager.live:

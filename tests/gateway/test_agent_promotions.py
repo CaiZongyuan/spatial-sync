@@ -7,6 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -46,7 +47,7 @@ def action(http, item, entity, name, params=None):
     )
 
 
-def accepted_round(http, app):
+def accepted_round(http, app, *, varied_scores=False):
     suite = http.post(
         "/api/v1/suites", content=private_suite_archive(), headers={"Content-Type": "application/x-tar"}
     )
@@ -77,10 +78,11 @@ def accepted_round(http, app):
     )
     assert run.status_code == 202, run.text
     run = run.json()
-    for _ in range(3):
+    for repeat in range(3):
         item = work(http, run)
-        assert action(http, item, "/World/Lab/RobotA", "home").json()["status"] == "succeeded"
-        assert action(http, item, CENTRIFUGE, "closeLid").json()["status"] == "succeeded"
+        if not varied_scores or repeat > 0:
+            assert action(http, item, "/World/Lab/RobotA", "home").json()["status"] == "succeeded"
+            assert action(http, item, CENTRIFUGE, "closeLid").json()["status"] == "succeeded"
         response = http.post(
             BASE + run["id"] + "/complete",
             json={"caseRunId": item["caseRunId"], "nativeSessionId": "accepted-" + item["caseRunId"]},
@@ -119,7 +121,10 @@ def capture(native_session):
     return {"format": "claude-code-stream-json", "records": records}
 
 
-def test_accepted_round_private_native_bind_and_human_promotion_have_no_public_test_projection():
+@pytest.mark.parametrize("interrupt_publication", [False, True])
+def test_accepted_round_private_native_bind_and_human_promotion_have_no_public_test_projection(
+    interrupt_publication,
+):
     settings = Settings(
         remote=True, operator_token="owned-promotion-controller", remote_requests_per_minute=10000
     )
@@ -241,6 +246,18 @@ def test_accepted_round_private_native_bind_and_human_promotion_have_no_public_t
                 assert http.get(case["artifacts"][0]["url"], headers=optimizer).status_code == 403
                 ordinary = BASE + run["id"] + "/cases/" + case["caseRunId"] + "/artifacts/trace"
                 assert http.get(ordinary).status_code == 404
+                assert (
+                    http.get(
+                        "/recordings/" + case["recordingId"] + "/recording.json", headers=optimizer
+                    ).status_code
+                    == 403
+                )
+        assert http.get("/api/v1/" + MARKER, headers=optimizer).status_code == 403
+        trace = http.get(
+            "/api/v1/agents/lab-operator/tool-trace", params={"goal": plan["goalId"]}, headers=optimizer
+        )
+        assert trace.status_code == 200 and MARKER not in trace.text
+        assert all(identity not in trace.text for identity in private_ids + native_ids)
         public_paths = (
             "/api/v1/agent-runs",
             "/api/v1/evaluations",
@@ -266,11 +283,37 @@ def test_accepted_round_private_native_bind_and_human_promotion_have_no_public_t
         assert summary.status_code == 200 and summary.json()["totals"]["llmUsd"] == 0.3244434, summary.text
         approval_path = "/api/v1/approvals/" + card["approvalId"] + "/decision"
         assert http.post(approval_path, headers=optimizer, json={"decision": "approve"}).status_code == 403
+        private_run = app.state.agent_rsi.external.get(card["test"]["reference"]["id"])
+        saved_hash = private_run["identitySnapshot"]["files"]["packages/agent_rsi/workflow.py"]
+        private_run["identitySnapshot"]["files"]["packages/agent_rsi/workflow.py"] = "0" * 64
+        changed = http.post(approval_path, json={"decision": "approve"})
+        assert changed.status_code == 409 and changed.json()["detail"]["code"] == "not_comparable"
+        assert http.get("/api/v1/agents/lab-operator").json()["referenceVersion"] == 1
+        private_run["identitySnapshot"]["files"]["packages/agent_rsi/workflow.py"] = saved_hash
+        if interrupt_publication:
+            from packages.info.plans import PlanError
+
+            service = app.state.agent_rsi
+            write = service._write
+
+            def interrupted(**values):
+                if any(item["status"] == "promoted" for item in values.get("promotions", {}).values()):
+                    raise PlanError(
+                        "agent_rsi_unavailable", "Controlled publication interruption", status=503
+                    )
+                return write(**values)
+
+            service._write = interrupted
         promoted = http.post(
             approval_path, json={"decision": "approve", "note": "Controlled lower-test warning reviewed"}
         )
-        assert promoted.status_code == 200 and promoted.json()["status"] == "promoted", promoted.text
-        assert http.post(approval_path, json={"decision": "approve"}).json()["status"] == "promoted"
+        if interrupt_publication:
+            assert promoted.status_code == 503, promoted.text
+            assert http.get(path).json()["status"] == "applying"
+        else:
+            assert promoted.status_code == 200 and promoted.json()["status"] == "promoted", promoted.text
+            assert http.post(approval_path, json={"decision": "approve"}).json()["status"] == "promoted"
+            assert http.post(approval_path, json={"decision": "deny"}).status_code == 409
         agent = http.get("/api/v1/agents/lab-operator").json()
         assert agent["currentVersion"] == agent["referenceVersion"] == 2
         assert pack_harness(app.state.agents.user_root / "agents/lab-operator/harness") == candidate_bytes
@@ -281,5 +324,7 @@ def test_accepted_round_private_native_bind_and_human_promotion_have_no_public_t
     with TestClient(restarted) as http:
         http.headers.update(operator)
         assert http.get("/api/v1/agents/lab-operator").json()["referenceVersion"] == 2
+        assert http.get(path).json()["status"] == "promoted"
+        assert http.get("/api/v1/plans/" + plan["id"]).json()["result"]["referenceAdvanced"]
         assert http.get("/api/v1/runtime-sessions/" + early_id).status_code == 404
         assert http.post(path + "/next", headers=controller).status_code == 401

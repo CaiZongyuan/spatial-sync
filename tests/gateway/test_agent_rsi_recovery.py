@@ -93,6 +93,8 @@ def test_budget_preflight_finite_exception_and_historical_activation_cannot_over
             blocked.status_code == 409 and blocked.json()["detail"]["code"] == "harness_transition_conflict"
         )
         assert edited.read_text(encoding="utf-8") == "A later human edit after committed activation.\n"
+        assert http.get(path).json()["status"] == "activation_blocked"
+        assert http.get(path).json()["activation"]["status"] == "blocked"
         assert http.get("/api/v1/health").json()["sessionCount"] == 3
         edited.write_text(
             next(file["content"] for file in files if file["path"] == "AGENTS.md"),

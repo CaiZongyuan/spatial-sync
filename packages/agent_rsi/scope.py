@@ -162,9 +162,23 @@ class WorkflowAuthority:
             audit_id = secrets.token_hex(16)
             raw = await request.body()
             body = json.loads(raw) if raw else {}
-            if not isinstance(body, dict) or not grant.permits(
-                request.method, request.url.path, request.query_params, body
-            ):
+            if not isinstance(body, dict):
+                raise PlanError("invalid_agent_request", "Submit a JSON object", status=422)
+            from packages.agent_rsi.contamination import observe_input
+
+            try:
+                await observe_input(
+                    self.service,
+                    grant,
+                    {"body": body, "path": request.url.path, "query": request.query_params.multi_items()},
+                    audit_id,
+                )
+            except PlanError as error:
+                self.service.record_tool(
+                    grant, request.method, request.url.path, error.status, request_id=audit_id
+                )
+                raise
+            if not grant.permits(request.method, request.url.path, request.query_params, body):
                 self.service.record_tool(grant, request.method, request.url.path, 403, request_id=audit_id)
                 raise PlanError("agent_capability_denied", "This interface is not granted", status=403)
             marker = _current.set(grant)
@@ -186,9 +200,6 @@ class WorkflowAuthority:
 
             try:
                 self.service.record_tool(grant, request.method, request.url.path, None, request_id=audit_id)
-                from packages.agent_rsi.contamination import observe_input
-
-                await observe_input(self.service, grant, body, audit_id)
                 async with asyncio.timeout_at(grant.deadline):
                     await self.app(scope, replay, capture)
             except PlanError as error:

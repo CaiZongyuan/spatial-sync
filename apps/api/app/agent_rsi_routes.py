@@ -120,7 +120,8 @@ def install_agent_rsi_routes(app, manager, agents, external, role_for):
         operator(request)
         from packages.agent_rsi.grants import issue_optimizer
 
-        return await asyncio.to_thread(issue_optimizer, service, name, body)
+        async with manager.plan_publication:
+            return await asyncio.to_thread(issue_optimizer, service, name, body)
 
     @app.get("/api/v1/agents/{name}/tool-trace")
     async def tool_trace(name: str, goal: str):
@@ -186,6 +187,13 @@ def install_agent_rsi_routes(app, manager, agents, external, role_for):
         actor = operator(request)
         await asyncio.to_thread(controller_intent, service, identifier, body, actor)
         return await finish(service, identifier)
+
+    @app.post("/api/v1/plans/{identifier}/contamination/runtime-records/import", status_code=202)
+    async def contamination_capture(identifier: str, body: ImportCapture, request: Request):
+        from packages.agent_rsi.contamination import ingest
+
+        human(request)
+        return await asyncio.to_thread(ingest, service, identifier, body)
 
     @app.get("/api/v1/agent-promotions/{identifier}")
     async def promotion(identifier: str):

@@ -248,9 +248,7 @@ class ExternalEvaluations:
                     },
                 }
             # A prior capture must be restricted before any private statement/token is released.
-            await asyncio.to_thread(
-                self.runtime_records.mark_private, case["boundNativeSessionId"], binding
-            )
+            await asyncio.to_thread(self.runtime_records.mark_private, case["boundNativeSessionId"], binding)
         return {
             "runId": identifier,
             "status": "work",
@@ -282,10 +280,17 @@ class ExternalEvaluations:
             return {}
         record = self.runtime_records.get(body.runtimeRecordId)
         if run.get("agentRound") is not None or run.get("agentPromotion") is not None:
-            expected = {"agentId": run["agentId"], "harnessVersion": run["harnessVersion"],
-                        "planId": run["planId"], "planRevision": run["planRevision"], "goalId": run["goalId"]}
-            if any(key in record["associations"] and record["associations"][key] != value
-                   for key, value in expected.items()):
+            expected = {
+                "agentId": run["agentId"],
+                "harnessVersion": run["harnessVersion"],
+                "planId": run["planId"],
+                "planRevision": run["planRevision"],
+                "goalId": run["goalId"],
+            }
+            if any(
+                key in record["associations"] and record["associations"][key] != value
+                for key, value in expected.items()
+            ):
                 raise PlanError(
                     "runtime_association_mismatch", "Native attribution differs from this round", status=409
                 )
@@ -346,8 +351,15 @@ class ExternalEvaluations:
                         )
                 else:
                     grant.require()
+                    if body.nativeSessionId in self.manager.agent_rsi.optimizer_sessions:
+                        raise PlanError(
+                            "native_session_reused",
+                            "Target requires a fresh conversation outside Optimizer",
+                            status=409,
+                        )
                     if any(
-                        previous.get("nativeSessionId") == body.nativeSessionId
+                        body.nativeSessionId
+                        in (previous.get("nativeSessionId"), previous.get("boundNativeSessionId"))
                         and previous["caseRunId"] != body.caseRunId
                         for record in self.evaluator.store.records.values()
                         if record.get("layer") == "agent"
@@ -779,7 +791,8 @@ def install_external_evaluations(app, evaluator, agents, runtime_records, role_f
             "runs": [
                 service.document(run)
                 for run in evaluator.store.records.values()
-                if run.get("layer") == "agent" and run["split"] == "train"
+                if run.get("layer") == "agent"
+                and run["split"] == "train"
                 and (agent is None or run["agentId"] == agent)
             ]
         }
