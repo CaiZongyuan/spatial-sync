@@ -37,7 +37,14 @@ def link_directory(link, target):
 
 def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_path(tmp_path):
     catalog = invoke(tmp_path, "skills", "ls")
-    names = ["lab", "lab-library", "lab-operate", "lab-runtime-records", "lab-training-plan"]
+    names = [
+        "lab",
+        "lab-agent-evaluate",
+        "lab-library",
+        "lab-operate",
+        "lab-runtime-records",
+        "lab-training-plan",
+    ]
     assert [item["name"] for item in catalog] == names
     target = tmp_path / "Agent skills with spaces"
     target.mkdir()

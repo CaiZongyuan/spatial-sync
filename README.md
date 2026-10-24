@@ -69,8 +69,12 @@ that exact version into its connected workspace.
 **Evaluation (评估)** (`/eval`) lists pinned Agent and embodied suites. Open an
 embodied suite for comparable conditions, the confidence scoreboard,
 separate curves for each condition group, stage observations and episode replays.
-The Agent suite exposes ten public laboratory task statements and its fixed
-environment; full Agent evaluations, scores and formal baseline are still unavailable.
+The Agent suite hands ten public train tasks to an existing external runtime.
+Each task has three owned Synthetic Sessions; the platform retains trusted
+Trace, final observations, reported 0–100 scores and explicit native usage links.
+Start with `lw agent-run create --help`; the platform does not start a model.
+One-case verification publishes no full result. Reported train results change
+no Reference or promotion decision.
 The held-out test row stays locked. Registered Controller versions and training
 costs are not yet available. See [evaluations](docs/EVALUATIONS.md) and
 [Agent Harness versions](docs/AGENT_HARNESS.md).

@@ -129,7 +129,8 @@ VLA 条目（π0、GR00T N、OpenVLA、SmolVLA 等）在 v1 只登记来源、�
 
 ### 4.3 完整评估交接
 
-人在 Claude Code 里通过平台工具操作实验室照常可用。外部 runtime 自动驱动完整 Suite、受信过程证据与记分板写入属于后续范围，须有明确规格与验收；本次导入不声称完成这些能力。
+人在 Claude Code 里通过平台工具操作实验室照常可用。#44 B 的完整 train 交接见
+[External runtime evaluation](LAB_EXTERNAL_AGENT_EVALUATION_SPEC_V1.md)：外部 runtime 创建新 Target，平台通过共享评估队列分配公开 Case × repeat、自有 Synthetic Session 和限定 grant，并采集可信 Trace/final 与私有评分。结果为 `reported`，不自动修改 Reference、提升或 R3 Notebook。A 导入本身仍不产生这些评分。
 
 ## 5. 评估集
 
@@ -170,7 +171,7 @@ Builder 建好评估集后，对当前对象跑一次完整评估，记为**正�
  "traces": ["trace-..."], "at": "2026-10-18T10:02:00Z"}
 ```
 
-- `decision` ∈ `baseline / accepted / rejected / test`。落选的 Candidate 也写入（与 PenguinHarness 不同），以便实验记录引用。
+- 具身记录的 `decision` ∈ `baseline / accepted / rejected / test`。落选的 Candidate 也写入（与 PenguinHarness 不同），以便实验记录引用。#44 B 的 Agent 原始结果仅记 `reported`；完整性与平台评分不自动成为 Reference、接受或提升决定。
 - 记分板只由平台写入；Optimizer 与 Evaluator 不能直接写。
 
 ### 6.2 可比较条件
@@ -282,6 +283,8 @@ R1 时间桶按 UTC：`1h` 为 5 分钟桶、`1d` 为小时桶、`7d` / `30d` �
 | POST | `/agents`、`/agents/{id}/snapshots` | 从快照创建 Agent、导入快照 |
 | POST | `/runtime-sessions/import` | 导入明确的 `content` 或 `records`、`format` 与可选关联；不接受服务端文件路径 |
 | GET | `/runtime-sessions`、`/runtime-sessions/{id}` | 已导入会话列表、详情与规范化证据链接 |
+| POST | `/agents/{name}/runs` | 冻结外部 runtime 评估的 Harness/Suite/声明条件及有限截止时间 |
+| GET / POST | `/agent-runs`、`/agent-runs/{id}`、`/{id}/next`、`/{id}/complete`、`/{id}/cancel` | controller 读写交接；Target grant 无此权限；仅 `next` 返回连接凭据 |
 | GET | `/suites`、`/suites/{id}` | 评估集元数据与公开题面；**私有评分条件与 test 题目从不由 API 返回** |
 | GET | `/suites/{id}/scoreboard?subject=` | 记分板记录与可比较条件；比较不同条件的记录返回 `not_comparable` |
 | POST | `/suites/{id}/runs` | `{subject, version, split}`；`split: test` 只能由提升流程触发 |
@@ -312,6 +315,8 @@ lw runtime import <capture.jsonl> --format claude-code-stream-json
 lw runtime ingest <records.json> --format claude-code-stream-json
 lw runtime ls
 lw runtime show <id>
+lw agent-run create <agent> --suite <suite> --harness-version N --runtime <runtime> --model <model> --thinking <thinking>
+lw agent-run ls | show <id> | next <id> | complete <id> --case-run <case> --native-session <native> | cancel <id>
 lw harness diff <id> <vA> <vB>
 lw suite ls | show <id> | run <id> --subject <agent|controller> [--split train]
 lw score ls --suite <id> [--subject <id>]
@@ -345,7 +350,9 @@ A2 ──► R4 资源：Embodiment、Controller、Robot Model 目录
 
 **R1**：具身评估集加 train / test；记分板与可比较条件；评估页；成本中心（GPU 小时）。验收：两版策略在同一评估集上可比较，test 只在申请提升时运行；GPU 小时与作业心跳一致。
 
-**R2 / #44 首版 A**：已有 runtime 记录的导入、持久化、CLI/MCP/Web 读回与报告用量/成本；`suite/lab-ops-basic` 的公开题面和既有 Agent/Harness 元数据继续可读。首版验收以 [runtime records integration](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md) 为准。全题每题 3 次的真实评估、可信记分板与自动交接仍为后续 B，不由导入记录代替，也不因 A 交付而关闭。
+**R2 / #44 A**：已有 runtime 记录的导入、持久化、CLI/MCP/Web 读回与报告用量/成本，验收见 [runtime records integration](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)。
+
+**R2 / #44 B**：外部 runtime 接公开任务并报告完成，平台拥有每题至少 3 次的完整范围、实际 Session/Trace/final/私有 grade、reported 记分板与 A 计量快照。只跑一题的 verification 不发布完整结果；脚本化 CPU 交接证明不冒充真实模型能力。真实 runtime 单题须另有明确授权，完整验收见 [external evaluation](LAB_EXTERNAL_AGENT_EVALUATION_SPEC_V1.md)。R3 优化/提升和统计政策保持单独范围。
 
 **R3**：`lab-harness-optimize`、Harness 快照与回滚、Agent 层接受规则。验收：一轮 Candidate 被接受、一轮被拒绝并回滚；实验记录与成本中心对得上。
 

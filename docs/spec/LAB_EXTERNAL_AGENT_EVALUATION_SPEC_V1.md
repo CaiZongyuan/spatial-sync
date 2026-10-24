@@ -100,6 +100,31 @@ belongs to the runtime. Do not claim a machine sandbox or launch hook programs.
 
 ## Verification and delivery
 
+### Concrete first interface
+
+- `POST /api/v1/agents/{name}/runs`: `{requestId,suite,harnessVersion,runtime:{name,version?,model,thinking?},purpose?,caseId?,wallSeconds?}`. `purpose` is `train` (default) or `verification`; only verification selects one public `caseId`. Runtime version/thinking can stay unknown. Wall seconds are finite, 1–7200 (default900).
+- `GET /api/v1/agent-runs[?agent=agent/name]` and `GET /api/v1/agent-runs/{id}` expose public Run/cases/pins, declared and observed provenance, cleanup facts, native links and saved result. The ID is also the shared evaluator's `evaluationId`.
+- `POST /api/v1/agent-runs/{id}/next`: controller receives `pending`, `work` or `finished`. Work has `caseRunId`, `caseId`, one-based `repeat`, `statement`, `sessionId`, expiry, frozen public Harness/skill files and `connection:{sessionId,token,tokenType:"Bearer"}`.
+- `POST /api/v1/agent-runs/{id}/complete`: `{caseRunId,nativeSessionId,runtimeRecordId?,runtime?}` signals completion and returns `{case,run}`. No score/final/usage field is accepted. Runtime context, if supplied, must match the fixed declaration.
+- `POST /api/v1/agent-runs/{id}/cancel` uses existing platform ownership cleanup. Operator retry after a blocked close is the existing `POST /api/v1/evaluations/{id}/cleanup`.
+- Public case artifacts use fixed `trace/final/score` identifiers under `/api/v1/agent-runs/{id}/cases/{caseRunId}/artifacts/{name}`; incomplete cases expose only retained evidence. Physical evidence availability is classified at B completion; the pure grader's known-false/unknown scoring function is unchanged.
+- Controller CLI is `lw agent-run create/ls/show/next/complete/cancel`; the generic MCP names are `agent_run_create/list/show/next/complete/cancel`. Target's tool list excludes all controller, approval, Vault, policy and arbitrary file interfaces.
+
+The first implementation uses in-process Synthetic Sources. Scope proof in
+final HTTP reads uses the information store's `X-Spatial-Scene-Revision` and
+`X-Spatial-Epoch` response headers; its JSON and recording format remain readable
+unchanged. Required physical values and metadata must be available/fresh/typed;
+missing actions and absent derived process/alert events remain ability negatives.
+
+For authentication separation from the global operator, the supported external
+Target deployment uses existing remote/operator-token mode. The controller
+keeps its credential and gives Target only the case grant/scoped MCP. Additional
+Shell/raw HTTP access is the runtime's configuration responsibility. Anonymous
+local development keeps its existing operator behavior; this is not a claim of
+OS isolation or unrestricted-network coverage.
+
+### Acceptance checks
+
 First one-case scripted external controller through real HTTP/MCP, then all
 10 public cases×3 actual Synthetic Sessions using the same public handoff.
 Cover exact retries, wrong/expired grant, no self-approval, high-risk denial→grade,

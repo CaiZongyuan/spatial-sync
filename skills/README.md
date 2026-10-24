@@ -7,7 +7,8 @@ imports assets/scenes, reads completeness and validation, and revalidates exact
 immutable versions. `lab-training-plan` interviews the user, snapshots a Task
 and submits measurable hypotheses for human approval. `lab-runtime-records`
 imports existing Claude Code captures, refreshes their messages and reported
-usage, and reads normalized evidence. All skills reserve approvals and
+usage, and reads normalized evidence. `lab-agent-evaluate` coordinates public
+cases with an external runtime and reads platform-owned grades. All skills reserve approvals and
 Vault writes for a person, including when a user asks an agent to bypass them.
 Later workflows are explicitly marked unavailable in this release.
 
@@ -20,7 +21,7 @@ lw skills install --target "/path/to/agent skills" --json
 ```
 
 `--target` is the parent skill directory: the installer creates `lab/SKILL.md`
-`lab-library/SKILL.md`, `lab-operate/SKILL.md`, `lab-runtime-records/SKILL.md`
+`lab-agent-evaluate/SKILL.md`, `lab-library/SKILL.md`, `lab-operate/SKILL.md`, `lab-runtime-records/SKILL.md`
 and `lab-training-plan/SKILL.md` beneath it.
 Quoted paths containing spaces work.
 The default is `~/.claude/skills` (Claude Code's user skill directory); choose

@@ -17,6 +17,7 @@ from apps.api.app.evaluation_views import public_agent_run
 from apps.api.app.evaluations import now, persist
 from packages.agent_evaluation.audit import CaseAudit
 from packages.agent_evaluation.bundle import freeze_harness
+from packages.agent_evaluation.evidence import require_case_evidence
 from packages.agent_evaluation.scope import CaseGrant, observation_scope
 from packages.info.agent_grading import final_observations, grade_agent_case
 from packages.info.plans import PlanError
@@ -355,14 +356,34 @@ class ExternalEvaluations:
                         base,
                         base + "/state",
                         "/api/v1/alerts?sessionId=" + grant.session.session_id,
+                        base,
                     )
                 ]
                 if any(response.status_code != 200 for response in responses):
                     raise PlanError(
                         "agent_evidence_unavailable", "Final platform HTTP observation failed", status=503
                     )
-        summary, state, alerts = (response.json() for response in responses)
-        return {"session": summary, "state": state, "alerts": alerts["alerts"], "observedAt": now()}
+        before, state, alerts, summary = (response.json() for response in responses)
+        keys = ("sessionId", "sceneRevision", "epoch")
+        if any(before.get(key) != summary.get(key) for key in keys):
+            raise PlanError("agent_evidence_unavailable", "Final observation scope changed", status=503)
+        try:
+            scope = {
+                "sessionId": grant.session.session_id,
+                "sceneRevision": responses[1].headers["x-spatial-scene-revision"],
+                "epoch": int(responses[1].headers["x-spatial-epoch"]),
+            }
+        except (KeyError, ValueError):
+            raise PlanError(
+                "agent_evidence_unavailable", "Final observation scope is unavailable", status=503
+            ) from None
+        return {
+            "session": summary,
+            "scope": scope,
+            "state": state,
+            "alerts": alerts["alerts"],
+            "observedAt": now(),
+        }
 
     def artifact(self, run, case, name):
         if name not in ("trace", "final", "score"):
@@ -387,12 +408,14 @@ class ExternalEvaluations:
             if final["session"]["state"] not in ("RUNNING", "PAUSED"):
                 raise PlanError("agent_source_failed", "The owned Source is unavailable", status=503)
             grant.audit.seal(final, observed_monotonic=cutoff)
-            values, metadata = final_observations(final["state"], final["session"], final["alerts"])
-            score = grade_agent_case(
-                suite, case["caseId"], values, grant.audit.derived(), cutoff - grant.audit.started, metadata
-            )
             directory = self.directory(run) / case["caseRunId"]
             await persist(durable_json, directory / "final.json", redacted(final))
+            trace = grant.audit.derived()
+            require_case_evidence(suite, case["caseId"], final, trace, grant.session.catalog)
+            values, metadata = final_observations(final["state"], final["session"], final["alerts"])
+            score = grade_agent_case(
+                suite, case["caseId"], values, trace, cutoff - grant.audit.started, metadata
+            )
             await persist(durable_json, directory / "score.json", score)
             case.update(
                 score=score["score"],

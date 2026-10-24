@@ -172,7 +172,11 @@ def install_info_routes(app, manager, role_for, *, prefix="/api/v1/sessions/{ses
     async def states(keys: str | None = None, session=Depends(resolve_target)):
         selected = dict.fromkeys(keys.split(",")) if keys else session.catalog.entities.keys()
         entries = (encode(key) + ":" + state_json(session, key) for key in selected)
-        return Response(content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json")
+        return Response(
+            content='{"entities":{' + ",".join(entries) + "}}", media_type="application/json",
+            headers={"X-Spatial-Scene-Revision": session.info.scene_revision,
+                     "X-Spatial-Epoch": str(session.info.epoch)},
+        )
 
     @app.post(prefix + "/actions")
     async def action(body: HttpAction, request: Request, session=Depends(resolve_target)):

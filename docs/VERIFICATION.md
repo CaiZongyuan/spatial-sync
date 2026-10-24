@@ -99,6 +99,38 @@ from the optional model-driven I5 journey below. See
 [runtime records](AGENT_HARNESS.md#import-existing-runtime-records) for supported
 formats, optional associations and conflict behavior.
 
+### External Agent evaluation handoff
+
+The CPU-only B checks use a scripted external controller over real HTTP and the
+same installed CLI/official MCP tools. They create real Synthetic Sessions;
+they execute no model or SDK:
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_external_agent_evaluation.py tests/gateway/test_external_agent_lifecycle.py tests/gateway/test_external_agent_restart.py tests/gateway/test_external_agent_suite.py tests/gateway/test_external_agent_evidence.py tests/gateway/test_external_agent_native_links.py tests/cli/test_agent_run_commands.py -q
+```
+
+The public Suite journey completes ten tasks × three unique recordings and
+publishes only `reported` scores. The one-case path excludes complete results.
+Paired physical-evidence checks distinguish missing/stale/wrong scope from
+fresh known-false outcomes; private rubric/thresholds remain unchanged. HTTP
+state reads expose `X-Spatial-Scene-Revision` and `X-Spatial-Epoch` from the
+actual information store, allowing final evidence to verify its scope without
+changing the existing JSON or recording format.
+
+The restart check kills only its own fixture gateway through its creating
+Popen handle, restarts on the same owned roots and proves old grants/completion
+cannot revive effects. The Source runs in that owned process; no external
+runtime is started or killed. Cancel/expiry and controlled Source cleanup
+failures also prove the shared slot remains blocked until confirmation.
+`tests/e2e/agent-runs.spec.ts` owns its API/Web and separately labels actual
+one-case evidence and controlled complete/invalid UI fixtures.
+
+Use the existing authenticated remote/operator-token mode for the later real
+runtime single-case smoke. Controller credentials stay outside Target; the
+Target receives only the case grant and scoped MCP. Runtime context/general
+tool configuration remains external. Real model execution needs a concrete
+model, budget, time limit and authorization after implementation/review.
+
 ### Training Goal and Lab Notebook
 
 An approved Training Plan's linked train Evaluations produce public Notebook

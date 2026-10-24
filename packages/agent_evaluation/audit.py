@@ -30,7 +30,11 @@ class CaseAudit:
 
     def snapshot(self):
         return {
-            "scope": self.scope(),
+            "scope": {
+                "sessionId": self.session.session_id,
+                "sceneRevision": self.session.info.scene_revision,
+                "epoch": self.session.info.epoch,
+            },
             "state": {
                 "entities": {
                     key: value.model_dump(mode="json") for key, value in self.session.info.entities.items()
