@@ -68,13 +68,17 @@ test('external evaluation freezes inputs, exposes real Synthetic evidence and ke
       return handoff.status;
     }).toBe('work');
     const work = handoff.work;
+    const targetRead = await http.get(`${api}/api/v1/sessions/${work.sessionId}`, {
+      headers: { Authorization: `Bearer ${work.connection.token}` },
+    });
+    expect(targetRead.ok(), await targetRead.text()).toBe(true);
     const capture = await readFile(resolve('../../tests/fixtures/runtime/claude-code-stream.jsonl'), 'utf8');
     const imported = await http.post(`${api}/api/v1/runtime-sessions/import`, { data: {
       format: 'claude-code-stream-json', content: capture, sourceLabel: 'Actual-format fixture replay; scripted Synthetic case, no model execution',
     } });
     expect(imported.ok(), await imported.text()).toBe(true);
     const native = (await imported.json()).session;
-    // A scripted controller signals completion without claiming the task succeeded.
+    // A scripted Target reads its own Session, then the controller signals a valid negative attempt.
     const completed = await http.post(`${api}/api/v1/agent-runs/${runId}/complete`, { data: {
       caseRunId: work.caseRunId, nativeSessionId: native.nativeSessionId, runtimeRecordId: native.id,
     } });
