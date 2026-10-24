@@ -1,10 +1,10 @@
 """Authoring schemas are HTTP metadata, separate from spatial recording messages."""
 
-import math
-import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+
+from packages.training.predictions import prediction
 
 
 class Schema(BaseModel):
@@ -106,10 +106,10 @@ class Prediction(Schema):
     @field_validator("to")
     @classmethod
     def measurable(cls, value):
-        if isinstance(value, str):
-            match = re.fullmatch(r"\s*(?:>=|<=|>|<|==|=)?\s*([-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)\s*", value)
-            if not match or not math.isfinite(float(match[1])):
-                raise ValueError("predict.to requires a finite number or numeric comparison")
+        try:
+            prediction(value)
+        except ValueError:
+            raise ValueError("predict.to requires a finite number or numeric comparison") from None
         return value
 
 

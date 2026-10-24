@@ -2,23 +2,13 @@
 
 import math
 import operator
-import re
 
 from packages.info.evaluations import wilson_interval
+from packages.training.predictions import prediction
 
 RULE_VERSION = "hypothesis-threshold/1"
 COMPARISONS = {">=": operator.ge, ">": operator.gt, "<=": operator.le,
                "<": operator.lt, "=": operator.eq, "==": operator.eq}
-PREDICTION = re.compile(r"\s*(>=|<=|>|<|==|=)?\s*([-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)\s*")
-
-
-def prediction(value):
-    if type(value) in (int, float) and math.isfinite(value):
-        return ">=", float(value)
-    match = PREDICTION.fullmatch(value) if isinstance(value, str) else None
-    if match is None or not math.isfinite(float(match[2])):
-        raise ValueError("Prediction requires a finite numeric threshold")
-    return match[1] or ">=", float(match[2])
 
 
 def rate_metric(row):
