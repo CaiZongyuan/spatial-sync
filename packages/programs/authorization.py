@@ -1,8 +1,15 @@
 """Current training approval is required for evaluation of exact immutable script material."""
 
+import json
+from pathlib import Path
+
 from pydantic import Field
 
 from packages.info.plans import PlanError
+from packages.library.assets import AssetLibrary
+from packages.library.common import LibraryError
+from packages.library.scenes import SceneLibrary
+from packages.library.tasks import TaskLibrary
 from packages.programs.metadata import Hash, ProgramIntent, Schema, Text
 
 
@@ -81,4 +88,50 @@ def verify_program_approval(manager, proof, suite, scene):
     )
     if actual != proof:
         raise PlanError("program_approval_changed", "Frozen code approval differs from admission", status=409)
+    return proof
+
+
+def require_runtime_approval(proof, state_root):
+    """Runner rechecks evaluation code approval. Committed deployments use their own proof."""
+    proof = ProgramApproval.model_validate(proof) if isinstance(proof, dict) else proof
+    root = Path(state_root)
+    try:
+        records = json.loads((root / "training-plans.json").read_bytes())
+        current = max(
+            (record for record in records if record["plan"]["id"] == proof.planId),
+            key=lambda record: record["plan"]["revision"],
+        )
+        approval = None
+        for line in (root / "approvals.jsonl").read_bytes().splitlines(keepends=True):
+            if not line.endswith(b"\n"):
+                break
+            value = json.loads(line)
+            if value["approvalId"] == proof.approvalId:
+                approval = value
+        plan = current["plan"]
+        if (
+            current["approvalId"] != proof.approvalId
+            or plan["revision"] != proof.planRevision
+            or plan["task"] != proof.task
+            or plan.get("program") != proof.program.model_dump(mode="json")
+            or approval is None
+            or approval["status"] != "approved"
+            or approval["subject"] != "plan"
+            or approval["subjectId"] != proof.planId
+            or approval["details"].get("revision") != proof.planRevision
+            or approval["details"].get("plan") != plan
+            or not approval["decisions"]
+            or approval["decisions"][-1]["decision"] != "approve"
+            or approval["decisions"][-1]["actor"]["kind"] != "user"
+        ):
+            raise ValueError("Exact current human code approval differs")
+        assets = AssetLibrary(root)
+        scenes = SceneLibrary(user_root=assets.roots["user"], state_root=root)
+        task = TaskLibrary(assets, lambda: scenes).show(proof.task)
+        if task["contentHash"] != proof.taskContentHash:
+            raise ValueError("Frozen approved Task material differs")
+    except (OSError, ValueError, TypeError, KeyError, LibraryError) as exc:
+        raise PlanError(
+            "program_not_approved", "Current human code approval is unavailable", status=409
+        ) from exc
     return proof

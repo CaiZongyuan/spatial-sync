@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from packages.info.plans import PlanError
-from packages.programs.authorization import require_program_approval, verify_program_approval
+from packages.programs.authorization import (
+    require_program_approval,
+    require_runtime_approval,
+    verify_program_approval,
+)
 from tests.fixtures.embodied_evaluation import native_suite
 from tests.gateway.test_program_plans import prepare
 
@@ -39,6 +43,11 @@ def test_program_approval_is_exact_current_and_reverified_without_import_or_sour
         assert proof.approvalId == plan["approvalId"] and proof.planRevision == 1
         assert proof.task == plan["task"] and len(proof.taskContentHash) == 64
         assert verify_program_approval(manager, proof, suite, scene) == proof
+        assert require_runtime_approval(proof, manager.settings.state_root) == proof
+        with pytest.raises(PlanError, match="approval"):
+            require_runtime_approval(
+                proof.model_copy(update={"taskContentHash": "0" * 64}), manager.settings.state_root
+            )
         assert not hasattr(math, "_lw_uploaded_program_marker")
         assert client.get("/api/v1/health").json()["sessionCount"] == 0
         assert client.post(
@@ -46,6 +55,8 @@ def test_program_approval_is_exact_current_and_reverified_without_import_or_sour
         ).status_code == 200
         with pytest.raises(PlanError, match="approved"):
             verify_program_approval(manager, proof, suite, scene)
+        with pytest.raises(PlanError, match="approval"):
+            require_runtime_approval(proof, manager.settings.state_root)
 
 
 @pytest.mark.parametrize("case", ["missing", "pending", "denied", "revision", "artifact", "source", "target"])
