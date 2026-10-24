@@ -15,7 +15,8 @@ from fastapi import HTTPException, Request
 from pydantic import Field, StrictStr
 
 from apps.api.app.evaluation_views import public_evaluation, public_score
-from packages.info.conditions import condition_state, validate_conditions
+from packages.info.conditions import CompiledConditions, condition_state, validate_conditions
+from packages.info.evaluation_evidence import EvidenceUnavailable, require_physical
 from packages.info.evaluations import EvaluationStore, evaluation_decision, wilson_interval
 from packages.info.invocations import TERMINAL
 from packages.info.store import StateStore
@@ -122,6 +123,7 @@ class EvaluationService:
 
     def require_interactive(self):
         from packages.agent_evaluation.scope import current_scope
+
         scope = current_scope()
         if scope is not None and scope.run_id == self._active_evaluation:
             return
@@ -252,8 +254,9 @@ class EvaluationService:
             )
         suite = self.suites.resolve(body.suite)
         if suite.metadata["layer"] != "embodied":
-            raise HTTPException(422, {"code": "agent_runner_unavailable",
-                                      "message": "Agent SDK execution is not available"})
+            raise HTTPException(
+                422, {"code": "agent_runner_unavailable", "message": "Agent SDK execution is not available"}
+            )
         selected = await asyncio.to_thread(
             self.manager.library.resolve,
             suite.metadata["scene"],
@@ -289,7 +292,8 @@ class EvaluationService:
         notebooks = getattr(self.manager, "notebooks", None)
         context = (
             await asyncio.to_thread(notebooks.prepare_evaluation, body, suite, selected)
-            if notebooks else None
+            if notebooks
+            else None
         )
         await self.admit(record, context)
         return deepcopy(record)
@@ -544,8 +548,9 @@ class EvaluationService:
                 "durationSeconds": time.monotonic() - started,
                 "at": now(),
             }
-            row.update({name: record[name] for name in ("planId", "planRevision", "goalId")
-                        if name in record})
+            row.update(
+                {name: record[name] for name in ("planId", "planRevision", "goalId") if name in record}
+            )
             await persist(self.store.append, row)
             record.update(status="completed", result=row, endedAt=now())
         except BaseException as exc:
@@ -635,6 +640,29 @@ class EvaluationService:
         stages = {stage["id"]: False for stage in task["milestones"]}
 
         def observe():
+            conditions = CompiledConditions(
+                [task["success"], *(stage["when"] for stage in task["milestones"])]
+            )
+            conditions = [
+                condition | {"entity": condition.get("entity", task["robot"])} for condition in conditions
+            ]
+            scope = {
+                "sessionId": session.session_id,
+                "sceneRevision": session.manifest.sceneRevision,
+                "epoch": session.epoch,
+            }
+            sample = {
+                "scope": scope | {"sceneRevision": mirror.scene_revision, "epoch": mirror.epoch},
+                "state": {
+                    "entities": {
+                        key: entity.model_dump(mode="json") for key, entity in mirror.entities.items()
+                    }
+                },
+            }
+            try:
+                require_physical(conditions, sample, scope, session.catalog)
+            except EvidenceUnavailable:
+                raise HTTPException(503, {"code": "evaluation_observation_unavailable"}) from None
             for stage in task["milestones"]:
                 stages[stage["id"]] |= (
                     condition_state(
@@ -665,6 +693,7 @@ class EvaluationService:
                 invocation.invocationId, "deny", "operator", actor, "Human gates are denied during evaluation"
             )
         deadline = time.monotonic() + task["timeoutSeconds"]
+        timed_out = False
         while True:
             events = await session.info.events_after(cursor, 0 if invocation.status in TERMINAL else 0.1)
             if events["gap"]:
@@ -679,12 +708,17 @@ class EvaluationService:
             invocation = pipeline.table.get(invocation.invocationId)
             if session.state not in ("RUNNING", "PAUSED"):
                 raise HTTPException(503, {"code": "source_unavailable"})
+            if invocation.error and invocation.error.code in ("source_unavailable", "device_unavailable"):
+                raise HTTPException(503, {"code": invocation.error.code})
             if invocation.status in TERMINAL:
                 break
             if time.monotonic() >= deadline:
                 await pipeline.cancel(invocation.invocationId, "operator")
-                raise HTTPException(504, {"code": "episode_timeout"})
-        success = (
+                invocation = pipeline.table.get(invocation.invocationId)
+                timed_out = True
+                break
+        observe()
+        success = not timed_out and (
             condition_state([task["success"]], task["robot"], session.info.values(), session.info.metadata())
             is True
         )
@@ -697,6 +731,7 @@ class EvaluationService:
             ),
             "invocationId": invocation.invocationId,
             "invocationStatus": invocation.status,
+            **({"reason": "task_timeout"} if timed_out else {}),
         }
 
     async def cleanup(self, identifier):
@@ -742,19 +777,31 @@ def install_evaluation_routes(app, service, role_for):
         return service.suites.resolve(f"suite/{name}@{revision}").public()
 
     @app.get("/api/v1/suites/{name}/{revision}/scoreboard")
-    async def scoreboard(name: str, revision: str, subject: str | None = None,
-                         compare: str | None = None, against: str | None = None):
+    async def scoreboard(
+        name: str,
+        revision: str,
+        subject: str | None = None,
+        compare: str | None = None,
+        against: str | None = None,
+    ):
         version = service.suites.resolve(f"suite/{name}@{revision}")
-        rows = [row for row in service.store.rows if row["suite"] == version.id and row["split"] == "train"
-                and (subject is None or row["subject"] == subject)]
+        rows = [
+            row
+            for row in service.store.rows
+            if row["suite"] == version.id
+            and row["split"] == "train"
+            and (subject is None or row["subject"] == subject)
+        ]
         if (compare is None) != (against is None):
             raise HTTPException(
                 422, {"code": "invalid_comparison", "message": "Provide compare and against together"}
             )
         result = {"rows": [public_score(row, rows) for row in rows]}
         if compare is not None:
-            selected = [next((row for row in rows if row["evaluationId"] == identifier), None)
-                        for identifier in (compare, against)]
+            selected = [
+                next((row for row in rows if row["evaluationId"] == identifier), None)
+                for identifier in (compare, against)
+            ]
             if any(row is None for row in selected):
                 raise HTTPException(404, {"code": "unknown_evaluation"})
             first, second = selected
@@ -762,8 +809,11 @@ def install_evaluation_routes(app, service, role_for):
                 raise HTTPException(
                     409, {"code": "not_comparable", "message": "Evaluation conditions differ"}
                 )
-            result["comparison"] = {"compare": compare, "against": against,
-                                    "scoreDelta": first["score"] - second["score"]}
+            result["comparison"] = {
+                "compare": compare,
+                "against": against,
+                "scoreDelta": first["score"] - second["score"],
+            }
         return result
 
     @app.post("/api/v1/evaluations", status_code=202)
@@ -776,7 +826,8 @@ def install_evaluation_routes(app, service, role_for):
         return {
             "evaluations": [
                 public_evaluation(value, service.store.rows)
-                for value in service.store.records.values() if value["split"] == "train"
+                for value in service.store.records.values()
+                if value["split"] == "train"
             ]
         }
 

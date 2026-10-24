@@ -67,6 +67,7 @@ class RecordedEpisode(Schema):
     recordingId: str | None = None
     invocationId: str | None = None
     invocationStatus: str | None = None
+    reason: str | None = None
     milestones: dict[str, bool] = Field(default_factory=dict)
 
 

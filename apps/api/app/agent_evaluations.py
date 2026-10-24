@@ -20,6 +20,7 @@ from packages.agent_evaluation.bundle import freeze_harness
 from packages.agent_evaluation.evidence import require_case_evidence
 from packages.agent_evaluation.scope import CaseGrant, observation_scope
 from packages.info.agent_grading import final_observations, grade_agent_case
+from packages.info.evaluation_evidence import EvidenceUnavailable
 from packages.info.plans import PlanError
 from packages.library.transactions import durable_json
 from packages.protocol.internal import SessionOptions
@@ -414,7 +415,12 @@ class ExternalEvaluations:
             directory = self.directory(run) / case["caseRunId"]
             await persist(durable_json, directory / "final.json", redacted(final))
             trace = grant.audit.derived()
-            require_case_evidence(suite, case["caseId"], final, trace, grant.session.catalog)
+            try:
+                require_case_evidence(suite, case["caseId"], final, trace, grant.session.catalog)
+            except EvidenceUnavailable:
+                raise PlanError(
+                    "agent_evidence_unavailable", "Required physical observations are unavailable", status=503
+                ) from None
             values, metadata = final_observations(final["state"], final["session"], final["alerts"])
             score = grade_agent_case(
                 suite, case["caseId"], values, trace, cutoff - grant.audit.started, metadata
