@@ -72,9 +72,12 @@ def admitted_subject(record):
 
 def scene_requires_material_authorization(scene, source):
     programs = {policies.PolicyProgram.id, "robot_arm.script"}
-    return any(
-        binding["program"] in programs for binding in scene.report()["effectiveBindings"].get(source, [])
-    )
+    # Legacy valid builtin reports predate effectiveBindings. Inspect their resolved
+    # declarations too, so neither a missing report key nor a template bypasses admission.
+    bindings = scene.report().get("effectiveBindings", {}).get(source)
+    if bindings is None:
+        bindings = [item.binding for item in scene.declarations(source).declarations]
+    return any(binding["program"] in programs for binding in bindings)
 
 
 def material_bindings(catalog):
