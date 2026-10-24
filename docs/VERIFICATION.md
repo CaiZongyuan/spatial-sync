@@ -133,6 +133,26 @@ model, budget, time limit and authorization after implementation/review.
 
 ### Training Goal and Lab Notebook
 
+Evaluation comparison groups require complete server evidence for the fixed
+environment and judge. Candidate versions remain separate. Legacy scores and
+decisions stay readable; missing comparison evidence is unknown and cannot
+establish a new Reference. Notebook reads expose historical comparisons as
+`recordedComparison` when current evidence differs, preserving the original
+automatic result and human audit. Private recoverable inputs live under the
+owned state's `evaluations/identity-inputs/`, outside public API projections.
+Snapshots include the platform's actual library resolvers, HTTP action/control
+boundary and `lw` tool/schema/client implementation. External runtime/client
+SDK code and context remain unattested, with declaration provenance retained.
+
+Healthy task deadlines retain valid failed episodes and continue the fixed
+protocol. Invalid observations or Source failures retain partial attempts,
+actual recording links and cleanup evidence, with unknown success and no
+complete score. The Evaluation page's detail selector includes these attempts.
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_evaluation_identity_restart.py tests/gateway/test_evaluation_deadlines.py tests/gateway/test_notebooks_api.py -q
+```
+
 An approved Training Plan's linked train Evaluations produce public Notebook
 records, including failed and cancelled attempts. Use the Plan's returned
 `goalId` (by default `goal/<Task.name>`, stable across Task revisions):

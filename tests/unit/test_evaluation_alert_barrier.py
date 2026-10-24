@@ -48,7 +48,7 @@ async def test_only_returns_the_original_graded_outcome_after_release(fixture):
 
     task = asyncio.create_task(outer_evaluator())
     await asyncio.sleep(0)
-    barriers.original_episode.assert_awaited_once_with(session, suite, {"id": "train-one"})
+    barriers.original_episode.assert_awaited_once_with(session, suite, {"id": "train-one"}, attempt=None)
     assert not task.done() and not close.called
     snapshot = barriers.snapshot(token)
     assert snapshot["state"] == "held"

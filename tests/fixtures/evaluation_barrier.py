@@ -68,9 +68,9 @@ class EvaluationAlertBarriers:
             barrier["state"] = "released"
         return self.snapshot(token)
 
-    async def episode(self, session, suite, case):
+    async def episode(self, session, suite, case, *, attempt=None):
         # Grade the unmodified real action exactly once before extending lifetime.
-        outcome = await self.original_episode(session, suite, case)
+        outcome = await self.original_episode(session, suite, case, attempt=attempt)
         barrier = next(
             (item for item in self.barriers.values() if item["evaluationId"] == session.evaluation_id), None
         )

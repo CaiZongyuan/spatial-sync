@@ -63,6 +63,7 @@ async def controlled_evaluator(identifier):
     record.update(status="running", startedAt=now())
     service.store.save(record)
     selected = app.state.manager.library.resolve(suite.metadata["scene"])
+    identity = {name: base_identities[name] for name in ("environment", "judge")}
     key = {
         "suite": suite.id,
         "suiteContentHash": suite.content_hash,
@@ -73,8 +74,14 @@ async def controlled_evaluator(identifier):
         "solver": "Controlled evaluator receipt fixture; no physics",
         "target": suite.task["robot"],
         "bindingHash": "f" * 64,
+        **identity,
     }
-    record["key"] = key
+    record.update(
+        key=key,
+        comparisonIdentity=identity,
+        comparisonState="known",
+        candidateIdentity={"kind": "controlled-fixture", "contentHash": version[0]},
+    )
     stages = [stage["id"] for stage in suite.task["milestones"]]
     for index, case in enumerate(case for case in suite.metadata["episodes"] if case["split"] == "train"):
         success = index < outcomes[0]
@@ -95,6 +102,7 @@ async def controlled_evaluator(identifier):
         "subject": record["subject"],
         "version": version[0],
         "key": key,
+        "comparisonIdentity": identity,
         "split": "train",
         "successes": successes,
         "episodes": count,

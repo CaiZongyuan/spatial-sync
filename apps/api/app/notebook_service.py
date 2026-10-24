@@ -1,52 +1,18 @@
 """Link real evaluator receipts to public Lab Notebooks without exporting private suites."""
 
-import hashlib
 import threading
 from copy import deepcopy
 
 from apps.api.app.evaluation_views import public_episode
+from packages.info.evaluation_identity import comparison_identity, implementation_identities
 from packages.info.plans import PlanError
-from packages.library.common import REPO_ROOT, LibraryError
+from packages.library.common import LibraryError
 from packages.training.loop_budgets import goal_id, plan_budget
 from packages.training.notebook_contract import NotebookEntry
 from packages.training.notebook_rules import RULE_VERSION, judge_hypothesis, remaining_gap_reduction
 from packages.training.notebooks import LabNotebooks
 
 TERMINAL = {"completed", "failed", "cancelled"}
-
-
-def code_digest(paths):
-    digest = hashlib.sha256()
-    for name in paths:
-        root = REPO_ROOT / name
-        if not root.exists():
-            raise FileNotFoundError("Required public implementation input is unavailable")
-        files = [root] if root.is_file() else sorted(root.rglob("*"))
-        files = [
-            path for path in files if path.is_file() and path.suffix in (".py", ".yaml", ".yml", ".lock")
-        ]
-        if not files:
-            raise FileNotFoundError("Required public implementation input is empty")
-        for path in files:
-            if path.is_file() and path.suffix in (".py", ".yaml", ".yml", ".lock"):
-                digest.update(path.relative_to(REPO_ROOT).as_posix().encode() + b"\0")
-                digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
-    return digest.hexdigest()
-
-
-def implementation_identities():
-    # Only public implementation files enter these digests. Suite private bytes
-    # remain in the internal comparison key, never in Notebook/Markdown output.
-    return {
-        "scheme": "public-code-lf-sha256/1",
-        "candidate": code_digest(("packages/programs",)),
-        "environment": code_digest(
-            ("packages/sim_runtime", "apps/api/app/sources", "packages/protocol", "uv.lock")
-        ),
-        "judge": code_digest(
-            ("packages/info", "devices", "apps/api/app/evaluations.py", "apps/api/app/session_manager.py")
-        ),
-    }
 
 
 class NotebookService:
@@ -182,8 +148,10 @@ class NotebookService:
     @staticmethod
     def _comparison_key(record):
         context = record.get("notebookContext")
+        identity = comparison_identity(record)
         if (
             context is None
+            or identity is None
             or record.get("key") is None
             or record.get("notebookExecution") != context["implementations"]
         ):
@@ -191,8 +159,8 @@ class NotebookService:
         return {
             "inputs": context["comparisonInputs"],
             "execution": record["key"],
-            "environment": context["implementations"]["environment"],
-            "judge": context["implementations"]["judge"],
+            "environment": identity["environment"],
+            "judge": identity["judge"],
         }
 
     def _comparison(self, record, result, current_implementations):
@@ -291,14 +259,17 @@ class NotebookService:
                 "plan": context["plan"],
                 "suite": record["suite"],
                 "subject": record["subject"],
-                "candidateVersion": context["implementations"]["candidate"],
+                "candidateVersion": (record.get("candidateIdentity") or {}).get("contentHash")
+                or context["implementations"]["candidate"],
                 "status": record["status"],
                 "at": record["at"],
                 "endedAt": record.get("endedAt"),
                 "score": score,
                 "partialEpisodes": [public_episode(value) for value in record.get("episodes", [])],
                 "attemptedEpisodes": record.get("attemptedEpisodes"),
-                "reportedDecision": result["decision"] if result else None,
+                "reportedDecision": result["decision"]
+                if result and result["decision"] != "reported"
+                else None,
                 "comparison": comparison,
                 "deployment": {"status": deployment.status, "approvalId": deployment.approvalId}
                 if deployment
@@ -349,7 +320,35 @@ class NotebookService:
         self.reconcile()
         if goal not in self.goals():
             raise PlanError("unknown_goal", "Unknown improvement Goal", status=404)
-        return {"goalId": goal, "entries": self.store.list(goal, refuted=refuted)}
+        return {
+            "goalId": goal,
+            "entries": [self.public_entry(entry) for entry in self.store.list(goal, refuted=refuted)],
+        }
+
+    def public_entry(self, entry):
+        """Current comparison evidence is a read projection, separate from historical decisions/audits."""
+        result = deepcopy(entry)
+        record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
+        if record.get("notebookContext") is None:
+            current = entry["comparison"] | {
+                "state": "unknown",
+                "reason": "Complete comparison evidence is unavailable",
+                "conditionsGroup": entry["evaluationId"],
+                "remainingGapReduction": None,
+                "gapReason": "not_comparable",
+            }
+        else:
+            current = self._comparison(
+                record,
+                record.get("result") if record.get("status") == "completed" else None,
+                record.get("notebookExecution"),
+            )
+        if current["state"] not in ("baseline", "comparable"):
+            current.update(referenceEvaluationId=None, referenceScore=None)
+        if current != entry["comparison"]:
+            result["recordedComparison"] = deepcopy(entry["comparison"])
+            result["comparison"] = current
+        return result
 
     def loop(self, goal):
         entries = self.notebook(goal)["entries"]

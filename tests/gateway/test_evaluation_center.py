@@ -38,6 +38,8 @@ def documents():
         "solver": None,
         "target": "/World/Lab/RobotA",
         "bindingHash": "c" * 64,
+        "environment": "controlled-private-environment",
+        "judge": "controlled-private-judge",
     }
     row = {
         "evaluationId": "eval-public",
@@ -45,6 +47,8 @@ def documents():
         "subject": "robot_arm.virtual",
         "version": "d" * 64,
         "key": key,
+        "comparisonIdentity": {"environment": key["environment"], "judge": key["judge"]},
+        "comparisonState": "known",
         "split": "train",
         "successes": 1,
         "episodes": 2,
@@ -97,6 +101,12 @@ def app_for(tmp_path):
 def test_every_public_evaluation_read_keeps_normal_dto_and_excludes_nested_private_inputs(tmp_path):
     expected_row, expected_record = documents()
     row, record = deepcopy(expected_row), deepcopy(expected_record)
+    expected_row.pop("comparisonIdentity")
+    expected_row["key"] = {
+        key: value for key, value in expected_row["key"].items() if key not in ("environment", "judge")
+    }
+    expected_record["key"] = deepcopy(expected_row["key"])
+    expected_record["result"] = deepcopy(expected_row)
     row.update(privateGrading=CANARY, seeds={"test": CANARY}, provenance={"privateTask": CANARY})
     row["key"]["privateConditions"] = {"testSeed": CANARY}
     row["phases"]["grasp"]["when"] = {"equals": CANARY}
@@ -120,6 +130,8 @@ def test_every_public_evaluation_read_keeps_normal_dto_and_excludes_nested_priva
         for value in [listed, score, shown, cancelled]:
             assert CANARY not in json.dumps(value)
             assert "eval-held-out" not in json.dumps(value)
+            assert "controlled-private-environment" not in json.dumps(value)
+            assert "controlled-private-judge" not in json.dumps(value)
         assert set(score) == {"rows"}
         public_row = score["rows"][0]
         assert public_row.pop("conditionsGroup") == "eval-public"
@@ -131,30 +143,56 @@ def test_every_public_evaluation_read_keeps_normal_dto_and_excludes_nested_priva
         assert [case["id"] for case in suite["episodes"]] == ["train-one", "train-two"]
         inventory = client.get("/api/v1/suites").json()
         assert set(inventory) == {"suites"}
-        assert sorted(value["id"] for value in inventory["suites"]) == [
-            SUITE, "suite/lab-ops-basic@1"
-        ]
+        assert sorted(value["id"] for value in inventory["suites"]) == [SUITE, "suite/lab-ops-basic@1"]
         by_id = {value["id"]: value for value in inventory["suites"]}
         assert by_id[SUITE] == suite
-        case_ids = ["centrifuge-two", "pause-reset", "incubator-alert", "correct-rejection", "transfer-tube",
-                    "return-sample", "close-lid-safe", "stop-cycle", "cabinet-blower",
-                    "preserve-high-risk-gate"]
+        case_ids = [
+            "centrifuge-two",
+            "pause-reset",
+            "incubator-alert",
+            "correct-rejection",
+            "transfer-tube",
+            "return-sample",
+            "close-lid-safe",
+            "stop-cycle",
+            "cabinet-blower",
+            "preserve-high-risk-gate",
+        ]
         package = BUILTIN_ROOT / "suites/lab-ops-basic/1"
         expected_agent = {
-            "id": "suite/lab-ops-basic@1", "layer": "agent", "title": "Basic laboratory operations",
-            "contentHash": content_hash(package), "scene": suite["scene"],
-            "sceneContentHash": suite["sceneContentHash"], "source": "synthetic",
-            "target": "agent/lab-operator", "split": "train", "runsPerCase": 3,
-            "cases": [{"id": identifier, "statement": (package / f"statements/{identifier}.md").read_text(
-                encoding="utf-8"
-            )} for identifier in case_ids],
+            "id": "suite/lab-ops-basic@1",
+            "layer": "agent",
+            "title": "Basic laboratory operations",
+            "contentHash": content_hash(package),
+            "scene": suite["scene"],
+            "sceneContentHash": suite["sceneContentHash"],
+            "source": "synthetic",
+            "target": "agent/lab-operator",
+            "split": "train",
+            "runsPerCase": 3,
+            "cases": [
+                {
+                    "id": identifier,
+                    "statement": (package / f"statements/{identifier}.md").read_text(encoding="utf-8"),
+                }
+                for identifier in case_ids
+            ],
             "gradingDimensions": ["finalState", "rejectedHighRisk", "steps", "elapsed", "planFirst"],
         }
         assert by_id[expected_agent["id"]] == expected_agent
         assert client.get("/api/v1/suites/lab-ops-basic/1").json() == expected_agent
-        assert all(value not in json.dumps(inventory) for value in [
-            CANARY, "held-out-safe-sensor", "grading/", "private/", '"weight"', '"when"', '"threshold"'
-        ])
+        assert all(
+            value not in json.dumps(inventory)
+            for value in [
+                CANARY,
+                "held-out-safe-sensor",
+                "grading/",
+                "private/",
+                '"weight"',
+                '"when"',
+                '"threshold"',
+            ]
+        )
         assert all(value not in json.dumps(suite) for value in ["held-out-example", "4101", "4102", "9101"])
         for method, suffix in [("get", ""), ("post", "/cancel"), ("post", "/cleanup")]:
             response = getattr(client, method)("/api/v1/evaluations/eval-held-out" + suffix)
@@ -171,7 +209,7 @@ def test_every_public_evaluation_read_keeps_normal_dto_and_excludes_nested_priva
 
 def test_scoreboard_comparison_requires_both_public_same_suite_ids_and_the_entire_key(tmp_path):
     first, _ = documents()
-    second = deepcopy(first) | {"evaluationId": "eval-second", "score": 0.75}
+    second = deepcopy(first) | {"evaluationId": "eval-second", "score": 0.75, "subject": "policy/candidate@1"}
     different = deepcopy(first) | {"evaluationId": "eval-different"}
     different["key"]["bindingHash"] = "e" * 64
     hidden_condition = deepcopy(first) | {"evaluationId": "eval-private-condition"}

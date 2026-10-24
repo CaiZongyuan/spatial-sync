@@ -80,10 +80,10 @@ test('condition fixture with identical public tags keeps separate curves and sur
   const suite = await (await request.get(`${api}/api/v1/suites/lab-demo-pick-place/1`)).json();
   const key = { suite: suite.id, scene: suite.scene, source: suite.source, target: suite.target };
   const baseline = { evaluationId: 'fixture-baseline', suite: suite.id, subject: 'robot_arm.virtual', version: 'fixture-runtime-a',
-    key, conditionsGroup: 'fixture-baseline', split: 'train', successes: 1, episodes: 2, score: .5, ci95: [.09, .91],
+    key, conditionsGroup: 'fixture-baseline', comparisonState: 'known', split: 'train', successes: 1, episodes: 2, score: .5, ci95: [.09, .91],
     decision: 'baseline', reference: null, phases: { grasp: { passed: 1, episodes: 2, rate: .5 }, place: { passed: 1, episodes: 2, rate: .5 } },
     recordings: [], durationSeconds: 4, at: '2026-10-23T00:00:00Z' };
-  const candidate = { ...baseline, evaluationId: 'fixture-candidate', version: 'fixture-runtime-b', score: 1, successes: 2,
+  const candidate = { ...baseline, evaluationId: 'fixture-candidate', subject: 'policy/fixture@1', version: 'fixture-runtime-b', score: 1, successes: 2,
     decision: 'rejected', reference: 'fixture-baseline', at: '2026-10-23T00:01:00Z' };
   const different = { ...baseline, evaluationId: 'fixture-other-conditions', conditionsGroup: 'fixture-other-conditions', at: '2026-10-23T00:02:00Z' };
   const rows = [baseline, candidate, different];
@@ -99,6 +99,8 @@ test('condition fixture with identical public tags keeps separate curves and sur
   await page.goto('/eval/lab-demo-pick-place@1');
   await expect(page.locator('.eval-chart-line')).toHaveCount(2);
   await expect(page.locator('.eval-curves figure').first().locator('circle')).toHaveCount(2);
+  await expect(page.locator('.eval-curves figure').first().locator('figcaption')).toContainText(candidate.subject);
+  await expect(page.locator('.eval-curves circle title').filter({ hasText: candidate.evaluationId })).toContainText(candidate.subject);
   await expect(page.locator('[data-evaluation-id="fixture-candidate"]')).not.toContainText('当前参照');
   await expect(page.locator('[data-evaluation-id="fixture-baseline"]')).toContainText('当前参照');
   await page.getByRole('combobox', { name: '比较候选', exact: true }).selectOption('fixture-other-conditions');
@@ -133,6 +135,35 @@ test('failed public read can retry and an Agent Suite without runs stays readabl
   await expect(page.getByRole('heading', { name: '角色与可见性', exact: true })).toBeVisible();
   await expect(page.getByTestId('held-out-test-row')).toContainText('锁定');
   expect(errors).toEqual([]);
+});
+
+test('controlled invalid attempt stays visible without a score and legacy conditions stay unknown', async ({ page, request }) => {
+  const suite = await (await request.get(`${api}/api/v1/suites/lab-demo-pick-place/1`)).json();
+  const legacy = { evaluationId: 'fixture-legacy', suite: suite.id, subject: 'robot_arm.virtual', version: 'old-code',
+    key: { scene: suite.scene, source: suite.source }, conditionsGroup: 'fixture-legacy', comparisonState: 'unknown',
+    split: 'train', successes: 1, episodes: 2, score: .5, ci95: [.09, .91], decision: 'baseline', reference: null,
+    phases: {}, recordings: [], durationSeconds: 4, at: '2026-10-23T00:00:00Z' };
+  const invalid = { evaluationId: 'fixture-invalid', suite: suite.id, subject: legacy.subject, status: 'failed',
+    at: '2026-10-23T00:01:00Z', attemptedEpisodes: 1, error: { code: 'evaluation_observation_gap' }, episodes: [{
+      caseId: 'train-one', status: 'invalid', reason: 'evaluation_observation_gap', milestones: { grasp: true },
+      recordingId: 'fixture-partial-recording', invocationId: 'fixture-invocation', cleanupComplete: false,
+    }] };
+  await page.route('**/api/v1/evaluations', route => route.fulfill({ json: { evaluations: [
+    { evaluationId: legacy.evaluationId, suite: suite.id, subject: legacy.subject, status: 'completed', at: legacy.at, episodes: [], result: legacy }, invalid,
+  ] } }));
+  await page.route('**/api/v1/suites/lab-demo-pick-place/1/scoreboard', route => route.fulfill({ json: { rows: [legacy] } }));
+  await page.goto('/eval/lab-demo-pick-place@1');
+  await expect(page.locator('[data-evaluation-id="fixture-legacy"]')).not.toContainText('当前参照');
+  await expect(page.locator('.eval-curves figcaption')).toContainText('条件未知');
+  await expect(page.getByRole('region', { name: '可比较条件', exact: true })).toContainText('比较证据未知');
+  await page.getByLabel('评估明细', { exact: true }).selectOption(invalid.evaluationId);
+  const attempt = page.getByRole('table', { name: '评估回合', exact: true }).getByRole('row').filter({ hasText: 'train-one' });
+  await expect(attempt.getByRole('cell', { name: '实验无效', exact: false })).toContainText('evaluation_observation_gap');
+  await expect(attempt).toContainText('通过');
+  await expect(attempt).toContainText('未确认');
+  await expect(attempt.getByRole('link', { name: '查看回放 ↗' })).toHaveAttribute('href', '/replay/fixture-partial-recording');
+  await expect(page.locator('[data-evaluation-id="fixture-invalid"]')).toHaveCount(0);
+  await expect(page.locator('.eval-selected-id')).toHaveCount(0);
 });
 
 test('partial failure cancels deferred peers before polling and navigation aborts the pending batch', async ({ page }) => {
