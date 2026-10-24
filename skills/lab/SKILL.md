@@ -45,6 +45,8 @@ logs and model context.
    inspect completeness and validation, or revalidate an immutable version.
 5. Use [lab-training-plan](../lab-training-plan/SKILL.md) to interview a person,
    snapshot a Task and submit measurable hypotheses for human approval.
+6. Use [lab-runtime-records](../lab-runtime-records/SKILL.md) to import an existing
+   runtime capture, refresh its records and inspect reported usage and evidence.
 
 The following workflows are planned, not included in this release. Check the
 shipped skill list before using a newer workflow; report unavailable capabilities
@@ -64,6 +66,7 @@ using the acceptance rule and human gates. Agent-layer changes vary the Harness
 while model and thinking stay fixed. Embodied changes vary the Controller while
 the Embodiment and scene version stay fixed.
 
-Formal evaluation runners, training execution, promotion and budget workflows are not
-available in this release. An observed action outcome is operational evidence,
-not a fabricated evaluation score or a claim that an RSI milestone completed.
+Full Agent evaluations and automatic Harness optimization remain later workflows.
+Use the shipped interfaces for embodied evaluation and approved training. Imported
+runtime messages are operational evidence; platform evaluation results and human
+approval decisions retain their own trusted sources.

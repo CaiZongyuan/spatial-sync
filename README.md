@@ -70,10 +70,15 @@ that exact version into its connected workspace.
 embodied suite for comparable conditions, the confidence scoreboard,
 separate curves for each condition group, stage observations and episode replays.
 The Agent suite exposes ten public laboratory task statements and its fixed
-environment; Agent runs, scores and formal baseline are still unavailable.
+environment; full Agent evaluations, scores and formal baseline are still unavailable.
 The held-out test row stays locked. Registered Controller versions and training
 costs are not yet available. See [evaluations](docs/EVALUATIONS.md) and
 [Agent Harness versions](docs/AGENT_HARNESS.md).
+**Runtime records** (`/runtime-sessions`) imports existing Claude Code captures,
+shows their messages, tool events and reported usage, and links normalized
+evidence to the cost dashboard. Import an explicitly chosen file with
+`lw runtime import <capture.jsonl> --json`; the platform does not start a runtime.
+See [runtime records](docs/AGENT_HARNESS.md#import-existing-runtime-records).
 **Resources · Compute** (`/resources/gpu`) shows host resources and
 managed Newton backends. These pages refresh every two seconds. **Recordings**
 (`/recordings`) links to read-only replay at `/replay/{id}`.

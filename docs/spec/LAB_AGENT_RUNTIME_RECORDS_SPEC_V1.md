@@ -89,6 +89,7 @@ and are fixed in their first vertical slice before expanding the UI.
 - Bounded simplification, non-author Standards/Spec, mandatory repository checks,
   exact final-head CI, current-main green and integrated-tree verification apply.
 
-Implementation starts from current main26ef in new linked worktrees. Preserve
-backend5cdf48c/client5eccbfc branches and all earlier raw receipts. #18 stays
-paused; user HTML, services5192/5193 and shared #94 remain untouched.
+The first supported implementation accepts Claude Code native stream JSONL and
+session JSONL. pi remains unsupported until a native importer is delivered.
+The reusable import/readback workflow is documented in
+[Agent Harness and runtime records](../AGENT_HARNESS.md#import-existing-runtime-records).
