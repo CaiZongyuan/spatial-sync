@@ -1,0 +1,10 @@
+id: environment/cardboard-box
+kind: environment
+title: Cardboard box acquisition fixture
+description: Deterministic local package staged by the SF2 fixture runner; no third-party bytes.
+stage: asset.usda
+dimensionsM: [0.7, 0.52, 0.51]
+dressing: true
+physics:
+  massKg: 1.2
+  collision: authored

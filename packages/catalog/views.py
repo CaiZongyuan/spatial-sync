@@ -120,6 +120,7 @@ def _base_document(entry, local_assets):
         "ref": entry.ref,
         "provider": entry.provider,
         "packageId": entry.package_id,
+        "localAssetId": entry.local_asset_id,
         "revision": entry.revision,
         "kind": entry.kind,
         "title": entry.names["en"],
@@ -264,7 +265,8 @@ def estimate_document(catalog, entry, local_assets):
         "cache": {
             "reusedBytes": None,
             "known": False,
-            "reason": "Raw cache is not implemented before SF2.",
+            "reason": "The read-only catalog estimate does not inspect the raw cache; "
+            "the acquisition preflight reports reuse.",
         },
         "transfer": {"upperBoundBytes": source_bytes},
         "temporary": {"upperBoundBytes": source_bytes},

@@ -8,6 +8,7 @@
   "entries": [
     {
       "packageId": "box_cardboard_a01",
+      "localAssetId": "environment/cardboard-box",
       "kind": "environment",
       "source": {
         "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/box_cardboard_a01",
@@ -140,6 +141,7 @@
     },
     {
       "packageId": "bucket_utility_gray_a01",
+      "localAssetId": "environment/utility-bucket",
       "kind": "environment",
       "source": {
         "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/bucket_utility_gray_a01",
@@ -269,6 +271,7 @@
     },
     {
       "packageId": "container_recycle_square_blue_a02",
+      "localAssetId": "environment/recycle-container",
       "kind": "environment",
       "source": {
         "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/container_recycle_square_blue_a02",
@@ -398,6 +401,7 @@
     },
     {
       "packageId": "equipment_utility_cart_e01",
+      "localAssetId": "environment/utility-cart",
       "kind": "environment",
       "source": {
         "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/equipment_utility_cart_e01",
@@ -523,6 +527,7 @@
     },
     {
       "packageId": "desk_a01",
+      "localAssetId": "environment/desk",
       "kind": "environment",
       "source": {
         "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/desk_a01",

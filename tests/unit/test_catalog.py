@@ -175,6 +175,7 @@ def test_catalog_facts_match_factory_support_and_committed_bytes():
         entry = value.by_package[source["package"]]
         assert entry.revision == source["revision"] == REVISION
         assert entry.kind == "environment"
+        assert entry.local_asset_id == source["plannedLocalAssetId"]
         assert entry.source.url == source["source"]["url"]
         assert entry.source.files == source["source"]["files"]
         assert entry.source.bytes == source["source"]["bytes"]
@@ -766,6 +767,7 @@ def test_describe_summary_full_digest_and_unknown_entry():
     assert summary["view"] == "summary"
     assert serialized_size(summary) <= 8192
     assert summary["names"] == {"en": "Cardboard box", "zh": "纸箱"}
+    assert summary["localAssetId"] == "environment/cardboard-box"
     assert summary["aliases"]["zh"] == ["瓦楞纸箱", "纸盒", "包装箱"]
     assert summary["installed"] == {"versions": [], "latest": None, "truncated": False}
     assert summary["unknown"] == []
@@ -775,6 +777,7 @@ def test_describe_summary_full_digest_and_unknown_entry():
     full = value.describe("simready", entry.package_id, REVISION, view="full",
                           document_digest=summary["documentDigest"])
     assert full["view"] == "full"
+    assert full["localAssetId"] == "environment/cardboard-box"
     assert serialized_size(full) <= 32768
     assert full["documentDigest"] == summary["documentDigest"]
     digest_input = {key: item for key, item in full.items()
@@ -889,7 +892,8 @@ def test_estimate_reports_budgets_cache_and_special_cases():
     assert box["temporary"] == {"upperBoundBytes": 21530693}
     assert box["cache"] == {
         "reusedBytes": None, "known": False,
-        "reason": "Raw cache is not implemented before SF2.",
+        "reason": "The read-only catalog estimate does not inspect the raw cache; "
+        "the acquisition preflight reports reuse.",
     }
     assert box["adaptedPackage"] == {
         "bytes": 19085294, "upperBoundBytes": 19085294, "known": True,

@@ -24,6 +24,9 @@ SNAPSHOT_PREFIX = "sha256:"
 REVISION = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9_.-]*")
+LOCAL_ASSET_ID = re.compile(
+    r"(?:robot|device|labware|environment)/[a-z0-9]+(?:-[a-z0-9]+)*"
+)
 USAGE_NAMES = ("dressing", "staticCollision")
 ADAPTATION_STATUSES = ("pass", "gap")
 LIMIT_KEYS = (
@@ -235,6 +238,7 @@ class CatalogEntry:
     provider: str
     revision: str
     package_id: str
+    local_asset_id: str
     kind: str
     source: Source
     names: dict
@@ -440,6 +444,9 @@ def _entry(value, provider, revision):
     package_id = _string(data.get("packageId"), "entries[].packageId", maximum=200)
     if not PACKAGE.fullmatch(package_id):
         raise CatalogFormatError(f"Invalid package ID: {package_id}")
+    local_asset_id = _string(data.get("localAssetId"), "entries[].localAssetId", maximum=200)
+    if not LOCAL_ASSET_ID.fullmatch(local_asset_id):
+        raise CatalogFormatError(f"Invalid local asset ID: {local_asset_id}")
     kind = _string(data.get("kind"), "entries[].kind", maximum=50)
     if kind not in KINDS:
         raise CatalogFormatError(f"Unknown entry kind: {kind}")
@@ -447,6 +454,7 @@ def _entry(value, provider, revision):
         provider=provider,
         revision=revision,
         package_id=package_id,
+        local_asset_id=local_asset_id,
         kind=kind,
         source=_source(data.get("source")),
         names=_bilingual(data.get("names"), "names", maximum=100_000),

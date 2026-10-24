@@ -143,6 +143,7 @@ export interface CatalogEntryDocument {
   provider: string;
   packageId: string;
   revision: string;
+  localAssetId: string;
   kind: string;
   title: string;
   names: { en: string; zh: string };
