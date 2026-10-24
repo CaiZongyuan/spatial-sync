@@ -2,9 +2,12 @@
 
 import asyncio
 import copy
+import hashlib
+import io
 import json
 import os
 import subprocess
+import tarfile
 
 import httpx
 from cli_support import LW, ROOT, TOOLS, result
@@ -16,6 +19,44 @@ ENTRY_ROUTE = (
     "524747d9b5e1f21b5b18b56041788c01d745f1a1"
 )
 UNKNOWN_ID = "simready/missing_package@" + "0" * 40
+
+
+def upload_correlated_box(http):
+    stage = (
+        b'#usda 1.0\n(defaultPrim = "Asset"\n upAxis = "Z"\n metersPerUnit = 1)\n'
+        b'def Xform "Asset" {}\n'
+    )
+    provenance = {
+        "sourceRevision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "sourcePackage": "box_cardboard_a01",
+        "license": {"name": "CC-BY-4.0"},
+        "files": {"asset.usda": {"sha256": hashlib.sha256(stage).hexdigest(),
+                                 "bytes": len(stage)}},
+    }
+    files = {
+        "asset.yaml": (
+            b"id: environment/cli-box\nkind: environment\ntitle: CLI box\n"
+            b"stage: asset.usda\ndimensionsM: [0.699435, 0.521152, 0.509927]\n"
+        ),
+        "asset.usda": stage,
+        "LICENSE.txt": b"CC-BY-4.0\n",
+        "provenance.json": json.dumps(provenance).encode(),
+    }
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as archive:
+        for name, content in files.items():
+            entry = tarfile.TarInfo(name)
+            entry.size = len(content)
+            archive.addfile(entry, io.BytesIO(content))
+    response = http.post(
+        "/api/v1/library/imports",
+        content=output.getvalue(),
+        headers={"Content-Type": "application/x-tar"},
+    )
+    assert response.status_code == 200, response.text
+    job = response.json()
+    assert job["assetVersion"] == "environment/cli-box@1"
+    return job
 
 
 def client_environment(gateway_url):
@@ -63,6 +104,13 @@ async def test_catalog_search_show_estimate_pages_errors_and_local_shape(gateway
     environment = client_environment(gateway_url)
     transport = StdioServerParameters(command=str(LW), args=["mcp"], env=environment)
     with httpx.Client(base_url=gateway_url, trust_env=False, timeout=20) as http:
+        upload_correlated_box(http)
+        for installed, present in ((True, True), (False, False)):
+            document = http.get(
+                "/api/v1/library/search",
+                params={"q": "box", "scope": "online", "installed": installed},
+            ).json()
+            assert (CATALOG_ID in {item["id"] for item in document["results"]}) is present
         async with Client(transport, mode="legacy") as mcp:
             assert {tool.name for tool in (await mcp.list_tools()).tools} == TOOLS
 
@@ -259,3 +307,15 @@ async def test_catalog_search_show_estimate_pages_errors_and_local_shape(gateway
             mcp_missing_document = mcp_error(mcp_missing)
             assert mcp_missing_document["error"]["statusCode"] == 404
             assert error_code(mcp_missing_document) == "unknown_catalog_entry"
+
+            conflict = await cli_async(
+                environment, "catalog", "search", "-q", "box",
+                "--installed", "--not-installed", code=1,
+            )
+            assert conflict["error"]["statusCode"] == 400
+            assert error_code(conflict) == "invalid_filter"
+            mcp_conflict = await mcp.call_tool(
+                "catalog_search", {"query": "box", "installed": True, "notInstalled": True}
+            )
+            assert mcp_conflict.is_error
+            assert "invalid_filter" in mcp_conflict.content[0].text

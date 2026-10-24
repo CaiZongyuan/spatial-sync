@@ -38,22 +38,22 @@ def installed_document(local_assets, limit=3):
         usage = local_usage(item)
         license_document = local_license(item)
         versions.append({
-            "id": item.version.id,
-            "contentHash": item.version.content_hash,
+            "id": clip(item.version.id, 200),
+            "contentHash": clip(item.version.content_hash, 128),
             "usage": {
                 "dressing": usage["dressing"],
                 "staticCollision": usage["staticCollision"],
             },
             "license": {
-                "name": license_document["name"],
+                "name": clip(license_document["name"], 200),
                 "admitted": license_document["admitted"],
                 "unknown": license_document["unknown"],
             },
-            "unknown": local_unknown(item),
+            "unknown": clip_list(local_unknown(item), 8, 80),
         })
     return {
         "versions": versions,
-        "latest": ordered[0].version.id if ordered else None,
+        "latest": clip(ordered[0].version.id, 200) if ordered else None,
         "truncated": len(selected) < len(ordered),
     }
 
@@ -166,6 +166,11 @@ def _bound(document, maximum):
             values.pop()
     while value["evidence"]["licenseAttachments"] and serialized_size(value) > maximum:
         value["evidence"]["licenseAttachments"].pop()
+    installed = value.get("installed")
+    if isinstance(installed, dict):
+        while installed.get("versions") and serialized_size(value) > maximum:
+            installed["versions"].pop()
+            installed["truncated"] = True
     for language in ("zh", "en"):
         while value["aliases"][language] and serialized_size(value) > maximum:
             value["aliases"][language].pop()

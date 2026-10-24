@@ -809,6 +809,63 @@ def test_maximal_valid_entry_describe_stays_bounded(tmp_path):
     assert full.get("previewTruncated") is True
 
 
+def test_describe_with_many_installed_versions_stays_bounded(tmp_path):
+    versions = []
+    for revision in range(1, 21):
+        version = make_version(
+            tmp_path, f"box-{revision:02d}", revision,
+            provenance={
+                "sourceRevision": REVISION,
+                "sourcePackage": "box_cardboard_a01",
+                "license": {"name": "CC-BY-4.0"},
+            },
+        )
+        (version.path / "LICENSE.txt").write_text("CC-BY-4.0", encoding="utf-8")
+        versions.append(version)
+    value = catalog()
+    summary = value.describe(
+        "simready", "box_cardboard_a01", REVISION, library=FakeLibrary(versions)
+    )
+    full = value.describe(
+        "simready", "box_cardboard_a01", REVISION, library=FakeLibrary(versions), view="full"
+    )
+    assert canonical_bytes(summary) <= 8192
+    assert canonical_bytes(full) <= 32768
+    assert summary["installed"]["truncated"] is True
+    assert summary["previewTruncated"] is True
+    assert len(summary["installed"]["versions"]) < 20
+
+
+def test_describe_clips_a_huge_installed_license_name(tmp_path):
+    version = make_version(
+        tmp_path, "huge-license", 1,
+        provenance={
+            "sourceRevision": REVISION,
+            "sourcePackage": "box_cardboard_a01",
+            "license": {"name": "L" * 50_000},
+        },
+    )
+    (version.path / "LICENSE.txt").write_text("fixture", encoding="utf-8")
+    value = catalog()
+    full = value.describe(
+        "simready", "box_cardboard_a01", REVISION,
+        library=FakeLibrary([version]), view="full",
+    )
+    assert canonical_bytes(full) <= 32768
+    assert len(full["installed"]["versions"][0]["license"]["name"]) <= 200
+
+
+def test_zero_result_with_long_coverage_terminates_within_budget(tmp_path):
+    data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    data["coverage"] = "C" * 10_000
+    path = tmp_path / "long-coverage.json"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    value = catalog(path)
+    result = value.search(EmptyLibrary(), q="9" * 40_000 + "m", scope="online")
+    assert canonical_bytes(result) <= 32768
+    assert result["zeroResult"] is not None
+
+
 def test_cart_describe_exposes_unknowns_and_gap():
     value = catalog()
     full = value.describe("simready", "equipment_utility_cart_e01", REVISION, view="full")

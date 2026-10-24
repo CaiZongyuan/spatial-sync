@@ -97,16 +97,18 @@ def local_license(local):
     if not name:
         return {"name": None, "admitted": False, "unknown": True, "obligations": []}
     obligations = value.get("obligations", []) if isinstance(value, dict) else []
-    evidence = (
-        any(value.get(key) for key in ("file", "sha256", "evidence"))
-        if isinstance(value, dict) else False
-    )
-    if not evidence:
-        version_path = getattr(local.version, "path", None)
-        evidence = bool(version_path) and any(
-            (version_path / filename).is_file()
+    version_path = getattr(local.version, "path", None)
+    evidence = False
+    if version_path:
+        root = Path(version_path).resolve()
+        evidence = any(
+            (root / filename).is_file()
             for filename in ("LICENSE", "LICENSE.txt", "LICENSE.md", "NOTICE")
         )
+        declared = value.get("file") if isinstance(value, dict) else None
+        if not evidence and isinstance(declared, str):
+            candidate = (root / declared).resolve()
+            evidence = candidate.is_relative_to(root) and candidate.is_file()
     if not evidence:
         return {"name": name, "admitted": False, "unknown": True, "obligations": []}
     admitted = value.get("admitted") if isinstance(value, dict) else None

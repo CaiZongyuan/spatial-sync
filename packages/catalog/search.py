@@ -596,7 +596,9 @@ def _fits(response):
 def _shrink(response):
     """Last-resort identity trimming for adversarial query text or coverage."""
     response["counts"]["budgetTruncated"] = True
-    while serialized_size(response) > MAX_BYTES:
+    for _ in range(1000):
+        if serialized_size(response) <= MAX_BYTES:
+            return
         if response["interpretedQuery"]["notes"]:
             response["interpretedQuery"]["notes"].pop()
         elif response["interpretedQuery"]["keywords"]:
@@ -617,7 +619,8 @@ def _shrink(response):
             else:
                 response["interpretedQuery"]["exact"] = None
         elif response["snapshot"]["coverage"]:
-            response["snapshot"]["coverage"] = clip(response["snapshot"]["coverage"], 200)
+            coverage = response["snapshot"]["coverage"]
+            response["snapshot"]["coverage"] = clip(coverage, 200) if len(coverage) > 200 else ""
         elif response["zeroResult"] and response["zeroResult"]["messages"]:
             response["zeroResult"]["messages"].pop()
         elif response["zeroResult"] and response["zeroResult"]["suggestions"]:
@@ -663,6 +666,8 @@ def _zero_document(scope, interpreted, filters, snapshot, reason, messages, excl
             "excludedBy": [],
             "suggestions": [],
         }
+        document["counts"]["budgetTruncated"] = True
+    if reason == "response_budget":
         document["counts"]["budgetTruncated"] = True
     return document
 

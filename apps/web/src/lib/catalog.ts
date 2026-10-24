@@ -174,6 +174,7 @@ export interface CatalogEntryDocument {
   unknown: string[];
   evidence: Record<string, unknown>;
   preview: CatalogPreview;
+  previewTruncated?: boolean;
   estimate: { resource: string; id: string; tool: string; path: string };
 }
 

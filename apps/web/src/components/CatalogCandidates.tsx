@@ -164,6 +164,7 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
       <div><h2>候选详情与估算</h2><p>{candidate.names.zh ?? candidate.title} · {candidate.names.en ?? ''} <code>{candidate.ref}</code></p></div>
       <button onClick={onClose}>关闭详情</button>
     </header>
+    {entry?.previewTruncated && <p className="asset-small-note">部分长证据列表已按响应预算裁剪；不表示来源没有更多条目。</p>}
     {state.loading ? <p className="asset-empty" role="status">正在读取目录详情与估算…</p>
       : state.error ? <div className="asset-empty" role="alert">{state.error}</div>
         : entry && estimate ? <div className="catalog-detail-grid">

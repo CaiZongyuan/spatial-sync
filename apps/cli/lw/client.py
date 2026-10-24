@@ -177,7 +177,11 @@ class GatewayClient:
                              maxDimensionM=None, approximate=False, sort="relevance", limit=10,
                              cursor=None):
         if installed and notInstalled:
-            raise ValueError("installed and notInstalled are mutually exclusive")
+            raise GatewayError(
+                "installed and notInstalled are mutually exclusive",
+                status_code=400,
+                detail={"code": "invalid_filter"},
+            )
         installed_filter = True if installed else False if notInstalled else None
         params = {name: value for name, value in {
             "q": query,
