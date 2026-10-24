@@ -3,12 +3,13 @@ import { useContext } from 'react';
 import { ApprovalInboxContext } from '../lib/approvals';
 import type { JobStatus } from '../lib/jobs';
 import { usePlansList } from '../lib/plans/hooks';
-import type { EmbodiedTrainingPlanDocument } from '../lib/training';
+import type { AgentTrainingPlanDocument, EmbodiedTrainingPlanDocument } from '../lib/training';
 import { elapsed, jobReason, jobStatusLabels, numberOrUnknown, percentage } from '../lib/training-presentation';
 import { useTrainingResources } from '../lib/use-training-resources';
 import { ApprovalCard } from './ApprovalsPage';
 import { ComputeNodes } from './ComputeNodes';
 import { GoalNotebookPanel } from './training/GoalNotebookPanel';
+import { AgentRunsPanel } from './training/AgentRunsPanel';
 import '../resources.css';
 import '../training-resources.css';
 
@@ -24,10 +25,11 @@ function TrainingStages() {
 }
 
 export function TrainPage() {
-  const resources = useTrainingResources();
+  const search = useSearch({ from: '/train' }), navigate = useNavigate({ from: '/train' });
+  const agentLayer = search.layer === 'agent';
+  const resources = useTrainingResources(!agentLayer);
   const plans = usePlansList();
   const approvals = useContext(ApprovalInboxContext);
-  const search = useSearch({ from: '/train' }), navigate = useNavigate({ from: '/train' });
   const router = useRouter();
   const changeGoal = (goal: string) => {
     // Discovery may settle after navigation; the current route owns the URL.
@@ -39,13 +41,16 @@ export function TrainPage() {
     && `${job.jobId} ${job.task} ${job.planId}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.createdAt - a.createdAt);
   const trainingPlans = plans.plans?.filter((plan): plan is EmbodiedTrainingPlanDocument => plan.kind === 'training' && plan.layer !== 'agent');
+  const agentPlans = plans.plans?.filter((plan): plan is AgentTrainingPlanDocument => plan.kind === 'training' && plan.layer === 'agent');
   const pending = approvals.inbox?.approvals.filter(record => record.subject === 'plan'
-    && record.status === 'pending' && record.details.plan?.kind === 'training');
+    && record.status === 'pending' && record.details.plan?.kind === 'training' && record.details.plan.layer !== 'agent');
   return <main className="training-page" data-testid="training-page"><header className="training-heading">
     <div><span className="eyebrow">LAB TRAINING</span><h1>训练</h1><p>从已批准的计划跟进作业、资源与结果。</p></div>
-    <div className="training-layer"><span aria-current="page">具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</span>
-      <button disabled title="Agent 层作业尚未接入">Agent 层 · 尚未接入</button></div>
-  </header><TrainingStages />
+    <div className="training-layer" role="group" aria-label="训练层"><button aria-pressed={!agentLayer} onClick={() => void navigate({ search: current => ({ ...current, layer: undefined }), hash: true })}>具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</button>
+      <button aria-pressed={agentLayer} onClick={() => void navigate({ search: current => ({ ...current, layer: 'agent' }), hash: true })}>Agent 运行</button></div>
+  </header>{agentLayer ? <AgentRunsPanel plans={agentPlans} query={query} status={status}
+    onQuery={q => void navigate({ search: current => ({ ...current, q: q || undefined }), hash: true })}
+    onStatus={status => void navigate({ search: current => ({ ...current, status }), hash: true })} /> : <><TrainingStages />
     <GoalNotebookPanel goal={search.goal} onGoalChange={changeGoal} />
     <section className="training-job-section resource-panel" id="jobs" aria-label="训练作业">
       <header><div><h2>训练作业</h2><span className="resource-tag">{resources.jobs?.length ?? '—'} 个作业</span>
@@ -99,5 +104,5 @@ export function TrainPage() {
     <section className="resource-panel training-unavailable" id="policies" aria-labelledby="training-policies-title"><div className="resource-panel-body">
       <h2 id="training-policies-title">策略提升尚未接入</h2><p>实验记录与 RSI 成绩已在本页展示。策略创建、运行与部署提升将在对应流程上线后显示。</p>
       <Link to="/eval">查看评估中心 →</Link></div></section>
-  </main>;
+  </>}</main>;
 }

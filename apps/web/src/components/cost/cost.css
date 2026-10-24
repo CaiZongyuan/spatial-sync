@@ -22,6 +22,7 @@
 .cost-summary-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 14px; margin: 0; }
 .cost-summary-card dt { font-size: 10px; color: var(--muted); }
 .cost-summary-card dd { margin: 7px 0 0; font: 400 18px var(--mono); overflow-wrap: anywhere; }
+.cost-summary-card dd small { display: block; margin-top: 6px; font: 10px/1.5 var(--sans); color: var(--muted); }
 .cost-charts-grid, .cost-breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .cost-chart, .cost-breakdown, .cost-anomalies { min-width: 0; }
 .cost-chart > header, .cost-breakdown > header, .cost-anomalies > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
@@ -38,6 +39,18 @@
 .cost-empty-plot small { font-size: 10px; }
 .cost-chart-data { margin-top: 14px; font-size: 11px; color: var(--muted); }
 .cost-chart-data summary { cursor: pointer; }
+.cost-svg-chart { display: block; width: 100%; height: 185px; margin-top: 16px; overflow: visible; }
+.cost-svg-chart text { fill: var(--muted); font: 9px var(--mono); }
+.cost-plot-grid { stroke: var(--line); stroke-width: 1; }
+.cost-series-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 10px; color: var(--muted); }
+.cost-series-legend span { display: inline-flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.cost-series-legend i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.cost-rate-series { border-top: 1px solid var(--line); border-bottom: 1px dashed var(--line); margin-top: 16px; padding-top: 10px; color: var(--muted); font-size: 10px; }
+.cost-rate-series > span { display: flex; justify-content: space-between; }
+.cost-rate-series svg { width: 100%; height: 52px; display: block; }
+.cost-price-area { fill: var(--c1); opacity: .12; }
+.cost-price-line { stroke: var(--c1); stroke-width: 2; }
+.cost-price-point { fill: var(--c1); }
 .cost-table-scroll { overflow: auto; max-height: 320px; max-width: 100%; margin-top: 12px; }
 .cost-table-scroll table { min-width: 600px; width: 100%; border-collapse: collapse; font-size: 11px; }
 .cost-table-scroll th, .cost-table-scroll td { padding: 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; font-weight: 400; }

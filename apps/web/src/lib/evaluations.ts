@@ -1,4 +1,5 @@
 import { request } from './api';
+import type { AgentCaseRun } from './jobs';
 
 interface SuiteMetadata {
   id: string;
@@ -29,7 +30,7 @@ export interface AgentEvaluationSuite extends SuiteMetadata {
 export type EvaluationSuite = EmbodiedEvaluationSuite | AgentEvaluationSuite;
 
 export type EvaluationConditions = Record<string, string | null>;
-export interface EvaluationScore {
+interface ScoreBase {
   evaluationId: string;
   suite: string;
   subject: string;
@@ -37,32 +38,45 @@ export interface EvaluationScore {
   key: EvaluationConditions;
   conditionsGroup?: string;
   split: 'train';
-  successes: number;
-  episodes: number;
   score: number;
-  ci95: [number, number] | null;
-  decision: 'baseline' | 'accepted' | 'rejected';
   reference: string | null;
-  phases: Record<string, { passed: number; episodes: number; rate: number }>;
   recordings: string[];
-  cost?: { gpuHours?: number | null };
+  cost?: { gpuHours?: number | null; llmUsd?: number | null; tokens?: number | null };
   durationSeconds: number;
   at: string;
+  planId?: string; planRevision?: number; goalId?: string;
 }
+export interface EmbodiedEvaluationScore extends ScoreBase {
+  layer?: 'embodied'; successes: number; episodes: number;
+  ci95: [number, number] | null; decision: 'baseline' | 'accepted' | 'rejected';
+  phases: Record<string, { passed: number; episodes: number; rate: number }>;
+}
+export interface AgentEvaluationScore extends ScoreBase {
+  layer: 'agent'; version: number; ci95: null; decision: 'reported';
+  runs: number; caseRuns: number; traces: string[];
+}
+export type EvaluationScore = EmbodiedEvaluationScore | AgentEvaluationScore;
 
-export interface EvaluationRecord {
+interface EvaluationRecordBase {
   evaluationId: string;
   suite: string;
   subject: string;
   split: 'train';
   status: string;
   at: string;
-  runtimeHash: string;
-  episodes: { caseId: string; success: boolean; milestones: Record<string, boolean>;
-    failedStage: string | null; invocationId: string; invocationStatus: string; recordingId: string }[];
+  runtimeHash?: string;
   result?: EvaluationScore;
   error?: { code: string };
 }
+export interface EmbodiedEvaluationRecord extends EvaluationRecordBase {
+  layer?: 'embodied';
+  episodes: { caseId: string; success: boolean; milestones: Record<string, boolean>;
+    failedStage: string | null; invocationId: string; invocationStatus: string; recordingId: string }[];
+}
+export interface AgentEvaluationRecord extends EvaluationRecordBase {
+  layer: 'agent'; jobId: string; allocatedCaseRuns: number; attemptedCaseRuns: number; caseRuns: AgentCaseRun[];
+}
+export type EvaluationRecord = EmbodiedEvaluationRecord | AgentEvaluationRecord;
 
 export function suitePath(id: string) {
   const match = /^suite\/([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)$/.exec(id);
@@ -94,8 +108,8 @@ export const compareEvaluations = (suite: string, compare: string, against: stri
   request<{ comparison: { scoreDelta: number } }>(`${suitePath(suite)}/scoreboard?${new URLSearchParams({ compare, against })}`, { signal });
 
 // A missing server equivalence marker is conservatively a separate curve.
-export function scoreGroups(rows: EvaluationScore[]) {
-  const groups = new Map<string, EvaluationScore[]>();
+export function scoreGroups<T extends EvaluationScore>(rows: T[]) {
+  const groups = new Map<string, T[]>();
   for (const row of rows) {
     const id = JSON.stringify([row.suite, row.subject, row.conditionsGroup ?? row.evaluationId]);
     const group = groups.get(id) ?? [];
@@ -105,8 +119,10 @@ export function scoreGroups(rows: EvaluationScore[]) {
 }
 
 export function currentReference(rows: EvaluationScore[]) {
-  return [...rows].reverse().find(row => row.decision === 'baseline' || row.decision === 'accepted');
+  return [...rows].reverse().find((row): row is EmbodiedEvaluationScore => row.layer !== 'agent' && (row.decision === 'baseline' || row.decision === 'accepted'));
 }
+export const evaluationScoreLabel = (row: EvaluationScore) => row.layer === 'agent'
+  ? `${row.score.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} / 100` : successRate(row.score);
 
 export const successRate = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? '未知' : `${(value * 100).toFixed(1)}%`;

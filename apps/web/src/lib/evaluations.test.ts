@@ -1,13 +1,23 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { compareEvaluations, currentReference, readEvaluationCenter, scoreGroups, suitePath, type EvaluationScore } from './evaluations';
+import { compareEvaluations, currentReference, evaluationScoreLabel, readEvaluationCenter, scoreGroups, suitePath, type EmbodiedEvaluationScore, type AgentEvaluationScore } from './evaluations';
 
 afterEach(() => vi.unstubAllGlobals());
 
-const score = (id: string, conditionsGroup?: string, decision: EvaluationScore['decision'] = 'baseline') => ({
+const score = (id: string, conditionsGroup?: string, decision: EmbodiedEvaluationScore['decision'] = 'baseline') => ({
   evaluationId: id, suite: 'suite/real@1', subject: 'robot_arm.virtual', version: 'runtime', key: { source: 'synthetic' },
   conditionsGroup, split: 'train', score: .5, decision, reference: null, successes: 1, episodes: 2,
   ci95: [.09, .91], durationSeconds: 5, recordings: [], phases: {}, at: '2026-10-23T00:00:00Z',
-} satisfies EvaluationScore);
+} satisfies EmbodiedEvaluationScore);
+
+it('keeps reported Agent points on the 0–100 scale and out of the embodied Reference rule', () => {
+  const reported: AgentEvaluationScore = { layer: 'agent', evaluationId: 'agent-result', suite: 'suite/agent@1',
+    subject: 'agent/lab-operator', version: 1, split: 'train', score: 40, decision: 'reported', reference: null,
+    ci95: null, runs: 3, caseRuns: 30, recordings: [], traces: [], key: { model: 'fixture' },
+    durationSeconds: 2, at: '2026-10-24T00:00:00Z' };
+  expect(evaluationScoreLabel(reported)).toBe('40 / 100');
+  expect(evaluationScoreLabel(score('physical'))).toBe('50.0%');
+  expect(currentReference([reported])).toBeUndefined();
+});
 
 it('keeps complete server condition groups and subjects separate even when public tags are identical', () => {
   const original = score('first', 'first');

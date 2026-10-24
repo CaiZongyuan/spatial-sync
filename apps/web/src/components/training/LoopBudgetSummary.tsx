@@ -10,6 +10,7 @@ const axes: { id: BudgetAxis; label: string; digits: number }[] = [
 export function LoopBudgetSummary({ budget, review = false }: { budget: LoopBudget; review?: boolean }) {
   return <section className="loop-budget" aria-label="目标闭环预算">
     <header><h3>闭环预算</h3><code>{budget.goalId}</code></header>
+    {budget.expired && <p className="loop-budget-warning">目标期限已过，原截止时间保持不变。</p>}
     {review && budget.exhaustedBefore && <p className="loop-budget-warning" role="alert">闭环预算已用尽 · 本次批准仅授权此计划，目标上限保持不变。</p>}
     {review && !budget.exhaustedBefore && budget.exhausted && <p className="loop-budget-warning">本计划将用尽或超出闭环预算。</p>}
     {!review && budget.exhausted && <p className="loop-budget-warning">闭环预算已用尽 · 新计划仍需人工审批。</p>}
@@ -26,6 +27,6 @@ export function LoopBudgetSummary({ budget, review = false }: { budget: LoopBudg
     </div></div>
     {budget.limit == null && <p className="rsi-note">目标上限未知：原批准的预算或固定输入证据不足。计划中的新声明不会替代旧上限。</p>}
     {budget.authority && <p className="rsi-note">原预算来源：{budget.authority.planId} · r{budget.authority.revision}。计划批准不重置目标上限或截止时间。</p>}
-    <p className="rsi-note">用量包含失败与取消的已知消耗；承诺与实际分别展示。{budget.coverage?.llmUsd ?? 'LLM 用量未知。'}</p>
+    <p className="rsi-note">用量包含失败与取消的已知消耗；承诺与实际分别展示。{'llmUsd' in budget.actual ? '受管 Agent 的未确认用量保留未知。' : 'LLM 用量未知。'}</p>
   </section>;
 }

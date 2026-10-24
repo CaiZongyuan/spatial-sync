@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { listJobs, listNodes, type TrainingJob, type TrainingNode } from './jobs';
 
-export function useTrainingResources() {
+export function useTrainingResources(enabled = true) {
   const [data, setData] = useState<{ jobs?: TrainingJob[]; nodes?: TrainingNode[];
     jobsError?: string; nodesError?: string }>({});
   const [retry, setRetry] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     let disposed = false, pending: AbortController | undefined;
     const read = async () => {
       if (pending) return;
@@ -25,6 +26,6 @@ export function useTrainingResources() {
     void read();
     const timer = setInterval(() => void read(), 3000);
     return () => { disposed = true; clearInterval(timer); pending?.abort(); };
-  }, [retry]);
+  }, [retry, enabled]);
   return { ...data, refresh: () => setRetry(value => value + 1) };
 }

@@ -5,3 +5,6 @@
 .agent-run-detail table { width: 100%; border-collapse: collapse; }
 .agent-run-detail th, .agent-run-detail td { text-align: left; padding: .75rem; border-bottom: 1px solid var(--line); }
 .agent-run-start p, .agent-run-detail dd { overflow-wrap: anywhere; }
+.agent-runs-panel td small { display: block; color: var(--muted); }
+.agent-runs-panel table { min-width: 700px; width: 100%; border-collapse: collapse; }
+.agent-runs-panel th, .agent-runs-panel td { text-align: left; padding: .75rem; border-bottom: 1px solid var(--line); }

@@ -16,7 +16,8 @@ async function freePort() {
   });
 }
 
-test('approved Agent Plan starts its exact revision and retry opens public Run evidence', async ({ page, playwright }, info) => {
+for (const scenario of ['complete', 'partial', 'exception'] as const) {
+test(`approved Agent Plan exposes ${scenario} Run, scores and attributed cost`, async ({ page, playwright }, info) => {
   const [apiPort, webPort] = await Promise.all([freePort(), freePort()]);
   const api = `http://127.0.0.1:${apiPort}`, web = `http://127.0.0.1:${webPort}`;
   const python = process.env.SPATIAL_PYTHON ?? resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
@@ -50,9 +51,15 @@ test('approved Agent Plan starts its exact revision and retry opens public Run e
       try { return (await http.get(`${api}/api/v1/health`, { timeout: 500 })).ok() && (await http.get(web, { timeout: 500 })).ok(); }
       catch { return false; }
     }, { timeout: 20_000 }).toBe(true);
-    const seeded = await http.post(`${api}/e2e/agent-plan`);
+    let seeded = await http.post(`${api}/e2e/agent-plan?mode=${scenario === 'exception' ? 'expired' : scenario}`);
     expect(seeded.ok(), await seeded.text()).toBe(true);
-    const plan = await seeded.json();
+    let plan = await seeded.json();
+    if (scenario === 'exception') {
+      expect((await http.post(`${api}/api/v1/approvals/${plan.approvalId}/decision`, { data: { decision: 'approve' } })).ok()).toBe(true);
+      await expect.poll(async () => (await (await http.get(`${api}/api/v1/loops/${plan.goalId}`)).json()).budget.expired).toBe(true);
+      seeded = await http.post(`${api}/e2e/agent-plan?mode=exception`);
+      expect(seeded.ok(), await seeded.text()).toBe(true); plan = await seeded.json();
+    }
     await page.goto(`${web}/approvals`);
     const approval = page.getByTestId(`approval-${plan.approvalId}`);
     await expect(approval).toContainText('Agent 运行计划');
@@ -77,21 +84,63 @@ test('approved Agent Plan starts its exact revision and retry opens public Run e
     await launch.click();
     await expect(page).toHaveURL(/\/train\/jobs\/job-/);
     const detail = page.getByTestId('agent-run-detail');
-    await expect(detail).toContainText('1,050');
-    await expect(detail).toContainText('$0.00105');
-    await expect(detail.getByRole('table', { name: 'Agent 题次结果' }).getByRole('row')).toHaveCount(31);
+    await expect(detail).toContainText(scenario === 'partial' ? 'provider_stream_incomplete' : '1,050');
+    await expect(detail).toContainText(scenario === 'partial' ? '$0.00002' : '$0.00105');
+    const cases = detail.getByRole('table', { name: 'Agent 题次结果' });
+    await expect(cases.getByRole('row')).toHaveCount(scenario === 'partial' ? 2 : 31);
+    if (scenario === 'partial') {
+      await expect(cases).toContainText('未形成有效评分');
+      await expect(cases.getByRole('cell', { name: '0', exact: true })).toHaveCount(0);
+    }
+    if (scenario === 'exception') {
+      await expect(detail).toContainText('本计划获有限例外');
+      await expect(detail).toContainText('目标期限已过');
+      expect((await (await http.get(`${api}/api/v1/loops/${plan.goalId}`)).json()).budget.expired).toBe(true);
+    }
     expect(requests).toHaveLength(2);
     expect(requests[0]).toEqual(requests[1]);
     expect(Object.keys(requests[0]).sort()).toEqual(['planId', 'planRevision', 'requestId', 'split', 'suite', 'version']);
     expect(requests[0]).toMatchObject({ planId: plan.id, planRevision: 1, suite: plan.suite, version: 1, split: 'train' });
     const jobs = (await (await http.get(`${api}/api/v1/jobs?kind=agent-run`)).json()).jobs;
-    expect(jobs).toHaveLength(1); expect(jobs[0].usage.requests).toBe(30);
+    expect(jobs).toHaveLength(1); expect(jobs[0].usage.requests).toBe(scenario === 'partial' ? 1 : 30);
     const evidence = detail.getByRole('link', { name: /受信平台 Trace/ }).first();
     const url = await evidence.getAttribute('href');
     expect(url).toMatch(/^\/api\/v1\/agent-runs\/job-[^/]+\/artifacts\//);
     expect((await (await http.get(api + url)).json()).controlled).toBe(true);
     await page.getByLabel('Color theme').selectOption('dark');
     await page.screenshot({ path: info.outputPath('agent-run-dark.png'), fullPage: true });
+    await detail.getByRole('link', { name: '查看本计划成本', exact: true }).click();
+    await expect(page.getByLabel('成本计划', { exact: true })).toHaveValue(`${plan.id}@1`);
+    await expect(page.getByTestId('cost-selected-tokens')).toContainText(scenario === 'partial' ? '未知' : '1,050');
+    await expect(page.getByTestId('cost-selected-llm')).toContainText(scenario === 'partial' ? '未知' : '$0.00105');
+    const tokens = page.getByTestId('token-cost-chart');
+    await tokens.locator('summary').click();
+    await expect(tokens.getByRole('columnheader', { name: '缓存写入', exact: true })).toBeVisible();
+    if (scenario === 'partial') {
+      await expect(page.getByLabel('当前范围成本摘要')).toContainText('已知部分 $0.00002');
+      await expect(page.getByLabel('当前范围成本摘要')).toContainText('未确认预留 $0.0001');
+      await expect(tokens.getByRole('table', { name: 'Token 数据表' })).toContainText('未知');
+      expect((await tokens.locator('rect[data-coverage="partial"]').count())).toBeGreaterThan(0);
+    } else {
+      for (const amount of ['600', '300', '60', '90']) await expect(tokens.getByRole('cell', { name: amount, exact: true })).toBeVisible();
+    }
+    await page.setViewportSize({ width: 900, height: 1000 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath('agent-cost-dark-900.png'), fullPage: true });
+    await page.goto(`${web}/eval/${plan.suite.replace(/^suite\//, '')}`);
+    if (scenario === 'partial') {
+      await expect(page.getByRole('table', { name: 'Agent 逐题得分' })).toContainText('未形成有效评分');
+      await expect(page.getByRole('table', { name: 'Agent 评估计分板' })).toContainText('尚无 Agent train 运行记录');
+    } else {
+      await expect(page.getByRole('table', { name: 'Agent 评估计分板' })).toContainText('78.67 / 100');
+      await expect(page.getByRole('table', { name: 'Agent 评估计分板' })).toContainText('reported');
+      await expect(page.getByRole('table', { name: 'Agent 逐题得分' }).getByRole('row')).toHaveCount(31);
+    }
+    await expect(page.getByTestId('held-out-test-row')).toContainText('锁定');
+    await page.screenshot({ path: info.outputPath('agent-eval-dark-900.png'), fullPage: true });
+    await page.goto(`${web}/train?layer=agent`);
+    await expect(page.getByRole('table', { name: 'Agent 运行作业表' })).toContainText(jobs[0].jobId);
+    await expect(page.getByTestId('goal-notebook-panel')).toHaveCount(0);
     expect((await (await http.get(`${api}/api/v1/health`)).json()).sessionCount).toBe(0);
     expect(errors).toEqual([]); expect(forbidden).toEqual([]);
     await writeFile(info.outputPath('client-receipt.json'), JSON.stringify({ planId: plan.id, requests,
@@ -105,3 +154,4 @@ test('approved Agent Plan starts its exact revision and retry opens public Run e
     finishCleanup(cleanup, original);
   }
 });
+}

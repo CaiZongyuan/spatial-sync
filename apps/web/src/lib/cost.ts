@@ -9,19 +9,23 @@ export type CostDimension = 'agent' | 'model' | 'node' | 'goal' | 'plan' | 'job'
 export interface CostFilters { range: CostRange; agent?: string; model?: string; node?: string; goal?: string; plan?: string; start?: string; end?: string }
 export interface CostTotals {
   requests: number | null; failures: number | null; tokens: number | null;
-  inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null;
+  inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens?: number | null;
   llmUsd: number | null; successRate: number | null; cacheHitRate: number | null;
   gpuSeconds: number; gpuHours: number; reportedGpuSeconds: number; estimatedGpuSeconds: number;
   historicalGpuSeconds: number; memoryPeakMb: number | null;
   gpuUsd: number | null; knownGpuUsd: number; unpricedGpuSeconds: number;
   priceRevisions: number[]; priceWarnings: string[];
+  knownRequests?: number; knownFailures?: number; knownTokens?: number; knownLlmUsd?: number;
+  knownInputTokens?: number; knownOutputTokens?: number; knownCacheReadTokens?: number; knownCacheWriteTokens?: number;
+  reservedRequests?: number; reservedTokens?: number; reservedLlmUsd?: number;
+  unknownUsageRequests?: number; unknownOutcomeRequests?: number; notForwardedRequests?: number;
 }
 export interface CostWindow { key: string; start: number; end: number; bucketSeconds: number; timezone: 'UTC' }
 export interface CostSummary {
   window: CostWindow; totals: CostTotals; cards: Record<'today' | '7d' | 'all', CostTotals>;
   choices: Record<CostDimension, string[]>; availability: { llm: boolean; reason: string }; pricingPolicy: string;
 }
-export interface CostBucket extends CostTotals { start: number; end: number }
+export interface CostBucket extends CostTotals { start: number; end: number; agents?: (CostTotals & { agent: string })[] }
 export interface CostBreakdown {
   window: CostWindow; by: CostDimension;
   rows: (CostTotals & { key: string | null; label: string; gpuShare: number | null;

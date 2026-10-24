@@ -59,6 +59,7 @@ app = create_app(
     agent_adapter=Adapter(),
 )
 published = {}
+plan_modes = {}
 
 
 async def controlled_evaluation(evaluation_id):
@@ -67,6 +68,7 @@ async def controlled_evaluation(evaluation_id):
     evaluation = deepcopy(manager.evaluations.store.records[evaluation_id])
     identifier = evaluation["jobId"]
     run = service.get(identifier)
+    partial = plan_modes.get(run["planId"]) == "partial"
     service.update(identifier, status="running", startedAt=time.time())
     evaluation.update(status="running")
     manager.evaluations.store.save(evaluation)
@@ -81,7 +83,9 @@ async def controlled_evaluation(evaluation_id):
                 "type": "message",
                 "id": f"client-fixture-{count[0]}",
                 "content": [{"type": "text", "text": "Controlled transport response"}],
-                "usage": {
+                "usage": {"input_tokens": 20}
+                if partial
+                else {
                     "input_tokens": 20,
                     "output_tokens": 10,
                     "cache_read_input_tokens": 2,
@@ -117,6 +121,8 @@ async def controlled_evaluation(evaluation_id):
                     "messages": [{"role": "user", "content": "Controlled public case"}],
                 }
             )
+            if partial:
+                break
     cases, artifacts = [], []
     suite = manager.evaluations.suites.resolve(run["suite"])
     for index, (case, repetition) in enumerate(
@@ -124,6 +130,8 @@ async def controlled_evaluation(evaluation_id):
         for case in suite.public()["cases"]
         for repetition in range(1, suite.metadata["runsPerCase"] + 1)
     ):
+        if partial and index:
+            break
         case_id = f"case-{index + 1:04d}"
         score = 40 if index == 0 else 80
         result = {
@@ -137,6 +145,10 @@ async def controlled_evaluation(evaluation_id):
             "elapsedSeconds": 0.2,
             "traceId": f"trace-{identifier}-{case_id}",
         }
+        if partial:
+            result.update(status="invalid", error={"code": "provider_stream_incomplete"})
+            result.pop("score")
+            result.pop("dimensions")
         cases.append(result)
         for kind, data in (
             ("platform-trace", {"controlled": True, "caseRunId": case_id}),
@@ -161,6 +173,27 @@ async def controlled_evaluation(evaluation_id):
     usage = service.get(identifier)["usage"]
     from apps.api.app.evaluations import now
 
+    if partial:
+        evaluation.update(
+            status="failed",
+            caseRuns=cases,
+            attemptedCaseRuns=len(cases),
+            error={"code": "provider_stream_incomplete"},
+            endedAt=now(),
+        )
+        manager.evaluations.store.save(evaluation)
+        service.update(
+            identifier,
+            status="failed",
+            reason="provider_stream_incomplete",
+            attemptedCaseRuns=len(cases),
+            caseRuns=cases,
+            artifacts=artifacts,
+            finishedAt=time.time(),
+            executionSeconds=0.2,
+            cleanupSeconds=0,
+        )
+        return
     row = {
         "evaluationId": evaluation_id,
         "layer": "agent",
@@ -248,10 +281,14 @@ async def seed(request: Request):
     body = agent_plan()
     body.pop("id")
     body["title"] = "Agent 客户端验收 · 受控数据"
+    if request.query_params.get("mode") == "expired":
+        body["goalBudget"]["days"] = 0.000001
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url=str(request.base_url)) as http:
         response = await http.post("/api/v1/plans", json=body)
     assert response.status_code == 201, response.text
-    return response.json()
+    plan = response.json()
+    plan_modes[plan["id"]] = request.query_params.get("mode", "complete")
+    return plan
 
 
 @app.get("/api/v1/agent-runs/{identifier}/artifacts/{artifact_id}")

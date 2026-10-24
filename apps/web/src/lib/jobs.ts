@@ -3,6 +3,7 @@ import type { Actor } from './protocol';
 import type { AgentPlanBudget } from './training';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type ManagedJobStatus = JobStatus | 'admitting' | 'cancelling';
 export interface JobMetrics {
   iteration?: number;
   elapsedSeconds?: number;
@@ -85,7 +86,7 @@ export interface AgentUsage {
 }
 export interface AgentCaseRun {
   caseRunId: string; caseId: string; repetition: number; status: string;
-  score?: number | null; dimensions?: Record<string, number>; metrics?: Record<string, number | boolean>;
+  score?: number | null; dimensions?: Record<string, number>; metrics?: Record<string, number | boolean | string | null>;
   traceId?: string; recordingId?: string; elapsedSeconds?: number; error?: { code: string };
 }
 export interface AgentArtifact extends JobArtifact {
@@ -95,15 +96,18 @@ export interface AgentArtifact extends JobArtifact {
 }
 export interface AgentRunJob {
   jobId: string; kind: 'agent-run'; layer: 'agent';
-  status: JobStatus | 'admitting' | 'cancelling'; reason: string | null;
+  status: ManagedJobStatus; reason: string | null;
   requestId: string; requestedBy: Actor; agent: string; harnessVersion: number;
   planId: string; planRevision: number; goalId: string; suite: string; split: 'train'; evaluationId: string;
   model: string; thinking: string; executionDevice: 'cpu'; nodeId: null; placement: 'gateway-local'; gpuHours: number;
   createdAt: number; startedAt: number | null; finishedAt: number | null;
-  attemptedCaseRuns: number; allocatedCaseRuns: number; currentCase?: string;
+  attemptedCaseRuns: number; allocatedCaseRuns: number;
+  currentCase?: { caseRunId: string; caseId: string; repetition: number; status: string } | null;
   budget: AgentPlanBudget; allocatedLlmUsd: number; allocatedWallSeconds: number;
-  executionSeconds: number | null; cleanupSeconds: number; executionTiming?: string;
+  executionSeconds: number | null; cleanupSeconds: number | null; executionTiming?: string;
   goalDeadline: number | null; cleanupIncomplete?: boolean; usage: AgentUsage;
+  goalException?: { dimensions: ('days' | 'caseRuns' | 'llmUsd')[]; approvalId: string;
+    planId: string; planRevision: number; reviewBasis: string; originalDeadline: number | null; approvedAtMs: number } | null;
   caseRuns: AgentCaseRun[]; artifacts: AgentArtifact[];
 }
 export type ManagedJob = TrainingJob | AgentRunJob;
@@ -149,7 +153,7 @@ export interface TrainingNode {
   queue: string[];
 }
 
-type JobFilters = { plan?: string; status?: JobStatus; kind?: ManagedJob['kind'] };
+type JobFilters = { plan?: string; status?: ManagedJobStatus; kind?: ManagedJob['kind'] };
 export function listJobs(filters: JobFilters & { kind: 'training' }, signal?: AbortSignal): Promise<TrainingJob[]>;
 export function listJobs(filters: JobFilters & { kind: 'agent-run' }, signal?: AbortSignal): Promise<AgentRunJob[]>;
 export function listJobs(filters?: JobFilters, signal?: AbortSignal): Promise<ManagedJob[]>;

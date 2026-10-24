@@ -21,6 +21,7 @@ export interface LoopBudget {
   exhausted: boolean;
   exhaustedBefore?: boolean;
   exhaustedDimensions: string[];
+  expired?: boolean;
   authority?: { planId: string; revision: number } | null;
   coverage?: Record<string, string>;
 }

@@ -8,6 +8,7 @@ import { numberOrUnknown } from '../../lib/training-presentation';
 import type { AgentTrainingPlanDocument, TrainingPlanDocument } from '../../lib/training';
 import { TrainingPlanDetails } from '../TrainingPlanDetails';
 import { LoopBudgetSummary } from './LoopBudgetSummary';
+import type { LoopBudget } from '../../lib/notebooks';
 import './agent-runs.css';
 
 const artifactNames: Record<AgentArtifact['kind'], string> = {
@@ -18,6 +19,14 @@ const artifactNames: Record<AgentArtifact['kind'], string> = {
 export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; error?: string; refresh: () => void }) {
   const [plan, setPlan] = useState<AgentTrainingPlanDocument>(), [planError, setPlanError] = useState<string>();
   const [pending, setPending] = useState(false), [actionError, setActionError] = useState<string>();
+  const [goalBudget, setGoalBudget] = useState<LoopBudget>(), [goalError, setGoalError] = useState<string>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void request<{ budget: LoopBudget }>(`/loops/${encodeURIComponent(job.goalId)}`, { signal: controller.signal })
+      .then(value => { if (!controller.signal.aborted) { setGoalBudget(value.budget); setGoalError(undefined); } })
+      .catch(failure => { if (!controller.signal.aborted) setGoalError((failure as Error).message); });
+    return () => controller.abort();
+  }, [job.goalId, job.usage.knownLlmUsd, job.status]);
   useEffect(() => {
     const controller = new AbortController(); setPlan(undefined); setPlanError(undefined);
     void request<TrainingPlanDocument>(`/plans/${encodeURIComponent(job.planId)}?revision=${job.planRevision}`, { signal: controller.signal })
@@ -48,11 +57,12 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
       <div><span>LLM 估算</span><strong>{agentMoney(job.usage.llmUsd)}</strong></div>
     </div>
     <div className="agent-run-links"><Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(job.suite) }}>查看 Agent 计分板</Link>
-      <Link to="/cost" search={{ range: '7d', plan: job.planId, goal: job.goalId, agent: job.agent }}>查看本计划成本</Link>
+      <Link to="/cost" search={{ range: '7d', plan: `${job.planId}@${job.planRevision}`, goal: job.goalId, agent: job.agent }}>查看本计划成本</Link>
       {['admitting', 'queued', 'running'].includes(job.status) && <button disabled={pending} onClick={() => void act(false)}>取消 Agent 运行</button>}
       {job.status === 'cancelling' && <span>正在取消，等待服务确认资源清理。</span>}
       {job.cleanupIncomplete && <><span role="alert">清理尚未确认，用量与资源承诺仍保留。</span><button disabled={pending} onClick={() => void act(true)}>重试清理</button></>}
     </div>{actionError && <p role="alert">{actionError}</p>}
+    {job.goalException && <p className="loop-budget-warning" role="status">{job.goalException.dimensions.includes('days') ? 'Goal 期限已过；' : 'Goal 预算已用尽；'}本计划获有限例外，仍按本计划剩余执行额度运行。原目标上限与截止时间保持不变。</p>}
     <section className="panel"><h2>固定运行身份与用量</h2><dl className="training-plan-facts">
       <div><dt>Agent / Harness</dt><dd>{job.agent} · v{job.harnessVersion}</dd></div>
       <div><dt>模型 / 思考等级</dt><dd>{job.model} · {job.thinking}</dd></div>
@@ -63,6 +73,7 @@ export function AgentRunDetails({ job, error, refresh }: { job: AgentRunJob; err
       <div><dt>实际执行资源</dt><dd>本地受管执行 · CPU · {job.gpuHours} GPU 小时</dd></div>
       {job.reason && <div><dt>状态原因</dt><dd>{job.reason}</dd></div>}
     </dl><p className="resource-note">有效负例保留得分；无效或不完整题次不补成零分。reported 记录不代表已接受或部署。</p></section>
+    {goalError && <p role="alert">目标预算暂不可用：{goalError}</p>}{goalBudget && <LoopBudgetSummary budget={goalBudget} />}
     <section className="panel"><h2>逐题运行记录</h2><div className="resource-table-scroll"><table aria-label="Agent 题次结果"><thead><tr><th>题目 / 重复</th><th>状态</th><th>得分 / 100</th><th>维度得分</th><th>证据</th></tr></thead><tbody>
       {job.caseRuns.map(caseRun => <tr key={caseRun.caseRunId}><td>{caseRun.caseId} · #{caseRun.repetition}</td><td>{caseRun.status}{caseRun.error && <small>{caseRun.error.code}</small>}</td>
         <td>{numberOrUnknown(caseRun.score, 2)}</td><td>{caseRun.dimensions ? Object.entries(caseRun.dimensions).map(([key, score]) => `${key}: ${score}`).join(' · ') : '未形成有效评分'}</td>
