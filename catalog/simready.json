@@ -1,0 +1,661 @@
+{
+  "schema": "lw.asset-catalog/1",
+  "provider": "simready",
+  "dataset": "nvidia/simready-assets",
+  "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+  "indexedAt": "2026-10-24T13:53:52+00:00",
+  "coverage": "Curated SimReady subset; not the complete dataset.",
+  "entries": [
+    {
+      "packageId": "box_cardboard_a01",
+      "kind": "environment",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/box_cardboard_a01",
+        "files": 36,
+        "bytes": 21530693,
+        "rootUsd": "simready_usd/sm_box_cardboard_a01_01.usd",
+        "bomItems": 30,
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ]
+      },
+      "names": {
+        "en": "Cardboard box",
+        "zh": "纸箱"
+      },
+      "aliases": {
+        "en": [
+          "carton",
+          "cardboard carton",
+          "packaging box"
+        ],
+        "zh": [
+          "瓦楞纸箱",
+          "纸盒",
+          "包装箱"
+        ]
+      },
+      "descriptions": {
+        "en": "Corrugated cardboard shipping box with an authored collision body; suitable for lab dressing and static collision.",
+        "zh": "瓦楞纸运输纸箱，带有作者定义的碰撞体，可用于实验室布景与静态碰撞。"
+      },
+      "tags": {
+        "en": [
+          "packaging",
+          "box",
+          "storage"
+        ],
+        "zh": [
+          "包装",
+          "纸箱",
+          "收纳"
+        ]
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "admitted": true,
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ],
+        "inBom": false,
+        "evidence": {
+          "file": ".metadata/LICENSE.txt",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        "attachments": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          }
+        ]
+      },
+      "usage": {
+        "dressing": {
+          "eligible": true,
+          "unknown": false,
+          "evidence": "S1/S2/S4/S6 and an authored collision body pass; Newton P1/P3 pass (reports/box_cardboard_a01.json)."
+        },
+        "staticCollision": {
+          "eligible": true,
+          "unknown": false,
+          "evidence": "S1/S2/S4/S6, an authored collision body and Newton P1/P3 pass (reports/box_cardboard_a01.json)."
+        }
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "dimensionsM": [
+          0.699435,
+          0.521152,
+          0.509927
+        ],
+        "outputBytes": 19085294,
+        "outputFiles": 10,
+        "variant": "Newton/Enabled",
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ]
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_004_MUJOCO",
+          "FET_004_NEWTON",
+          "FET_004_PHYSX",
+          "FET_004_STANDARD",
+          "FET_005_STANDARD",
+          "FET_006_OPENPBR"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "acquisition": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    {
+      "packageId": "bucket_utility_gray_a01",
+      "kind": "environment",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/bucket_utility_gray_a01",
+        "files": 50,
+        "bytes": 15683159,
+        "rootUsd": "simready_usd/sm_bucket_utility_gray_a01_01.usd",
+        "bomItems": 44,
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ]
+      },
+      "names": {
+        "en": "Gray utility bucket",
+        "zh": "灰色工具桶"
+      },
+      "aliases": {
+        "en": [
+          "bucket",
+          "pail",
+          "utility bucket"
+        ],
+        "zh": [
+          "水桶",
+          "提桶",
+          "工具桶"
+        ]
+      },
+      "descriptions": {
+        "en": "Gray utility bucket with an authored collision body; suitable for lab dressing and static collision.",
+        "zh": "灰色工具桶，带有作者定义的碰撞体，可用于实验室布景与静态碰撞。"
+      },
+      "tags": {
+        "en": [
+          "container",
+          "bucket",
+          "cleaning"
+        ],
+        "zh": [
+          "容器",
+          "水桶",
+          "清洁"
+        ]
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "admitted": true,
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ],
+        "inBom": false,
+        "evidence": {
+          "file": ".metadata/LICENSE.txt",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        "attachments": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          }
+        ]
+      },
+      "usage": {
+        "dressing": {
+          "eligible": true,
+          "unknown": false,
+          "evidence": "S1/S2/S4/S6 and an authored collision body pass; Newton P1/P3 pass (reports/bucket_utility_gray_a01.json)."
+        },
+        "staticCollision": {
+          "eligible": true,
+          "unknown": false,
+          "evidence": "S1/S2/S4/S6, an authored collision body and Newton P1/P3 pass (reports/bucket_utility_gray_a01.json)."
+        }
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "dimensionsM": [
+          0.338272,
+          0.328056,
+          0.258783
+        ],
+        "outputBytes": 16247969,
+        "outputFiles": 16,
+        "variant": "Newton/Enabled",
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ]
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_005_STANDARD",
+          "FET_006_MDL",
+          "FET_006_OPENPBR"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "acquisition": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    {
+      "packageId": "container_recycle_square_blue_a02",
+      "kind": "environment",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/container_recycle_square_blue_a02",
+        "files": 35,
+        "bytes": 8482999,
+        "rootUsd": "simready_usd/sm_container_recycle_square_blue_a02_01.usd",
+        "bomItems": 29,
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ]
+      },
+      "names": {
+        "en": "Blue square recycling container",
+        "zh": "蓝色方形回收箱"
+      },
+      "aliases": {
+        "en": [
+          "recycling bin",
+          "recycle container",
+          "waste bin"
+        ],
+        "zh": [
+          "回收桶",
+          "垃圾桶",
+          "废料箱"
+        ]
+      },
+      "descriptions": {
+        "en": "Blue square recycling container; suitable for dressing, but Newton physics loading fails (P1), so static collision is not validated.",
+        "zh": "蓝色方形回收箱，可用于布景；Newton 物理加载失败（P1），因此静态碰撞未通过验证。"
+      },
+      "tags": {
+        "en": [
+          "recycling",
+          "waste",
+          "container"
+        ],
+        "zh": [
+          "回收",
+          "垃圾",
+          "容器"
+        ]
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "admitted": true,
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ],
+        "inBom": false,
+        "evidence": {
+          "file": ".metadata/LICENSE.txt",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        "attachments": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          }
+        ]
+      },
+      "usage": {
+        "dressing": {
+          "eligible": true,
+          "unknown": false,
+          "evidence": "S1/S2/S4/S6 and an authored collision body pass; dressing does not require Newton physics (reports/container_recycle_square_blue_a02.json)."
+        },
+        "staticCollision": {
+          "eligible": false,
+          "unknown": false,
+          "evidence": "Newton P1 failed: Newton model could not load (ValueError); P2/P3 warned (reports/container_recycle_square_blue_a02.json)."
+        }
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "dimensionsM": [
+          0.516591,
+          0.516591,
+          0.855702
+        ],
+        "outputBytes": 8798478,
+        "outputFiles": 10,
+        "variant": "Newton/Enabled",
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ]
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_005_STANDARD",
+          "FET_006_MDL",
+          "FET_006_OPENPBR"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "acquisition": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    {
+      "packageId": "equipment_utility_cart_e01",
+      "kind": "environment",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/equipment_utility_cart_e01",
+        "files": 64,
+        "bytes": 171038176,
+        "rootUsd": "simready_usd/sm_equipment_utility_cart_e01_01.usd",
+        "bomItems": 58,
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ]
+      },
+      "names": {
+        "en": "Utility equipment cart",
+        "zh": "工具推车"
+      },
+      "aliases": {
+        "en": [
+          "cart",
+          "push cart",
+          "equipment cart"
+        ],
+        "zh": [
+          "台车",
+          "推车",
+          "工具车"
+        ]
+      },
+      "descriptions": {
+        "en": "Utility equipment cart; adaptation is blocked by UDIM texture sets, so dimensions and usage are unknown.",
+        "zh": "工具推车；UDIM 纹理集导致适配失败，尺寸与用途未知。"
+      },
+      "tags": {
+        "en": [
+          "cart",
+          "transport",
+          "equipment"
+        ],
+        "zh": [
+          "推车",
+          "运输",
+          "设备"
+        ]
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "admitted": true,
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ],
+        "inBom": false,
+        "evidence": {
+          "file": ".metadata/LICENSE.txt",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        "attachments": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          }
+        ]
+      },
+      "usage": {
+        "dressing": {
+          "eligible": null,
+          "unknown": true,
+          "evidence": "Adaptation failed, so the package was not imported or validated (reports/equipment_utility_cart_e01.json)."
+        },
+        "staticCollision": {
+          "eligible": null,
+          "unknown": true,
+          "evidence": "Adaptation failed, so the package was not imported or validated (reports/equipment_utility_cart_e01.json)."
+        }
+      },
+      "adaptation": {
+        "status": "gap",
+        "gaps": [
+          "UDIM/UVTILE texture sets are not supported by the restricted GLB path: ../Textures/t_equipment_utility_cart_e01_alb.<UDIM>.png"
+        ],
+        "dimensionsM": null,
+        "outputBytes": null,
+        "outputFiles": null,
+        "variant": "Newton/Enabled",
+        "approximations": []
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_005_STANDARD",
+          "FET_006_OPENPBR",
+          "FET_010_STANDARD"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "acquisition": {
+        "eligible": false,
+        "reasons": [
+          "UDIM/UVTILE texture sets are not supported by the restricted GLB path: ../Textures/t_equipment_utility_cart_e01_alb.<UDIM>.png"
+        ]
+      }
+    },
+    {
+      "packageId": "desk_a01",
+      "kind": "environment",
+      "source": {
+        "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1/desk_a01",
+        "files": 46,
+        "bytes": 242383218,
+        "rootUsd": "simready_usd/sm_desk_a01_01.usd",
+        "bomItems": 40,
+        "bomNotInBom": [
+          ".metadata/LICENSE.txt",
+          ".metadata/com.nvidia.simready.conformance.Package-Candidate@1.0.0.json",
+          ".metadata/com.nvidia.simready.conformance.Package@1.0.0.json",
+          ".metadata/com.nvidia.simready.packaging.bom.json",
+          ".metadata/com.nvidia.simready.root_usds.json",
+          "com.nvidia.simready.packaging.json"
+        ]
+      },
+      "names": {
+        "en": "Laboratory desk",
+        "zh": "实验室工作台"
+      },
+      "aliases": {
+        "en": [
+          "laboratory desk",
+          "workbench",
+          "table"
+        ],
+        "zh": [
+          "工作台",
+          "实验台",
+          "桌子"
+        ]
+      },
+      "descriptions": {
+        "en": "Laboratory desk with known dimensions; the adapted package exceeds the 128 MiB upload limit, so usage is not validated.",
+        "zh": "实验室工作台，尺寸已知；适配成品超过 128 MiB 上传限制，因此用途尚未验证。"
+      },
+      "tags": {
+        "en": [
+          "furniture",
+          "workbench",
+          "lab"
+        ],
+        "zh": [
+          "家具",
+          "工作台",
+          "实验室"
+        ]
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "admitted": true,
+        "obligations": [
+          "attribution",
+          "retain license and notices",
+          "mark modifications"
+        ],
+        "inBom": false,
+        "evidence": {
+          "file": ".metadata/LICENSE.txt",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        "attachments": [
+          {
+            "file": "simready_usd/source_assets/OmniPBR.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBR_ClearCoat.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          },
+          {
+            "file": "simready_usd/source_assets/OmniPBRBase.mdl",
+            "license": "BSD-3-Clause",
+            "evidence": "header"
+          }
+        ]
+      },
+      "usage": {
+        "dressing": {
+          "eligible": null,
+          "unknown": true,
+          "evidence": "The adapted package was not imported, so usage was not validated (reports/desk_a01.json)."
+        },
+        "staticCollision": {
+          "eligible": null,
+          "unknown": true,
+          "evidence": "The adapted package was not imported, so usage was not validated (reports/desk_a01.json)."
+        }
+      },
+      "adaptation": {
+        "status": "pass",
+        "gaps": [],
+        "dimensionsM": [
+          0.802,
+          1.802,
+          0.759153
+        ],
+        "outputBytes": 297991931,
+        "outputFiles": 16,
+        "variant": "Newton/Enabled",
+        "approximations": [
+          "Selected Newton variant; other physics variants are disabled.",
+          "GLB uses UsdPreviewSurface fallback materials; MDL shading is not reproduced.",
+          "MDL files import NVIDIA core libraries outside the package; the MDL render path is not supported."
+        ]
+      },
+      "upstreamValidation": {
+        "profile": "Robotics-Prop",
+        "profileVersion": "4.0.0",
+        "date": "2026-10-08",
+        "failingFeatures": [
+          "FET_000_MUJOCO",
+          "FET_000_NEWTON",
+          "FET_000_PHYSX",
+          "FET_004_MUJOCO",
+          "FET_004_NEWTON",
+          "FET_004_PHYSX",
+          "FET_004_STANDARD",
+          "FET_005_STANDARD",
+          "FET_006_OPENPBR",
+          "FET_010_STANDARD"
+        ],
+        "declaredBy": "upstream SimReady layer customLayerData"
+      },
+      "acquisition": {
+        "eligible": false,
+        "reasons": [
+          "Adapted package is 297991931 bytes before tar headers; the existing upload limit is 134217728 bytes",
+          "The SF2 internal import path is required for adapted packages above the 128 MiB upload limit."
+        ]
+      }
+    }
+  ]
+}

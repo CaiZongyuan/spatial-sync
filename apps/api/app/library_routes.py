@@ -1,6 +1,8 @@
-"""Uploaded library packages and their indexed files."""
+"""Uploaded library packages, indexed files and the external asset catalog."""
 
+import functools
 import tempfile
+from typing import Literal
 
 import anyio
 from fastapi import HTTPException, Request
@@ -8,14 +10,16 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from apps.api.app.info_routes import actor_from_headers
 from apps.api.app.library_validation import program_schemas
+from packages.catalog import AssetCatalog
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
 from packages.library.description_views import description_view
 from packages.library.imports import LibraryImports
 from packages.library.validation import StructuralValidator
 
 
-def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for):
+def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for, catalog=None):
     validator = StructuralValidator(assets.jobs_root.parent, program_schemas)
+    catalog = catalog if catalog is not None else AssetCatalog(None)
 
     async def request_deletion(kind, identifier, request):
         if role_for(request.headers) != "operator":
@@ -36,6 +40,69 @@ def install_library_routes(app, assets: AssetLibrary, scenes, manager, role_for)
     @app.get("/api/v1/library/assets")
     async def list_assets(kind: str | None = None, q: str | None = None, gaps: bool = False):
         return {"assets": assets.list(kind, q, gaps)}
+
+    @app.get("/api/v1/library/search")
+    async def search_library(
+        q: str | None = None,
+        scope: Literal["all", "local", "online"] = "all",
+        kind: str | None = None,
+        provider: str | None = None,
+        usage: Literal["dressing", "staticCollision"] | None = None,
+        licenseAdmitted: bool | None = None,
+        installed: bool | None = None,
+        minSourceBytes: int | None = None,
+        maxSourceBytes: int | None = None,
+        minDimensionM: float | None = None,
+        maxDimensionM: float | None = None,
+        approximate: bool = False,
+        sort: Literal["relevance", "name", "sourceBytes"] = "relevance",
+        limit: int = 10,
+        cursor: str | None = None,
+    ):
+        search = functools.partial(
+            catalog.search,
+            assets,
+            q=q,
+            scope=scope,
+            kind=kind,
+            provider=provider,
+            usage=usage,
+            license_admitted=licenseAdmitted,
+            installed=installed,
+            min_source_bytes=minSourceBytes,
+            max_source_bytes=maxSourceBytes,
+            min_dimension_m=minDimensionM,
+            max_dimension_m=maxDimensionM,
+            approximate=approximate,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+        )
+        return await anyio.to_thread.run_sync(search)
+
+    @app.get("/api/v1/library/catalog/entries/{provider}/{package}/{revision}")
+    async def describe_catalog_entry(
+        provider: str,
+        package: str,
+        revision: str,
+        view: Literal["summary", "full"] = "summary",
+        documentDigest: str | None = None,
+    ):
+        describe = functools.partial(
+            catalog.describe,
+            provider,
+            package,
+            revision,
+            library=assets,
+            view=view,
+            document_digest=documentDigest,
+        )
+        return await anyio.to_thread.run_sync(describe)
+
+    @app.get("/api/v1/library/catalog/entries/{provider}/{package}/{revision}/estimate")
+    async def estimate_catalog_entry(provider: str, package: str, revision: str):
+        estimate = functools.partial(catalog.estimate, provider, package, revision, library=assets)
+        return await anyio.to_thread.run_sync(estimate)
 
     @app.get("/api/v1/library/assets/{kind}/{name}")
     @app.get("/api/v1/library/assets/{kind}/{name}/{rev}")

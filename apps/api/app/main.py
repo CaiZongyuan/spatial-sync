@@ -55,8 +55,10 @@ from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from apps.api.app.task_routes import install_task_routes
 from packages.assets.registry import AssetRegistry
+from packages.catalog import AssetCatalog
 from packages.info.invocations import HistoryUnavailable
 from packages.info.plans import PlanError
+from packages.library.common import REPO_ROOT
 from packages.library.deletions import LibraryDeletions
 from packages.library.description_views import description_view
 from packages.library.previews import PreviewRepository
@@ -144,10 +146,16 @@ def create_app(
     asset_registry: AssetRegistry | None = None,
     platform_sampler=None,
     live_transport_factory=None,
+    catalog_path: Path | None = None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
+    catalog = AssetCatalog(
+        catalog_path
+        if catalog_path is not None
+        else Path(os.environ.get("LW_CATALOG", str(REPO_ROOT / "catalog/simready.json")))
+    )
     recordings = EvaluationRecordingRepository(settings, asset_registry)
     previews = PreviewRepository(settings.scene_previews_root)
     manager = SessionManager(settings, source_factory, recordings)
@@ -188,6 +196,7 @@ def create_app(
             await asyncio.to_thread(manager.library_deletions.recover)
             manager.library.refresh()
             library_assets.startup()
+            await asyncio.to_thread(catalog.startup)
             await recordings.startup()
             await evaluations.startup()
             await asyncio.to_thread(notebooks.startup)
@@ -250,6 +259,7 @@ def create_app(
     app.state.manager, app.state.settings = manager, settings
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
+    app.state.catalog = catalog
     app.state.training_views = views
     app.state.notebooks = notebooks
     app.state.demonstrations = demonstrations
@@ -279,7 +289,7 @@ def create_app(
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
-                           lambda headers: _role(headers, settings))
+                           lambda headers: _role(headers, settings), catalog)
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):
