@@ -146,6 +146,10 @@ interview: interview.md                # lab-training-plan 产出的完整问答
 
 ### 5.1 生命周期
 
+本节原有具身训练输入与预算语义保持；AgentRun 作为另一种作业使用相同生命周期和持久化/ownership约束，
+其已批准计划为显式 `kind: training, layer: agent` 分支，不能伪装成 Task/PPO。
+缺少 layer 的旧计划仍是具身层。参见 [Managed AgentRun contract v1](LAB_AGENT_RUN_CONTRACT_V1.md)。
+
 `queued → running → succeeded | failed | cancelled`。作业属于一个已批准的计划。网关重启时，运行中的作业由节点重新上报状态；节点失联超过 60 s，作业标记为 `failed`（原因 `node_lost`）。
 
 ### 5.2 计算节点与 GPU 租约

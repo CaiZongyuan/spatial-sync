@@ -114,6 +114,10 @@ VLA 条目（π0、GR00T N、OpenVLA、SmolVLA 等）在 v1 只登记来源、�
 
 ### 4.1 适配器
 
+用户已选择 #44 的受限运行 A profile。具体冻结输入、Plan 入场、权限、锁定 skill、预算与兼容合同见
+[Managed AgentRun contract v1](LAB_AGENT_RUN_CONTRACT_V1.md)。合法 Harness 的存取与其可执行能力分开：
+默认 Harness 可运行，任意可执行 hook / 自定义 stdio MCP 明确 preflight unsupported，不能静默忽略。
+
 - Agent 运行是一种作业（训练规格 §5，类型 `agent-run`），由计算节点上的适配器执行。v1 实现 **Claude Agent SDK 适配器**；接口允许以后接入其他 agent。
 - 输入：Harness 版本、模型与思考等级、题目题面、场景版本、凭据引用。
 - 运行：在专属工作目录中加载该 Harness（平台 skill 按 `skills.lock` 安装），连接平台 MCP / CLI，执行题面；审批模式为平台 skill 规定的模式，人工关口在评估中一律自动驳回，并计入评分。
@@ -204,6 +208,8 @@ Builder 建好评估集后，对当前对象跑一次完整评估，记为**正�
 | **Target** | 被测 Agent 或 Controller | 题面 | 评分条件 |
 
 - 隔离靠平台 API 的访问控制加 skill 约定：私有评分条件与 test 集不经任何对 Optimizer 开放的 CLI / MCP 命令返回；Agent 运行器的工作目录里不放评分文件。
+- 受管 Target 的实际授权由固定 profile、可信工具传输与服务端 ownSession 身份共同限制，不能只信自报 actor、隐藏审批工具或独立 cwd。
+  可执行 hook、stdio、文件、网络和产物出口都必须服从上述 AgentRun 合同；未授予的能力不因 Harness 可存取而获得执行权。
 - 每次工具调用都在 Trace 中。发现私有信息进入 Optimizer 上下文时，回滚正在测试的 Candidate，计划标记为"污染"并停止。
 - 人仍在关口审批：训练计划、提升、超预算（素材规格 §10.4）。
 
