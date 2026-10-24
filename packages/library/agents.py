@@ -65,6 +65,7 @@ def harness_files(path):
                 raise ValueError
             if name not in REQUIRED and not (
                 name.startswith("hooks/") and not any(part.startswith(".") for part in name.split("/"))
+                or re.fullmatch(r"skills/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\.md", name)
             ):
                 raise ValueError
             file = path / name
@@ -82,6 +83,17 @@ def harness_files(path):
             if set(skill) != {"name", "version"} or not NAME.fullmatch(skill["name"]) or not isinstance(
                 skill["version"], str
             ) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}", skill["version"]):
+                raise ValueError
+        for name in (name for name in files if name.startswith("skills/")):
+            identity = name.split("/")[1]
+            body = (path / name).read_text(encoding="utf-8")
+            header, separator, _ = body[4:].partition("\n---\n")
+            metadata = yaml.safe_load(header)
+            pins = [item for item in skills["skills"] if item["name"] == identity]
+            if (not body.startswith("---\n") or not separator or not isinstance(metadata, dict)
+                    or metadata.get("name") != identity or not isinstance(metadata.get("description"), str)
+                    or not metadata["description"].strip() or len(pins) != 1
+                    or pins[0]["version"] != hashlib.sha256(body.encode()).hexdigest()):
                 raise ValueError
         mcp = document(path / "mcp.yaml")
         if set(mcp) != {"servers"} or not isinstance(mcp["servers"], dict):

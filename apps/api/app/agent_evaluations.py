@@ -75,9 +75,12 @@ class ExternalEvaluations:
     async def save(self, record):
         await persist(self.evaluator.store.save, record)
 
-    async def submit(self, name, body):
+    async def submit(self, name, body, *, agent_round=None):
         agent = self.agents.show(name)["id"]
-        request_hash = digest({"agentId": agent, **body.model_dump()})
+        inputs = {"agentId": agent, **body.model_dump()}
+        if agent_round is not None:
+            inputs["agentRound"] = agent_round
+        request_hash = digest(inputs)
         async with self._submission:
             previous = next(
                 (
@@ -186,6 +189,8 @@ class ExternalEvaluations:
                     "contextProvenance": "runtime-declaration",
                 },
             }
+            if agent_round is not None:
+                record.update(agentRound=deepcopy(agent_round), **agent_round)
             directory = self.directory(record)
             record["candidateIdentity"] = {
                 "kind": "agent-harness",

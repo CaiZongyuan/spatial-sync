@@ -30,6 +30,7 @@ from apps.api.app.acquisition_routes import (
 )
 from apps.api.app.agent_evaluations import install_external_evaluations
 from apps.api.app.agent_routes import install_agent_routes
+from apps.api.app.agent_rsi_routes import install_agent_rsi_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.cost_routes import install_cost_routes
@@ -226,6 +227,7 @@ def create_app(
             await acquisitions.startup()
             await recordings.startup()
             await evaluations.startup()
+            await asyncio.to_thread(agent_rsi.startup)
             await asyncio.to_thread(notebooks.startup)
             await monitor.start()
             await views.start()
@@ -309,6 +311,9 @@ def create_app(
     )
     external_evaluations = install_external_evaluations(
         app, evaluations, app.state.agents, runtime_records, lambda headers: _role(headers, settings)
+    )
+    agent_rsi = install_agent_rsi_routes(
+        app, manager, app.state.agents, external_evaluations, lambda headers: _role(headers, settings)
     )
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))

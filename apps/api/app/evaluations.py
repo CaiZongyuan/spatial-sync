@@ -376,6 +376,8 @@ class EvaluationService:
         identifier = record["evaluationId"]
         async with self._admission:
             notebooks = getattr(self.manager, "notebooks", None)
+            if record.get("agentRound") is not None:
+                self.manager.agent_rsi.require_admission(record)
             if notebooks is not None:
                 record.update(notebooks.admit_evaluation(notebook_context))
             self._admitting[identifier] = record

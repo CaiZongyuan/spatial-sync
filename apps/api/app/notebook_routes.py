@@ -26,8 +26,8 @@ def install_notebook_routes(app, service, role_for):
         return value
 
     @app.get("/api/v1/loops")
-    async def goals():
-        return {"goals": service.goals()}
+    async def goals(layer: str = "embodied"):
+        return {"goals": service.goals(layer=layer)}
 
     @app.get("/api/v1/notebooks/{identity:path}")
     async def notebook(identity: str, refuted: bool = False):

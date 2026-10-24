@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.approvals import ApprovalConflict, Subject
 from packages.info.context import information_revision
+from packages.training.dispatch import training_store
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -46,7 +47,8 @@ def install_approval_routes(app, manager, role_for):
         return {
             **record.model_dump(mode="json"),
             "canRevoke": (record.subject == "job" and manager.jobs.can_revoke(record)) or (
-                          training and manager.training_plans.can_revoke(record)) or (
+                          training
+                          and training_store(manager, identifier=record.subjectId).can_revoke(record)) or (
                           record.subject == "deletion" and record.status in ("approved", "denied")
                           and record.details.get("execution", {}).get("status")
                           in ("not_started", "blocked", "failed")) or available
@@ -116,7 +118,9 @@ def install_approval_routes(app, manager, role_for):
             return document(get_record(approval_id))
         if record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training":
             try:
-                manager.training_plans.decide(record, body.decision, actor, body.note)
+                training_store(manager, identifier=record.subjectId).decide(
+                    record, body.decision, actor, body.note
+                )
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
             return document(get_record(approval_id))

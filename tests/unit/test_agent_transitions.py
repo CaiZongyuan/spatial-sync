@@ -1,10 +1,12 @@
 """Real Harness files, interrupted swaps and unrelated editor saves cross one interface."""
 
+import hashlib
 import json
 import os
 
 import pytest
 
+from packages.agent_evaluation.bundle import freeze_harness
 from packages.library.agents import AgentLibrary, pack_harness
 from packages.library.common import LibraryError, content_hash
 from tests.unit.test_agent_harness import changed_archive, library
@@ -128,3 +130,23 @@ def test_restart_preserves_editor_conflict_after_intent_was_saved(tmp_path, monk
     assert agents.show("rsi")["currentVersion"] == 2
     intent = agents.user_root / "agents/rsi/transitions/reject-round-one/intent.json"
     assert json.loads(intent.read_bytes())["status"] == "prepared"
+
+
+def test_agent_owned_skill_is_frozen_and_restored_without_editing_product_skills(tmp_path):
+    agents, original, version = candidate(tmp_path)
+    restore(agents, version)
+    directory = agents.user_root / "agents/rsi/harness"
+    own = directory / "skills/agent-observe/SKILL.md"
+    own.parent.mkdir(parents=True)
+    body = "---\nname: agent-observe\ndescription: Observe final state.\n---\n\nRead before reporting.\n"
+    own.write_text(body, encoding="utf-8")
+    with (directory / "skills.lock").open("a", encoding="utf-8") as stream:
+        stream.write(f"- name: agent-observe\n  version: {hashlib.sha256(body.encode()).hexdigest()}\n")
+    snapshot = agents.snapshot("rsi")
+    frozen = freeze_harness(agents, "rsi", snapshot["version"])
+    selected = next(item for item in frozen["files"] if item["path"] == "skills/agent-observe/SKILL.md")
+    assert selected["content"] == body
+    agents.transition("rsi", target_version=1, expected_version=snapshot["version"],
+                      expected_hash=snapshot["contentHash"], request_id="restore-owned-skill",
+                      outcome_version=snapshot["version"])
+    assert pack_harness(directory) == original and not own.exists()

@@ -49,6 +49,7 @@ class TrainingPlanStore:
         for approval in list(self.approvals.records.values()):
             if (approval.subject == "plan" and approval.status == "pending"
                     and approval.details.get("plan", {}).get("kind") == "training"
+                    and approval.details.get("plan", {}).get("layer", "embodied") == "embodied"
                     and approval.approvalId not in current):
                 self.approvals.set_status(approval.approvalId, "unavailable")
         for record in self.records.values():

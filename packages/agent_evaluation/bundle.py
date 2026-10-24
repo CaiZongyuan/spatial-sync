@@ -33,8 +33,12 @@ def freeze_harness(agents, name, version):
             raise PlanError(
                 "skill_version_unavailable", "Exact content-addressed skill pins are required", status=422
             )
-        found = None
+        found = files.get(f"harness/skills/{name}/SKILL.md")
+        if found is not None and sha256(found.encode()) != expected:
+            raise PlanError("skill_version_unavailable", "Agent skill differs from its exact pin", status=422)
         for path in (source / "archive" / name / expected / "SKILL.md", source / name / "SKILL.md"):
+            if found is not None:
+                break
             try:
                 if any(parent.is_symlink() or parent.is_junction() for parent in (path, *path.parents)):
                     continue

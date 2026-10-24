@@ -8,6 +8,7 @@ from apps.api.app.info_routes import actor_from_headers
 from apps.api.app.information_targets import information_target
 from packages.info.plans import PlanError
 from packages.info.preview import PreviewRequest, SourcePreview
+from packages.training.dispatch import training_store, training_stores
 
 
 def plan_context(plan_id=None, step_id=None, revision=None):
@@ -66,7 +67,10 @@ def install_plan_routes(app, manager, role_for):
         if body.get("kind") == "training":
             if body.get("id") in store.records:
                 raise PlanError("plan_exists", "Plan ID already exists")
-            return training.submit(body, actor)
+            selected = training_store(manager, document=body)
+            if selected is training:
+                body = {key: value for key, value in body.items() if key != "layer"}
+            return selected.submit(body, actor)
         payload, session = target(body)
         await session.action_pipeline()
         if payload.get("id") in training.records:
@@ -76,8 +80,13 @@ def install_plan_routes(app, manager, role_for):
     @app.post("/api/v1/plans/{plan_id}/revisions", status_code=201)
     async def revise_plan(plan_id: str, body: dict[str, Any], request: Request):
         actor = operator(request)
-        if plan_id in training.records:
-            return training.submit(body, actor, plan_id=plan_id)
+        if any(plan_id in selected.records for selected in training_stores(manager)):
+            selected = training_store(manager, identifier=plan_id)
+            if body.get("layer", "embodied") != ("agent" if selected is manager.agent_rsi else "embodied"):
+                raise PlanError("invalid_plan_layer", "A Plan revision cannot change layer", status=422)
+            if selected is training:
+                body = {key: value for key, value in body.items() if key != "layer"}
+            return selected.submit(body, actor, plan_id=plan_id)
         payload, session = target(body)
         await session.action_pipeline()
         return store.document(await store.create(payload, session, actor, plan_id=plan_id))
@@ -89,7 +98,8 @@ def install_plan_routes(app, manager, role_for):
         documents = [
                 store.document(record)
                 for record in store.records.values()
-            ] + [training.document(record) for record in training.records.values()]
+            ] + [selected.document(record) for selected in training_stores(manager)
+                 for record in selected.records.values()]
         return {"plans": [value for value in documents
                           if (kind is None or kind == value["kind"])
                           and (status is None or status == value["status"])
@@ -98,14 +108,15 @@ def install_plan_routes(app, manager, role_for):
     @app.get("/api/v1/plans/{plan_id}")
     async def plan(plan_id: str, revision: int | None = None):
         await store.flush()
-        if plan_id in training.records:
-            return training.document(training.get(plan_id, revision))
+        if any(plan_id in selected.records for selected in training_stores(manager)):
+            selected = training_store(manager, identifier=plan_id)
+            return selected.document(selected.get(plan_id, revision))
         return store.document(store.get(plan_id, revision))
 
     @app.get("/api/v1/plans/{plan_id}/steps/{step_id}/preview")
     async def preview(plan_id: str, step_id: int = Path(ge=1), revision: int | None = Query(None, ge=1)):
         await store.flush()
-        if plan_id in training.records:
+        if any(plan_id in selected.records for selected in training_stores(manager)):
             raise PlanError("unknown_plan_step", "Training plans have no device steps", status=404)
         record = store.get(plan_id, revision)
         session = information_target(manager, record.sessionId)
