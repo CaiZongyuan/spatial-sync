@@ -632,6 +632,18 @@ class GatewayClient:
     async def node_list(self):
         return (await self.request("GET", "/api/v1/nodes"))["nodes"]
 
+    async def policy_create(self, checkpoint, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/policies", actor=actor, json={"checkpoint": checkpoint})
+
+    async def policy_list(self):
+        return (await self.request("GET", "/api/v1/policies"))["policies"]
+
+    async def policy_show(self, id):
+        match = re.fullmatch(r"policy/([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)", id)
+        if not match:
+            raise ValueError("Select an exact policy/name@revision")
+        return await self.request("GET", f"/api/v1/policies/{match[1]}/{match[2]}")
+
     async def cost_query(self, since="7d", by=None, view="summary", agent=None, model=None,
                          node=None, goal=None, plan=None, start=None, end=None):
         projection = "breakdown" if by else view

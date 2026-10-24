@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-23T22:17:05.522390+00:00",
+  "capturedAt": "2026-10-24T15:30:23.099345+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -96,6 +96,22 @@
       "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
     },
     {
+      "path": "packages/library/transactions.py",
+      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+    },
+    {
+      "path": "packages/policies/inference.py",
+      "sha256": "f5a80801cd60c984c417dfca41a3b2241b58054401a8cd9783e1d1e689ddbc0a"
+    },
+    {
+      "path": "packages/policies/library.py",
+      "sha256": "840502289a2c92f205c790d6211e97db3e855fb6769bcc6b552ad10d8331d757"
+    },
+    {
+      "path": "packages/policies/observations.py",
+      "sha256": "906d4674db3c0dc66533b5d855b12f9594e8b9ad9fb74d7896989419d95d5ff5"
+    },
+    {
       "path": "packages/programs/centrifuge/newton.py",
       "sha256": "c5ef3c5a4605f90b7207abf169475ca5d97a16005102b726687533089920d753"
     },
@@ -110,6 +126,10 @@
     {
       "path": "packages/programs/robot_arm/newton.py",
       "sha256": "474686dccb3b4d166a2ee9e3af28333e8cd66beeabe1bd605a3b9ad5c238e1bf"
+    },
+    {
+      "path": "packages/programs/robot_arm/policy.py",
+      "sha256": "5f753e5f076a1b55fbcf50eadaf806c45401edb68fd88cc2486663b6663fec66"
     },
     {
       "path": "packages/programs/robot_arm/preview.py",
@@ -149,7 +169,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "73f629b955a4d3be79f16b725b92d0ed411c19215d2869fbd2064acf8a482ef8"
+      "sha256": "6bfd8dcd23cc7ada34877d7220a618c759ba51a8425e1703a150dc8e9a78b813"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -217,7 +237,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "76adf983e8be222de2c22e7a45412b5611631679d06e92c253bd8f0f5bb6f1ff"
+      "sha256": "336b811f6b0b38cab4219958de52c69cda6a3c4135edcbf6dbe41f6ed062ff20"
     }
   ],
   "documents": {
@@ -227,10 +247,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "0689d87ccb4be3437e575f2ba23fa333010eca46230dfed8eba3b08ba6b1aea6",
-    "catalog.json": "d119cbdb93051123a422f4da5a93e8c97c4df777ab4805a0876fa93846ad277b",
-    "state.json": "957029e99e9cc6d01ddda276a1d16a0efdb88744bcfcf045ea5098aba6a2c6e4",
-    "snapshot.bin": "3c896722ec8f6c2a831873f1b2b01343e4a38279a58bb6d6d31f471cb4f3ad37"
+    "manifest.json": "c4f2f54848a045c19e5a1cfe6d2c5ef021ccf7a89ed9dbb2614418844a5cbe1c",
+    "catalog.json": "a8ab702da0b2252525c9f1a4bdca28c0c9d3befd286b4368a20a3a37f83f7823",
+    "state.json": "22ca04518139658baa51920eb57ec81ea569a89b3089d9054b95acb895905451",
+    "snapshot.bin": "1c900dda6ab5ba393ca3a6da6a630871c61fbcc9db26bd2ad73ec80759be5807"
   },
   "counts": {
     "physicalEntities": 3,

@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-23T22:18:09.895519+00:00",
+  "capturedAt": "2026-10-24T15:31:10.795683+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -108,6 +108,22 @@
       "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
     },
     {
+      "path": "packages/library/transactions.py",
+      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+    },
+    {
+      "path": "packages/policies/inference.py",
+      "sha256": "f5a80801cd60c984c417dfca41a3b2241b58054401a8cd9783e1d1e689ddbc0a"
+    },
+    {
+      "path": "packages/policies/library.py",
+      "sha256": "840502289a2c92f205c790d6211e97db3e855fb6769bcc6b552ad10d8331d757"
+    },
+    {
+      "path": "packages/policies/observations.py",
+      "sha256": "906d4674db3c0dc66533b5d855b12f9594e8b9ad9fb74d7896989419d95d5ff5"
+    },
+    {
       "path": "packages/programs/centrifuge/newton.py",
       "sha256": "c5ef3c5a4605f90b7207abf169475ca5d97a16005102b726687533089920d753"
     },
@@ -122,6 +138,10 @@
     {
       "path": "packages/programs/robot_arm/newton.py",
       "sha256": "474686dccb3b4d166a2ee9e3af28333e8cd66beeabe1bd605a3b9ad5c238e1bf"
+    },
+    {
+      "path": "packages/programs/robot_arm/policy.py",
+      "sha256": "5f753e5f076a1b55fbcf50eadaf806c45401edb68fd88cc2486663b6663fec66"
     },
     {
       "path": "packages/programs/robot_arm/preview.py",
@@ -161,7 +181,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "73f629b955a4d3be79f16b725b92d0ed411c19215d2869fbd2064acf8a482ef8"
+      "sha256": "6bfd8dcd23cc7ada34877d7220a618c759ba51a8425e1703a150dc8e9a78b813"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -237,7 +257,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "76adf983e8be222de2c22e7a45412b5611631679d06e92c253bd8f0f5bb6f1ff"
+      "sha256": "336b811f6b0b38cab4219958de52c69cda6a3c4135edcbf6dbe41f6ed062ff20"
     }
   ],
   "documents": {
@@ -247,10 +267,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "ee62d3eecf49157a7e435025ad997984bcabf574607880bfc0bf6887c89d0363",
-    "catalog.json": "341aa7aca0dbc176c880273c8f198947356b2eb1e9c6264d6987340887b00766",
-    "state.json": "61719ea3336cbcfeb432637cf41deb0d37811f04253dea114f34f8e139dcca2f",
-    "snapshot.bin": "32cb8310f01be2bdfb43378602ddbf947426449878acb4090a6f2cf4e700cf01",
+    "manifest.json": "9ea2f0f5d3ed0136491c12d2e1daa2f9ad23f9e3a3d05fd7c1b007e33a978ddc",
+    "catalog.json": "74ebe524b7e91ad8da9c14b43709037e37cae2d287fd6be7745b1e1ac423e5e3",
+    "state.json": "126c6520cbc46927b79da7c77f1291a00a5eeb99ba2c2fe87c8862864c9c3c60",
+    "snapshot.bin": "efc6ce450a54d0f454fcb8921e614dc7cc713b1a5397a4ca028d929731bd1a9e",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"

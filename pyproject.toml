@@ -16,6 +16,8 @@ dependencies = [
   "psutil>=7.2,<8",
   "usd-core==26.8",
   "paho-mqtt==2.1.0",
+  "onnx==1.19.1",
+  "onnxruntime==1.23.2", # CPU distribution; policy inference never registers CUDA providers.
 ]
 
 [project.scripts]
