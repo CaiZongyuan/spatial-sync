@@ -751,10 +751,13 @@ class EvaluationService:
             "sceneRevision": session.manifest.sceneRevision,
             "epoch": session.epoch,
         }
-        mirror.apply(session.info_snapshot())
         stages = {stage["id"]: False for stage in task["milestones"]}
 
-        def observe():
+        def observe(message=None):
+            if message is not None:
+                if message.sceneRevision != scope["sceneRevision"] or message.epoch != scope["epoch"]:
+                    raise HTTPException(503, {"code": "evaluation_observation_unavailable"})
+                mirror.apply(message)
             conditions = CompiledConditions(
                 [task["success"], *(stage["when"] for stage in task["milestones"])]
             )
@@ -792,7 +795,7 @@ class EvaluationService:
             if attempt is not None:
                 attempt["milestones"] = dict(stages)
 
-        observe()
+        observe(session.info_snapshot())
         cursor = session.info.event_seq
         pipeline = await session.action_pipeline()
         actor = Actor(kind="user", name="platform-evaluator")
@@ -822,8 +825,7 @@ class EvaluationService:
                 value = event["message"]
                 if value["type"] in ("entity.snapshot", "entity.observations"):
                     model = EntitySnapshot if value["type"] == "entity.snapshot" else EntityObservations
-                    mirror.apply(model.model_validate(value))
-                    observe()
+                    observe(model.model_validate(value))
             cursor = events["lastSeq"]
             invocation = pipeline.table.get(invocation.invocationId)
             if attempt is not None:
