@@ -112,6 +112,10 @@ VLA 条目（π0、GR00T N、OpenVLA、SmolVLA 等）在 v1 只登记来源、�
 
 ## 4. Agent 运行器
 
+#44 首版采用 [Runtime records integration A](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)：
+现有 Claude Code/pi 等 runtime 通过 skills、CLI、MCP 接入；平台导入、持久化和展示其已有会话、事件与报告用量。
+本轮不启动 SDK/runtime、不代理模型凭据、不自动驱动完整 Suite；以下历史自动运行/付费 smoke 首版验收由新规格明确替代。
+
 ### 4.1 适配器
 
 - Agent 运行是一种作业（训练规格 §5，类型 `agent-run`），由计算节点上的适配器执行。v1 实现 **Claude Agent SDK 适配器**；接口允许以后接入其他 agent。
@@ -218,6 +222,9 @@ Builder 建好评估集后，对当前对象跑一次完整评估，记为**正�
 训练规格 §8.7、§8.9 扩展到两层：实验记录按"改进目标"组织（如 `goal/fr3-pick-tube`、`goal/lab-ops-basic`），闭环预算增加 LLM 成本上限（美元，按价格表估算）。
 
 ## 11. 成本中心
+
+#44 首版 runtime 来源和幂等用量口径见 [Runtime records integration A](LAB_AGENT_RUNTIME_RECORDS_SPEC_V1.md)。
+直接保留 runtime 报告的用量、成本与来源，缺失为未知；原价格表不作为导入门槛，也不与 runtime 成本重复相加。
 
 ### 11.1 用量记录
 

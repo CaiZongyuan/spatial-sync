@@ -45,6 +45,7 @@ from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import install_recording_routes
 from apps.api.app.resource_routes import install_resource_routes
+from apps.api.app.runtime_routes import install_runtime_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
 from apps.api.app.stream_broadcaster import ClientConnection
@@ -176,6 +177,7 @@ def create_app(
     async def lifespan(app):
         try:
             await manager.startup()
+            await asyncio.to_thread(runtime_records.startup)
             # Resolve the operator's roots at startup, before any owned workers or recordings.
             await asyncio.to_thread(manager.library_deletions.recover)
             manager.library.refresh()
@@ -222,6 +224,11 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
+        if request.url.path.startswith("/api/v1/runtime-sessions"):
+            return JSONResponse(
+                {"detail": {"code": "invalid_runtime_import", "message": "Runtime import is invalid"}},
+                status_code=422,
+            )
         if request.url.path.startswith(("/api/v1/models", "/api/v1/prices", "/api/v1/vault")):
             # These endpoints never echo rejected input (including accidental credential fields).
             return JSONResponse(
@@ -247,6 +254,9 @@ def create_app(
     install_notebook_routes(app, notebooks, lambda headers: _role(headers, settings))
     install_demonstration_routes(app, demonstrations, lambda headers: _role(headers, settings))
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
+    runtime_records = install_runtime_routes(
+        app, manager, app.state.agents, lambda headers: _role(headers, settings)
+    )
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_job_routes(app, manager, lambda headers: _role(headers, settings), views)

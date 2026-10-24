@@ -1,0 +1,7 @@
+{
+  "format": "claude-code-stream-json",
+  "runtimeVersion": "2.1.306",
+  "source": "Existing project-owned tools/agent_journey.py native --output-format stream-json capture",
+  "sourceSha256": "140266872c33268e54e694d98df4cfa1b293b394dd393f4fb2315800276a5e34",
+  "transformation": "Selected native init/assistant/tool-result/final records; identifiers and message bodies minimized; metering/result fields retained. The final capture total owns its contained per-message usage. No new runtime/model invocation."
+}
