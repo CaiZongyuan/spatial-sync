@@ -58,10 +58,12 @@ class AgentGrants:
                 "agent_scope_unavailable", "The Session is not owned by this Agent run", status=409
             )
         revision, expires = session.manifest.sceneRevision, self.clock() + ttl
+        token = PREFIX + secrets.token_urlsafe(32)
 
         def valid():
             return (
                 self.clock() < expires
+                and token in self._tokens
                 and active()
                 and session.state in ("RUNNING", "PAUSED")
                 and session.manifest is not None
@@ -69,7 +71,6 @@ class AgentGrants:
                 and session.agent_run_id == run_id
             )
 
-        token = PREFIX + secrets.token_urlsafe(32)
         self._tokens[token] = ManagedScope(
             run_id, session_id, revision, session.evaluation_id, "managed-" + run_id, valid
         )
@@ -161,6 +162,7 @@ def install_agent_scopes(app, manager):
         try:
             scope = grants.authenticate(token)
             body = await request.json() if request.method in ("POST", "PUT", "PATCH") else {}
+            scope.require()
             if not isinstance(body, dict) or not grants.permits(
                 scope, request.method, request.url.path, request.query_params, body
             ):

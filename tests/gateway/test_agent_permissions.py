@@ -1,5 +1,6 @@
 """Managed authority is enforced by the real HTTP/pipeline, not self-reported actor."""
 
+import asyncio
 import json
 
 import httpx
@@ -170,11 +171,22 @@ async def test_official_mcp_uses_only_owned_http_projection_and_cannot_publish_o
         ) as http:
             foreign = (await http.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"})).json()
             foreign_id = foreign["sessionId"]
-            secret = (await http.post("/api/v1/plans", json={
-                "sessionId": foreign_id, "title": sentinel, "target": "session", "steps": [{
-                    "id": 1, "do": {"entity": CENTRIFUGE, "action": "closeLid"},
-                }],
-            })).json()
+            secret = (
+                await http.post(
+                    "/api/v1/plans",
+                    json={
+                        "sessionId": foreign_id,
+                        "title": sentinel,
+                        "target": "session",
+                        "steps": [
+                            {
+                                "id": 1,
+                                "do": {"entity": CENTRIFUGE, "action": "closeLid"},
+                            }
+                        ],
+                    },
+                )
+            ).json()
             assert secret["status"] == "submitted"
             # A real other-Session Plan and its inbox publication survive Session shutdown.
             await http.delete(f"/api/v1/sessions/{foreign_id}")
@@ -185,8 +197,13 @@ async def test_official_mcp_uses_only_owned_http_projection_and_cannot_publish_o
             session.evaluation_id = "eval-mcp-fixture"
             session.deny_human_gates = True
             token = app.state.agent_grants.issue(session.agent_run_id, session_id)
-            gateway = ScopedGatewayClient(run_id=session.agent_run_id, session=session_id,
-                                          token=token, url="http://127.0.0.1:8048", http=http)
+            gateway = ScopedGatewayClient(
+                run_id=session.agent_run_id,
+                session=session_id,
+                token=token,
+                url="http://127.0.0.1:8048",
+                http=http,
+            )
             requests = []
 
             async def observed(request):
@@ -194,9 +211,9 @@ async def test_official_mcp_uses_only_owned_http_projection_and_cannot_publish_o
 
             http.event_hooks["request"] = [observed]
             server = await create_server(gateway)
-            async with Client(server, mode="legacy", client_info=Implementation(
-                name="user:forged-human", version="1"
-            )) as mcp:
+            async with Client(
+                server, mode="legacy", client_info=Implementation(name="user:forged-human", version="1")
+            ) as mcp:
                 assert {item.name for item in (await mcp.list_tools()).tools} == TARGET_TOOLS
                 assert sentinel not in mcp.session.instructions
                 assert await tool(mcp, "plan_list") == []
@@ -216,11 +233,20 @@ async def test_official_mcp_uses_only_owned_http_projection_and_cannot_publish_o
                     assert sentinel not in str(denied)
                 read = await tool(mcp, "get_state", keys=[CENTRIFUGE])
                 assert read["entities"][CENTRIFUGE]["values"]["lidOpen"] is True
-                ordinary = await tool(mcp, "plan_create", document={
-                    "title": "Verify own state", "target": "session", "steps": [{
-                        "id": 1, "check": {"entity": CENTRIFUGE, "property": "lidOpen", "equals": True},
-                    }],
-                })
+                ordinary = await tool(
+                    mcp,
+                    "plan_create",
+                    document={
+                        "title": "Verify own state",
+                        "target": "session",
+                        "steps": [
+                            {
+                                "id": 1,
+                                "check": {"entity": CENTRIFUGE, "property": "lidOpen", "equals": True},
+                            }
+                        ],
+                    },
+                )
                 assert ordinary["sessionId"] == session_id
                 assert ordinary["requestedBy"]["kind"] == "agent"
                 assert [value["id"] for value in await tool(mcp, "plan_list")] == [ordinary["id"]]
@@ -228,11 +254,21 @@ async def test_official_mcp_uses_only_owned_http_projection_and_cannot_publish_o
                 assert own_inbox["messages"] and own_inbox["approvals"] == []
                 assert {row["sessionId"] for row in own_inbox["messages"]} == {session_id}
                 assert sentinel not in json.dumps(own_inbox)
-                denied_plan = await mcp.call_tool("plan_create", {"document": {
-                    "title": "Cannot ask a human", "target": "session", "steps": [{
-                        "id": 1, "do": {"entity": CENTRIFUGE, "action": "closeLid"},
-                    }],
-                }})
+                denied_plan = await mcp.call_tool(
+                    "plan_create",
+                    {
+                        "document": {
+                            "title": "Cannot ask a human",
+                            "target": "session",
+                            "steps": [
+                                {
+                                    "id": 1,
+                                    "do": {"entity": CENTRIFUGE, "action": "closeLid"},
+                                }
+                            ],
+                        }
+                    },
+                )
                 assert denied_plan.is_error and "approval_denied" in str(denied_plan)
                 after = await http.get("/api/v1/approvals")
                 assert not any(row["sessionId"] == session_id for row in after.json()["approvals"])
@@ -248,3 +284,37 @@ async def test_official_mcp_uses_only_owned_http_projection_and_cannot_publish_o
 def test_managed_mcp_requires_generated_loopback_binding(url):
     with pytest.raises(GatewayError, match="loopback"):
         ScopedGatewayClient(run_id="job-managed", session="session-owned", token="lw-agent-x", url=url)
+
+
+async def test_revocation_during_http_body_read_prevents_a_previously_authenticated_command():
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://127.0.0.1:8048"
+        ) as http:
+            created = (await http.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@3"})).json()
+            session_id = created["sessionId"]
+            session = app.state.manager.get(session_id)
+            session.agent_run_id = "job-revocation"
+            grant = app.state.agent_grants.issue(session.agent_run_id, session_id)
+            body_started, body_continue = asyncio.Event(), asyncio.Event()
+
+            async def chunks():
+                yield b'{"requestId":"revoke-window",'
+                body_started.set()
+                await body_continue.wait()
+                yield b'"command":"pause"}'
+
+            pending = asyncio.create_task(
+                http.post(
+                    f"/api/v1/sessions/{session_id}/commands",
+                    content=chunks(),
+                    headers={"Authorization": "Bearer " + grant, "content-type": "application/json"},
+                )
+            )
+            await asyncio.wait_for(body_started.wait(), 2)
+            app.state.agent_grants.revoke(session.agent_run_id)
+            body_continue.set()
+            response = await asyncio.wait_for(pending, 2)
+            assert response.status_code == 403, response.text
+            assert session.state == "RUNNING"
