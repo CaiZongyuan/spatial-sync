@@ -101,7 +101,7 @@ def install_plan_routes(app, manager, role_for):
 
     @app.get("/api/v1/plans")
     async def plans(kind: str | None = None, status: str | None = None, sessionId: str | None = None):
-        from packages.agent_rsi.privacy import visible_session_id
+        from packages.info.evaluation_privacy import visible_session_id
 
         store.require_started()
         await store.flush()
@@ -123,7 +123,7 @@ def install_plan_routes(app, manager, role_for):
             selected = training_store(manager, identifier=plan_id)
             return selected.document(selected.get(plan_id, revision))
         record = store.get(plan_id, revision)
-        from packages.agent_rsi.privacy import visible_session_id
+        from packages.info.evaluation_privacy import visible_session_id
 
         if not visible_session_id(manager, record.sessionId):
             raise PlanError("unknown_plan", "Unknown public Plan", status=404)

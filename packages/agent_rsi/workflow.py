@@ -821,22 +821,9 @@ class AgentRSI:
         }
 
     def private_recording(self, recording_id):
-        session = self.manager.sessions.get(recording_id)
-        starting = getattr(self.manager, "_starting_session", None)
-        if session is None and starting is not None and starting.session_id == recording_id:
-            session = starting
-        if session is not None:
-            record = self.manager.evaluations.store.records.get(session.evaluation_id, {})
-            if record.get("split") == "test":
-                return True
-        return any(
-            run.get("split") == "test"
-            and any(
-                attempt.get("recordingId") == recording_id
-                for attempt in (*run.get("cases", []), *run.get("episodes", []))
-            )
-            for run in self.manager.evaluations.store.records.values()
-        )
+        from packages.info.evaluation_privacy import private_recording
+
+        return private_recording(self.manager, recording_id)
 
     def native_associations(self, identity):
         capture = self.external.runtime_records.records.get(identity, {})

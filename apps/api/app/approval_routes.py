@@ -66,8 +66,10 @@ def install_approval_routes(app, manager, role_for):
         }
 
     def get_record(approval_id):
+        from packages.info.evaluation_privacy import private_recording
+
         record = store.records.get(approval_id)
-        if record is None or record.sessionId and manager.agent_rsi.private_recording(record.sessionId):
+        if record is None or record.sessionId and private_recording(manager, record.sessionId):
             raise HTTPException(404, {"code": "unknown_approval"})
         return record
 
@@ -79,9 +81,11 @@ def install_approval_routes(app, manager, role_for):
         sessionId: str | None = None,
         limit: int = Query(100, ge=1, le=1000),
     ):
+        from packages.info.evaluation_privacy import private_recording
+
         records = sorted(
             (record for record in store.records.values()
-             if not record.sessionId or not manager.agent_rsi.private_recording(record.sessionId)),
+             if not record.sessionId or not private_recording(manager, record.sessionId)),
             key=lambda record: (record.status == "pending", record.createdAtMs),
             reverse=True,
         )

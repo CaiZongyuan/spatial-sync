@@ -71,8 +71,6 @@ class ExposureRequest(RunRequest):
 def install_agent_rsi_routes(app, manager, agents, external, role_for):
     service = AgentRSI(manager, agents, external)
     app.state.agent_rsi = manager.agent_rsi = service
-    manager.recordings.is_restricted = service.private_recording
-    manager.inbox.is_restricted_session = lambda identity: service.private_recording(identity)
 
     def operator(request):
         if role_for(request.headers) != "operator":

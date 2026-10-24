@@ -941,6 +941,12 @@ class EvaluationService:
 
 
 def install_evaluation_routes(app, service, role_for):
+    from packages.info.evaluation_privacy import private_recording
+
+    manager = service.manager
+    manager.recordings.is_restricted = lambda identity: private_recording(manager, identity)
+    manager.inbox.is_restricted_session = lambda identity: private_recording(manager, identity)
+
     def operator(request):
         if role_for(request.headers) != "operator":
             raise HTTPException(403, {"code": "not_permitted"})

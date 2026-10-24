@@ -420,7 +420,7 @@ def create_app(
 
     @app.get("/api/v1/health")
     async def health():
-        from packages.agent_rsi.privacy import visible_session
+        from packages.info.evaluation_privacy import visible_session
 
         sessions = [session for session in manager.sessions.values() if visible_session(manager, session)]
         return {

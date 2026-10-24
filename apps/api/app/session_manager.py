@@ -1298,7 +1298,7 @@ class SessionManager:
             return session
 
     def get(self, session_id):
-        from packages.agent_rsi.privacy import visible_session_id
+        from packages.info.evaluation_privacy import visible_session_id
 
         if session_id not in self.sessions or not visible_session_id(self, session_id):
             raise HTTPException(404, {"code": "unknown_session"})
