@@ -29,7 +29,9 @@ class Sampler:
 
 allowed_origins = tuple(filter(None, os.getenv("SPATIAL_ALLOWED_ORIGINS", "").split(",")))
 app = create_app(
-    Settings(node_token=TOKEN, node_trainer=(), allowed_origins=allowed_origins or Settings().allowed_origins),
+    Settings(
+        node_token=TOKEN, node_trainer=(), allowed_origins=allowed_origins or Settings().allowed_origins
+    ),
     platform_sampler=Sampler(),
 )
 
