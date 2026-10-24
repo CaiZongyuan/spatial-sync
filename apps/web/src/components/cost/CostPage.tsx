@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { acknowledgeCostAnomaly, CostAnomalyContext, costFilters, costRanges, useCostDashboard, type CostFilters, type CostTotals } from '../../lib/cost';
 import { dollars } from '../../lib/model-resources';
 import { localTime, numberOrUnknown } from '../../lib/training-presentation';
+import { runtimeCount, runtimeMoney } from '../../lib/runtime-records';
 import { CostBreakdownTable, GpuChart, LlmCharts } from './CostCharts';
 import './cost.css';
 
@@ -14,10 +15,11 @@ function dateInput(iso: string | undefined) {
   const date = new Date(iso);
   return Number.isFinite(date.getTime()) ? new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
 }
-function SummaryCard({ title, values }: { title: string; values: CostTotals }) {
+function SummaryCard({ title, values, available }: { title: string; values: CostTotals; available: boolean }) {
   return <section className="cost-summary-card" aria-label={`${title} 成本摘要`}><h2>{title}</h2><dl>
-    <div><dt>Token</dt><dd>{usage(values.tokens)}</dd></div><div><dt>请求</dt><dd>{usage(values.requests)}</dd></div>
-    <div><dt>LLM 成本（估算）</dt><dd>{values.llmUsd == null ? '未接入' : dollars(values.llmUsd)}</dd></div>
+    <div><dt>Token</dt><dd>{available ? runtimeCount(values.tokens) : usage(values.tokens)}</dd></div><div><dt>请求</dt><dd>{available ? runtimeCount(values.requests) : usage(values.requests)}</dd></div>
+    <div><dt>LLM 成本{available ? '（运行时）' : '（估算）'}</dt><dd>{available ? runtimeMoney(values.llmUsd) : values.llmUsd == null ? '未接入' : dollars(values.llmUsd)}</dd>
+      {available && values.llmUsd == null && <small>已知 {runtimeMoney(values.knownLlmUsd)}</small>}</div>
     <div><dt>GPU 小时</dt><dd>{numberOrUnknown(values.gpuHours, 6)}</dd></div>
   </dl></section>;
 }
@@ -56,8 +58,9 @@ export function CostPage({ filters, onFiltersChange }: { filters: CostFilters; o
     ...(key === 'node' ? data?.connectedNodes.map(node => node.id) ?? [] : []), ...(filters[key] ? [filters[key]!] : []),
   ])];
   const total = data?.summary.totals;
+  const llmAvailable = data?.summary.availability.llm ?? false;
   return <main className="cost-page" data-testid="cost-page">
-    <header className="cost-heading"><div><p className="eyebrow">COST & USAGE</p><h1>成本与统计</h1><p>GPU 用量与人维护的价格估算</p></div>
+    <header className="cost-heading"><div><p className="eyebrow">COST & USAGE</p><h1>成本与统计</h1><p>运行时原样报告的 LLM 用量 · GPU 用量与价格估算</p></div>
       <button onClick={refresh}>刷新成本</button></header>
     <div className="cost-filters" aria-label="成本筛选">
       {([['agent', 'Agent'], ['model', '模型'], ['node', '节点'], ['goal', 'RSI 目标'], ['plan', '计划']] as const).map(([key, label]) =>
@@ -78,11 +81,13 @@ export function CostPage({ filters, onFiltersChange }: { filters: CostFilters; o
           {localTime(data.summary.window.start)} — {localTime(data.summary.window.end)} <small>（时间桶按 UTC）</small></span></div>
         <strong data-testid="cost-selected-gpu">{numberOrUnknown(total.gpuHours, 6)} <small>GPU 小时</small></strong>
         <span>GPU 估算 {dollars(total.gpuUsd)}</span>
+        {llmAvailable && <span data-testid="cost-selected-llm">LLM {runtimeMoney(total.llmUsd)} · {total.costSource === 'runtime-estimate' ? '运行时估算（原样）' : total.costSource === 'runtime-reported' ? '运行时报告' : total.costSource === 'runtime-mixed' ? '运行时报告 / 估算混合' : '费用未知'}
+          {total.llmUsd == null && <small> · 已知 {runtimeMoney(total.knownLlmUsd)}</small>}</span>}
         {total.unpricedGpuSeconds > 0 && <small className="cost-price-unknown">* 未定价 {numberOrUnknown(total.unpricedGpuSeconds, 3)} GPU 秒；已定价部分 {dollars(total.knownGpuUsd)}</small>}
       </section>
-      <div className="cost-summary-grid"><SummaryCard title="今日 · UTC" values={data.summary.cards.today} /><SummaryCard title="近 7 天" values={data.summary.cards['7d']} /><SummaryCard title="累计" values={data.summary.cards.all} /></div>
-      <div className="cost-charts-grid"><LlmCharts buckets={data.buckets} /><GpuChart breakdown={data.nodes} connectedNodes={data.connectedNodes} /></div>
-      <div className="cost-breakdown-grid"><CostBreakdownTable title="按 RSI 目标分摊" data={data.goals} /><CostBreakdownTable title="按计划分摊" data={data.plans} /></div>
+      <div className="cost-summary-grid"><SummaryCard title="今日 · UTC" values={data.summary.cards.today} available={llmAvailable} /><SummaryCard title="近 7 天" values={data.summary.cards['7d']} available={llmAvailable} /><SummaryCard title="累计" values={data.summary.cards.all} available={llmAvailable} /></div>
+      <div className="cost-charts-grid"><LlmCharts buckets={data.buckets} available={llmAvailable} /><GpuChart breakdown={data.nodes} connectedNodes={data.connectedNodes} /></div>
+      <div className="cost-breakdown-grid"><CostBreakdownTable title="按 RSI 目标分摊" data={data.goals} available={llmAvailable} /><CostBreakdownTable title="按计划分摊" data={data.plans} available={llmAvailable} /></div>
       <section className="panel cost-anomalies"><header><div><h2>成本异常</h2><span>{anomalies.data?.unreadCount ?? '—'} 条未读</span></div>
         {anomalies.data?.canAcknowledge && <button disabled={reading || !anomalies.data.unreadCount}
           onClick={() => void markRead(anomalies.data!.anomalies.filter(row => !row.read).map(row => row.id))}>全部标为已读</button>}</header>
@@ -95,10 +100,10 @@ export function CostPage({ filters, onFiltersChange }: { filters: CostFilters; o
           {row.read ? <span>已读</span> : anomalies.data?.canAcknowledge && <button disabled={reading} onClick={() => void markRead([row.id])}>标为已读</button>}
         </li>)}</ul>
       </section>
-      <footer className="cost-footer"><p>{total.estimatedGpuSeconds > 0 || total.historicalGpuSeconds > 0
+      <footer className="cost-footer">{llmAvailable ? <p>LLM 来自导入的运行时计量，费用保留运行时报告或估算来源；未提供字段保留未知，不按当前价格表重算。按首次导入时间入桶，追加或重复导入更新同一条记录。<Link to="/runtime-sessions">查看运行记录与来源</Link></p> : <p>{total.estimatedGpuSeconds > 0 || total.historicalGpuSeconds > 0
         ? 'GPU 账本含保守计数或历史累计，已上报量与估计量分列；金额按价格表估算。'
-        : 'Token 与 GPU 小时为平台精确记录，金额按价格表估算。'}</p>
-        <p>LLM 用量尚未接入，未显示的请求与 Token 保留未知。GPU 已上报 {numberOrUnknown(total.reportedGpuSeconds, 3)} 秒；失联或尚未确认的保守计数 {numberOrUnknown(total.estimatedGpuSeconds, 3)} 秒。</p>
+        : 'Token 与 GPU 小时为平台精确记录，金额按价格表估算。'}</p>}
+        <p>{!llmAvailable && 'LLM 用量尚未接入，未显示的请求与 Token 保留未知。'}GPU 已上报 {numberOrUnknown(total.reportedGpuSeconds, 3)} 秒；失联或尚未确认的保守计数 {numberOrUnknown(total.estimatedGpuSeconds, 3)} 秒。</p>
         {total.historicalGpuSeconds > 0 && <p>含历史累计 {numberOrUnknown(total.historicalGpuSeconds, 3)} 秒，缺少原始观测时点与价格版本。</p>}
         <p>时间桶按 UTC，GPU 增量按相邻观测区间分摊；已知排队区间不计入。* 表示缺少价格，金额保留未知，已定价部分单独列出。<Link to="/resources/models">价格与审计</Link></p>
       </footer>
