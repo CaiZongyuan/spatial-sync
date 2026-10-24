@@ -2,8 +2,18 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
+from packages.models import Thinking
 from packages.training.predictions import prediction
 
 
@@ -150,20 +160,12 @@ class PlanBudget(Schema):
     episodes: int | None = Field(default=None, ge=1)
 
 
-class TrainingPlan(Schema):
+class PlanIntent(Schema):
     id: str = Field(pattern=r"^plan-[A-Za-z0-9-]+$")
     kind: Literal["training"] = "training"
     title: Text
     goal: Text
-    goalId: GoalRef | None = None
-    task: TaskRef
     previous: str | None = None
-    algorithm: dict[str, JsonValue] = Field(min_length=1)
-    model: dict[str, JsonValue] = Field(min_length=1)
-    hyperparameters: dict[str, JsonValue] = Field(min_length=1)
-    jobs: Jobs
-    budget: PlanBudget
-    evaluation: Evaluation
     rationale: Text
     hypotheses: list[Hypothesis] = Field(min_length=1)
     notebookRead: list[Text]
@@ -177,3 +179,66 @@ class TrainingPlan(Schema):
         if len({item.id for item in value}) != len(value):
             raise ValueError("hypothesis IDs must be distinct")
         return value
+
+
+class TrainingPlan(PlanIntent):
+    layer: Literal["embodied"] = "embodied"
+    goalId: GoalRef | None = None
+    task: TaskRef
+    algorithm: dict[str, JsonValue] = Field(min_length=1)
+    model: dict[str, JsonValue] = Field(min_length=1)
+    hyperparameters: dict[str, JsonValue] = Field(min_length=1)
+    jobs: Jobs
+    budget: PlanBudget
+    evaluation: Evaluation
+
+
+class AgentSelection(Schema):
+    id: str = Field(pattern=r"^agent/[a-z0-9]+(?:-[a-z0-9]+)*$")
+    harnessVersion: int = Field(ge=1)
+
+
+class AgentModel(Schema):
+    ref: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255}$")
+    thinking: Thinking
+
+
+class AgentBudget(Schema):
+    caseRuns: int = Field(ge=1)
+    requests: int = Field(ge=1)
+    tokens: int = Field(ge=1)
+    llmUsd: float = Field(ge=0)
+    wallSeconds: float = Field(gt=0)
+    maxOutputTokensPerRequest: int = Field(ge=1)
+
+
+class AgentTrainingPlan(PlanIntent):
+    layer: Literal["agent"]
+    goalId: GoalRef
+    agent: AgentSelection
+    suite: str = Field(pattern=r"^suite/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")
+    split: Literal["train"] = "train"
+    model: AgentModel
+    credentialRef: str = Field(min_length=1, max_length=128)
+    executionProfile: Literal["lw.agent-restricted/1"]
+    budget: AgentBudget
+
+    @field_validator("credentialRef")
+    @classmethod
+    def credential_name(cls, value):
+        from packages.vault import valid_name
+
+        return valid_name(value)
+
+
+def normalize_plan_layer(value):
+    if isinstance(value, dict) and "layer" not in value:
+        return value | {"layer": "embodied"}
+    return value
+
+
+PlanDocument = Annotated[
+    Annotated[TrainingPlan | AgentTrainingPlan, Field(discriminator="layer")],
+    BeforeValidator(normalize_plan_layer),
+]
+PLAN_DOCUMENT = TypeAdapter(PlanDocument)
