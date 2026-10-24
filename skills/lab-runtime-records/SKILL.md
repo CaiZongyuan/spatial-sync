@@ -67,6 +67,10 @@ Association flags omitted during refresh preserve existing links;
 `--clear-associations` explicitly clears them. A conflict means an existing
 event changed or the native session has a different capture scope. Preserve the
 original input and report the conflict; do not invent replacement identities.
+Once a final result is retained, backfill conversation or message usage with the
+full ordered snapshot, including every retained event and that original result
+with preserved or increased reported counters. Partial conversation increments
+are unsupported; known-event retries and metadata-only additions remain valid.
 
 Keep native zero values distinct from missing values. Missing requests, total
 tokens, timestamps and thinking levels stay unknown; turns do not count as

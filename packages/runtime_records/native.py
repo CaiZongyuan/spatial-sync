@@ -191,16 +191,16 @@ def normalize(format_name, records):
             "Split captures with distinct result totals before importing",
             status=422,
         )
-    if format_name == "claude-code-stream-json":
-        final = next((index for index, record in enumerate(records) if record.get("type") == "result"), None)
-        if final is not None and any(
-            record.get("type") in {"assistant", "user"} for record in records[final + 1 :]
-        ):
-            raise PlanError(
-                "unsupported_runtime_counter_scope",
-                "Split post-result conversation captures before importing",
-                status=422,
-            )
+    final = next((index for index, record in enumerate(records) if record.get("type") == "result"), None)
+    if final is not None and any(
+        record.get("type") in {"assistant", "user"} or record.get("message")
+        for record in records[final + 1 :]
+    ):
+        raise PlanError(
+            "unsupported_runtime_counter_scope",
+            "Split post-result conversation captures before importing",
+            status=422,
+        )
     events, receipts = [], {}
     for record in records:
         native_type = text(record.get("type"), required=True)

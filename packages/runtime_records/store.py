@@ -139,6 +139,40 @@ class RuntimeRecords:
                     status=409,
                 )
             indexed = {event["id"]: event for event in record["events"]}
+            prior_results = {event["id"] for event in record["events"] if event["nativeType"] == "result"}
+            incoming_results = {event["id"] for event in parsed["events"] if event["nativeType"] == "result"}
+            backfill = bool(prior_results) and (
+                any(
+                    event["id"] not in indexed
+                    and (event["nativeType"] in {"assistant", "user"} or event["kind"] in {"message", "tool"})
+                    for event in parsed["events"]
+                )
+                or any(
+                    key.startswith("message:")
+                    and merge_metric(record["receipts"].get(key), value) != record["receipts"].get(key)
+                    for key, value in parsed["receipts"].items()
+                )
+            )
+            # Only a complete native snapshot establishes that backfilled conversation
+            # belongs to an already retained result; partial increments cannot extend it.
+            if prior_results and (
+                incoming_results - prior_results
+                or backfill
+                and (
+                    incoming_results != prior_results
+                    or not indexed.keys() <= {event["id"] for event in parsed["events"]}
+                    or any(
+                        merge_metric(value, parsed["receipts"].get(key, {})) != parsed["receipts"].get(key)
+                        for key, value in record["receipts"].items()
+                        if key.startswith("capture:")
+                    )
+                )
+            ):
+                raise PlanError(
+                    "unsupported_runtime_counter_scope",
+                    "Refresh a completed capture with its full ordered snapshot and original result",
+                    status=409,
+                )
             added = 0
             for event in parsed["events"]:
                 previous = indexed.get(event["id"])
@@ -150,6 +184,10 @@ class RuntimeRecords:
                     indexed[event["id"]] = event
                     record["events"].append(event)
                     added += 1
+            if backfill:
+                record["events"] = [
+                    indexed[key] for key in dict.fromkeys(event["id"] for event in parsed["events"])
+                ]
             updated = 0
             for key, metric in parsed["receipts"].items():
                 before = record["receipts"].get(key)

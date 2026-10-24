@@ -98,6 +98,11 @@ cost. A changed event or a different capture scope for the same native session
 returns a conflict; keep the original capture rather than combining unrelated
 outputs. Native stream captures support one final result; multi-result scopes
 return an unsupported-format error.
+After a result is retained, new conversation events or changed message usage
+require a full ordered snapshot containing every retained event and the original
+result identity, with its reported counters preserved or increased. Backfilled
+conversation stays before that result. Partial conversation increments return
+a conflict; known-event retries and metadata-only additions remain supported.
 
 `lw runtime ingest records.json --format claude-code-stream-json --json` accepts
 a JSON array of the same native records. Generic MCP `runtime_import` accepts

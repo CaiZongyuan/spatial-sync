@@ -206,14 +206,11 @@ class CostLedger:
             "unpricedGpuSeconds": unpriced,
             "priceRevisions": sorted(revisions),
             "priceWarnings": sorted(warnings),
+            "runtimeSessionCount": 0,
         }
-        runtime = getattr(self.manager, "runtime_records", None)
-        if runtime and runtime.records:
-            result.update(
-                aggregate_imported(
-                    [job for job in jobs if job.get("source") == "runtime-import"], window, include_end
-                )
-            )
+        imported = [job for job in jobs if job.get("source") == "runtime-import"]
+        if imported:
+            result.update(aggregate_imported(imported, window, include_end))
         return result
 
     def summary(self, window, filters):

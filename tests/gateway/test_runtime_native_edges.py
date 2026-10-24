@@ -2,12 +2,15 @@
 
 import json
 from copy import deepcopy
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
+from apps.api.app.settings import Settings
 from tests.fixtures.training_task import task_archive, training_plan
+from tests.gateway.test_cost_http import TOKEN, admitted, report, totals
 from tests.gateway.test_runtime_records import FIXTURE
 
 
@@ -90,6 +93,87 @@ def test_init_and_result_models_are_explicit_without_registry_or_invented_times(
     session = only.json()["session"]
     assert session["models"] == ["claude-opus-5-5"]
     assert session["createdAt"] is None and session["updatedAt"] is None and session["importedAt"]
+
+
+@pytest.mark.parametrize(
+    "extension", ["new-message", "new-user", "message-usage", "partial-result", "new-result"]
+)
+def test_completed_capture_rejects_unscoped_conversation_or_usage_growth(http, extension):
+    records = native()
+    original = post(http, records).json()["session"]
+    saved = http.app.state.runtime_records.path.read_bytes()
+    message = deepcopy(records[2] if extension == "new-user" else records[1])
+    if extension == "message-usage":
+        message["message"]["usage"]["input_tokens"] = 1000
+    else:
+        message["uuid"] = "late-event"
+        message["message"]["id"] = "late-message"
+    incoming = [records[0], message]
+    if extension == "partial-result":
+        incoming.append(records[-1])
+    elif extension == "new-result":
+        result = deepcopy(records[-1])
+        result["uuid"] = "different-result"
+        incoming = [records[0], result]
+    response = post(http, incoming)
+    assert response.status_code == 409 and "unsupported_runtime_counter_scope" in response.text
+    current = http.get(f"/api/v1/runtime-sessions/{original['id']}").json()
+    assert current["eventCount"] == original["eventCount"] and current["status"] == "completed"
+    assert current["usage"] == original["usage"] and current["contentHash"] == original["contentHash"]
+    assert http.app.state.runtime_records.path.read_bytes() == saved
+    assert http.get("/api/v1/cost/summary", params={"range": "all"}).json()["totals"]["llmUsd"] == 0.3244434
+
+
+def test_completed_capture_allows_metadata_and_known_event_retries_without_result(http):
+    records = native()
+    original = post(http, records).json()["session"]
+    metadata = {"type": "rate_limit_event", "uuid": "later-metadata", "session_id": records[0]["session_id"]}
+    response = post(http, [records[0], metadata])
+    assert response.status_code == 202, response.text
+    current = response.json()["session"]
+    assert current["eventCount"] == original["eventCount"] + 1
+    assert current["usage"] == original["usage"] and current["status"] == "completed"
+    assert post(http, records[:-1]).json()["idempotent"]
+
+
+def test_completed_capture_backfill_needs_full_ordered_snapshot_and_nondecreasing_result(http):
+    records = native()
+    original = post(http, [records[0], records[-1]]).json()["session"]
+    lower = deepcopy(records)
+    lower[-1]["total_cost_usd"] = 0
+    assert post(http, lower).status_code == 409
+    response = post(http, records)
+    assert response.status_code == 202, response.text
+    assert response.json()["addedEvents"] == 2
+    current = http.get(f"/api/v1/runtime-sessions/{original['id']}").json()
+    assert [event["id"] for event in current["events"]] == [record["uuid"] for record in records]
+    assert current["usage"] == original["usage"] and current["messageCount"] == 2
+    assert post(http, records).json()["idempotent"]
+    assert post(http, [records[0], records[-1], records[1]]).status_code == 422
+
+
+def test_unrelated_runtime_import_preserves_unknown_llm_for_existing_embodied_plan():
+    app = create_app(Settings(node_token=TOKEN))
+    clock = [datetime.now(UTC).timestamp()]
+    app.state.jobs.clock = lambda: clock[0]
+    with TestClient(app) as http:
+        plan, body, job = admitted(http, clock)
+        clock[0] += 10
+        assert report(http, body, job, 10, "failed").status_code == 200
+        filters = {"plan": f"{plan['id']}@1", "range": "all"}
+        before = totals(http, **filters)
+        assert before["gpuSeconds"] == 10 and before["llmUsd"] is None
+        assert post(http, native()).status_code == 202
+        after = totals(http, **filters)
+        for field in ("requests", "tokens", "llmUsd", "inputTokens", "outputTokens", "cacheReadTokens"):
+            assert after[field] is before[field] is None
+        assert after["gpuSeconds"] == before["gpuSeconds"] and after["runtimeSessionCount"] == 0
+        series = http.get("/api/v1/cost/series", params=filters).json()["buckets"]
+        assert all(bucket["llmUsd"] is None and bucket["requests"] is None for bucket in series)
+        assert totals(http)["llmUsd"] == 0.3244434
+        empty = totals(http, range="custom", start="2020-01-01T00:00:00Z", end="2020-01-02T00:00:00Z")
+        assert empty["llmUsd"] == empty["tokens"] == empty["requests"] == empty["runtimeSessionCount"] == 0
+        assert http.get("/api/v1/health").json()["sessionCount"] == 0
 
 
 def test_explicit_links_need_no_approved_plan_and_unprovided_goal_stays_unassociated(http):
