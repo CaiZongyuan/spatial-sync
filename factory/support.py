@@ -99,7 +99,7 @@ def empty(checked_at):
             "expectedAddedSeconds": 10,
             "actualAddedSeconds": None,
         },
-        "complete": False,
+        "sourcePackagesComplete": False,
     }
 
 
@@ -132,8 +132,16 @@ def validate(data):
         or configuration.get("autoStartServerDefault") is not True
     ):
         errors.append("the addon auto-start baseline is not recorded honestly")
-    if data.get("complete") is not True:
-        errors.append("support list is not marked complete")
+    if configuration.get("telemetry") != "DISABLE_TELEMETRY=true":
+        errors.append("the telemetry disable flag is not recorded")
+    runtime_unavailable = "unavailable" in str(configuration.get("telemetryRuntime"))
+    if (blender.get("verified") or {}).get("telemetryDisabled"):
+        if runtime_unavailable:
+            errors.append("telemetry cannot be both verified and unavailable")
+    elif not runtime_unavailable:
+        errors.append("telemetry must be verified or explicitly unavailable")
+    if data.get("sourcePackagesComplete") is not True:
+        errors.append("source packages are not marked complete")
     candidates = data.get("sourcePackages")
     if not isinstance(candidates, list):
         return errors + ["sourcePackages must be a list"]
@@ -147,6 +155,14 @@ def validate(data):
         if item.get("revision") != REVISION:
             errors.append(f"{prefix}: revision is not pinned")
         source = item.get("source") or {}
+        planned = item.get("plannedLocalAssetId")
+        if (
+            not isinstance(planned, str)
+            or "/" not in planned
+            or "@" in planned
+            or planned.strip() != planned
+        ):
+            errors.append(f"{prefix}: plannedLocalAssetId is not a bare local asset id")
         if candidate is not None and (
             source.get("expectedFiles") != candidate.expected_files
             or source.get("expectedBytes") != candidate.expected_bytes

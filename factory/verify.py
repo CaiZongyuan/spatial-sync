@@ -60,6 +60,26 @@ def _synthetic():
     return errors, round(time.perf_counter() - started, 2)
 
 
+def _full_journey(item):
+    adaptation = item.get("adaptation") or {}
+    import_info = item.get("import") or {}
+    structure = import_info.get("structural") or {}
+    usage = item.get("usage") or {}
+    return (
+        adaptation.get("status") == "pass"
+        and import_info.get("status") == "pass"
+        and isinstance(import_info.get("assetVersion"), str)
+        and bool(import_info["assetVersion"])
+        and isinstance(import_info.get("contentHash"), str)
+        and len(import_info["contentHash"]) == 64
+        and all(structure.get(f"S{index}") == "pass" for index in range(1, 8))
+        and import_info.get("physicsStatus") == "completed"
+        and (adaptation.get("sourcePhysics") or {}).get("massIsUpstreamDeclaration") is True
+        and usage.get("dressingUsable") is True
+        and usage.get("staticCollisionUsable") is True
+    )
+
+
 def check():
     """Run the synthetic end-to-end journey and validate the committed support list."""
     synthetic_errors, seconds = _synthetic()
@@ -71,13 +91,9 @@ def check():
         data = support_schema.load(support_path)
         support_errors.extend(support_schema.validate(data))
         candidates = data.get("sourcePackages") or []
-        if not any(
-            item.get("adaptation", {}).get("status") == "pass"
-            and item.get("import", {}).get("status") == "pass"
-            for item in candidates
-        ):
+        if not any(_full_journey(item) for item in candidates):
             support_errors.append(
-                "support list has no source package that completed adaptation and import"
+                "support list has no source package that completed adaptation, import and usage validation"
             )
     errors = synthetic_errors + support_errors
     if not support_path.is_file():
@@ -233,21 +249,25 @@ def evidence(args):
         entries.append(_source_entry(candidate, report, imported))
     result = support_schema.empty(datetime.now(UTC).isoformat(timespec="seconds"))
     result["sourcePackages"] = sorted(entries, key=lambda item: item["package"])
-    synthetic_errors, seconds = _synthetic()
-    result["ci"]["actualAddedSeconds"] = seconds
-    result["ci"]["measuredScope"] = "synthetic adapter/import journey"
-    result["complete"] = len(entries) == len(SOURCE_PACKAGES) and any(
-        item["adaptation"]["status"] == "pass" and item["import"]["status"] == "pass"
-        for item in entries
-    )
-    if synthetic_errors:
-        result["complete"] = False
-    support_errors = support_schema.validate(result)
-    if support_errors:
-        result["complete"] = False
     blender_evidence = Path(args.blender_evidence) if args.blender_evidence else output / "blender.json"
     if blender_evidence.is_file():
         result["blender"] = _blender_summary(support_schema.load(blender_evidence))
+    synthetic_errors, seconds = _synthetic()
+    result["ci"]["actualAddedSeconds"] = seconds
+    result["ci"]["measuredScope"] = "synthetic adapter/import journey"
+    result["sourcePackagesComplete"] = (
+        len(entries) == len(SOURCE_PACKAGES)
+        and blender_evidence.is_file()
+        and any(
+            item["adaptation"]["status"] == "pass" and item["import"]["status"] == "pass"
+            for item in entries
+        )
+    )
+    if synthetic_errors:
+        result["sourcePackagesComplete"] = False
+    support_errors = support_schema.validate(result)
+    if support_errors:
+        result["sourcePackagesComplete"] = False
     support_path = output / "support.json"
     support_path.write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -261,7 +281,7 @@ def evidence(args):
             {
                 "support": str(support_path),
                 "sourcePackages": len(entries),
-                "complete": result["complete"],
+                "sourcePackagesComplete": result["sourcePackagesComplete"],
                 "supportErrors": support_errors,
             },
             indent=2,
@@ -269,7 +289,7 @@ def evidence(args):
     )
     return (
         0
-        if result["complete"]
+        if result["sourcePackagesComplete"]
         and not support_errors
         and all(item["adaptation"]["status"] != "fail" for item in entries)
         else 1
