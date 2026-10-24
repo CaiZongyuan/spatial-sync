@@ -790,6 +790,11 @@ class EvaluationService:
     async def _episode(self, session, suite, case, *, attempt=None):
         task = suite.task
         mirror = StateStore(session.manifest.sceneRevision, session.epoch)
+        scope = {
+            "sessionId": session.session_id,
+            "sceneRevision": session.manifest.sceneRevision,
+            "epoch": session.epoch,
+        }
         mirror.apply(session.info_snapshot())
         stages = {stage["id"]: False for stage in task["milestones"]}
 
@@ -800,11 +805,12 @@ class EvaluationService:
             conditions = [
                 condition | {"entity": condition.get("entity", task["robot"])} for condition in conditions
             ]
-            scope = {
-                "sessionId": session.session_id,
-                "sceneRevision": session.manifest.sceneRevision,
-                "epoch": session.epoch,
-            }
+            if (
+                session.session_id != scope["sessionId"]
+                or session.manifest.sceneRevision != scope["sceneRevision"]
+                or session.epoch != scope["epoch"]
+            ):
+                raise HTTPException(503, {"code": "evaluation_observation_unavailable"})
             sample = {
                 "scope": scope | {"sceneRevision": mirror.scene_revision, "epoch": mirror.epoch},
                 "state": {
