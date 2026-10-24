@@ -28,7 +28,7 @@ from packages.runtime_records.native import digest, redacted
 
 class RuntimeDeclaration(Model):
     name: str = Field(min_length=1, max_length=128)
-    version: str = Field(min_length=1, max_length=128)
+    version: str | None = Field(default=None, min_length=1, max_length=128)
     model: str = Field(min_length=1, max_length=256)
     thinking: str | None = Field(default=None, max_length=128)
 
@@ -235,6 +235,7 @@ class ExternalEvaluations:
             or record["models"]
             and record["models"] != [run["runtime"]["model"]]
             or record["runtimeVersion"] is not None
+            and run["runtime"]["version"] is not None
             and record["runtimeVersion"] != run["runtime"]["version"]
         ):
             raise PlanError(
@@ -246,6 +247,12 @@ class ExternalEvaluations:
             "runtimeRecordId": record["id"],
             "runtimeRecordHash": record["contentHash"],
             "usage": deepcopy(record["usage"]) | {"observationBasis": "completion-snapshot"},
+            "observedRuntime": {
+                "name": record["runtime"],
+                "version": record["runtimeVersion"],
+                "models": record["models"],
+                "thinking": record["thinking"],
+            },
         }
 
     async def complete(self, identifier, body):

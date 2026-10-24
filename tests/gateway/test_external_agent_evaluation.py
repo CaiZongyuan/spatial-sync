@@ -38,7 +38,7 @@ def work(http, run):
 
 def test_public_verification_case_scores_trusted_http_and_duplicate_completion():
     with TestClient(create_app()) as http:
-        run, body = create(http)
+        run, body = create(http, runtime=DECLARATION | {"version": None})
         repeated = http.post("/api/v1/agents/lab-operator/runs", json=body)
         assert repeated.json()["id"] == run["id"]
         item = work(http, run)
@@ -123,3 +123,30 @@ def test_target_scope_survives_own_reset_and_high_risk_is_denied_without_human_a
         assert done.status_code == 200 and done.json()["case"]["status"] == "completed", done.text
         assert done.json()["case"]["score"] == 20
         assert done.json()["case"]["metrics"]["rejectedHighRisk"] == 1
+
+
+def test_scoped_plan_list_never_returns_another_sessions_plan():
+    with TestClient(create_app()) as http:
+        previous = http.post(
+            "/api/v1/sessions", json={"sceneVersion": "lab-demo@3", "source": "synthetic"}
+        ).json()
+        plan = http.post(
+            "/api/v1/plans",
+            json={
+                "title": "Unrelated previous work",
+                "sessionId": previous["sessionId"],
+                "target": "session",
+                "steps": [{"id": 1, "do": {"entity": CENTRIFUGE, "action": "closeLid", "params": {}}}],
+            },
+        ).json()
+        assert http.delete("/api/v1/sessions/" + previous["sessionId"]).status_code == 204
+        run, _ = create(http)
+        item = work(http, run)
+        listed = http.get(
+            "/api/v1/plans",
+            params={"sessionId": item["sessionId"]},
+            headers={"Authorization": "Bearer " + item["connection"]["token"]},
+        )
+        assert listed.status_code == 200
+        assert plan["id"] not in [value["id"] for value in listed.json()["plans"]]
+        assert http.post(BASE + run["id"] + "/cancel").status_code == 200
