@@ -286,6 +286,7 @@ class LoopBudgets:
             if authority and limit is None
             else None,
             "actual": actual,
+            "knownActual": known,
             "unspentCommitment": unspent,
             "effective": effective,
             "remaining": {name: max(0, limit[name] - effective[name])
@@ -293,6 +294,7 @@ class LoopBudgets:
                           for name in actual},
             "firstApprovedAt": first_at,
             "deadline": deadline,
+            "expired": expired,
             "elapsedDays": max(0, (self.clock() - first_at) / 86400) if first_at is not None else 0,
             "exhausted": bool(exhausted),
             "exhaustedDimensions": exhausted,

@@ -124,7 +124,12 @@ def usage_snapshot(rows, stop_reason=None):
         row["id"]: ProviderQuote(row["quoteRevision"], row["rates"]).cost(row["usage"]) for row in rows
     }
     money = sum(costs.values(), Decimal(0))
+    fields = ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
+    known = {name: sum(row["usage"].get(key, 0) for row in rows)
+             for name, key in zip(fields, TOKEN_KEYS, strict=True)}
     return {
+        **{name: None if unknown else value for name, value in known.items()},
+        **{"known" + name[0].upper() + name[1:]: value for name, value in known.items()},
         "requests": None if pending else len(attempted),
         "knownRequests": len(attempted) - len(pending),
         "reservedRequests": len(pending),

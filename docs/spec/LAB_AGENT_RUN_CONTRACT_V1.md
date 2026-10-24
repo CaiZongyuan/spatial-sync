@@ -26,6 +26,10 @@ An existing Goal keeps its original authority. A missing Agent/LLM axis remains 
 approval card; approving this Plan authorizes only its finite known envelope and does not manufacture a global
 Goal limit or free balance. Requests/tokens/execution seconds are per-Plan axes, not additional Goal dimensions.
 Agent case runs and physical episodes remain distinct; Synthetic CPU execution has actual GPU use0.
+The same finite-Plan exception applies to Goal.days only when that exact active human approval reviewed a fresh
+card already showing the original Goal deadline as expired. The Run retains a server proof linking that approval,
+revision and review basis, and executes within its remaining shared Plan seconds. The original Goal remains expired;
+an earlier approval does not revive when time passes, and a stale pending card must be resubmitted.
 
 The CLI prototype is extended with its approved parent Plan:
 

@@ -47,6 +47,7 @@ class AgentRuns:
         self.records, self._deadlines, self._case_active = {}, {}, {}
         self._lock = threading.RLock()
         self._failure = False
+        self.clock = time.time
 
     def startup(self):
         if self.path.exists():
@@ -72,6 +73,21 @@ class AgentRuns:
                 ) from error
             self.records = records
             return record
+
+    def create(self, record):
+        with self._lock:
+            if self._failure:
+                raise PlanError("agent_runs_unavailable", "Agent Job persistence is unavailable", status=503)
+            records = self.records | {record["jobId"]: deepcopy(record)}
+            try:
+                durable_json(self.path, records)
+            except OSError as error:
+                self._failure = True
+                raise PlanError(
+                    "agent_runs_unavailable", "Agent Job persistence is unavailable", status=503
+                ) from error
+            self.records = records
+            return records[record["jobId"]]
 
     def get(self, identity):
         if identity not in self.records:
@@ -159,7 +175,12 @@ class AgentRuns:
                 raise PlanError("agent_plan_busy", "This Plan already has an admitted Agent Run", status=409)
             frozen = self.inputs.verify(stored)
             goal = self.manager.loop_budgets.summary(plan["goalId"])
-            if goal["deadline"] is not None and time.time() >= goal["deadline"]:
+            exception = self.goal_exception(stored)
+            if (
+                goal["deadline"] is not None
+                and self.clock() >= goal["deadline"]
+                and "days" not in (exception or {}).get("dimensions", [])
+            ):
                 raise PlanError("goal_budget_exhausted", "The Goal deadline expired", status=409)
             # The fresh human approval grants this finite envelope, including any
             # overage shown on its card, without changing the original Goal limit.
@@ -238,6 +259,7 @@ class AgentRuns:
                 "executionSeconds": 0.0,
                 "cleanupSeconds": 0.0,
                 "goalDeadline": goal["deadline"],
+                "goalException": exception,
                 "budget": budget,
                 "plan": plan,
                 "frozenInputs": frozen,
@@ -258,14 +280,10 @@ class AgentRuns:
                 "artifacts": [],
                 "admissionState": "creating-evaluation",
             }
-            self.records[identity] = record
             try:
-                await persist(self.update, identity)
+                await persist(self.create, record)
             except asyncio.CancelledError:
                 self.update(identity, status="failed", reason="admission_interrupted", finishedAt=time.time())
-                raise
-            except BaseException:
-                self.records.pop(identity, None)
                 raise
             evaluation = {
                 "evaluationId": evaluation_id,
@@ -305,6 +323,16 @@ class AgentRuns:
     def active(self, identity):
         record = self.get(identity)
         approval = self.manager.approvals.records.get(record["authorityId"])
+        proof = record.get("goalException") or {}
+        days_exception = (
+            "days" in proof.get("dimensions", [])
+            and approval is not None
+            and proof.get("approvalId") == record["authorityId"]
+            and proof.get("planId") == record["planId"]
+            and proof.get("planRevision") == record["planRevision"]
+            and approval.details.get("loopBudget", {}).get("basis") == proof.get("reviewBasis")
+            and "days" in approval.details.get("loopBudget", {}).get("exhaustedDimensions", [])
+        )
         return (
             not self._failure
             and record["status"] == "running"
@@ -312,8 +340,52 @@ class AgentRuns:
             and approval
             and approval.status == "approved"
             and time.monotonic() < self._deadlines.get(identity, 0)
-            and (record["goalDeadline"] is None or time.time() < record["goalDeadline"])
+            and (record["goalDeadline"] is None or self.clock() < record["goalDeadline"] or days_exception)
         )
+
+    def goal_exception(self, stored):
+        approval = self.manager.approvals.records.get(stored.approvalId)
+        review = (stored.goalContext or {}).get("review", {})
+        card = approval.details.get("loopBudget", {}) if approval else {}
+        human = (
+            next(
+                (
+                    decision
+                    for decision in reversed(approval.decisions)
+                    if decision.decision == "approve" and decision.actor.kind != "agent"
+                ),
+                None,
+            )
+            if approval
+            else None
+        )
+        if (
+            not approval
+            or approval.status != "approved"
+            or human is None
+            or card.get("basis") != review.get("basis")
+            or not review.get("basis")
+        ):
+            return None
+        dimensions = [
+            name
+            for name in ("caseRuns", "llmUsd")
+            if (review.get("limit") or {}).get(name) is not None
+            and review["effective"].get(name, 0) > review["limit"][name]
+        ]
+        if "days" in review.get("exhaustedDimensions", []) and review.get("deadline") is not None:
+            dimensions.append("days")
+        if not dimensions:
+            return None
+        return {
+            "dimensions": dimensions,
+            "approvalId": approval.approvalId,
+            "planId": stored.plan.id,
+            "planRevision": stored.plan.revision,
+            "reviewBasis": review["basis"],
+            "originalDeadline": review.get("deadline"),
+            "approvedAtMs": human.atMs,
+        }
 
     @staticmethod
     def wall_commitment(record):
