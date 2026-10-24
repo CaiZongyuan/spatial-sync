@@ -50,7 +50,7 @@ RSI 指 Recursive Self-Improvement：agent 通过平台闭环地改进实验室�
 
 ### 2.3 不包含
 
-- 场景搭建与建模工具：Web 内编辑、agent 在平台内放置物体、Blender 导出插件。素材和场景由平台外的**素材工厂**制作，以场景包或素材包格式导入（§11.3）。
+- 平台内场景搭建与建模工具：Web 编辑、agent 在平台内放置物体。素材和场景由平台外的**素材工厂**制作，以场景包或素材包格式导入（§11.4）；本仓库独立工厂脚本与 Blender 桥接的后续范围见 [Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md)，网关不依赖 Blender。
 - 视觉检查（自动渲染评审）与 Isaac Sim `omni.asset_validator` 第二意见。
 - 场景变体与初始条件预设、域随机化（训练规格处理）。
 - Synthetic 源运行 USD 场景。
@@ -67,7 +67,7 @@ RSI 指 Recursive Self-Improvement：agent 通过平台闭环地改进实验室�
 | `assets/registry.yaml`、`/api/v1/assets/{id}` | 保留给内置 Web 资源；库素材经新路由提供（§9） |
 | `assets/robots/franka_emika_panda/` | 包装为内置素材 `robot/fr3@1` |
 | 信息规格 §2.2 "Asset / Equipment Model → EntityType" | 改为 "Asset → Asset（形体）；Equipment Model → EntityType（行为）" |
-| 信息规格 §1.3 "Blender/UE5 导出" 不包含 | 仍不包含；本规格只定义导入格式 |
+| 信息规格 §1.3 "Blender/UE5 导出" 不包含 | 本规格定义导入格式；后续外部 Blender 工厂脚本由 Scene Factory 规格定义，不建设平台内编辑器或通用 UE5 导出器 |
 | 录制 `formatVersion: 1` | 升为 2，读取器继续支持 1（§8） |
 
 ## 4. 库
@@ -510,7 +510,7 @@ offset/nextOffset 按 Unicode 码点计数，服务端选满足完整 envelope �
 
 ### 11.4 FR3 实验室的导入（A3 前置，平台外完成）
 
-把 `laboratory_final.blend` 转换为场景包是一次性的素材工厂工作，由 agent 在平台外用 bpy 完成，不进平台代码：
+把 `laboratory_final.blend` 转换为场景包是一次性的素材工厂工作，由 agent 在平台外用 bpy 完成，网关运行时不依赖 bpy。后续可复用的工厂脚本由本仓库独立维护，遵循 [Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md)；该工作不恢复暂停中的 #18：
 
 - 按顶层 Collection 拆出素材：实验台 ×2、生物安全柜、离心机、试管架、试管、培养瓶；其余合并为 `environment/lab-room-dressing@1`。
 - FR3 不从 Blender 导出，直接引用内置素材 `robot/fr3@1`。
