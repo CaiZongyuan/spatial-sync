@@ -437,6 +437,8 @@ class EvaluationService:
             self.wake()
 
     async def _evaluate(self, identifier):
+        if self.store.records[identifier].get("layer") == "agent":
+            return await self.manager.agent_runs.evaluate(identifier)
         record = deepcopy(self.store.records[identifier])
         record.update(status="running", startedAt=now())
         session = None

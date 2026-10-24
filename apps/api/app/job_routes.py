@@ -49,8 +49,8 @@ def install_job_routes(app, manager, role_for, views=None):
     async def listing(plan: str | None = None, status: str | None = None, kind: str | None = None):
         return {
             "jobs": [
-                jobs.document(job)
-                for job in jobs.records.values()
+                manager.agent_runs.document(job) if job["kind"] == "agent-run" else jobs.document(job)
+                for job in [*jobs.records.values(), *manager.agent_runs.records.values()]
                 if (plan is None or job["planId"] == plan)
                 and (status is None or job["status"] == status)
                 and (kind is None or job["kind"] == kind)
@@ -59,6 +59,8 @@ def install_job_routes(app, manager, role_for, views=None):
 
     @app.get("/api/v1/jobs/{identity}")
     async def show(identity: str):
+        if identity in manager.agent_runs.records:
+            return manager.agent_runs.document(manager.agent_runs.get(identity))
         jobs.reconcile()
         jobs._save()
         return jobs.document(jobs.get(identity))

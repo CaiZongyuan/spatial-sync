@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import StrictBool, TypeAdapter, ValidationError, model_validator
 
 from apps.api.app.agent_routes import install_agent_routes
+from apps.api.app.agent_run_routes import install_agent_run_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.cost_routes import install_cost_routes
@@ -141,6 +142,7 @@ def create_app(
     asset_registry: AssetRegistry | None = None,
     platform_sampler=None,
     live_transport_factory=None,
+    agent_adapter=None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
@@ -186,6 +188,7 @@ def create_app(
             library_assets.startup()
             await recordings.startup()
             await evaluations.startup()
+            await asyncio.to_thread(agent_runs.startup)
             await asyncio.to_thread(notebooks.startup)
             await monitor.start()
             await views.start()
@@ -209,7 +212,10 @@ def create_app(
                     try:
                         await evaluations.close()
                     finally:
-                        await manager.close()
+                        try:
+                            await agent_runs.close()
+                        finally:
+                            await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
     app.state.tensorboard = tensorboard
@@ -226,6 +232,11 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
+        if request.url.path.startswith("/api/v1/agents/") and request.url.path.endswith("/runs"):
+            return JSONResponse(
+                {"detail": {"code": "invalid_agent_run", "message": "Agent run metadata is invalid"}},
+                status_code=422,
+            )
         if request.url.path.startswith(("/api/v1/models", "/api/v1/prices", "/api/v1/vault")):
             # These endpoints never echo rejected input (including accidental credential fields).
             return JSONResponse(
@@ -251,6 +262,8 @@ def create_app(
     install_notebook_routes(app, notebooks, lambda headers: _role(headers, settings))
     install_demonstration_routes(app, demonstrations, lambda headers: _role(headers, settings))
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
+    agent_runs = install_agent_run_routes(app, manager, app.state.agents,
+                                           lambda headers: _role(headers, settings), agent_adapter)
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_job_routes(app, manager, lambda headers: _role(headers, settings), views)

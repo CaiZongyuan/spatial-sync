@@ -132,10 +132,21 @@ def clean_environment(root, *, gateway_url, session_id, run_id, tool_token, prov
 
 
 class AgentWorker:
-    def __init__(self, root, configuration, environment, *, files=(), deadline, active=lambda: True):
+    def __init__(
+        self,
+        root,
+        configuration,
+        environment,
+        *,
+        files=(),
+        deadline,
+        active=lambda: True,
+        on_cleanup=lambda: None,
+    ):
         self.root, self.configuration, self.environment = Path(root).resolve(), configuration, environment
         self.files = files
         self.deadline, self.active = deadline, active
+        self.on_cleanup = on_cleanup
         self.process = None
 
     def remaining(self):
@@ -182,6 +193,7 @@ class AgentWorker:
                     "durationSeconds": time.monotonic() - started,
                 }
         finally:
+            self.on_cleanup()
             if self.process is not None:
                 # Cancellation cannot let the lease go before owned descendant cleanup finishes.
                 cleanup = asyncio.create_task(asyncio.to_thread(self.process.close))
