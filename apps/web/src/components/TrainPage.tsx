@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useContext } from 'react';
 import { ApprovalInboxContext } from '../lib/approvals';
 import type { JobStatus } from '../lib/jobs';
@@ -27,7 +27,13 @@ export function TrainPage() {
   const resources = useTrainingResources();
   const plans = usePlansList();
   const approvals = useContext(ApprovalInboxContext);
-  const search = useSearch({ from: '/train' }), navigate = useNavigate();
+  const search = useSearch({ from: '/train' }), navigate = useNavigate({ from: '/train' });
+  const router = useRouter();
+  const changeGoal = (goal: string) => {
+    // Discovery may settle after navigation; the current route owns the URL.
+    if (router.state.location.pathname !== '/train') return;
+    void navigate({ to: '/train', search: current => ({ ...current, goal }), hash: true, resetScroll: false });
+  };
   const status = search.status ?? '', query = search.q ?? '';
   const jobs = resources.jobs?.filter(job => (!status || job.status === status)
     && `${job.jobId} ${job.task} ${job.planId}`.toLowerCase().includes(query.toLowerCase()))
@@ -40,7 +46,7 @@ export function TrainPage() {
     <div className="training-layer"><span aria-current="page">具身层 · {search.goal?.replace(/^goal\//, '') ?? '机器人训练'}</span>
       <button disabled title="Agent 层作业尚未接入">Agent 层 · 尚未接入</button></div>
   </header><TrainingStages />
-    <GoalNotebookPanel goal={search.goal} onGoalChange={goal => void navigate({ to: '/train', search: { ...search, goal }, resetScroll: false })} />
+    <GoalNotebookPanel goal={search.goal} onGoalChange={changeGoal} />
     <section className="training-job-section resource-panel" id="jobs" aria-label="训练作业">
       <header><div><h2>训练作业</h2><span className="resource-tag">{resources.jobs?.length ?? '—'} 个作业</span>
         <span className="resource-tag">{resources.jobs?.filter(job => job.status === 'running').length ?? '—'} 个运行中</span></div>
