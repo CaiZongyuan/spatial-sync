@@ -154,7 +154,13 @@ class CostLedger:
         for record in runtime.records.values() if runtime else ():
             rsi = getattr(self.manager, "agent_rsi", None)
             execution = rsi.native_associations(record["id"]) if rsi is not None else {}
-            imported.append(record | {"associations": record["associations"] | execution})
+            imported.append(
+                record
+                | {
+                    "associations": record["associations"] | execution,
+                    **({"visibility": "private"} if runtime.is_private(record) else {}),
+                }
+            )
         return [*self.manager.jobs.records.values(), *imported]
 
     def window(self, key, *, start=None, end=None):

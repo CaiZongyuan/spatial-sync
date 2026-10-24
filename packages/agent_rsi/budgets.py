@@ -12,7 +12,7 @@ def public_cost(service, value):
     private = {
         identity
         for identity, record in service.external.runtime_records.records.items()
-        if record.get("visibility") == "private"
+        if service.external.runtime_records.is_private(record)
     }
     hidden = False
     if "runtimeRecordIds" in result:

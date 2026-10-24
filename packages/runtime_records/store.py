@@ -281,8 +281,14 @@ class RuntimeRecords:
             raise PlanError("unknown_runtime_session", "Unknown imported runtime session", status=404)
         return record
 
+    def is_private(self, record):
+        service = getattr(self.manager, "agent_rsi", None)
+        return record.get("visibility") == "private" or (
+            service is not None and service.private_native_context(record["nativeSessionId"]) is not None
+        )
+
     def artifact(self, record, identity, *, private=False):
-        if record.get("visibility") == "private" and not private:
+        if self.is_private(record) and not private:
             raise PlanError("unknown_runtime_session", "Unknown imported runtime session", status=404)
         if identity == "transcript":
             return (
@@ -298,7 +304,7 @@ class RuntimeRecords:
     def document(self, record, *, detail=False, private=False):
         import hashlib
 
-        if record.get("visibility") == "private" and not private:
+        if self.is_private(record) and not private:
             raise PlanError("unknown_runtime_session", "Unknown imported runtime session", status=404)
         result = deepcopy({key: value for key, value in record.items() if key not in {"events", "receipts"}})
         rsi = getattr(self.manager, "agent_rsi", None)

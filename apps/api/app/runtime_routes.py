@@ -31,7 +31,7 @@ def install_runtime_routes(app, manager, agents, role_for):
             "sessions": [
                 store.document(record)
                 for record in tuple(store.records.values())
-                if record.get("visibility") != "private"
+                if not store.is_private(record)
                 and (runtime is None or record["runtime"] == runtime)
                 and (agent is None or record["associations"].get("agentId") == agent)
                 and (goal is None or record["associations"].get("goalId") == goal)

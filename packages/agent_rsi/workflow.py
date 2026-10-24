@@ -826,7 +826,9 @@ class AgentRSI:
 
     def native_associations(self, identity):
         capture = self.external.runtime_records.records.get(identity, {})
-        context = capture.get("privateContext", {})
+        context = (
+            capture.get("privateContext") or self.private_native_context(capture.get("nativeSessionId")) or {}
+        )
         if context:
             return {
                 key: context[key]
