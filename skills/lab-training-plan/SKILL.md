@@ -42,6 +42,26 @@ lw task show task/fr3-pick-tube@1 --json
 
 检查返回的版本和 `contentHash`。同内容重推会返回已有版本；推送只做静态快照，不运行包里的代码。
 
+## 示范输入
+
+已有成功回合时，先按精确来源 Task 读取示范；需要标记时使用实际录制 ID。已关联具身 train 评估的录制可省略 `--task`，普通会话必须指明固定来源 Task。
+
+```bash
+lw demo ls --task task/fr3-pick-tube@1 --json
+lw demo add session-EXAMPLE --task task/fr3-pick-tube@1 --json
+```
+
+录制完成不代表 Task 成功。平台核对录制中的目标动作、实际参数、成功条件及同一回合身份；缺证据时先解决来源问题，不填写猜测。已知 held-out/test 来源不能转为训练数据，Agent 题目分数也不表示具身成功。
+
+从返回值复制实际 `set.id`，在消费 Task 的 `task.yaml` 声明用途，再推一个新 Task 版本：
+
+```yaml
+demonstrations:
+  - {set: demoset/fr3-pick-tube@1, purpose: reset}
+```
+
+`purpose` 可为 `reset` 或 `imitation`。Task 的 Python 代码消费节点提供的集合/录制本地路径，平台只固定数据输入。新示范生成新集合版本；已有 Task 和 Job 不自动升级。重复标记返回首次版本，按任务列出的 `set` 是当前集合；计划明确选择实际读过的固定版本，不写“latest”。标记数据不批准训练。
+
 ## 提交
 
 计划必须给出以下内容；替换 Task 版本、上一轮、假设和访谈，不臆造历史：

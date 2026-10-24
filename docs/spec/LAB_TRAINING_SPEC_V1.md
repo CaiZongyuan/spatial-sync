@@ -349,6 +349,24 @@ RSI 的改进对象不只是策略权重（参考 EmbodiedRSI 的代码与技能
 - Task 包可以声明使用示范：作为分阶段重置数据集的来源（替代教程里手工生成的重置状态），或作为模仿学习的数据。训练作业的输入因此多了一项"示范集版本"，按引用传递（§5.3）。
 - 这让"agent 写脚本解出一次 → 录下示范 → 训练出更鲁棒的策略"成为闭环里的一条路径（EmbodiedSWE 的做法）。
 
+已落地的输入边界：
+
+- 录制完成只表示文件已关闭。标记时以固定 Task 的 `success` 对照录制观察，要求目标动作成功、一个可确定的回合、同一场景修订与 epoch，且无缺段或观察 gap。程序绑定与实际参数来自录制；历史代码版本未记录时明确保留未知。
+- 已关联具身 train 评估的回合从固定 Plan 恢复 Task；普通会话须用 `lw demo add <recordingId> --task task/name@N` 指明来源 Task。已知 test/非 train 来源拒绝，即使另传 Task。Agent 题目分数不作为具身示范来源。
+- 标记会冻结原录制包的逐字节副本，保留现有元数据与 LWLG 格式；外部索引记录证据及包哈希。每次加入新回合生成累计的 `demoset/<来源 Task.name>@N`，旧版本保持不变。重复标记同一录制不新增版本，并返回首次标记的版本；`lw demo ls --task` 按精确来源 Task 版本筛选，列出当前集合引用。
+
+消费 Task 在 `task.yaml` 中固定输入及用途，例如：
+
+```yaml
+demonstrations:
+  - {set: demoset/fr3-pick-tube@1, purpose: reset}
+  # purpose 也可为 imitation；同一集合可声明两种用途。
+```
+
+示范与消费 Task 的场景版本/哈希、机器人和动作必须兼容。作业接纳时冻结集合与录制包的引用/哈希；节点按现有受认证输入端点下载并校验，不依赖共享文件系统。`LW_DEMONSTRATION_SETS` 提供集合的 `id`、`contentHash`、`purpose`、本地 `directory` 与 `recordings` 路径映射，Task 自己的 Python 重置/学习代码消费这些数据。这里提供数据输入，不增加训练算法。
+
+`versions.json.demonstrationSets` 必须与作业固定的集合引用一致；缺失或替换均拒绝产物。旧的无示范作业把缺失字段视为空集合，继续可读。旧录制仍由现有回放读取器解释；缺少场景哈希等来源证据时不补造示范身份。
+
 ### 8.7 实验记录
 
 - 目标资源使用稳定的 `goalId`（`goal/<slug>`），与 Plan 的自然语言 `goal` 描述分开。

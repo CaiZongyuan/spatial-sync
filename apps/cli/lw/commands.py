@@ -115,6 +115,16 @@ def description_arguments(default, metavar="id"):
 
 
 COMMANDS = (
+    Command(path=("demo", "add"), help="Keep a proven successful recorded Task episode as a Demonstration.",
+            method="demo_add", arguments=(
+                Argument("recordingId", ("recordingId",), str, "Complete successful episode recording"),
+                Argument("task", ("--task",), str | None,
+                         "Exact source Task; required without a linked Plan", None),
+            ), mcp_name="demo_add", actor=True),
+    Command(path=("demo", "ls"), help="List Demonstrations and immutable DemoSet references.",
+            method="demo_list", arguments=(
+                Argument("task", ("--task",), str | None, "Exact source Task version", None),
+            ), mcp_name="demo_list", output_type=list[dict[str, Any]]),
     Command(path=("notebook", "show"), help="Read train-only Hypotheses and human judgement audit.",
             method="notebook_show", arguments=(
                 Argument("goal", ("goal",), str, "Goal ID or default Task goal"),

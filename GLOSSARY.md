@@ -138,8 +138,12 @@ A new version of a Harness or Controller produced by one bounded change and kept
 _Avoid_: Experiment, branch, trial
 
 **Demonstration** (示范):
-A recorded successful episode, produced by any Device Program, kept as data for resets or imitation learning.
+A recorded episode whose fixed Task success is established, with its Device Program and actual parameters attributed, kept as data for resets or imitation learning.
 _Avoid_: Trajectory (a planned motion), dataset
+
+**Demonstration Set** (示范集，DemoSet):
+A versioned collection of Demonstrations selected as one reproducible Task input for resets or imitation learning. Later additions create a new version while earlier versions keep their members.
+_Avoid_: Recording (one captured session), Task (the consumer definition)
 
 **Policy** (策略):
 A versioned, trained controller produced by a training Job for one Task, which a device program can run in place of taught motions.

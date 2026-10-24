@@ -30,6 +30,7 @@ class TaskLibrary:
     def __init__(self, assets, scenes):
         self.assets, self.roots, self.scenes = assets, assets.roots, scenes
         self.user_root = self.roots["user"]
+        self.demonstrations = None
 
     def _versions(self):
         values = {}
@@ -114,6 +115,13 @@ class TaskLibrary:
                 raise ValueError("implements must name an action of the selected robot type")
             validate_conditions([task.success], task.robot,
                                 lambda entity, prop: types[entity_type(entity)]["properties"][prop]["schema"])
+            if task.demonstrations:
+                if self.demonstrations is None:
+                    raise ValueError("Demonstration Set resolver is unavailable")
+                self.demonstrations.resolve_inputs(
+                    [item.model_dump(mode="json") for item in task.demonstrations],
+                    task.model_dump(mode="json") | {"sceneContentHash": scene.content_hash},
+                )
             return task.model_dump(mode="json"), scene
         except (OSError, ValueError, KeyError, ValidationError) as exc:
             raise invalid(str(exc), path="task.yaml") from exc

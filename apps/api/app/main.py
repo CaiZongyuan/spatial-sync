@@ -28,6 +28,7 @@ from apps.api.app.agent_routes import install_agent_routes
 from apps.api.app.alert_routes import install_alert_routes
 from apps.api.app.approval_routes import install_approval_routes
 from apps.api.app.cost_routes import install_cost_routes
+from apps.api.app.demonstrations import DemonstrationService, install_demonstration_routes
 from apps.api.app.device_host import DeviceHost
 from apps.api.app.evaluation_recordings import EvaluationRecordingRepository
 from apps.api.app.evaluations import EvaluationService, install_evaluation_routes
@@ -157,6 +158,7 @@ def create_app(
     evaluations = EvaluationService(manager)
     manager.evaluations = evaluations
     notebooks = NotebookService(manager)
+    demonstrations = DemonstrationService(manager)
     manager.notebooks = notebooks
     manager.training_plans.additional_in_use = notebooks.plan_in_use
     library_assets = manager.library_assets
@@ -237,11 +239,13 @@ def create_app(
     app.state.library_assets = library_assets
     app.state.training_views = views
     app.state.notebooks = notebooks
+    app.state.demonstrations = demonstrations
     install_info_routes(app, manager, lambda headers: _role(headers, settings))
     install_live_routes(app, manager, settings, lambda headers: _role(headers, settings))
 
     install_evaluation_routes(app, evaluations, lambda headers: _role(headers, settings))
     install_notebook_routes(app, notebooks, lambda headers: _role(headers, settings))
+    install_demonstration_routes(app, demonstrations, lambda headers: _role(headers, settings))
     install_agent_routes(app, library_assets.roots, lambda headers: _role(headers, settings))
     install_approval_routes(app, manager, lambda headers: _role(headers, settings))
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))

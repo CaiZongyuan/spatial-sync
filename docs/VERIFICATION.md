@@ -105,6 +105,43 @@ verifies two controlled evaluator rounds, CI lines, budget exhaustion and durabl
 human audit. Its labelled fake evaluator adapter runs no physics or training;
 the gateway Notebook tests separately exercise actual Synthetic evaluation.
 
+### Demonstrations and pinned training inputs
+
+Use an actual successful episode recording and its exact source Task. A linked
+embodied train Evaluation supplies the frozen Task; ordinary session recordings
+require it explicitly:
+
+```powershell
+lw demo add session-EXAMPLE --task task/fr3-pick-tube@1 --json
+lw demo ls --task task/fr3-pick-tube@1 --json
+```
+
+The generic MCP tools are `demo_add` and `demo_list`. Copy the returned immutable
+`set.id` into the consuming Task's `demonstrations` list with `purpose: reset` or
+`purpose: imitation`, push that Task version, then submit its Plan normally.
+The Task author consumes node-local paths from `LW_DEMONSTRATION_SETS`; this
+does not supply an imitation-learning or reset implementation.
+
+Frozen recording packages live under
+`LW_LIBRARY/demonstrations/recordings/<recordingId>/`; cumulative immutable indexes
+live under `LW_LIBRARY/demonstrations/sets/<name>/<revision>/manifest.json`.
+The returned `recordingUrl` can be passed as the existing replay page's `src`
+query. Recording metadata, binary segments and assets retain their original
+bytes. The dataset remains available after ordinary recording retention.
+
+The gateway journey `tests/gateway/test_demonstrations_api.py` creates two actual
+Synthetic successes, pins a Task to DemoSet v1 before v2 exists, then runs the
+real isolated node with the explicitly fake CPU trainer. It checks downloaded
+hashes, local paths, `versions.json` attribution and rejection of missing dataset
+references. `tests/cli/test_demonstration_commands.py` uses installed `lw`, actual
+HTTP and official MCP stdio. These prove data transfer; they do not train a policy.
+
+Admission rejects failed/unknown outcomes, gaps, mixed episode identities and
+known held-out sources. Agent case scores are unsupported as physical
+Demonstrations. Legacy recording replay remains supported; missing historical
+program implementation identity stays unknown and missing scene identity cannot
+be inferred from current files.
+
 The latency budgets in information specification section12 use this development
 machine's Linux/WSL2 environment, as used for the I3 acceptance, as the reference.
 Windows results are diagnostic references and do not gate delivery. Before

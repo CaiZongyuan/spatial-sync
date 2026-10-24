@@ -62,6 +62,7 @@ def install():
     versions = {
         "versions": {name: importlib.metadata.version(distribution) for name, distribution in names.items()},
         "hardware": inputs["hardware"],
+        "demonstrationSets": job.get("demonstrationSets", []),
         **{
             name: job[name]
             for name in ("jobId", "task", "taskContentHash", "scene", "sceneContentHash", "seed")

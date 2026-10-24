@@ -15,6 +15,7 @@ Text = Annotated[str, Field(min_length=1, max_length=4000, pattern=r"\S")]
 SceneRef = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
 TaskRef = Annotated[str, Field(pattern=r"^task/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
 GoalRef = Annotated[str, Field(pattern=r"^goal/[a-z0-9]+(?:-[a-z0-9]+)*$")]
+DemoSetRef = Annotated[str, Field(pattern=r"^demoset/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
 
 
 class Evaluation(Schema):
@@ -55,6 +56,11 @@ class Episode(Schema):
     params: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class DemonstrationUse(Schema):
+    set: DemoSetRef
+    purpose: Literal["reset", "imitation"]
+
+
 class TaskMetadata(Schema):
     name: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     title: Text
@@ -68,6 +74,14 @@ class TaskMetadata(Schema):
     isaaclab: IsaacLab
     evaluation: Evaluation
     loopBudget: LoopBudget
+    demonstrations: list[DemonstrationUse] = Field(default_factory=list, max_length=32)
+
+    @field_validator("demonstrations")
+    @classmethod
+    def distinct_demonstrations(cls, value):
+        if len({(item.set, item.purpose) for item in value}) != len(value):
+            raise ValueError("Demonstration Set usages must be distinct")
+        return value
 
     @field_validator("success")
     @classmethod
