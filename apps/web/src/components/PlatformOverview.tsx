@@ -15,7 +15,9 @@ function Metric({ title, value, children }: { title: string; value: string; chil
   </article>;
 }
 
-export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
+export function PlatformOverview({ page, children, nodeCount }: {
+  page: 'sessions' | 'resources'; children?: React.ReactNode; nodeCount?: number;
+}) {
   const { snapshot, error, now } = usePlatform();
   const stale = snapshot && now - snapshot.sampledAtMs > Math.max(6000, snapshot.samplingIntervalSeconds * 3000);
   const system = snapshot?.system;
@@ -34,9 +36,9 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
     <div className="platform-heading">
       <div>
         <h1 id="platform-title" aria-label={page === 'sessions' ? 'Sessions' : 'Compute resources'}>{page === 'sessions' ? '会话' : '资源'}</h1>
-        <p>{page === 'sessions' ? '查看托管会话、观察者与原生查看器。' : '查看网关主机资源与托管的 Newton 后端。'}</p></div>
+        <p>{page === 'sessions' ? '查看托管会话、观察者与原生查看器。' : '查看计算节点、资源租约与网关主机状态。'}</p></div>
       <div className={`platform-sample ${error || stale ? 'is-stale' : ''}`} role="status">
-        {!snapshot ? error ? '平台暂不可用' : '正在读取平台…' : stale ? '采样已过期' : error ? '刷新失败' : '实时 · 每 2 秒刷新'}
+        {!snapshot ? error ? '平台暂不可用' : '正在读取平台…' : stale ? '采样已过期' : error ? '刷新失败' : page === 'resources' ? '主机 · 每 2 秒刷新' : '实时 · 每 2 秒刷新'}
         {snapshot && <small>采样于 {new Date(snapshot.sampledAtMs).toLocaleTimeString()}</small>}
       </div>
     </div>
@@ -45,7 +47,8 @@ export function PlatformOverview({ page }: { page: 'sessions' | 'resources' }) {
       {summaries.map(([label, text, value]) => <article key={label} aria-label={label}><strong>{value ?? unknown}</strong><span>{text}</span></article>)}
     </div>}
     {page === 'resources' && <>
-    <ResourceTabs current="gpu" />
+    <ResourceTabs current="gpu" nodeCount={nodeCount} />
+    {children}
     <div className="platform-section-heading"><h2 aria-label="Gateway machine">网关主机</h2><span>主机总量，包含其他应用</span></div>
     <div className="platform-metrics">
       <Metric title="Host CPU" value={percent(system?.cpu.percent)}>

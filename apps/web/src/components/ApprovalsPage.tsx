@@ -17,7 +17,7 @@ const decisionText: Record<ApprovalDecision, string> = { approve: '批准', deny
 const actor = (value: ApprovalRecord['requestedBy']) => `${value.kind}:${value.name}`;
 const time = (value: number) => new Date(value).toLocaleString('zh-CN', { hour12: false });
 
-function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide: boolean }) {
+export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; canDecide: boolean }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
