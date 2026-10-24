@@ -591,7 +591,7 @@ class EvaluationService:
                 ):
                     raise HTTPException(503, {"code": "recording_unavailable"})
                 execution_facts = None
-                if session.kind == "newton":
+                if suite.metadata["source"] == "newton":
                     probe = getattr(session.source, "observation_runtime", None)
                     execution_facts = await probe() if callable(probe) else {}
                     record["executionFacts"] = deepcopy(execution_facts)

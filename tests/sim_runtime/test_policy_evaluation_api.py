@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from copy import deepcopy
 
 import httpx
 import pytest
@@ -33,6 +34,18 @@ async def test_real_policy_http_evaluation_uses_fixed_suite_and_same_teacher_com
         )
         assert response.status_code == 201, response.text
         policy = response.json()
+        other_task = deepcopy(task)
+        other_task["success"]["lte"] = 0.065
+        other_job = uploaded_job(seed, tmp_path / "next-task", spec=spec, task_document=other_task)
+        other_response = seed.post(
+            "/api/v1/policies",
+            json={
+                "checkpoint": other_job["jobId"] + "/checkpoints/model_0.pt",
+            },
+        )
+        assert other_response.status_code == 201, other_response.text
+        other_policy = other_response.json()
+        assert other_policy["taskContentHash"] != policy["taskContentHash"]
         manager = seed.app.state.manager
         scene = manager.library.resolve(policy["scene"], launch=True, source="newton")
         suite = native_suite(manager, scene, timeout=45.0)
@@ -59,11 +72,14 @@ async def test_real_policy_http_evaluation_uses_fixed_suite_and_same_teacher_com
 
             teacher = await evaluate("robot_arm.newton")
             candidate = await evaluate(policy["id"])
+            other_candidate = await evaluate(other_policy["id"])
             assert teacher["result"]["successes"] == 1
             assert candidate["result"]["successes"] == 0
             assert candidate["result"]["decision"] == "rejected"
             assert candidate["result"]["reference"] == teacher["evaluationId"]
             assert candidate["result"]["conditionsGroup"] == teacher["result"]["conditionsGroup"]
+            assert other_candidate["result"]["conditionsGroup"] == teacher["result"]["conditionsGroup"]
+            assert other_candidate["result"]["reference"] == teacher["evaluationId"]
             episode = candidate["episodes"][0]
             assert episode["invocationStatus"] == "succeeded" and episode["success"] is False
             assert episode["policyExecution"]["inferenceCalls"] >= 1
