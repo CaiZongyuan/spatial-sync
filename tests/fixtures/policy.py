@@ -60,8 +60,10 @@ def model_bytes(size=1, *, external_path=None):
     return model.SerializeToString()
 
 
-def policy_task(path, *, spec=None):
+def policy_task(path, *, spec=None, task=None):
     task_directory(path)
+    if task is not None:
+        (path / "task.yaml").write_text(yaml.safe_dump(task), encoding="utf-8")
     (path / "obs_spec.yaml").write_text(yaml.safe_dump(spec or observation_spec()), encoding="utf-8")
     return task_archive(path)
 

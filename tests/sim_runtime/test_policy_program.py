@@ -22,6 +22,7 @@ from packages.sim_runtime.manifest_export import export_manifest
 from packages.sim_runtime.physics_port import PhysicsPort
 from packages.sim_runtime.simulation import NewtonSimulation
 from tests.fixtures.policy import observation_spec
+from tests.fixtures.training_task import task_document
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_policy_program_contract import Invocation
@@ -99,7 +100,10 @@ def test_real_newton_port_policy_init_cpu_inference_targets_and_cancel_without_w
         assert inv.outcome == "cancelled" and port.welds.counts()[1] == 0
 
 
-async def test_policy_zone_interlock_uses_real_newton_facts_and_existing_action_pipeline(tmp_path):
+@pytest.mark.parametrize("destination", ["centrifuge.slot1", "rack.A2"])
+async def test_policy_zone_interlock_uses_real_newton_facts_and_existing_action_pipeline(
+    tmp_path, destination
+):
     robot, centrifuge = "/World/Lab/RobotA", "/World/Lab/Centrifuge"
     with NewtonSimulation("robot-and-tubes", device="cpu") as sim:
         manifest = export_manifest(
@@ -110,8 +114,11 @@ async def test_policy_zone_interlock_uses_real_newton_facts_and_existing_action_
         spec = observation_spec()
         selected = base["jointKeys"][1]
         spec["observations"][0]["keys"] = spec["action"]["jointKeys"] = [selected]
+        task = task_document()
+        task["episode"]["params"]["to"] = destination
+        task["success"]["all"][0]["equals"] = base["locations"]["locations"][destination]["site"]
         with TestClient(create_app(Settings(node_token=TOKEN))) as client:
-            job = uploaded_job(client, tmp_path, spec=spec)
+            job = uploaded_job(client, tmp_path, spec=spec, task_document=task)
             response = client.post(
                 "/api/v1/policies",
                 json={
@@ -236,9 +243,17 @@ async def test_policy_zone_interlock_uses_real_newton_facts_and_existing_action_
         forward(host.drain_events())
         assert pipeline.table.get(safe.invocationId).status == "cancelled"
 
-        pick = await action(robot, "pickPlace", {"from": "rack.A1", "to": "centrifuge.slot1"})
+        if destination == "rack.A2":
+            seed_measured_joints(base["locations"]["locations"]["centrifuge.slot1"]["grasp"])
+            tick()
+            assert store.values()[robot]["zone"] == "centrifuge"
+        pick = await action(robot, "pickPlace", {"from": "rack.A1", "to": destination})
         assert pick.status == "accepted"
-        assert store.values()[robot]["zone"] is None  # Fast-path read has not received the reservation.
+        if destination == "rack.A2":
+            forward(host.drain_events())
+            await lid_denied()  # A valid rack-only Task must not clear measured centrifuge occupancy.
+        else:
+            assert store.values()[robot]["zone"] is None  # Fast path has not received the reservation.
         assert host.values()[robot]["zone"] == "centrifuge"
         await lid_denied()  # Authoritative intake protects even before the next control tick.
         tick()

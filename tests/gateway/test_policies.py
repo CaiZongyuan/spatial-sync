@@ -13,11 +13,13 @@ from tests.fixtures.training_task import training_plan
 from tests.gateway.test_training_jobs import HEARTBEAT, NODE, TOKEN, approve, heartbeat
 
 
-def uploaded_job(client, tmp_path, *, model=None, external=None, node_headers=None, spec=None):
+def uploaded_job(
+    client, tmp_path, *, model=None, external=None, node_headers=None, spec=None, task_document=None
+):
     node_headers = node_headers or NODE
     task = client.post(
         "/api/v1/tasks",
-        content=policy_task(tmp_path / "task", spec=spec),
+        content=policy_task(tmp_path / "task", spec=spec, task=task_document),
         headers={"Content-Type": "application/x-tar"},
     ).json()
     plan = client.post("/api/v1/plans", json=training_plan(task["id"])).json()

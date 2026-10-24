@@ -84,13 +84,14 @@ training coverage. Success uses the frozen Task condition and observed facts;
 timeout, cancellation and inference failure hold the current actuator positions.
 Task control frequency must fit the Runner's control frequency.
 
-The Program reserves the Task's unique interlocked location zone at authoritative
+The Program reserves the configuration's unique interlocked location zone at authoritative
 admission, before any queued motion or policy target. A black box has no trusted
 pick/place stage, so the reservation persists throughout the action and through
 stop, cancellation, success, timeout or inference failure. Multiple interlocked
 zones cannot be represented by the existing single `zone` property and reject.
-For a Task without named locations, configured location zones provide the
-conservative reservation; an ambiguous zone set rejects.
+A Task naming only rack sites retains the same reservation because the black
+box has no path constraint. Without an interlocked zone, named Task locations
+(or all configured locations for an action without names) must select one zone.
 
 Idle facts update `zone`/`atLocation` only from actual seven-joint feedback that
 matches home or a known taught approach/grasp, using the existing strict

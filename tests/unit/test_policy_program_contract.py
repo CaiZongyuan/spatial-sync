@@ -155,7 +155,24 @@ def test_multiple_interlocked_zones_reject_without_a_permissive_reservation(tmp_
     program, ctx = runtime(tmp_path)
     values = {}
     ctx.set = lambda **fields: values.update(fields)
-    program.locations["rack.A1"]["requires"] = [{"property": "doorOpen", "equals": True}]
+    program.locations["outside-task"] = {
+        "site": "/other",
+        "zone": "other",
+        "requires": [{"property": "doorOpen", "equals": True}],
+    }
     refused = program.accept(Invocation(), ctx)
     assert refused.code == "precondition_failed"
     assert "zone" not in values
+
+
+def test_rack_only_task_cannot_clear_the_configured_guarded_workspace(tmp_path):
+    program, ctx = runtime(tmp_path)
+    values = {"zone": "centrifuge"}
+    ctx.set = lambda **fields: values.update(fields)
+    program.locations["rack.A2"] = {"site": "/rack2", "zone": "rack"}
+    params = {"from": "rack.A1", "to": "rack.A2"}
+    program.task["episode"]["params"] = params
+    inv = Invocation()
+    inv.params = params
+    assert program.accept(inv, ctx) is None
+    assert values["zone"] == "centrifuge"

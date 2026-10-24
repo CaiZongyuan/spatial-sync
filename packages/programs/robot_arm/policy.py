@@ -90,7 +90,8 @@ class PolicyProgram:
         # Unstaged joint-space policies may visit any configured interlocked location.
         if not locations:
             locations = list(self.locations.values())
-        guarded = {item["zone"] for item in locations if item.get("requires")}
+        # The model has no path constraint, even when its Task names only rack sites.
+        guarded = {item["zone"] for item in self.locations.values() if item.get("requires")}
         zones = guarded or {item["zone"] for item in locations}
         if len(zones) != 1:
             raise ValueError("Policy motion requires one conservatively reservable zone")
