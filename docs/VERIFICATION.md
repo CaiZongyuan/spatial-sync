@@ -384,7 +384,8 @@ usage flags. Real Newton evidence is recorded by the separate evidence run.
 Real source and Blender evidence is separate from CI and needs network access.
 The factory evidence run also needs the simulation/USD extras and Pillow for the
 Newton CPU usage decision and texture handling; use `uv run --with pillow --no-sync`
-or a local environment that has them without changing `uv.lock`:
+or a local environment that has them without changing `uv.lock` (committed scene
+previews hash `uv.lock`):
 
 ```powershell
 uv run --no-sync python factory/verify.py evidence --cache .scratch/sf0/cache --out .scratch/sf0/evidence
@@ -432,6 +433,74 @@ same owned fixture gateway as the asset library:
 ```powershell
 pnpm --filter @spatial-sync/web exec playwright test catalog-search.spec.ts
 ```
+
+## Scene Factory acquisition worker (SF2)
+
+The gateway never imports `factory/`; the acquisition runner starts
+`factory.acquisition_worker` as a subprocess with a server-created job. The
+GPU-free worker test uses the synthetic fixture source, so it needs no network:
+
+```powershell
+uv run --no-sync pytest tests/unit/test_acquisition_worker.py -q
+```
+
+It exercises the staged `asset.yaml`/`LICENSE.txt`/`SOURCE-NOTICE` package,
+Git LFS pointer rejection (`lfs_pointer`), BOM and unsafe-path failures, the
+source/adapted byte limits, and the progress/result JSON. Failures leave no
+staged package.
+
+Real box and bucket evidence needs network access and is not a CI prerequisite.
+The job files are server-created (never a user URL or path); keep the cache,
+staging and result under `.scratch/` so no third-party bytes enter Git:
+
+```powershell
+uv run --no-sync python -m factory.acquisition_worker --job <server-created job.json>
+```
+
+The worker downloads the pinned commit, verifies file/byte counts, BOM closure,
+license text and LFS content, adapts under the staging root and records actual
+source, transfer, cache-reuse and adapted bytes in the result file. Textured real
+packages need Pillow: use an environment with the simulation/USD extras or
+`uv run --with pillow --no-sync` for this evidence. Do not add Pillow to
+`uv.lock`; committed scene previews hash `uv.lock`. The GPU-free worker test uses
+a texture-free fixture and needs neither.
+
+### Acquisition commands and browser journey (SF2)
+
+The installed `lw` and `lw mcp` expose the same HTTP records. Start an owned
+gateway first (the fixture below serves the real service with a deterministic
+runner, no network or worker subprocess):
+
+```powershell
+lw acquisition start simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1 --wait --json
+lw acquisition ls --status succeeded --json
+lw acquisition show acq-<32 hex> --json
+lw acquisition cancel acq-<32 hex> --json
+lw acquisition retry acq-<32 hex> --json
+```
+
+MCP tool names are `acquisition_start`, `acquisition_list`, `acquisition_show`,
+`acquisition_cancel` and `acquisition_retry`; they return the same HTTP
+documents. `--wait` polls the record for at most 120 seconds. The GPU-free CLI
+test starts `tests/fixtures/acquisition_gateway.py`, which stages the committed
+`tests/fixtures/acquisition/package`, and compares HTTP, installed `lw` and
+official MCP stdio for start, list, show, result, cancel, retry and the
+unknown/ineligible/budget errors:
+
+```powershell
+uv run --no-sync python -m pytest tests/cli/test_acquisition_commands.py -q
+```
+
+The browser journey owns the same fixture gateway and a Vite server, watches
+real byte/file progress on an online candidate, cancels, retries, opens the
+exact local version link and checks the records section at 400 px:
+
+```powershell
+pnpm --filter @spatial-sync/web exec playwright test acquisition.spec.ts
+```
+
+Both journeys start from catalog candidate IDs only, never request remote
+previews and keep their roots under `.scratch/`.
 
 ## Ownership and cleanup
 

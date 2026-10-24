@@ -171,3 +171,26 @@
 @media(max-width:1100px){.asset-card-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.asset-detail-grid{grid-template-columns:1fr}.catalog-result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.catalog-detail-grid{grid-template-columns:1fr}.catalog-estimate .asset-kv dd{max-width:none}}
 @media(max-width:760px){.asset-filters .asset-search{margin-left:0}.asset-filters input[type=search]{max-width:180px}.asset-page-heading h1{font-size:26px}.asset-completeness li{grid-template-columns:1fr 76px}.asset-completeness small{grid-column:1/-1}.catalog-snapshot{font-size:11px}.catalog-detail-heading{flex-direction:column}}
 @media(max-width:560px){.asset-card-grid{grid-template-columns:1fr}.catalog-result-grid{grid-template-columns:1fr}.asset-scope-toggle{width:100%}.asset-scope-toggle button{flex:1}.catalog-facts dd{text-align:left}.catalog-facts>div{flex-direction:column;gap:2px}.catalog-usage{justify-content:flex-start}.catalog-zero{padding:20px 16px}}
+
+/* Acquisition records stay separate from imports and per-version usage. */
+.acquisition-records{margin-top:24px}
+.acquisition-records>header>button{flex:none;height:30px;padding:0 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface-2);color:var(--ink);font:500 12.5px/1 var(--sans);box-shadow:none}
+.acquisition-start .acquisition-record{margin-top:14px}
+.acquisition-record{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--ground-2)}
+.acquisition-record-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
+.acquisition-record-head code{font-size:11px;overflow-wrap:anywhere}
+.acquisition-record-head small{display:block;margin-top:3px;font-size:10.5px;color:var(--faint);overflow-wrap:anywhere}
+.acquisition-record-list{display:grid;gap:12px}
+.acquisition-progress{width:100%;height:6px;accent-color:var(--accent)}
+.acquisition-failure{padding:10px 12px;border:1px solid color-mix(in srgb,var(--bad) 30%,var(--line));border-radius:8px;background:color-mix(in srgb,var(--bad) 6%,transparent);font-size:12px}
+.acquisition-failure p{margin:0 0 4px;color:var(--bad);overflow-wrap:anywhere}
+.acquisition-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.acquisition-actions button{height:30px;padding:0 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface-2);color:var(--ink);font:500 12.5px/1 var(--sans);box-shadow:none}
+.acquisition-actions button:disabled{opacity:.5}
+.acquisition-error{min-height:0;padding:12px}
+@media(max-width:560px){
+.acquisition-record-head{flex-direction:column}
+.acquisition-actions{flex-direction:column;align-items:stretch}
+.acquisition-actions>button,.acquisition-actions>a{justify-content:center}
+.acquisition-records>header{flex-wrap:wrap}
+}

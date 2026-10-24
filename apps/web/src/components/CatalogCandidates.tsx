@@ -7,6 +7,7 @@ import {
   type CatalogSearchResponse, type CatalogSnapshot,
 } from '../lib/catalog';
 import { assetKinds, dimensionsLabel } from '../lib/asset-library';
+import { AcquisitionStart } from './AcquisitionPanel';
 
 const attributeLabels: Record<string, string> = {
   dimensionsM: '尺寸', dressing: '布景', staticCollision: '静态碰撞', license: '许可',
@@ -217,7 +218,8 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 : <div className="catalog-preview-placeholder"><b>预览未缓存</b><small>{entry.preview.reason ?? '获取流程会解析来源预览；页面不会请求远程图片。'}</small></div>}</div>
             </div></section>
           </div>
-          <section className="asset-panel catalog-estimate"><header><h2>有界估算</h2></header><div className="asset-panel-body">
+          <div className="catalog-detail-stack">
+            <section className="asset-panel catalog-estimate"><header><h2>有界估算</h2></header><div className="asset-panel-body">
             <dl className="asset-kv">
               <div><dt>来源包</dt><dd>{formatBytes(estimate.source.bytes)} · {estimate.source.files} 个文件</dd></div>
               <div><dt>传输上界</dt><dd>{formatBytes(estimate.transfer.upperBoundBytes)}</dd></div>
@@ -237,6 +239,9 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
             {estimate.unknown.length > 0 && <p className="asset-small-note">未知项：{estimate.unknown.map(labelFor).join('、')}</p>}
             <p className="asset-small-note">估算分别列出传输、临时空间、适配成品与必须磁盘；未知缓存不按零计算。</p>
           </div></section>
+            <AcquisitionStart ref={entry.ref} eligible={entry.acquisition.eligible}
+              reasons={entry.acquisition.reasons} estimate={estimate} />
+          </div>
         </div>
         : <div className="asset-empty" role="alert">目录详情不可用。</div>}
   </section>;
