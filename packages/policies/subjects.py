@@ -1,18 +1,20 @@
 """Freeze policy identity separately from the fixed evaluation world and its bindings."""
 
-from copy import deepcopy
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from packages.info.declarations import EntityBindingDeclaration
 from packages.library.common import LibraryError, document
 from packages.programs.robot_arm.policy import PolicyProgram
 from packages.programs.subjects import (
+    BindingTarget,
+    EvaluationScene,
     apply_binding,
     fingerprint,
     validate_applied_catalog,
 )
+from packages.programs.subjects import canonical_binding as canonical_binding
+from packages.programs.subjects import fixed_bindings as simulation_fixed_bindings
 from packages.programs.subjects import (
     validate_base_catalog as validate_simulation_base,
 )
@@ -41,16 +43,8 @@ class CandidateIdentity(Schema):
     taskContentHash: Hash
 
 
-class EvaluationScene(Schema):
-    id: Text
-    contentHash: Hash
-    source: Literal["newton"]
-
-
-class Target(Schema):
-    entityKey: Text
+class Target(BindingTarget):
     interface: Literal["robot-arm/v1"]
-    action: Text
 
 
 class PolicySubject(Schema):
@@ -85,35 +79,15 @@ def _invalid(message, code="policy_subject_mismatch"):
     return LibraryError(code, message, 409)
 
 
-def canonical_binding(binding, registry):
-    """Match the public Catalog's normalization, including current Program defaults."""
-    value = deepcopy(binding)
-    program = registry[value["program"]]
-    if value["type"] != program.type:
-        raise ValueError("Declared Program/interface differ")
-    value["config"] = program.Config.model_validate(value["config"]).model_dump(mode="json")
-    return EntityBindingDeclaration.model_validate(value).model_dump(
-        mode="json",
-        by_alias=True,
-        exclude_none=True,
-        exclude={"alerts"},
-    )
-
-
 def fixed_bindings(scene, source):
     """Use the validated instantiated declarations; never guess a missing robot or document."""
     from packages.sim_runtime.info_catalog import REGISTRY
 
-    scene.require_launchable()
     try:
-        bindings = scene.report()["effectiveBindings"][source]
-        if not bindings:
-            raise ValueError("No verified effective bindings")
-        result = {value["key"]: canonical_binding(value, REGISTRY) for value in bindings}
-        if len(result) != len(bindings):
-            raise ValueError("Duplicate effective binding")
-        return result
-    except (KeyError, TypeError, ValueError) as exc:
+        return simulation_fixed_bindings(scene, source, REGISTRY)
+    except LibraryError as exc:
+        if exc.detail["code"] != "subject_binding_unavailable":
+            raise
         raise _invalid("Verified evaluation bindings are unavailable", "policy_binding_unavailable") from exc
 
 

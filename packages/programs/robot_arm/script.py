@@ -67,6 +67,7 @@ class ScriptProgram(RobotArmPhysicsFacts):
         if ctx.physics is None:
             raise ValueError("robot_arm.script requires the Newton PhysicsPort")
         prepared = self.prepared[ctx.key]
+        prepared.initialized = False
         self.record, self.delegate = prepared.record, prepared.delegate
         if (
             self.record["id"] != ctx.config.programArtifact.id
