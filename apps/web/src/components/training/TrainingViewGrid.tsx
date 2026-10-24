@@ -1,4 +1,4 @@
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { View } from '@react-three/drei';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FrameRecorder } from '../../lib/performance/frame-recorder';
@@ -22,6 +22,16 @@ declare global {
 const phases = { waiting: '等待采样', live: '正在接收', stale: '最近采样 · 已暂停更新', ended: '训练已结束', error: '视图不可用' };
 const layers = { colliders: false, sites: false, origins: false, grid: true };
 const hidden = new Set<string>();
+
+function ClearTrainingViews() {
+  useFrame(({ gl }) => {
+    // A viewport Canvas follows HTML tracks as the page scrolls. Remove the
+    // previous scissor rectangles before drawing their new positions.
+    const alpha = gl.getClearAlpha();
+    gl.setScissorTest(false); gl.setClearAlpha(0); gl.clear(true, true, true); gl.setClearAlpha(alpha);
+  }, -1);
+  return null;
+}
 
 function TrainingEnvironment({ source, index, register }: { source: TrainingEnvSource; index: number;
   register: (envIndex: number, read?: () => EnvironmentReceipt) => void }) {
@@ -115,9 +125,11 @@ export function TrainingViewGrid({ jobId, onStatusChange }: { jobId: string; onS
         })}
       </div>
       {state.sources.size > 0 && <Canvas className="training-view-canvas" flat shadows eventSource={container} frameloop={visible && foreground ? 'always' : 'never'}
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} dpr={[1, 1.5]}
+        // Drei's offscreen test compares viewport track coordinates with the
+        // Canvas size. Keep that Canvas in viewport coordinates as well.
+        style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', pointerEvents: 'none' }} dpr={[1, 1.5]}
         gl={{ antialias: true, alpha: true }} camera={{ position: [4.2, 3, 4.8], fov: 44, near: .01, far: 100 }}>
-        <View.Port />
+        <ClearTrainingViews /><View.Port />
       </Canvas>}
       {!environments.length && state.state === 'waiting' && <p className="training-view-message">等待节点开始发布训练环境。收到完整实际采样后显示视图。</p>}
     </div>
