@@ -6,6 +6,7 @@ from pydantic import Field
 
 from packages.library.common import LibraryError
 from packages.programs.authorization import ProgramApproval, require_program_approval
+from packages.programs.library import ProgramLibrary
 from packages.programs.metadata import Hash, ProgramIntent, Schema, Text
 from packages.programs.robot_arm.script import ScriptProgram
 from packages.programs.subjects import (
@@ -207,3 +208,22 @@ def validate_program_execution(subject, evidence, *, runtime=None):
         raise invalid(
             "Native script execution evidence is unavailable or differs", "program_execution_unavailable"
         ) from error
+
+
+def validate_program_material(candidate, binding, roots, *, controller=None):
+    identity = ProgramCandidate.model_validate(candidate)
+    record = ProgramLibrary(roots).show(identity.id)
+    artifact = {"id": identity.id, "contentHash": identity.contentHash}
+    if (
+        binding.get("program") != ScriptProgram.id
+        or binding.get("type") != ScriptProgram.type
+        or binding.get("config", {}).get("programArtifact") != artifact
+        or any(record[name] != getattr(identity, name) for name in MATERIAL)
+        or fingerprint(binding["config"].get("parameters")) != fingerprint(record["metadata"]["config"])
+    ):
+        raise invalid("Deployed script material or reviewed configuration differs", "program_subject_changed")
+    if controller is not None and (
+        controller.get("program") != ScriptProgram.id or controller.get("programArtifact") != artifact
+    ):
+        raise invalid("Deployed Controller/script material differs")
+    return record

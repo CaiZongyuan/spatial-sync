@@ -102,6 +102,24 @@ class ProgramLoader:
         record, package = self.library.resolve(proof.program.id)
         if record["contentHash"] != proof.program.contentHash:
             raise invalid("Approved Python package hash differs")
+        return self._load(record, package)
+
+    def load_deployment(self, permit, *, scene, catalog, entity_key):
+        from packages.programs.deployment import verify_runtime_deployment
+
+        verified = verify_runtime_deployment(scene, catalog, permit, state_root=self.state_root)
+        identity = verified.permit["materialIdentities"].get(entity_key)
+        if identity is None or identity["kind"] != "program":
+            raise invalid("Script binding has no committed material identity")
+        record, package = self.library.resolve(identity["id"])
+        if any(
+            record[name] != identity[name]
+            for name in ("contentHash", "codeHash", "configHash", "archiveSha256")
+        ):
+            raise invalid("Actual deployed script material differs")
+        return self._load(record, package)
+
+    def _load(self, record, package):
         modules = _FrozenModules(package, record)
         sys.meta_path.insert(0, modules)
         try:

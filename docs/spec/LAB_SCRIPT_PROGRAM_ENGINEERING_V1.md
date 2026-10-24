@@ -87,6 +87,22 @@ shared layer owns base/all-non-target integrity and exact admitted-descriptor
 checks, not device behavior. Transport naming is agreed with the #36 owner
 before replacing the existing private policy adapter.
 
+The shared private transport is `simulation_subject`, with `policy_subject` and
+`lw.policy-subject/1` retained for legacy policy descriptors. Scripts use
+`lw.script-subject/1`; exact admitted descriptor equality is checked before
+Session creation. Ordinary interactive launches obtain `deployment_permit`
+from `manager.controller_promotions.authorize_scene(scene)` under the existing
+library/import reservation lock. Candidate bindings without an issuer or proof
+reject before Source creation. This permit does not apply a second override.
+
+The private `lw.deployment-permit/1` pins the committed promotion/publication,
+human approval/context, actual Scene and Controller document, target/replacement,
+complete `appliedBindings` and `materialIdentities` for every Candidate slot.
+The Runner uses the shared pure `read_committed_permit(state_root, promotion_id,
+publication_hash)` reader and compares its rebuilt proof to the transport before
+verifying actual Catalog/material/config. The publication hash is transport
+integrity; a caller-supplied hash or approval flag does not authorize loading.
+
 The fixed Suite/evaluation Task, Scene and target slot remain the experiment.
 Uploaded code/config/archive/Plan provenance are Candidate material. The static
 `robot_arm.script` runtime wrapper and loader are fixed implementation and
