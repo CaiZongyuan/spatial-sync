@@ -17,7 +17,7 @@ from packages.vault import Vault
 
 
 @asynccontextmanager
-async def model_server(gate):
+async def model_server(gate, *, registered=lambda handle: None):
     class Server(uvicorn.Server):
         @contextmanager
         def capture_signals(self):
@@ -31,6 +31,8 @@ async def model_server(gate):
     listener.setblocking(False)
     server = Server(uvicorn.Config(app, log_level="error", access_log=False))
     task = asyncio.create_task(server.serve(sockets=[listener]))
+    handle = server, task, listener
+    registered(handle)
     try:
         async with asyncio.timeout(5):
             while not server.started:
@@ -39,15 +41,21 @@ async def model_server(gate):
                 await asyncio.sleep(0.01)
         yield f"http://127.0.0.1:{listener.getsockname()[1]}"
     finally:
-        server.should_exit = True
-        for request in tuple(server.server_state.tasks):
-            request.cancel()
-        try:
-            await asyncio.wait_for(task, 5)
-        except TimeoutError as error:
-            raise CleanupIncomplete("Owned model listener cleanup is unconfirmed") from error
-        finally:
-            listener.close()
+        await close_model_server(handle)
+
+
+async def close_model_server(handle):
+    server, task, listener = handle
+    server.should_exit = True
+    requests = tuple(server.server_state.tasks)
+    for request in requests:
+        request.cancel()
+    try:
+        _, pending = await asyncio.wait((task, *requests), timeout=5)
+        if pending:
+            raise CleanupIncomplete("Owned model listener cleanup is unconfirmed")
+    finally:
+        listener.close()
 
 
 class SDKAdapter:
@@ -57,6 +65,7 @@ class SDKAdapter:
             context_bounds or {},
             upstream_origin,
         )
+        self._relays, self._workers, self._listeners, self._untracked = {}, {}, {}, set()
 
     def describe(self, model, thinking):
         identity = runtime_identity()
@@ -84,8 +93,51 @@ class SDKAdapter:
             upstream_origin=self.upstream_origin,
         )
         relay.trusted_relay = True
-        async with relay:
-            yield relay
+        self._relays[record["jobId"]] = relay
+        try:
+            async with relay:
+                yield relay
+        except CleanupIncomplete:
+            if relay.process is None:
+                self._untracked.add(record["jobId"])
+            raise
+        finally:
+            self.release_confirmed(record["jobId"])
+
+    def release_confirmed(self, identity):
+        workers = self._workers.get(identity, [])
+        listeners = self._listeners.get(identity, [])
+        relay = self._relays.get(identity)
+        if (
+            identity not in self._untracked
+            and all(worker.process is not None and worker.process.cleanup.is_file() for worker in workers)
+            and all(
+                task.done() and not server.server_state.tasks and listener.fileno() == -1
+                for server, task, listener in listeners
+            )
+            and (relay is None or relay.process is not None and relay.process.cleanup.is_file())
+        ):
+            self._workers.pop(identity, None)
+            self._listeners.pop(identity, None)
+            self._relays.pop(identity, None)
+            return True
+        return False
+
+    async def confirm_cleanup(self, identity):
+        if identity in self._untracked:
+            return False
+        try:
+            for worker in self._workers.get(identity, []):
+                if worker.process is not None:
+                    await asyncio.to_thread(worker.process.close)
+            for handle in self._listeners.get(identity, []):
+                await close_model_server(handle)
+            relay = self._relays.get(identity)
+            if relay is not None:
+                await relay.close()
+        except Exception:
+            return False
+        return self.release_confirmed(identity)
 
     async def case(self, task, gateway, gate):
         configuration = sdk_configuration(
@@ -96,7 +148,10 @@ class SDKAdapter:
             requests=task["limits"]["requests"],
             max_output_tokens=task["limits"]["max_output_tokens"],
         )
-        async with model_server(gate) as provider_url:
+        identity = task["runId"]
+        async with model_server(
+            gate, registered=lambda handle: self._listeners.setdefault(identity, []).append(handle)
+        ) as provider_url:
             environment = clean_environment(
                 task["directory"] / "private-environment",
                 gateway_url=task["gatewayUrl"],
@@ -114,7 +169,13 @@ class SDKAdapter:
                 deadline=task["deadline"],
                 on_cleanup=task["onCleanup"],
             )
-            receipt = await worker.run()
+            self._workers.setdefault(identity, []).append(worker)
+            try:
+                receipt = await worker.run()
+            except CleanupIncomplete:
+                if worker.process is None:
+                    self._untracked.add(identity)
+                raise
         messages = [json.loads(line) for line in receipt["trace"].read_text(encoding="utf-8").splitlines()]
         results = [
             message["data"]["value"]

@@ -16,6 +16,16 @@ from packages.agents.runtime import clean_process_environment
 from packages.info.plans import PlanError
 
 
+def reconcile_observations(path, gate):
+    if not path.exists():
+        return
+    for line in path.read_bytes().splitlines(keepends=True):
+        if not line.endswith(b"\n"):
+            break
+        observation = json.loads(line)
+        gate.observe_prefix(observation["attempt"], observation["usage"], observation.get("messageId"))
+
+
 class CredentialRelay:
     def __init__(
         self, root, vault, credential_ref, model, *, deadline, upstream_origin="https://api.anthropic.com"
@@ -86,14 +96,7 @@ class CredentialRelay:
             (self.root / "cancelled").touch()
 
     def reconcile(self, gate):
-        path = self.root / "observations.jsonl"
-        if not path.exists():
-            return
-        for line in path.read_bytes().splitlines(keepends=True):
-            if not line.endswith(b"\n"):
-                break
-            observation = json.loads(line)
-            gate.observe_prefix(observation["attempt"], observation["usage"], observation.get("messageId"))
+        reconcile_observations(self.root / "observations.jsonl", gate)
 
     async def close(self):
         self.revoke()

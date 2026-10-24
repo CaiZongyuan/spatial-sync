@@ -13,12 +13,15 @@ from decimal import Decimal
 from typing import Literal
 
 import httpx
+import psutil
 from pydantic import Field
 
+from apps.node.process import CleanupIncomplete, cleanup_confirmed
 from packages.agents.audit import CaseAudit
 from packages.agents.bundle import prepare_harness
 from packages.agents.inputs import AgentPlanInputs, fingerprint
-from packages.agents.provider import BudgetedProvider, ProviderLimits
+from packages.agents.provider import BudgetedProvider, ProviderLimits, usage_snapshot
+from packages.agents.transport import reconcile_observations
 from packages.info.agent_grading import final_observations, grade_agent_case
 from packages.info.plans import PlanError
 from packages.library.agents import agent_name
@@ -48,15 +51,36 @@ class AgentRuns:
         self._lock = threading.RLock()
         self._failure = False
         self.clock = time.time
+        self.instance = uuid.uuid4().hex
 
     def startup(self):
         if self.path.exists():
             self.records = json.loads(self.path.read_bytes())
         for record in list(self.records.values()):
-            if record["status"] not in TERMINAL:
+            committed = next(
+                (
+                    row
+                    for row in self.manager.evaluations.store.rows
+                    if row["evaluationId"] == record["evaluationId"]
+                ),
+                None,
+            )
+            if committed is not None:
+                self.update(record["jobId"], status="succeeded", result=committed, reason=None)
+            elif record["status"] not in TERMINAL:
                 self.update(
                     record["jobId"], status="failed", reason="gateway_restarted", finishedAt=time.time()
                 )
+            confirmed = self.resources_confirmed(record)
+            if record.get("cleanupIncomplete") and self.owner_alive_or_unknown(record):
+                confirmed = False
+            if not confirmed:
+                self.update(record["jobId"], cleanupIncomplete=True)
+                self.manager.evaluations._blocked.add(record["evaluationId"])
+            else:
+                if record.get("cleanupIncomplete"):
+                    self.update(record["jobId"], cleanupIncomplete=False)
+                self.reconcile_usage(record["jobId"])
 
     def update(self, identity, **changes):
         with self._lock:
@@ -95,13 +119,90 @@ class AgentRuns:
         return self.records[identity]
 
     def document(self, record):
-        return deepcopy(
+        result = deepcopy(
             {
                 key: value
                 for key, value in record.items()
-                if key not in {"provider", "requestHash", "frozenInputs", "plan", "authorityId"}
+                if key
+                not in {"provider", "requestHash", "frozenInputs", "plan", "authorityId", "executionOwner"}
             }
         )
+        result["usage"] = usage_snapshot(record["provider"]["requests"], record["provider"].get("stopReason"))
+        return result
+
+    @staticmethod
+    def owner_alive_or_unknown(record):
+        owner = record.get("executionOwner")
+        if not owner:
+            return True
+        try:
+            return psutil.Process(owner["pid"]).create_time() == owner["createdAt"]
+        except psutil.NoSuchProcess:
+            return False
+        except psutil.AccessDenied:
+            return True
+
+    def resources_confirmed(self, record):
+        for receipt in (self.root / record["jobId"]).glob("**/process-*.json"):
+            if not cleanup_confirmed(receipt.parent, json.loads(receipt.read_bytes())):
+                return False
+        return True
+
+    def reconcile_usage(self, identity):
+        record = self.get(identity)
+        path = self.root / identity / "private-transport" / "observations.jsonl"
+        if not path.exists():
+            return
+        budget = record["budget"]
+        gate = None
+
+        def save():
+            self.update(identity, provider=gate.state, usage=gate.snapshot())
+
+        gate = BudgetedProvider(
+            identity,
+            record["model"].split("/", 1)[1],
+            ProviderLimits(
+                budget["requests"],
+                budget["tokens"],
+                budget["llmUsd"],
+                budget["wallSeconds"],
+                budget["maxOutputTokensPerRequest"],
+            ),
+            None,
+            None,
+            deepcopy(record["provider"]),
+            save,
+            None,
+            "",
+            transport_token="",
+            is_active=lambda: False,
+        )
+        reconcile_observations(path, gate)
+
+    async def cleanup(self, identity):
+        record = self.get(identity)
+        owner = record.get("executionOwner") or {}
+        if (
+            record.get("cleanupIncomplete")
+            and owner.get("instance") != self.instance
+            and self.owner_alive_or_unknown(record)
+        ):
+            raise PlanError(
+                "agent_cleanup_unconfirmed", "The previous Agent owner is still alive or unknown", status=409
+            )
+        confirm = getattr(self.adapter, "confirm_cleanup", None)
+        if record.get("cleanupIncomplete") and (confirm is None or not await confirm(identity)):
+            raise PlanError(
+                "agent_cleanup_unconfirmed", "Owned Agent resources are not yet confirmed closed", status=409
+            )
+        if not self.resources_confirmed(record):
+            raise PlanError(
+                "agent_cleanup_unconfirmed", "Owned Agent process cleanup is unconfirmed", status=409
+            )
+        self.reconcile_usage(identity)
+        self.update(identity, cleanupIncomplete=False)
+        return self.document(self.get(identity))
 
     def plan_in_use(self, identity, revision=None):
         return any(
@@ -434,6 +535,7 @@ class AgentRuns:
         gate, transport, session, audit = None, None, None, None
         current_case = None
         try:
+            owner = psutil.Process()
             self.update(
                 identity,
                 status="running",
@@ -441,6 +543,11 @@ class AgentRuns:
                 admissionState="running",
                 executionSeconds=None,
                 cleanupSeconds=None,
+                executionOwner={
+                    "pid": owner.pid,
+                    "createdAt": owner.create_time(),
+                    "instance": self.instance,
+                },
             )
             evaluation.update(status="running", startedAt=now())
             await persist(evaluations.store.save, evaluation)
@@ -634,6 +741,9 @@ class AgentRuns:
             self.update(identity, status="succeeded", finishedAt=time.time(), result=row)
         except BaseException as error:
             self.manager.agent_grants.revoke(identity)
+            if isinstance(error, CleanupIncomplete):
+                evaluations._blocked.add(evaluation_id)
+                self.update(identity, cleanupIncomplete=True)
             if session is not None:
                 try:
                     await session.close()

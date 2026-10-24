@@ -120,13 +120,13 @@ def usage_snapshot(rows, stop_reason=None):
     failures = sum(row["status"] == "failed" for row in rows)
     unknown = [row for row in rows if not row.get("usageComplete")]
     tokens = sum(sum(row["usage"].values()) for row in rows)
-    costs = {
-        row["id"]: ProviderQuote(row["quoteRevision"], row["rates"]).cost(row["usage"]) for row in rows
-    }
+    costs = {row["id"]: ProviderQuote(row["quoteRevision"], row["rates"]).cost(row["usage"]) for row in rows}
     money = sum(costs.values(), Decimal(0))
     fields = ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
-    known = {name: sum(row["usage"].get(key, 0) for row in rows)
-             for name, key in zip(fields, TOKEN_KEYS, strict=True)}
+    known = {
+        name: sum(row["usage"].get(key, 0) for row in rows)
+        for name, key in zip(fields, TOKEN_KEYS, strict=True)
+    }
     return {
         **{name: None if unknown else value for name, value in known.items()},
         **{"known" + name[0].upper() + name[1:]: value for name, value in known.items()},
@@ -316,8 +316,13 @@ class BudgetedProvider:
             if key not in TOKEN_KEYS or type(value) is not int or value < 0:
                 raise PlanError("agent_usage_mismatch", "Invalid trusted usage observation", status=503)
             merged[key] = max(merged.get(key, 0), value)
-        if merged == row["usage"]:
+        forwarded = row.get("dispatchState") == "reserved"
+        if merged == row["usage"] and not forwarded:
             return
+        if forwarded:
+            row["dispatchState"] = (
+                "started"  # A trusted response observation proves this external attempt began.
+            )
         row["usage"] = merged
         if message_id is not None:
             row["providerMessageId"] = self._redact(message_id)

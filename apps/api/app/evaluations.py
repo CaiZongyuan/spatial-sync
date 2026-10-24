@@ -703,6 +703,9 @@ class EvaluationService:
         for session in self.manager.sessions.values():
             if session.evaluation_id == identifier:
                 await session.close()
+        record = self.store.records[identifier]
+        if record.get("layer") == "agent":
+            await self.manager.agent_runs.cleanup(record["jobId"])
         self._blocked.discard(identifier)
         self.wake()
         return self.status()

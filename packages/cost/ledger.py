@@ -6,7 +6,7 @@ from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
 
-from packages.agents.provider import TOKEN_KEYS, usage_snapshot
+from packages.agents.provider import usage_snapshot
 from packages.cost.ranges import overlap_fraction, reporting_window
 from packages.info.plans import PlanError
 from packages.library.transactions import durable_json
@@ -201,11 +201,9 @@ class CostLedger:
                     for row in job["provider"]["requests"]
                     if window.start <= row["at"] < window.end or include_end and row["at"] == window.end]
             snapshot = usage_snapshot(rows)
-            unknown = snapshot["unknownUsageRequests"] > 0
             token_fields = ("inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens")
-            known = {name: sum(row["usage"].get(key, 0) for row in rows)
-                     for name, key in zip(token_fields, TOKEN_KEYS, strict=True)}
-            result.update({name: None if unknown else value for name, value in known.items()})
+            known = {name: snapshot["known" + name[0].upper() + name[1:]] for name in token_fields}
+            result.update({name: snapshot[name] for name in token_fields})
             result.update({"known" + name[0].upper() + name[1:]: value for name, value in known.items()})
             result.update({name: snapshot[name] for name in ("requests", "failures", "tokens", "llmUsd",
                             "knownRequests", "knownFailures", "knownTokens", "knownLlmUsd",
@@ -215,7 +213,8 @@ class CostLedger:
             count, failed = snapshot["requests"], snapshot["failures"]
             result["successRate"] = (count - failed) / count if count and failed is not None else None
             inputs = known["inputTokens"] + known["cacheReadTokens"] + known["cacheWriteTokens"]
-            result["cacheHitRate"] = known["cacheReadTokens"] / inputs if inputs and not unknown else None
+            result["cacheHitRate"] = (known["cacheReadTokens"] / inputs
+                                      if inputs and not snapshot["unknownUsageRequests"] else None)
             result["priceRevisions"] = sorted(revisions | set(snapshot["priceRevisions"]))
         return result
 
