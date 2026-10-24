@@ -129,7 +129,7 @@ The returned `recordingUrl` can be passed as the existing replay page's `src`
 query. Recording metadata, binary segments and assets retain their original
 bytes. The dataset remains available after ordinary recording retention.
 
-The gateway journey `tests/gateway/test_demonstrations.py` creates two actual
+The gateway journey `tests/gateway/test_demonstrations_api.py` creates two actual
 Synthetic successes, pins a Task to DemoSet v1 before v2 exists, then runs the
 real isolated node with the explicitly fake CPU trainer. It checks downloaded
 hashes, local paths, `versions.json` attribution and rejection of missing dataset
