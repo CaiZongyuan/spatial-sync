@@ -14,5 +14,17 @@
 .job-detail th, .job-detail td { padding: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .job-detail code { overflow-wrap: anywhere; }
 .job-log { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; }
+.job-metric-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.job-metric-chart { min-width: 0; }
+.job-metric-chart h3 { font-size: 12px; font-weight: 500; }
+.job-metric-chart svg { width: 100%; color: var(--accent, #1a6f68); }
+.job-metric-chart text { fill: var(--text-muted, #777); font-size: 10px; }
+.job-metric-axis { fill: none; stroke: var(--line); }
+.job-metric-line { fill: none; stroke: currentColor; stroke-width: 2; }
+.job-metric-chart circle { fill: currentColor; }
+.job-metric-note { font-size: 12px; opacity: .7; }
+.job-metric-table { max-height: 360px; overflow: auto; }
+.job-detail details summary { cursor: pointer; font-size: 12px; }
+.job-tensorboard-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 @media (max-width: 950px) { .job-detail-columns { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .job-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

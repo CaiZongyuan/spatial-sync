@@ -4,7 +4,10 @@ import { request } from '../lib/api';
 import { getJob, type TrainingJob } from '../lib/jobs';
 import { remainingSeconds } from '../lib/training-presentation';
 import type { TrainingPlanDocument } from '../lib/training';
+import type { TrainingViewStatus } from '../lib/training/view-source';
 import { TrainingPlanDetails } from './TrainingPlanDetails';
+import { JobMetricCharts } from './training/JobMetricCharts';
+import { TrainingViewGrid } from './training/TrainingViewGrid';
 import '../job-detail.css';
 
 const statuses = { queued: '排队中', running: '训练中', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
@@ -19,6 +22,20 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   const [logs, setLogs] = useState<string[]>([]);
   const [logsComplete, setLogsComplete] = useState(false);
   const [logsError, setLogsError] = useState<string>();
+  const [view, setView] = useState<TrainingViewStatus>();
+  const [tensorboardUrl, setTensorboardUrl] = useState<string>();
+  const [tensorboardError, setTensorboardError] = useState<string>();
+  const [tensorboardPending, setTensorboardPending] = useState(false);
+
+  useEffect(() => { setView(undefined); setTensorboardUrl(undefined); setTensorboardError(undefined); }, [jobId]);
+  const openTensorboard = async () => {
+    setTensorboardPending(true); setTensorboardError(undefined);
+    try {
+      const result = await request<{ url: string }>('/tensorboard', { method: 'POST' });
+      setTensorboardUrl(result.url);
+    } catch (failure) { setTensorboardError((failure as Error).message); }
+    finally { setTensorboardPending(false); }
+  };
 
   useEffect(() => {
     let disposed = false, pending: AbortController | undefined;
@@ -84,6 +101,14 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
       <div><span>已用 / 预计剩余</span><strong>{value(elapsed, 0)}s / {value(remaining, 0)}s</strong></div>
     </div>
     <div className="job-detail-columns"><div>
+      {job.status === 'running' && <TrainingViewGrid jobId={jobId} onStatusChange={setView} />}
+      <JobMetricCharts history={job.metricsHistory} />
+      <section className="panel"><h2>TensorBoard</h2>
+        <div className="job-tensorboard-controls"><button type="button" disabled={tensorboardPending} onClick={() => void openTensorboard()}>
+          {tensorboardPending ? '正在启动…' : '启动 / 连接 TensorBoard'}</button>
+          {tensorboardUrl && <a href={tensorboardUrl} target="_blank" rel="noreferrer">打开完整训练曲线 ↗</a>}</div>
+        {tensorboardError && <p role="alert">{tensorboardError}</p>}
+      </section>
       <section className="panel"><h2>检查点</h2>{checkpoints.length ? <table><thead><tr><th>文件</th><th>大小</th><th>SHA256</th></tr></thead>
         <tbody>{checkpoints.map(artifact => <tr key={artifact.path}><td><code>{artifact.path}</code></td><td>{artifact.size.toLocaleString()} B</td>
           <td><code title={artifact.sha256}>{artifact.sha256.slice(0, 12)}</code></td></tr>)}</tbody></table>
@@ -98,6 +123,9 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         <dt>场景</dt><dd>{job.scene}</dd><dt>节点 / 设备</dt><dd>{job.nodeId ?? '—'} / {job.executionDevice}</dd>
         <dt>Seed</dt><dd>{job.seed}</dd><dt>GPU 型号</dt><dd>{job.resourceModel ?? '—'}</dd>
         <dt>训练端 Newton</dt><dd>{job.versions?.versions.newton ?? '—'}</dd>
+        <dt>视图实际 Newton / Solver</dt><dd>{view?.hello ? `${view.hello.source.newtonVersion} / ${view.hello.source.solver}` : '—'}</dd>
+        <dt>视图实际 dt / 环境</dt><dd>{view?.hello ? `${view.hello.source.physicsDt}s / ${view.hello.environments.join(', ')}` : '—'}</dd>
+        <dt>几何捕获 Newton</dt><dd>{view?.hello?.capture?.source.newtonVersion ?? '—'}</dd>
         <dt>说明</dt><dd>{job.reason ?? '—'}</dd></dl>
         {job.approvalId && <Link to="/approvals">查看作业审批</Link>}</section>
       <section className="panel"><h2>批准的训练计划 · 修订 {job.planRevision}</h2>

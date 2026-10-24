@@ -174,7 +174,10 @@ interview: interview.md                # lab-training-plan 产出的完整问答
   进程使用随机 loopback 端口、独立 URL 前缀且禁用 CUDA。相同输入集合重复调用复用同一进程；
   新作业改变输入集合时，下一次调用只重启自身进程并返回新地址。启动等待不占用会话、心跳或取消锁，
   调用者断开不丢失创建任务；Gateway 关闭时通过原创建 handle 回收进程树。
-- 平台只存储并显示心跳里的标题指标。
+- 平台只存储并显示心跳里的标题指标。Job 的 `metricsHistory` 最多保留 900 条已接受报告，
+  `receivedAt` 是 Gateway 接收该报告的 Unix 秒，`reportedStatus/reason` 保留节点原报告，
+  metrics 的 0 与 null 分开保留；相同报告重试不增加历史。旧 Job 无历史时为空，不补造过去数据。
+  标题曲线以 iteration 为横轴，同一 iteration 取最后一次观测，缺值处断开；终态最后报告仍保留。
 - 第三方实验管理（SwanLab、W&B）不在 v1 范围，可以由 Task 包自己配置 rsl_rl 的日志写入器接入。
 
 ## 6. 训练视图
