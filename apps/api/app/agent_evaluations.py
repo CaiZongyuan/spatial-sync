@@ -241,6 +241,9 @@ class ExternalEvaluations:
             or record["runtimeVersion"] is not None
             and run["runtime"]["version"] is not None
             and record["runtimeVersion"] != run["runtime"]["version"]
+            or record.get("thinking") is not None
+            and run["runtime"]["thinking"] is not None
+            and record["thinking"] != run["runtime"]["thinking"]
         ):
             raise PlanError(
                 "runtime_context_mismatch",

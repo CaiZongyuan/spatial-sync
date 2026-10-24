@@ -6,12 +6,12 @@ export interface RuntimeDeclaration { name: string; version: string | null; mode
 export interface HarnessVersion { version: number; contentHash: string; archiveHash: string; decision: string }
 export interface AgentCase {
   caseRunId: string; caseId: string; repeat: number;
-  status: 'waiting' | 'running' | 'finishing' | 'completed' | 'invalid' | 'cancelled';
+  status: 'waiting' | 'starting' | 'running' | 'finishing' | 'completed' | 'invalid' | 'cancelled';
   sessionId?: string; nativeSessionId?: string; runtimeRecordId?: string; runtimeRecordHash?: string;
   observedRuntime?: { name: string; version: string | null; models: string[]; thinking: string | null };
   score?: number; dimensions?: Record<string, number>; recordingId?: string;
   artifacts: { id: string; kind: string; url: string; sha256: string; size: number }[];
-  usage?: RuntimeUsage & { observationBasis: 'completion-snapshot' };
+  usage?: (RuntimeUsage & { observationBasis: 'completion-snapshot' }) | null;
   error?: { code: string };
 }
 export interface AgentRun {
@@ -41,4 +41,4 @@ export const cancelAgentRun = (id: string, signal: AbortSignal) =>
   request<AgentRun>(`/agent-runs/${encodeURIComponent(id)}/cancel`, { method: 'POST', signal });
 
 export const agentRunStatus = { queued: '排队中', running: '等待外部 runtime', completed: '已完成', failed: '无效 / 未完成', cancelled: '已取消' };
-export const agentCaseStatus = { waiting: '等待交接', running: '等待完成信号', finishing: '平台收尾中', completed: '已评分', invalid: '基础设施无效', cancelled: '已取消' };
+export const agentCaseStatus = { waiting: '等待交接', starting: '启动平台会话', running: '等待完成信号', finishing: '平台收尾中', completed: '已评分', invalid: '基础设施无效', cancelled: '已取消' };

@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -57,3 +58,47 @@ def test_explicit_native_link_validates_identity_and_freezes_cost_without_double
         assert saved["cases"][0] == outcome
         assert saved["status"] == "completed" and saved.get("result") is None
         assert restarted.get("/api/v1/suites/lab-ops-basic/1/scoreboard").json()["rows"] == []
+
+
+@pytest.mark.parametrize("thinking,accepted", [("low", False), ("high", True), (None, True)])
+def test_controlled_persisted_known_thinking_is_checked_without_inventing_unknown(thinking, accepted):
+    # A's current native producer reports no thinking level. This controlled
+    # persistence-boundary fixture only tests B's existing known-value guard.
+    settings = Settings()
+    with TestClient(create_app(settings)) as http:
+        native = http.post(
+            "/api/v1/runtime-sessions/import",
+            json={
+                "format": "claude-code-stream-json",
+                "content": FIXTURE.read_text(encoding="utf-8"),
+            },
+        ).json()["session"]
+        assert native["thinking"] is None
+    path = settings.state_root / "runtime-sessions.json"
+    persisted = json.loads(path.read_bytes())
+    persisted["sessions"][native["id"]]["thinking"] = "high"
+    path.write_text(json.dumps(persisted), encoding="utf-8")
+    declaration = {
+        "name": "claude-code",
+        "version": "2.1.306",
+        "model": "claude-opus-5-5",
+        "thinking": thinking,
+    }
+    with TestClient(create_app(settings)) as http:
+        run, _ = create(http, runtime=declaration)
+        item = work(http, run)
+        response = http.post(
+            BASE + run["id"] + "/complete",
+            json={
+                "caseRunId": item["caseRunId"],
+                "nativeSessionId": native["nativeSessionId"],
+                "runtimeRecordId": native["id"],
+            },
+        )
+        if accepted:
+            assert response.status_code == 200 and response.json()["case"]["status"] == "completed"
+            assert response.json()["case"]["observedRuntime"]["thinking"] == "high"
+            assert response.json()["run"]["runtime"]["thinking"] == thinking
+        else:
+            assert response.status_code == 409 and "runtime_context_mismatch" in response.text
+            assert http.post(BASE + run["id"] + "/cancel").json()["cleanup"]["complete"]
