@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-24T14:23:36.300786+00:00",
+  "capturedAt": "2026-10-24T15:16:03.313849+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -241,7 +241,7 @@
     },
     {
       "path": "packages/programs/robot_arm/policy.py",
-      "sha256": "27a4e06356c61193fb4b0a609d4ff3dd5446b26149dea50eb1ef4afe1b2b3034"
+      "sha256": "17333e71a6214edd801c3dc8bbbef4991cbbf42bc9d714e3f7cfb81530aedc68"
     },
     {
       "path": "packages/programs/robot_arm/preview.py",
@@ -371,10 +371,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "dc31a982eefea289b61d573dfbcb44feab4b766b89d237e50e75ba6041d26c7b",
-    "catalog.json": "d3579fb1c101e85c0059bc5aaa5b00f682795cf782dad10deca023fd3812c134",
-    "state.json": "e2d88a67ca9d46d9461fcf5dad27df9bc36252daa077c4dca90a27b2e68cfcaa",
-    "snapshot.bin": "f4d678ce3c4334e66ae2a2ddc86c7b5daa6b0553bb5a6afb9f1f531d08c9252b",
+    "manifest.json": "0a9638d94f4671bf7d1b3b6b46fa2b9795f742efee0c5db0236c4e292afedeb7",
+    "catalog.json": "df606b6255edd35c3cdd470bf1548c5592561b13f4775b852a007458bbd1d96e",
+    "state.json": "688fa2d0c2040de8d401289495c370f067553695ef70a3846fece553236c93a4",
+    "snapshot.bin": "285f0813d1a853e5dfb0e21ac3214e675e4f1804e14315a24f6aad408fcdcab4",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
