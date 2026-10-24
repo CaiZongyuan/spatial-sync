@@ -14,14 +14,41 @@ The CPU loader requires one fixed float32 `[1,N]` observation input and `[1,A]`
 action output, and registers only `CPUExecutionProvider`. `onnx` and the CPU
 distribution of `onnxruntime` are frozen in the lockfile; neither imports Isaac Lab.
 
-A loadable candidate is **unqualified**. The current candidate record keeps
-`evaluations: []`, `qualified: false`, and names the missing platform Newton
-evaluation and actual 256 trainer-state observation comparison. The existing
-embodied evaluator still accepts scene-bound programs; policy/checkpoint Suite
-binding and promotion are subsequent integration work. Numerical fixtures,
-short training exports and the existing failed T0 checkpoint do not establish
-contact-policy quality. #35's real Newton pickPlace and observation gate remain
-open. There is no policy promotion endpoint in this engineering slice.
+A loadable candidate is **unqualified**. Its original immutable artifact keeps
+`evaluations: []` and `qualified: false`; current API readback projects linked
+platform evaluations and observation reports under `evidence` without changing
+that artifact/content hash. Numerical fixtures, short exports and the failed T0
+checkpoint do not establish contact-policy quality. #35's real learned Newton
+pickPlace and actual256 independent trainer-state gate remain open. Promotion
+is a separate capability.
+
+## Evaluate an immutable policy
+
+```powershell
+lw eval run policy/fr3-pick-tube@1 --suite suite/fr3-pick-tube@1 --json
+lw eval run checkpoint/job-EXAMPLE/checkpoints/run/model_0.pt --suite suite/fr3-pick-tube@1 --json
+```
+
+Use an existing compatible exact Suite and actual checkpoint reference. Checkpoint
+intent reuses policy freezing and resolves to the same immutable candidate on
+retry. Versioned script subjects need the separate program loader.
+
+The existing evaluator retains its one Session slot and freezes the Suite's
+evaluation Scene/Task/source. It verifies every original binding, replaces only
+the target implementation, and independently compares Gateway/Runner Catalogs.
+An absent or mismatched override rejects before running a taught fallback.
+Published Scene packages and recording format remain unchanged; the recording
+contains the actual policy Catalog. A future deployment Scene does not replace
+the fixed experiment environment.
+
+Candidate weights, checkpoint and training Task remain provenance. Comparison
+uses the same fixed base Program slot for teacher/policy candidates, preserving
+all non-target behavior. A private native probe records actual ORT version and
+provider availability for both. The policy receipt must match that probe and
+reports actual inference calls/finite outputs and a PhysicsPort-observation
+digest. These counters do not assert committed joint targets or motion. The
+platform grades the frozen Suite facts even if the candidate's own Task goal
+reports success. Unknown comparison proof cannot establish a new Reference.
 
 ## Supported observation format
 
@@ -118,3 +145,30 @@ It always labels provenance as caller supplied and never qualifies/promotes a
 policy itself. The engineering fixture is not the required real trainer sample.
 `sim_gap` compares success fractions and triggers strictly above fifteen
 percentage points; unknown rates remain unknown.
+
+## Freeze and verify source-Job evidence
+
+A Task may implement synchronous
+`env.unwrapped.lw_policy_observation_samples(256) -> {method, samples}`.
+The owned training Bridge calls it after exporting the exact learned model.
+Samples supply unique `sourceStateId`, raw canonical `state`, independently
+captured `trainingObservation`, raw `previousAction` and optional `references`.
+The Bridge freezes a versioned envelope and capture receipt with the actual
+Task hook/code, fenced Job dispatch, model/observation hashes, versions and IDs.
+An old Task without the hook retains missing evidence.
+
+```powershell
+lw policy check-observations policy/fr3-pick-tube@1 --artifact observations/samples.json --json
+lw policy observation-checks policy/fr3-pick-tube@1 --json
+lw policy verify-observation-source policy/fr3-pick-tube@1 check-EXAMPLE --artifact observations/capture.json --json
+```
+
+These commands and generic MCP methods consume existing authenticated source-Job
+artifacts; they accept no host paths, score upload or qualified flag. Reports
+freeze the input bytes, implementation/runtime identity and recomputed per-term
+errors. Failed numerical checks, identical retries and restart readback remain
+available. `verify-observation-source` separately checks the actual hook/Task,
+dispatch, succeeded process, weights, versions, IDs and hashes against the
+capture receipt. Its `capture_contract_verified` status validates those source
+facts; it explicitly does not establish actual training quality or independent
+observation semantics. All these operations retain `qualified:false`.

@@ -3,10 +3,13 @@
 import hashlib
 import importlib.util
 import json
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
 
+from apps.node import bridge_callback, observation_capture
 from apps.node.observation_capture import capture_observations, code_hash
 
 
@@ -86,3 +89,54 @@ def test_duplicate_state_ids_and_foreign_hook_source_do_not_create_capture(tmp_p
     monkeypatch.setenv("LW_TASK_PACKAGE", str(other))
     with pytest.raises(ValueError, match="frozen Task"):
         capture_observations(*args[:5])
+
+
+def test_real_registration_wrapper_calls_the_owned_sampler_after_exact_export(tmp_path, monkeypatch):
+    runner, output, inputs, _, _, _ = controlled_hook(tmp_path, monkeypatch)
+    inputs.update(plan={"algorithm": {"version": "5.4.1"}}, hardware={"device": "cpu", "gpu": None})
+    manifest = tmp_path / "inputs.json"
+    manifest.write_text(json.dumps(inputs), encoding="utf-8")
+    monkeypatch.setenv("LW_NODE_INPUTS", str(manifest))
+    monkeypatch.setenv("LW_NODE_OUTPUT", str(output))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(bridge_callback, "external_files", lambda *_: [])
+    monkeypatch.setattr(
+        bridge_callback.importlib.metadata,
+        "version",
+        lambda name: "5.4.1" if name == "rsl-rl-lib" else "controlled-fixture",
+    )
+    order = []
+
+    class ControlledRunner:
+        def __init__(self):
+            self.env = runner.env
+            self.current_learning_iteration = 0
+            self.logger = SimpleNamespace(
+                log_dir=str(tmp_path / "logs/run"), rewbuffer=[], log=lambda **_: None
+            )
+
+        def learn(self):
+            order.append("learn")
+            path = tmp_path / "logs/run"
+            path.mkdir(parents=True)
+            (path / "model_0.pt").write_bytes(b"controlled learned checkpoint")
+            return "controlled-return"
+
+        def export_policy_to_onnx(self, path, filename):
+            order.append("export")
+            (output / filename).write_bytes(b"controlled exported model; not a quality policy")
+
+    package = types.ModuleType("rsl_rl")
+    module = types.ModuleType("rsl_rl.runners")
+    module.OnPolicyRunner = ControlledRunner
+    monkeypatch.setitem(sys.modules, "rsl_rl", package)
+    monkeypatch.setitem(sys.modules, "rsl_rl.runners", module)
+    monkeypatch.setitem(sys.modules, "lw_observation_capture", observation_capture)
+    bridge_callback.install()
+    assert ControlledRunner().learn() == "controlled-return"
+    receipt = json.loads((output / "observations/capture.json").read_bytes())
+    export = json.loads((output / "export.json").read_bytes())
+    assert order == ["learn", "export"]
+    assert receipt["policy"]["onnxSha256"] == export["policySha256"]
+    assert receipt["capture"]["hookStatus"] == "returned" and receipt["sampleCount"] == 256
+    assert receipt["source"]["versions"]["versions"]["rsl_rl"] == "5.4.1"
