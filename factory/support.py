@@ -64,6 +64,7 @@ def empty(checked_at):
                 "telemetryDisabled": False,
                 "providersDisabled": False,
             },
+            "contentTelemetryConsent": False,
             "evidence": None,
         },
         "sourcePackages": [],
@@ -169,6 +170,10 @@ def validate(data):
             errors.append(f"{prefix}: pass has an incomplete BOM closure")
         if status == "pass" and (adaptation.get("variant") or {}).get("selected") != "Newton/Enabled":
             errors.append(f"{prefix}: Newton variant selection is not recorded")
+        if status == "pass" and not (adaptation.get("sourcePhysics") or {}).get(
+            "massIsUpstreamDeclaration"
+        ):
+            errors.append(f"{prefix}: upstream mass evidence is not recorded")
         if status == "pass":
             output = adaptation.get("output") or {}
             visual = adaptation.get("visual") or {}
@@ -207,21 +212,21 @@ def validate(data):
         structure = import_info.get("structural") or {}
         physics = import_info.get("physics") or {}
         usage = item.get("usage") or {}
-        if usage.get("dressing") not in (True, False, "unknown"):
-            errors.append(f"{prefix}: dressing usage is not measured or unknown")
-        if usage.get("staticCollision") not in (True, False, "unknown"):
-            errors.append(f"{prefix}: staticCollision usage is not measured or unknown")
-        if usage.get("staticCollision") is True:
+        if usage.get("dressingUsable") not in (True, False, "unknown"):
+            errors.append(f"{prefix}: dressingUsable usage is not measured or unknown")
+        if usage.get("staticCollisionUsable") not in (True, False, "unknown"):
+            errors.append(f"{prefix}: staticCollisionUsable usage is not measured or unknown")
+        if usage.get("staticCollisionUsable") is True:
             if not all(structure.get(f"S{index}") == "pass" for index in USABLE_STRUCTURE):
-                errors.append(f"{prefix}: staticCollision claims S1/S2/S4/S6")
+                errors.append(f"{prefix}: staticCollisionUsable claims S1/S2/S4/S6")
             if not (adaptation.get("physics") or {}).get("collision") == "authored":
-                errors.append(f"{prefix}: staticCollision claims an authored collision body")
+                errors.append(f"{prefix}: staticCollisionUsable claims an authored collision body")
             if not all(physics.get(identifier) == "pass" for identifier in STATIC_PHYSICS):
-                errors.append(f"{prefix}: staticCollision claims Newton P1/P3")
-        if usage.get("dressing") is True and not all(
+                errors.append(f"{prefix}: staticCollisionUsable claims Newton P1/P3")
+        if usage.get("dressingUsable") is True and not all(
             structure.get(f"S{index}") == "pass" for index in USABLE_STRUCTURE
         ):
-            errors.append(f"{prefix}: dressing claims S1/S2/S4/S6")
+            errors.append(f"{prefix}: dressingUsable claims S1/S2/S4/S6")
     verified = blender.get("verified") or {}
     for field in ("backgroundScript", "safeMode", "providersDisabled"):
         if verified.get(field) is not True:
@@ -230,6 +235,8 @@ def validate(data):
         configuration.get("telemetryRuntime")
     ):
         errors.append("blender.telemetryDisabled must be verified or explicitly unavailable")
+    if blender.get("contentTelemetryConsent") is not False:
+        errors.append("addon content telemetry consent must be recorded false")
     ci = data.get("ci") or {}
     actual = ci.get("actualAddedSeconds")
     if not isinstance(actual, (int, float)) or actual <= 0:

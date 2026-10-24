@@ -62,32 +62,40 @@ def _synthetic():
 
 def check():
     """Run the synthetic end-to-end journey and validate the committed support list."""
-    errors, seconds = _synthetic()
+    synthetic_errors, seconds = _synthetic()
     support_path = REPO_ROOT / "factory" / "support.json"
+    support_errors = []
     if not support_path.is_file():
-        errors.append("factory/support.json is missing")
+        support_errors.append("factory/support.json is missing")
     else:
         data = support_schema.load(support_path)
-        errors.extend(support_schema.validate(data))
+        support_errors.extend(support_schema.validate(data))
         candidates = data.get("sourcePackages") or []
         if not any(
             item.get("adaptation", {}).get("status") == "pass"
             and item.get("import", {}).get("status") == "pass"
             for item in candidates
         ):
-            errors.append("support list has no source package that completed adaptation and import")
+            support_errors.append(
+                "support list has no source package that completed adaptation and import"
+            )
+    errors = synthetic_errors + support_errors
+    if not support_path.is_file():
+        support_state = "missing"
+    else:
+        support_state = "invalid" if support_errors else "checked"
     result = {
         "command": "check",
-        "synthetic": "pass" if not errors else "fail",
+        "syntheticJourney": "pass" if not synthetic_errors else "fail",
         "syntheticSeconds": seconds,
-        "supportList": "checked" if support_path.is_file() else "missing",
+        "supportList": support_state,
         "errors": errors,
     }
     print(json.dumps(result, indent=2))
     return 1 if errors else 0
 
 
-def _entry(candidate, report, imported):
+def _source_entry(candidate, report, imported):
     source = report.get("source") or {}
     bom = source.get("bom") or {}
     adaptation = {
@@ -98,12 +106,13 @@ def _entry(candidate, report, imported):
         "visual": report.get("visual"),
         "dimensionsM": report.get("dimensionsM"),
         "physics": report.get("physics"),
+        "sourcePhysics": report.get("sourcePhysics"),
         "variant": report.get("variant"),
     }
     imported = imported or {"status": "gap", "reason": "Adaptation did not produce a package"}
     usage = {
-        "dressing": imported.get("dressingUsable", "unknown"),
-        "staticCollision": imported.get("staticCollisionUsable", "unknown"),
+        "dressingUsable": imported.get("dressingUsable", "unknown"),
+        "staticCollisionUsable": imported.get("staticCollisionUsable", "unknown"),
         "note": (
             "Static collision follows S1/S2/S4/S6, an authored collision body "
             "and Newton P1/P3; other failing checks stay visible."
@@ -111,7 +120,7 @@ def _entry(candidate, report, imported):
     }
     return {
         "package": candidate.package,
-        "localAssetId": candidate.asset_id,
+        "plannedLocalAssetId": candidate.asset_id,
         "title": candidate.title,
         "role": candidate.role,
         "revision": REVISION,
@@ -165,6 +174,7 @@ def _blender_summary(data):
         "blenderDownload",
         "addon",
         "license",
+        "contentTelemetryConsent",
         "configuration",
         "verified",
         "notes",
@@ -204,7 +214,7 @@ def evidence(args):
             (report_root / f"{candidate.package}.json").write_text(
                 json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8"
             )
-            entries.append(_entry(candidate, report, None))
+            entries.append(_source_entry(candidate, report, None))
             continue
         print(f"adapting {candidate.package}", flush=True)
         report = adapt(candidate, source, output / "adapted" / candidate.package)
@@ -220,12 +230,21 @@ def evidence(args):
             (report_root / f"{candidate.package}.import.json").write_text(
                 json.dumps(imported, indent=2, default=str) + "\n", encoding="utf-8"
             )
-        entries.append(_entry(candidate, report, imported))
+        entries.append(_source_entry(candidate, report, imported))
     result = support_schema.empty(datetime.now(UTC).isoformat(timespec="seconds"))
-    result["complete"] = True
     result["sourcePackages"] = sorted(entries, key=lambda item: item["package"])
-    _, seconds = _synthetic()
+    synthetic_errors, seconds = _synthetic()
     result["ci"]["actualAddedSeconds"] = seconds
+    result["ci"]["measuredScope"] = "synthetic adapter/import journey"
+    result["complete"] = len(entries) == len(SOURCE_PACKAGES) and any(
+        item["adaptation"]["status"] == "pass" and item["import"]["status"] == "pass"
+        for item in entries
+    )
+    if synthetic_errors:
+        result["complete"] = False
+    support_errors = support_schema.validate(result)
+    if support_errors:
+        result["complete"] = False
     blender_evidence = Path(args.blender_evidence) if args.blender_evidence else output / "blender.json"
     if blender_evidence.is_file():
         result["blender"] = _blender_summary(support_schema.load(blender_evidence))
@@ -237,8 +256,24 @@ def evidence(args):
         Path(args.support_out).write_text(
             json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-    print(json.dumps({"support": str(support_path), "sourcePackages": len(entries)}, indent=2))
-    return 0 if all(item["adaptation"]["status"] != "fail" for item in entries) else 1
+    print(
+        json.dumps(
+            {
+                "support": str(support_path),
+                "sourcePackages": len(entries),
+                "complete": result["complete"],
+                "supportErrors": support_errors,
+            },
+            indent=2,
+        )
+    )
+    return (
+        0
+        if result["complete"]
+        and not support_errors
+        and all(item["adaptation"]["status"] != "fail" for item in entries)
+        else 1
+    )
 
 
 def blender(args):
@@ -246,13 +281,7 @@ def blender(args):
 
     result = verify(Path(args.blender), Path(args.mcp), Path(args.out))
     print(json.dumps(result, indent=2))
-    required = all(
-        result["verified"].get(field) for field in ("backgroundScript", "safeMode", "providersDisabled")
-    )
-    telemetry = result["verified"].get("telemetryDisabled") or "unavailable" in str(
-        result["configuration"].get("telemetryRuntime")
-    )
-    return 0 if required and telemetry else 1
+    return 0 if all(result["verified"].values()) else 1
 
 
 def main(argv=None):

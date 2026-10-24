@@ -33,7 +33,7 @@ STATIC_PHYSICS = ("P1", "P3")
 
 
 @dataclass(frozen=True)
-class SourceCandidate:
+class PinnedSource:
     package: str
     asset_id: str
     title: str
@@ -44,7 +44,7 @@ class SourceCandidate:
 
 
 SOURCE_PACKAGES = (
-    SourceCandidate(
+    PinnedSource(
         "container_recycle_square_blue_a02",
         "environment/recycle-container",
         "Blue square recycling container",
@@ -53,7 +53,7 @@ SOURCE_PACKAGES = (
         8482999,
         "dressing and static collision prop",
     ),
-    SourceCandidate(
+    PinnedSource(
         "bucket_utility_gray_a01",
         "environment/utility-bucket",
         "Gray utility bucket",
@@ -62,7 +62,7 @@ SOURCE_PACKAGES = (
         15683159,
         "dressing and static collision prop",
     ),
-    SourceCandidate(
+    PinnedSource(
         "box_cardboard_a01",
         "environment/cardboard-box",
         "Cardboard box",
@@ -71,7 +71,7 @@ SOURCE_PACKAGES = (
         21530693,
         "dressing and static collision prop",
     ),
-    SourceCandidate(
+    PinnedSource(
         "equipment_utility_cart_e01",
         "environment/utility-cart",
         "Utility equipment cart",
@@ -80,7 +80,7 @@ SOURCE_PACKAGES = (
         171038176,
         "dressing and static collision prop",
     ),
-    SourceCandidate(
+    PinnedSource(
         "desk_a01",
         "environment/desk",
         "Laboratory desk",

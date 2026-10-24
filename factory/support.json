@@ -51,7 +51,8 @@
       "The addon socket is not auto-started; Blender background mode refuses the interactive server.",
       "BLENDER_MCP_SAFE_MODE covers the MCP path only; the addon socket accepts local code from any process."
     ],
-    "evidence": "Blender and MCP probe output is kept in the delivery evidence directory."
+    "evidence": "Blender and MCP probe output is kept in the delivery evidence directory.",
+    "contentTelemetryConsent": false
   },
   "limitations": [
     "Only the pinned NVIDIA SimReady package family is prepared; this is not a general converter.",
@@ -73,12 +74,12 @@
     "command": "uv run --no-sync python factory/verify.py check",
     "lane": "core",
     "expectedAddedSeconds": 10,
-    "actualAddedSeconds": 1.52
+    "actualAddedSeconds": 1.52,
+    "measuredScope": "synthetic adapter/import journey"
   },
   "sourcePackages": [
     {
       "package": "box_cardboard_a01",
-      "localAssetId": "environment/cardboard-box",
       "title": "Cardboard box",
       "role": "dressing and static collision prop",
       "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
@@ -305,6 +306,12 @@
             "Newton",
             "PhysX"
           ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 0.9999663233757019,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
         }
       },
       "import": {
@@ -340,15 +347,15 @@
         ]
       },
       "usage": {
-        "dressing": true,
-        "staticCollision": true,
-        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": true,
+        "staticCollisionUsable": true
       },
-      "evidence": "reports/box_cardboard_a01.json"
+      "evidence": "reports/box_cardboard_a01.json",
+      "plannedLocalAssetId": "environment/cardboard-box"
     },
     {
       "package": "bucket_utility_gray_a01",
-      "localAssetId": "environment/utility-bucket",
       "title": "Gray utility bucket",
       "role": "dressing and static collision prop",
       "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
@@ -578,6 +585,12 @@
             "Newton",
             "PhysX"
           ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 1.3274039775133133,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
         }
       },
       "import": {
@@ -608,15 +621,15 @@
         "validationFailures": []
       },
       "usage": {
-        "dressing": true,
-        "staticCollision": true,
-        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": true,
+        "staticCollisionUsable": true
       },
-      "evidence": "reports/bucket_utility_gray_a01.json"
+      "evidence": "reports/bucket_utility_gray_a01.json",
+      "plannedLocalAssetId": "environment/utility-bucket"
     },
     {
       "package": "container_recycle_square_blue_a02",
-      "localAssetId": "environment/recycle-container",
       "title": "Blue square recycling container",
       "role": "dressing and static collision prop",
       "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
@@ -840,6 +853,12 @@
             "Newton",
             "PhysX"
           ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 1.3542308807373047,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
         }
       },
       "import": {
@@ -875,15 +894,15 @@
         ]
       },
       "usage": {
-        "dressing": true,
-        "staticCollision": false,
-        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": true,
+        "staticCollisionUsable": false
       },
-      "evidence": "reports/container_recycle_square_blue_a02.json"
+      "evidence": "reports/container_recycle_square_blue_a02.json",
+      "plannedLocalAssetId": "environment/recycle-container"
     },
     {
       "package": "desk_a01",
-      "localAssetId": "environment/desk",
       "title": "Laboratory desk",
       "role": "dressing and static collision prop",
       "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
@@ -1117,6 +1136,12 @@
             "Newton",
             "PhysX"
           ]
+        },
+        "sourcePhysics": {
+          "collision": true,
+          "massKg": 120.5645980834961,
+          "massIsUpstreamDeclaration": true,
+          "inertiaAuthored": true
         }
       },
       "import": {
@@ -1131,15 +1156,15 @@
         "validationFailures": null
       },
       "usage": {
-        "dressing": "unknown",
-        "staticCollision": "unknown",
-        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": "unknown",
+        "staticCollisionUsable": "unknown"
       },
-      "evidence": "reports/desk_a01.json"
+      "evidence": "reports/desk_a01.json",
+      "plannedLocalAssetId": "environment/desk"
     },
     {
       "package": "equipment_utility_cart_e01",
-      "localAssetId": "environment/utility-cart",
       "title": "Utility equipment cart",
       "role": "dressing and static collision prop",
       "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
@@ -1340,7 +1365,8 @@
             "Newton",
             "PhysX"
           ]
-        }
+        },
+        "sourcePhysics": null
       },
       "import": {
         "status": "gap",
@@ -1354,11 +1380,12 @@
         "validationFailures": null
       },
       "usage": {
-        "dressing": "unknown",
-        "staticCollision": "unknown",
-        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible."
+        "note": "Static collision follows S1/S2/S4/S6, an authored collision body and Newton P1/P3; other failing checks stay visible.",
+        "dressingUsable": "unknown",
+        "staticCollisionUsable": "unknown"
       },
-      "evidence": "reports/equipment_utility_cart_e01.json"
+      "evidence": "reports/equipment_utility_cart_e01.json",
+      "plannedLocalAssetId": "environment/utility-cart"
     }
   ],
   "complete": true

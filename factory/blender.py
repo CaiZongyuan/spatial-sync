@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pxr import Usd
 
-from factory.support import BLENDER_DOWNLOAD, MCP_COMMIT
+from factory.support import BLENDER_DOWNLOAD, BLENDER_LICENSES, MCP_COMMIT
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,11 +68,8 @@ def verify(blender, mcp, output):
         "mcpCommit": MCP_COMMIT,
         "blenderDownload": BLENDER_DOWNLOAD,
         "addon": None,
-        "license": {
-            "blender": "GPL-3.0-or-later",
-            "mcpForBlender": "MIT",
-            "addon": "MIT",
-        },
+        "license": dict(BLENDER_LICENSES),
+        "contentTelemetryConsent": None,
         "configuration": {
             "safeMode": "BLENDER_MCP_SAFE_MODE=1",
             "telemetry": "DISABLE_TELEMETRY=true",
@@ -130,6 +127,7 @@ def verify(blender, mcp, output):
             blender_result = json.loads(blender_out.read_text(encoding="utf-8"))
             result["version"] = blender_result.get("blenderVersion")
             result["addon"] = blender_result.get("addon")
+            result["contentTelemetryConsent"] = blender_result.get("contentTelemetryConsent")
             result["configuration"]["autoStartServerDefault"] = blender_result.get(
                 "autoStartServerDefault"
             )
