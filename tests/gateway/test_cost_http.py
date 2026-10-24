@@ -54,7 +54,7 @@ def admitted(http, clock, *, device="cuda", budget=10):
     return plan, body, job
 
 
-def report(http, body, job, elapsed, status="running"):
+def report(http, body, job, elapsed, status="running", *, memory=0):
     return http.post(
         "/api/v1/nodes/local/heartbeat",
         headers=HEADERS,
@@ -66,7 +66,7 @@ def report(http, body, job, elapsed, status="running"):
                     "leaseId": job["leaseId"],
                     "status": status,
                     "elapsedSeconds": elapsed,
-                    "memoryUsedMb": 0,
+                    "memoryUsedMb": memory,
                 }
             ]
         },
@@ -250,3 +250,45 @@ def test_preledger_job_counters_reopen_as_explicit_unpriced_history():
         assert actual["gpuUsd"] is None
         assert actual["priceWarnings"] == ["Price at historical usage was not retained"]
         assert "costLedger" not in http.get(f"/api/v1/jobs/{job['jobId']}").json()
+
+
+def test_cross_day_preledger_reopen_does_not_retimestamp_an_old_gpu_memory_report():
+    settings = Settings(node_token=TOKEN)
+    clock = [1000.0]
+    first = create_app(settings)
+    first.state.jobs.clock = lambda: clock[0]
+    with TestClient(first) as http:
+        _, body, job = admitted(http, clock)
+        clock[0] += 10
+        assert report(http, body, job, 10, "failed", memory=512).status_code == 200
+    path = settings.state_root / "jobs.json"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    saved["jobs"][job["jobId"]].pop("costLedger")
+    path.write_text(json.dumps(saved), encoding="utf-8")
+    clock[0] += 86400
+    reopened = create_app(settings)
+    reopened.state.jobs.clock = lambda: clock[0]
+    with TestClient(reopened) as http:
+        assert http.get(f"/api/v1/jobs/{job['jobId']}").status_code == 200
+        assert totals(http, range="today")["memoryPeakMb"] is None
+        assert totals(http, range="today")["gpuSeconds"] == 0
+
+
+def test_a_job_queued_for_an_hour_does_not_allocate_gpu_seconds_before_its_lease():
+    app = create_app(Settings(node_token=TOKEN))
+    clock = [1000.0]
+    app.state.jobs.clock = lambda: clock[0]
+    with TestClient(app) as http:
+        plan, body, first = admitted(http, clock)
+        queued = http.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 43}).json()
+        assert queued["leaseId"] is None and queued["reason"] == "gpu_busy"
+        clock[0] += 3600
+        assert report(http, body, first, 0, "failed").status_code == 200
+        active = http.get(f"/api/v1/jobs/{queued['jobId']}").json()
+        assert active["leaseId"]
+        clock[0] += 10
+        assert report(http, body, active, 10).status_code == 200
+        series = http.get("/api/v1/cost/series", params={"range": "1h"}).json()["buckets"]
+        assert [bucket["gpuSeconds"] for bucket in series[:-1]] == [0] * (len(series) - 1)
+        assert series[-1]["gpuSeconds"] == pytest.approx(10)
+        assert sum(bucket["gpuSeconds"] for bucket in series) == pytest.approx(totals(http)["gpuSeconds"])

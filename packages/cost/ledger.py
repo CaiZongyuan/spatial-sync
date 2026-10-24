@@ -25,6 +25,10 @@ LLM_FIELDS = (
 DIMENSIONS = {"agent", "model", "node", "goal", "plan", "job"}
 
 
+def report_signature(report):
+    return hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
+
+
 class CostLedger:
     def __init__(self, manager):
         self.manager = manager
@@ -45,6 +49,7 @@ class CostLedger:
                 "lastObservedAt": at,
                 "reportedSeconds": reported,
                 "memorySamples": [],
+                "memoryReport": report_signature(report),
                 "entries": [],
             }
             if charged:
@@ -66,11 +71,19 @@ class CostLedger:
         prices = None
         for job in jobs.values():
             state = job["costLedger"]
+            if job["leaseId"] and job["leaseId"] != state.get("leaseId"):
+                node = self.manager.jobs.nodes.get(job["nodeId"], {})
+                lease = node.get("leases", {}).get(job["resourceId"])
+                if lease and lease["leaseId"] == job["leaseId"]:
+                    # Queue time is known not to own this GPU. Only a new
+                    # fenced dispatch advances the initial observation bound.
+                    state["lastObservedAt"] = max(state["lastObservedAt"], lease["assignedAt"])
+                    state["leaseId"] = job["leaseId"]
             report = job.get("lastNodeReport") or {}
             if job["executionDevice"] == "cuda":
                 state["reportedSeconds"] = max(state["reportedSeconds"], report.get("elapsedSeconds", 0))
                 memory = report.get("memoryUsedMb")
-                signature = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
+                signature = report_signature(report)
                 if memory is not None and state.get("memoryReport") != signature:
                     state["memorySamples"].append({"at": now, "memoryUsedMb": memory})
                     state["memoryReport"] = signature
