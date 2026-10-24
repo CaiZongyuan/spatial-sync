@@ -122,7 +122,7 @@ test('a read deadline reports a timeout and cancels every pending peer', async (
   await page.getByRole('button', { name: '刷新', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.resourceReads.pending)).toBe(3);
   await page.clock.fastForward(8100);
-  await expect(page.getByRole('alert')).toContainText('读取模型与价格超时');
+  await expect(page.getByRole('alert').filter({ hasText: '读取模型与价格超时' })).toBeVisible();
   expect(await page.evaluate(() => window.resourceReads.pending)).toBe(0);
   expect(await page.evaluate(() => window.resourceReads.aborted)).toBe(3);
 });

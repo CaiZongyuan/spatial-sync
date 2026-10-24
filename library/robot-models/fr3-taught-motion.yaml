@@ -1,0 +1,21 @@
+id: fr3-taught-motion
+title: FR3 taught motion（内置脚本）
+family: scripted
+source: spatial-sync built-in robot_arm.newton
+license: null
+parameters: null
+embodiments: [fr3-sim]
+upstreamEmbodiments: [Franka Research 3 + Franka Hand]
+actionSpace: taught waypoints / joint_position_targets
+compute: {inference: CPU}
+runnable: true
+capability:
+  program: robot_arm.newton
+  sources: [newton]
+  requirements: [Newton simulation dependencies, taught scene postures, valid PhysicsPort binding]
+  notes: Supported built-in taught motion; current scene uses graspMode=weld. This is not a trained contact policy or a host-readiness probe.
+quality: {status: not-evaluated, evaluationId: null}
+sources:
+  - title: Built-in Program implementation
+    url: https://github.com/CaiZongyuan/spatial-sync/blob/bcaabb33c39d7060a0a24099fac46cd2c833afb6/packages/programs/robot_arm/newton.py
+    retrievedOn: '2026-10-24'

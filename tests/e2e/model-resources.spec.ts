@@ -48,7 +48,8 @@ test('real model resources mask a local credential and persist audited human pri
   await expect(row).toContainText('默认');
   await expect(row).toContainText('未测量');
   await expect(row.getByRole('cell', { name: '* / * / *', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: '机器人模型目录' })).toContainText('尚未接入');
+  await expect(page.getByRole('region', { name: '机器人模型目录' })).toContainText('OpenVLA 7B');
+  await expect(page.getByRole('region', { name: '机器人模型目录' })).toContainText('仅登记 · v1 不推理');
   await page.getByRole('button', { name: '编辑价格表', exact: true }).click();
   await page.getByLabel(`${modelId} 输入 ($/MTok)`, { exact: true }).fill('0');
   await page.getByLabel(`${modelId} 输出 ($/MTok)`, { exact: true }).fill('3.25');

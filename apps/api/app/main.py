@@ -45,6 +45,7 @@ from apps.api.app.plan_routes import install_plan_routes
 from apps.api.app.platform_monitor import PlatformMonitor
 from apps.api.app.recordings import install_recording_routes
 from apps.api.app.resource_routes import install_resource_routes
+from apps.api.app.robot_resource_routes import install_robot_resource_routes
 from apps.api.app.runtime_routes import install_runtime_routes
 from apps.api.app.session_manager import SessionManager, default_source_factory, encode
 from apps.api.app.settings import Settings
@@ -264,6 +265,7 @@ def create_app(
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))
+    install_robot_resource_routes(app, library_assets, manager.library)
     install_cost_routes(app, manager, lambda headers: _role(headers, settings))
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)

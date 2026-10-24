@@ -284,6 +284,19 @@ COMMANDS = (
         path=("suite", "ls"), help="List public train metadata for pinned Agent and embodied suites.",
         method="suites_list", output_type=list[dict[str, Any]], mcp_name="suite_list",
     ),
+    Command(path=("robot", "ls"), help="Read robot Embodiments and scene bindings; starts no Source.",
+            method="robots_list", mcp_name="robot_list", output_type=list[dict[str, Any]]),
+    Command(path=("robot", "show"), help="Read an Embodiment, control composition and version history.",
+            method="robot_show", mcp_name="robot_show", arguments=(
+                Argument("id", ("embodiment",), str, "Embodiment ID, such as fr3-sim"),)),
+    Command(path=("robot-model", "ls"), help="Read Robot Model sources, loading support and quality.",
+            method="robot_models_list", mcp_name="robot_model_list", output_type=list[dict[str, Any]]),
+    Command(path=("robot-model", "show"), help="Read a Robot Model's source, licence and capability.",
+            method="robot_model_show", mcp_name="robot_model_show", arguments=(
+                Argument("id", ("model",), str, "Robot Model ID"),)),
+    Command(path=("controller", "show"), help="Read the explicitly current Controller and retained versions.",
+            method="controller_show", mcp_name="controller_show", arguments=(
+                Argument("id", ("controller",), str, "Controller ID, such as fr3-arm"),)),
     Command(
         path=("suite", "show"), help="Describe a pinned suite without private seeds or grading.",
         method="suite_show", arguments=(

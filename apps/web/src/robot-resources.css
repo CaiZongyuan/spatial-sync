@@ -1,0 +1,19 @@
+.robot-resources .robot-card { margin-bottom: 24px; }
+.robot-card-body { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(0, 1.1fr); gap: 28px; padding: 24px; }
+.robot-identity { min-width: 0; }
+.robot-identity .asset-model-viewport { height: 300px; border: 1px solid var(--line); border-radius: 8px; }
+.robot-card dl { margin: 20px 0 0; display: grid; gap: 12px; font-size: 12px; }
+.robot-card dl > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; }
+.robot-card dt { color: var(--muted); }
+.robot-card dd { margin: 0; overflow-wrap: anywhere; }
+.robot-card small, .model-resources table small { display: block; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.robot-card a, .model-resources table a { color: var(--accent-ink); }
+.robot-card h3 { margin: 0 0 16px; font: 500 18px/1.5 var(--serif); }
+.robot-control-stack dl > div { border-left: 2px solid var(--line-2); padding: 12px 0 12px 16px; }
+.robot-control-stack dl { gap: 0; margin-bottom: 20px; }
+.robot-disconnected-preview { min-height: 180px; display: grid; place-content: center; text-align: center; border: 1px dashed var(--line-2); border-radius: 8px; color: var(--muted); }
+.robot-history { padding: 20px 24px; border-top: 1px solid var(--line); }
+.model-resources [aria-label='机器人模型目录'] { min-width: 1180px; }
+.model-resources [aria-label='机器人模型目录'] td, .model-resources [aria-label='机器人模型目录'] th { max-width: 260px; overflow-wrap: anywhere; }
+.model-resources [aria-label='机器人模型目录'] details { margin-top: 8px; }
+@media (max-width: 1050px) { .robot-card-body { grid-template-columns: minmax(0, 1fr); } }

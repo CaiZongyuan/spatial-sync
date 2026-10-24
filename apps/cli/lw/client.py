@@ -108,6 +108,21 @@ class GatewayClient:
     async def models(self, query=None):
         return (await self.request("GET", "/api/v1/models", params={"q": query} if query else {}))["models"]
 
+    async def robots_list(self):
+        return (await self.request("GET", "/api/v1/embodiments"))["embodiments"]
+
+    async def robot_show(self, id):
+        return await self.request("GET", "/api/v1/embodiments/" + quote(id, safe=""))
+
+    async def robot_models_list(self):
+        return (await self.request("GET", "/api/v1/robot-models"))["models"]
+
+    async def robot_model_show(self, id):
+        return await self.request("GET", "/api/v1/robot-models/" + quote(id, safe=""))
+
+    async def controller_show(self, id):
+        return await self.request("GET", "/api/v1/controllers/" + quote(id, safe=""))
+
     async def add_model(self, ref, default_thinking="default", credential_name=None):
         provider, separator, model_id = ref.partition("/")
         if not separator or not provider or not model_id:
