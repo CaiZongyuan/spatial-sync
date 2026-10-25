@@ -92,7 +92,7 @@ aliases and purposes are supported; semantic recall is labelled with its model
 and index version and never relaxes a hard condition.
 
 ```text
-lw catalog search -q "blue recycling container" --scope all --usage staticCollision --license admitted --json
+lw catalog search -q "blue recycling container" --scope all --usage dressing --license admitted --json
 lw catalog search -q "装废弃物的容器" --scope all --json
 lw catalog show simready/container_recycle_square_blue_a02@524747d9b5e1f21b5b18b56041788c01d745f1a1 --json
 lw catalog estimate simready/container_recycle_square_blue_a02@524747d9b5e1f21b5b18b56041788c01d745f1a1 --json
