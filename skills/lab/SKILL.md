@@ -59,6 +59,10 @@ logs and model context.
     embodied material within its approved Plan/budget, inspect public failures
     and request human Controller promotion. A loadable Policy still needs trusted
     native observation qualification and current accepted train evidence.
+11. Use [lab-scene-director](../lab-scene-director/SKILL.md) to build a scene
+    from an external conversation: compare and acquire trusted assets, author a
+    missing object, import and validate exact versions, and hand back a runnable
+    scene.
 
 ## RSI loop
 
