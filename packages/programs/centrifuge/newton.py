@@ -114,15 +114,15 @@ class CentrifugeProgram:
             if self.stop_angle is None:
                 # Leave room for the physical drive to settle before alignment.
                 speed = max(self.rotor_velocity, abs(float(port.joint_qd(self.spindle)[0])))
-                self.stop_angle = math.ceil((angle + speed * 0.5 + 0.005) / (2 * math.pi)) * 2 * math.pi
+                self.stop_angle = math.ceil((angle + speed + 0.005) / (2 * math.pi)) * 2 * math.pi
             error = self.stop_angle - angle
-            velocity = max(0.0, min(ctx.config.visualRpmCap / 60 * 2 * math.pi, error))
+            velocity = max(0.0, min(ctx.config.visualRpmCap / 60 * 2 * math.pi, error * 0.5))
             if abs(error) < 0.005 and abs(port.joint_qd(self.spindle)[0]) < 0.05:
                 velocity, phase = 0.0, "idle"
         # The displayed ramp can reach the visual cap in one control sample.
         # Give newly enabled slot welds a gentle startup. The faster braking
-        # response and unit alignment gain settle without reversing the rotor.
-        response = 1.0 if velocity > self.rotor_velocity else 0.25
+        # response and 0.5/s alignment gain settle without reversing the rotor.
+        response = 1.0 if velocity > self.rotor_velocity else 0.5
         self.rotor_velocity += -math.expm1(-dt / response) * (velocity - self.rotor_velocity)
         if phase == "idle":
             self.rotor_velocity = 0.0
