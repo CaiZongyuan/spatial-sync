@@ -237,7 +237,7 @@ class ControllerPromotions:
             if scene_requires_material_authorization(scene, source):
                 return None
             bindings = scene.declarations(source).declarations
-            matching = [item.binding for item in bindings if item.binding["key"] == target]
+            matching = [item.binding for item in bindings if item.binding.get("key") == target]
             if len(matching) == 1:
                 return {"status": "scene_binding", "program": matching[0]["program"],
                         "scene": scene.id, "evaluationId": None}
