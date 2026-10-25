@@ -43,7 +43,7 @@ from factory.procedural import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUILTIN_LIBRARY = REPO_ROOT / "library"
-RECIPE = "sf3-blender-factory-v1"
+RECIPE = "sf3-blender-factory-v2"
 PLAN_SCHEMA = "lw.scene-plan/1"
 LAYOUT_SCHEMA = "lw.scene-layout/1"
 REQUEST_SCHEMA = "lw.blender-authoring/1"
@@ -320,7 +320,7 @@ class Plan(Schema):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False, populate_by_name=True)
 
     schema_id: Literal["lw.scene-plan/1"] = Field(alias="schema")
-    recipe: Literal["sf3-blender-factory-v1"]
+    recipe: Literal["sf3-blender-factory-v1", "sf3-blender-factory-v2"]
     buildLabel: str = ""
     units: Units
     scene: SceneSpec
@@ -763,7 +763,7 @@ def _stage(plan, transforms, assets):
                 "            double size = 1\n"
                 f"            float3 xformOp:scale = {_tuple(item.sizeM)}\n"
                 f"            double3 xformOp:translate = {_tuple(item.positionM)}\n"
-                '            uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:translate"]\n'
+                '            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]\n'
                 f"            color3f[] primvars:displayColor = [( "
                 + ", ".join(_fmt(value) for value in item.color)
                 + ' )] ( interpolation = "constant" )\n'

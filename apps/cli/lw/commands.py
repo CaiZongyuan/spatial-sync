@@ -948,7 +948,9 @@ COMMANDS = (
         arguments=(
             Argument("document", ("json/file",), dict[str, Any],
                      "JSON document with submissionId, source, sourceVersion, reportedAt and a "
-                     "draftId or exact object version"),
+                     "draftId or object {kind, id, contentHash}; optional summary, gaps and "
+                     "artifacts [{name, reference}]. schema, receivedAt and summaryBytes are "
+                     "response fields, not submission fields"),
         ),
         mcp_name="authoring_submit",
         actor=True,

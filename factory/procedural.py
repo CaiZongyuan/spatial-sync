@@ -283,7 +283,7 @@ def _cube(name, box: Box, indent):
         f"{pad}    double size = 1\n"
         f"{pad}    float3 xformOp:scale = {_vec(box.size)}\n"
         f"{pad}    double3 xformOp:translate = {_vec(box.center)}\n"
-        f'{pad}    uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:translate"]\n'
+        f'{pad}    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]\n'
         f"{pad}}}\n"
     )
 
@@ -396,7 +396,7 @@ def _package_files(identifier, kind, title, description, stage, visual, dimensio
         "schema": SCHEMA,
         "source": "factory/procedural.py",
         "license": "CC0-1.0",
-        "recipe": "sf3-procedural-v1",
+        "recipe": "sf3-procedural-v2",
         "approximations": [
             "Mass is nominal density times the authored collision volume; it is not measured.",
             "Inertia uses the solid bounding-box or cylinder formula, not a measured tensor.",

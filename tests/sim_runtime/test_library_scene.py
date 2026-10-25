@@ -117,6 +117,72 @@ def test_physics_and_runner_share_real_lab_model_and_keep_pbr_dressing_out_of_ph
                                    atol=1e-6)
 
 
+def test_authored_cube_dressing_renders_without_entering_the_physics_model(tmp_path):
+    from pxr import Gf, Usd, UsdGeom
+
+    payload, selected = authored_scope(tmp_path)
+    stage = Usd.Stage.Open(str(selected.path / "stage.usda"))
+    cube = UsdGeom.Cube.Define(stage, "/World/Dressing/Bench")
+    cube.GetSizeAttr().Set(1.)
+    cube.AddTranslateOp().Set(Gf.Vec3d(.2, .1, .725))
+    cube.AddScaleOp().Set(Gf.Vec3f(1.5, .8, .05))
+    hidden = UsdGeom.Cube.Define(stage, "/World/Dressing/HiddenBench")
+    UsdGeom.Imageable(hidden).MakeInvisible()
+    parent = UsdGeom.Xform.Define(stage, "/World/Dressing/HiddenGroup")
+    UsdGeom.Imageable(parent).MakeInvisible()
+    UsdGeom.Cube.Define(stage, "/World/Dressing/HiddenGroup/Bench")
+    stage.GetRootLayer().Save()
+    assets = AssetLibrary(tmp_path / "state", user_root=tmp_path / "library")
+    assets.startup()
+    payload = scoped_payload(selected, assets)
+    with physics_simulation(payload) as physical, NewtonSimulation(
+        selected.name, device="cpu", config=prepare_scene_config(payload, include_visuals=True)
+    ) as rendered:
+        assert physical.model.body_label == rendered.model.body_label
+        assert physical.model.shape_label == rendered.model.shape_label
+        manifest = export_manifest(rendered, session_id="cube-dressing", scene_revision="rev",
+                                   revision_numeric_id=1, strict_labels=True)
+        nodes = {node.entityKey: node for node in manifest.nodes}
+        assert not any(key.startswith("/World/Dressing/Hidden") for key in nodes)
+        bench = nodes["/World/Dressing/Bench"]
+        assert bench.kind == "static" and not bench.colliders
+        assert bench.initialPose.p == pytest.approx((.2, .1, .725))
+        assert bench.visuals[0].kind == "primitive"
+        assert bench.visuals[0].geometry.halfExtents == pytest.approx((.75, .4, .025))
+        assert [key for key in nodes if key.startswith("/World/Dressing/Room")] == [
+            "/World/Dressing/Room"
+        ]
+
+
+def test_factory_repaired_holes_keep_the_real_tube_seated_for_sixty_seconds(tmp_path):
+    from factory.authoring import build, load_plan
+
+    authored_scope(tmp_path)
+    root = tmp_path / "library"
+    repo = Path(__file__).resolve().parents[2]
+    plan = document(repo / "factory/plans/tube-rack-demo-v2.yaml")
+    plan["assets"][0]["id"] = "environment/usd-fixture-table"
+    plan["instances"][0]["asset"] = "environment/usd-fixture-table@1"
+    plan_path = tmp_path / "seat-plan.yaml"
+    plan_path.write_text(yaml.safe_dump(plan), encoding="utf-8")
+    output = tmp_path / "factory"
+    build(load_plan(plan_path), output, library_roots=[root])
+    shutil.copytree(output / "assets", root / "assets", dirs_exist_ok=True)
+    shutil.copytree(output / "scenes/tube-rack-demo", root / "scenes/tube-rack-demo/1")
+    assets = AssetLibrary(tmp_path / "state", user_root=root)
+    assets.startup()
+    selected = SceneLibrary(user_root=root, state_root=tmp_path / "state").resolve("tube-rack-demo@1")
+    config = prepare_scene_config(scoped_payload(selected, assets), include_visuals=True)
+    with NewtonSimulation(selected.name, device="cpu", config=config) as sim:
+        tube = sim.model.body_label.index("/World/Lab/Tubes/Tube01")
+        initial = sim.state.body_q.numpy()[tube, :3].copy()
+        for _ in range(60):
+            sim.step(240)
+            position = sim.state.body_q.numpy()[tube, :3]
+            assert np.isfinite(position).all()
+            assert np.linalg.norm(position - initial) <= .005
+
+
 def test_shared_usd_builder_preserves_actual_hinge_fk_and_ordinary_config_sites(tmp_path):
     root = tmp_path / "library"
     package = root / "scenes/usd-sites-fk/1"

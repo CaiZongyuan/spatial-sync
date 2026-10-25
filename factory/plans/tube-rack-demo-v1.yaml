@@ -1,5 +1,5 @@
 schema: lw.scene-plan/1
-recipe: sf3-blender-factory-v1
+recipe: sf3-blender-factory-v2
 buildLabel: solid-collision
 units:
   length: m
