@@ -26,7 +26,7 @@ def link_notebook(manager, record, plan, suite, scene):
     )
     record.update(planId=plan["id"], planRevision=plan["revision"], goalId=context["goalId"],
                   notebookContext=context, notebookExecution=deepcopy(context["implementations"]),
-                  attemptedEpisodes=len(record["episodes"]))
+                  attemptedEpisodes=len(record["episodes"]), key=deepcopy(record["result"]["key"]))
     manager.evaluations.store.save(record)
     manager.notebooks.observe(record)
     return context["goalId"]
