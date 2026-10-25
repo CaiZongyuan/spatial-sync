@@ -5,61 +5,58 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
+import { cleanupOwnedProcesses, finishCleanup, type OwnedProcess } from './owned-cleanup';
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-const test = base.extend<{ isolatedAPI: string }>({
+async function freePort() {
+  return new Promise<number>((resolve, reject) => {
+    const reservation = createServer();
+    reservation.once('error', reject);
+    reservation.listen(0, '127.0.0.1', () => {
+      const { port } = reservation.address() as { port: number };
+      reservation.close(error => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+const test = base.extend<{ isolatedAPI: { api: string; web: string } }>({
   isolatedAPI: async ({ playwright, page }, use, info) => {
-    const port = await new Promise<number>((resolve, reject) => {
-      const reservation = createServer();
-      reservation.once('error', reject);
-      reservation.listen(0, '127.0.0.1', () => {
-        const { port } = reservation.address() as { port: number };
-        reservation.close(error => error ? reject(error) : resolve(port));
-      });
-    });
+    const [port, webPort] = await Promise.all([freePort(), freePort()]);
     const api = `http://127.0.0.1:${port}`;
+    const web = `http://127.0.0.1:${webPort}`;
     const python = resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
-    const child = spawn(python, ['-m', 'uvicorn', 'approval_gateway:app', '--app-dir', 'tests/fixtures', '--host', '127.0.0.1', '--port', String(port)], {
-      cwd: resolve('../..'), windowsHide: true, env: { ...process.env, SPATIAL_REMOTE: '0',
-        LW_LIBRARY: info.outputPath('api-library'), SPATIAL_STATE_ROOT: info.outputPath('api-state'),
-        SPATIAL_RECORDINGS_ROOT: info.outputPath('api-recordings'),
-      },
-    });
-    let output = '', launchError: Error | undefined;
-    child.stdout.on('data', data => { output += data.toString(); });
-    child.stderr.on('data', data => { output += data.toString(); });
-    child.once('error', error => { launchError = error; });
-    const exited = new Promise<boolean>(resolve => child.once('exit', () => resolve(true)));
+    const owned = resolve('../../tests/fixtures/owned_processes.py'), execute = promisify(execFile);
+    const processes: OwnedProcess[] = [];
+    const env = { ...process.env, SPATIAL_REMOTE: '0', SPATIAL_ALLOWED_ORIGINS: web, SPATIAL_API_URL: api,
+      LW_LIBRARY: info.outputPath('api-library'), SPATIAL_STATE_ROOT: info.outputPath('api-state'),
+      SPATIAL_RECORDINGS_ROOT: info.outputPath('api-recordings') };
+    const start = (label: string, executable: string, args: string[], cwd: string) => {
+      const child = spawn(executable, args, { cwd, windowsHide: true, env });
+      const record: OwnedProcess = { child, label, output: '', exited: new Promise<void>(resolve => child.once('exit', () => resolve())),
+        identity: execute(python, [owned, 'snapshot', String(child.pid)]).then(value => ({ identity: value.stdout }), error => ({ error })) };
+      child.stdout.on('data', data => { record.output += data.toString(); });
+      child.stderr.on('data', data => { record.output += data.toString(); });
+      child.once('error', error => { record.error = error; }); processes.push(record);
+    };
     const health = await playwright.request.newContext();
     try {
-      const deadline = Date.now() + 15_000;
-      let ready = false;
-      while (Date.now() < deadline) {
-        if (launchError || child.exitCode !== null) throw launchError ?? new Error(output);
-        if (output.includes('Uvicorn running on')) {
-          try { ready = (await health.get(`${api}/api/v1/health`, { timeout: 500 })).ok(); } catch { /* startup */ }
-          if (ready) break;
-        }
-        await delay(50);
-      }
-      expect(ready, output).toBe(true);
-      // Only forward real HTTP bytes; shared cases deliberately retain invalid packages.
-      await page.route('**/api/v1/**', async route => {
-        const url = new URL(route.request().url());
-        const response = await route.fetch({ url: api + url.pathname + url.search });
-        await route.fulfill({ response });
-      });
-      await use(api);
+      start('isolated-api', python, ['-m', 'uvicorn', 'approval_gateway:app', '--app-dir', 'tests/fixtures',
+        '--host', '127.0.0.1', '--port', String(port)], resolve('../..'));
+      start('isolated-web', process.execPath, [resolve('node_modules/vite/bin/vite.js'),
+        ...(process.env.SPATIAL_E2E_WEB_MODE === 'preview' ? ['preview'] : []), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], process.cwd());
+      await expect.poll(async () => {
+        for (const process of processes) if (process.error || process.child.exitCode !== null) throw process.error ?? new Error(process.output);
+        try { return (await health.get(`${api}/api/v1/health`, { timeout: 500 })).ok() && (await health.get(web, { timeout: 500 })).ok(); }
+        catch { return false; }
+      }, { timeout: 15_000 }).toBe(true);
+      // The actual Vite proxy isolates HTTP without a second route.fetch/fulfill owner.
+      await use({ api, web });
     } finally {
-      await page.unrouteAll({ behavior: 'wait' }).catch(() => {});
-      await health.dispose().catch(() => {});
-      // This current ChildProcess owns a single uvicorn (no worker/Runner is launched).
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-      let stopped = await Promise.race([exited, delay(3_000).then(() => false)]);
-      if (!stopped) { child.kill('SIGKILL'); stopped = await Promise.race([exited, delay(3_000).then(() => false)]); }
-      await writeFile(info.outputPath('isolated-api.log'), output);
-      await writeFile(info.outputPath('isolated-api-receipt.json'), JSON.stringify({ api, pid: child.pid, source: resolve('../..'), python, stopped, exitCode: child.exitCode, signalCode: child.signalCode }));
-      expect(stopped, 'Owned isolated API must exit').toBe(true);
+      const cleanup = await cleanupOwnedProcesses(processes, { python, script: owned, original: [], outputPath: name => info.outputPath(name),
+        context: { api, web, source: resolve('../..'), python }, ports: [port, webPort], prepare: [
+          { label: 'page:close', run: () => page.goto('about:blank') },
+          { label: 'health:dispose', run: () => health.dispose() },
+        ] });
+      finishCleanup(cleanup, []);
     }
   },
 });
@@ -90,7 +87,7 @@ test.afterEach(async ({ playwright }, info) => {
   } finally { ownedVersion = undefined; await cleanup.dispose(); }
 });
 
-test('exact user asset requests a human decision, then disappears from the library', async ({ page, request, isolatedAPI: api }, info) => {
+test('exact user asset requests a human decision, then disappears from the library', async ({ page, request, isolatedAPI: { api, web } }, info) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   const directory = info.outputPath('deletion-asset');
   await cp(resolve('../../tests/fixtures/asset-library/gap-cylinder'), directory, { recursive: true });
@@ -115,7 +112,7 @@ test('exact user asset requests a human decision, then disappears from the libra
     expect(response.ok()).toBe(true);
     return { name, url, sha256: createHash('sha256').update(await response.body()).digest('hex') };
   }));
-  await page.goto(`/assets/labware/deletion-browser/${revision}`);
+  await page.goto(`${web}/assets/labware/deletion-browser/${revision}`);
   await expect(page.getByRole('heading', { name: 'UI Cylinder', exact: true })).toBeVisible();
   const panel = page.getByRole('region', { name: '删除库版本' });
   const pendingResponse = page.waitForResponse(response => new URL(response.url()).pathname === target && response.request().method() === 'DELETE');

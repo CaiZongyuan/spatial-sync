@@ -1,4 +1,4 @@
-import { expect, test, type WebSocketRoute } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -6,6 +6,12 @@ import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { cleanupOwnedProcesses, finishCleanup, type OwnedProcess } from './owned-cleanup';
+
+declare global {
+  interface Window {
+    __trainingSocketsFixture: { count(): number; close(): void };
+  }
+}
 
 async function freePort() {
   return new Promise<number>((resolve, reject) => {
@@ -38,11 +44,26 @@ test('public fake node renders four isolated Job views, reconnects, resets and r
   const token = 'training-resources-browser-fixture-token', instance = 'training-resources-browser-node';
   const headers = { 'X-Node-Token': token, 'X-Node-Instance': instance };
   let node: object, job: { jobId: string; leaseId: string } | undefined;
-  const forbidden: string[] = [], errors: string[] = [], sockets: WebSocketRoute[] = [];
+  const forbidden: string[] = [], errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (/\/api\/v1\/(sessions|recordings)(\/|$)/.test(new URL(request.url()).pathname)) forbidden.push(request.url()); });
   page.on('websocket', socket => { if (socket.url().includes('/sessions/')) forbidden.push(socket.url()); });
-  await page.routeWebSocket('**/api/v1/jobs/*/view', route => { route.connectToServer(); sockets.push(route); });
+  // Keep manifest/binary traffic on the actual browser wire. Routing every frame
+  // through the test driver adds a second transport for all four environments.
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket;
+    const sockets: WebSocket[] = [];
+    Object.defineProperty(window, '__trainingSocketsFixture', { value: {
+      count: () => sockets.length,
+      close: () => sockets.at(-1)!.close(4001, 'Controlled reader reconnect'),
+    } });
+    window.WebSocket = class extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (/\/api\/v1\/jobs\/[^/]+\/view$/.test(new URL(String(url), location.href).pathname)) sockets.push(this);
+      }
+    };
+  });
   const debug = () => page.evaluate(() => window.__trainingViewDebug?.read());
   try {
     start('view-api', python, ['-m', 'uvicorn', 'training_resources_gateway:app', '--app-dir', 'tests/fixtures',
@@ -105,8 +126,8 @@ test('public fake node renders four isolated Job views, reconnects, resets and r
     send({ type: 'sample', seq: 1, reset: 1 });
     await expect.poll(async () => Object.values((await debug())!.environments).map(row => [row.seq, row.epoch])).toEqual([[1, 0], [1, 1], [1, 0], [1, 0]]);
     const before = (await debug())!;
-    await sockets.at(-1)!.close({ code: 4001, reason: 'Controlled reader reconnect' });
-    await expect.poll(() => sockets.length).toBe(2);
+    await page.evaluate(() => window.__trainingSocketsFixture.close());
+    await expect.poll(() => page.evaluate(() => window.__trainingSocketsFixture.count())).toBe(2);
     await expect.poll(async () => (await debug())?.state).toBe('live');
     expect((await debug())!.viewId).toBe(before.viewId);
     expect((await debug())!.environments[0].selected).toBe(key);
