@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from packages.catalog.local import LocalAsset, read_provenance
-from packages.catalog.models import CatalogFormatError, CatalogSnapshot, load_catalog
+from packages.catalog.models import REVISION, CatalogFormatError, CatalogSnapshot, load_catalog
 from packages.catalog.search import search_catalog
 from packages.catalog.semantic import SemanticIndex, build_semantic_index
 from packages.catalog.views import entry_document, estimate_document
@@ -32,6 +33,9 @@ class AssetCatalog:
         self.by_package = {}
         self.embedder = embedder
         self.semantic: SemanticIndex | None = None
+        self._lock = threading.RLock()
+        self.archive_paths: tuple[Path, ...] = ()
+        self._historical = {}
 
     def startup(self):
         try:
@@ -59,6 +63,15 @@ class AssetCatalog:
         # cannot load falls back to the stand-in and keeps that fact visible.
         self.semantic = build_semantic_index(entries, snapshot.id, embedder=self.embedder)
 
+    def activate(self, candidate, *, archive_paths=()):
+        """Publish a fully built index without exposing a mixture of snapshots."""
+        with self._lock:
+            if self.snapshot and self.snapshot.sync is None:
+                self._historical.update(self.by_id)
+            for name in ("available", "error", "snapshot", "entries", "by_id", "by_package", "semantic"):
+                setattr(self, name, getattr(candidate, name))
+            self.archive_paths = tuple(archive_paths)
+
     def require(self):
         if not self.available or self.snapshot is None:
             raise LibraryError(
@@ -69,9 +82,21 @@ class AssetCatalog:
         return self.snapshot
 
     def entry(self, provider, package, revision):
-        self.require()
-        entry = self.by_package.get(package)
-        if entry is None or entry.provider != provider or entry.revision != revision:
+        with self._lock:
+            self.require()
+            identity = f"{provider}/{package}@{revision}"
+            entry = self.by_id.get(identity) or self._historical.get(identity)
+            if entry is None and REVISION.fullmatch(revision):
+                for path in reversed(self.archive_paths):
+                    if not path.name.startswith(revision + "-"):
+                        continue
+                    _, entries = load_catalog(path)
+                    entry = next((item for item in entries if item.id == identity), None)
+                    if entry is not None:
+                        self._historical[identity] = entry
+                        break
+            if entry is not None:
+                return entry
             raise LibraryError(
                 "unknown_catalog_entry",
                 "Unknown catalog entry identity",
@@ -80,7 +105,6 @@ class AssetCatalog:
                 package=package,
                 revision=revision,
             )
-        return entry
 
     def local_assets(self, library):
         """Correlate only through provenance source revision and package ID."""
@@ -94,30 +118,40 @@ class AssetCatalog:
                 package = provenance.get("sourcePackage")
                 revision = provenance.get("sourceRevision")
                 candidate = self.by_package.get(package) if isinstance(package, str) else None
+                if isinstance(package, str) and isinstance(revision, str) and (
+                    candidate is None or candidate.revision != revision
+                ):
+                    try:
+                        candidate = self.entry(snapshot.provider, package, revision)
+                    except LibraryError:
+                        candidate = None
                 if (
                     candidate is not None
-                    and candidate.revision == revision == snapshot.revision
+                    and candidate.revision == revision
                 ):
                     entry = candidate
             result.append(LocalAsset(version, provenance, entry))
         return result
 
     def search(self, library, **kwargs):
-        return search_catalog(self, library, **kwargs)
+        with self._lock:
+            return search_catalog(self, library, **kwargs)
 
     def describe(self, provider, package, revision, *, library=None, view="summary",
                  document_digest=None):
-        entry = self.entry(provider, package, revision)
-        local = [
-            item for item in self.local_assets(library)
-            if item.entry is not None and item.entry.id == entry.id
-        ]
-        return entry_document(self, entry, local, view=view, document_digest=document_digest)
+        with self._lock:
+            entry = self.entry(provider, package, revision)
+            local = [
+                item for item in self.local_assets(library)
+                if item.entry is not None and item.entry.id == entry.id
+            ]
+            return entry_document(self, entry, local, view=view, document_digest=document_digest)
 
     def estimate(self, provider, package, revision, *, library=None):
-        entry = self.entry(provider, package, revision)
-        local = [
-            item for item in self.local_assets(library)
-            if item.entry is not None and item.entry.id == entry.id
-        ]
-        return estimate_document(self, entry, local)
+        with self._lock:
+            entry = self.entry(provider, package, revision)
+            local = [
+                item for item in self.local_assets(library)
+                if item.entry is not None and item.entry.id == entry.id
+            ]
+            return estimate_document(self, entry, local)

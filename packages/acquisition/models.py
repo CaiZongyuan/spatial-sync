@@ -19,7 +19,7 @@ RECIPE = "simready-newton-usdpreview-v1"
 
 ID = re.compile(r"acq-[a-f0-9]{32}")
 REF = re.compile(
-    r"(?:catalog:)?[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*@[0-9a-f]{40}"
+    r"(?:catalog:)?[a-z0-9][a-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*@[0-9a-f]{40}"
 )
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9_.-]*")
 REVISION = re.compile(r"[0-9a-f]{40}")

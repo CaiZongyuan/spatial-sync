@@ -72,6 +72,23 @@ only a generated fake credential locally, never through HTTP or in the user's Va
 
 ## Information and recording checks
 
+### Full external catalog sync
+
+The deterministic public journey uses a paginated upstream HTTP fixture, the
+production synchronizer, offline restart, cached images and fixed-revision
+admission. CLI/MCP use a separately owned real loopback gateway. The browser
+case owns its fixture API/Web and checks cancel/retry, cached preview loading,
+failed-sync snapshot retention and narrow layout; it downloads no external data.
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_catalog_sync.py tests/cli/test_catalog_sync_commands.py -q
+pnpm --filter @spatial-sync/web exec playwright test catalog-sync.spec.ts
+```
+
+The browser command still needs the owned approval gateway required above.
+Real-source full enumeration/coverage and transfer evidence is separate from
+CI. See [catalog/README.md](../catalog/README.md) for manual sync and limits.
+
 ### Existing runtime records
 
 The GPU-free import journey uses the actual Claude Code stream-format fixture

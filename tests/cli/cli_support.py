@@ -35,6 +35,7 @@ TOOLS = {
     "catalog_search",
     "catalog_show",
     "catalog_estimate",
+    "catalog_sync", "catalog_sync_status", "catalog_sync_cancel", "catalog_sync_retry",
     "acquisition_start",
     "acquisition_list",
     "acquisition_show",

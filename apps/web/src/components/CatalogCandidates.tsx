@@ -61,8 +61,9 @@ export function CatalogZeroResult({ response, onAction }: {
 
 function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
   const localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? imageUrl(candidate.preview.url);
-  if (candidate.preview.kind === 'local' && localUrl)
-    return <img src={localUrl} alt={`${candidate.title} 的本地版本预览`} loading="lazy" />;
+  if ((candidate.preview.kind === 'local' || candidate.preview.kind === 'cached') && localUrl)
+    return <img src={localUrl} className={candidate.preview.kind === 'cached' ? 'catalog-cached-preview' : undefined}
+      alt={`${candidate.title} 的缓存预览`} loading="lazy" />;
   return <div className="catalog-preview-placeholder" role="img" aria-label="在线预览未缓存">
     <b>预览未缓存</b>
     <small>{candidate.preview.reason ?? '获取流程会解析来源预览；这里不会请求远程图片。'}</small>
@@ -81,7 +82,7 @@ function OnlineCandidateCard({ candidate, index, onDetail }: {
     <p className="catalog-description">{candidate.descriptions.zh || candidate.descriptions.en}</p>
     <dl className="catalog-facts">
       <div><dt>来源</dt><dd>{candidate.source.provider}/{candidate.source.packageId} · <span title={candidate.source.revision ?? undefined}>{shortRevision(candidate.source.revision)}</span></dd></div>
-      <div><dt>许可</dt><dd>{candidate.license.unknown ? '未知' : candidate.license.name ?? '未知'} <span className={`asset-chip is-${candidate.license.unknown ? 'not_applicable' : candidate.license.admitted ? 'present' : 'missing'}`}><i />{candidate.license.unknown ? '未知' : candidate.license.admitted ? '已准入' : '未准入'}</span></dd></div>
+      <div><dt>许可</dt><dd>{candidate.license.name ?? '未知'} <span className={`asset-chip is-${candidate.license.unknown ? 'not_applicable' : candidate.license.admitted ? 'present' : 'missing'}`}><i />{candidate.license.unknown ? '未审查／上游声明' : candidate.license.admitted ? '已准入' : '未准入'}</span></dd></div>
       <div><dt>用途</dt><dd className="catalog-usage">{(Object.keys(usageLabels) as (keyof typeof usageLabels)[]).map(name => <span key={name} className={`asset-chip is-${usageState(candidate.usage[name])}`}><i />{usageLabels[name]} {usageLabel(candidate.usage[name])}</span>)}</dd></div>
       <div><dt>本地版本</dt><dd>{candidate.installed.versions.length
         ? candidate.installed.versions.map(version => <code key={version.id}>{version.id}</code>)
@@ -178,11 +179,11 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 <div><dt>目录引用</dt><dd><code>{entry.ref}</code></dd></div>
                 <div><dt>固定来源版本</dt><dd><code>{entry.revision}</code></dd></div>
                 <div><dt>上游包</dt><dd>{entry.provider}/{entry.packageId} · {entry.kind}</dd></div>
-                <div><dt>来源文件</dt><dd>{formatBytes(entry.source.bytes)} · {entry.source.files} 个文件</dd></div>
+                <div><dt>来源文件</dt><dd>{formatBytes(entry.source.bytes)} · {entry.source.files ?? '未知'} 个文件</dd></div>
                 <div><dt>来源链接</dt><dd><a className="catalog-source-link" href={entry.source.url} target="_blank" rel="noreferrer">{entry.source.url}</a></dd></div>
-                <div><dt>BOM 外文件</dt><dd>{entry.source.bomNotInBom.length} 项<small className="catalog-reason">{entry.source.bomNotInBom.join('、')}</small></dd></div>
-                <div><dt>许可</dt><dd>{entry.license.name} · {entry.license.admitted ? '已准入' : '未准入'}{entry.license.obligations.length ? ` · ${entry.license.obligations.join('、')}` : ''}</dd></div>
-                <div><dt>许可证据</dt><dd><code>{entry.license.evidence.file}</code><small className="catalog-hash">{entry.license.evidence.sha256}</small></dd></div>
+                <div><dt>BOM 外文件</dt><dd>{entry.source.bomItems === null ? '未知' : `${entry.source.bomNotInBom.length} 项`}<small className="catalog-reason">{entry.source.bomNotInBom.join('、')}</small></dd></div>
+                <div><dt>许可</dt><dd>{entry.license.name ?? '未知'} · {entry.license.unknown ? '未审查／上游声明' : entry.license.admitted ? '已准入' : '未准入'}{entry.license.obligations.length ? ` · ${entry.license.obligations.join('、')}` : ''}</dd></div>
+                <div><dt>许可证据</dt><dd><code>{entry.license.evidence.file ?? '尚未审查；声明不等于获取准入'}</code><small className="catalog-hash">{entry.license.evidence.sha256}</small></dd></div>
                 <div><dt>附件许可</dt><dd className="catalog-evidence-list">{entry.license.attachments.length
                   ? entry.license.attachments.map(item => <span key={item.file}><code>{item.file}</code> {item.license}</span>)
                   : '无'}</dd></div>
@@ -216,8 +217,9 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 </li>)}</ul>
                 : <p className="asset-small-note">尚未安装本地版本；候选只显示为在线条目，不冒充已安装 Asset。</p>}
               {entry.installed.truncated && <p className="asset-small-note">仅显示最近 20 个本地版本；其余版本见本地素材库。</p>}
-              <div className="catalog-detail-preview">{entry.preview.kind === 'local' && imageUrl(entry.preview.url)
-                ? <img src={entry.preview.url!} alt={`${entry.names.zh} 的本地版本预览`} />
+              <div className="catalog-detail-preview">{(entry.preview.kind === 'local' || entry.preview.kind === 'cached') && imageUrl(entry.preview.url)
+                ? <img src={entry.preview.url!} className={entry.preview.kind === 'cached' ? 'catalog-cached-preview' : undefined}
+                  alt={`${entry.names.zh} 的预览`} />
                 : <div className="catalog-preview-placeholder"><b>预览未缓存</b><small>{entry.preview.reason ?? '获取流程会解析来源预览；页面不会请求远程图片。'}</small></div>}</div>
             </div></section>
           </div>

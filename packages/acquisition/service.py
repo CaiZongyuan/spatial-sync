@@ -219,16 +219,16 @@ class AcquisitionService:
 
     async def start(self, ref):
         entry = self._entry(ref)
-        estimate, reasons = self._budget.preflight(entry, active=self._active_keys())
         if not entry.acquisition.eligible:
             raise LibraryError(
                 "acquisition_ineligible",
                 "This catalog entry is not eligible for acquisition",
                 409,
                 reasons=list(entry.acquisition.reasons),
-                estimate=estimate,
+                estimate=self.catalog.estimate(entry.provider, entry.package_id, entry.revision),
                 limits=self._limits.full_document(),
             )
+        estimate, reasons = self._budget.preflight(entry, active=self._active_keys())
         if reasons:
             raise LibraryError(
                 "budget_exceeded",

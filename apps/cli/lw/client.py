@@ -225,6 +225,29 @@ class GatewayClient:
     async def catalog_estimate(self, id):
         return await self.request("GET", self._catalog_path(id) + "/estimate")
 
+    async def catalog_sync(self, wait=False, *, actor="cli:lw"):
+        value = await self.request("POST", "/api/v1/library/catalog/sync", actor=actor)
+        if wait:
+            deadline = time.monotonic() + 120
+            while value["status"] in ("running", "cancelling") and time.monotonic() < deadline:
+                await asyncio.sleep(.2)
+                value = await self.catalog_sync_status(value["id"])
+        return value
+
+    async def catalog_sync_status(self, id=None):
+        path = "/api/v1/library/catalog/sync"
+        return await self.request("GET", path + ("/" + quote(id, safe="") if id else ""))
+
+    async def catalog_sync_cancel(self, id, *, actor="cli:lw"):
+        return await self.request(
+            "POST", "/api/v1/library/catalog/sync/" + quote(id, safe="") + "/cancel", actor=actor
+        )
+
+    async def catalog_sync_retry(self, id, *, actor="cli:lw"):
+        return await self.request(
+            "POST", "/api/v1/library/catalog/sync/" + quote(id, safe="") + "/retry", actor=actor
+        )
+
     @staticmethod
     def _acquisition_path(id):
         return "/api/v1/library/acquisitions/" + quote(id, safe="")

@@ -50,7 +50,7 @@ SORTS = ("relevance", "name", "sourceBytes")
 UNKNOWN_POLICY = "excluded"
 
 CATALOG_ID = re.compile(
-    r"(?P<provider>[a-z0-9][a-z0-9-]*)/(?P<package>[a-z0-9][a-z0-9_.-]*)"
+    r"(?P<provider>[a-z0-9][a-z0-9-]*)/(?P<package>[A-Za-z0-9][A-Za-z0-9_.-]*)"
     r"@(?P<revision>[0-9a-f]{40})"
 )
 LOCAL_ID = re.compile(
@@ -305,19 +305,23 @@ def _max_dimension(dimensions):
 def _online_status(entry, local_versions, filters):
     status = {}
     if filters.kind is not None:
-        status["kind"] = entry.kind == filters.kind
+        status["kind"] = None if entry.kind == "unknown" else entry.kind == filters.kind
     if filters.provider is not None:
         status["provider"] = entry.provider == filters.provider
     if filters.usage is not None:
         status["usage"] = entry.usage_value(filters.usage)
     if filters.license_admitted is not None:
-        status["licenseAdmitted"] = entry.license.admitted == filters.license_admitted
+        status["licenseAdmitted"] = (
+            None if entry.license.unknown else entry.license.admitted == filters.license_admitted
+        )
     if filters.installed is not None:
         status["installed"] = bool(local_versions) == filters.installed
     if filters.min_source_bytes is not None:
-        status["minSourceBytes"] = entry.source.bytes >= filters.min_source_bytes
+        status["minSourceBytes"] = (None if entry.source.bytes is None
+                                    else entry.source.bytes >= filters.min_source_bytes)
     if filters.max_source_bytes is not None:
-        status["maxSourceBytes"] = entry.source.bytes <= filters.max_source_bytes
+        status["maxSourceBytes"] = (None if entry.source.bytes is None
+                                    else entry.source.bytes <= filters.max_source_bytes)
     size = _max_dimension(entry.adaptation.dimensions_m)
     if filters.min_dimension_m is not None:
         status["minDimensionM"] = None if size is None else size >= filters.min_dimension_m
@@ -333,25 +337,25 @@ def _local_status(local, filters):
     if filters.kind is not None:
         status["kind"] = metadata.get("kind") == filters.kind
     if filters.provider is not None:
-        status["provider"] = local.entry.provider if local.entry is not None else None
+        status["provider"] = local.entry.provider == filters.provider if local.entry is not None else None
     if filters.usage is not None:
         status["usage"] = usage[filters.usage]
     if filters.license_admitted is not None:
         license_document = _local_license(local)
         status["licenseAdmitted"] = (
-            None if license_document["unknown"] else license_document["admitted"]
+            None if license_document["unknown"] else license_document["admitted"] == filters.license_admitted
         )
     if filters.installed is not None:
         status["installed"] = filters.installed is True
     if filters.min_source_bytes is not None:
         status["minSourceBytes"] = (
             local.entry.source.bytes >= filters.min_source_bytes
-            if local.entry is not None else None
+            if local.entry is not None and local.entry.source.bytes is not None else None
         )
     if filters.max_source_bytes is not None:
         status["maxSourceBytes"] = (
             local.entry.source.bytes <= filters.max_source_bytes
-            if local.entry is not None else None
+            if local.entry is not None and local.entry.source.bytes is not None else None
         )
     size = _max_dimension(metadata.get("dimensionsM"))
     if filters.min_dimension_m is not None:
@@ -437,7 +441,7 @@ def _license_document(license):
     return {
         "name": license.name,
         "admitted": license.admitted,
-        "unknown": False,
+        "unknown": license.unknown,
         "obligations": list(license.obligations),
     }
 
@@ -520,7 +524,7 @@ def _candidate(match, filters, language, correlated, by_bare_id):
             "match": match_document,
             "unknown": entry.unknown_attributes(),
             "detail": {"resource": "catalog", "id": entry.id, "tool": "catalog_show"},
-            "preview": preview_document(locals_),
+            "preview": preview_document(locals_, entry),
         }
     local = match.local
     version = local.version
@@ -842,8 +846,9 @@ def search_catalog(
     if exact is not None:
         kind_, first, second, third = exact
         if kind_ == "catalog":
-            entry = catalog.by_package.get(second) if catalog.available else None
-            if entry is not None and (entry.provider != first or entry.revision != third):
+            try:
+                entry = catalog.entry(first, second, third)
+            except LibraryError:
                 entry = None
             if scope == "local":
                 if entry is None:
@@ -951,7 +956,7 @@ def search_catalog(
     local_matches = []
     if scope in ("local", "all"):
         for local in locals_all:
-            if scope == "all" and local.entry is not None:
+            if scope == "all" and local.entry is not None and local.entry.id in catalog.by_id:
                 continue
             reasons, score = _match_fields(_local_fields(local), keywords)
             if reasons is not None:

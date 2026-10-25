@@ -9,6 +9,8 @@
 > 归属：[Lab RSI Platform #2](https://github.com/CaiZongyuan/spatial-sync/issues/2)。基础：[素材与场景规格](LAB_ASSETS_AND_SCENES_SPEC_V1.md)、[Web 页面契约](LAB_WEB_UI_SPEC_V1.md)、[术语表](../../GLOSSARY.md)、[USD 规范格式](../adr/0001-usd-canonical-scene-format.md)、[外部素材适配边界](../adr/0003-external-asset-preparation-boundary.md)、[外部工厂与界面分工](../adr/0004-scene-authoring-through-external-factories.md)。
 >
 > 启动与操作：[Scene Factory 指引](../SCENE_FACTORY.md)。
+>
+> 下一期增量：[#186](https://github.com/CaiZongyuan/spatial-sync/issues/186)，仅全量目录同步，见 §15。用户已取消 Agent 场景制作过程可视化；历史独立原型不属于本期实施。
 
 ## 1. 交付目标
 
@@ -285,3 +287,16 @@ Blender USD 往返存在层／变体／材质边界；MCP 提供控制能力，�
 - [SimReady Central](https://huggingface.co/spaces/nvidia/simready-central/blob/e131715eb52d323bd903b1e51f81fb86bce96081/README.md) 使用另行构建的搜索索引，不能把其字段假定为包 manifest 自带。
 - [MCP for Blender 固定源码](https://github.com/ahujasid/mcp-for-blender/tree/5a3618fccb2d982d0dd61e7a1879912c3100073b)：包 2.2.2、MIT，支持脚本、场景查询和视觉查看；不是 NVIDIA provider 或平台包导出器。
 - [Blender USD 文档](https://docs.blender.org/manual/en/latest/files/import_export/usd.html)、[脚本入口](https://docs.blender.org/manual/en/latest/advanced/command_line/arguments.html)、[OpenUSD references](https://openusd.org/release/tut_referencing_layers.html)、[UsdPhysics 单位与坐标](https://openusd.org/release/api/usd_physics_page_front.html)。实际实现固定工具版本再验证。
+
+## 15. 全量素材目录同步（#186）
+
+用户 2026-10-25 修订范围：仅实施在线素材目录同步；不实施 Agent 场景制作过程页面。以下增量替代首期仅精选目录的发现范围，保持 SF0–SF5 与既有场景页面的交付边界。
+
+- 首个来源为 `nvidia/simready-assets`。用户显式触发同步，先固定 revision、跟随分页完整枚举包，再索引概览与缓存上游缩略图。大模型／纹理不随目录同步下载。不存在上游图片时显示缺口，不自动下载 USD 生成图片。
+- 全目录身份覆盖、详细元数据覆盖、缩略图覆盖分别显示。无法读取单包元数据时保留最小来源身份和未知属性；未完整枚举或构建失败不得发布为完整目录。名称从 ID 整理时明确其依据，不把整理文字当上游描述或物理事实。
+- 同步记录持久化阶段、已发现／已索引／失败数、预览成功／缺失／失败数、实际网络字节、缓存复用和错误。允许取消／重试；重启后的未完成任务标记中断。同步失败／取消保留上一次可用快照，构建成功后原子发布。
+- 按包树哈希复用未变的元数据与缩略图；每次更新重新枚举固定 revision。新 revision 不继承旧许可／适配准入；精选覆盖只在实际核实的 revision 生效。旧精确版本仍可描述，已安装 Asset、场景依赖和录制不被删除。
+- 可发现范围与获取资格分开。未知字段不满足硬条件；未知大小不当零，许可证声明不当平台审查。未准入条目仍可搜索、描述和查看上游来源，获取继续明确拒绝并给出原因。
+- 同步仅访问固定来源的目录、轻量 JSON 和图片；跟随的分页限制在该来源／revision。默认并发 8、请求超时 20 秒、最多 3 次尝试；每份元数据或预览不超过 2 MiB，每次网络传输与独立目录缓存均不超过 2 GiB。优先选择实际文件大小最小的上游缩略图，不信任目录名代表像素尺寸；实测上游部分“256x256”图为 1024x1024，单图约 0.5–1 MiB，因此全目录预算使用 GiB 量级。限流按 Retry-After／RateLimit 复位时间共享等待。达到限额明确报告缺口或失败，不静默提高限额。旧快照和用户已导入素材不参与目录缓存淘汰。
+- Web、CLI、MCP 通过共享 HTTP 启动、观察、取消、重试。同步在后台进行，当前搜索继续可用；默认仍能断网检索最近成功目录，未同步时退回已提交的精选快照。Web 加载缓存预览时不直接请求外部图片。
+- 验收覆盖完整分页、增量复用、单包缺口、取消／中断／重启、失败保留旧快照、精确旧版本与准入隔离、三端一致和浏览器旅程；CI 用可控来源，无在线全量、付费模型或 GPU 依赖。另以真实来源身份集合对账记录实际覆盖、字节、缺口和全量检索耗时。执行仓库 Mandatory checks，原始回执留 `.scratch/`。

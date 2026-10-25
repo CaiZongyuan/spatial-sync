@@ -16,6 +16,8 @@ export interface CatalogSnapshot {
   offlineReadable: boolean;
   networkRequired: boolean;
   ageSeconds: number | null;
+  sync?: { discovered: number; indexed: number; metadataFailed: number;
+    previewsCached: number; previewsReused: number; previewsMissing: number; previewsFailed: number };
 }
 
 export interface CatalogZeroResult {
@@ -104,7 +106,7 @@ export interface CatalogLocalResult {
 }
 
 export interface CatalogPreview {
-  kind: 'local' | 'remote' | 'unavailable';
+  kind: 'local' | 'remote' | 'cached' | 'unavailable';
   url: string | null;
   reason?: string | null;
 }
@@ -170,7 +172,7 @@ export interface CatalogEntryDocument {
   provider: string;
   packageId: string;
   revision: string;
-  localAssetId: string;
+  localAssetId: string | null;
   kind: string;
   title: string;
   names: { en: string; zh: string };
@@ -178,13 +180,13 @@ export interface CatalogEntryDocument {
   descriptions: Record<string, string>;
   tags: Record<string, string[]>;
   source: {
-    url: string; files: number; bytes: number; rootUsd: string;
-    bomItems: number; bomNotInBom: string[];
+    url: string; files: number | null; bytes: number | null; rootUsd: string | null;
+    bomItems: number | null; bomNotInBom: string[];
   };
   license: {
-    name: string; admitted: boolean; unknown: boolean; obligations: string[];
-    inBom: boolean;
-    evidence: { file: string; sha256: string };
+    name: string | null; admitted: boolean; unknown: boolean; obligations: string[];
+    inBom: boolean | null;
+    evidence: { file: string | null; sha256: string | null };
     attachments: CatalogAttachment[];
   };
   usage: Record<CatalogUsage, CatalogUsageFact>;
@@ -209,12 +211,13 @@ export interface CatalogEntryDocument {
 export interface CatalogEstimateDocument {
   schema: 'lw.catalog-estimate/1';
   ref: string;
-  source: { bytes: number; files: number; licenseFiles: string[]; bomItems: number; bomNotInBom: string[] };
+  source: { bytes: number | null; files: number | null; licenseFiles: string[];
+    bomItems: number | null; bomNotInBom: string[] };
   cache: { reusedBytes: number | null; known: boolean; reason: string };
-  transfer: { upperBoundBytes: number };
-  temporary: { upperBoundBytes: number };
+  transfer: { upperBoundBytes: number | null };
+  temporary: { upperBoundBytes: number | null };
   adaptedPackage: { bytes: number | null; upperBoundBytes: number; known: boolean };
-  requiredDiskBytes: number;
+  requiredDiskBytes: number | null;
   limits: {
     sourcePackageBytes: number; adaptedPackageBytes: number; batchBytes: number;
     rawCacheBytes: number; freeDiskMinBytes: number;
@@ -257,6 +260,30 @@ export const catalogSearchPath = (filters: CatalogSearchFilters) =>
 
 export const searchCatalog = (filters: CatalogSearchFilters, signal?: AbortSignal) =>
   request<CatalogSearchResponse>(catalogSearchPath(filters), { signal });
+
+export interface CatalogSyncRecord {
+  schema: 'lw.catalog-sync/1'; id: string;
+  status: 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+  stage: 'enumerating' | 'indexing' | 'publishing' | 'done';
+  startedAt: string; finishedAt: string | null; revision: string | null;
+  discovered: number; indexed: number; metadataReused: number; metadataFailed: number;
+  previewsCached: number; previewsReused: number; previewsMissing: number; previewsFailed: number;
+  networkBytes: number; cacheBytes: number; snapshotId: string | null;
+  errors: { package: string | null; message: string }[];
+  message?: string | null;
+}
+export interface CatalogSyncState {
+  current: CatalogSyncRecord | null; snapshot: CatalogSnapshot | null;
+  limits: { workers: number; cacheBytes: number; transferBytes: number; responseBytes: number };
+}
+export const getCatalogSync = (signal?: AbortSignal) =>
+  request<CatalogSyncState>('/library/catalog/sync', { signal });
+export const startCatalogSync = () =>
+  request<CatalogSyncRecord>('/library/catalog/sync', { method: 'POST' });
+export const cancelCatalogSync = (id: string) =>
+  request<CatalogSyncRecord>(`/library/catalog/sync/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+export const retryCatalogSync = (id: string) =>
+  request<CatalogSyncRecord>(`/library/catalog/sync/${encodeURIComponent(id)}/retry`, { method: 'POST' });
 
 const entryBase = (provider: string, packageId: string, revision: string) =>
   `/library/catalog/entries/${encodeURIComponent(provider)}/${encodeURIComponent(packageId)}/${encodeURIComponent(revision)}`;
