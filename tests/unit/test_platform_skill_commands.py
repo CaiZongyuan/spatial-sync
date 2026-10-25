@@ -1,5 +1,6 @@
 """The actual checker validates subcommands and arguments without performing lab actions."""
 
+import hashlib
 import json
 import os
 import shlex
@@ -31,6 +32,13 @@ def test_every_shipped_command_matches_the_real_parser_without_a_gateway():
     checked = json.loads(result.stdout)
     assert checked["skills"] == 9
     assert checked["commands"] > 0
+
+
+def test_historical_skill_directories_use_the_installer_canonical_text_hash():
+    archives = list((ROOT / "skills/archive/lab").glob("*/SKILL.md"))
+    assert archives
+    for path in archives:
+        assert hashlib.sha256(path.read_text(encoding="utf-8").encode()).hexdigest() == path.parent.name
 
 
 @pytest.mark.parametrize(
