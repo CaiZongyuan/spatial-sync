@@ -35,3 +35,29 @@ def test_source_does_not_retry_before_the_servers_long_wait(monkeypatch, headers
         source = module.SimReadySource(client=client, cancel=Cancel())
         assert source.revision() == "a" * 40
     assert len(requests) == 2 and requests[1] >= 600
+
+
+def test_waiting_worker_rechecks_a_reset_extended_by_another_worker(monkeypatch):
+    elapsed = [0.0]
+    requests = []
+
+    class Cancel:
+        def is_set(self):
+            return False
+
+        def wait(self, seconds):
+            elapsed[0] += seconds
+            if elapsed[0] == 10:
+                source._rate_until = 20  # Another in-flight request receives a later reset.
+            return False
+
+    def handler(request):
+        requests.append(elapsed[0])
+        return httpx.Response(200, json={"sha": "a" * 40})
+
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: elapsed[0]))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        source = module.SimReadySource(client=client, cancel=Cancel())
+        source._rate_until = 10
+        assert source.revision() == "a" * 40
+    assert requests == [20]

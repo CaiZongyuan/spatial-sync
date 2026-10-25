@@ -337,13 +337,13 @@ def _local_status(local, filters):
     if filters.kind is not None:
         status["kind"] = metadata.get("kind") == filters.kind
     if filters.provider is not None:
-        status["provider"] = local.entry.provider if local.entry is not None else None
+        status["provider"] = local.entry.provider == filters.provider if local.entry is not None else None
     if filters.usage is not None:
         status["usage"] = usage[filters.usage]
     if filters.license_admitted is not None:
         license_document = _local_license(local)
         status["licenseAdmitted"] = (
-            None if license_document["unknown"] else license_document["admitted"]
+            None if license_document["unknown"] else license_document["admitted"] == filters.license_admitted
         )
     if filters.installed is not None:
         status["installed"] = filters.installed is True

@@ -61,13 +61,16 @@ class SimReadySource:
     def _read(self, url):
         last = None
         for attempt in range(3):
-            self.check()
-            with self._lock:
-                if self.transferred >= MAX_TRANSFER_BYTES:
-                    raise SourceError("Catalog sync transfer exceeds 2 GiB")
-                pause = max(0, self._rate_until - time.monotonic())
-            if pause and self.cancel.wait(pause):
-                raise SyncCancelled()
+            while True:
+                self.check()
+                with self._lock:
+                    if self.transferred >= MAX_TRANSFER_BYTES:
+                        raise SourceError("Catalog sync transfer exceeds 2 GiB")
+                    pause = max(0, self._rate_until - time.monotonic())
+                if not pause:
+                    break
+                if self.cancel.wait(pause):
+                    raise SyncCancelled()
             retry_after = 1 + attempt
             try:
                 with self.client.stream("GET", url, headers={

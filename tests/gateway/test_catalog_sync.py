@@ -75,8 +75,15 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
         current = client.get(SEARCH, params={"scope": "online"}).json()
         assert all(not item["acquisition"]["eligible"] for item in current["results"])
         assert all(item["source"]["revision"] == upstream.revision for item in current["results"])
-        installed = client.get(SEARCH, params={"scope": "all", "q": "cardboard", "installed": True}).json()
-        assert "environment/cardboard-box@1" in {item["id"] for item in installed["results"]}
+        for provider in ({}, {"provider": "simready"}):
+            installed = client.get(SEARCH, params={
+                "scope": "all", "q": "cardboard", "installed": True, **provider,
+            }).json()
+            assert "environment/cardboard-box@1" in {item["id"] for item in installed["results"]}
+        excluded = client.get(SEARCH, params={
+            "scope": "all", "q": "cardboard", "installed": True, "licenseAdmitted": False,
+        }).json()
+        assert not excluded["results"]
         exact = client.get(SEARCH, params={"q": old_box, "scope": "online"}).json()
         assert exact["results"][0]["id"] == old_box
         assert exact["results"][0]["license"]["admitted"]
