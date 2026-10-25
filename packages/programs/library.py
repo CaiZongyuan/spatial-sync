@@ -16,6 +16,7 @@ from packages.library.archive import destination_parent, extract_package, import
 from packages.library.common import NAME, TYPE_ROOT, LibraryError, document
 from packages.library.transactions import durable_json
 from packages.programs.metadata import ProgramMetadata
+from packages.programs.subjects import fingerprint
 from packages.training.inputs import pack_package
 
 MAX_FILES = 256
@@ -27,12 +28,6 @@ PUBLIC_IMPORTS = {
 }
 HELPER_IMPORTS = {"__future__", "math", "numpy", "collections", "dataclasses", "typing", "pydantic"}
 REFERENCE = re.compile(r"program/robot_arm\.script\.([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)")
-
-
-def fingerprint(value):
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    ).hexdigest()
 
 
 def invalid(message, *, path=""):

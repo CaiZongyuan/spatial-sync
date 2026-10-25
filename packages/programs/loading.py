@@ -15,7 +15,8 @@ from packages.info.program import ProgramConfig
 from packages.library.assets import AssetLibrary
 from packages.library.common import LibraryError
 from packages.programs.authorization import require_runtime_approval
-from packages.programs.library import ProgramLibrary, fingerprint
+from packages.programs.library import ProgramLibrary
+from packages.programs.subjects import fingerprint
 
 
 def invalid(message):

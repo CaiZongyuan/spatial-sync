@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pydantic import JsonValue
 
 from packages.info.program import TERMINAL, Reject
-from packages.programs.library import fingerprint
 from packages.programs.metadata import ProgramIntent
+from packages.programs.subjects import fingerprint
 
 from .physical import RobotArmPhysicsConfig, RobotArmPhysicsFacts
 
