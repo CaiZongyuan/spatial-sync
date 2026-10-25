@@ -62,7 +62,8 @@ export function CatalogZeroResult({ response, onAction }: {
 function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
   const localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? imageUrl(candidate.preview.url);
   if ((candidate.preview.kind === 'local' || candidate.preview.kind === 'cached') && localUrl)
-    return <img src={localUrl} alt={`${candidate.title} 的缓存预览`} loading="lazy" />;
+    return <img src={localUrl} className={candidate.preview.kind === 'cached' ? 'catalog-cached-preview' : undefined}
+      alt={`${candidate.title} 的缓存预览`} loading="lazy" />;
   return <div className="catalog-preview-placeholder" role="img" aria-label="在线预览未缓存">
     <b>预览未缓存</b>
     <small>{candidate.preview.reason ?? '获取流程会解析来源预览；这里不会请求远程图片。'}</small>
@@ -217,7 +218,8 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 : <p className="asset-small-note">尚未安装本地版本；候选只显示为在线条目，不冒充已安装 Asset。</p>}
               {entry.installed.truncated && <p className="asset-small-note">仅显示最近 20 个本地版本；其余版本见本地素材库。</p>}
               <div className="catalog-detail-preview">{(entry.preview.kind === 'local' || entry.preview.kind === 'cached') && imageUrl(entry.preview.url)
-                ? <img src={entry.preview.url!} alt={`${entry.names.zh} 的本地版本预览`} />
+                ? <img src={entry.preview.url!} className={entry.preview.kind === 'cached' ? 'catalog-cached-preview' : undefined}
+                  alt={`${entry.names.zh} 的预览`} />
                 : <div className="catalog-preview-placeholder"><b>预览未缓存</b><small>{entry.preview.reason ?? '获取流程会解析来源预览；页面不会请求远程图片。'}</small></div>}</div>
             </div></section>
           </div>
