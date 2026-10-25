@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-25T10:18:21.716394+00:00",
+  "capturedAt": "2026-10-25T11:59:31.269325+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -169,7 +169,7 @@
     },
     {
       "path": "packages/programs/tube/facts.py",
-      "sha256": "64915a1a42b6e4bf8b0b02026b3bcc156cffff638bd20624773456e3e02d5e79"
+      "sha256": "5e7bba76e2cebc0e8cc3d5c3276e6384bb692d410b0cfae6bc943b9fddd4880e"
     },
     {
       "path": "packages/programs/tube/newton.py",
@@ -271,10 +271,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "b7c419d94021b19b9975b035dd48cf307eef0f668f2ed5cfcf7c64e5edc11a79",
-    "catalog.json": "8999390af433fa3518c04bfc8efc6235430cb1703b5317de1793f3b2cd062489",
-    "state.json": "8428b72670b5d236a5a8c43ede932b836ed9bd10f36cd25a0dd9b6ad47c3061d",
-    "snapshot.bin": "9f4a44410b7ef52b8ff0fd085b82871d1d86ea96d75db8348c8909c5ee296fbf"
+    "manifest.json": "cd22d4b2536004c9692a7ee0da3d2840226b1fd5042c95f061592e830fc19e67",
+    "catalog.json": "90ad80c38d0fcddbaea10368b86ec586b02734d5a2c98902551c987bc79eb2e4",
+    "state.json": "8f60ef60f48f5229060df0e8df33807bd90bd952037e8e6976cddbb158ad9828",
+    "snapshot.bin": "84b9fc263517414b4d63a6eedcb6f141e773b8ddb91e72155c6110c939d25da5"
   },
   "counts": {
     "physicalEntities": 3,
