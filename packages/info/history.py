@@ -104,7 +104,8 @@ def write_property_index(path):
         })
         entry["startSampleTimeMs"] = min(entry["startSampleTimeMs"], sample.t_ms)
         entry["endSampleTimeMs"] = max(entry["endSampleTimeMs"], sample.t_ms)
-        entry["records"].append([sample.t_ms, sample.offset, sample.epoch, sample.entity_index])
+        # JSON arrays stay identical; immutable numeric tuples can be untracked by GC.
+        entry["records"].append((sample.t_ms, sample.offset, sample.epoch, sample.entity_index))
     document = {"version": 1, "segmentSha256": sha256(raw).hexdigest(), "bytes": len(raw),
                 "properties": list(properties.values())}
     document["checksum"] = sha256(_json_bytes(document)).hexdigest()
