@@ -85,6 +85,19 @@ def test_notebook_separates_approval_publication_and_actual_default_without_priv
         assert approved["deployment"]["status"] == "approved"
         assert approved["deployment"]["publicationStatus"] == "not_committed"
         assert approved["defaultProgram"]["program"] == "robot_arm.newton"
+
+        def interrupt_current(effect, _):
+            if effect == "current_written":
+                raise OSError("Controlled interruption after current commit point")
+
+        service.publication.after_effect = interrupt_current
+        with pytest.raises(OSError, match="after current commit point"):
+            client.post(decision, json={"decision": "approve"})
+        uncertain = client.get(route).json()
+        assert uncertain["deployment"]["status"] == "approved"
+        assert uncertain["deployment"]["publicationStatus"] == "unavailable"
+        assert uncertain["defaultProgram"] is None
+        assert service.publication.read(promotion["id"])["phase"] == "controller_version_written"
         service.publication.after_effect = lambda *_: None
         published = client.post(decision, json={"decision": "approve"})
         assert published.status_code == 200 and published.json()["status"] == "published"
@@ -131,6 +144,17 @@ def test_notebook_separates_approval_publication_and_actual_default_without_priv
         assert latest["candidate"]["reportedDecision"] == "rejected"
         assert latest["deployment"]["status"] == "not_requested"
         assert latest["defaultProgram"] == committed["defaultProgram"]
+        failed = deepcopy(later)
+        failed_id = "eval-" + "3" * 32
+        failed.update(evaluationId=failed_id, status="failed", episodes=[], attemptedEpisodes=0,
+                      at="2026-10-25T02:00:00+00:00", error={"code": "program_runtime_invalid"})
+        failed.pop("result")
+        failed.pop("key")
+        store.save(failed)
+        manager.notebooks.observe(failed)
+        no_ready_source = client.get(route).json()
+        assert no_ready_source["candidate"]["score"] is None
+        assert no_ready_source["defaultProgram"] == committed["defaultProgram"]
         assert client.post("/api/v1/approvals/" + plan["approvalId"] + "/decision",
                            json={"decision": "revoke"}).status_code == 200
         assert client.get(route).json()["defaultProgram"] == committed["defaultProgram"]

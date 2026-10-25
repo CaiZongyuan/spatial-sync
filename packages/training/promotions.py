@@ -177,7 +177,11 @@ class ControllerPromotions:
             try:
                 permit = read_committed_permit(self.manager.settings.state_root, value["id"])
             except (PlanError, LibraryError, OSError, ValueError):
-                if value["status"] == "published":
+                try:
+                    committed = self.publication.committed(value["id"])
+                except (PlanError, LibraryError, OSError, ValueError):
+                    committed = None
+                if value["status"] == "published" or committed is not False:
                     projection["publicationStatus"] = "unavailable"
             else:
                 projection.update(publicationStatus="committed", scene=permit["scene"],

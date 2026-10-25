@@ -367,11 +367,19 @@ class NotebookService:
         try:
             task = self.manager.tasks.show(context["plan"]["task"])
             inputs = context["comparisonInputs"]
+            suite = self.manager.evaluations.suites.resolve(record["suite"])
+            observed_source = (record.get("key") or {}).get("source")
             if (task["contentHash"] != context["taskContentHash"]
                     or task["task"]["scene"] != inputs["scene"]
-                    or task["sceneContentHash"] != inputs["sceneContentHash"]):
+                    or task["sceneContentHash"] != inputs["sceneContentHash"]
+                    or suite.id != inputs["suite"]
+                    or suite.content_hash != record["suiteContentHash"]
+                    or suite.content_hash != inputs["suiteContentHash"]
+                    or suite.metadata["scene"] != inputs["scene"]
+                    or suite.metadata["sceneContentHash"] != inputs["sceneContentHash"]
+                    or observed_source not in (None, suite.metadata["source"])):
                 return None
-            return (inputs["scene"], inputs["sceneContentHash"], record["key"]["source"],
+            return (inputs["scene"], inputs["sceneContentHash"], suite.metadata["source"],
                     task["task"]["robot"])
         except (LibraryError, KeyError, TypeError, ValueError):
             return None
