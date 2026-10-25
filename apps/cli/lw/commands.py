@@ -890,6 +890,42 @@ COMMANDS = (
         actor=True,
     ),
     Command(
+        path=("authoring", "submit"),
+        help=(
+            "Submit one external Authoring Report from a JSON/YAML file; submissionId is the "
+            "idempotency key and no attachment or file path is read by the gateway."
+        ),
+        method="authoring_submit",
+        arguments=(
+            Argument("document", ("json/file",), dict[str, Any],
+                     "JSON document with submissionId, source, sourceVersion, reportedAt and a "
+                     "draftId or exact object version"),
+        ),
+        mcp_name="authoring_submit",
+        actor=True,
+    ),
+    Command(
+        path=("authoring", "ls"),
+        help="List received external reports newest first; summaries are bounded previews.",
+        method="authoring_list",
+        arguments=(
+            Argument("scene", ("--scene",), str | None,
+                     "Exact scene version name@rev, or a scene name", None),
+            Argument("asset", ("--asset",), str | None,
+                     "Exact asset version kind/name@rev, or an asset ID", None),
+            Argument("draft", ("--draft",), str | None, "External draft ID", None),
+            Argument("limit", ("--limit",), int, "Page size from 1 to 100; default 20", 20),
+        ),
+        mcp_name="authoring_list",
+    ),
+    Command(
+        path=("authoring", "show"),
+        help="Read one received external report: source, times, binding, summary, gaps and references.",
+        method="authoring_show",
+        arguments=(Argument("id", ("id",), str, "Stable submissionId"),),
+        mcp_name="authoring_show",
+    ),
+    Command(
         path=("asset", "ls"),
         help="Search asset versions in the built-in and user libraries.",
         method="asset_search",

@@ -37,6 +37,15 @@ export interface SceneVersion {
   countsReason: string | null;
   preview: ScenePreview;
 }
+export interface SceneVersionLink {
+  id: string;
+  rev: number;
+  contentHash: string;
+  launchable: boolean;
+  launchReason: string | null;
+  validationStatus: string;
+}
+export interface AssetDependency { id: string; contentHash: string }
 export interface ValidationReport {
   subject: string;
   ranAt?: string;
@@ -56,6 +65,8 @@ export interface SceneDetail extends SceneVersion {
   validation: ValidationReport | null;
   inspection: string;
   recordings: Recording[];
+  assets: AssetDependency[];
+  versions: SceneVersionLink[];
 }
 
 export const getSceneLibrary = (filters: { q?: string; launchable?: boolean; source?: SceneSource }, signal?: AbortSignal) => {
