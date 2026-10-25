@@ -121,14 +121,14 @@ class AssetCatalog:
             if snapshot is not None and provenance is not None:
                 package = provenance.get("sourcePackage")
                 revision = provenance.get("sourceRevision")
+                provider = provenance.get("sourceProvider", "simready")
                 candidate = self.by_package.get(package) if isinstance(package, str) else None
                 if isinstance(package, str) and isinstance(revision, str) and (
-                    candidate is None or candidate.revision != revision
+                    candidate is None or candidate.revision != revision or candidate.provider != provider
                 ):
                     try:
                         # Historical provenance did not carry a provider. Never
                         # guess across sources; the legacy source is SimReady.
-                        provider = provenance.get("sourceProvider", "simready")
                         candidate = self.entry(provider, package, revision)
                     except LibraryError:
                         candidate = None

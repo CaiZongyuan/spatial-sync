@@ -19,6 +19,8 @@ export interface CatalogSnapshot {
   sync?: { discovered: number; indexed: number; metadataFailed: number;
     previewsCached: number; previewsReused: number; previewsMissing: number; previewsFailed: number };
   sources?: { provider: string; dataset: string; revision: string; entryCount: number; indexedAt: string }[];
+  sourceCount?: number;
+  sourcesTruncated?: boolean;
 }
 
 export interface CatalogZeroResult {

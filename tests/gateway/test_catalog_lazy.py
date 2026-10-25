@@ -11,6 +11,7 @@ from apps.api.app.main import create_app
 from packages.catalog.source import SourceError
 from packages.catalog.sources import CatalogSource
 from tests.fixtures.catalog_source import PNG, REVISION, CatalogSourceFixture
+from tests.gateway.test_catalog_search import correlated_asset, upload
 from tests.gateway.test_catalog_sync import BASE, SEARCH, start
 
 
@@ -248,3 +249,69 @@ def test_waiting_image_requests_do_not_occupy_search_capacity():
             finally:
                 release.set()
             assert all(image.result().content == PNG for image in images)
+
+
+def test_many_sources_keep_search_response_and_cursor_bounded(tmp_path):
+    import copy
+    from pathlib import Path
+
+    seed = json.loads(
+        (Path(__file__).resolve().parents[2] / "catalog/simready.json").read_text(encoding="utf-8")
+    )
+    groups = []
+    for index in range(100):
+        group = copy.deepcopy(seed)
+        group["provider"] = ("source-" + str(index)).ljust(96, "a")
+        group["dataset"] = "d" * 300
+        groups.append(group)
+    path = tmp_path / "many.json"
+    path.write_text(
+        json.dumps({"schema": "lw.asset-catalog/3", "sources": groups, "limits": {}}), encoding="utf-8"
+    )
+    with TestClient(create_app(catalog_path=path, catalog_sources=[])) as client:
+        params = {"scope": "online", "provider": groups[0]["provider"], "limit": 1}
+        response = client.get(SEARCH, params=params)
+        value = response.json()
+        assert len(response.content) <= 32768
+        assert len(value["results"]) == 1 and value["nextCursor"]
+        assert value["snapshot"]["sourceCount"] == 100 and value["snapshot"]["sourcesTruncated"]
+        assert len(value["snapshot"]["sources"]) == 20
+        params["cursor"] = value["nextCursor"]
+        assert client.get(SEARCH, params=params).json()["results"][0]["id"] != value["results"][0]["id"]
+
+
+def test_shared_transfer_budget_stops_later_sources(monkeypatch):
+    from packages.catalog import sync
+
+    first, second, third = (CatalogSourceFixture() for _ in range(3))
+    first.names = second.names = third.names = ["same_name"]
+    monkeypatch.setattr(sync, "MAX_TRANSFER_BYTES", 200)
+    sources = [
+        CatalogSource(name, "fixture/" + name, source.source)
+        for name, source in [("simready", first), ("second", second), ("third", third)]
+    ]
+    with TestClient(create_app(catalog_sources=sources)) as client:
+        record = start(client)
+        assert record["status"] == "succeeded"  # First successful source is still published.
+        assert [result["status"] for result in record["sources"]] == ["succeeded", "failed", "failed"]
+        assert record["networkBytes"] > 200
+        assert not third.requests
+        assert client.get(BASE).json()["limits"]["transferBytes"] == 200
+
+
+def test_other_provider_cannot_shadow_historical_installed_provenance():
+    first, other = CatalogSourceFixture(), CatalogSourceFixture()
+    other.names = ["box_cardboard_a01"]
+    sources = [
+        CatalogSource("simready", "nvidia/simready-assets", first.source),
+        CatalogSource("other", "fixture/other", other.source),
+    ]
+    with TestClient(create_app(catalog_sources=sources)) as client:
+        upload(client, correlated_asset())
+        assert start(client)["status"] == "succeeded"
+        params = {"scope": "all", "provider": "simready", "installed": True, "q": "cardboard"}
+        assert client.get(SEARCH, params=params).json()["results"]
+        first.names = ["CT_fixture_a01"]
+        assert start(client)["status"] == "succeeded"
+        result = client.get(SEARCH, params=params).json()["results"]
+        assert "environment/cardboard-box@1" in {item["id"] for item in result}

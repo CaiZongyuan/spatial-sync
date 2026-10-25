@@ -72,7 +72,7 @@ function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
     });
     observer.observe(frame.current);
     return () => observer.disconnect();
-  }, []);
+  }, [candidate.preview.kind, candidate.preview.url, candidate.local?.asset.thumbnailUrl]);
   const localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? (candidate.preview.kind === 'on-demand'
     ? candidate.preview.url : imageUrl(candidate.preview.url));
   if (['local', 'cached', 'on-demand'].includes(candidate.preview.kind) && localUrl)

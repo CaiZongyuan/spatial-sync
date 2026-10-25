@@ -317,7 +317,9 @@ class CatalogSnapshot:
         if self.sync is not None:
             result["sync"] = self.sync
         if self.sources:
-            result["sources"] = list(self.sources)
+            result["sources"] = list(self.sources[:20])
+            result["sourceCount"] = len(self.sources)
+            result["sourcesTruncated"] = len(self.sources) > 20
         return result
 
 
@@ -596,7 +598,7 @@ def parse_catalog(data, raw=None):
             dataset=single.dataset if single else "multiple",
             revision=single.revision if single else hashlib.sha1(raw).hexdigest(),
             indexed_at=latest.indexed_at, indexed_at_text=latest.indexed_at_text,
-            coverage="Complete lightweight directories; details and previews load on demand.",
+            coverage="Searches retained source indexes; coverage is reported separately for each source.",
             entry_count=len(entries), limits=_limits(data.get("limits")),
             sync={key: sum((s.sync or {}).get(key, 0) for s in snapshots) for key in (
                 "discovered", "indexed", "metadataFailed", "previewsCached", "previewsReused",
@@ -604,7 +606,7 @@ def parse_catalog(data, raw=None):
             )},
             sources=tuple({"provider": s.provider, "dataset": s.dataset,
                            "revision": s.revision, "entryCount": s.entry_count,
-                           "indexedAt": s.indexed_at_text} for s in snapshots),
+                           "indexedAt": s.indexed_at_text, "coverage": s.coverage[:240]} for s in snapshots),
         ), tuple(entries)
     synced = data.get("schema") == SYNCED_CATALOG_SCHEMA
     if data.get("schema") not in (CATALOG_SCHEMA, SYNCED_CATALOG_SCHEMA):

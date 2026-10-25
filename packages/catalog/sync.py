@@ -15,7 +15,7 @@ from pathlib import Path
 
 from packages.catalog.catalog import AssetCatalog
 from packages.catalog.models import COLLECTION_SCHEMA, DEFAULT_LIMITS, SYNCED_CATALOG_SCHEMA, parse_catalog
-from packages.catalog.source import PACKAGE, REVISION, SourceError, SyncCancelled
+from packages.catalog.source import MAX_TRANSFER_BYTES, PACKAGE, REVISION, SourceError, SyncCancelled
 from packages.catalog.sources import CatalogSources
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
@@ -109,6 +109,7 @@ class CatalogSync:
                         "provider": source.provider,
                         "dataset": source.dataset,
                         "entryCount": len(self._documents.get(source.provider, {}).get("entries", [])),
+                        "coverage": self._documents.get(source.provider, {}).get("coverage"),
                     }
                     for source in self.sources.registrations.values()
                 ],
@@ -116,7 +117,7 @@ class CatalogSync:
                 "limits": {
                     "workers": WORKERS,
                     "cacheBytes": MAX_CACHE_BYTES,
-                    "transferBytes": MAX_CACHE_BYTES,
+                    "transferBytes": MAX_TRANSFER_BYTES,
                     "responseBytes": 2 * 1024 * 1024,
                 },
             }
@@ -207,6 +208,8 @@ class CatalogSync:
     def _progress(self, size):
         with self._lock:
             self._current["networkBytes"] += size
+            if self._current["networkBytes"] > MAX_TRANSFER_BYTES:
+                raise SourceError("Catalog update exceeded the shared transfer budget")
 
     def _notice(self, message):
         with self._lock:
@@ -215,6 +218,9 @@ class CatalogSync:
                 self._persist(force=False)
 
     def _directory(self, provider):
+        with self._lock:
+            if self._current["networkBytes"] >= MAX_TRANSFER_BYTES:
+                raise SourceError("Catalog update exhausted the shared transfer budget")
         registration = self.sources.require(provider)
         source = self.sources.open(
             provider, cancel=self._cancel, progress=self._progress, notice=self._notice

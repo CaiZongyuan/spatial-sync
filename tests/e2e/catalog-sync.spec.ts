@@ -63,6 +63,10 @@ test('lightweight indexing, visible previews, retries and failed-source preserva
     const first = page.locator('.catalog-card.is-online').first();
     await expect(first.locator('img')).toHaveAttribute('src', /\/api\/v1\/library\/catalog\/entries\/.+\/preview$/);
     await expect.poll(() => first.locator('img').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(1);
+    // A seed card keeps its React key across publication; it must attach a new observer.
+    const retained = page.locator('.catalog-card[data-candidate^="simready/box_cardboard_a01@"]');
+    await retained.scrollIntoViewIfNeeded();
+    await expect.poll(() => retained.locator('img').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(1);
     await page.getByRole('searchbox', { name: '搜索素材' }).fill('CT_fixture_a01');
     await expect(page.locator('.catalog-card.is-online')).toHaveCount(1);
     await expect(page.locator('.catalog-card.is-online')).toContainText('未审查／上游声明');
