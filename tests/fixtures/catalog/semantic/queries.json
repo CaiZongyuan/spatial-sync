@@ -10,8 +10,8 @@
     "note": "The five SimReady records are copied unchanged from catalog/simready.json. The other 100 are synthetic bilingual fixtures; their source, license, size, adaptation and usage fields are not real source facts."
   },
   "labels": {
-    "status": "initial",
-    "labeledBy": "Agent initial labels; not user-adjudicated",
+    "status": "confirmed",
+    "labeledBy": "Agent initial labels; confirmed by the user on 2026-10-25 with no changes",
     "definition": "Relevant means the record serves the stated use without violating an explicit hard condition; unknown attributes never count as satisfying a condition.",
     "adjudication": [
       "zh-use-01",
@@ -23,7 +23,7 @@
       "en-cond-01",
       "en-unknown-01"
     ],
-    "adjudicationNote": "Conflicts flagged for user spot-check and adjudication before the labels are frozen."
+    "adjudicationNote": "All eight flagged queries were confirmed unchanged on 2026-10-25; no retained query, split or relevant list was edited."
   },
   "splits": {
     "retained": {
