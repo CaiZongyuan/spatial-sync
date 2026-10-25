@@ -12,6 +12,7 @@ pytest.importorskip("newton")
 pytestmark = pytest.mark.newton
 
 from apps.api.app.main import create_app
+from apps.api.app.session_manager import default_source_factory
 from packages.policies.subjects import fixed_bindings
 from packages.training.inputs import pack_package
 from tests.fixtures.script_deployment import gripper_promotion_suite
@@ -62,9 +63,26 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
             == 200
         )
         suite = gripper_promotion_suite(manager, scene)
-    app = create_app()
+    starts = []
+
+    def counted_source(kind, identifier):
+        starts.append((kind, identifier))
+        return default_source_factory(kind, identifier)
+
+    app = create_app(source_factory=counted_source)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://owned") as http:
+            manager = app.state.manager
+            controller_before = app.state.robot_resources.controller("fr3-arm")
+            refused = await http.post(
+                "/api/v1/controller-promotions",
+                json={"subject": program["id"], "scene": scene.id, "planId": plan["id"]},
+            )
+            assert refused.status_code == 409, refused.text
+            assert refused.json()["detail"]["code"] == "candidate_not_accepted"
+            assert not starts and not manager.evaluations.store.records
+            assert not list(app.state.controller_promotions.root.glob("promotion-*.json"))
+            assert app.state.robot_resources.controller("fr3-arm") == controller_before
             teacher = await evaluate(http, suite, "robot_arm.newton", plan=plan)
             script = await evaluate(http, suite, program["id"], plan=plan)
             assert teacher["result"]["successes"] == 0 and script["result"]["successes"] == 1
@@ -92,6 +110,10 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
                 assert promotion["status"] not in ("failed", "inconclusive", "cleanup_blocked"), promotion
                 assert time.monotonic() < deadline, promotion
                 await asyncio.sleep(0.05)
+            assert "test" not in promotion and "candidateBelowReference" not in promotion
+            transaction = app.state.controller_promotions.get(promotion["id"])
+            for identifier in transaction["runs"].values():
+                assert (await http.get("/api/v1/evaluations/" + identifier)).status_code == 404
             private_review = "/api/v1/controller-promotions/" + promotion["id"] + "/review"
             denied = await http.get(private_review, headers={"X-Actor": "agent:optimizer"})
             assert denied.status_code == 403
@@ -112,7 +134,14 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
             assert published["status"] == "published", published
             deployed = published["deployment"]
             assert deployed["scene"]["id"] != scene.id
-            assert deployed["controller"]["document"]["programArtifact"] == body["program"]
+            controller = deployed["controller"]["document"]
+            assert controller["programArtifact"] == body["program"]
+            assert controller["program"] == "robot_arm.script" and controller["policy"] is None
+            assert controller["task"] == plan["task"]
+            assert controller["action"]["hz"] is None and controller["action"]["hzUnknownReason"]
+            readback = await http.get("/api/v1/controllers/fr3-arm")
+            assert readback.status_code == 200, readback.text
+            assert readback.json()["current"]["programArtifact"] == body["program"]
             revoked = await http.post(
                 "/api/v1/approvals/" + plan["approvalId"] + "/decision",
                 json={"decision": "revoke"},
@@ -120,6 +149,14 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
             )
             assert revoked.status_code == 200, revoked.text
             assert (await http.get("/api/v1/plans/" + plan["id"])).json()["status"] == "draft"
+            starts_before = len(starts)
+            stale = await http.post(
+                "/api/v1/evaluations",
+                json={"subject": program["id"], "suite": suite.id, "planId": plan["id"], "planRevision": 1},
+            )
+            assert stale.status_code == 409, stale.text
+            assert stale.json()["detail"]["code"] == "program_not_approved"
+            assert len(starts) == starts_before
             launched = await http.post(
                 "/api/v1/sessions",
                 json={"sceneVersion": deployed["scene"]["id"], "source": "newton", "device": "cpu"},
@@ -135,6 +172,7 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
             finally:
                 assert (await http.delete("/api/v1/sessions/" + identity)).status_code in (200, 204)
             assert all(not value.holds_resources for value in app.state.manager.sessions.values())
+            assert not manager.jobs.records
             record_property(
                 "script_permission_promotion",
                 json.dumps(
@@ -147,6 +185,8 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
                         "trainingPlanRevoked": True,
                         "committedSceneStillLoadable": True,
                         "ownedCleanupComplete": True,
+                        "unacceptedPromotionSourceStarts": 0,
+                        "revokedEvaluationSourceStarts": 0,
                         "basis": "gripper-only engineering fixture",
                     },
                     sort_keys=True,
