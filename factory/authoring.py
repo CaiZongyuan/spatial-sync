@@ -899,6 +899,16 @@ def _check_package(path, files):
         )
 
 
+def _same_manifest(existing, expected):
+    """A manifest written with platform newline translation has the same content."""
+    if existing == expected:
+        return True
+    try:
+        return existing.decode("utf-8").replace("\r\n", "\n") == expected.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+
+
 def _write_package(path, files):
     path = Path(path)
     if path.exists():
@@ -1117,7 +1127,7 @@ def build(plan, output, *, library_roots=None, layout=None):
     if manifest_path.is_symlink():
         raise FactoryError("manifest destination cannot be a filesystem link: " + str(manifest_path))
     if manifest_path.exists():
-        if manifest_path.read_bytes() != manifest_bytes:
+        if not _same_manifest(manifest_path.read_bytes(), manifest_bytes):
             raise FactoryError(
                 "refusing to overwrite an immutable factory manifest: " + str(manifest_path)
             )
