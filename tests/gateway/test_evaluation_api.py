@@ -1,8 +1,13 @@
 import asyncio
+import itertools
 import json
+import re
 import shutil
 import time
+import uuid
+from datetime import datetime
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 from ws_messages import receive_message
@@ -17,6 +22,75 @@ from packages.protocol.schema import EntityObservations, EntitySnapshot
 from packages.transport import FrameCodec
 
 SUITE = "suite/lab-demo-pick-place@1"
+PRIVATE_SEEDS = (4101, 4102, 9101)
+OPAQUE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:"
+    r"(?:eval|session|rev|inv|plan|case|job|runtime-session)-[a-fA-F0-9]{12,64}"
+    r"|[a-fA-F0-9]{64}|[a-fA-F0-9]{32}"
+    r"|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+    r")(?![A-Za-z0-9_])"
+)
+TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
+PUBLIC_TIMESTAMPS = {"at", "createdAt", "startedAt", "endedAt", "finishedAt", "deadlineAt", "scoringCutoffAt"}
+
+
+def assert_no_private_evaluation_data(value):
+    leaks = []
+
+    def inspect(item, path, field=None):
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if key.casefold().replace("_", "").replace("-", "") in {
+                    "seed", "seeds", "private", "privatequestion",
+                }:
+                    leaks.append(path + "." + key)
+                inspect(key, path + ".<key>")
+                inspect(child, path + "." + key, key)
+        elif isinstance(item, list):
+            for index, child in enumerate(item):
+                inspect(child, path + f"[{index}]")
+        elif type(item) in (int, float):
+            if item in PRIVATE_SEEDS:
+                leaks.append(path)
+        elif isinstance(item, str):
+            if field in PUBLIC_TIMESTAMPS and TIMESTAMP.fullmatch(item):
+                try:
+                    datetime.fromisoformat(item.replace("Z", "+00:00"))
+                    return
+                except ValueError:
+                    pass
+            visible = OPAQUE.sub("<opaque>", item)
+            if "held-out-example" in visible or any(str(seed) in visible for seed in PRIVATE_SEEDS):
+                leaks.append(path)
+
+    inspect(value, "$")
+    assert not leaks, {"privateEvaluationDataPaths": leaks}
+
+
+def test_privacy_guard_allows_opaque_identifiers_digests_and_public_timing_digits():
+    assert_no_private_evaluation_data({
+        "evaluationId": "eval-4101000000004abc8abc000000000000",
+        "recording": "/recordings/session-410100000001/recording.json",
+        "nativeSessionId": "41010000-0000-4000-8000-000000000000",
+        "environment": "a" * 28 + "4102" + "b" * 32,
+        "elapsedSeconds": .9101,
+        "sampleTimeMs": 1792914410142.25,
+        "createdAt": "2026-10-25T11:12:00.410199+00:00",
+    })
+
+
+@pytest.mark.parametrize("leak", [
+    {"nested": {"value": 4101}}, {"nested": [4102.0]}, {"value": "9101"},
+    {"note": "The private seed is4101."}, {"nested": [{"note": "seed4102wasused"}]},
+    {"note": "held-out-example"}, {"nested": {"held-out-example": "value"}},
+    {"seed": "a" * 64}, {"nested": {"privateQuestion": "a" * 64}}, {"private-question": "a" * 64},
+    {"note": "eval-4101000000004abc8abc000000000000 still leaked seed9101"},
+    {"note": "invalid timestamp2026-99-99T11:12:00.410199+00:00"},
+    {"note": "2026-10-25T11:12:00.410199+00:00"},
+])
+def test_privacy_guard_rejects_actual_private_fields_values_and_nested_text(leak):
+    with pytest.raises(AssertionError, match="privateEvaluationDataPaths"):
+        assert_no_private_evaluation_data(leak)
 
 
 def eventually(read, predicate, timeout=120):
@@ -30,6 +104,9 @@ def eventually(read, predicate, timeout=120):
 
 
 def test_two_real_episodes_queue_and_private_seed(tmp_path, monkeypatch):
+    sequence = itertools.count()
+    # Opaque public identifiers may legitimately contain the private digits.
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID(hex=f"4101{next(sequence):08x}4abc8abc000000000000"))
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
     source_starts = []
 
@@ -176,9 +253,7 @@ def test_two_real_episodes_queue_and_private_seed(tmp_path, monkeypatch):
         assert len(app.state.manager.sessions) == 3
         rows = client.get("/api/v1/suites/lab-demo-pick-place/1/scoreboard").json()["rows"]
         assert rows == [result["result"]]
-        assert all(
-            private not in json.dumps(result) for private in ("4101", "4102", "9101", "held-out-example")
-        )
+        assert_no_private_evaluation_data(result)
 
 
 def test_public_test_execution_is_denied_for_forged_roles(tmp_path, monkeypatch):
