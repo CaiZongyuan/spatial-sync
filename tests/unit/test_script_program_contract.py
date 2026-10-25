@@ -1,11 +1,12 @@
 """Fixed physical facts/interlocks around a controlled delegate, without engine or uploaded Python."""
 
+import inspect
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from packages.info.program import TERMINAL, ProgramConfig
+from packages.info.program import TERMINAL, ProgramConfig, Reject
 from packages.programs.loading import PreparedProgram
 from packages.programs.robot_arm.script import ScriptProgram
 
@@ -134,6 +135,58 @@ def test_failed_delegate_initialization_leaves_readiness_unconfirmed():
     with pytest.raises(RuntimeError):
         program.init(ctx)
     assert not prepared.initialized
+
+
+@pytest.mark.parametrize("method,kind", [
+    ("init", "coroutine"), ("init", "generator"), ("init", "async_generator"),
+    ("accept", "coroutine"), ("accept", "generator"), ("accept", "async_generator"),
+    ("accept", "other"), ("start", "other"), ("tick", "other"), ("cancel", "other"),
+])
+def test_invalid_callback_returns_fail_without_executing_deferred_work(method, kind):
+    program, ctx, values = inputs(initialize=method != "init")
+    prepared = program.prepared[ctx.key]
+    executed = []
+
+    async def coroutine():
+        executed.append(True)
+
+    def generator():
+        executed.append(True)
+        yield None
+
+    async def async_generator():
+        executed.append(True)
+        yield None
+
+    returned = {"coroutine": coroutine, "generator": generator,
+                "async_generator": async_generator, "other": lambda: object()}[kind]()
+    inv = Invocation()
+    if method in ("tick", "cancel"):
+        program.start(inv, ctx)
+    setattr(prepared.delegate, method, lambda *_: returned)
+    arguments = {"init": (ctx,), "accept": (inv, ctx), "start": (inv, ctx),
+                 "tick": (ctx, 1 / 60), "cancel": (inv, ctx)}[method]
+    try:
+        with pytest.raises(ValueError, match="return"):
+            getattr(program, method)(*arguments)
+    finally:
+        if inspect.iscoroutine(returned) or inspect.isgenerator(returned):
+            returned.close()
+    assert not executed
+    assert values["phase"] == "fault" and program.execution_evidence()["callbackErrors"] == 1
+    assert len(ctx.physics.targets) >= 9
+    if method == "init":
+        assert not prepared.initialized
+    elif method in ("start", "tick", "cancel"):
+        assert inv.invocation.status == "failed" and program.handle is None
+
+
+def test_synchronous_accept_can_return_a_declared_rejection():
+    program, ctx, _ = inputs()
+    rejection = Reject(code="precondition_failed", message="Controlled valid rejection")
+    program.delegate.accept = lambda *_: rejection
+    assert program.accept(Invocation(), ctx) == rejection
+    assert program.execution_evidence()["callbackErrors"] == 0
 
 
 def test_idle_callbacks_do_not_drive_an_unadmitted_controller():

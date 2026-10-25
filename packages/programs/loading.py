@@ -145,6 +145,7 @@ class ProgramLoader:
                     not callable(getattr(definition, method, None))
                     or inspect.iscoroutinefunction(getattr(definition, method))
                     or inspect.isgeneratorfunction(getattr(definition, method))
+                    or inspect.isasyncgenfunction(getattr(definition, method))
                     for method in ("init", "accept", "start", "tick", "cancel")
                 )
             ):

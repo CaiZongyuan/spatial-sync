@@ -148,3 +148,5 @@ lw loop show goal/fr3-pick-tube --json
 按所选路径只执行对应一行，用真实版本、Suite、Plan ID 与修订替换示例。两路共用现有队列、动作管线、评分、录制和 Notebook；脚本在准入及每回合前复核精确代码批准。核对实际原生执行回执与回放，再读取固定 Suite 的成绩。动作成功或回调计数不等于任务成功；比较条件未知时保留已知代码身份和未知项。
 
 实验记录只提供 train 投影，失败、取消和无效尝试按实际消耗保留。满足既有接受规则后，使用已交付的共享 Controller 提升流程与人审入口；人审提交的新 Scene/Controller 及完整 material/binding proof 才授权普通模拟部署。保持实验的原固定 Suite/Scene，读取实际提升状态，不能用修改默认绑定或导入 Scene 代替事务。下一轮重新读本目标的预算、实验记录和人工决定。
+
+脚本 Candidate 使用 `lw program promote program/robot_arm.script.pick-tube@1 --scene robot-and-tubes@2 --evaluation eval-example --plan plan-example --revision 1 --request-id promotion-example --json` 申请同一提升事务，再用 `lw promotion show promotion-example --json` 读取返回的实际提升 ID。所选资金 Plan 必须批准同一精确程序版本与内容哈希；人工审查和私有 test 结果不进入 agent 上下文。

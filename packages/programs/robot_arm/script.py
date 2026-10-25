@@ -1,5 +1,6 @@
 """Fixed robot facts and action lifecycle around an approved Runner-loaded delegate."""
 
+import inspect
 import multiprocessing as mp
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -100,7 +101,15 @@ class ScriptProgram(RobotArmPhysicsFacts):
     def _callback(self, method, *args):
         self.calls[method] += 1
         try:
-            return getattr(self.delegate, method)(*args)
+            result = getattr(self.delegate, method)(*args)
+            if (
+                inspect.isawaitable(result)
+                or inspect.isgenerator(result)
+                or inspect.isasyncgen(result)
+                or result is not None and (method != "accept" or not isinstance(result, Reject))
+            ):
+                raise ValueError("Script callbacks must return synchronously with None or an accept Reject")
+            return result
         except Exception:
             self.errors += 1
             self._hold(self.context)
