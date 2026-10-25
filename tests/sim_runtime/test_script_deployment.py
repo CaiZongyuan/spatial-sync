@@ -169,7 +169,7 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
             assert len(starts) == starts_before
             launched = await http.post(
                 "/api/v1/sessions",
-                json={"sceneVersion": deployed["scene"]["id"], "source": "newton", "device": "cpu"},
+                json={"sceneVersion": deployed["scene"]["id"], "source": "newton"},
             )
             assert launched.status_code == 201, launched.text
             identity = launched.json()["sessionId"]

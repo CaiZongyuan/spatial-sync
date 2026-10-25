@@ -19,6 +19,12 @@ def seed_controlled_train(manager, policy, job, *, successes=10, episodes=10):
     suite = native_suite(manager, scene, name="promotion-controlled", heldout=True)
     manager.evaluations.suites.refresh()
     subject = resolve_policy_subject(manager, policy["id"], suite, scene)
+    return seed_controlled_subject(manager, subject, suite, scene, plan_id=job["planId"],
+                                   successes=successes, episodes=episodes)
+
+
+def seed_controlled_subject(manager, subject, suite, scene, *, plan_id, successes=10, episodes=10):
+    """Real immutable Subject/identity inputs; controlled train scores, never a Source."""
     store = manager.evaluations.store
     identity = {"environment": "controlled-environment", "judge": "controlled-judge"}
     key = {"suite": suite.id, "suiteContentHash": suite.content_hash,
@@ -45,7 +51,8 @@ def seed_controlled_train(manager, policy, job, *, successes=10, episodes=10):
                   "episodes": [{"status": "valid", "success": index < passed,
                                 "cleanupComplete": True} for index in range(episodes)], "at": row["at"]}
         if label == "candidate":
-            record.update(policySubject=subject.document(), planId=job["planId"])
+            field = "policySubject" if candidate["kind"] == "policy" else "simulationSubject"
+            record.update({field: subject.document(), "planId": plan_id})
         store.append(row)
         store.save(record)
     return scene
