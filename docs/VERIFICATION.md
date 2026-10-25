@@ -209,6 +209,21 @@ scores/qualification and physical validation. They prove human approval,
 interruption/restart recovery, concurrent current/Reference fencing, budget and
 privacy behavior; they do not certify actual native trainer256/contact quality.
 
+Script packages use the same evaluator with a current human-approved exact code
+Plan. The owned Newton checks below prove Runner-only loading/readiness, then
+actual HTTP action/grade/recording/Notebook and installed CLI/official MCP:
+
+```powershell
+uv run --no-sync python -m pytest tests/sim_runtime/test_script_loading.py tests/sim_runtime/test_script_evaluation_api.py tests/sim_runtime/test_script_cli.py -q
+```
+
+These need the same frozen simulation/USD extras and isolated roots. The finite
+gripper script can complete its own action while the fixed tube-transfer Suite
+correctly scores zero. The policy comparison uses an authored engineering model;
+the script creates no training Job. These results verify the platform path and
+do not establish learned-policy quality or the T3 successful-demo milestone.
+See [script packages](PROGRAMS.md) for review and evaluation commands.
+
 Evaluation comparison groups require complete server evidence for the fixed
 environment and judge. Candidate versions remain separate. Legacy scores and
 decisions stay readable; missing comparison evidence is unknown and cannot
