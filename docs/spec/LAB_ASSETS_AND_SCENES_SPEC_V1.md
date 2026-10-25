@@ -510,7 +510,7 @@ offset/nextOffset 按 Unicode 码点计数，服务端选满足完整 envelope �
 
 ### 11.4 FR3 实验室的导入（A3 前置，平台外完成）
 
-把 `laboratory_final.blend` 转换为场景包是一次性的素材工厂工作，由 agent 在平台外用 bpy 完成，网关运行时不依赖 bpy。后续可复用的工厂脚本由本仓库独立维护，遵循 [Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md)；该工作不恢复暂停中的 #18：
+把 `laboratory_final.blend` 转换为场景包是一次性的素材工厂工作，由 agent 在平台外用 bpy 完成，网关运行时不依赖 bpy。后续可复用的工厂脚本由本仓库独立维护，遵循 [Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md)；#18 的本地演示边界由 §12 单独定义：
 
 - 按顶层 Collection 拆出素材：实验台 ×2、生物安全柜、离心机、试管架、试管、培养瓶；其余合并为 `environment/lab-room-dressing@1`。
 - FR3 不从 Blender 导出，直接引用内置素材 `robot/fr3@1`。
@@ -547,12 +547,16 @@ A1 库 + 场景包 + 场景库页 ──► A2 素材包 + 验证 + 素材库页
 
 **A3 `fr3-lab` 演示**
 
-验收：
+按用户对 #18 的范围调整（2026-10-25），本里程碑验收本地场景演示：
 
-1. `fr3-lab` 以场景包导入后可启动；浏览器中显示 PBR 布景与实体。
-2. 素材库中能看到拆出的素材及其缺口（例如生物安全柜无类型）。
-3. 通过 CLI 在 `fr3-lab` 中完成信息规格 I3 的抓放与离心流程。
-4. agent 只依靠 `lab` 与 `lab-library` skill，从 `lw scene ls` 开始找到并启动 `fr3-lab`，并说出它有哪些设备和缺口。
+1. `fr3-lab` 以场景包导入、重复导入可去重，并能启动 Newton CPU 会话。
+2. 浏览器中能显示 PBR 布景与实体。
+3. 素材库中能看到拆出的素材及其缺口（例如生物安全柜无实现类型）。
+4. 通过共享 CLI 查看场景版本、设备与示教信息，启动场景并完成一次代表性交互，例如 `rack.A1 → centrifuge.slot1` 的 `pickPlace` 返回成功终态。
+
+完整四槽 I3、1 mm 夹持相对漂移、持续物理稳定性和 agent 仅凭 skill 独立发现的挑战不再作为 #18 的关闭前置；场景演示不宣称这些质量项通过。《信息规格》的物理门槛、#35 的真实策略与独立 256 状态一致性、T0 的接触训练标准保持不变。后续训练和策略验收仍按各自规格与工单进行。
+
+本机输入和普通主线启动方式见 [FR3 laboratory demo](../FR3_LAB_DEMO.md)。
 
 ## 13. 测试
 
