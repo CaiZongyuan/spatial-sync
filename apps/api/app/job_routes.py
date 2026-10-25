@@ -88,6 +88,9 @@ def install_job_routes(app, manager, role_for, views=None):
             "schemaVersion": 1,
             "job": jobs.document(job),
             "plan": job["plan"],
+            "nativeObservationProfile": manager.policy_evidence.native_profiles.for_task(
+                job["taskContentHash"], job["plan"]["algorithm"]["version"]
+            ),
             "packages": await anyio.to_thread.run_sync(input_packages, manager, job),
             **({"view": await views.inputs_hint(job)} if views is not None else {}),
         }

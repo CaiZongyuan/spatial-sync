@@ -46,6 +46,10 @@ async def test_installed_policy_cli_and_mcp_share_readback_and_rejection(
         assert policy["qualified"] is False and not policy["idempotent"]
         assert invoke("policy", "create", checkpoint)["idempotent"]
         assert invoke("policy", "show", policy["id"])["checkpointSha256"] == policy["checkpointSha256"]
+        refused = invoke("policy", "promote", policy["id"], "--scene", policy["scene"], code=1)
+        assert refused["error"]["statusCode"] == 409
+        assert refused["error"]["detail"]["code"] == "candidate_not_accepted"
+        assert http.get("/api/v1/evaluations").json()["evaluations"] == []
     async with Client(
         StdioServerParameters(command=str(LW), args=["mcp"], env=env),
         mode="legacy",
@@ -53,6 +57,10 @@ async def test_installed_policy_cli_and_mcp_share_readback_and_rejection(
     ) as mcp:
         names = {tool.name for tool in (await mcp.list_tools()).tools}
         assert {"policy_create", "policy_list", "policy_show"} <= names
+        assert {"policy_promote", "controller_promotion_show"} <= names
+        assert not {"controller_promotion_review", "controller_promotion_approve"} & names
         assert policy["id"] in [item["id"] for item in await result(mcp, "policy_list")]
         assert (await result(mcp, "policy_show", id=policy["id"]))["contentHash"] == policy["contentHash"]
         assert (await result(mcp, "policy_create", checkpoint=checkpoint))["idempotent"]
+        denied = await mcp.call_tool("policy_promote", {"id": policy["id"], "scene": policy["scene"]})
+        assert denied.is_error and "candidate_not_accepted" in denied.content[0].text

@@ -44,9 +44,12 @@ def install_approval_routes(app, manager, role_for):
         )
         plan_can_revoke = bool(plan_current
                                and all(step.status == "pending" for step in plan.plan.steps))
+        promotion = record.details.get("controllerPromotionId")
+        promotion_revoke = bool(promotion and manager.controller_promotions.can_revoke(record))
         return {
             **record.model_dump(mode="json"),
-            "canRevoke": (record.subject == "job" and manager.jobs.can_revoke(record)) or (
+            "canRevoke": promotion_revoke or (
+                          record.subject == "job" and manager.jobs.can_revoke(record)) or (
                           training
                           and training_store(manager, identifier=record.subjectId).can_revoke(record)) or (
                           record.subject == "deletion" and record.status in ("approved", "denied")
@@ -66,8 +69,10 @@ def install_approval_routes(app, manager, role_for):
         }
 
     def get_record(approval_id):
+        from packages.info.evaluation_privacy import private_recording
+
         record = store.records.get(approval_id)
-        if record is None or record.sessionId and manager.agent_rsi.private_recording(record.sessionId):
+        if record is None or record.sessionId and private_recording(manager, record.sessionId):
             raise HTTPException(404, {"code": "unknown_approval"})
         return record
 
@@ -79,9 +84,11 @@ def install_approval_routes(app, manager, role_for):
         sessionId: str | None = None,
         limit: int = Query(100, ge=1, le=1000),
     ):
+        from packages.info.evaluation_privacy import private_recording
+
         records = sorted(
             (record for record in store.records.values()
-             if not record.sessionId or not manager.agent_rsi.private_recording(record.sessionId)),
+             if not record.sessionId or not private_recording(manager, record.sessionId)),
             key=lambda record: (record.status == "pending", record.createdAtMs),
             reverse=True,
         )
@@ -111,6 +118,13 @@ def install_approval_routes(app, manager, role_for):
         if role != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
         record = get_record(approval_id)
+        if record.details.get("controllerPromotionId"):
+            try:
+                return await anyio.to_thread.run_sync(
+                    manager.controller_promotions.decide, record, body.decision, actor, body.note
+                )
+            except ApprovalConflict as exc:
+                raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
         if record.details.get("agentPromotionId"):
             from packages.agent_rsi.promotions import decide
 

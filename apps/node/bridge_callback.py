@@ -90,14 +90,9 @@ def install():
     original_learn = OnPolicyRunner.learn
 
     def learn(runner, *args, **kwargs):
-        from contextlib import nullcontext
+        from contextlib import ExitStack
 
-        if os.getenv("LW_NODE_VIEW_IPC"):
-            from lw_view_bridge import observe_training
-
-            observer = observe_training(runner, inputs)
-        else:
-            observer = nullcontext()
+        native = None
         original_log = runner.logger.log
         started = time.monotonic()
 
@@ -116,7 +111,17 @@ def install():
 
         runner.logger.log = log
         try:
-            with observer:
+            with ExitStack() as stack:
+                if os.getenv("LW_NODE_VIEW_IPC") or inputs.get("nativeObservationProfile"):
+                    from lw_view_bridge import observe_training
+
+                    observer = stack.enter_context(observe_training(runner, inputs))
+                    if profile := inputs.get("nativeObservationProfile"):
+                        from lw_native_observation_capture import NativeObservationCapture
+
+                        native = stack.enter_context(
+                            NativeObservationCapture(runner, observer, profile, inputs)
+                        )
                 result = original_learn(runner, *args, **kwargs)
         finally:
             runner.logger.log = original_log
@@ -134,6 +139,8 @@ def install():
             "iteration": runner.current_learning_iteration, "afterLearn": True,
         }
         (output / "export.json").write_text(json.dumps(export), encoding="utf-8")
+        if native is not None:
+            native.publish(output, export, versions)
         if getattr(runner, "env", None) is not None:
             from lw_observation_capture import capture_observations
 

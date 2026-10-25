@@ -12,7 +12,7 @@ export interface ApprovalRecord {
   subjectId: string;
   sessionId: string | null;
   title: string;
-  details: { agentPromotionId?: string; agentId?: string; entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number; changes?: TrainingPlanChange[]; estimatedGpuHours?: number; remainingGpuHours?: number; planId?: string; planRevision?: number; loopBudget?: LoopBudget } & Partial<DeletionDetails>;
+  details: { controllerPromotionId?: string; agentPromotionId?: string; agentId?: string; entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number; changes?: TrainingPlanChange[]; estimatedGpuHours?: number; remainingGpuHours?: number; planId?: string; planRevision?: number; loopBudget?: LoopBudget } & Partial<DeletionDetails>;
   requestedBy: ApprovalActor;
   createdAtMs: number;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' | 'unavailable';

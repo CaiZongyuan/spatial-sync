@@ -1,11 +1,13 @@
 """Immutable observation checks over exact, authenticated source-Job artifacts."""
 
 import importlib.metadata
+import json
 import os
 import platform
 import shutil
 import tempfile
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
@@ -24,26 +26,11 @@ from packages.library.transactions import durable_json
 from packages.training.views import attempt_identity
 
 from .consistency import compare_observations
+from .evidence_contract import Sample, Source, Weights
 from .library import REFERENCE, digest, read_json
+from .native_evidence import NativeSamples
 from .observations import ObservationSpec, vector
 from .subjects import Hash, Schema, Text
-
-
-class Source(Schema):
-    jobId: Text
-    task: Text
-    taskContentHash: Hash
-    scene: Text
-    sceneContentHash: Hash
-    seed: int = Field(ge=0)
-    attemptId: Text
-    versions: dict
-
-
-class Weights(Schema):
-    checkpointSha256: Hash
-    onnxSha256: Hash
-    observationSha256: Hash
 
 
 class Capture(Schema):
@@ -59,14 +46,6 @@ class Capture(Schema):
     hookStatus: Literal["returned"]
     requestedSamples: Literal[256]
     capturedAt: AwareDatetime
-
-
-class Sample(Schema):
-    sourceStateId: Text
-    state: dict
-    trainingObservation: list[float]
-    previousAction: list[float]
-    references: dict[str, str] = Field(default_factory=dict)
 
 
 class Samples(Schema):
@@ -97,7 +76,11 @@ def implementation_identity():
                 "packages/policies/observations.py",
                 "packages/policies/consistency.py",
                 "packages/policies/evidence.py",
+                "packages/policies/evidence_contract.py",
+                "packages/policies/native_evidence.py",
+                "packages/policies/qualification.py",
                 "apps/node/observation_capture.py",
+                "apps/node/native_observation_capture.py",
                 "packages/protocol/math.py",
                 "uv.lock",
             )
@@ -115,10 +98,14 @@ def invalid(message):
 
 
 class ObservationEvidence:
-    def __init__(self, manager):
+    def __init__(self, manager, *, profiles=None):
+        from .qualification import NativeCaptureVerifier, NativeProfiles
+
         self.manager = manager
         self.assets = manager.library_assets
         self.root = self.assets.roots["user"]
+        self.native_profiles = profiles if profiles is not None else NativeProfiles()
+        self.native = NativeCaptureVerifier(self, self.native_profiles)
 
     def _parent(self, policy_id, *, create=False):
         match = REFERENCE.fullmatch(policy_id)
@@ -171,7 +158,10 @@ class ObservationEvidence:
         try:
             policy, package = self.manager.policies.resolve(policy_id)
             job, source, entry = self._artifact(policy, artifact)
-            envelope = Samples.model_validate_json(source.read_bytes())
+            raw = source.read_bytes()
+            schema = json.loads(raw).get("schema")
+            envelope = NativeSamples if schema == "lw.policy-native-observation-samples/1" else Samples
+            envelope = envelope.model_validate_json(raw)
             self._validate_source(policy, job, envelope)
             identifiers = [sample.sourceStateId for sample in envelope.samples]
             if len(set(identifiers)) != len(identifiers):
@@ -281,6 +271,28 @@ class ObservationEvidence:
             if path.name.startswith("check-")
         ]
 
+    def _publish_verification(self, policy_id, check_path, verification, files):
+        with self.assets._lock, import_lock(self.root):
+            parent = destination_parent(check_path, ("verifications",), create=True)
+            destination = parent / verification["id"]
+            if destination.exists():
+                return self.show(policy_id, verification["check"]) | {"idempotent": True}
+            with tempfile.TemporaryDirectory(prefix=".verification-", dir=parent) as temporary:
+                stage = Path(temporary)
+                package = stage / "package"
+                package.mkdir()
+                for name, data in files.items():
+                    target = package / relative_path(name)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                durable_json(package / "verification.json", verification)
+                durable_json(stage / "metadata.json", {"contentHash": content_hash(package)})
+                os.rename(stage, destination)
+            return self.show(policy_id, verification["check"]) | {"idempotent": False}
+
+    def qualification(self, policy_id, identifier=None):
+        return self.native.qualification(policy_id, identifier)
+
     def verify_source(self, policy_id, identifier, artifact):
         import io
 
@@ -288,6 +300,8 @@ class ObservationEvidence:
             report, check_path = self._read(policy_id, identifier)
             policy, _ = self.manager.policies.resolve(policy_id)
             job, source, entry = self._artifact(policy, artifact)
+            if json.loads(source.read_bytes()).get("schema") == "lw.policy-native-observation-capture/1":
+                return self.native.verify_source(policy_id, identifier, artifact)
             receipt = CaptureReceipt.model_validate_json(source.read_bytes())
             self._validate_source(policy, job, receipt)
             envelope = Samples.model_validate_json((check_path / "package/samples.json").read_bytes())
@@ -330,22 +344,11 @@ class ObservationEvidence:
                 "realTrainingAndIndependentSemantics": "not_asserted_by_source_verification",
                 "qualified": False,
             }
-            with self.assets._lock, import_lock(self.root):
-                parent = destination_parent(check_path, ("verifications",), create=True)
-                destination = parent / verification_id
-                if destination.exists():
-                    return self.show(policy_id, identifier) | {"idempotent": True}
-                with tempfile.TemporaryDirectory(prefix=".verification-", dir=parent) as temporary:
-                    stage = Path(temporary)
-                    package = stage / "package"
-                    package.mkdir()
-                    shutil.copyfile(source, package / "capture.json")
-                    if digest(package / "capture.json") != entry["sha256"]:
-                        raise invalid("Capture source changed during freezing")
-                    (package / "hook-source.py").write_bytes(hook_bytes)
-                    durable_json(package / "verification.json", verification)
-                    durable_json(stage / "metadata.json", {"contentHash": content_hash(package)})
-                    os.rename(stage, destination)
-                return self.show(policy_id, identifier) | {"idempotent": False}
+            raw = source.read_bytes()
+            if sha256(raw).hexdigest() != entry["sha256"]:
+                raise invalid("Capture source changed during freezing")
+            return self._publish_verification(
+                policy_id, check_path, verification, {"capture.json": raw, "hook-source.py": hook_bytes}
+            )
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise invalid("Native capture verification is invalid") from exc

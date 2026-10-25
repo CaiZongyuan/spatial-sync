@@ -1,7 +1,5 @@
 """Freeze policy identity separately from the fixed evaluation world and its bindings."""
 
-import hashlib
-import json
 from copy import deepcopy
 from typing import Annotated, Literal
 
@@ -10,8 +8,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from packages.info.declarations import EntityBindingDeclaration
 from packages.library.common import LibraryError, document
 from packages.programs.robot_arm.policy import PolicyProgram
+from packages.programs.subjects import (
+    apply_binding,
+    fingerprint,
+    validate_applied_catalog,
+)
+from packages.programs.subjects import (
+    validate_base_catalog as validate_simulation_base,
+)
 
-from .library import read_json
+from .library import PolicyLibrary, read_json
 from .observations import ObservationSpec
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -73,12 +79,6 @@ class PolicyExecution(Schema):
     inferenceCalls: int = Field(ge=0)
     validOutputs: int = Field(ge=0)
     observationDigest: Hash
-
-
-def fingerprint(value):
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, allow_nan=False, separators=(",", ":")).encode()
-    ).hexdigest()
 
 
 def _invalid(message, code="policy_subject_mismatch"):
@@ -194,11 +194,14 @@ def verify_policy_subject(manager, subject, suite, scene):
 def validate_base_catalog(catalog, subject):
     """Every target and non-target definition must match before applying an override."""
     subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
-    actual = {key: fingerprint(binding) for key, binding in catalog.entities.items()}
-    if actual != subject.baseBindings:
-        raise _invalid("Actual evaluation base bindings differ", "policy_base_binding_changed")
-    if fingerprint(subject.binding) != subject.bindingHash:
-        raise _invalid("Frozen replacement binding changed", "policy_subject_changed")
+    try:
+        validate_simulation_base(catalog, subject)
+    except LibraryError as exc:
+        if exc.detail["code"] == "subject_base_binding_changed":
+            raise _invalid("Actual evaluation base bindings differ", "policy_base_binding_changed") from exc
+        if fingerprint(subject.binding) != subject.bindingHash:
+            raise _invalid("Frozen replacement binding changed", "policy_subject_changed") from exc
+        raise _invalid("Replacement is not the frozen policy target") from exc
     if (
         subject.binding.get("program") != PolicyProgram.id
         or subject.binding.get("key") != subject.target.entityKey
@@ -211,27 +214,26 @@ def validate_base_catalog(catalog, subject):
 def validate_policy_catalog(catalog, subject):
     """A declared policy intent must never silently execute the scene's taught Program."""
     subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
-    expected = dict(subject.baseBindings)
-    expected[subject.target.entityKey] = subject.bindingHash
-    actual = {key: fingerprint(binding) for key, binding in catalog.entities.items()}
-    if actual != expected or fingerprint(subject.binding) != subject.bindingHash:
-        raise _invalid("Actual policy override is missing or differs", "policy_binding_not_applied")
+    try:
+        validate_applied_catalog(catalog, subject)
+    except LibraryError as exc:
+        raise _invalid("Actual policy override is missing or differs", "policy_binding_not_applied") from exc
     return subject
 
 
 def apply_policy_catalog(catalog, subject, scene):
     """Evaluator-only initialization hook, applied independently by gateway and Runner."""
     subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
-    if (
-        scene is None
-        or scene.id != subject.evaluationScene.id
-        or scene.content_hash != subject.evaluationScene.contentHash
-    ):
-        raise _invalid("Policy override belongs to another fixed evaluation Scene")
     validate_base_catalog(catalog, subject)
-    catalog.replace_program(subject.target.entityKey, PolicyProgram, subject.binding["config"])
-    validate_policy_catalog(catalog, subject)
-    return catalog
+    try:
+        return apply_binding(catalog, subject, scene, {PolicyProgram.id: PolicyProgram})
+    except LibraryError as exc:
+        code = (
+            "policy_subject_mismatch"
+            if exc.detail["code"] == "subject_scene_mismatch"
+            else "policy_binding_not_applied"
+        )
+        raise _invalid("Policy replacement or fixed Scene differs", code) from exc
 
 
 def validate_policy_execution(subject, evidence, *, runtime=None):
@@ -250,7 +252,8 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
         ):
             raise ValueError("Actual native policy identity/counters differ")
         if runtime is not None and (
-            runtime.get("available") is not True or value.runtimeVersion != runtime.get("runtimeVersion")
+            runtime.get("available") is not True
+            or value.runtimeVersion != runtime.get("runtimeVersion")
             or any(provider not in runtime.get("availableProviders", []) for provider in value.providers)
         ):
             raise ValueError("Actual policy runtime differs from the common native runtime probe")
@@ -259,3 +262,26 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
         raise _invalid(
             "Native policy execution evidence is unavailable or differs", "policy_execution_unavailable"
         ) from exc
+
+
+def validate_policy_material(candidate, binding, roots, *, controller=None):
+    identity = CandidateIdentity.model_validate(candidate)
+    record, package = PolicyLibrary(roots).resolve(identity.id)
+    if (
+        binding.get("program") != PolicyProgram.id
+        or binding.get("type") != PolicyProgram.type
+        or binding.get("config", {}).get("policy") != identity.id
+        or any(record.get(name) != getattr(identity, name)
+               for name in CandidateIdentity.model_fields if name != "kind")
+    ):
+        raise _invalid("Deployed Policy material or binding differs", "policy_subject_changed")
+    task = read_json(package / "task.json")
+    if task["robot"] != binding.get("key") or task["implements"].rsplit(".", 1)[0] != PolicyProgram.type:
+        raise _invalid("Deployed Policy Task target differs")
+    if controller is not None and (
+        controller.get("program") != PolicyProgram.id
+        or controller.get("policy") != identity.id
+        or controller.get("programArtifact") is not None
+    ):
+        raise _invalid("Deployed Controller/Policy material differs")
+    return record

@@ -49,16 +49,16 @@ logs and model context.
    runtime capture, refresh its records and inspect reported usage and evidence.
 7. Use [lab-agent-evaluate](../lab-agent-evaluate/SKILL.md) to hand public cases to
    an existing runtime and read platform-owned Agent evaluation results.
-
-The following workflows are planned, not included in this release. Check the
-shipped skill list before using a newer workflow; report unavailable capabilities
-instead of inventing its commands or calling an assumed API.
-
-| Workflow | Skill when delivered |
-| --- | --- |
-| Run approved training, evaluate and request promotion | lab-train-evaluate |
-| Build and calibrate evaluations and their reference baseline | lab-eval-build |
-| Improve an Agent's Harness | lab-harness-optimize |
+8. Use [lab-eval-build](../lab-eval-build/SKILL.md) to publish an explicitly selected
+   fixed Agent Suite, check its public coverage and establish a measured Reference.
+9. Use [lab-harness-optimize](../lab-harness-optimize/SKILL.md) for one bounded
+   Harness change under an approved Agent Plan, public train evaluation and a
+   verified keep/restore decision. Private promotion tests and human deployment
+   review remain outside the Optimizer's context and authority.
+10. Use [lab-train-evaluate](../lab-train-evaluate/SKILL.md) to evaluate exact
+    embodied material within its approved Plan/budget, inspect public failures
+    and request human Controller promotion. A loadable Policy still needs trusted
+    native observation qualification and current accepted train evidence.
 
 ## RSI loop
 
@@ -68,8 +68,15 @@ using the acceptance rule and human gates. Agent-layer changes vary the Harness
 while model and thinking stay fixed. Embodied changes vary the Controller while
 the Embodiment and scene version stay fixed.
 
-Agent train evaluations use external runtime handoff; automatic Harness optimization
-and promotion remain later workflows.
-Use the shipped interfaces for embodied evaluation and approved training. Imported
-runtime messages are operational evidence; platform evaluation results and human
-approval decisions retain their own trusted sources.
+Agent train evaluations use external runtime handoff through the shared queue.
+Harness acceptance, private promotion tests and a human promotion decision are
+separate facts. Keep model/thinking context fixed for the comparison and use the
+issued Optimizer/Target scopes; a generic tool or guessed ID cannot read test data.
+
+Embodied train acceptance advances the statistical Reference. Human deployment
+approval separately publishes a derived Scene and Controller for new Sessions;
+active Sessions retain their loaded version. Follow the approved budget and exact
+Task/code/material identities. GPU training, real devices and model execution
+still need their concrete authorization; a controlled engineering fixture does
+not establish learned quality. Imported runtime messages remain operational
+evidence; platform grades and human decisions retain their own trusted sources.

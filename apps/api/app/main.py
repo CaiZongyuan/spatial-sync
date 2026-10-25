@@ -161,6 +161,9 @@ def create_app(
     acquisition_limits=None,
     acquisition_disk_usage=None,
     acquisition_source_root: Path | None = None,
+    observation_profiles=None,
+    controller_promotion_qualification=None,
+    controller_publication_validator=None,
 ) -> FastAPI:
     configure_gateway_logging()
     settings = settings or Settings()
@@ -237,6 +240,7 @@ def create_app(
             await evaluations.startup()
             await asyncio.to_thread(agent_rsi.startup)
             await asyncio.to_thread(notebooks.startup)
+            await asyncio.to_thread(controller_promotions.recover)
             from packages.agent_rsi.contamination import recover
             from packages.agent_rsi.promotions import recover as recover_promotions
 
@@ -333,11 +337,20 @@ def create_app(
     install_plan_routes(app, manager, lambda headers: _role(headers, settings))
     install_job_routes(app, manager, lambda headers: _role(headers, settings), views)
     install_task_routes(app, manager.tasks, lambda headers: _role(headers, settings))
-    install_policy_routes(app, manager, lambda headers: _role(headers, settings))
+    install_policy_routes(
+        app, manager, lambda headers: _role(headers, settings), profiles=observation_profiles
+    )
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))
-    install_robot_resource_routes(app, library_assets, manager.library)
+    install_robot_resource_routes(app, library_assets, manager.library, manager)
+    from apps.api.app.controller_promotion_routes import install_controller_promotion_routes
+
+    controller_promotions = install_controller_promotion_routes(
+        app, manager, app.state.robot_resources, lambda headers: _role(headers, settings),
+        qualification=controller_promotion_qualification,
+        publication_validator=controller_publication_validator,
+    )
     install_cost_routes(app, manager, lambda headers: _role(headers, settings))
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)
@@ -420,7 +433,7 @@ def create_app(
 
     @app.get("/api/v1/health")
     async def health():
-        from packages.agent_rsi.privacy import visible_session
+        from packages.info.evaluation_privacy import visible_session
 
         sessions = [session for session in manager.sessions.values() if visible_session(manager, session)]
         return {

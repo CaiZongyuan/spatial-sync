@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from packages.protocol.schema import Actor
 from packages.training.schema import GoalRef, Hypothesis, Schema, TaskRef, Text
@@ -72,6 +72,8 @@ class RecordedEpisode(Schema):
     invocationStatus: str | None = None
     reason: str | None = None
     milestones: dict[str, bool] = Field(default_factory=dict)
+    policyExecution: dict[str, JsonValue] | None = None
+    programExecution: dict[str, JsonValue] | None = None
 
 
 class Comparison(Schema):
@@ -100,6 +102,7 @@ class NotebookEntry(Schema):
     suite: Text
     subject: Text
     candidateVersion: str | None
+    candidateIdentity: dict[str, JsonValue] | None = None
     status: Literal["completed", "failed", "cancelled"]
     at: Text
     endedAt: Text | None

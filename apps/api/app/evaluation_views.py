@@ -94,6 +94,35 @@ def public_conditions(value):
     )
 
 
+def public_candidate(value):
+    if not isinstance(value, dict):
+        return None
+    result = fields(
+        value,
+        (
+            "kind",
+            "id",
+            "programId",
+            "contentHash",
+            "codeHash",
+            "configHash",
+            "archiveSha256",
+            "jobId",
+            "checkpoint",
+            "checkpointSha256",
+            "onnxSha256",
+            "observationSha256",
+            "task",
+            "taskContentHash",
+            "planId",
+            "approvalId",
+        ),
+        (str,),
+    )
+    result.update(fields(value, ("planRevision",), (int,)))
+    return result
+
+
 def public_episode(value):
     result = fields(
         value,
@@ -116,12 +145,27 @@ def public_episode(value):
         }
     execution = value.get("policyExecution")
     if isinstance(execution, dict):
-        summary = fields(execution, ("kind", "policy", "policyContentHash", "onnxSha256",
-                                     "observationSha256", "runtimeVersion"), (str,))
+        summary = fields(
+            execution,
+            ("kind", "policy", "policyContentHash", "onnxSha256", "observationSha256", "runtimeVersion"),
+            (str,),
+        )
         summary.update(fields(execution, ("actionStarts", "inferenceCalls", "validOutputs"), (int,)))
         if execution.get("providers") == ["CPUExecutionProvider"]:
             summary["providers"] = ["CPUExecutionProvider"]
         result["policyExecution"] = summary
+    execution = value.get("programExecution")
+    if isinstance(execution, dict):
+        summary = fields(
+            execution,
+            ("kind", "program", "programContentHash", "codeHash", "configHash", "archiveSha256"),
+            (str,),
+        )
+        summary.update(fields(execution, ("actionStarts", "callbackErrors"), (int,)))
+        callbacks = execution.get("callbacks")
+        if isinstance(callbacks, dict):
+            summary["callbacks"] = fields(callbacks, ("init", "accept", "start", "tick", "cancel"), (int,))
+        result["programExecution"] = summary
     return result
 
 
@@ -145,6 +189,9 @@ def public_score(value, rows=()):
         (str,),
     )
     result["comparisonState"] = "known" if comparison_identity(value) else "unknown"
+    candidate = public_candidate(value.get("candidateIdentity"))
+    if candidate:
+        result["candidateIdentity"] = candidate
     result.update(fields(value, ("version",), (str, int)))
     result.update(fields(value, ("planRevision",), (int,)))
     result.update(numbers(value, ("successes", "episodes", "score", "durationSeconds", "trainingSuccess")))
@@ -211,6 +258,9 @@ def public_evaluation(value, rows=()):
         (str,),
     )
     result.update(fields(value, ("planRevision", "allocatedEpisodes", "attemptedEpisodes"), (int,)))
+    candidate = public_candidate(value.get("candidateIdentity"))
+    if candidate:
+        result["candidateIdentity"] = candidate
     if isinstance(value.get("episodes"), list):
         result["episodes"] = [
             public_episode(episode) for episode in value["episodes"] if isinstance(episode, dict)

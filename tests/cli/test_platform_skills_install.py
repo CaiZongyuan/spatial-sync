@@ -45,6 +45,7 @@ def test_local_catalog_and_repeat_install_preserve_all_user_files_in_a_space_pat
         "lab-library",
         "lab-operate",
         "lab-runtime-records",
+        "lab-train-evaluate",
         "lab-training-plan",
     ]
     assert [item["name"] for item in catalog] == names

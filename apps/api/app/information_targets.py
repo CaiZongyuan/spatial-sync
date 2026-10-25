@@ -2,7 +2,7 @@
 
 
 def information_targets(manager):
-    from packages.agent_rsi.privacy import visible_session
+    from packages.info.evaluation_privacy import visible_session
 
     live = getattr(manager, "live", None)
     return (

@@ -12,6 +12,7 @@ from packages.library.archive import destination_parent
 from packages.library.common import NAME, LibraryError
 from packages.library.templates import TemplateError
 from packages.library.templates import resolve as resolve_templates
+from packages.programs.metadata import ProgramIntent
 
 Name = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")]
 PinnedScene = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
@@ -52,6 +53,10 @@ class Controller(Document):
 class Action(Document):
     space: str = Field(min_length=1, max_length=256)
     hz: float | None = Field(default=None, gt=0)
+    hzSource: str | None = Field(default=None, min_length=1, max_length=1000,
+                               exclude_if=lambda value: value is None)
+    hzUnknownReason: str | None = Field(default=None, min_length=1, max_length=1000,
+                                      exclude_if=lambda value: value is None)
 
 
 class ControllerVersion(Document):
@@ -61,11 +66,20 @@ class ControllerVersion(Document):
     robotModel: Name
     policy: str | None
     program: str = Field(min_length=1, max_length=256)
+    programArtifact: ProgramIntent | None = None
     action: Action
     observation: str | None
     task: str | None
     scene: PinnedScene
     evaluationId: str | None
+
+    @model_validator(mode="after")
+    def actual_script_material(self):
+        if (self.program == "robot_arm.script") != (self.programArtifact is not None):
+            raise ValueError("A script Controller requires its exact immutable Program artifact")
+        if self.programArtifact is not None and self.policy is not None:
+            raise ValueError("Script and Policy material identities cannot be interchanged")
+        return self
 
 
 class Capability(Document):

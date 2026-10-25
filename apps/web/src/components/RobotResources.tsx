@@ -1,10 +1,20 @@
 import { Link } from '@tanstack/react-router';
-import { useRobotResources, type RobotEmbodiment, type RobotModel } from '../lib/robot-resources';
+import { useRobotResources, type ControllerVersion, type RobotEmbodiment, type RobotModel } from '../lib/robot-resources';
 import { AssetModelViewport } from './AssetModelViewport';
 import { ResourceTabs } from './ResourceTabs';
 import '../resources.css';
 import '../assets.css';
 import '../robot-resources.css';
+
+function ControllerEvaluation({ version }: { version: ControllerVersion }) {
+  const evidence = version.evaluationEvidence;
+  if (evidence?.status !== 'measured' || evidence.score == null || !evidence.suite) return <>公开 train 成绩未知</>;
+  const decision = ({ accepted: '已接受', rejected: '已拒绝', baseline: '基线', reported: '已报告' } as Record<string, string>)[evidence.decision ?? ''] ?? evidence.decision;
+  return <><strong>{evidence.successes} / {evidence.episodes} · {(evidence.score * 100).toFixed(1)}%</strong>
+    <small>公开 train · {decision} · {evidence.currentEvidence === 'verified' ? '当前输入证据已核验' : '当前输入证据未知'}</small>
+    {evidence.evidenceMode === 'controlled' && <small>受控工程分数</small>}
+    <small><Link to="/eval/$suiteId" params={{ suiteId: evidence.suite.replace(/^suite\//, '') }}>{evidence.evaluationId} →</Link></small></>;
+}
 
 function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotModel[] }) {
   const current = robot.currentController, binding = robot.bindings[0];
@@ -25,14 +35,19 @@ function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotMod
       <dl><div><dt>Robot Model</dt><dd>{model?.title ?? '未绑定'}<small>{model?.id}</small></dd></div>
         <div><dt>策略版本</dt><dd>{current?.policy ?? '无已提升策略'}</dd></div>
         <div><dt>设备程序</dt><dd><code>{current?.program ?? binding?.program ?? '未接入'}</code></dd></div>
-        <div><dt>动作空间 / 频率</dt><dd>{current?.action.space ?? model?.actionSpace ?? '未接入'}<small>{current?.action.hz ? `${current.action.hz} Hz` : '频率未单独声明'}</small></dd></div>
+        {current?.programArtifact && <div><dt>脚本版本</dt><dd><code>{current.programArtifact.id}</code><small>{current.programArtifact.contentHash}</small></dd></div>}
+        {current && <div><dt>默认部署场景</dt><dd><Link to="/scenes/$name/$rev" params={{ name: current.scene.split('@')[0], rev: current.scene.split('@')[1] }}>{current.scene} →</Link></dd></div>}
+        <div><dt>动作空间 / 频率</dt><dd>{current?.action.space ?? model?.actionSpace ?? '未接入'}<small>{current?.action.hz ? `${current.action.hz} Hz` : '频率未单独声明'}</small><small>{current?.action.hzSource ?? current?.action.hzUnknownReason}</small></dd></div>
         <div><dt>观测</dt><dd>{current?.observation ?? (binding ? '内置 Program / PhysicsPort；无策略 obs_spec' : '未接入')}</dd></div>
-        <div><dt>评估成绩</dt><dd>{current?.evaluationId ? `评估引用 ${current.evaluationId}` : '暂无 Controller 评估结果'}</dd></div></dl>
+        <div><dt>评估成绩</dt><dd>{current ? <ControllerEvaluation version={current} /> : '暂无 Controller 评估结果'}</dd></div></dl>
       {model && <p className="resource-note">{model.capability.notes}</p>}
+      {!!robot.activeSessions?.length && <div className="robot-active-sessions"><h4>活动会话保留的版本</h4>{robot.activeSessions.map(session => <p key={session.sessionId}>
+        <Link to="/sessions/$sessionId" params={{ sessionId: session.sessionId }}>{session.sessionId}</Link><small>{session.scene} · {session.controller ? `Controller ${session.controller.id} v${session.controller.version}` : '场景内置程序'}</small>
+      </p>)}</div>}
     </div></div>
     <div className="robot-history"><h3>Controller 版本历史</h3>
-      {robot.controllerHistory.length ? <div className="resource-table-scroll"><table aria-label={`${robot.id} Controller 历史`}><thead><tr><th>版本</th><th>Robot Model / 策略</th><th>程序</th><th>场景</th><th>评估引用</th></tr></thead><tbody>
-        {robot.controllerHistory.map(value => <tr key={value.version}><td>v{value.version}{value.version === current?.version && <small>当前</small>}</td><td>{value.robotModel}<small>{value.policy ?? '无策略'}</small></td><td>{value.program}</td><td>{value.scene}</td><td>{value.evaluationId ?? '未提供'}</td></tr>)}
+      {robot.controllerHistory.length ? <div className="resource-table-scroll"><table aria-label={`${robot.id} Controller 历史`}><thead><tr><th>版本</th><th>Robot Model / 策略</th><th>程序</th><th>场景</th><th>公开 train 评估</th></tr></thead><tbody>
+        {robot.controllerHistory.map(value => <tr key={value.version}><td>v{value.version}{value.version === current?.version && <small>当前</small>}</td><td>{value.robotModel}<small>{value.policy ?? '无策略'}</small></td><td>{value.program}<small>{value.programArtifact?.id}</small></td><td>{value.scene}</td><td><ControllerEvaluation version={value} /></td></tr>)}
       </tbody></table></div> : <p className="resource-note">尚无已提升版本。策略或脚本通过独立提升流程后，显示实际 Controller 版本与评估记录。</p>}
     </div>
   </article>;

@@ -3,7 +3,7 @@
 import threading
 from copy import deepcopy
 
-from apps.api.app.evaluation_views import public_episode
+from apps.api.app.evaluation_views import public_candidate, public_episode
 from packages.info.evaluation_identity import comparison_identity, implementation_identities
 from packages.info.plans import PlanError
 from packages.library.common import LibraryError
@@ -261,6 +261,7 @@ class NotebookService:
                 "subject": record["subject"],
                 "candidateVersion": (record.get("candidateIdentity") or {}).get("contentHash")
                 or context["implementations"]["candidate"],
+                "candidateIdentity": public_candidate(record.get("candidateIdentity")),
                 "status": record["status"],
                 "at": record["at"],
                 "endedAt": record.get("endedAt"),

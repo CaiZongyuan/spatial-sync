@@ -167,10 +167,30 @@ def test_program_and_weight_candidates_freeze_the_same_fixed_suite_program_slot(
             "task": "training@2",
         },
     )
+    script = freeze_identity(
+        "eval-uploaded-script",
+        suite,
+        scene,
+        "program/robot_arm.script.fixture@1",
+        tmp_path / "snapshots",
+        candidate={
+            "kind": "program",
+            "id": "program/robot_arm.script.fixture@1",
+            "contentHash": "code-one",
+            "codeHash": "python-one",
+            "configHash": "config-one",
+            "task": "training@3",
+        },
+    )
     assert program["unknownReason"] is None
-    assert program["programSlot"] == policy["programSlot"] == second["programSlot"]
-    assert program["environmentInputs"] == policy["environmentInputs"] == second["environmentInputs"]
-    assert program["judgeInputs"] == policy["judgeInputs"] == second["judgeInputs"]
+    assert program["programSlot"] == policy["programSlot"] == second["programSlot"] == script["programSlot"]
+    assert (
+        program["environmentInputs"]
+        == policy["environmentInputs"]
+        == second["environmentInputs"]
+        == script["environmentInputs"]
+    )
+    assert program["judgeInputs"] == policy["judgeInputs"] == second["judgeInputs"] == script["judgeInputs"]
     assert program["candidateIdentity"] != policy["candidateIdentity"] != second["candidateIdentity"]
 
 
