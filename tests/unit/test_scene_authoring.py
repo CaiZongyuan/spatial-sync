@@ -473,6 +473,26 @@ def test_manifest_with_platform_line_endings_does_not_block_a_rebuild(tmp_path):
     assert manifest.read_bytes() == translated
 
 
+def test_manifest_differences_beyond_line_endings_still_conflict(tmp_path):
+    library = library_with_box(tmp_path)
+    plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
+    out = tmp_path / "manifest-drift"
+    build(plan, out, library_roots=[library])
+
+    manifest = out / "manifest.json"
+    canonical = manifest.read_bytes()
+    document = json.loads(canonical)
+    drifted = dict(document, gaps=["unexpected"])
+    for variant in (
+        json.dumps(document, indent=4, sort_keys=True) + "\n",
+        json.dumps(drifted, indent=2, sort_keys=True) + "\n",
+        canonical.decode("utf-8") + "\n",
+    ):
+        manifest.write_bytes(variant.encode("utf-8"))
+        with pytest.raises(FactoryError, match="immutable factory manifest"):
+            build(plan, out, library_roots=[library])
+
+
 def test_authoring_request_names_every_library_root(tmp_path):
     library = library_with_box(tmp_path)
     plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
