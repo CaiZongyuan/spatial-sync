@@ -18,7 +18,7 @@ test('delayed Goal discovery preserves the current policy hash and Training filt
   try {
     await page.goto('/train?q=owned-navigation&status=queued');
     await discovery.requested;
-    await page.getByRole('navigation', { name: '具身层阶段' }).getByRole('link', { name: /策略版本/ }).click();
+    await page.getByRole('navigation', { name: '具身层阶段' }).getByRole('link', { name: /控制器版本/ }).click();
     await expect(page).toHaveURL(/#policies$/);
     const before = new URL(page.url());
     discovery.release();
