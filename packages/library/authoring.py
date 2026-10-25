@@ -263,7 +263,14 @@ class AuthoringReports:
         with self._lock:
             path = self._path(submission.submissionId)
             if path.is_file():
-                return self._read(path), False
+                report = self._read(path)
+                if report["submissionId"] != submission.submissionId:
+                    raise LibraryError(
+                        "authoring_report_unavailable",
+                        "A stored authoring report is unreadable",
+                        503,
+                    )
+                return report, False
             self._validate_binding(submission.object)
             report = _document(submission, self.clock())
             self._write(path, report)
