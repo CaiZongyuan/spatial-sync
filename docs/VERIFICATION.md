@@ -436,6 +436,34 @@ uv run --no-sync python factory/verify.py evidence --cache .scratch/sf0/cache --
 uv run --no-sync python factory/verify.py blender --blender <blender.exe> --mcp <mcp-for-blender.exe> --out .scratch/sf0/evidence/blender.json
 ```
 
+## Scene authoring factory (SF3)
+
+The pure scene plan, procedural geometry, OpenUSD composition and layout
+receipts are GPU-free and run in the core lane:
+
+```powershell
+uv run --no-sync python -m pytest tests/unit/test_scene_authoring.py -q
+```
+
+`factory/plans/` contains the reproducible plans. A build returns the canonical
+asset and scene packages; Blender is only a layout workspace and never writes
+USD. The background authoring entry records the scripted or human-edited path:
+
+```powershell
+<blender.exe> --background --factory-startup --python factory/blender_author.py -- `
+  --request <request.json> --blend <workspace.blend> --layout <layout.json>
+<blender.exe> --background --python factory/blender_author.py -- `
+  --request <request.json> --open-blend <edited.blend> --layout <layout.json>
+```
+
+Real evidence uses an installed trusted asset library, imports the generated
+packages through the normal gateway, and validates/launches the exact scene
+version. It is separate from CI: the gateway never imports `factory/`, and the
+committed tests use no Blender, network or GPU. Record the Blender version, plan
+and request hashes, layout mode, immutable content hashes, S/P checks, viewport
+capture and any remaining failure in `.scratch/`; an image or a redrawn report
+is not a physics result.
+
 The pinned combination is Blender 4.5.9 LTS, MCP for Blender 2.2.2 at commit
 `5a3618fccb2d982d0dd61e7a1879912c3100073b`, addon `bl_info` 1.8,
 `BLENDER_MCP_SAFE_MODE=1`, `DISABLE_TELEMETRY=true`, no auto-started socket and
