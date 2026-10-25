@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass
@@ -38,6 +39,8 @@ from packages.catalog.views import (
     serialized_size,
 )
 from packages.library.common import LibraryError
+
+LOGGER = logging.getLogger(__name__)
 
 MAX_BYTES = 32768
 DEFAULT_LIMIT = 10
@@ -955,9 +958,9 @@ def search_catalog(
                 local_matches.append(_Match(
                     "local", None, local, reasons, score, _local_status(local, filters),
                 ))
-    # Semantic recall only fills a gap left by keyword matching. It never
-    # re-ranks or relaxes a keyword/exact result and never bypasses a hard
-    # filter; its scores are soft ordering inside this recall set.
+    # Semantic recall is a recall fallback: it runs only when keyword matching
+    # found no online candidate, so it cannot re-rank an eligible keyword result
+    # or change the base identity/ordering contract. Hard filters still apply.
     semantic_matches = []
     if (
         text and exact is None and scope in ("all", "online") and keywords
@@ -974,29 +977,48 @@ def search_catalog(
                 semantic_index, reason=semantic_reason,
             )
         else:
-            hits = semantic_index.search(text, limit=MAX_LIMIT)
-            for hit in hits:
-                entry = hit.entry
-                local_versions = correlated.get(entry.id, [])
-                semantic_matches.append(_Match(
-                    "online", entry, None,
-                    [{
-                        "field": "semantic",
-                        "value": clip(entry.names.get(language) or entry.names.get("en", ""), 80),
-                        "query": clip(text, 80),
-                    }],
-                    hit.score,
-                    _online_status(entry, local_versions, filters),
-                    semantic_score=hit.score,
-                ))
-            semantic_reason = "semantic_recall" if hits else "no_semantic_match"
-            semantic_document = _semantic_document(
-                semantic_index, applied=bool(hits), reason=semantic_reason, hits=len(hits),
-            )
-            note = _semantic_note(semantic_document, semantic_index)
-            if note:
-                interpreted["notes"] = (interpreted["notes"] + [clip(note, 400)])[:10]
-            online_matches = semantic_matches
+            try:
+                hits = semantic_index.search(text, limit=MAX_LIMIT)
+            except Exception as exc:  # a loaded model can still fail on one query
+                LOGGER.warning("Semantic query failed; keeping lexical results: %s", exc)
+                semantic_reason = "embedder_error"
+                semantic_document = _semantic_document(
+                    semantic_index, reason=semantic_reason,
+                )
+                semantic_document["model"]["fallbackReason"] = clip(str(exc), 400)
+                semantic_document["notice"] = (
+                    "The semantic query failed; lexical results are unchanged."
+                )
+                interpreted["notes"] = (
+                    interpreted["notes"]
+                    + ["Semantic recall failed for this query; lexical results are unchanged."]
+                )[:10]
+                hits = []
+            else:
+                for hit in hits:
+                    entry = hit.entry
+                    local_versions = correlated.get(entry.id, [])
+                    semantic_matches.append(_Match(
+                        "online", entry, None,
+                        [{
+                            "field": "semantic",
+                            "value": clip(
+                                entry.names.get(language) or entry.names.get("en", ""), 80
+                            ),
+                            "query": clip(text, 80),
+                        }],
+                        hit.score,
+                        _online_status(entry, local_versions, filters),
+                        semantic_score=hit.score,
+                    ))
+                online_matches = semantic_matches
+                semantic_reason = "semantic_recall" if hits else "no_semantic_match"
+                semantic_document = _semantic_document(
+                    semantic_index, applied=bool(hits), reason=semantic_reason, hits=len(hits),
+                )
+                note = _semantic_note(semantic_document, semantic_index)
+                if note:
+                    interpreted["notes"] = (interpreted["notes"] + [clip(note, 400)])[:10]
     elif (
         text and exact is None and scope in ("all", "online") and keywords
         and semantic_index is None

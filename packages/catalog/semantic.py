@@ -3,9 +3,10 @@
 The default embedder is a deterministic, dependency-free stand-in used by CI.
 Every response labels it as ``deterministic-stand-in`` and says that it is not
 real-model evidence. A pluggable CPU multilingual embedder can be selected for
-separate evidence runs; the gateway never downloads weights and CI never
-claims a real model. Semantic scores only order the recall set: hard filters,
-scope, exact identities, cursors, snapshots and response budgets are unchanged.
+separate evidence runs; CI never downloads weights, while a configured real
+adapter may populate its own cache on first use. Semantic scores only order the
+recall set: hard filters, scope, exact identities, cursors, snapshots and
+response budgets are unchanged.
 """
 
 from __future__ import annotations

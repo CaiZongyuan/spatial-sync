@@ -10,7 +10,7 @@ import pytest
 
 from packages.catalog import AssetCatalog
 from packages.catalog.models import load_catalog
-from packages.catalog.semantic import EmbedderInfo
+from packages.catalog.semantic import EmbedderInfo, HashEmbedder
 from packages.catalog.views import canonical_json
 from packages.library.common import LibraryError
 
@@ -35,6 +35,38 @@ class BrokenEmbedder:
 
     def embed(self, texts, role="document"):
         raise RuntimeError("model is not available in this environment")
+
+
+class QueryFailingEmbedder:
+    info = EmbedderInfo(
+        id="query-failing-model", version="0", kind="real-cpu-multilingual", real=True,
+        runtime="test", dimension=512,
+    )
+
+    def __init__(self):
+        self._base = HashEmbedder()
+
+    def embed(self, texts, role="document"):
+        if role == "query":
+            raise RuntimeError("query encoder failed")
+        return self._base.embed(texts, role=role)
+
+    def coverage(self, query, text):
+        return self._base.coverage(query, text)
+
+    def coverages(self, query, indices):
+        return self._base.coverages(query, indices)
+
+
+@pytest.fixture(autouse=True)
+def deterministic_embedder_environment(monkeypatch):
+    for name in (
+        "LW_CATALOG_EMBEDDER",
+        "LW_CATALOG_EMBEDDER_MODEL",
+        "LW_CATALOG_EMBEDDER_CACHE",
+        "LW_CATALOG_EMBEDDER_THREADS",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def catalog(path=CATALOG_PATH, **kwargs):
@@ -149,6 +181,19 @@ def test_semantic_pages_stay_within_the_compact_budget():
     )
     assert len(canonical_json(result).encode("utf-8")) <= 32768
     assert result["semantic"]["model"]["real"] is False
+
+
+def test_query_time_model_failure_keeps_lexical_results_and_is_labeled():
+    value = catalog(CORPUS_CATALOG, embedder=QueryFailingEmbedder())
+    result = value.search(
+        EmptyLibrary(), q="用来装实验室废弃物的容器", scope="online",
+    )
+    assert result["semantic"]["applied"] is False
+    assert result["semantic"]["reason"] == "embedder_error"
+    assert result["semantic"]["model"]["real"] is True
+    assert "query encoder failed" in result["semantic"]["model"]["fallbackReason"]
+    assert "lexical results are unchanged" in result["semantic"]["notice"]
+    assert result["results"] == []
 
 
 def test_real_embedder_unavailable_falls_back_to_a_labeled_standin():
