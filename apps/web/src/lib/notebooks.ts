@@ -1,6 +1,7 @@
 import { request } from './api';
 import type { Actor } from './protocol';
 import type { TrainingPlanDocument } from './training';
+import type { CandidateIdentity } from './evaluations';
 
 export type HypothesisVerdict = 'confirmed' | 'refuted' | 'inconclusive';
 export interface LoopBudget {
@@ -29,6 +30,7 @@ export interface NotebookEntry {
   entryId: string; evaluationId: string; goalId: string; round?: number;
   plan: { id: string; revision: number; task: string; goalId: string; goal: string; title: string; changedFields: string[]; targetSuccessRate?: number | null };
   suite: string; subject: string; candidateVersion: string | null;
+  candidateIdentity?: CandidateIdentity | null;
   status: 'completed' | 'failed' | 'cancelled'; at: string; endedAt: string | null;
   score: { successes: number; episodes: number; score: number; ci95: number[] } | null;
   attemptedEpisodes: number | null;

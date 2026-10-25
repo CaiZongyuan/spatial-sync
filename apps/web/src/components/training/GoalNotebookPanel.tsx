@@ -4,6 +4,7 @@ import { request } from '../../lib/api';
 import { ApprovalInboxContext } from '../../lib/approvals';
 import { getGoalLoop, listGoals, type GoalLoop, type HypothesisVerdict, type NotebookEntry } from '../../lib/notebooks';
 import { LoopBudgetSummary } from './LoopBudgetSummary';
+import { ProgramEvidence } from '../ProgramEvidence';
 import './notebooks.css';
 
 const verdicts = { confirmed: '达成预测', refuted: '预测被反驳', inconclusive: '证据不足' };
@@ -103,7 +104,8 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
         {data.defaultProgram && <p className="rsi-note">固定评估场景默认程序：<code>{data.defaultProgram.program}</code> · {data.defaultProgram.scene ?? '场景未知'}。候选接受不会改变该绑定。</p>}
         <div className="resource-table-scroll"><table className="rsi-records" aria-label="实验记录表"><thead><tr><th>轮次 / 固定计划</th><th>平台成绩 / 95% CI</th><th>差距比例</th><th>假设支持</th><th>接受 / 部署 / 证据</th></tr></thead>
           <tbody>{entries.map(entry => <tr key={entry.entryId} data-entry-id={entry.entryId}>
-            <td><strong>第 {entry.round} 轮 · r{entry.plan.revision}</strong><Link to="/plans/$planId" params={{ planId: entry.plan.id }}>{entry.plan.title}</Link><small>{entry.plan.task}</small><code>{entry.candidateVersion?.slice(0, 12) ?? '版本未知'}</code></td>
+            <td><strong>第 {entry.round} 轮 · r{entry.plan.revision}</strong><Link to="/plans/$planId" params={{ planId: entry.plan.id }}>{entry.plan.title}</Link><small>{entry.plan.task}</small><code>{entry.candidateVersion?.slice(0, 12) ?? '版本未知'}</code>
+              <ProgramEvidence identity={entry.candidateIdentity} /></td>
             <td>{entry.score ? <>{entry.score.successes}/{entry.score.episodes} · {percent(entry.score.score)}<small>[{percent(entry.score.ci95[0])}, {percent(entry.score.ci95[1])}]</small></> : <>无完整成绩<small>{entry.status} · {entry.errorCode ?? '未完成'}</small></>}<small>评估尝试 {entry.attemptedEpisodes ?? '未知'} · 已知作业 GPU {entry.knownJobGpuHours == null ? '未知' : entry.knownJobGpuHours.toFixed(3)}h</small></td>
             <td>{percent(entry.comparison.remainingGapReduction)}<small>{entry.comparison.gapReason === 'reference_at_ceiling' ? '参照已满分，分母为零' : entry.comparison.reason ?? (entry.comparison.remainingGapReduction == null ? '缺少可比参照' : '(新 − 旧) / (1 − 旧)')}</small>
               {entry.recordedComparison && <details><summary>历史比较快照（不作为本轮依据）</summary><small>{entry.recordedComparison.state} · 差距比例 {percent(entry.recordedComparison.remainingGapReduction)}</small><small>{entry.recordedComparison.referenceEvaluationId ?? '历史未记录参照'}</small></details>}</td>

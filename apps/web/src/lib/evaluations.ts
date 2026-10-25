@@ -29,11 +29,21 @@ export interface AgentEvaluationSuite extends SuiteMetadata {
 export type EvaluationSuite = EmbodiedEvaluationSuite | AgentEvaluationSuite;
 
 export type EvaluationConditions = Record<string, string | null>;
+export interface CandidateIdentity {
+  kind: string; id?: string | null; contentHash?: string | null; codeHash?: string | null;
+  configHash?: string | null; archiveSha256?: string | null;
+}
+export interface ProgramExecution {
+  kind: 'program'; program: string; programContentHash: string; codeHash: string; configHash: string;
+  archiveSha256: string; actionStarts: number; callbackErrors: number;
+  callbacks: Partial<Record<'init' | 'accept' | 'start' | 'tick' | 'cancel', number>>;
+}
 export interface EvaluationScore {
   evaluationId: string;
   suite: string;
   subject: string;
   version: string | number;
+  candidateIdentity?: CandidateIdentity | null;
   key: EvaluationConditions;
   conditionsGroup?: string;
   comparisonState?: 'known' | 'unknown';
@@ -62,10 +72,12 @@ export interface EvaluationRecord {
   status: string;
   at: string;
   runtimeHash: string;
+  candidateIdentity?: CandidateIdentity | null;
   episodes: { caseId: string; status?: 'starting' | 'running' | 'valid' | 'invalid' | 'cancelled';
     success?: boolean | null; milestones: Record<string, boolean>; reason?: string;
     failedStage?: string | null; invocationId?: string; invocationStatus?: string;
-    recordingId?: string; sessionId?: string; cleanupComplete?: boolean | null }[];
+    recordingId?: string; sessionId?: string; cleanupComplete?: boolean | null;
+    programExecution?: ProgramExecution | null }[];
   result?: EvaluationScore;
   error?: { code: string };
 }
