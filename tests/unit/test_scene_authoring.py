@@ -458,6 +458,21 @@ def test_authoring_request_and_immutable_versions(tmp_path):
         build(changed, out, library_roots=[library])
 
 
+def test_manifest_with_platform_line_endings_does_not_block_a_rebuild(tmp_path):
+    library = library_with_box(tmp_path)
+    plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
+    out = tmp_path / "line-endings"
+    build(plan, out, library_roots=[library])
+
+    manifest = out / "manifest.json"
+    translated = manifest.read_bytes().replace(b"\n", b"\r\n")
+    manifest.write_bytes(translated)
+
+    build(plan, out, library_roots=[library])
+
+    assert manifest.read_bytes() == translated
+
+
 def test_authoring_request_names_every_library_root(tmp_path):
     library = library_with_box(tmp_path)
     plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
