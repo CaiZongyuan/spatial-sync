@@ -68,4 +68,13 @@
 .approval-timeline small { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .approval-error { color: var(--bad); font-size: 13px; overflow-wrap: anywhere; }
 .approval-permission { color: var(--muted); font-size: 12.5px; margin: 0 0 16px; }
+.controller-promotion-review { margin: 20px 0; font-size: 13px; line-height: 1.65; }
+.controller-promotion-review h4 { margin: 0 0 10px; }
+.controller-score-scroll { overflow-x: auto; margin-top: 16px; }
+.controller-promotion-review table { border-collapse: collapse; width: 100%; text-align: left; }
+.controller-promotion-review th, .controller-promotion-review td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.controller-promotion-review thead th { color: var(--muted); font-size: 12px; font-weight: 500; }
+.controller-promotion-review tbody th { min-width: 160px; max-width: 240px; font-size: 12px; font-weight: 500; }
+.controller-promotion-review small { display: block; color: var(--muted); overflow-wrap: anywhere; font: 11px/1.5 var(--mono); margin-top: 4px; }
+.controller-promotion-review td { white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 1000px) { .approval-layout { grid-template-columns: 1fr; } }
