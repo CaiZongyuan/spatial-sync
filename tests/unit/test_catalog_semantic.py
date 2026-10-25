@@ -235,7 +235,16 @@ def test_corpus_is_frozen_labeled_and_measures_the_expected_contract():
     assert corpus["labels"]["status"] == "confirmed"
     assert "confirmed by the user" in corpus["labels"]["labeledBy"]
     adjudicated = set(corpus["labels"]["adjudication"])
-    assert len(adjudicated) == 8
+    assert adjudicated == {
+        "zh-use-01",
+        "zh-use-02",
+        "zh-use-05",
+        "zh-unknown-01",
+        "en-use-01",
+        "en-use-05",
+        "en-cond-01",
+        "en-unknown-01",
+    }
     assert adjudicated <= {query["id"] for query in corpus["queries"]}
     queries = corpus["queries"]
     assert len(queries) == 40

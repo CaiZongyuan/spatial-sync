@@ -22,7 +22,7 @@ exact IDs, cursors, snapshots and response budgets are unchanged.
 
 The SF1b evaluation corpus lives in `tests/fixtures/catalog/semantic/`: five
 real SimReady records copied unchanged plus 100 synthetic bilingual fixture
-records, 40 queries with a frozen retained split, snapshot ID and initial Agent
+records, 40 queries with a frozen retained split, snapshot ID and user-confirmed
 relevance labels. Synthetic source, license, size, adaptation and usage fields
 are fixtures, not source facts. Use `tools/eval_catalog_semantic.py` for the
 per-language metrics; the deterministic stand-in is not a real-model result.
