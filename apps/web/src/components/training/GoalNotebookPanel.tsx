@@ -46,6 +46,18 @@ function ScoreChart({ entries }: { entries: NotebookEntry[] }) {
   </figure>;
 }
 
+const deploymentApprovals: Record<string, string> = { not_requested: '未申请部署', pending: '待人工审查',
+  approved: '已批准，待确认发布', denied: '已拒绝', revoked: '已撤销', expired: '已失效', unavailable: '部署证据未知' };
+function deploymentLabel(value: NotebookEntry['deployment']) {
+  if (value.publicationStatus === 'committed') return value.current === true ? '已发布 · 当前默认'
+    : value.current === false ? '已发布 · 历史版本' : '已发布 · 当前状态未知';
+  if (value.publicationStatus === 'unavailable') return '历史发布凭据待核验';
+  if (value.promotionStatus === 'testing') return '验证中';
+  if (value.promotionStatus === 'blocked' || value.promotionStatus === 'cleanup_blocked') return '发布受阻';
+  if (value.promotionStatus === 'inconclusive' || value.promotionStatus === 'failed') return '验证未完成';
+  return deploymentApprovals[value.status] ?? value.status;
+}
+
 export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoalChange: (goal: string) => void }) {
   const [goals, setGoals] = useState<string[]>([]), [data, setData] = useState<GoalLoop>();
   const [error, setError] = useState<string>(), [retry, setRetry] = useState(0);
@@ -99,9 +111,12 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
         <div className="rsi-pair"><article><span>本轮参照</span><strong>{percent(latest?.comparison.referenceScore)}</strong><small>{latest?.comparison.referenceEvaluationId ?? '尚无参照评估'}</small></article>
           <article><span>最新候选</span><strong>{percent(latest?.score?.score)}</strong><small>{latest?.subject ?? '等待平台评估'}</small></article>
           <article><span>候选接受</span><strong>{latest?.reportedDecision ? decisions[latest.reportedDecision] : '暂无完整决定'}</strong><small>与假设支持、人工部署分别记录</small></article>
-          <article><span>部署审批</span><strong>{data.deployment.status === 'not_requested' ? '未申请部署' : data.deployment.status}</strong><small>本看板读取记录，不执行提升</small></article></div>
+          <article><span>最新候选部署</span><strong>{deploymentLabel(data.deployment)}</strong><small>人工决定与当前默认分别记录</small></article></div>
         <div className="rsi-main-grid"><ScoreChart entries={entries} /><LoopBudgetSummary budget={data.budget} /></div>
-        {data.defaultProgram && <p className="rsi-note">固定评估场景默认程序：<code>{data.defaultProgram.program}</code> · {data.defaultProgram.scene ?? '场景未知'}。候选接受不会改变该绑定。</p>}
+        <p className="rsi-note">{data.defaultProgram ? <>{data.defaultProgram.status === 'committed' ? '当前默认程序' : '固定评估场景程序'}：<code>{data.defaultProgram.program}</code>
+          {data.defaultProgram.subject && data.defaultProgram.subject !== data.defaultProgram.program && <> · <code>{data.defaultProgram.subject}</code></>}
+          {' · '}{data.defaultProgram.scene ?? '场景未知'}。候选接受与人工发布分别记录。</> : '当前默认程序证据未知。'}{' '}
+          <Link to="/resources/robots">查看实际 Controller 与版本历史 →</Link></p>
         <div className="resource-table-scroll"><table className="rsi-records" aria-label="实验记录表"><thead><tr><th>轮次 / 固定计划</th><th>平台成绩 / 95% CI</th><th>差距比例</th><th>假设支持</th><th>接受 / 部署 / 证据</th></tr></thead>
           <tbody>{entries.map(entry => <tr key={entry.entryId} data-entry-id={entry.entryId}>
             <td><strong>第 {entry.round} 轮 · r{entry.plan.revision}</strong><Link to="/plans/$planId" params={{ planId: entry.plan.id }}>{entry.plan.title}</Link><small>{entry.plan.task}</small><code>{entry.candidateVersion?.slice(0, 12) ?? '版本未知'}</code>
@@ -114,7 +129,8 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
               {hypothesis.overrides.map(audit => <small key={audit.requestId}>{audit.actor.name} · {new Date(audit.atMs).toLocaleString()}：{audit.note}</small>)}
               {approvals.inbox?.role === 'operator' && <button type="button" onClick={() => { setOverrideError(undefined); setEditor({ entry: entry.entryId, hypothesis: hypothesis.definition.id, verdict: hypothesis.effectiveVerdict, note: '', requestId: crypto.randomUUID() }); }}>人工改判 {hypothesis.definition.id}</button>}
             </div>)}</td>
-            <td><strong>{entry.reportedDecision ? decisions[entry.reportedDecision] : '无接受决定'}</strong><small>{entry.deployment.status === 'not_requested' ? '未申请部署' : entry.deployment.status}</small><small>{entry.comparison.state === 'comparable' ? '比较条件一致' : entry.comparison.reason ?? '首轮参照'}</small>
+            <td><strong>{entry.reportedDecision ? decisions[entry.reportedDecision] : '无接受决定'}</strong><small>{deploymentLabel(entry.deployment)}</small><small>{entry.comparison.state === 'comparable' ? '比较条件一致' : entry.comparison.reason ?? '首轮参照'}</small>
+              {entry.recordedDeployment && <details><summary>评估完成时的部署记录</summary><small>{deploymentApprovals[entry.recordedDeployment.status] ?? entry.recordedDeployment.status}</small></details>}
               <Link to="/eval/$suiteId" params={{ suiteId: entry.suite }}>查看平台评估 →</Link>{entry.recordings.map(id => <Link key={id} to="/replay/$recordingId" params={{ recordingId: id }}>回放 {id.slice(-8)} →</Link>)}</td>
           </tr>)}</tbody></table>{!entries.length && <p className="rsi-note">暂无关联评估。实验记录在平台评估结束后写入，失败和无效结果也保留。</p>}</div>
         {editor && <form className="rsi-override" onSubmit={event => { event.preventDefault(); void save(); }}><h3>人工改判 · {editor.hypothesis}</h3>

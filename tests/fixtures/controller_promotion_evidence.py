@@ -23,9 +23,11 @@ def seed_controlled_train(manager, policy, job, *, successes=10, episodes=10):
                                    successes=successes, episodes=episodes)
 
 
-def seed_controlled_subject(manager, subject, suite, scene, *, plan_id, successes=10, episodes=10):
+def seed_controlled_subject(manager, subject, suite, scene, *, plan_id, successes=10, episodes=10,
+                            identifiers=None):
     """Real immutable Subject/identity inputs; controlled train scores, never a Source."""
     store = manager.evaluations.store
+    identifiers = identifiers or {label: "eval-controlled-" + label for label in ("reference", "candidate")}
     identity = {"environment": "controlled-environment", "judge": "controlled-judge"}
     key = {"suite": suite.id, "suiteContentHash": suite.content_hash,
            "scene": scene.id, "sceneContentHash": scene.content_hash, "source": "newton", **identity}
@@ -33,14 +35,14 @@ def seed_controlled_subject(manager, subject, suite, scene, *, plan_id, successe
         ("reference", {"kind": "program", "id": "robot_arm.newton", "contentHash": "1" * 64}, 0, "baseline"),
         ("candidate", subject.document()["candidateIdentity"], successes, "accepted"),
     ):
-        identifier, requested = "eval-controlled-" + label, candidate["id"]
+        identifier, requested = identifiers[label], candidate["id"]
         snapshot = freeze_identity(identifier, suite, scene, requested, store.root / "identity-inputs",
                                    candidate=candidate if label == "candidate" else None)
         candidate = snapshot["candidateIdentity"]
         row = {"evaluationId": identifier, "suite": suite.id, "subject": requested,
                "candidateIdentity": candidate, "key": deepcopy(key), "split": "train",
                "comparisonIdentity": deepcopy(identity), "decision": decision,
-               "reference": "eval-controlled-reference" if label == "candidate" else None,
+               "reference": identifiers["reference"] if label == "candidate" else None,
                "episodes": episodes, "successes": passed, "score": passed / episodes,
                "ci95": wilson_interval(passed, episodes), "at": "2026-10-25T00:00:00+00:00"}
         record = {"evaluationId": identifier, "suite": suite.id, "suiteContentHash": suite.content_hash,

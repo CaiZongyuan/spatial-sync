@@ -119,7 +119,8 @@ async def test_package_approval_and_an_ordinary_scene_import_do_not_authorize_lo
     monkeypatch.setattr(manager.library, "resolve", lambda *_args, **_kwargs: scene)
     with pytest.raises(PlanError) as error:
         await manager.create(None, "newton", SessionOptions(device="cpu"), scene_version=scene.id)
-    assert error.value.detail["code"] == "simulation_deployment_required"
+    assert error.value.detail["code"] == "deployment_authorization_required"
+    assert error.value.status == 409
     assert manager.sessions == {} and manager._starting_session is None
 
 

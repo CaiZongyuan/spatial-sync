@@ -104,7 +104,7 @@ function EmbodiedTrainPage() {
         <p className="resource-note">{resources.nodesError ? '节点数据暂不可用。' : '正在读取节点…'}</p>}
     </section></div>
     <section className="resource-panel training-unavailable" id="policies" aria-labelledby="training-policies-title"><div className="resource-panel-body">
-      <h2 id="training-policies-title">策略提升尚未接入</h2><p>实验记录与 RSI 成绩已在本页展示。策略创建、运行与部署提升将在对应流程上线后显示。</p>
-      <Link to="/eval">查看评估中心 →</Link></div></section>
+      <h2 id="training-policies-title">策略与脚本提升</h2><p>候选满足固定评估的接受规则后，可用 lw policy promote 或 lw program promote 申请同一人工提升。提交完成的 Scene 与 Controller 显示在机器人资源中。</p>
+      <Link to="/eval">查看评估中心 →</Link><Link to="/resources/robots">查看已部署控制器 →</Link></div></section>
   </main>;
 }
