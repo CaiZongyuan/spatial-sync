@@ -414,7 +414,9 @@ class EvaluationService:
             confirmed = []
             try:
                 for record in fresh:
-                    record.update(funding | {"allocatedEpisodes": record["allocatedEpisodes"]})
+                    allocated = record["allocatedEpisodes"]
+                    record.update(funding | {"allocatedEpisodes": allocated,
+                                             "notebookContext": context | {"allocatedEpisodes": allocated}})
                     self._admitting[record["evaluationId"]] = record
                     await persist(self.store.save, record)
                     confirmed.append(record["evaluationId"])

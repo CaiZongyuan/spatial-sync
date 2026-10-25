@@ -15,6 +15,7 @@ from packages.library.transactions import durable_json
 from packages.policies.subjects import resolve_policy_subject
 from tests.fixtures.policy import observation_spec
 from tests.fixtures.policy_evaluation import native_suite
+from tests.fixtures.training_task import training_plan
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_controller_publication import ControlledPublicationValidator
@@ -26,7 +27,7 @@ def controlled_qualification(policy, check=None):
 
 
 @pytest.fixture
-def promotion_inputs(tmp_path, monkeypatch):
+def promotion_inputs(tmp_path, monkeypatch, request):
     starts = []
 
     def no_source(*args, **kwargs):
@@ -64,7 +65,7 @@ def promotion_inputs(tmp_path, monkeypatch):
         for label, candidate, successes, decision in (
             ("reference", {"kind": "program", "id": "robot_arm.newton", "contentHash": "1" * 64},
              0, "baseline"),
-            ("candidate", subject.document()["candidateIdentity"], 10, "accepted"),
+            ("candidate", subject.document()["candidateIdentity"], getattr(request, "param", 10), "accepted"),
         ):
             identifier = "eval-controlled-" + label
             row = {"evaluationId": identifier, "suite": suite.id, "subject": candidate["id"],
@@ -218,6 +219,42 @@ def test_new_reference_before_human_decision_blocks_old_intent(promotion_inputs)
     assert not starts and not list(service.publication.root.glob("*/record.json"))
 
 
+def test_denial_and_revoke_preserve_current_without_publication(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
+    route = "/api/v1/approvals/" + review["approvalId"]
+    denied = client.post(route + "/decision", json={"decision": "deny"})
+    assert denied.status_code == 200 and denied.json()["status"] == "denied"
+    assert client.get(route).json()["canRevoke"]
+    revoked = client.post(route + "/decision", json={"decision": "revoke"})
+    assert revoked.status_code == 200 and revoked.json()["status"] == "revoked"
+    assert service.resources.controller("fr3-arm")["currentVersion"] is None and not starts
+    assert not list(service.publication.root.glob("*/record.json"))
+
+
+def test_both_private_sides_require_the_existing_total_budget_before_either_is_queued(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    store = service.manager.evaluations.store
+    current = store.records["eval-controlled-candidate"]
+    revised = client.post("/api/v1/plans/" + current["planId"] + "/revisions",
+                          json=training_plan(policy["task"], budget={"gpuHours": 1, "episodes": 11}))
+    assert revised.status_code == 201, revised.text
+    approved = client.post("/api/v1/approvals/" + revised.json()["approvalId"] + "/decision",
+                           json={"decision": "approve"})
+    assert approved.status_code == 200, approved.text
+    before = set(store.records)
+    response = client.post("/api/v1/controller-promotions", json={
+        "subject": policy["id"], "scene": scene.id, "requestId": "controlled-insufficient-budget",
+    })
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "plan_evaluation_budget_exhausted"
+    assert set(store.records) == before and not starts
+    saved = [service.get(path.stem) for path in service.root.glob("promotion-*.json")]
+    assert len(saved) == 1 and saved[0]["status"] == "blocked"
+
+
 def test_competing_controller_before_current_commit_is_preserved(promotion_inputs):
     client, service, policy, scene, starts = promotion_inputs
     promotion = request(client, policy, scene)
@@ -275,3 +312,45 @@ def test_reference_append_waits_for_the_actual_controller_current_commit(promoti
     deployed = service.manager.library.resolve(response.json()["deployment"]["scene"]["id"],
                                                launch=True, source="newton")
     assert service.authorize_scene(deployed)["candidateIdentity"]["id"] == policy["id"]
+
+
+@pytest.mark.parametrize("promotion_inputs", [6], indirect=True)
+def test_orphan_model_cannot_poison_a_later_accepted_context_for_the_same_candidate(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    first = request(client, policy, scene, "controlled-orphan-model")
+    complete_controlled_tests(service, first)
+    review = client.get(f"/api/v1/controller-promotions/{first['id']}/review").json()
+
+    def interrupt(effect, _):
+        if effect == "scene_published":
+            raise OSError("Controlled failure after immutable model and Scene publication")
+
+    service.publication.after_effect = interrupt
+    with pytest.raises(OSError, match="Controlled failure"):
+        client.post("/api/v1/approvals/" + review["approvalId"] + "/decision", json={"decision": "approve"})
+    first_model = service.get(first["id"])["context"]["robotModel"]
+    user = service.manager.library_assets.roots["user"]
+    old_path = user / "robot-models" / f"{first_model['id']}.yaml"
+    old_bytes = old_path.read_bytes()
+    store = service.manager.evaluations.store
+    previous = deepcopy(store.records["eval-controlled-candidate"])
+    later = deepcopy(previous["result"]) | {
+        "evaluationId": "eval-controlled-same-material-later", "reference": "eval-controlled-candidate",
+        "successes": 10, "score": 1.0, "ci95": wilson_interval(10, 10), "at": "2026-10-26T00:00:00+00:00",
+    }
+    previous.update(evaluationId=later["evaluationId"], result=later, at=later["at"],
+                    episodes=[{"status": "valid", "success": True, "cleanupComplete": True}
+                              for _ in range(10)])
+    store.append(later)
+    store.save(previous)
+    service.publication.after_effect = lambda *_: None
+    second = request(client, policy, scene, "controlled-new-context")
+    complete_controlled_tests(service, second)
+    review = client.get(f"/api/v1/controller-promotions/{second['id']}/review").json()
+    published = client.post("/api/v1/approvals/" + review["approvalId"] + "/decision",
+                            json={"decision": "approve"})
+    assert published.status_code == 200 and published.json()["status"] == "published", published.text
+    second_model = service.get(second["id"])["context"]["robotModel"]
+    assert first_model["id"] != second_model["id"] and old_path.read_bytes() == old_bytes
+    assert second_model["quality"]["evaluationId"] == later["evaluationId"]
+    assert "testEvidence" not in second_model and not starts

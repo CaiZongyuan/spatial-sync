@@ -169,8 +169,8 @@ class ControllerPromotions:
     def _model(self, subject, embodiment, row):
         candidate = subject.document()["candidateIdentity"]
         policy = candidate["kind"] == "policy"
-        return RobotModel.model_validate({
-            "id": f"{candidate['kind']}-{fingerprint(candidate)[:24]}", "title": candidate["id"],
+        facts = {
+            "title": candidate["id"],
             "family": "rl-policy" if policy else "scripted", "source": candidate["id"],
             "license": None, "parameters": None, "embodiments": [embodiment["id"]],
             "upstreamEmbodiments": [], "actionSpace": "joint_position_delta" if policy else "robot-arm/v1",
@@ -182,7 +182,9 @@ class ControllerPromotions:
             "sources": [{"title": "Platform promotion contract",
                          "url": "https://github.com/CaiZongyuan/spatial-sync/issues/36",
                          "retrievedOn": row["at"][:10]}],
-        }).model_dump(mode="json")
+        }
+        identifier = f"{candidate['kind']}-{fingerprint({'candidate': candidate, 'model': facts})[:24]}"
+        return RobotModel.model_validate({"id": identifier, **facts}).model_dump(mode="json")
 
     def _prepare(self, body, actor):
         with self._lock, self.manager.evaluations.store.reference_guard():
@@ -275,10 +277,20 @@ class ControllerPromotions:
 
         value = await asyncio.to_thread(self._prepare, body, actor)
         if value["status"] == "testing":
-            await self.manager.evaluations.admit_controller_tests(
-                value["evaluationRecords"], value["context"]["funding"]
-            )
+            try:
+                await self.manager.evaluations.admit_controller_tests(
+                    value["evaluationRecords"], value["context"]["funding"]
+                )
+            except (PlanError, LibraryError) as error:
+                await asyncio.to_thread(self._block_admission, value["id"], error.detail["code"])
+                raise
         return self.public(value)
+
+    def _block_admission(self, identifier, code):
+        with self._lock:
+            value = self.get(identifier)
+            value.update(status="blocked", error={"code": code})
+            self._save(value)
 
     def _validate(self, value):
         context = value["context"]
@@ -523,4 +535,10 @@ class ControllerPromotions:
 
     def recover(self):
         for path in self.root.glob("promotion-*.json"):
-            self.refresh(path.stem)
+            value = self.get(path.stem)
+            if (value["status"] == "testing" and any(identity not in self.manager.evaluations.store.records
+                                                       for identity in value["runs"].values())):
+                value.update(status="inconclusive", error={"code": "promotion_admission_interrupted"})
+                self._save(value)
+            else:
+                self.refresh(path.stem)
