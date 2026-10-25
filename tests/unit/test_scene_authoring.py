@@ -487,6 +487,7 @@ def test_manifest_differences_beyond_line_endings_still_conflict(tmp_path):
         json.dumps(document, indent=4, sort_keys=True) + "\n",
         json.dumps(drifted, indent=2, sort_keys=True) + "\n",
         canonical.decode("utf-8") + "\n",
+        canonical[:-1].decode("utf-8"),
     ):
         manifest.write_bytes(variant.encode("utf-8"))
         with pytest.raises(FactoryError, match="immutable factory manifest"):
