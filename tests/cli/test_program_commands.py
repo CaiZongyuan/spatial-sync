@@ -36,6 +36,9 @@ async def test_installed_program_cli_and_mcp_preserve_source_and_immutable_ident
     assert pushed["id"] == "program/robot_arm.script.probe@1" and pushed["plans"] == []
     assert invoke("program", "push", directory)["idempotent"]
     assert invoke("program", "show", pushed["id"])["contentHash"] == pushed["contentHash"]
+    refused = invoke("program", "promote", pushed["id"], "--scene", "robot-and-tubes@2", code=1)
+    assert refused["error"]["statusCode"] == 409
+    assert refused["error"]["detail"]["code"] == "candidate_not_accepted"
     assert invoke("program", "source", pushed["id"], "controller.py")["content"].encode() == SOURCE
     exported = tmp_path / "frozen.tar"
     assert invoke("program", "export", pushed["id"], exported)["output"] == str(exported)
@@ -55,8 +58,13 @@ async def test_installed_program_cli_and_mcp_preserve_source_and_immutable_ident
         names = {tool.name for tool in (await mcp.list_tools()).tools}
         assert {
             "program_inspect", "program_push", "program_list", "program_show", "program_source",
-            "program_export",
+            "program_export", "program_promote", "controller_promotion_show",
         } <= names
+        assert not {"controller_promotion_review", "controller_promotion_approve"} & names
+        denied = await mcp.call_tool(
+            "program_promote", {"id": pushed["id"], "scene": "robot-and-tubes@2"}
+        )
+        assert denied.is_error and "candidate_not_accepted" in denied.content[0].text
         assert len(await result(mcp, "program_list")) == 2
         checked = await result(mcp, "program_inspect", directory=str(directory))
         assert checked["contentHash"] == changed["contentHash"]

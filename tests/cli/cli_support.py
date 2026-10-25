@@ -13,7 +13,7 @@ TOOLS = {
     "agent_round_start", "agent_round_settle", "agent_contamination", "agent_promotion_request",
     "robot_list", "robot_show", "robot_model_list", "robot_model_show", "controller_show",
     "policy_create", "policy_list", "policy_show",
-    "policy_promote", "controller_promotion_show",
+    "policy_promote", "program_promote", "controller_promotion_show",
     "policy_check_observations", "policy_observation_checks", "policy_observation_check_show",
     "policy_observation_check_verify_source",
     "agent_run_create", "agent_run_list", "agent_run_show", "agent_run_next",

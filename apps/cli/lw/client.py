@@ -339,6 +339,13 @@ class GatewayClient:
     async def program_show(self, id):
         return await self.request("GET", self._program_path(id))
 
+    async def program_promote(self, id, scene, evaluation=None, plan=None, revision=None,
+                              request_id=None, *, actor="cli:lw"):
+        self._program_path(id)
+        return await self.controller_promotion_request(
+            id, scene, evaluation, plan=plan, revision=revision, request_id=request_id, actor=actor
+        )
+
     async def program_source(self, id, filename):
         content = await self.request(
             "GET", self._program_path(id) + "/files/" + quote(filename, safe="/"), response_bytes=True

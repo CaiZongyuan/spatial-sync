@@ -556,6 +556,16 @@ COMMANDS = (
     Command(path=("program", "show"), help="Read a frozen program package and its Plan associations.",
             method="program_show", mcp_name="program_show", arguments=(
                 Argument("id", ("program/id@rev",), str, "Exact program version"),)),
+    Command(path=("program", "promote"), help="Request shared private tests and human deployment review.",
+            method="program_promote", mcp_name="program_promote", actor=True, arguments=(
+                Argument("id", ("program/id@rev",), str, "Exact accepted immutable program"),
+                Argument("scene", ("--scene",), str, "Exact fixed Scene name@revision"),
+                Argument("evaluation", ("--evaluation",), str | None,
+                         "Exact current accepted train row", None),
+                Argument("plan", ("--plan",), str | None, "Current approved code/funding Plan", None),
+                Argument("revision", ("--revision",), int | None, "Exact Plan revision", None),
+                Argument("request_id", ("--request-id",), str | None, "Retry identity", None),
+            )),
     Command(path=("program", "source"), help="Read one frozen source file as text.",
             method="program_source", mcp_name="program_source", arguments=(
                 Argument("id", ("program/id@rev",), str, "Exact program version"),

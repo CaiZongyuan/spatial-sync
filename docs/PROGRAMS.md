@@ -108,8 +108,18 @@ the shared committed human Scene/Controller transaction with exact material and
 complete binding proof; a committed deployment does not borrow a later training
 Plan approval or depend on that Plan remaining approved.
 
+```powershell
+lw program promote program/robot_arm.script.pick-tube@1 --scene robot-and-tubes@2 --evaluation <accepted-evaluation-id> --plan <plan-id> --revision 1 --request-id <retry-id> --json
+lw promotion show <promotion-id> --json
+```
+
+Promotion uses the same private held-out evaluation and human deployment review
+as policy Candidates. Public progress does not disclose held-out questions,
+seeds, results or recordings. Requesting promotion cannot approve deployment.
+
 HTTP package routes are `/api/v1/programs`, `/programs/inspect`,
 `/programs/<name>/<revision>`, `/files/<filename>` and `/archive` under the same
 prefix. Generic MCP exposes `program_inspect`, `program_push`, `program_list`,
-`program_show`, `program_source`, `program_export` and the existing
+`program_show`, `program_source`, `program_export`, `program_promote`,
+`controller_promotion_show` and the existing
 `evaluation_run` with `planId`/`planRevision`. No device-specific MCP action is added.
