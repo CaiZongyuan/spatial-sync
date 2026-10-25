@@ -899,19 +899,17 @@ def _check_package(path, files):
         )
 
 
-def _write_package(path, files, *, immutable):
+def _write_package(path, files):
     path = Path(path)
     if path.exists():
         if not path.is_dir():
             raise FactoryError(f"package destination is not a directory: {path}")
-        if immutable:
-            existing = _read_package(path)
-            if existing != files:
-                raise FactoryError(
-                    "refusing to overwrite an immutable factory package: " + str(path)
-                )
-            return
-        shutil.rmtree(path)
+        existing = _read_package(path)
+        if existing != files:
+            raise FactoryError(
+                "refusing to overwrite an immutable factory package: " + str(path)
+            )
+        return
     temporary = path.with_name(path.name + ".factory-tmp")
     if temporary.exists():
         shutil.rmtree(temporary)
@@ -972,9 +970,14 @@ def _layout(plan, layout, expected_request_sha):
         instance = next(item for item in plan.instances if item.instanceId == identifier)
         if entry.get("entityKey") != instance.entityKey:
             raise PlanError("layout changed or omitted the stable entityKey: " + str(identifier))
-        transforms[identifier] = Transform.model_validate(
-            {"positionM": entry.get("positionM"), "rotationDeg": entry.get("rotationDeg", [0, 0, 0])}
-        )
+        if entry.get("rotationDeg") is None:
+            raise PlanError("layout instance requires rotationDeg: " + str(identifier))
+        try:
+            transforms[identifier] = Transform.model_validate(
+                {"positionM": entry.get("positionM"), "rotationDeg": entry.get("rotationDeg")}
+            )
+        except ValidationError as exc:
+            raise PlanError("layout instance has an invalid transform: " + str(identifier)) from exc
     missing = sorted(expected_ids - seen)
     if missing:
         raise PlanError("layout is missing instances: " + ", ".join(missing))
@@ -1071,8 +1074,8 @@ def build(plan, output, *, library_roots=None, layout=None):
         _check_package(destination, files)
     _check_package(scene_path, scene_files)
     for destination, files in pending:
-        _write_package(destination, files, immutable=True)
-    _write_package(scene_path, scene_files, immutable=True)
+        _write_package(destination, files)
+    _write_package(scene_path, scene_files)
     manifest = {
         "schema": BUILD_SCHEMA,
         "recipe": RECIPE,
@@ -1110,7 +1113,16 @@ def build(plan, output, *, library_roots=None, layout=None):
         "gaps": [],
     }
     manifest_path = output / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if manifest_path.is_symlink():
+        raise FactoryError("manifest destination cannot be a filesystem link: " + str(manifest_path))
+    if manifest_path.exists():
+        if manifest_path.read_bytes() != manifest_bytes:
+            raise FactoryError(
+                "refusing to overwrite an immutable factory manifest: " + str(manifest_path)
+            )
+    else:
+        manifest_path.write_bytes(manifest_bytes)
     return {
         "output": str(output),
         "scene": str(scene_path),
@@ -1173,6 +1185,7 @@ def authoring_request(plan, *, library_roots=None):
         "planSha256": plan_digest(plan),
         "scene": {"name": plan.scene.name, "title": plan.scene.title},
         "libraryRoot": str(roots[0]),
+        "libraryRoots": [str(root) for root in roots],
         "instances": instances,
         "dressing": [
             {
@@ -1189,6 +1202,7 @@ def authoring_request(plan, *, library_roots=None):
 def request_digest(request):
     payload = deepcopy(request)
     payload.pop("requestSha256", None)
+    payload.pop("libraryRoots", None)
     for instance in payload.get("instances") or []:
         if isinstance(instance, dict):
             instance.pop("meshSha256", None)
@@ -1210,11 +1224,12 @@ def _clean_number(value):
 
 
 def _mesh_sha256(mesh):
-    vertices = sorted(
+    # Vertex order is part of the identity: the faces index into it.
+    vertices = [
         [_clean_number(vertex[0]), _clean_number(vertex[1]), _clean_number(vertex[2])]
         for vertex in mesh["vertices"]
-    )
-    faces = sorted([int(index) for index in face] for face in mesh["faces"])
+    ]
+    faces = [[int(index) for index in face] for face in mesh["faces"]]
     payload = json.dumps(
         {"vertices": vertices, "faces": faces}, sort_keys=True, separators=(",", ":")
     )

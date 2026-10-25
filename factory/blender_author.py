@@ -74,7 +74,10 @@ def _write_json(path, value):
 
 
 def _request_digest(request):
-    payload = {key: value for key, value in request.items() if key != "requestSha256"}
+    payload = {
+        key: value for key, value in request.items()
+        if key not in ("requestSha256", "libraryRoots")
+    }
     payload["instances"] = [
         {key: value for key, value in instance.items() if key != "meshSha256"}
         for instance in payload.get("instances") or []
@@ -258,10 +261,11 @@ def _clean(value):
 
 
 def _mesh_sha256(vertices, faces):
-    normalized = sorted(
+    # Vertex order is part of the identity: the faces index into it.
+    normalized = [
         [_clean(vertex[0]), _clean(vertex[1]), _clean(vertex[2])] for vertex in vertices
-    )
-    normalized_faces = sorted([int(index) for index in face] for face in faces)
+    ]
+    normalized_faces = [[int(index) for index in face] for face in faces]
     payload = json.dumps(
         {"vertices": normalized, "faces": normalized_faces},
         sort_keys=True,
@@ -286,10 +290,16 @@ def _object_mesh_sha256(empty):
 
 
 def _validate_request(request):
-    root_text = request.get("libraryRoot")
-    if not isinstance(root_text, str):
-        raise AuthoringError("authoring request is missing its library root")
-    root = Path(root_text).resolve()
+    roots = request.get("libraryRoots")
+    if roots is None:
+        roots = [request.get("libraryRoot")]
+    if (
+        not isinstance(roots, list)
+        or not roots
+        or any(not isinstance(item, str) for item in roots)
+    ):
+        raise AuthoringError("authoring request is missing its library roots")
+    resolved = [Path(item).resolve() for item in roots]
     for instance in request["instances"]:
         if instance.get("kind") != "trusted":
             continue
@@ -297,9 +307,9 @@ def _validate_request(request):
         if not isinstance(stage_text, str):
             raise AuthoringError("trusted instance is missing its stage path")
         stage = Path(stage_text).resolve()
-        if not stage.is_file() or not stage.is_relative_to(root):
+        if not stage.is_file() or not any(stage.is_relative_to(root) for root in resolved):
             raise AuthoringError(
-                f"trusted stage escapes the installed library: {stage_text}"
+                f"trusted stage escapes the installed libraries: {stage_text}"
             )
 
 

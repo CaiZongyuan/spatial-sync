@@ -12,6 +12,7 @@ from factory.authoring import (
     BUILTIN_LIBRARY,
     FactoryError,
     PlanError,
+    _mesh_sha256,
     authoring_request,
     build,
     load_plan,
@@ -230,6 +231,9 @@ def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
     no_mode = json.loads(json.dumps(layout))
     del no_mode["mode"]
     cases.append(("no-mode", no_mode, "mode"))
+    no_rotation = json.loads(json.dumps(layout))
+    del no_rotation["instances"][0]["rotationDeg"]
+    cases.append(("no-rotation", no_rotation, "rotationDeg"))
     no_mesh = json.loads(json.dumps(layout))
     del no_mesh["procedural"][0]["meshSha256"]
     cases.append(("no-mesh", no_mesh, "mesh differs"))
@@ -252,6 +256,19 @@ def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
             assert message in str(error), (name, str(error))
             continue
         raise AssertionError(f"{name} did not raise PlanError")
+
+
+def test_procedural_mesh_digest_binds_vertex_order():
+    mesh = {
+        "vertices": [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.0, 0.1, 0.0]],
+        "faces": [[0, 1, 2]],
+    }
+    swapped = json.loads(json.dumps(mesh))
+    swapped["vertices"][0], swapped["vertices"][1] = (
+        swapped["vertices"][1],
+        swapped["vertices"][0],
+    )
+    assert _mesh_sha256(mesh) != _mesh_sha256(swapped)
 
 
 def test_scene_package_is_not_replaced_by_another_plan(tmp_path):
@@ -430,6 +447,7 @@ def test_authoring_request_and_immutable_versions(tmp_path):
     assert rack["visualMeshSha256"]
     assert len(rack["visualMesh"]["faces"]) > 0
     assert request["dressing"][0]["name"] == "Bench"
+    assert request["libraryRoots"] == [str(library.resolve())]
 
     out = tmp_path / "immutable"
     build(plan, out, library_roots=[library])
@@ -438,3 +456,13 @@ def test_authoring_request_and_immutable_versions(tmp_path):
     changed = load_plan(write_plan(tmp_path, document, "changed.yaml"))
     with pytest.raises(FactoryError, match="immutable"):
         build(changed, out, library_roots=[library])
+
+
+def test_authoring_request_names_every_library_root(tmp_path):
+    library = library_with_box(tmp_path)
+    plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
+    request = authoring_request(plan, library_roots=[library, BUILTIN_LIBRARY])
+    assert request["libraryRoots"] == [
+        str(library.resolve()), str(BUILTIN_LIBRARY.resolve()),
+    ]
+    assert request["libraryRoot"] == str(library.resolve())
