@@ -213,7 +213,13 @@ class SyntheticSource:
                 if not will_tick:
                     for event in self.host.drain_events():
                         self._events.put_nowait(event)
-                self._advance(steps)
+                for remaining in range(steps, 0, -1):
+                    previous_control = self._control_index
+                    self._advance(1)
+                    if remaining > 1 and self._control_index != previous_control:
+                        # Deliver completed observations before later catch-up ticks.
+                        # Keep the lock so commands/snapshots see a complete advance.
+                        await asyncio.sleep(0)
                 self._actual_rtf = steps * self.options.physicsDt / elapsed if elapsed > 0 else 0.0
                 if now >= next_publish:
                     self._publish()
