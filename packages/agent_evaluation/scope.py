@@ -31,6 +31,16 @@ def owns_session(session):
     return bool(value and value.session is session)
 
 
+def is_internal_observation(request):
+    """Only a matching server-owned read is outside the public client quota."""
+    grant = _scope.get()
+    return bool(
+        _observer.get() and grant is not None and request.method == "GET"
+        and request.headers.get("authorization") == "Bearer " + grant.token
+        and grant.permits(request.method, request.url.path, request.query_params, {})
+    )
+
+
 @contextmanager
 def observation_scope(grant):
     marker = _observer.set(True)
