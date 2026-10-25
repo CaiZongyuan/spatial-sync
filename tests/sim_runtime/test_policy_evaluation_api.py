@@ -13,12 +13,15 @@ from fastapi.testclient import TestClient
 pytest.importorskip("newton")
 pytestmark = pytest.mark.newton
 
+from apps.api.app.library_validation import program_schemas
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from packages.protocol.schema import SessionOptions
+from tests.fixtures.controller_promotion_evidence import controlled_qualification
 from tests.fixtures.policy_evaluation import finger_probe_inputs, native_suite
-from tests.gateway.test_controller_promotions import controlled_qualification
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
+from tests.unit.test_controller_publication import ControlledPublicationValidator
 
 
 async def evaluate(client, suite, subject, *, expected="completed"):
@@ -195,7 +198,10 @@ async def test_actual_newton_private_scopes_keep_train_reference_and_recordings_
         (suite.path / "task.yaml").write_text(yaml.safe_dump(grading), encoding="utf-8")
     # Actual CPU Sources/actions/grades. Only the separately unmet native-training
     # qualification gate is replaced by this explicitly controlled constructor adapter.
-    app = create_app(settings, controller_promotion_qualification=controlled_qualification)
+    app = create_app(settings, controller_promotion_qualification=controlled_qualification,
+                     controller_publication_validator=ControlledPublicationValidator(
+                         tmp_path / "controlled-publication-validation", program_schemas
+                     ))
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://owned") as client:
             teacher = await evaluate(client, suite, "robot_arm.newton")
@@ -236,6 +242,23 @@ async def test_actual_newton_private_scopes_keep_train_reference_and_recordings_
             assert review["qualification"]["evidenceMode"] == "controlled"
             assert set(review["test"]) == {"reference", "candidate"}
             assert all(not session.holds_resources for session in app.state.manager.sessions.values())
+            old = await app.state.manager.create(
+                None, "newton", SessionOptions(continueWithoutObservers=True), scene_version=scene.id
+            )
+            try:
+                published = await client.post("/api/v1/approvals/" + review["approvalId"] + "/decision",
+                                              json={"decision": "approve"})
+                assert published.status_code == 200, published.text
+                assert published.json()["status"] == "published", published.text
+                robot = (await client.get("/api/v1/embodiments/fr3-sim")).json()
+                assert robot["currentController"]["scene"] != scene.id
+                [active] = robot["activeSessions"]
+                assert active["sessionId"] == old.session_id and active["scene"] == scene.id
+                assert active["controller"] is None and old.deployment_permit is None
+                assert old.scene_version.id == scene.id and old.state == "RUNNING"
+            finally:
+                await old.close()
+            assert not old.holds_resources
             record_property("actual_newton_private_scopes", json.dumps({
                 "promotion": promotion["id"], "runs": frozen["runs"], "recordings": recordings,
                 "qualification": "controlled-constructor; no actual native trainer proof",

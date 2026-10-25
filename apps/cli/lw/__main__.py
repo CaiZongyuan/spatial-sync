@@ -186,6 +186,7 @@ async def run(args, machine):
                 output(message, machine)
             return 0
         if declaration := getattr(args, "registered_command", None):
+            human_actor = None
             if declaration.method == "job_logs" and args.follow:
                 after = args.after
                 while True:
@@ -201,7 +202,9 @@ async def run(args, machine):
                         status_code=403,
                         detail={"code": "approval_requires_human"},
                     )
-                preview = await client.describe_approval(args.invocation_id)
+                preview = await client.describe_approval(
+                    args.invocation_id, actor="user:cli", human_review=True
+                )
                 print(json.dumps(preview, ensure_ascii=False, indent=2), flush=True)
                 decision = "deny" if args.deny else "approve"
                 try:
@@ -210,7 +213,8 @@ async def run(args, machine):
                     confirmation = ""
                 if confirmation.strip() != decision:
                     raise GatewayError("Approval cancelled; no decision was sent")
-            result = await declaration.invoke(client, vars(args))
+                human_actor = "user:cli"
+            result = await declaration.invoke(client, vars(args), actor=human_actor)
         elif command == "status":
             result = await client.status()
         elif command == "get":

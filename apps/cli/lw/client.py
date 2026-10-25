@@ -825,12 +825,21 @@ class GatewayClient:
             actor=actor,
         )
 
-    async def describe_approval(self, invocation_id):
+    async def describe_approval(self, invocation_id, *, actor="cli:lw", human_review=False):
         if invocation_id.startswith("approval-"):
-            return await self.request("GET", "/api/v1/approvals/" + quote(invocation_id, safe=""))
+            value = await self.request(
+                "GET", "/api/v1/approvals/" + quote(invocation_id, safe=""), actor=actor
+            )
+            promotion = value.get("details", {}).get("controllerPromotionId")
+            if human_review and promotion:
+                value["humanReview"] = await self.request(
+                    "GET", "/api/v1/controller-promotions/" + quote(promotion, safe="") + "/review",
+                    actor=actor,
+                )
+            return value
         return await self.get_invocation(invocation_id)
 
-    async def approve_invocation(self, invocation_id, *, deny=False, note=""):
+    async def approve_invocation(self, invocation_id, *, deny=False, note="", actor="cli:lw"):
         path = (
             "/api/v1/approvals/" + quote(invocation_id, safe="") + "/decision"
             if invocation_id.startswith("approval-")
@@ -840,6 +849,7 @@ class GatewayClient:
         return await self.request(
             "POST",
             path,
+            actor=actor,
             json={"decision": "deny" if deny else "approve", "note": note},
         )
 

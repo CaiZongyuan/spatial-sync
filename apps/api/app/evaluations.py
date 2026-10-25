@@ -636,7 +636,7 @@ class EvaluationService:
                     ),
                     scene_version=selected.id,
                     evaluation_id=identifier,
-                    private_evaluation=split == "test",
+                    **({"private_evaluation": True} if split == "test" else {}),
                     **execution_context,
                 )
                 if attempt is not None:

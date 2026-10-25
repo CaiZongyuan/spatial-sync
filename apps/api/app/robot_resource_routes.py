@@ -19,10 +19,14 @@ def install_robot_resource_routes(app, assets, scenes, manager=None):
                     or not visible_session(manager, session)):
                 continue
             loaded = session.scene_version
-            if loaded is None or not any(binding["entity"] in session.catalog.entities
-                                         for binding in robot["bindings"]):
-                continue
             permit = session.deployment_permit
+            same_embodiment = bool(permit and permit["controller"]["document"]["embodiment"] == robot["id"])
+            original_binding = loaded is not None and any(
+                binding["scene"] == loaded.id and binding["source"] == session.kind
+                and binding["entity"] in session.catalog.entities for binding in robot["bindings"]
+            )
+            if loaded is None or not (same_embodiment or original_binding):
+                continue
             controller = permit["controller"] if permit else None
             sessions.append({"sessionId": session.session_id, "scene": loaded.id,
                              "sceneContentHash": loaded.content_hash, "controller": controller})

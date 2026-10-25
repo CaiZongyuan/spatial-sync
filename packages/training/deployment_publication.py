@@ -52,7 +52,6 @@ class DeploymentPublication:
         self.root = Path(state_root) / "controller-publications"
         if self.root.is_symlink() or self.root.is_junction():
             raise PlanError("publication_unavailable", "Publication state cannot be a filesystem link")
-        self.root.mkdir(parents=True, exist_ok=True)
         self.library = assets.roots["user"]
         self.validate_context, self.commit_context = validate_context, commit_context
         self.after_effect = after_effect or (lambda *_: None)
@@ -61,6 +60,8 @@ class DeploymentPublication:
     def _directory(self, identifier, *, create=False):
         if not isinstance(identifier, str) or not NAME.fullmatch(identifier):
             raise PlanError("invalid_publication", "Invalid publication identity", status=422)
+        if create:
+            self.root.mkdir(parents=True, exist_ok=True)
         return destination_parent(self.root, (identifier,), create=create)
 
     def read(self, identifier):

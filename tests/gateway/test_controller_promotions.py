@@ -1,7 +1,6 @@
 """Controlled scores/qualification prove the actual promotion transaction, never learned quality."""
 
 import threading
-from collections import deque
 from copy import deepcopy
 
 import pytest
@@ -10,21 +9,18 @@ from fastapi.testclient import TestClient
 from apps.api.app.library_validation import program_schemas
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
-from packages.info.evaluation_identity import freeze_identity
 from packages.info.evaluations import wilson_interval
 from packages.library.transactions import durable_json
-from packages.policies.subjects import resolve_policy_subject
+from tests.fixtures.controller_promotion_evidence import (
+    complete_controlled_tests,
+    controlled_qualification,
+    seed_controlled_train,
+)
 from tests.fixtures.policy import observation_spec
-from tests.fixtures.policy_evaluation import native_suite
 from tests.fixtures.training_task import training_plan
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_controller_publication import ControlledPublicationValidator
-
-
-def controlled_qualification(policy, check=None):
-    return {"qualified": True, "check": check or "controlled-observation-check",
-            "evidenceMode": "controlled", "policy": policy}
 
 
 @pytest.fixture
@@ -55,40 +51,7 @@ def promotion_inputs(tmp_path, monkeypatch, request):
         )
         assert created.status_code == 201, created.text
         policy = created.json()
-        scene = manager.library.resolve(policy["scene"], launch=True, source="newton")
-        suite = native_suite(manager, scene, name="promotion-controlled", heldout=True)
-        manager.evaluations.suites.refresh()
-        subject = resolve_policy_subject(manager, policy["id"], suite, scene)
-        store = manager.evaluations.store
-        identity = {"environment": "controlled-environment", "judge": "controlled-judge"}
-        key = {"suite": suite.id, "suiteContentHash": suite.content_hash,
-               "scene": scene.id, "sceneContentHash": scene.content_hash, **identity}
-        for label, candidate, successes, decision in (
-            ("reference", {"kind": "program", "id": "robot_arm.newton", "contentHash": "1" * 64},
-             0, "baseline"),
-            ("candidate", subject.document()["candidateIdentity"], getattr(request, "param", 10), "accepted"),
-        ):
-            identifier = "eval-controlled-" + label
-            requested = candidate["id"]
-            snapshot = freeze_identity(identifier, suite, scene, requested, store.root / "identity-inputs",
-                                       candidate=candidate if label == "candidate" else None)
-            candidate = snapshot["candidateIdentity"]
-            row = {"evaluationId": identifier, "suite": suite.id, "subject": requested,
-                   "candidateIdentity": candidate, "key": deepcopy(key), "split": "train",
-                   "comparisonIdentity": deepcopy(identity), "decision": decision,
-                   "reference": "eval-controlled-reference" if label == "candidate" else None,
-                   "episodes": 10, "successes": successes, "score": successes / 10,
-                   "ci95": wilson_interval(successes, 10), "at": "2026-10-25T00:00:00+00:00"}
-            record = {"evaluationId": identifier, "suite": suite.id, "suiteContentHash": suite.content_hash,
-                      "subject": requested, "candidateIdentity": candidate,
-                      "split": "train", "status": "completed", "result": row,
-                      "identitySnapshot": snapshot, "runtimeHash": manager.evaluations._runtime_hash,
-                      "episodes": [{"status": "valid", "success": index < successes,
-                                    "cleanupComplete": True} for index in range(10)], "at": row["at"]}
-            if label == "candidate":
-                record.update(policySubject=subject.document(), planId=job["planId"])
-            store.append(row)
-            store.save(record)
+        scene = seed_controlled_train(manager, policy, job, successes=getattr(request, "param", 10))
         yield client, app.state.controller_promotions, policy, scene, starts
 
 
@@ -98,26 +61,6 @@ def request(client, policy, scene, request_id="controlled-request"):
     })
     assert response.status_code == 202, response.text
     return response.json()
-
-
-def complete_controlled_tests(service, promotion):
-    value = service.get(promotion["id"])
-    store = service.manager.evaluations.store
-    for side, identifier in value["runs"].items():
-        record = deepcopy(store.records[identifier])
-        train = value["context"]["currentAccepted" if side == "candidate" else "priorReference"]
-        success = side == "reference"
-        row = train | {"evaluationId": identifier, "split": "test", "decision": "test",
-                       "episodes": 1, "successes": int(success), "score": float(success),
-                       "ci95": wilson_interval(int(success), 1)}
-        record.update(status="completed", result=row, attemptedEpisodes=1,
-                      episodes=[{"caseId": "test-one", "status": "valid", "success": success,
-                                 "cleanupComplete": True}])
-        store.append(row)
-        store.save(record)
-    service.manager.evaluations._queue = deque(
-        entry for entry in service.manager.evaluations._queue if entry[1] not in value["runs"].values()
-    )
 
 
 def test_refuses_unqualified_or_noncurrent_train_before_any_private_work(promotion_inputs):

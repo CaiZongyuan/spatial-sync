@@ -116,7 +116,6 @@ class ControllerPromotions:
     def __init__(self, manager, resources, importer, *, qualification=None, after_effect=None):
         self.manager, self.resources = manager, resources
         self.root = Path(manager.settings.state_root) / "controller-promotions"
-        self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._commit_local = threading.local()
         self.qualify = qualification or manager.policy_evidence.qualification
@@ -129,7 +128,8 @@ class ControllerPromotions:
     def _path(self, identifier):
         if not isinstance(identifier, str) or not NAME.fullmatch(identifier):
             raise PlanError("unknown_promotion", "Unknown Controller promotion", status=404)
-        return destination_parent(self.root, ()) / f"{identifier}.json"
+        root = destination_parent(self.manager.settings.state_root, ("controller-promotions",))
+        return root / f"{identifier}.json"
 
     def get(self, identifier):
         path = self._path(identifier)
@@ -138,6 +138,7 @@ class ControllerPromotions:
         return document(path)
 
     def _save(self, value):
+        destination_parent(self.manager.settings.state_root, ("controller-promotions",), create=True)
         durable_json(self._path(value["id"]), value)
         return value
 
