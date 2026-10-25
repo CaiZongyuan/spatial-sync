@@ -330,7 +330,7 @@ class NotebookService:
         }
 
     def public_entry(self, entry):
-        """Current comparison evidence is a read projection, separate from historical decisions/audits."""
+        """Current comparison/deployment facts are projections, separate from historical receipts."""
         if entry.get("layer") == "agent":
             return self.manager.agent_rsi.public_notebook_entry(entry)
         result = deepcopy(entry)

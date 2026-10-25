@@ -205,7 +205,7 @@ class ControllerPromotions:
         """Resolve one fixed Goal slot to actual committed current, or its plain Scene binding."""
         scene_id, scene_hash, source, target = scope
         try:
-            scene = self.manager.library.resolve(scene_id, launch=True, source=source)
+            scene = self.manager.library.resolve(scene_id, source=source)
             if scene.content_hash != scene_hash:
                 return None
             controller = None
@@ -236,6 +236,7 @@ class ControllerPromotions:
                                        for key in ("id", "version", "contentHash")}}
             if scene_requires_material_authorization(scene, source):
                 return None
+            scene.require_launchable()
             bindings = scene.declarations(source).declarations
             matching = [item.binding for item in bindings if item.binding.get("key") == target]
             if len(matching) == 1:
