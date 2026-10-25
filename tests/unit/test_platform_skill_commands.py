@@ -30,7 +30,7 @@ def test_every_shipped_command_matches_the_real_parser_without_a_gateway():
     result = check()
     assert result.returncode == 0, result.stdout + result.stderr
     checked = json.loads(result.stdout)
-    assert checked["skills"] == 9
+    assert checked["skills"] == 10
     assert checked["commands"] > 0
 
 

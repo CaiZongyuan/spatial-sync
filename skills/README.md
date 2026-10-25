@@ -8,9 +8,11 @@ immutable versions. `lab-training-plan` interviews the user, snapshots a Task
 and submits measurable hypotheses for human approval. `lab-runtime-records`
 imports existing Claude Code captures, refreshes their messages and reported
 usage, and reads normalized evidence. `lab-agent-evaluate` coordinates public
-cases with an external runtime and reads platform-owned grades. All skills reserve approvals and
+cases with an external runtime and reads platform-owned grades. `lab-scene-director`
+turns an external scene request into trusted asset selection, acquisition, Blender
+authoring, exact-version import/validation and received Authoring Reports. All
+skills reserve approvals and
 Vault writes for a person, including when a user asks an agent to bypass them.
-Later workflows are explicitly marked unavailable in this release.
 
 These are shipped product files. Repository development skills remain in
 `.agents/skills/` and are managed separately.
@@ -20,9 +22,10 @@ lw skills ls --json
 lw skills install --target "/path/to/agent skills" --json
 ```
 
-`--target` is the parent skill directory: the installer creates `lab/SKILL.md`
-`lab-agent-evaluate/SKILL.md`, `lab-library/SKILL.md`, `lab-operate/SKILL.md`, `lab-runtime-records/SKILL.md`
-and `lab-training-plan/SKILL.md` beneath it.
+`--target` is the parent skill directory: the installer creates the shipped
+skill directories (`lab`, `lab-agent-evaluate`, `lab-eval-build`,
+`lab-harness-optimize`, `lab-library`, `lab-operate`, `lab-runtime-records`,
+`lab-scene-director`, `lab-train-evaluate` and `lab-training-plan`) beneath it.
 Quoted paths containing spaces work.
 The default is `~/.claude/skills` (Claude Code's user skill directory); choose
 another agent's directory explicitly with `--target`.
