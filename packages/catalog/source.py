@@ -30,6 +30,14 @@ class SourceError(Exception):
     pass
 
 
+class RateState:
+    """A provider's backoff is shared by indexing and demand reads."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.until = 0
+
+
 def image_extension(data):
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "png"
@@ -41,15 +49,26 @@ def image_extension(data):
 
 
 class SimReadySource:
-    def __init__(self, *, client=None, cancel=None, progress=None, notice=None):
+    def __init__(self, *, client=None, cancel=None, progress=None, notice=None, rate_state=None):
         self.client = client or httpx.Client(timeout=20, follow_redirects=True)
         self.cancel = cancel or threading.Event()
         self.progress = progress or (lambda size: None)
         self.notice = notice or (lambda message: None)
         self.transferred = 0
-        self._lock = threading.Lock()
-        self._rate_until = 0
+        self._rate = rate_state or RateState()
+        self._lock = self._rate.lock
         self.origin = "https://huggingface.co"
+
+    @property
+    def _rate_until(self):
+        return self._rate.until
+
+    @_rate_until.setter
+    def _rate_until(self, value):
+        self._rate.until = value
+
+    def package_url(self, revision, package):
+        return f"{self.origin}/datasets/{DATASET}/tree/{revision}/{quote(package, safe='')}"
 
     def close(self):
         self.client.close()
@@ -188,7 +207,7 @@ class SimReadySource:
             f"{self.origin}/datasets/{DATASET}/resolve/{revision}/{quote(path, safe='/')}"
         )[0]
 
-    def metadata(self, revision, package):
+    def preview_info(self, revision, package):
         files = [item for item in self.tree(revision, package) if item.get("type") == "file"]
         if not files or any(
             not isinstance(item.get("path"), str)
@@ -199,19 +218,7 @@ class SimReadySource:
         ):
             raise SourceError("Source package file inventory is incomplete or invalid")
         paths = {item["path"] for item in files}
-        declaration = None
-        errors = []
         manifest = package + "/com.nvidia.simready.packaging.json"
-        if manifest in paths:
-            try:
-                data = json.loads(self.file(revision, manifest))
-                license_ = data.get("license") if isinstance(data, dict) else None
-                if isinstance(license_, str) and 0 < len(license_) <= 1000:
-                    declaration = license_
-            except (SourceError, ValueError, UnicodeError) as exc:
-                errors.append(str(exc)[:300])
-        else:
-            errors.append("Source packaging manifest is missing")
         root_usds = sorted(path for path in paths if re.fullmatch(
             re.escape(package) + r"/simready_usd/[^/]+\.usd[ac]?", path
         ))
@@ -226,10 +233,29 @@ class SimReadySource:
                 "rootUsd": root_usds[0].removeprefix(package + "/") if root_usds else None,
                 "bomItems": None,
             },
-            "declaredLicense": declaration,
+            "declaredLicense": None,
+            "packagingPath": manifest if manifest in paths else None,
+            "detailsLoaded": False,
             "thumbnailPath": previews[0]["path"] if previews else None,
-            "errors": errors,
+            "errors": [],
         }
+
+    def metadata(self, revision, package, *, inventory=None):
+        value = dict(inventory) if inventory is not None else self.preview_info(revision, package)
+        errors = []
+        declaration = None
+        manifest = value.get("packagingPath")
+        if manifest:
+            try:
+                data = json.loads(self.file(revision, manifest))
+                license_ = data.get("license") if isinstance(data, dict) else None
+                if isinstance(license_, str) and 0 < len(license_) <= 1000:
+                    declaration = license_
+            except (SourceError, ValueError, UnicodeError) as exc:
+                errors.append(str(exc)[:300])
+        else:
+            errors.append("Source packaging manifest is missing")
+        return value | {"declaredLicense": declaration, "detailsLoaded": True, "errors": errors}
 
 
 __all__ = ["SimReadySource", "SourceError", "SyncCancelled", "image_extension"]

@@ -59,7 +59,7 @@ async def cli(environment, *arguments):
 
 async def test_sync_read_search_and_retry_through_real_cli_and_mcp(sync_gateway):
     http, environment = sync_gateway
-    initial = await cli(environment, "catalog", "sync", "--wait")
+    initial = await cli(environment, "catalog", "sync", "--provider", "simready", "--wait")
     assert initial["status"] == "succeeded" and initial["discovered"] == 2
     expected = http.get("/api/v1/library/catalog/sync/" + initial["id"]).json()
     assert await cli(environment, "catalog", "sync-status", "--id", initial["id"]) == expected
@@ -67,7 +67,7 @@ async def test_sync_read_search_and_retry_through_real_cli_and_mcp(sync_gateway)
     async with Client(transport, mode="legacy") as mcp:
         assert await result(mcp, "catalog_sync_status", id=initial["id"]) == expected
         found = await result(mcp, "catalog_search", query="CT_fixture_a01", scope="online")
-        assert found["results"][0]["preview"]["kind"] == "cached"
+        assert found["results"][0]["preview"]["kind"] == "on-demand"
         exact = await cli(environment, "catalog", "show", found["results"][0]["id"])
         assert exact["id"] == found["results"][0]["id"]
         assert not exact["acquisition"]["eligible"]
@@ -77,8 +77,8 @@ async def test_sync_read_search_and_retry_through_real_cli_and_mcp(sync_gateway)
             if value["status"] == "succeeded":
                 break
             await asyncio.sleep(.02)
-        assert value["status"] == "succeeded" and value["metadataReused"] == 2
-        assert value["previewsReused"] == 2
+        assert value["status"] == "succeeded" and value["metadataReused"] == 0
+        assert value["previewsReused"] == 0
         assert await result(mcp, "catalog_sync_cancel", id=value["id"]) == value
         retried = await cli(environment, "catalog", "sync-retry", value["id"])
         assert retried["retryOf"] == value["id"]

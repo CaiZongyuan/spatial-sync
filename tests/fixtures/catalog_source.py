@@ -25,6 +25,7 @@ class CatalogSourceFixture:
         self.delay = 0
         self.unsafe_next = False
         self.entered = threading.Event()
+        self.images = {}
 
     def source(self, **kwargs):
         return SimReadySource(client=httpx.Client(transport=httpx.MockTransport(self.handle)), **kwargs)
@@ -36,6 +37,9 @@ class CatalogSourceFixture:
             return httpx.Response(200, json={"sha": self.revision})
         root = "/api/datasets/nvidia/simready-assets/tree/" + self.revision
         if path == root:
+            self.entered.set()
+            if self.delay:
+                time.sleep(self.delay)
             if self.fail_listing:
                 return httpx.Response(410)
             start = int(request.url.params.get("cursor", 0))
@@ -46,7 +50,7 @@ class CatalogSourceFixture:
             if self.unsafe_next:
                 headers["Link"] = '<https://unexpected.invalid/private>; rel="next"'
             return httpx.Response(200, json=[{
-                "type": "directory", "path": name, "oid": (str(index + 1) * 40),
+                "type": "directory", "path": name, "oid": f"{index + 1:040x}",
             } for index, name in enumerate(names, start=start)], headers=headers)
         if path.startswith(root + "/"):
             package = path.removeprefix(root + "/")
@@ -59,10 +63,14 @@ class CatalogSourceFixture:
                 {"type": "file", "path": package + "/com.nvidia.simready.packaging.json", "size": 25},
                 {"type": "file", "path": package + "/simready_usd/model.usd", "size": 9000000},
                 {"type": "file", "path": package + "/simready_usd/.thumbs/256x256/large.png", "size": 900000},
-                {"type": "file", "path": package + "/simready_usd/.thumbs/small.png", "size": len(PNG)},
+                {"type": "file", "path": package + "/simready_usd/.thumbs/small.png",
+                 "size": len(self.images.get(package, PNG))},
             ])
         if "/resolve/" in path and path.endswith("/com.nvidia.simready.packaging.json"):
             return httpx.Response(200, json={"license": "CC-BY-4.0"})
         if "/resolve/" in path and path.endswith("/.thumbs/small.png"):
-            return httpx.Response(200, content=PNG, headers={"Content-Type": "image/png"})
+            package = path.partition("/resolve/")[2].split("/")[1]
+            return httpx.Response(
+                200, content=self.images.get(package, PNG), headers={"Content-Type": "image/png"}
+            )
         raise AssertionError("Unexpected upstream request (models and large previews forbidden): " + path)

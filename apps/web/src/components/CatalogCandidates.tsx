@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   filterLabels, formatAge, formatBytes, getCatalogEntry, getCatalogEstimate, semanticLabel,
@@ -60,13 +60,34 @@ export function CatalogZeroResult({ response, onAction }: {
 }
 
 function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
-  const localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? imageUrl(candidate.preview.url);
-  if ((candidate.preview.kind === 'local' || candidate.preview.kind === 'cached') && localUrl)
-    return <img src={localUrl} className={candidate.preview.kind === 'cached' ? 'catalog-cached-preview' : undefined}
-      alt={`${candidate.title} 的缓存预览`} loading="lazy" />;
+  const frame = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!frame.current) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); }
+    });
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, []);
+  const localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? (candidate.preview.kind === 'on-demand'
+    ? candidate.preview.url : imageUrl(candidate.preview.url));
+  if (['local', 'cached', 'on-demand'].includes(candidate.preview.kind) && localUrl)
+    return <div className="catalog-demand-preview" ref={frame} aria-busy={visible && !loaded && !failed}>
+      {failed ? <div className="catalog-preview-placeholder"><b>预览暂不可用</b><button onClick={() => {
+        setFailed(false); setLoaded(false); setAttempt(value => value + 1);
+      }}>重试预览</button></div> : visible ? <><img src={`${localUrl}${attempt ? `?retry=${attempt}` : ''}`}
+        className={candidate.preview.kind === 'local' ? undefined : 'catalog-cached-preview'}
+        alt={`${candidate.title} 的预览`} decoding="async" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
+        {!loaded && <div className="catalog-preview-placeholder" role="status">正在加载预览…</div>}</>
+        : <div className="catalog-preview-placeholder" aria-label="预览待加载">预览</div>}
+    </div>;
   return <div className="catalog-preview-placeholder" role="img" aria-label="在线预览未缓存">
     <b>预览未缓存</b>
-    <small>{candidate.preview.reason ?? '获取流程会解析来源预览；这里不会请求远程图片。'}</small>
+    <small>{candidate.preview.reason ?? '该素材暂未提供预览。'}</small>
   </div>;
 }
 
@@ -170,6 +191,7 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
       <button onClick={onClose}>关闭详情</button>
     </header>
     {entry?.previewTruncated && <p className="asset-small-note">部分长证据列表已按响应预算裁剪；不表示来源没有更多条目。</p>}
+    {entry?.discovery?.metadataError && <p role="status">部分来源详情暂不可用：{entry.discovery.metadataError}</p>}
     {state.loading ? <p className="asset-empty" role="status">正在读取目录详情与估算…</p>
       : state.error ? <div className="asset-empty" role="alert">{state.error}</div>
         : entry && estimate ? <div className="catalog-detail-grid">
@@ -217,10 +239,7 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 </li>)}</ul>
                 : <p className="asset-small-note">尚未安装本地版本；候选只显示为在线条目，不冒充已安装 Asset。</p>}
               {entry.installed.truncated && <p className="asset-small-note">仅显示最近 20 个本地版本；其余版本见本地素材库。</p>}
-              <div className="catalog-detail-preview">{(entry.preview.kind === 'local' || entry.preview.kind === 'cached') && imageUrl(entry.preview.url)
-                ? <img src={entry.preview.url!} className={entry.preview.kind === 'cached' ? 'catalog-cached-preview' : undefined}
-                  alt={`${entry.names.zh} 的预览`} />
-                : <div className="catalog-preview-placeholder"><b>预览未缓存</b><small>{entry.preview.reason ?? '获取流程会解析来源预览；页面不会请求远程图片。'}</small></div>}</div>
+              <div className="catalog-detail-preview"><CandidatePreview candidate={{ ...candidate, preview: entry.preview }} /></div>
             </div></section>
           </div>
           <div className="catalog-detail-stack">

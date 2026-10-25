@@ -10,7 +10,7 @@ import { CatalogSyncPanel } from '../components/CatalogSyncPanel';
 
 type Search = {
   scope?: CatalogScope; view?: 'card' | 'list'; kind?: AssetKind; usage?: CatalogUsage;
-  gaps?: boolean; approximate?: boolean; q?: string;
+  gaps?: boolean; approximate?: boolean; q?: string; provider?: string;
 };
 const scopeLabels: Record<CatalogScope, string> = { local: '本地', online: '在线', all: '全部' };
 export const Route = createFileRoute('/assets/')({
@@ -22,6 +22,7 @@ export const Route = createFileRoute('/assets/')({
     gaps: value.gaps === true || value.gaps === 'true' ? true : undefined,
     approximate: value.approximate === true || value.approximate === 'true' ? true : undefined,
     q: typeof value.q === 'string' && value.q ? value.q : undefined,
+    provider: typeof value.provider === 'string' && /^[a-z0-9][a-z0-9-]{0,99}$/.test(value.provider) ? value.provider : undefined,
   }), component: AssetLibrary,
 });
 function AssetLibrary() {
@@ -35,6 +36,7 @@ function AssetLibrary() {
   const [more, setMore] = useState<{ loading: boolean; error?: string }>({ loading: false });
   const [detail, setDetail] = useState<CatalogCandidate>();
   const [attempt, setAttempt] = useState(0);
+  const [sources, setSources] = useState<{ provider: string; dataset: string; entryCount: number }[]>([]);
   useEffect(() => {
     if (scope !== 'local') return;
     const controller = new AbortController();
@@ -48,21 +50,22 @@ function AssetLibrary() {
     if (scope === 'local') return;
     const controller = new AbortController();
     setCatalog(undefined); setCatalogError(undefined); setMore({ loading: false });
-    const filters: CatalogSearchFilters = { q: search.q, scope, kind: search.kind, usage: search.usage, approximate: search.approximate, limit: 20 };
+    const filters: CatalogSearchFilters = { q: search.q, scope, provider: search.provider, kind: search.kind, usage: search.usage, approximate: search.approximate, limit: 20 };
     void searchCatalog(filters, controller.signal)
       .then(value => { if (!controller.signal.aborted) setCatalog(value); })
       .catch((error: Error) => { if (!controller.signal.aborted) setCatalogError(error.message); });
     return () => controller.abort();
-  }, [scope, search.kind, search.usage, search.approximate, search.q, attempt]);
-  useEffect(() => { setDetail(undefined); }, [scope, search.kind, search.usage, search.approximate, search.q]);
+  }, [scope, search.provider, search.kind, search.usage, search.approximate, search.q, attempt]);
+  useEffect(() => { setDetail(undefined); }, [scope, search.provider, search.kind, search.usage, search.approximate, search.q]);
   const change = (next: Partial<Search>) => void navigate({ search: previous => ({ ...previous, ...next }), replace: true });
   const actOnZero = (action: 'remove_filter' | 'broaden_scope' | 'enable_approximation', filter?: string) => {
     if (action === 'broaden_scope') return change({ scope: 'all' });
     if (action === 'enable_approximation') return change({ approximate: true });
     if (!filter) return void navigate({
-      search: previous => ({ ...previous, q: undefined, kind: undefined, usage: undefined, approximate: undefined }), replace: true,
+      search: previous => ({ ...previous, q: undefined, kind: undefined, usage: undefined, provider: undefined, approximate: undefined }), replace: true,
     });
     if (filter === 'kind') return change({ kind: undefined });
+    if (filter === 'provider') return change({ provider: undefined });
     if (filter === 'usage') return change({ usage: undefined });
   };
   const loadMore = async () => {
@@ -70,7 +73,7 @@ function AssetLibrary() {
     setMore({ loading: true });
     try {
       const next = await searchCatalog({
-        q: search.q, scope, kind: search.kind, usage: search.usage,
+        q: search.q, scope, provider: search.provider, kind: search.kind, usage: search.usage,
         approximate: search.approximate, limit: 20, cursor: catalog.nextCursor,
       });
       setCatalog(previous => previous?.snapshot.id === catalog.snapshot.id
@@ -89,11 +92,14 @@ function AssetLibrary() {
     <div className="asset-library-toolbar"><span>{scope === 'local' ? assets ? `${assets.length} 件素材 · 圆点依次为六项完整度` : '正在读取素材…' : catalogToolbar}</span>
       {scope === 'local' && <div className="asset-view-toggle" role="group" aria-label="视图">{(['card', 'list'] as const).map(view => <button key={view} aria-pressed={(search.view ?? 'card') === view} onClick={() => change({ view })}>{view === 'card' ? '▦ 卡片' : '☷ 列表'}</button>)}</div>}
     </div>
-    {scope !== 'local' && <CatalogSyncPanel onPublished={() => setAttempt(value => value + 1)} />}
+    {scope !== 'local' && <CatalogSyncPanel provider={search.provider} onSources={setSources} onPublished={() => setAttempt(value => value + 1)} />}
     <section className="asset-filters" aria-label="素材筛选">
       <div className="asset-scope-toggle" role="group" aria-label="范围">{(['local', 'online', 'all'] as const).map(value =>
         <button key={value} aria-pressed={scope === value} onClick={() => change({ scope: value })}>{scopeLabels[value]}</button>)}</div>
       <label>种类<select aria-label="素材种类" value={search.kind ?? ''} onChange={event => change({ kind: event.target.value as AssetKind || undefined })}><option value="">全部种类</option>{Object.entries(assetKinds).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select></label>
+      {scope !== 'local' && <label>来源<select aria-label="素材来源" value={search.provider ?? ''} onChange={event => change({ provider: event.target.value || undefined })}>
+        <option value="">全部来源</option>{sources.map(source => <option key={source.provider} value={source.provider}>{source.provider}</option>)}
+      </select></label>}
       {scope !== 'local' && <label>用途<select aria-label="用途" value={search.usage ?? ''} onChange={event => change({ usage: event.target.value as CatalogUsage || undefined })}><option value="">全部用途</option><option value="dressing">布景</option><option value="staticCollision">静态碰撞</option></select></label>}
       {scope === 'local' && <label className="asset-gaps"><input type="checkbox" checked={!!search.gaps} onChange={event => change({ gaps: event.target.checked || undefined })} />只看缺口</label>}
       {scope !== 'local' && <label className="asset-gaps"><input type="checkbox" checked={!!search.approximate} onChange={event => change({ approximate: event.target.checked || undefined })} />允许近似结果</label>}

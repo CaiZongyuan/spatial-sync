@@ -819,9 +819,11 @@ COMMANDS = (
     ),
     Command(
         path=("catalog", "sync"),
-        help="Synchronize the complete SimReady directory and upstream previews; model files stay on demand.",
+        help="Update lightweight search indexes; details, previews and models stay on demand.",
         method="catalog_sync",
-        arguments=(Argument("wait", ("--wait",), bool, "Poll for completion, at most 120 seconds", False),),
+        arguments=(Argument("wait", ("--wait",), bool, "Poll for completion, at most 120 seconds", False),
+                   Argument("provider", ("--provider",), str | None,
+                            "One registered source; omit for all", None)),
         mcp_name="catalog_sync", actor=True,
     ),
     Command(
@@ -838,7 +840,7 @@ COMMANDS = (
     ),
     Command(
         path=("catalog", "sync-retry"),
-        help="Retry a finished sync, reusing unchanged metadata and previews.",
+        help="Retry a finished lightweight directory update; content is never prefetched.",
         method="catalog_sync_retry", arguments=(Argument("id", ("id",), str, "Sync ID"),),
         mcp_name="catalog_sync_retry", actor=True,
     ),

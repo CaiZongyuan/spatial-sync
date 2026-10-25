@@ -48,7 +48,9 @@ usage separately from independently verified provider billing.
 ## Complete the authoring loop
 
 1. Search both the local library and the online catalog (the curated offline
-   seed is used until a full directory sync is published). Read exact
+   seed is used until a lightweight directory update is published; Web **更新目录**,
+   or `lw catalog sync --wait --json`). Full directory coverage does not download
+   package details or previews; those load only when requested. Read exact
    candidate identities, source revisions, unknowns, license admission, usage
    and acquisition eligibility. Estimate before acquiring; bind the exact local
    version returned by the completed acquisition.

@@ -225,8 +225,9 @@ class GatewayClient:
     async def catalog_estimate(self, id):
         return await self.request("GET", self._catalog_path(id) + "/estimate")
 
-    async def catalog_sync(self, wait=False, *, actor="cli:lw"):
-        value = await self.request("POST", "/api/v1/library/catalog/sync", actor=actor)
+    async def catalog_sync(self, wait=False, provider=None, *, actor="cli:lw"):
+        value = await self.request("POST", "/api/v1/library/catalog/sync", actor=actor,
+                                   params={"provider": provider} if provider else None)
         if wait:
             deadline = time.monotonic() + 120
             while value["status"] in ("running", "cancelling") and time.monotonic() < deadline:

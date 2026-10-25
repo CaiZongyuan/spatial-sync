@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, Protocol
 
 from packages.acquisition.models import ERROR_CODES
-from packages.library.common import REPO_ROOT
+from packages.library.common import REPO_ROOT, LibraryError
 from packages.library.transactions import durable_json
 
 ProgressCallback = Callable[[dict], Awaitable[None]]
@@ -76,7 +76,12 @@ class SubprocessRunner:
     def _entry(self, record):
         if self.catalog is None or not getattr(self.catalog, "available", False):
             return None
-        return getattr(self.catalog, "by_package", {}).get(record.source["packageId"])
+        try:
+            return self.catalog.entry(
+                record.source["provider"], record.source["packageId"], record.source["revision"]
+            )
+        except LibraryError:
+            return None
 
     def job_document(self, record):
         provider = record.source["provider"]

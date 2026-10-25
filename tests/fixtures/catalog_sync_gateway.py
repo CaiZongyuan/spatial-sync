@@ -25,4 +25,13 @@ async def control(request: Request):
     body = await request.json()
     source.delay = min(3, max(0, float(body.get("delaySeconds", 0))))
     source.fail_listing = bool(body.get("failListing", False))
+    if "count" in body:
+        source.names = [f"fixture_{index:03d}" for index in range(min(100, max(1, int(body["count"]))))]
+    if body.get("clearRequests"):
+        source.requests.clear()
     return {"delaySeconds": source.delay, "failListing": source.fail_listing}
+
+
+@app.get("/e2e/catalog-source")
+async def requests():
+    return {"requests": list(source.requests)}

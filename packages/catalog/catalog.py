@@ -36,6 +36,7 @@ class AssetCatalog:
         self._lock = threading.RLock()
         self.archive_paths: tuple[Path, ...] = ()
         self._historical = {}
+        self.resources = None
 
     def startup(self):
         try:
@@ -57,7 +58,11 @@ class AssetCatalog:
         self.snapshot = snapshot
         self.entries = entries
         self.by_id = {entry.id: entry for entry in entries}
-        self.by_package = {entry.package_id: entry for entry in entries}
+        # Legacy package-only consumers may use only unambiguous package names.
+        counts = {}
+        for entry in entries:
+            counts[entry.package_id] = counts.get(entry.package_id, 0) + 1
+        self.by_package = {entry.package_id: entry for entry in entries if counts[entry.package_id] == 1}
         # The index is built from this snapshot only; the stand-in needs no
         # network, cache or model weights. A configured real embedder that
         # cannot load falls back to the stand-in and keeps that fact visible.
@@ -86,14 +91,13 @@ class AssetCatalog:
             self.require()
             identity = f"{provider}/{package}@{revision}"
             entry = self.by_id.get(identity) or self._historical.get(identity)
-            if entry is None and REVISION.fullmatch(revision):
+            if (entry is None or entry.discovery is None) and REVISION.fullmatch(revision):
                 for path in reversed(self.archive_paths):
-                    if not path.name.startswith(revision + "-"):
-                        continue
                     _, entries = load_catalog(path)
-                    entry = next((item for item in entries if item.id == identity), None)
-                    if entry is not None:
-                        self._historical[identity] = entry
+                    archived = next((item for item in entries if item.id == identity), None)
+                    if archived is not None:
+                        entry = archived
+                        self._historical[identity] = archived
                         break
             if entry is not None:
                 return entry
@@ -122,12 +126,16 @@ class AssetCatalog:
                     candidate is None or candidate.revision != revision
                 ):
                     try:
-                        candidate = self.entry(snapshot.provider, package, revision)
+                        # Historical provenance did not carry a provider. Never
+                        # guess across sources; the legacy source is SimReady.
+                        provider = provenance.get("sourceProvider", "simready")
+                        candidate = self.entry(provider, package, revision)
                     except LibraryError:
                         candidate = None
                 if (
                     candidate is not None
                     and candidate.revision == revision
+                    and candidate.provider == provenance.get("sourceProvider", "simready")
                 ):
                     entry = candidate
             result.append(LocalAsset(version, provenance, entry))
@@ -139,8 +147,10 @@ class AssetCatalog:
 
     def describe(self, provider, package, revision, *, library=None, view="summary",
                  document_digest=None):
+        entry = self.entry(provider, package, revision)
+        if self.resources is not None:
+            entry = self.resources.details(entry)
         with self._lock:
-            entry = self.entry(provider, package, revision)
             local = [
                 item for item in self.local_assets(library)
                 if item.entry is not None and item.entry.id == entry.id
@@ -148,8 +158,10 @@ class AssetCatalog:
             return entry_document(self, entry, local, view=view, document_digest=document_digest)
 
     def estimate(self, provider, package, revision, *, library=None):
+        entry = self.entry(provider, package, revision)
+        if self.resources is not None:
+            entry = self.resources.details(entry)
         with self._lock:
-            entry = self.entry(provider, package, revision)
             local = [
                 item for item in self.local_assets(library)
                 if item.entry is not None and item.entry.id == entry.id
