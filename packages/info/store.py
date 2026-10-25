@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections import defaultdict, deque
 from copy import deepcopy
+from functools import cached_property
 
 from packages.protocol.json import encode
 from packages.protocol.schema import EntityObservations, EntitySnapshot, EntityValues, ObservationMeta
@@ -11,6 +12,15 @@ from packages.protocol.schema import EntityObservations, EntitySnapshot, EntityV
 
 class _StoredMeta(ObservationMeta, frozen=True):
     """One validated batch timestamp can be shared without mutable aliases."""
+
+    @cached_property
+    def _json_items(self):
+        return tuple(self.model_dump(mode="json").items())
+
+    def model_copy(self, *, update=None, deep=False):
+        copied = super().model_copy(update=update, deep=deep)
+        copied.__dict__.pop("_json_items", None)
+        return copied
 
 
 class StateStore:
@@ -101,7 +111,10 @@ class StateStore:
                     "rev": value.rev,
                     "values": value.values,
                     "meta": {
-                        prop: at.model_dump(mode="json")
+                        prop: (
+                            dict(at._json_items)
+                            if isinstance(at, _StoredMeta) else at.model_dump(mode="json")
+                        )
                         for prop, at in value.meta.items()
                     },
                 }

@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from packages.info.store import StateStore
+from packages.live.clock import public_message
 from packages.protocol.schema import EntityObservations, EntitySnapshot, InvocationUpdate
 
 
@@ -86,6 +87,63 @@ def test_batch_timestamp_cannot_be_mutated_through_another_entity():
     with pytest.raises(ValidationError):
         state.entities["/a"].meta["x"].source = "device"
     assert state.entities["/b"].meta["x"].source == "virtual"
+
+
+@pytest.mark.parametrize("initial", ["snapshot", "observation"])
+def test_exported_metadata_copies_follow_live_clock_mapping_without_changing_prior_exports(initial):
+    state = store()
+    if initial == "observation":
+        state.apply(observation())
+    else:
+        state.apply(EntitySnapshot(
+            sceneRevision="scene", epoch=0, sampleTimeMs=200,
+            entities=[{"key": "/a", "rev": 2, "values": {"x": 2}, "meta": {
+                "x": {"simTime": 2, "sampleTimeMs": 200, "source": "virtual"},
+            }}],
+        ))
+    before = state.export_json("/a")
+    snapshot = EntitySnapshot(
+        sceneRevision="scene", epoch=0, sampleTimeMs=300, entities=list(state.entities.values()),
+    )
+    mapped = public_message(snapshot, lambda stamp: stamp + 1000)
+    copied = StateStore("scene")
+    assert copied.apply(mapped)
+    assert mapped.sampleTimeMs == 1300
+    assert json.loads(copied.export_json("/a"))["meta"]["x"]["sampleTimeMs"] == 1200
+    assert json.loads(before)["meta"]["x"]["sampleTimeMs"] == 200
+    assert state.export_json("/a") == before
+
+
+def test_metadata_only_updates_refresh_export_time_and_staleness_without_changing_values():
+    state = store()
+    state.apply(observation())
+    previous = state.export_json("/a")
+    for rev, at, stale in ((3, 250, True), (4, 300, False)):
+        assert state.apply(EntityObservations(
+            sceneRevision="scene", epoch=0, simTime=3, sampleTimeMs=at, source="virtual",
+            changes=[{"key": "/a", "rev": rev, "values": {}, "meta": {
+                "x": {"simTime": 3, "sampleTimeMs": at, "source": "virtual", "stale": stale},
+            }}],
+        ))
+        exported = json.loads(state.export_json("/a"))
+        assert exported["values"] == json.loads(previous)["values"]
+        assert exported["meta"]["x"]["sampleTimeMs"] == at
+        assert exported["meta"]["x"].get("stale", False) is stale
+        assert ("stale" in exported["meta"]["x"]) is stale
+    assert json.loads(previous)["meta"]["x"]["sampleTimeMs"] == 200
+
+
+def test_export_preserves_whole_document_numeric_fallback_and_escaped_property_keys():
+    state = StateStore("scene")
+    values = {"huge": 10**100, "tiny": 1e-7, 'quoted"\\\n中': {"zero": -0.0, "flags": [False, None]}}
+    state.apply(observation(at=1e-7, values=values).model_copy(update={"simTime": -0.0}))
+    entity = state.entities["/a"]
+    expected = json.dumps({
+        "rev": 2, "values": values,
+        "meta": {prop: {"simTime": -0.0, "sampleTimeMs": 1e-7, "source": "virtual"} for prop in entity.meta},
+    }, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    assert state.export_json("/a") == expected
+    assert state.export_json("/a") == expected  # The warm result retains those exact bytes.
 
 
 @pytest.mark.parametrize("kind", ["observation", "invocation"])
