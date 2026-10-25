@@ -33,7 +33,7 @@ function AcceptanceRules({ layer }: { layer?: EvaluationSuite['layer'] }) {
     {layer !== 'embodied' && <p>Agent Candidate 的 train 均分必须严格高于同条件 Reference，且每题至少运行 3 次。可比较条件包括评估集版本、模型与思考等级。</p>}
     <p>{layer === 'agent' ? '完整有效的 train 评估追加为已报告结果。Reference、接受与提升保持独立。' : '首次完整评估成为正式基线。后续已接受版本成为新的参照；未接受的候选仍保留在计分板。'}</p>
     <div className="eval-rule-formula">{layer === 'agent' ? <>mean(Candidate) &gt; mean(Reference)</> : <>CI<sub>95%, lower</sub>(Candidate) &gt; score(Reference)</>}</div>
-    <small>held-out test 仅在申请提升时运行并揭示。本页只读取 train；提升流程尚未接入。</small>
+    <small>held-out test 由提升流程私有运行，结果仅供人工审查。本页只读取公开 train。</small>
   </section>;
 }
 
@@ -149,7 +149,7 @@ function Scoreboard({ suite, rows, selected, select }: { suite: EvaluationSuite;
       {!rows.length && <tr><td colSpan={8} className="eval-empty">尚无完整 train 评估。首次完整运行将建立正式基线。</td></tr>}
       <tr className="eval-locked" data-testid="held-out-test-row"><th scope="row"><Icon name="lock" /> held-out test</th><td colSpan={7}>锁定 · 仅在申请提升时运行并揭示；题目、种子与结果不公开。</td></tr>
     </tbody></table></div>
-    <p className="eval-footnote">版本来自本次评估的实际运行代码指纹。训练成本与已注册 Controller 版本尚未接入。</p>
+    <p className="eval-footnote">版本来自本次评估的实际运行代码指纹。本表未提供训练成本。<Link to="/resources/robots">查看已发布 Controller 与版本历史 →</Link></p>
     {rows.length > 1 && <Comparison key={rows[0].subject} suite={suite.id} rows={rows} />}
   </section>;
 }

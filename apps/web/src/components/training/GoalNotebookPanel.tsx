@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { request } from '../../lib/api';
+import { suiteSegment } from '../../lib/evaluations';
 import { ApprovalInboxContext } from '../../lib/approvals';
 import { getGoalLoop, listGoals, type GoalLoop, type HypothesisVerdict, type NotebookEntry } from '../../lib/notebooks';
 import { LoopBudgetSummary } from './LoopBudgetSummary';
@@ -131,7 +132,7 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
             </div>)}</td>
             <td><strong>{entry.reportedDecision ? decisions[entry.reportedDecision] : '无接受决定'}</strong><small>{deploymentLabel(entry.deployment)}</small><small>{entry.comparison.state === 'comparable' ? '比较条件一致' : entry.comparison.reason ?? '首轮参照'}</small>
               {entry.recordedDeployment && <details><summary>评估完成时的部署记录</summary><small>{deploymentApprovals[entry.recordedDeployment.status] ?? entry.recordedDeployment.status}</small></details>}
-              <Link to="/eval/$suiteId" params={{ suiteId: entry.suite }}>查看平台评估 →</Link>{entry.recordings.map(id => <Link key={id} to="/replay/$recordingId" params={{ recordingId: id }}>回放 {id.slice(-8)} →</Link>)}</td>
+              <Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(entry.suite) }}>查看平台评估 →</Link>{entry.recordings.map(id => <Link key={id} to="/replay/$recordingId" params={{ recordingId: id }}>回放 {id.slice(-8)} →</Link>)}</td>
           </tr>)}</tbody></table>{!entries.length && <p className="rsi-note">暂无关联评估。实验记录在平台评估结束后写入，失败和无效结果也保留。</p>}</div>
         {editor && <form className="rsi-override" onSubmit={event => { event.preventDefault(); void save(); }}><h3>人工改判 · {editor.hypothesis}</h3>
           <label>有效判定 <select aria-label="人工假设判定" value={editor.verdict} onChange={event => setEditor({ ...editor, verdict: event.target.value as HypothesisVerdict })}>{Object.entries(verdicts).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

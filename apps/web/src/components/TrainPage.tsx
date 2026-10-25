@@ -21,7 +21,7 @@ function TrainingStages() {
     <Link to="/plans"><small>03 · 计划</small><strong>计划与审批</strong><span>确认目标与预算 →</span></Link>
     <Link to="/train" hash="jobs" aria-current="step"><small>04 · 作业</small><strong>训练作业</strong><span>当前阶段 ↓</span></Link>
     <Link to="/eval"><small>05 · 评估</small><strong>评估中心</strong><span>查看评估结果 →</span></Link>
-    <Link to="/train" hash="policies"><small>06 · 策略</small><strong>策略版本</strong><span>尚未接入 ↓</span></Link>
+    <Link to="/train" hash="policies"><small>06 · 提升</small><strong>控制器版本</strong><span>人工审查与部署 ↓</span></Link>
   </nav>;
 }
 
