@@ -1,6 +1,7 @@
 """Uploaded library packages, indexed files and the external asset catalog."""
 
 import functools
+import json
 import tempfile
 from typing import Literal
 
@@ -30,8 +31,13 @@ def install_library_routes(
         length = request.headers.get("content-length")
         if length is not None and (not length.isdecimal() or int(length) > 1024 * 1024):
             raise invalid_authoring("Authoring report body exceeds 1 MiB")
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 1024 * 1024:
+                raise invalid_authoring("Authoring report body exceeds 1 MiB")
         try:
-            document = await request.json()
+            document = json.loads(body.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             raise invalid_authoring("Provide one JSON authoring report object") from None
         if not isinstance(document, dict):

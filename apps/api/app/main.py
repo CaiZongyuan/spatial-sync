@@ -475,17 +475,20 @@ def create_app(
         )
         related = await asyncio.to_thread(recordings.list)
         detail["recordings"] = [item for item in related if item.get("sceneVersion") == detail["id"]]
-        versions = []
-        for candidate in manager.library.versions.values():
-            if candidate.name != name:
-                continue
-            value = candidate.with_templates(manager.library.roots).summary()
-            versions.append({
-                key: value[key]
-                for key in ("id", "rev", "contentHash", "launchable", "launchReason",
-                            "validationStatus")
-            })
-        detail["versions"] = sorted(versions, key=lambda item: item["rev"], reverse=True)
+        def version_summaries():
+            values = []
+            for candidate in manager.library.versions.values():
+                if candidate.name != name:
+                    continue
+                value = candidate.with_templates(manager.library.roots).summary()
+                values.append({
+                    key: value[key]
+                    for key in ("id", "rev", "contentHash", "launchable", "launchReason",
+                                "validationStatus")
+                })
+            return sorted(values, key=lambda item: item["rev"], reverse=True)
+
+        detail["versions"] = await asyncio.to_thread(version_summaries)
         return description_view(detail, "scene", selector, view=view, section=section, offset=offset,
                                 document_digest=documentDigest)
 

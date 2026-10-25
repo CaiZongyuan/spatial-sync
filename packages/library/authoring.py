@@ -12,6 +12,7 @@ attachment, or sends an external message.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -218,7 +219,10 @@ class AuthoringReports:
     def _path(self, submission_id):
         if not ID.fullmatch(submission_id):
             raise unknown_authoring()
-        return self.root / f"{submission_id}.json"
+        # The ID may contain ':' or differ only by case. Hashing gives every ID
+        # a portable, case-sensitive storage name without changing the receipt.
+        digest = hashlib.sha256(submission_id.encode("utf-8")).hexdigest()
+        return self.root / f"{digest}.json"
 
     def _read(self, path):
         try:
@@ -241,6 +245,10 @@ class AuthoringReports:
                 version = self.assets.resolve(binding.id)
         except LibraryError:
             raise invalid_authoring("Binding names no exact library version") from None
+        if version.id != binding.id:
+            raise invalid_authoring(
+                "Binding must name the exact canonical version, not an alias revision"
+            )
         if version.content_hash != binding.contentHash:
             raise invalid_authoring("Binding content hash does not match that library version")
 
@@ -265,7 +273,12 @@ class AuthoringReports:
         path = self._path(submission_id)
         if not path.is_file():
             raise unknown_authoring()
-        return self._read(path)
+        report = self._read(path)
+        if report["submissionId"] != submission_id:
+            raise LibraryError(
+                "authoring_report_unavailable", "A stored authoring report is unreadable", 503
+            )
+        return report
 
     def list(self, *, scene=None, asset=None, draft=None, limit=LIST_DEFAULT):
         try:
@@ -280,9 +293,13 @@ class AuthoringReports:
         reports = []
         if self.root.is_dir():
             for path in sorted(self.root.glob("*.json")):
-                if not ID.fullmatch(path.stem) or path.is_symlink() or path.is_junction():
+                if not re.fullmatch(r"[0-9a-f]{64}", path.stem):
+                    continue
+                if path.is_symlink() or path.is_junction():
                     continue
                 report = self._read(path)
+                if self._path(report["submissionId"]).name != path.name:
+                    continue
                 if scene is not None and not _matches_scene(report, scene):
                     continue
                 if asset is not None:
@@ -294,7 +311,13 @@ class AuthoringReports:
                 if draft is not None and report.get("draftId") != draft:
                     continue
                 reports.append(report)
-        reports.sort(key=lambda item: (item["reportedAt"], item["receivedAt"]), reverse=True)
+        def sort_time(item):
+            return (
+                datetime.fromisoformat(item["reportedAt"]),
+                datetime.fromisoformat(item["receivedAt"]),
+            )
+
+        reports.sort(key=sort_time, reverse=True)
         return [_preview(report) for report in reports[:limit]]
 
     @staticmethod

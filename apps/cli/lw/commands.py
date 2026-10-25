@@ -911,6 +911,8 @@ COMMANDS = (
         arguments=(
             Argument("scene", ("--scene",), str | None,
                      "Exact scene version name@rev, or a scene name", None),
+            Argument("asset", ("--asset",), str | None,
+                     "Exact asset version kind/name@rev, or an asset ID", None),
             Argument("draft", ("--draft",), str | None, "External draft ID", None),
             Argument("limit", ("--limit",), int, "Page size from 1 to 100; default 20", 20),
         ),

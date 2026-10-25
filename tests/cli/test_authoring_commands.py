@@ -166,6 +166,11 @@ async def test_submit_list_show_http_cli_and_mcp_share_one_document(gateway, tmp
             assert [item["submissionId"] for item in asset_filtered["reports"]] == [
                 "sub-cli", "sub-mcp",
             ]
+            assert await result(
+                mcp, "authoring_list", asset="robot/fr3@1"
+            ) == asset_filtered == await cli_async(
+                environment, "authoring", "ls", "--asset", "robot/fr3@1"
+            )
             draft_filtered = http.get(
                 "/api/v1/library/authoring-reports", params={"draft": "draft-mcp"}
             ).json()

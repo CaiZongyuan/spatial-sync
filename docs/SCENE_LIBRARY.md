@@ -150,6 +150,34 @@ files use the indexed `/library/files` route and the package integrity check.
 Merged Dressing GLB export remains a later capability; reports warn when the
 final GLB count was not inspected.
 
+## Authoring Reports
+
+External factory updates enter only as received, read-only Authoring Reports
+(`lw.authoring-report/1`). `POST /api/v1/library/authoring-reports` accepts a
+stable `submissionId`, `source`, `sourceVersion`, `reportedAt`, a `draftId` or an
+exact canonical Scene/Asset version plus its content hash, a plain-text summary
+of at most 64 KiB, gaps and artifact references. `GET` lists recent previews
+(filter by scene, asset or draft) and returns one full receipt. `lw authoring
+submit|ls|show` and the generic `authoring_submit|list|show` MCP tools use the
+same routes.
+
+`submissionId` is the idempotency key: a replay returns the first receipt,
+including its original `receivedAt`, and never rewrites it. Storage is
+gateway-owned under the state root and uses a hash of the ID as the file name, so
+IDs containing `:` and IDs that differ only by case stay distinct on
+case-insensitive filesystems. The report keeps the submitted ID and exact
+binding identity; an alias revision such as `@02` is rejected. A report is not a
+validation result: it never changes the immutable package, its validation report,
+launchability or a recording. Artifact references are opaque text and are never
+resolved, fetched or stored as attachments.
+
+Scene detail additionally lists the scene's versions and its received reports.
+Reports are presented as external statements with source, `reportedAt` and
+server `receivedAt`; platform validation remains authoritative. A draft-only
+report has no scene to attach to, so it is readable through the report list/show
+but does not appear on a scene page. Copying a failure summary is a local
+clipboard action and sends no message.
+
 ## Binding templates
 
 An entity can select an exact asset version instead of repeating its type and

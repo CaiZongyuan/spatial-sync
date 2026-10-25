@@ -1,6 +1,8 @@
 """External Authoring Reports: idempotency, binding, bounds and platform isolation."""
 
+import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -61,6 +63,11 @@ def make_client(tmp_path):
     return client, detail
 
 
+def stored_path(tmp_path, submission_id):
+    digest = hashlib.sha256(submission_id.encode("utf-8")).hexdigest()
+    return tmp_path / "state/authoring/reports" / f"{digest}.json"
+
+
 def test_submission_is_idempotent_persistent_and_readable(tmp_path):
     client, scene = make_client(tmp_path)
     with client:
@@ -79,7 +86,7 @@ def test_submission_is_idempotent_persistent_and_readable(tmp_path):
         assert stored["draftId"] == "blender-cart-draft"
         assert stored["object"] == body["object"]
         assert stored["summaryBytes"] == len(body["summary"].encode("utf-8"))
-        persisted = tmp_path / "state/authoring/reports/sub-cart-edit.json"
+        persisted = stored_path(tmp_path, "sub-cart-edit")
         assert json.loads(persisted.read_text(encoding="utf-8")) == stored
 
         # The submissionId is the idempotency key: a replay never rewrites the receipt,
@@ -139,6 +146,9 @@ def test_binding_requires_a_draft_or_an_exact_existing_version_hash(tmp_path):
             }),
             report(scene["contentHash"], submissionId="sub-inexact", object={
                 "kind": "scene", "id": "cart-fixture", "contentHash": scene["contentHash"],
+            }),
+            report(scene["contentHash"], submissionId="sub-alias", object={
+                "kind": "scene", "id": "cart-fixture@02", "contentHash": scene["contentHash"],
             }),
         ):
             rejected = client.post("/api/v1/library/authoring-reports", json=document)
@@ -230,9 +240,93 @@ def test_late_and_old_reports_stay_visible_and_never_replace_validation(tmp_path
         assert after["launchable"] is False
         assert after["launchReason"] and "0.00 m" in after["launchReason"]
         assert json.loads(
-            (tmp_path / "state/authoring/reports/sub-later.json").read_text(encoding="utf-8")
+            stored_path(tmp_path, "sub-later").read_text(encoding="utf-8")
         )["summary"].startswith("Blender")
         metadata = yaml.safe_load(
             (tmp_path / f"user-library/scenes/{NAME}/2/scene.yaml").read_text(encoding="utf-8")
         )
         assert metadata["name"] == NAME
+
+
+def test_storage_names_are_portable_and_ids_stay_case_sensitive(tmp_path):
+    client, scene = make_client(tmp_path)
+    with client:
+        colon = report(scene["contentHash"], submissionId="sub:cart", summary="Colon id")
+        assert client.post(
+            "/api/v1/library/authoring-reports", json=colon
+        ).status_code == 201
+        assert client.get(
+            "/api/v1/library/authoring-reports/sub:cart"
+        ).json()["summary"] == "Colon id"
+
+        upper = report(scene["contentHash"], submissionId="Sub-1", summary="Upper id")
+        lower = report(scene["contentHash"], submissionId="sub-1", summary="Lower id")
+        assert client.post(
+            "/api/v1/library/authoring-reports", json=upper
+        ).status_code == 201
+        assert client.post(
+            "/api/v1/library/authoring-reports", json=lower
+        ).status_code == 201
+        assert client.get(
+            "/api/v1/library/authoring-reports/Sub-1"
+        ).json()["summary"] == "Upper id"
+        assert client.get(
+            "/api/v1/library/authoring-reports/sub-1"
+        ).json()["summary"] == "Lower id"
+
+        paths = sorted((tmp_path / "state/authoring/reports").glob("*.json"))
+        assert len(paths) == 3
+        assert all(re.fullmatch(r"[0-9a-f]{64}\.json", path.name) for path in paths)
+        assert not any(":" in path.name for path in paths)
+
+    # A restart keeps each receipt addressable without a case-insensitive collision.
+    with TestClient(create_app()) as restarted:
+        assert restarted.get(
+            "/api/v1/library/authoring-reports/Sub-1"
+        ).json()["summary"] == "Upper id"
+        replay = restarted.post("/api/v1/library/authoring-reports", json=upper)
+        assert replay.status_code == 200
+        assert replay.json()["summary"] == "Upper id"
+
+
+def test_list_sorts_absolute_times_across_offsets(tmp_path):
+    client, scene = make_client(tmp_path)
+    with client:
+        earlier = report(
+            scene["contentHash"], submissionId="sub-earlier",
+            reportedAt="2026-10-24T12:00:00+08:00",
+        )
+        later = report(
+            scene["contentHash"], submissionId="sub-later-absolute",
+            reportedAt="2026-10-24T05:00:00+00:00",
+        )
+        assert client.post(
+            "/api/v1/library/authoring-reports", json=earlier
+        ).status_code == 201
+        assert client.post(
+            "/api/v1/library/authoring-reports", json=later
+        ).status_code == 201
+        listed = client.get("/api/v1/library/authoring-reports").json()["reports"]
+        assert [item["submissionId"] for item in listed] == [
+            "sub-later-absolute", "sub-earlier",
+        ]
+
+
+def test_authoring_body_cap_holds_for_chunked_requests(tmp_path):
+    client, _ = make_client(tmp_path)
+
+    def chunks():
+        yield b'{"submissionId":"sub-chunked","source":"agent","sourceVersion":"1",'
+        yield b'"reportedAt":"2026-10-24T12:00:00+00:00","draftId":"draft","summary":"'
+        for _ in range(20):
+            yield b"x" * 65536
+        yield b'"}'
+
+    with client:
+        response = client.post(
+            "/api/v1/library/authoring-reports",
+            content=chunks(),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["code"] == "invalid_authoring_report"
