@@ -54,14 +54,14 @@ def test_gateway_context_rejects_before_any_candidate_import(tmp_path):
     assert not hasattr(math, "_lw_uploaded_program_marker")
 
 
-@pytest.mark.parametrize("case", ["loaded", "relative", "config", "revoked"])
+@pytest.mark.parametrize("case", ["loaded", "relative", "config", "revoked", "async_init", "async_tick"])
 def test_owned_loader_worker_rechecks_approval_and_config_without_mutating_snapshot(tmp_path, case):
     def forbidden(*_):
         raise AssertionError("Loader contract tests start no physics Source")
 
     with TestClient(create_app(source_factory=forbidden)) as client:
         body, snapshot = prepare(client, tmp_path)
-        if case in ("config", "relative"):
+        if case in ("config", "relative", "async_init", "async_tick"):
             directory = tmp_path / "program"
             manifest = yaml.safe_load((directory / "program.yaml").read_text(encoding="utf-8"))
             if case == "config":
@@ -70,13 +70,20 @@ def test_owned_loader_worker_rechecks_approval_and_config_without_mutating_snaps
                     b"    class Config(ProgramConfig):\n        undeclared: int = 1",
                 )
                 source += b"\n    def __init__(self):\n        math._lw_uploaded_constructor_marker = True\n"
-            else:
+            elif case == "relative":
                 (directory / "helper.py").write_text("VALUE = 3\n", encoding="utf-8")
                 source = SOURCE.replace(
                     b"def tick(self, ctx, dt): pass",
                     b"def tick(self, ctx, dt):\n        from .helper import VALUE\n"
                     b"        self.helper_value = VALUE",
                 )
+            else:
+                method = "init(self, ctx)" if case == "async_init" else "tick(self, ctx, dt)"
+                source = SOURCE.replace(
+                    ("def " + method + ": pass").encode(),
+                    ("async def " + method + ": yield None").encode(),
+                )
+                source += b"\n    def __init__(self):\n        math._lw_uploaded_constructor_marker = True\n"
             (directory / "controller.py").write_bytes(source)
             (directory / "program.yaml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
             pushed = client.post(
@@ -139,7 +146,7 @@ def test_owned_loader_worker_rechecks_approval_and_config_without_mutating_snaps
             }
         else:
             assert "error" in result and result["constructor"] is False, result
-            assert result["marker"] is (case == "config"), result
+            assert result["marker"] is (case in ("config", "async_init", "async_tick")), result
         assert before == {
             path.relative_to(package).as_posix(): path.read_bytes()
             for path in package.rglob("*")
