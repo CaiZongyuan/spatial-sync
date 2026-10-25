@@ -2,12 +2,14 @@
 
 import json
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from tests.fixtures.catalog_source import PNG, REVISION, CatalogSourceFixture
+from tests.gateway.test_catalog_search import correlated_asset, upload
 
 BASE = "/api/v1/library/catalog/sync"
 SEARCH = "/api/v1/library/search"
@@ -33,6 +35,7 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
     upstream = CatalogSourceFixture()
     app = create_app(catalog_sync_source=upstream.source)
     with TestClient(app) as client:
+        upload(client, correlated_asset())
         before = client.get(SEARCH, params={"scope": "online", "limit": 1}).json()
         record = start(client)
         assert record["status"] == "succeeded", record
@@ -72,6 +75,8 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
         current = client.get(SEARCH, params={"scope": "online"}).json()
         assert all(not item["acquisition"]["eligible"] for item in current["results"])
         assert all(item["source"]["revision"] == upstream.revision for item in current["results"])
+        installed = client.get(SEARCH, params={"scope": "all", "q": "cardboard", "installed": True}).json()
+        assert "environment/cardboard-box@1" in {item["id"] for item in installed["results"]}
         exact = client.get(SEARCH, params={"q": old_box, "scope": "online"}).json()
         assert exact["results"][0]["id"] == old_box
         assert exact["results"][0]["license"]["admitted"]
@@ -170,3 +175,21 @@ def test_pagination_cannot_leave_the_pinned_source_or_publish_a_partial_director
         assert record["status"] == "failed"
         assert "left the fixed dataset/revision" in record["errors"][-1]["message"]
         assert client.get(SEARCH).json()["snapshot"]["id"] == before
+
+
+def test_sync_preserves_configured_acquisition_limits_after_publication_and_restart(tmp_path):
+    seed_path = Path(__file__).resolve().parents[2] / "catalog/simready.json"
+    seed = json.loads(seed_path.read_text(encoding="utf-8"))
+    seed["limits"] = {"sourcePackageBytes": 1048576, "batchBytes": 2097152}
+    path = tmp_path / "seed.json"
+    path.write_text(json.dumps(seed), encoding="utf-8")
+    upstream = CatalogSourceFixture()
+    estimate = "/api/v1/library/catalog/entries/simready/box_cardboard_a01/" + REVISION + "/estimate"
+    with TestClient(create_app(catalog_path=path, catalog_sync_source=upstream.source)) as client:
+        assert start(client)["status"] == "succeeded"
+        assert client.get(estimate).json()["limits"]["sourcePackageBytes"] == 1048576
+    with TestClient(create_app(catalog_path=path, catalog_sync_source=upstream.source)) as restarted:
+        value = restarted.get(estimate).json()
+        assert value["limits"]["sourcePackageBytes"] == 1048576
+        assert value["limits"]["batchBytes"] == 2097152
+        assert not value["withinLimits"]

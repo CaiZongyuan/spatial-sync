@@ -67,6 +67,7 @@ export function CatalogSyncPanel({ onPublished }: { onPublished: () => void }) {
       {record.revision && <code title={record.revision}>{shortRevision(record.revision)}</code>}
       <span>复用概览 {record.metadataReused} 项 · 已缓存图片 {record.previewsCached + record.previewsReused} 项</span>
       <span>响应体传输 {formatBytes(record.networkBytes)} · 缓存 {formatBytes(record.cacheBytes)}</span>
+      {record.message && <span>{record.message}</span>}
       {record.errors.length > 0 && <details><summary>查看同步缺口（{record.errors.length} 条摘要）</summary>
         <ul>{record.errors.map((item, index) => <li key={index}>{item.package ? `${item.package}：` : ''}{item.message}</li>)}</ul></details>}
     </div>}

@@ -956,7 +956,7 @@ def search_catalog(
     local_matches = []
     if scope in ("local", "all"):
         for local in locals_all:
-            if scope == "all" and local.entry is not None:
+            if scope == "all" and local.entry is not None and local.entry.id in catalog.by_id:
                 continue
             reasons, score = _match_fields(_local_fields(local), keywords)
             if reasons is not None:

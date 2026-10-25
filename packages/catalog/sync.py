@@ -83,7 +83,7 @@ class CatalogSync:
         if latest.exists():
             self._current = json.loads(latest.read_text(encoding="utf-8"))
             if self._current["status"] not in FINAL:
-                self._current.update(status="interrupted", stage="done", finishedAt=now())
+                self._current.update(status="interrupted", stage="done", finishedAt=now(), message=None)
                 self._current["errors"].append({"package": None, "message": "Gateway restarted during sync"})
                 self._persist()
         self._cache_bytes = sum(p.stat().st_size for p in self.cache.rglob("*") if p.is_file())
@@ -132,6 +132,7 @@ class CatalogSync:
                 "previewsReused": 0, "previewsMissing": 0, "previewsFailed": 0,
                 "networkBytes": 0, "cacheBytes": self._cache_bytes,
                 "errors": [], "snapshotId": None,
+                "message": None,
             }
             self._persist()
             document = copy.deepcopy(self._current)
@@ -165,6 +166,12 @@ class CatalogSync:
         with self._lock:
             self._current["networkBytes"] += size
 
+    def _notice(self, message):
+        with self._lock:
+            if self._current["message"] != message:
+                self._current["message"] = message
+                self._persist(force=False)
+
     def _store(self, path, data):
         with self._lock:
             previous = path.stat().st_size if path.is_file() else 0
@@ -197,7 +204,9 @@ class CatalogSync:
                 pass
         error = None
         try:
-            metadata = cached or (source.metadata(revision, package) | {"packageId": package, "treeOid": oid})
+            metadata = copy.deepcopy(cached) if cached else (
+                source.metadata(revision, package) | {"packageId": package, "treeOid": oid}
+            )
             if metadata.get("errors"):
                 error = "; ".join(metadata["errors"])
         except SourceError as exc:
@@ -227,7 +236,7 @@ class CatalogSync:
             except SourceError as exc:
                 preview = {"url": None, "reason": str(exc)[:2000]}
                 preview_state = "failed"
-        if not error:
+        if not error and metadata != cached:
             try:
                 self._store(cache_file, json.dumps(metadata, ensure_ascii=False, allow_nan=False).encode())
             except SourceError as exc:
@@ -260,7 +269,7 @@ class CatalogSync:
     def _run(self):
         source = None
         try:
-            source = self.source_factory(cancel=self._cancel, progress=self._progress)
+            source = self.source_factory(cancel=self._cancel, progress=self._progress, notice=self._notice)
             revision = source.revision()
             packages = source.packages(revision)
             with self._lock:
@@ -298,6 +307,7 @@ class CatalogSync:
                 "coverage": "Complete package directory at the fixed source revision; "
                             "metadata and preview gaps are reported separately.",
                 "entries": sorted(entries, key=lambda entry: entry["packageId"]), "sync": metrics,
+                "limits": dict(self.catalog.require().limits),
             }
             filename = revision + "-" + self._current["id"] + ".json"
             path = self.snapshots / filename
@@ -316,15 +326,15 @@ class CatalogSync:
                     candidate, archive_paths=[self.snapshots / item for item in self._published]
                 )
                 self._current.update(status="succeeded", stage="done", finishedAt=now(),
-                                     snapshotId=candidate.snapshot.id)
+                                     snapshotId=candidate.snapshot.id, message=None)
                 self._persist()
         except SyncCancelled:
             with self._lock:
-                self._current.update(status="cancelled", stage="done", finishedAt=now())
+                self._current.update(status="cancelled", stage="done", finishedAt=now(), message=None)
                 self._persist()
         except Exception as exc:
             with self._lock:
-                self._current.update(status="failed", stage="done", finishedAt=now())
+                self._current.update(status="failed", stage="done", finishedAt=now(), message=None)
                 self._current["errors"].append({"package": None, "message": str(exc)[:1000]})
                 self._persist()
         finally:

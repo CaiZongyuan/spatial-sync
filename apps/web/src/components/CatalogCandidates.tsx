@@ -181,7 +181,7 @@ export function CatalogDetailPanel({ candidate, onClose }: { candidate: CatalogC
                 <div><dt>来源文件</dt><dd>{formatBytes(entry.source.bytes)} · {entry.source.files ?? '未知'} 个文件</dd></div>
                 <div><dt>来源链接</dt><dd><a className="catalog-source-link" href={entry.source.url} target="_blank" rel="noreferrer">{entry.source.url}</a></dd></div>
                 <div><dt>BOM 外文件</dt><dd>{entry.source.bomItems === null ? '未知' : `${entry.source.bomNotInBom.length} 项`}<small className="catalog-reason">{entry.source.bomNotInBom.join('、')}</small></dd></div>
-                <div><dt>许可</dt><dd>{entry.license.name} · {entry.license.admitted ? '已准入' : '未准入'}{entry.license.obligations.length ? ` · ${entry.license.obligations.join('、')}` : ''}</dd></div>
+                <div><dt>许可</dt><dd>{entry.license.name ?? '未知'} · {entry.license.unknown ? '未审查／上游声明' : entry.license.admitted ? '已准入' : '未准入'}{entry.license.obligations.length ? ` · ${entry.license.obligations.join('、')}` : ''}</dd></div>
                 <div><dt>许可证据</dt><dd><code>{entry.license.evidence.file ?? '尚未审查；声明不等于获取准入'}</code><small className="catalog-hash">{entry.license.evidence.sha256}</small></dd></div>
                 <div><dt>附件许可</dt><dd className="catalog-evidence-list">{entry.license.attachments.length
                   ? entry.license.attachments.map(item => <span key={item.file}><code>{item.file}</code> {item.license}</span>)

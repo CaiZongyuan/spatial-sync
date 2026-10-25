@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 import time
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -38,10 +41,11 @@ def image_extension(data):
 
 
 class SimReadySource:
-    def __init__(self, *, client=None, cancel=None, progress=None):
+    def __init__(self, *, client=None, cancel=None, progress=None, notice=None):
         self.client = client or httpx.Client(timeout=20, follow_redirects=True)
         self.cancel = cancel or threading.Event()
         self.progress = progress or (lambda size: None)
+        self.notice = notice or (lambda message: None)
         self.transferred = 0
         self._lock = threading.Lock()
         self._rate_until = 0
@@ -70,16 +74,29 @@ class SimReadySource:
                     "User-Agent": "spatial-sync-catalog/1", "Accept-Encoding": "identity",
                 }) as response:
                     if response.status_code == 429:
+                        header = response.headers.get("retry-after", "2")
                         try:
-                            retry_after = min(300, max(1, float(response.headers.get("retry-after", 2))))
+                            retry_after = float(header)
                         except ValueError:
-                            retry_after = 2
+                            try:
+                                resume_at = parsedate_to_datetime(header)
+                                retry_after = (resume_at - datetime.now(UTC)).total_seconds()
+                            except (TypeError, ValueError, OverflowError):
+                                retry_after = 2
+                        if not math.isfinite(retry_after):
+                            raise SourceError("Source returned a non-finite retry interval")
+                        retry_after = max(1, retry_after)
                         reset = re.search(r"(?:^|;)\s*t=(\d+)", response.headers.get("ratelimit", ""))
                         if reset:
-                            retry_after = max(retry_after, min(300, int(reset[1]) + 1))
+                            retry_after = max(retry_after, int(reset[1]) + 1)
                         with self._lock:
                             self._rate_until = max(self._rate_until, time.monotonic() + retry_after)
+                        self.notice(f"来源限流，等待上游复位（约 {retry_after:.0f} 秒）；可取消本次同步。")
                     response.raise_for_status()
+                    with self._lock:
+                        waiting = self._rate_until > time.monotonic()
+                    if not waiting:
+                        self.notice(None)
                     chunks = bytearray()
                     for chunk in response.iter_bytes():
                         self.check()

@@ -270,6 +270,7 @@ export interface CatalogSyncRecord {
   previewsCached: number; previewsReused: number; previewsMissing: number; previewsFailed: number;
   networkBytes: number; cacheBytes: number; snapshotId: string | null;
   errors: { package: string | null; message: string }[];
+  message?: string | null;
 }
 export interface CatalogSyncState {
   current: CatalogSyncRecord | null; snapshot: CatalogSnapshot | null;
