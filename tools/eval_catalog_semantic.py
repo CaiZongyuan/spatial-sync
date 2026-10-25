@@ -319,7 +319,10 @@ def main(argv=None):
             "queryCount": len(timings),
             "p50Ms": round(statistics.median(timings), 3),
             "p95Ms": round(_percentile(timings, 0.95), 3),
-            "scope": "local machine, corpus size only; Linux/WSL 1000-record P95 is user-gated",
+            "scope": (
+                "this run's corpus and host; the Linux/WSL2 budget and a measured baseline "
+                "are in docs/VERIFICATION.md"
+            ),
         },
         "zeroResultCases": [
             {

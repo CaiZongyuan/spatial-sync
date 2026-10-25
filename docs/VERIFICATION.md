@@ -560,14 +560,21 @@ SimReady entries plus 100 synthetic bilingual fixtures) and `queries.json`
 (40 queries, 20 per language, at least eight retained per language, with
 snapshot ID and user-confirmed relevance labels). Synthetic source, license,
 size, adaptation and usage fields are fixtures, not source facts. Eight
-queries were flagged for spot-check and confirmed unchanged on 2026-10-25; the
-Linux/WSL 1000-record P95 remains an open check and is not claimed here.
-Real-model evidence uses a standalone environment, for example:
+queries were flagged for spot-check and confirmed unchanged on 2026-10-25.
+The Linux/WSL2 budget is P95 ≤ 2 s for 1000 records with the model loaded, with
+cold start reported separately. A measured run on Ubuntu 22.04 under WSL2
+(AMD Ryzen 5 5600, 12 vCPU, 31 GiB) reported P95 135 ms over 200 queries at
+1000 records with `fastembed` 0.9.1 and index `sha256:82fbcd05…` (105 entries);
+its cold index build was 67 s and is not part of that P95. Real-model evidence
+uses a standalone environment, for example:
 
 ```powershell
 uv run --with fastembed --no-sync python tools/eval_catalog_semantic.py `
   --embedder fastembed --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 `
   --output .scratch/sf1b/eval-real.json
+uv run --with fastembed --no-sync python tools/eval_catalog_semantic.py `
+  --embedder fastembed --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 `
+  --benchmark-records 1000 --benchmark-runs 5 --output .scratch/sf1b/eval-real-1000.json
 ```
 
 This downloads a model only for that evidence run; no third-party weights or
