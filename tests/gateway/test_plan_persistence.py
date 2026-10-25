@@ -12,6 +12,51 @@ from test_plans import close_step, plan
 
 from apps.api.app.main import create_app
 from apps.api.app.sources.synthetic_source import SyntheticSource
+from packages.info.journal import AppendJournal
+
+
+def saved_records(path):
+    # Later asynchronous observations may be in the middle of their final line.
+    # The consumed record must already exist in this complete prefix.
+    return [json.loads(line) for line in path.read_bytes().split(b"\n")[:-1]]
+
+
+async def test_saved_records_keep_the_complete_prefix_during_an_actual_partial_append(tmp_path, monkeypatch):
+    journal = AppendJournal(tmp_path / "prefix.jsonl")
+    committed = {"consumed": True}
+    await journal.wait(journal.append(json.dumps(committed)))
+    entered, release = threading.Event(), threading.Event()
+    original = journal._write_batch
+
+    def partial_write(stream, entries):
+        assert len(entries) == 1
+        sequence, payload, ticket = entries[0]
+        split = len(payload) // 2
+        stream.write(payload[:split])
+        stream.flush()
+        entered.set()
+        assert release.wait(5), "The test must release its owned partial append"
+        original(stream, [(sequence, payload[split:], ticket)])
+
+    monkeypatch.setattr(journal, "_write_batch", partial_write)
+    pending = journal.append(json.dumps({"later": "another observation"}))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        assert saved_records(journal.path) == [committed]
+        release.set()
+        await journal.wait(pending)
+        assert saved_records(journal.path) == [committed, {"later": "another observation"}]
+    finally:
+        release.set()
+        await journal.close()
+    assert not journal._thread.is_alive()
+
+
+def test_saved_records_still_reject_corruption_in_a_complete_line(tmp_path):
+    path = tmp_path / "corrupt.jsonl"
+    path.write_bytes(b'{"consumed":true}\n{"broken":\n')
+    with pytest.raises(json.JSONDecodeError):
+        saved_records(path)
 
 
 @pytest.mark.parametrize("writer_state", ["held", "failed"])
@@ -234,7 +279,7 @@ async def test_held_writer_does_not_block_health_or_dispatch_before_consumption_
                 else:
                     assert accepted.json()["status"] == "accepted", accepted.text
                     assert len(admissions) == 1
-                saved = [json.loads(line) for line in journal.path.read_text("utf-8").splitlines()]
+                saved = saved_records(journal.path)
                 assert any(
                     row["results"].get("1", {}).get("consumed")
                     and row["plan"]["steps"][0]["status"] == "running"
