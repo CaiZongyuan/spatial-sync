@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Request } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -24,9 +24,13 @@ test('real model resources mask a local credential and persist audited human pri
   expect(registered.status()).toBe(201);
   expect((await request.put(`${api}/api/v1/models/default`, { data: { ref: `e2e-fixture/${modelId}` } })).ok()).toBe(true);
   const responses: Promise<string>[] = [];
-  page.on('response', response => {
-    if (new URL(response.url()).pathname.startsWith('/api/v1/')) responses.push(response.text().catch(() => ''));
-  });
+  const capture = (request: Request) => {
+    // Reload can abort a response after headers. Only completed requests have a
+    // complete body to audit; response.text() on that old response can stay pending.
+    if (new URL(request.url()).pathname.startsWith('/api/v1/'))
+      responses.push(request.response().then(response => response?.text() ?? '').catch(() => ''));
+  };
+  page.on('requestfinished', capture);
   await page.goto('/resources/gpu');
   const tabs = page.getByRole('navigation', { name: '资源标签' });
   const compute = tabs.locator('a[href="/resources/gpu"]');
@@ -83,6 +87,7 @@ test('real model resources mask a local credential and persist audited human pri
   await page.setViewportSize({ width: 400, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await page.screenshot({ path: testInfo.outputPath('models-light-400.png'), fullPage: true });
+  page.off('requestfinished', capture);
   for (const body of await Promise.all(responses)) expect(body.includes(sentinel)).toBe(false);
   expect((await page.content()).includes(sentinel)).toBe(false);
 });

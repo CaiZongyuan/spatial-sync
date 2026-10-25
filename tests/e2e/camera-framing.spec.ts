@@ -41,6 +41,9 @@ async function viewerFixture(page: Page, delayVisual = false, previewOrder = fal
   spatial.writeUInt32LE(id, offset);
   [1, 0, 1, 0, 0, 0, 1].forEach((value, index) => spatial.writeFloatLE(value, offset + 4 + index * 4));
   let socket: WebSocketRoute | undefined;
+  let connected!: () => void, acknowledge!: () => void, beginStream!: () => void;
+  const connection = new Promise<void>(resolve => { connected = resolve; });
+  const subscription = new Promise<void>(resolve => { acknowledge = resolve; });
   let sequence = Number(spatial.readBigUInt64LE(16));
   let release!: () => void;
   const visualState = { requested: false, released: false, responseSent: false };
@@ -62,15 +65,25 @@ async function viewerFixture(page: Page, delayVisual = false, previewOrder = fal
       const request = JSON.parse(String(message));
       if (request.type === 'client.subscribe') {
         route.send(JSON.stringify({ type: 'subscription.ack', requestId: request.requestId, grantedRateHz: 30 }));
+        acknowledge();
         if (!previewOrder) route.send(spatial);
       }
     });
-    route.send(JSON.stringify({ type: 'server.ready', sessionId: 'framing-fixture', role: 'viewer',
+    beginStream = () => route.send(JSON.stringify({ type: 'server.ready', sessionId: 'framing-fixture', role: 'viewer',
       sceneRevision: manifest.sceneRevision, sessionState: 'PAUSED', epoch: 0, seq: sequence,
       simTime: 0, realtimeFactor: 1, heartbeatIntervalMs: 30000 }));
+    if (!previewOrder) beginStream();
+    connected();
   });
   return { release, visualState, sceneRevision: manifest.sceneRevision as string,
-    firstPose() { socket!.send(spatial); }, remotePose() {
+    async firstPose() {
+      await connection;
+      // A visible manifest may precede server.ready and the subscription. Hold
+      // ready until now so this ordering is exercised on every preview case.
+      beginStream();
+      await subscription;
+      socket!.send(spatial);
+    }, remotePose() {
     const next = Buffer.from(spatial);
     next.writeBigUInt64LE(BigInt(++sequence), 16);
     next.writeFloatLE(1e9, offset + 4);
@@ -150,7 +163,7 @@ for (const userOwns of [false, true]) test(`initial plan waits for pose/context/
     await expect(viewport).toBeVisible();
     await expect(viewport.locator('canvas')).toHaveCount(0);
     const requested = page.waitForRequest(request => request.url().includes(`/${plan.id}/steps/1/preview`));
-    fixture.firstPose(); // Authoritative epoch1 sample arrives before the parent's cached context catches up.
+    await fixture.firstPose(); // Authoritative epoch1 sample arrives before the parent's cached context catches up.
     await requested;
     await expect(viewport.locator('canvas')).toBeVisible();
     await expect(viewport).toHaveAttribute('data-camera-fitted', 'false');
