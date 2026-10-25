@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
-  filterLabels, formatAge, formatBytes, getCatalogEntry, getCatalogEstimate, shortRevision,
-  usageLabel, usageLabels, usageState, zeroReasonLabels,
+  filterLabels, formatAge, formatBytes, getCatalogEntry, getCatalogEstimate, semanticLabel,
+  shortRevision, usageLabel, usageLabels, usageState, zeroReasonLabels,
   type CatalogCandidate, type CatalogEntryDocument, type CatalogEstimateDocument,
-  type CatalogSearchResponse, type CatalogSnapshot,
+  type CatalogSearchResponse, type CatalogSemantic, type CatalogSnapshot,
 } from '../lib/catalog';
 import { assetKinds, dimensionsLabel } from '../lib/asset-library';
 import { AcquisitionStart } from './AcquisitionPanel';
@@ -22,12 +22,15 @@ function chips(values: string[]) {
   return values.map(value => <span key={value} className="asset-chip is-warning"><i />{labelFor(value)}</span>);
 }
 
-export function CatalogSnapshotBar({ snapshot }: { snapshot: CatalogSnapshot }) {
+export function CatalogSnapshotBar({ snapshot, semantic }: {
+  snapshot: CatalogSnapshot; semantic?: CatalogSemantic;
+}) {
   return <section className="catalog-snapshot" aria-label="目录快照">
     <span className="catalog-snapshot-item">快照 <code title={snapshot.id ?? undefined}>{snapshot.id ?? '不可用'}</code></span>
     <span className="catalog-snapshot-item">索引时间 <span>{snapshot.indexedAt ?? '未知'}</span></span>
     <span className="catalog-snapshot-item">新鲜度 <b>{formatAge(snapshot.ageSeconds)}</b> · {snapshot.entryCount} 条 · {snapshot.coverage ?? '覆盖范围未知'}</span>
     <span className="catalog-snapshot-item">{snapshot.offlineReadable ? '快照可离线读取' : '快照不可离线读取'} · {snapshot.networkRequired ? '检索需要网络' : '检索不联网'}</span>
+    {semantic && <span className="catalog-snapshot-item" title={semantic.notice}>{semanticLabel(semantic)}{semantic.applied ? ` · 本次召回 ${semantic.hits} 条` : ''}</span>}
   </section>;
 }
 

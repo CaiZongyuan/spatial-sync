@@ -11,6 +11,13 @@ from packages.catalog.models import (
     CatalogSnapshot,
     load_catalog,
 )
+from packages.catalog.semantic import (
+    SEMANTIC_SCHEMA,
+    HashEmbedder,
+    SemanticIndex,
+    build_semantic_index,
+    load_embedder,
+)
 
 __all__ = [
     "AssetCatalog",
@@ -18,8 +25,13 @@ __all__ = [
     "ENTRY_SCHEMA",
     "ESTIMATE_SCHEMA",
     "SEARCH_SCHEMA",
+    "SEMANTIC_SCHEMA",
     "CatalogEntry",
     "CatalogFormatError",
     "CatalogSnapshot",
+    "HashEmbedder",
+    "SemanticIndex",
+    "build_semantic_index",
     "load_catalog",
+    "load_embedder",
 ]

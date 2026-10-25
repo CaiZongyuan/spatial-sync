@@ -28,6 +28,7 @@ from packages.catalog.local import (
     local_usage as _local_usage,
 )
 from packages.catalog.models import SEARCH_SCHEMA, unavailable_snapshot_document
+from packages.catalog.semantic import SEMANTIC_SCHEMA
 from packages.catalog.views import (
     canonical_json,
     clip,
@@ -127,6 +128,7 @@ class _Match:
     score: float
     status: dict
     approximate: bool = False
+    semantic_score: float | None = None
 
     def lists(self):
         return (
@@ -407,13 +409,14 @@ def _encode_cursor(snapshot_id, key, offset):
     return base64.urlsafe_b64encode(payload.encode("utf-8")).rstrip(b"=").decode("ascii")
 
 
-def _query_key(text, scope, filters, sort, approximate):
+def _query_key(text, scope, filters, sort, approximate, semantic_version=None):
     value = {
         "scope": scope,
         "query": text,
         "filters": filters.applied(),
         "sort": sort,
         "approximate": bool(approximate),
+        "semantic": semantic_version,
     }
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
@@ -476,6 +479,14 @@ def _candidate(match, filters, language, correlated, by_bare_id):
     if match.type == "online":
         entry = match.entry
         locals_ = correlated.get(entry.id, [])
+        match_document = {
+            "reasons": match.reasons,
+            "satisfied": satisfied,
+            "unsatisfied": unsatisfied,
+            "unknown": unknown,
+        }
+        if match.semantic_score is not None:
+            match_document["semanticScore"] = round(float(match.semantic_score), 6)
         return {
             "type": "online",
             "ref": entry.ref,
@@ -503,12 +514,7 @@ def _candidate(match, filters, language, correlated, by_bare_id):
             },
             "installed": installed_document(locals_, limit=3),
             "acquisition": entry.acquisition.document(),
-            "match": {
-                "reasons": match.reasons,
-                "satisfied": satisfied,
-                "unsatisfied": unsatisfied,
-                "unknown": unknown,
-            },
+            "match": match_document,
             "unknown": entry.unknown_attributes(),
             "detail": {"resource": "catalog", "id": entry.id, "tool": "catalog_show"},
             "preview": preview_document(locals_),
@@ -568,8 +574,48 @@ def _snapshot_document(catalog, now):
     return unavailable_snapshot_document()
 
 
+def _semantic_document(index, *, applied=False, reason, hits=0):
+    """Versioned semantic metadata; always present, even when not applied."""
+    if index is None:
+        return {
+            "schema": SEMANTIC_SCHEMA,
+            "enabled": False,
+            "applied": False,
+            "reason": reason,
+            "model": None,
+            "index": None,
+            "threshold": None,
+            "hits": 0,
+            "notice": (
+                "Semantic recall is unavailable; exact identity and keyword matching are "
+                "unchanged."
+            ),
+        }
+    value = index.document()
+    value.update(applied=bool(applied), reason=reason, hits=int(hits))
+    return value
+
+
+def _semantic_note(document, index):
+    if document.get("applied"):
+        model = (document.get("model") or {}).get("id", "unknown")
+        return (
+            f"Semantic recall ({model}) supplied {document['hits']} candidate(s); hard filters "
+            "still apply and semantic scores are soft ranking only."
+        )
+    if document.get("enabled") and document.get("reason") == "no_semantic_match":
+        return (
+            "Semantic recall found no candidate above the model threshold; no hard filter "
+            "was relaxed."
+        )
+    fallback = ((document.get("model") or {}).get("fallbackReason"))
+    if fallback:
+        return f"The requested real embedder was unavailable; the deterministic stand-in was used: {fallback}"
+    return None
+
+
 def _summary_response(scope, interpreted, filters, snapshot, counts, results, next_cursor,
-                      truncated, zero):
+                      truncated, zero, semantic=None):
     applied = {
         name: clip(value, 200) if isinstance(value, str) else value
         for name, value in filters.applied().items()
@@ -581,6 +627,7 @@ def _summary_response(scope, interpreted, filters, snapshot, counts, results, ne
         "appliedFilters": applied,
         "unknownPolicy": UNKNOWN_POLICY,
         "snapshot": snapshot,
+        "semantic": semantic,
         "counts": counts,
         "results": results,
         "nextCursor": next_cursor,
@@ -618,6 +665,8 @@ def _shrink(response):
                 exact["id"] = clip(exact["id"], 80)
             else:
                 response["interpretedQuery"]["exact"] = None
+        elif response.get("semantic") and len(response["semantic"].get("notice") or "") > 80:
+            response["semantic"]["notice"] = clip(response["semantic"]["notice"], 80)
         elif response["snapshot"]["coverage"]:
             coverage = response["snapshot"]["coverage"]
             response["snapshot"]["coverage"] = clip(coverage, 200) if len(coverage) > 200 else ""
@@ -639,12 +688,12 @@ def _zero(reason, messages, excluded_by, suggestions):
 
 
 def _zero_document(scope, interpreted, filters, snapshot, reason, messages, excluded_by,
-                   suggestions):
+                   suggestions, semantic=None):
     document = _summary_response(
         scope, interpreted, filters, snapshot,
         {"returned": 0, "matching": 0, "localMatching": 0, "onlineMatching": 0,
          "approximate": 0, "budgetTruncated": False},
-        [], None, False, _zero(reason, messages, excluded_by, suggestions),
+        [], None, False, _zero(reason, messages, excluded_by, suggestions), semantic=semantic,
     )
     if not _fits(document):
         _shrink(document)
@@ -736,6 +785,20 @@ def search_catalog(
         notes.insert(0, "The catalog is unavailable; only local results are available.")
     snapshot = _snapshot_document(catalog, now)
     snapshot_id = snapshot["id"]
+    semantic_index = getattr(catalog, "semantic", None)
+    if not text:
+        semantic_reason = "empty_query"
+    elif exact is not None:
+        semantic_reason = "exact_identity"
+    elif scope == "local":
+        semantic_reason = "scope_local"
+    elif not keywords:
+        semantic_reason = "no_query_terms"
+    else:
+        semantic_reason = "not_evaluated"
+    semantic_document = _semantic_document(semantic_index, reason=semantic_reason)
+    if scope == "local" and not catalog.available:
+        semantic_document = _semantic_document(None, reason="catalog_unavailable")
     interpreted = {
         "text": clip(text, 500),
         "keywords": [clip(keyword, 80) for keyword in keywords[:16]],
@@ -744,21 +807,24 @@ def search_catalog(
         "approximateRequested": bool(approximate),
         "notes": notes,
     }
-    key = _query_key(text, scope, filters, sort, approximate)
+    key = _query_key(
+        text, scope, filters, sort, approximate,
+        semantic_index.version if semantic_index is not None else None,
+    )
     offset = 0
     if cursor is not None:
         payload = _decode_cursor(cursor)
-        if payload["key"] != key:
-            raise LibraryError("cursor_mismatch", "Cursor belongs to a different query", 400)
         if payload["snapshot"] != snapshot_id:
             raise LibraryError("stale_cursor", "The catalog snapshot changed; search again", 400)
+        if payload["key"] != key:
+            raise LibraryError("cursor_mismatch", "Cursor belongs to a different query", 400)
         offset = payload["offset"]
     if text and not keywords and not preferences and numeric_terms:
         return _zero_document(
             scope, interpreted, filters, snapshot, "no_query_match",
             ["The query contains only number+unit terms; no keyword remains after the "
              "correcting note. Use the explicit min/max parameters instead."],
-            [], [],
+            [], [], semantic=semantic_document,
         )
 
     locals_all = catalog.local_assets(library) if library is not None else []
@@ -782,18 +848,20 @@ def search_catalog(
                     return _zero_document(
                         scope, interpreted, filters, snapshot, "unknown_exact_id",
                         [f"No catalog entry has the exact ID '{clip(text, 200)}'."], [], [],
+                        semantic=semantic_document,
                     )
                 interpreted["exact"] = _exact_document("catalog", entry.id)
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "scope",
                     ["The exact catalog identity is outside scope=local."],
-                    [], [{"action": "broaden_scope"}],
+                    [], [{"action": "broaden_scope"}], semantic=semantic_document,
                 )
             if entry is None:
                 interpreted["exact"] = _exact_document("catalog", f"{first}/{second}@{third}")
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "unknown_exact_id",
                     [f"No catalog entry has the exact ID '{clip(text, 200)}'."], [], [],
+                    semantic=semantic_document,
                 )
             interpreted["exact"] = _exact_document("catalog", entry.id, entry.ref)
             local_versions = correlated.get(entry.id, [])
@@ -815,13 +883,14 @@ def search_catalog(
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "unknown_exact_id",
                     [f"No local asset has the exact ID '{clip(text, 200)}'."], [], [],
+                    semantic=semantic_document,
                 )
             interpreted["exact"] = _exact_document("local", version.id)
             if scope == "online":
                 return _zero_document(
                     scope, interpreted, filters, snapshot, "scope",
                     ["The exact local identity is outside scope=online."],
-                    [], [{"action": "broaden_scope"}],
+                    [], [{"action": "broaden_scope"}], semantic=semantic_document,
                 )
             local = next(
                 (item for item in locals_all if item.version.id == version.id),
@@ -843,6 +912,7 @@ def search_catalog(
                  "matched but a hard filter excluded it; unknown attributes never satisfy a filter."],
                 [{"filter": name, "count": 1} for name in failing],
                 [{"action": "remove_filter", "filter": name} for name in failing],
+                semantic=semantic_document,
             )
         results = [compact_candidate(_candidate(match, filters, language, correlated, by_bare_id))]
         response = _summary_response(
@@ -851,7 +921,7 @@ def search_catalog(
              "localMatching": 1 if match.type == "local" else 0,
              "onlineMatching": 1 if match.type == "online" else 0,
              "approximate": 0, "budgetTruncated": False},
-            results, None, False, None,
+            results, None, False, None, semantic=semantic_document,
         )
         if not _fits(response):
             identity = clip(
@@ -861,7 +931,7 @@ def search_catalog(
                 scope, interpreted, filters, snapshot, "response_budget",
                 [f"The exact candidate '{identity}' exceeds the 32 KiB compact budget; read "
                  "it through its library or catalog detail."],
-                [], [],
+                [], [], semantic=semantic_document,
             )
         return response
 
@@ -885,6 +955,53 @@ def search_catalog(
                 local_matches.append(_Match(
                     "local", None, local, reasons, score, _local_status(local, filters),
                 ))
+    # Semantic recall only fills a gap left by keyword matching. It never
+    # re-ranks or relaxes a keyword/exact result and never bypasses a hard
+    # filter; its scores are soft ordering inside this recall set.
+    semantic_matches = []
+    if (
+        text and exact is None and scope in ("all", "online") and keywords
+        and semantic_index is not None
+    ):
+        if online_matches:
+            semantic_reason = "keyword_matches"
+            semantic_document = _semantic_document(
+                semantic_index, reason=semantic_reason,
+            )
+        elif not semantic_index.entries:
+            semantic_reason = "empty_index"
+            semantic_document = _semantic_document(
+                semantic_index, reason=semantic_reason,
+            )
+        else:
+            hits = semantic_index.search(text, limit=MAX_LIMIT)
+            for hit in hits:
+                entry = hit.entry
+                local_versions = correlated.get(entry.id, [])
+                semantic_matches.append(_Match(
+                    "online", entry, None,
+                    [{
+                        "field": "semantic",
+                        "value": clip(entry.names.get(language) or entry.names.get("en", ""), 80),
+                        "query": clip(text, 80),
+                    }],
+                    hit.score,
+                    _online_status(entry, local_versions, filters),
+                    semantic_score=hit.score,
+                ))
+            semantic_reason = "semantic_recall" if hits else "no_semantic_match"
+            semantic_document = _semantic_document(
+                semantic_index, applied=bool(hits), reason=semantic_reason, hits=len(hits),
+            )
+            note = _semantic_note(semantic_document, semantic_index)
+            if note:
+                interpreted["notes"] = (interpreted["notes"] + [clip(note, 400)])[:10]
+            online_matches = semantic_matches
+    elif (
+        text and exact is None and scope in ("all", "online") and keywords
+        and semantic_index is None
+    ):
+        semantic_document = _semantic_document(None, reason="semantic_unavailable")
     scope_matches = online_matches + local_matches
     exact_matches = [item for item in scope_matches
                      if all(value is True for value in item.status.values())]
@@ -937,6 +1054,11 @@ def search_catalog(
                 *(f"Filter '{item['filter']}' excluded {item['count']} candidate(s)."
                   for item in excluded_by),
             ]
+            if semantic_document.get("applied"):
+                messages.append(
+                    "Semantic recall supplied candidates, but hard filters still apply; "
+                    "semantic similarity never counts as a satisfied or known condition."
+                )
             suggestions = [
                 {"action": "remove_filter", "filter": item["filter"]} for item in excluded_by
             ]
@@ -954,9 +1076,14 @@ def search_catalog(
                 "No candidate matches the query tokens within the requested scope."
                 if keywords else "The requested scope contains no candidates."
             ]
+            if semantic_document.get("applied"):
+                messages.append(
+                    "Semantic recall found no candidate above the model threshold; no hard "
+                    "filter was relaxed."
+                )
             suggestions = []
         return _zero_document(scope, interpreted, filters, snapshot, reason, messages,
-                              excluded_by, suggestions)
+                              excluded_by, suggestions, semantic=semantic_document)
 
     if offset >= len(ordered):
         raise LibraryError(
@@ -983,6 +1110,7 @@ def search_catalog(
             _encode_cursor(snapshot_id, key, next_offset) if has_more else None,
             has_more,
             None,
+            semantic=semantic_document,
         )
 
     response = build(results)
@@ -995,7 +1123,7 @@ def search_catalog(
             scope, interpreted, filters, snapshot, "response_budget",
             ["The matching page exceeds the 32 KiB compact budget even after trimming; "
              "narrow the query or request a single candidate by exact ID."],
-            [], [],
+            [], [], semantic=semantic_document,
         )
     if not _fits(response):
         _shrink(response)
@@ -1004,6 +1132,6 @@ def search_catalog(
                 scope, interpreted, filters, snapshot, "response_budget",
                 ["The matching page exceeds the 32 KiB compact budget even after trimming; "
                  "narrow the query or request a single candidate by exact ID."],
-                [], [],
+                [], [], semantic=semantic_document,
             )
     return response

@@ -99,6 +99,43 @@ def test_public_search_keeps_legacy_asset_routes_and_shapes_unchanged():
         assert body["interpretedQuery"]["keywords"] == ["纸箱"]
 
 
+def test_semantic_recall_is_labelled_and_keeps_hard_filter_semantics():
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/library/search", params={
+            "q": "用来装实验室废弃物的容器", "scope": "online",
+        })
+        assert response.status_code == 200, response.text
+        body = response.json()
+        semantic = body["semantic"]
+        assert semantic["schema"] == "lw.catalog-semantic/1"
+        assert semantic["enabled"] is True
+        assert semantic["applied"] is True
+        assert semantic["model"]["kind"] == "deterministic-stand-in"
+        assert semantic["model"]["real"] is False
+        assert semantic["index"]["version"].startswith("sha256:")
+        assert semantic["index"]["entryCount"] == 5
+        assert body["snapshot"]["id"].startswith("sha256:")
+        assert body["results"] and all(
+            item["match"]["semanticScore"] is not None for item in body["results"]
+        )
+        assert "Semantic recall" in " ".join(body["interpretedQuery"]["notes"])
+
+        keyword = client.get("/api/v1/library/search", params={
+            "q": "纸箱", "scope": "online",
+        }).json()
+        assert keyword["semantic"]["applied"] is False
+        assert keyword["semantic"]["reason"] == "keyword_matches"
+        assert "semanticScore" not in keyword["results"][0]["match"]
+
+        blocked = client.get("/api/v1/library/search", params={
+            "q": "用来装实验室废弃物的容器", "scope": "online",
+            "usage": "staticCollision", "maxDimensionM": "0.01",
+        }).json()
+        assert blocked["semantic"]["applied"] is True
+        assert blocked["results"] == []
+        assert blocked["zeroResult"]["reason"] == "hard_filters"
+
+
 def test_search_exact_identity_filters_approximation_and_zero_results():
     with TestClient(create_app()) as client:
         exact = client.get("/api/v1/library/search",

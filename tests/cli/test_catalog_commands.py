@@ -120,6 +120,7 @@ async def test_catalog_search_show_estimate_pages_errors_and_local_shape(gateway
             for query, cli_scope, mcp_scope in (
                 ("纸箱", "all", "online"),
                 ("carton", "online", "all"),
+                ("用来装实验室废弃物的容器", "all", "online"),
             ):
                 expected = {
                     scope: http.get(
