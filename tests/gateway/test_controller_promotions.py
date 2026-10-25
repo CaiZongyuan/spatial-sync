@@ -202,6 +202,32 @@ def test_denial_and_revoke_preserve_current_without_publication(promotion_inputs
     assert not list(service.publication.root.glob("*/record.json"))
 
 
+def test_human_review_exposes_approved_publication_recovery_without_restarting(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    route = f"/api/v1/controller-promotions/{promotion['id']}/review"
+    review = client.get(route).json()
+
+    def interrupt(effect, _):
+        if effect == "scene_published":
+            raise OSError("Controlled resumable publication")
+
+    service.publication.after_effect = interrupt
+    decision = "/api/v1/approvals/" + review["approvalId"] + "/decision"
+    with pytest.raises(OSError, match="Controlled resumable"):
+        client.post(decision, json={"decision": "approve"})
+    recovery = client.get(route)
+    assert recovery.status_code == 200, recovery.text
+    assert recovery.json()["status"] == "publishing" and recovery.json()["canResume"]
+    assert service.resources.controller("fr3-arm")["currentVersion"] is None
+    service.publication.after_effect = lambda *_: None
+    finished = client.post(decision, json={"decision": "approve"})
+    assert finished.status_code == 200 and finished.json()["status"] == "published", finished.text
+    assert len(client.get("/api/v1/approvals/" + review["approvalId"]).json()["decisions"]) == 1
+    assert len(service.resources.controller("fr3-arm")["versions"]) == 1 and not starts
+
+
 def test_both_private_sides_require_the_existing_total_budget_before_either_is_queued(promotion_inputs):
     client, service, policy, scene, starts = promotion_inputs
     store = service.manager.evaluations.store

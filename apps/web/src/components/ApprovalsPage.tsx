@@ -32,7 +32,11 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
   const promotion = record.details.agentPromotionId || record.details.controllerPromotionId;
   const [promotionReady, setPromotionReady] = useState(false);
   const [promotionStatus, setPromotionStatus] = useState('');
-  const retryPromotion = promotion && record.status === 'approved' && promotionStatus === 'applying';
+  const [controllerCanResume, setControllerCanResume] = useState(false);
+  const retryPromotion = record.status === 'approved' && (
+    record.details.agentPromotionId && promotionStatus === 'applying'
+    || record.details.controllerPromotionId && controllerCanResume
+  );
   const permitted = canDecide && (!promotion || promotionReady);
   async function decide(decision: ApprovalDecision) {
     setBusy(true); setError(undefined);
@@ -59,7 +63,7 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
       record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}
     {record.details.agentPromotionId && <AgentPromotionReview id={record.details.agentPromotionId} canRead={canDecide} ready={setPromotionReady} reportStatus={setPromotionStatus} refreshKey={`${record.status}:${busy}`} />}
-    {record.details.controllerPromotionId && <ControllerPromotionReview id={record.details.controllerPromotionId} canRead={canDecide} ready={setPromotionReady} reportStatus={setPromotionStatus} refreshKey={`${record.status}:${busy}`} />}
+    {record.details.controllerPromotionId && <ControllerPromotionReview id={record.details.controllerPromotionId} canRead={canDecide} ready={setPromotionReady} reportStatus={setPromotionStatus} reportCanResume={setControllerCanResume} refreshKey={`${record.status}:${busy}`} />}
     {last && <p className="approval-receipt">{actor(last.actor)} · {time(last.atMs)} · {decisionText[last.decision]}{last.note && <span>{last.note}</span>}</p>}
     {(!processed || record.canRevoke || retryPromotion) && <label className="approval-note">备注
       <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)}
@@ -68,7 +72,7 @@ export function ApprovalCard({ record, canDecide }: { record: ApprovalRecord; ca
     <div className="approval-actions">
       {!processed ? <><button disabled={busy || !canDecide} onClick={() => void decide('deny')}>驳回</button>
         <button className="primary" disabled={busy || !permitted} onClick={() => void decide('approve')}>批准</button></> :
-        retryPromotion ? <button className="primary" disabled={busy || !permitted} onClick={() => void decide('approve')}>重试 Reference 恢复</button> :
+        retryPromotion ? <button className="primary" disabled={busy || !permitted} onClick={() => void decide('approve')}>{record.details.controllerPromotionId ? '重试 Controller 发布' : '重试 Reference 恢复'}</button> :
         record.canRevoke ? <button disabled={busy || !canDecide} onClick={() => void decide('revoke')}>撤销</button> :
           <span className="approval-execution">{record.invocation?.startedSimTime != null ? '执行已开始' : record.status === 'revoked' ? '决定已撤销' : '审批已结束'}</span>}
     </div>

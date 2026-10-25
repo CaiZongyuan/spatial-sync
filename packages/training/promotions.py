@@ -446,10 +446,30 @@ class ControllerPromotions:
             return value
 
     def review(self, identifier):
-        value = self.refresh(identifier)
+        value = self.get(identifier)
+        if value["status"] not in ("approved", "publishing"):
+            value = self.refresh(identifier)
         if value["status"] == "awaiting_human":
             self._validate(value)
         result = self.public(value)
+        result["canResume"] = False
+        if value["status"] in ("approved", "publishing"):
+            approval = self.manager.approvals.records.get(value.get("approvalId"))
+            if (approval is not None and approval.status == "approved"
+                    and approval.decisions and approval.decisions[-1].decision == "approve"
+                    and approval.decisions[-1].actor.kind == "user"
+                    and approval.details.get("contextHash") == value["contextHash"]):
+                try:
+                    if not self.publication.committed(identifier):
+                        self._validate(value)
+                    path = self.publication._directory(identifier) / "record.json"
+                    publication = self.publication.read(identifier) if path.exists() else {}
+                    if publication.get("phase") == "blocked":
+                        result["error"] = publication["error"]
+                    else:
+                        result["canResume"] = True
+                except (PlanError, LibraryError) as error:
+                    result["error"] = {"code": error.detail["code"]}
         evidence = value["context"].get("testEvidence")
         if evidence:
             result["train"] = {key: deepcopy(value["context"][field])

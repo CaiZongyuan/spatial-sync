@@ -16,6 +16,7 @@ from tests.unit.test_controller_publication import ControlledPublicationValidato
 
 settings = Settings(node_token=TOKEN)
 starts = []
+publication_fault = {"active": False}
 
 
 def no_source(*args, **kwargs):
@@ -31,9 +32,28 @@ app = create_app(settings, source_factory=no_source,
 app.state.manager.evaluations._busy = lambda: True
 
 
+def fail_after_scene(effect, _):
+    if publication_fault["active"] and effect == "scene_published":
+        raise OSError("Controlled interruption after Scene publication")
+
+
+app.state.controller_promotions.publication.after_effect = fail_after_scene
+
+
 class Seed(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     policy: str
+
+
+class Fault(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    active: bool
+
+
+@app.post("/fixture/controller-promotions/publication-fault")
+async def fault(body: Fault):
+    publication_fault["active"] = body.active
+    return {"evidenceMode": "controlled", "active": body.active}
 
 
 @app.post("/fixture/controller-promotions/train")
