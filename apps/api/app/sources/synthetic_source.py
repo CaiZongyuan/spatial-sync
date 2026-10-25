@@ -213,10 +213,13 @@ class SyntheticSource:
                 if not will_tick:
                     for event in self.host.drain_events():
                         self._events.put_nowait(event)
-                for remaining in range(steps, 0, -1):
-                    previous_control = self._control_index
-                    self._advance(1)
-                    if remaining > 1 and self._control_index != previous_control:
+                target_step = self._step_index + steps
+                while self._step_index < target_step:
+                    boundary = math.ceil(
+                        (self._control_index + 1) / self.options.controlHz / self.options.physicsDt
+                    )
+                    self._advance(min(target_step, max(self._step_index + 1, boundary)) - self._step_index)
+                    if self._step_index < target_step:
                         # Deliver completed observations before later catch-up ticks.
                         # Keep the lock so commands/snapshots see a complete advance.
                         await asyncio.sleep(0)

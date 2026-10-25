@@ -108,7 +108,8 @@ async def test_publication_preserves_rate_under_coarse_wakeups(monkeypatch):
 
 
 @pytest.mark.parametrize("rtf", [0.1, 1, 10, None])
-async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(monkeypatch, rtf):
+@pytest.mark.parametrize("physics_dt", [1 / 240, 1 / 1000, 1e-6, 0.02])
+async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(monkeypatch, rtf, physics_dt):
     source = synthetic_module.SyntheticSource("drain-boundary")
     original_sleep = asyncio.sleep
     now = 0.0
@@ -132,7 +133,7 @@ async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(
     monkeypatch.setattr(synthetic_module.asyncio, "sleep", controlled_sleep)
     monkeypatch.setattr(synthetic_module.time, "monotonic", lambda: now)
     try:
-        await source.start("lab-demo", SessionOptions(realtimeFactor=rtf))
+        await source.start("lab-demo", SessionOptions(realtimeFactor=rtf, physicsDt=physics_dt))
         original_tick, original_drain = source.host.tick, source.host.drain_events
 
         def tick(*args):
