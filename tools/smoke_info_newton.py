@@ -28,21 +28,21 @@ from packages.protocol.schema import (
 
 ROBOT, CENTRIFUGE = "/World/Lab/RobotA", "/World/Lab/Centrifuge"
 TERMINAL = {"succeeded", "rejected", "failed", "cancelled"}
+RUN_PHASES = ("accelerating", "running", "decelerating")
 
 
 def validate_rotor_samples(samples):
-    samples = [
-        sample
-        for sample in samples
-        if sample["centrifuge"].get("phase") in ("accelerating", "running", "decelerating")
-    ]
+    first_run = next(
+        (index for index, sample in enumerate(samples) if sample["centrifuge"].get("phase") in RUN_PHASES),
+        None,
+    )
     expected = [f"{CENTRIFUGE}/Rotor/Slot{i}" for i in (1, 3)]
-    assert samples, "The loaded rotor must have actual observation samples"
+    assert first_run is not None, "The loaded rotor must have actual observation samples"
+    samples = samples[first_run:]
     assert {sample["centrifuge"]["phase"] for sample in samples} >= {
-        "accelerating",
-        "running",
-        "decelerating",
-    }, "All three physical run phases must be observed"
+        *RUN_PHASES,
+        "idle",
+    }, "All physical run phases and the post-run idle boundary must be observed"
     for sample in samples:
         assert sample["tubeLocations"] == expected, sample
 
@@ -107,6 +107,7 @@ async def run(output, duration=20):
     source, receipt = NewtonSource("info-newton-smoke"), {"actions": [], "physicalChecks": []}
     request_index = 0
     observer = None
+    observe_until = None
     try:
         manifest, catalog = await source.start("robot-and-tubes", SessionOptions(device="cpu"))
         assert len(catalog.entities) == 22
@@ -114,10 +115,12 @@ async def run(output, duration=20):
         await source.execute(Command(requestId="reset", command="reset"))
 
         async def observe_rotor():
-            values, epoch = {}, None
+            values, epoch, watching = {}, None, False
             async for event in source.events():
                 if not isinstance(event, (EntitySnapshot, EntityObservations)):
                     continue
+                if event.epoch != epoch:
+                    watching = False
                 if event.epoch != epoch or isinstance(event, EntitySnapshot):
                     values.clear()
                     epoch = event.epoch
@@ -125,7 +128,8 @@ async def run(output, duration=20):
                 for change in changes:
                     values.setdefault(change.key, {}).update(change.values)
                 centrifuge = values.get(CENTRIFUGE, {})
-                if centrifuge.get("phase") in ("accelerating", "running", "decelerating"):
+                watching = watching or centrifuge.get("phase") in RUN_PHASES
+                if watching and (observe_until is None or event.simTime <= observe_until):
                     receipt.setdefault("rotorObservations", []).append(
                         {
                             "simTime": event.simTime,
@@ -143,9 +147,15 @@ async def run(output, duration=20):
             return {entity.key: entity.values for entity in source.entity_snapshot().entities}
 
         async def action(key, name, params=None, rejection=None):
-            nonlocal request_index
+            nonlocal request_index, observe_until
             request_index += 1
             frame = source.latest_frame()
+            if (
+                key == ROBOT
+                and name == "pickPlace"
+                and (params or {}).get("from", "").startswith("centrifuge.slot")
+            ):
+                observe_until = frame.simTime
             request = InvokeRequest(
                 invocationId=f"smoke-{request_index}",
                 requestId=f"smoke-{request_index}",
@@ -246,6 +256,17 @@ async def run_cli(url, executable, output, duration=20):
                 response.raise_for_status()
                 return {key: value["values"] for key, value in response.json()["entities"].items()}
 
+            async def sample_rotor():
+                current = await states()
+                receipt["runningSamples"].append(
+                    {
+                        "centrifuge": current[CENTRIFUGE],
+                        "tubeLocations": [
+                            current[f"/World/Lab/Tubes/Tube{i:02d}"]["location"] for i in (1, 2)
+                        ],
+                    }
+                )
+
             async def action(key, name, params=None, rejection=None):
                 command = [
                     str(executable),
@@ -268,16 +289,7 @@ async def run_cli(url, executable, output, duration=20):
                             await asyncio.wait_for(asyncio.shield(communication), timeout=0.2)
                         except TimeoutError:
                             if key == CENTRIFUGE and name == "start":
-                                current = await states()
-                                receipt["runningSamples"].append(
-                                    {
-                                        "centrifuge": current[CENTRIFUGE],
-                                        "tubeLocations": [
-                                            current[f"/World/Lab/Tubes/Tube{i:02d}"]["location"]
-                                            for i in (1, 2)
-                                        ],
-                                    }
-                                )
+                                await sample_rotor()
                     stdout, stderr = await communication
                 finally:
                     if process.returncode is None:
@@ -304,6 +316,8 @@ async def run_cli(url, executable, output, duration=20):
                         receipt["failureState"] = await states()
                         receipt["stderr"] = stderr.decode()
                     assert process.returncode == 0 and record["status"] == "succeeded", record
+                    if key == CENTRIFUGE and name == "start":
+                        await sample_rotor()
                 return record
 
             async def check_tube(index, expected):

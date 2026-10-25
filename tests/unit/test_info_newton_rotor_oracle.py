@@ -8,7 +8,7 @@ from tools.smoke_info_newton import CENTRIFUGE, validate_rotor_samples
 def observations():
     return [
         {"centrifuge": {"phase": phase}, "tubeLocations": [f"{CENTRIFUGE}/Rotor/Slot{i}" for i in (1, 3)]}
-        for phase in ("accelerating", "running", "decelerating")
+        for phase in ("accelerating", "running", "decelerating", "idle")
     ]
 
 
@@ -21,7 +21,7 @@ def test_rejected_starts_before_loading_are_outside_the_physical_run():
     validate_rotor_samples(samples + observations())
 
 
-@pytest.mark.parametrize("index", [0, 1, 2])
+@pytest.mark.parametrize("index", [0, 1, 2, 3])
 def test_a_single_loose_observation_fails_even_when_next_observation_recovers(index):
     samples = observations()
     samples.insert(
@@ -35,7 +35,7 @@ def test_a_single_loose_observation_fails_even_when_next_observation_recovers(in
         validate_rotor_samples(samples)
 
 
-@pytest.mark.parametrize("samples", [[], observations()[:2]])
+@pytest.mark.parametrize("samples", [[], observations()[:2], observations()[:3]])
 def test_missing_physics_phases_cannot_establish_stable_locations(samples):
     with pytest.raises(AssertionError):
         validate_rotor_samples(samples)
