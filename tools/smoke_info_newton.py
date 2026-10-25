@@ -16,10 +16,35 @@ sys.path.insert(0, str(ROOT))
 from apps.api.app.sources.newton_source import NewtonSource
 from packages.programs.tube.facts import tube_location
 from packages.protocol.math import compose_pose
-from packages.protocol.schema import Command, InvokeRequest, SceneManifest, SessionOptions, TransformFrame
+from packages.protocol.schema import (
+    Command,
+    EntityObservations,
+    EntitySnapshot,
+    InvokeRequest,
+    SceneManifest,
+    SessionOptions,
+    TransformFrame,
+)
 
 ROBOT, CENTRIFUGE = "/World/Lab/RobotA", "/World/Lab/Centrifuge"
 TERMINAL = {"succeeded", "rejected", "failed", "cancelled"}
+
+
+def validate_rotor_samples(samples):
+    samples = [
+        sample
+        for sample in samples
+        if sample["centrifuge"].get("phase") in ("accelerating", "running", "decelerating")
+    ]
+    expected = [f"{CENTRIFUGE}/Rotor/Slot{i}" for i in (1, 3)]
+    assert samples, "The loaded rotor must have actual observation samples"
+    assert {sample["centrifuge"]["phase"] for sample in samples} >= {
+        "accelerating",
+        "running",
+        "decelerating",
+    }, "All three physical run phases must be observed"
+    for sample in samples:
+        assert sample["tubeLocations"] == expected, sample
 
 
 def validate_stats(receipt):
@@ -27,6 +52,7 @@ def validate_stats(receipt):
     assert stats["tickTimingSamples"] > 0
     assert stats["tickP95Ms"] <= 2, stats
     assert stats["declaredWeldCount"] == 100 and stats["activeWeldCount"] == 0
+    validate_rotor_samples(receipt.get("rotorObservations", receipt.get("runningSamples", [])))
     receipt["status"] = "passed"
 
 
@@ -80,11 +106,38 @@ def physical_check(manifest, previous, snapshot, values, index, expected):
 async def run(output, duration=20):
     source, receipt = NewtonSource("info-newton-smoke"), {"actions": [], "physicalChecks": []}
     request_index = 0
+    observer = None
     try:
         manifest, catalog = await source.start("robot-and-tubes", SessionOptions(device="cpu"))
         assert len(catalog.entities) == 22
         await source.execute(Command(requestId="pause", command="pause"))
         await source.execute(Command(requestId="reset", command="reset"))
+
+        async def observe_rotor():
+            values, epoch = {}, None
+            async for event in source.events():
+                if not isinstance(event, (EntitySnapshot, EntityObservations)):
+                    continue
+                if event.epoch != epoch or isinstance(event, EntitySnapshot):
+                    values.clear()
+                    epoch = event.epoch
+                changes = event.entities if isinstance(event, EntitySnapshot) else event.changes
+                for change in changes:
+                    values.setdefault(change.key, {}).update(change.values)
+                centrifuge = values.get(CENTRIFUGE, {})
+                if centrifuge.get("phase") in ("accelerating", "running", "decelerating"):
+                    receipt.setdefault("rotorObservations", []).append(
+                        {
+                            "simTime": event.simTime,
+                            "centrifuge": dict(centrifuge),
+                            "tubeLocations": [
+                                values.get(f"/World/Lab/Tubes/Tube{i:02d}", {}).get("location")
+                                for i in (1, 2)
+                            ],
+                        }
+                    )
+
+        observer = asyncio.create_task(observe_rotor())
 
         def values():
             return {entity.key: entity.values for entity in source.entity_snapshot().entities}
@@ -164,6 +217,8 @@ async def run(output, duration=20):
         assert not receipt["physicsImportedInCaller"]
     finally:
         await source.close()
+        if observer is not None:
+            await observer
         receipt["cleanup"] = source.stats()
         assert not receipt["cleanup"]["runnerAlive"] and not receipt["cleanup"]["readerThreadsAlive"]
         output.write_text(json.dumps(receipt, indent=2), encoding="utf-8")

@@ -606,7 +606,8 @@ nominalTarget    = bottomSiteWorld + [0, 0, h]
 - `start` 的 `accept()` 检查转子平衡：装管数必须为 0、2 或 4；为 2 时必须是 1 与 3 或 2 与 4。否则以 `imbalanced` 拒绝，`details` 给出当前装载。
 - **运行流程**：焊接孔位中的试管 → accelerating（1,000 rpm/s 爬升）→ running（持续 `durationSeconds`，仿真时间）→ decelerating → 转子停在下一个整圈位置 → idle → 解除焊接 → 调用成功，发出 `runCompleted` 事件。
 - `progress` = 已用时 / 计划总时长。
-- 转子的**物理**角速度为 `min(rpm, visualRpmCap) / 60 × 2π`，避免高速转动导致数值不稳定；`rpm` 属性报告程序值。这是已知简化，写入类型 description。
+- 转子的**物理**角速度以 `min(rpm, visualRpmCap) / 60 × 2π` 为目标，起转用 1 s、减速用 0.25 s 的指数响应平滑，避免在启用孔位焊接时突加速度；`rpm` 属性仍按 1,000 rpm/s 报告程序值。这是已知简化，类型 description 声明视觉转速上限。
+- 整圈停位为平滑驱动预留制动距离，停位角速度目标为剩余角度乘 1 s⁻¹（仍受视觉转速上限约束）；保持原角度误差 < 0.005 rad、实际角速度 < 0.05 rad/s 后才进入 idle 并解除焊接。
 - 停在整圈位置，保证孔位与示教位置对齐。
 - `stop`：转入 decelerating；正在运行的 `start` 回到 idle 时以 `cancelled` 结束。
 

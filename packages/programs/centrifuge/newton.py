@@ -31,6 +31,7 @@ class CentrifugeProgram:
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
         self.handle, self.stopping, self.stop_angle = None, False, None
         self.elapsed, self.running = 0.0, 0.0
+        self.rotor_velocity = 0.0
         self.welded = []
         ctx.set(
             phase="idle",
@@ -111,12 +112,21 @@ class CentrifugeProgram:
         if phase == "decelerating" and rpm == 0:
             angle = float(port.joint_q(self.spindle)[0])
             if self.stop_angle is None:
-                self.stop_angle = math.ceil((angle + 1e-4) / (2 * math.pi)) * 2 * math.pi
+                # Leave room for the physical drive to settle before alignment.
+                speed = max(self.rotor_velocity, abs(float(port.joint_qd(self.spindle)[0])))
+                self.stop_angle = math.ceil((angle + speed * 0.5 + 0.005) / (2 * math.pi)) * 2 * math.pi
             error = self.stop_angle - angle
-            velocity = max(0.0, min(ctx.config.visualRpmCap / 60 * 2 * math.pi, error * 8))
+            velocity = max(0.0, min(ctx.config.visualRpmCap / 60 * 2 * math.pi, error))
             if abs(error) < 0.005 and abs(port.joint_qd(self.spindle)[0]) < 0.05:
                 velocity, phase = 0.0, "idle"
-        port.set_joint_target_velocity(self.spindle, [velocity])
+        # The displayed ramp can reach the visual cap in one control sample.
+        # Give newly enabled slot welds a gentle startup. The faster braking
+        # response and unit alignment gain settle without reversing the rotor.
+        response = 1.0 if velocity > self.rotor_velocity else 0.25
+        self.rotor_velocity += -math.expm1(-dt / response) * (velocity - self.rotor_velocity)
+        if phase == "idle":
+            self.rotor_velocity = 0.0
+        port.set_joint_target_velocity(self.spindle, [self.rotor_velocity])
         ctx.set(phase=phase, rpm=rpm, remainingSeconds=max(0, duration - self.running))
         inv.progress(min(0.999, self.elapsed / (2 * target / 1000 + duration + 1)))
         if phase == "idle":
