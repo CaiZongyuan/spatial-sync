@@ -202,6 +202,17 @@ class ControllerPromotions:
                 "not_comparable", "Recoverable evaluation inputs are unavailable or changed"
             ) from error
 
+    def _funding(self, subject, suite, scene, plan_id, revision):
+        funding = self.manager.notebooks.prepare_evaluation(
+            SimpleNamespace(planId=plan_id, planRevision=revision), suite, scene
+        )
+        if subject.candidateIdentity.kind == "program":
+            from packages.programs.authorization import require_program_approval
+
+            require_program_approval(self.manager, subject.candidateIdentity.id, suite, scene,
+                                     plan_id=funding["planId"], plan_revision=funding["planRevision"])
+        return funding
+
     def _prepare(self, body, actor):
         with self._lock, self.manager.evaluations.store.reference_guard():
             inputs = body.model_dump(mode="json")
@@ -246,9 +257,7 @@ class ControllerPromotions:
                 plan_id = self.manager.jobs.get(subject.candidateIdentity.jobId)["planId"]
             if plan_id is None:
                 _refuse("promotion_plan_required")
-            funding = self.manager.notebooks.prepare_evaluation(
-                SimpleNamespace(planId=plan_id, planRevision=body.planRevision), suite, scene
-            )
+            funding = self._funding(subject, suite, scene, plan_id, body.planRevision)
             funding["allocatedEpisodes"] = count
             embodiment, controller = self._controller(scene, subject.target.entityKey)
             model = self._model(subject, embodiment, train.current_accepted)
@@ -350,9 +359,7 @@ class ControllerPromotions:
             if self.qualify(value["subject"], context["qualification"]["check"]) != context["qualification"]:
                 _refuse("promotion_qualification_changed")
         funding = context["funding"]
-        fresh = self.manager.notebooks.prepare_evaluation(
-            SimpleNamespace(planId=funding["planId"], planRevision=funding["planRevision"]), suite, scene
-        )
+        fresh = self._funding(subject, suite, scene, funding["planId"], funding["planRevision"])
         fresh["allocatedEpisodes"] = funding["allocatedEpisodes"]
         embodiment, controller = self._controller(scene, subject.target.entityKey)
         if (fresh != funding or embodiment != context["embodiment"] or controller != context["controller"]
