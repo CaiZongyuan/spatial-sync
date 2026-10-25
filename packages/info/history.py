@@ -65,12 +65,28 @@ def scan_samples(raw):
         entities = message["entities"] if kind == "entity.snapshot" else message["changes"]
         if kind == "entity.snapshot" and not store.apply(model):
             continue
+        # Unique keys can reduce together; immutable prior states retain time/revision evidence.
+        previous = (
+            {change.key: store.entities.get(change.key) for change in model.changes}
+            if kind == "entity.observations" else {}
+        )
+        batched = kind == "entity.observations" and len(previous) == len(model.changes)
+        if batched and not store.apply(model):
+            continue
+        # Duplicate keys still need each intermediate state in recorded FIFO order.
+        update = (
+            model.model_copy(update={"changes": model.changes[:1]})
+            if kind == "entity.observations" and not batched else None
+        )
         for entity_index, entity in enumerate(entities):
-            old = store.entities.get(entity["key"]) if kind == "entity.observations" else None
-            if kind == "entity.observations":
+            old = (
+                previous.get(entity["key"]) if batched
+                else store.entities.get(entity["key"]) if kind == "entity.observations" else None
+            )
+            if kind == "entity.observations" and not batched:
                 # A batch can contain the same key more than once. Advance in
                 # FIFO order, exactly as the live reducer does for that batch.
-                update = model.model_copy(update={"changes": [model.changes[entity_index]]})
+                update.changes[0] = model.changes[entity_index]
                 if not store.apply(update):
                     continue
             if kind == "entity.observations" and old and entity["rev"] < old.rev:
@@ -104,7 +120,8 @@ def write_property_index(path):
         })
         entry["startSampleTimeMs"] = min(entry["startSampleTimeMs"], sample.t_ms)
         entry["endSampleTimeMs"] = max(entry["endSampleTimeMs"], sample.t_ms)
-        entry["records"].append([sample.t_ms, sample.offset, sample.epoch, sample.entity_index])
+        # JSON arrays stay identical; immutable numeric tuples can be untracked by GC.
+        entry["records"].append((sample.t_ms, sample.offset, sample.epoch, sample.entity_index))
     document = {"version": 1, "segmentSha256": sha256(raw).hexdigest(), "bytes": len(raw),
                 "properties": list(properties.values())}
     document["checksum"] = sha256(_json_bytes(document)).hexdigest()

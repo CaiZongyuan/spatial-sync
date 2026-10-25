@@ -6,11 +6,73 @@ import math
 import pytest
 
 import apps.api.app.sources.synthetic_source as synthetic_module
-from packages.protocol.schema import SessionOptions
+from packages.protocol.schema import Command, InvokeRequest, SessionOptions
+
+
+@pytest.mark.parametrize("interrupt", [None, "pause", "reset"])
+async def test_catchup_delivers_observations_before_later_control_ticks(monkeypatch, interrupt):
+    source = synthetic_module.SyntheticSource("catchup-delivery")
+    original_sleep = asyncio.sleep
+    now = 0.0
+    finished = asyncio.Event()
+    received_at_ticks = []
+    commands, completed_advance = [], []
+
+    async def coarse_sleep(delay):
+        nonlocal now
+        if delay == 0:
+            await original_sleep(0)
+        elif now == 0:
+            now = 0.2  # One coarse wakeup requires 48 physical steps / 12 control ticks.
+        else:
+            completed_advance.append((
+                source._step_index, source._control_index, source.host.tick_index, source._epoch,
+            ))
+            finished.set()
+            await asyncio.Event().wait()
+
+    async def receive():
+        async for event in source.events():
+            if event.type == "entity.observations":
+                received_at_ticks.append(source._control_index)
+                if interrupt is not None and not commands:
+                    assert source._lock.locked()
+                    commands.append(asyncio.create_task(source.execute(Command(
+                        requestId="interrupt-catchup", command=interrupt,
+                    ))))
+
+    monkeypatch.setattr(synthetic_module.asyncio, "sleep", coarse_sleep)
+    monkeypatch.setattr(synthetic_module.time, "monotonic", lambda: now)
+    reader = asyncio.create_task(receive())
+    try:
+        await source.start("lab-demo", SessionOptions())
+        accepted = await source.invoke(InvokeRequest(
+            invocationId="catchup-move", requestId="catchup-move", epoch=0,
+            entityKey=synthetic_module.ROBOT, action="moveTo",
+            params={"location": "rack.A1", "pose": "approach"},
+            createdSimTime=0, createdAtMs=0,
+        ))
+        assert accepted.status == "accepted"
+        await finished.wait()
+        assert completed_advance == [(48, 12, 12, 0)]
+        assert received_at_ticks and received_at_ticks[0] < 12
+        if commands:
+            result = await commands[0]
+            assert result.ack.status == "applied"
+            if interrupt == "reset":
+                assert result.frame.epoch == 1 and result.frame.simTime == 0
+                assert source._step_index == source._control_index == source.host.tick_index == 0
+            else:
+                assert result.state.state == "PAUSED" and result.frame.simTime == 0.2
+    finally:
+        await source.close()
+        await reader
+        await asyncio.gather(*commands)
 
 
 async def test_publication_preserves_rate_under_coarse_wakeups(monkeypatch):
     source = synthetic_module.SyntheticSource("cadence")
+    original_sleep = asyncio.sleep
     now = 0.0
     publications = []
     finished = asyncio.Event()
@@ -18,6 +80,9 @@ async def test_publication_preserves_rate_under_coarse_wakeups(monkeypatch):
 
     async def coarse_sleep(delay):
         nonlocal now, last_seq
+        if delay == 0:
+            await original_sleep(0)
+            return
         frame = source.latest_frame()
         if frame and frame.seq != last_seq:
             last_seq = frame.seq
@@ -43,8 +108,10 @@ async def test_publication_preserves_rate_under_coarse_wakeups(monkeypatch):
 
 
 @pytest.mark.parametrize("rtf", [0.1, 1, 10, None])
-async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(monkeypatch, rtf):
+@pytest.mark.parametrize("physics_dt", [1 / 240, 1 / 1000, 1e-6, 0.02])
+async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(monkeypatch, rtf, physics_dt):
     source = synthetic_module.SyntheticSource("drain-boundary")
+    original_sleep = asyncio.sleep
     now = 0.0
     intervals = iter((0.001, 0.003, 0.005, math.nextafter(1 / 60, 0), 1 / 60, 0.02, 0.3, 0.001))
     iterations = []
@@ -52,6 +119,9 @@ async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(
 
     async def controlled_sleep(delay):
         nonlocal now
+        if delay == 0:
+            await original_sleep(0)
+            return
         elapsed = next(intervals, None)
         if elapsed is None:
             finished.set()
@@ -63,7 +133,7 @@ async def test_running_loop_flushes_without_repeating_a_due_control_ticks_drain(
     monkeypatch.setattr(synthetic_module.asyncio, "sleep", controlled_sleep)
     monkeypatch.setattr(synthetic_module.time, "monotonic", lambda: now)
     try:
-        await source.start("lab-demo", SessionOptions(realtimeFactor=rtf))
+        await source.start("lab-demo", SessionOptions(realtimeFactor=rtf, physicsDt=physics_dt))
         original_tick, original_drain = source.host.tick, source.host.drain_events
 
         def tick(*args):
