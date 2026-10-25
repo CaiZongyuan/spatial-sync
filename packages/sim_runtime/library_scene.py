@@ -210,6 +210,7 @@ def attach_visuals(builder, stage, graph, paths):
                   if spec.layer.identifier in layers and str(spec.path) == "/Asset"]
         cube = (
             not owners and key.startswith("/World/Dressing/") and prim.IsA(UsdGeom.Cube)
+            and UsdGeom.Imageable(prim).ComputeVisibility() != UsdGeom.Tokens.invisible
             and not any(prefix in dressing_assets for prefix in prim.GetPath().GetPrefixes())
         )
         if not owners and not cube:

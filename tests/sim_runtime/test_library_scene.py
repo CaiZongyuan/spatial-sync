@@ -126,6 +126,11 @@ def test_authored_cube_dressing_renders_without_entering_the_physics_model(tmp_p
     cube.GetSizeAttr().Set(1.)
     cube.AddTranslateOp().Set(Gf.Vec3d(.2, .1, .725))
     cube.AddScaleOp().Set(Gf.Vec3f(1.5, .8, .05))
+    hidden = UsdGeom.Cube.Define(stage, "/World/Dressing/HiddenBench")
+    UsdGeom.Imageable(hidden).MakeInvisible()
+    parent = UsdGeom.Xform.Define(stage, "/World/Dressing/HiddenGroup")
+    UsdGeom.Imageable(parent).MakeInvisible()
+    UsdGeom.Cube.Define(stage, "/World/Dressing/HiddenGroup/Bench")
     stage.GetRootLayer().Save()
     assets = AssetLibrary(tmp_path / "state", user_root=tmp_path / "library")
     assets.startup()
@@ -138,6 +143,7 @@ def test_authored_cube_dressing_renders_without_entering_the_physics_model(tmp_p
         manifest = export_manifest(rendered, session_id="cube-dressing", scene_revision="rev",
                                    revision_numeric_id=1, strict_labels=True)
         nodes = {node.entityKey: node for node in manifest.nodes}
+        assert not any(key.startswith("/World/Dressing/Hidden") for key in nodes)
         bench = nodes["/World/Dressing/Bench"]
         assert bench.kind == "static" and not bench.colliders
         assert bench.initialPose.p == pytest.approx((.2, .1, .725))
