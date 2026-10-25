@@ -307,6 +307,8 @@ class EvaluationService:
     async def submit(self, body):
         if body.split != "train":
             raise HTTPException(403, {"code": "test_requires_promotion"})
+        if body.subject.startswith("program/") and getattr(self.manager, "programs", None) is None:
+            raise HTTPException(422, {"code": "unsupported_subject", "message": "Script adapter is unavailable"})
         suite = self.suites.resolve(body.suite)
         if suite.metadata["layer"] != "embodied":
             raise HTTPException(

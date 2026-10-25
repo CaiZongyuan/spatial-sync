@@ -23,6 +23,23 @@ from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_controller_publication import ControlledPublicationValidator
 
 
+def test_gateway_without_concrete_script_adapter_refuses_before_any_source(monkeypatch):
+    starts = []
+
+    def no_source(*args, **kwargs):
+        starts.append((args, kwargs))
+        raise AssertionError("Unavailable material must be refused before Source allocation")
+
+    app = create_app(Settings(node_trainer=()), source_factory=no_source)
+    monkeypatch.delattr(app.state.manager, "programs", raising=False)
+    with TestClient(app) as client:
+        response = client.post("/api/v1/evaluations", json={
+            "subject": "program/robot_arm.script.unavailable@1", "suite": "suite/lab-demo-pick-place@1",
+        })
+        assert response.status_code == 422 and response.json()["detail"]["code"] == "unsupported_subject"
+        assert not starts and not app.state.manager.evaluations.store.records
+
+
 @pytest.fixture
 def promotion_inputs(tmp_path, monkeypatch, request):
     starts = []
