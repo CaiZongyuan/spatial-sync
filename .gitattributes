@@ -9,6 +9,7 @@ examples/usd-library/assets/** -text
 examples/usd-library/scene/** -text
 # The catalog snapshot ID hashes the exact committed file bytes.
 catalog/simready.json text eol=lf
+tests/fixtures/catalog/semantic/*.json text eol=lf
 packages/protocol/types/index.ts text eol=lf
 packages/protocol/types/protocol.schema.json text eol=lf
 packages/protocol/fixtures/*.json text eol=lf
