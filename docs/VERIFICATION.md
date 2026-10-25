@@ -581,7 +581,7 @@ On the WSL2 host the benchmark runs with POSIX continuations:
 ```bash
 uv run --with fastembed --no-sync python tools/eval_catalog_semantic.py \
   --embedder fastembed --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
-  --benchmark-records 1000 --benchmark-runs 5 --output .scratch/sf1b/eval-real-1000.json
+  --benchmark-records 1000 --benchmark-runs 5 --output .scratch/sf1b/eval-real-linux-1000.json
 ```
 
 This downloads a model only for that evidence run; no third-party weights or
