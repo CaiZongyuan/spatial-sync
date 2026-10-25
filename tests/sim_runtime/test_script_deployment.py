@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 pytest.importorskip("newton")
 pytestmark = pytest.mark.newton
 
+from apps.api.app.library_validation import program_schemas
 from apps.api.app.main import create_app
 from apps.api.app.session_manager import default_source_factory
 from packages.policies.subjects import fixed_bindings
@@ -19,6 +20,7 @@ from tests.fixtures.script_deployment import gripper_promotion_suite
 from tests.fixtures.script_program import closing_program_directory
 from tests.fixtures.training_task import task_archive, task_directory, training_plan
 from tests.sim_runtime.test_policy_evaluation_api import evaluate
+from tests.unit.test_controller_publication import ControlledPublicationValidator
 
 
 async def test_actual_script_human_publication_then_plan_revocation_keeps_committed_scene_loadable(
@@ -69,7 +71,15 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
         starts.append((kind, identifier))
         return default_source_factory(kind, identifier)
 
-    app = create_app(source_factory=counted_source)
+    # The builtin and derived Scene have the same known 16 P2 free-fall failures.
+    # This constructor seam retains real structural checks and marks physics unproved;
+    # evaluation, recordings, human authority and the deployed Newton Source are actual.
+    app = create_app(
+        source_factory=counted_source,
+        controller_publication_validator=ControlledPublicationValidator(
+            tmp_path / "controlled-publication-validation", program_schemas
+        ),
+    )
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://owned") as http:
             manager = app.state.manager
@@ -188,6 +198,7 @@ async def test_actual_script_human_publication_then_plan_revocation_keeps_commit
                         "unacceptedPromotionSourceStarts": 0,
                         "revokedEvaluationSourceStarts": 0,
                         "basis": "gripper-only engineering fixture",
+                        "publicationPhysics": "controlled constructor; physical stability unproved",
                     },
                     sort_keys=True,
                 ),
