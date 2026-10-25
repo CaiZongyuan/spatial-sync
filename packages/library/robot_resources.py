@@ -53,6 +53,10 @@ class Controller(Document):
 class Action(Document):
     space: str = Field(min_length=1, max_length=256)
     hz: float | None = Field(default=None, gt=0)
+    hzSource: str | None = Field(default=None, min_length=1, max_length=1000,
+                               exclude_if=lambda value: value is None)
+    hzUnknownReason: str | None = Field(default=None, min_length=1, max_length=1000,
+                                      exclude_if=lambda value: value is None)
 
 
 class ControllerVersion(Document):

@@ -240,6 +240,13 @@ class DeploymentPublication:
             raise PlanError("publication_controller_changed", "Published Controller snapshot differs")
         return True
 
+    def committed(self, identifier):
+        """Read the actual commit point even when the final journal write was interrupted."""
+        if not (self._directory(identifier) / "record.json").exists():
+            return False
+        record = self.read(identifier)
+        return record["phase"] == "committed" or self._own_commit(record)
+
     def publish(self, identifier):
         with self._lock:
             record = self.read(identifier)

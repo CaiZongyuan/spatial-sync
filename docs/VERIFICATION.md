@@ -195,6 +195,20 @@ temporary inputs/Session/recording. Source/artifact checks retain unqualified
 fixture labels. See [policy candidates](POLICIES.md) for actual subject and
 observation-evidence commands.
 
+Controller promotion adds transaction/privacy checks and an actual Newton CPU
+private-test journey:
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_controller_promotions.py tests/gateway/test_controller_promotion_privacy.py tests/gateway/test_native_observation_evidence.py tests/unit/test_controller_promotion_admission.py tests/unit/test_controller_publication.py tests/unit/test_deployment_authority.py -q
+```
+
+The Newton journey is included in `test_policy_evaluation_api.py` above. It uses
+real Sources/actions/grades/recordings while explicitly substituting only the
+unmet trainer qualification gate. Transaction tests separately mark controlled
+scores/qualification and physical validation. They prove human approval,
+interruption/restart recovery, concurrent current/Reference fencing, budget and
+privacy behavior; they do not certify actual native trainer256/contact quality.
+
 Evaluation comparison groups require complete server evidence for the fixed
 environment and judge. Candidate versions remain separate. Legacy scores and
 decisions stay readable; missing comparison evidence is unknown and cannot

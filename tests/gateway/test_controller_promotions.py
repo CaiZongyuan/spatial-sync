@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from apps.api.app.library_validation import program_schemas
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from packages.info.evaluation_identity import freeze_identity
 from packages.info.evaluations import wilson_interval
 from packages.library.transactions import durable_json
 from packages.policies.subjects import resolve_policy_subject
@@ -68,16 +69,20 @@ def promotion_inputs(tmp_path, monkeypatch, request):
             ("candidate", subject.document()["candidateIdentity"], getattr(request, "param", 10), "accepted"),
         ):
             identifier = "eval-controlled-" + label
-            row = {"evaluationId": identifier, "suite": suite.id, "subject": candidate["id"],
+            requested = candidate["id"]
+            snapshot = freeze_identity(identifier, suite, scene, requested, store.root / "identity-inputs",
+                                       candidate=candidate if label == "candidate" else None)
+            candidate = snapshot["candidateIdentity"]
+            row = {"evaluationId": identifier, "suite": suite.id, "subject": requested,
                    "candidateIdentity": candidate, "key": deepcopy(key), "split": "train",
                    "comparisonIdentity": deepcopy(identity), "decision": decision,
                    "reference": "eval-controlled-reference" if label == "candidate" else None,
                    "episodes": 10, "successes": successes, "score": successes / 10,
                    "ci95": wilson_interval(successes, 10), "at": "2026-10-25T00:00:00+00:00"}
             record = {"evaluationId": identifier, "suite": suite.id, "suiteContentHash": suite.content_hash,
-                      "subject": candidate["id"], "candidateIdentity": candidate,
+                      "subject": requested, "candidateIdentity": candidate,
                       "split": "train", "status": "completed", "result": row,
-                      "identitySnapshot": None, "runtimeHash": manager.evaluations._runtime_hash,
+                      "identitySnapshot": snapshot, "runtimeHash": manager.evaluations._runtime_hash,
                       "episodes": [{"status": "valid", "success": index < successes,
                                     "cleanupComplete": True} for index in range(10)], "at": row["at"]}
             if label == "candidate":
@@ -160,6 +165,9 @@ def test_private_review_warning_human_decision_and_exact_committed_authority(pro
     permit = service.authorize_scene(deployed)
     assert permit["candidateIdentity"]["id"] == policy["id"]
     assert permit["controller"]["document"]["evaluationId"] == "eval-controlled-candidate"
+    assert permit["controller"]["document"]["task"] == policy["task"]
+    assert permit["controller"]["document"]["action"]["hz"] == 30.0
+    assert permit["controller"]["document"]["action"]["hzSource"] == policy["id"] + "/task.json#/control/hz"
     assert service.resources.controller("fr3-arm")["current"]["scene"] == deployed.id
     assert client.post(decision, json={"decision": "revoke"}).status_code == 409
     funding = service.get(promotion["id"])["context"]["funding"]
@@ -170,14 +178,17 @@ def test_private_review_warning_human_decision_and_exact_committed_authority(pro
     assert not starts and policy["qualified"] is False
 
 
-def test_publication_interruption_resumes_same_scene_and_controller_revision(promotion_inputs, tmp_path):
+@pytest.mark.parametrize("failure_point", ["scene_published", "current_written"])
+def test_publication_interruption_resumes_same_scene_and_controller_revision(
+    promotion_inputs, tmp_path, failure_point
+):
     client, service, policy, scene, starts = promotion_inputs
     promotion = request(client, policy, scene)
     complete_controlled_tests(service, promotion)
     review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
 
     def interrupt(effect, _):
-        if effect == "scene_published":
+        if effect == failure_point:
             raise OSError("Controlled interruption after actual Scene import")
 
     service.publication.after_effect = interrupt
@@ -185,8 +196,19 @@ def test_publication_interruption_resumes_same_scene_and_controller_revision(pro
     with pytest.raises(OSError, match="Controlled interruption"):
         client.post(route, json={"decision": "approve"})
     interrupted = service.publication.read(promotion["id"])
-    assert interrupted["phase"] == "scene_published"
-    assert service.resources.controller("fr3-arm")["currentVersion"] is None
+    assert interrupted["phase"] == ("scene_published" if failure_point == "scene_published"
+                                    else "controller_version_written")
+    if failure_point == "current_written":
+        assert service.resources.controller("fr3-arm")["currentVersion"] == interrupted["controllerVersion"]
+        can_revoke = client.get("/api/v1/approvals/" + review["approvalId"]).json()["canRevoke"]
+        revoked = client.post(route, json={"decision": "revoke"})
+        assert revoked.status_code == 409, revoked.text
+        assert not can_revoke
+        assert client.get("/api/v1/approvals/" + review["approvalId"]).json()["status"] == "approved"
+        retried = client.post(route, json={"decision": "approve"})
+        assert retried.status_code == 200 and retried.json()["status"] == "published"
+    else:
+        assert service.resources.controller("fr3-arm")["currentVersion"] is None
     settings, factory = service.manager.settings, service.manager.factory
     client.__exit__(None, None, None)  # End this owned gateway before reopening its durable roots.
     app = create_app(settings, source_factory=factory,
@@ -201,6 +223,9 @@ def test_publication_interruption_resumes_same_scene_and_controller_revision(pro
         assert recovered["deployment"]["controller"]["document"]["version"] == (
             interrupted["controllerVersion"])
         assert len(app.state.robot_resources.controller("fr3-arm")["versions"]) == 1 and not starts
+        deployed = app.state.manager.library.resolve(recovered["deployment"]["scene"]["id"],
+                                                     launch=True, source="newton")
+        assert app.state.controller_promotions.authorize_scene(deployed)["approvalId"] == review["approvalId"]
 
 
 def test_new_reference_before_human_decision_blocks_old_intent(promotion_inputs):
@@ -354,3 +379,32 @@ def test_orphan_model_cannot_poison_a_later_accepted_context_for_the_same_candid
     assert first_model["id"] != second_model["id"] and old_path.read_bytes() == old_bytes
     assert second_model["quality"]["evaluationId"] == later["evaluationId"]
     assert "testEvidence" not in second_model and not starts
+
+
+@pytest.mark.parametrize("scope", ["candidate-train", "reference-train", "candidate-test", "reference-test"])
+def test_missing_recoverable_identity_blob_blocks_new_review_and_approval(promotion_inputs, scope):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    route = f"/api/v1/controller-promotions/{promotion['id']}/review"
+    review = client.get(route).json()
+    frozen = service.get(promotion["id"])
+    side, split = scope.split("-")
+    identifier = (frozen["runs"][side] if split == "test" else frozen["context"][
+        "currentAccepted" if side == "candidate" else "priorReference"]["evaluationId"])
+    store = service.manager.evaluations.store
+    record = deepcopy(store.records[identifier])
+    path = store.root / "identity-inputs" / record["identitySnapshot"]["recovery"]["file"]
+    original = path.read_bytes()
+    path.write_bytes(original + b"controlled evidence corruption")
+    try:
+        failed = client.get(route)
+        assert failed.status_code == 409 and failed.json()["detail"]["code"] == "not_comparable", failed.text
+        decision = client.post("/api/v1/approvals/" + review["approvalId"] + "/decision",
+                               json={"decision": "approve"})
+        assert decision.status_code == 409 and decision.json()["detail"]["code"] == "not_comparable"
+        assert store.records[identifier] == record
+        assert service.resources.controller("fr3-arm")["currentVersion"] is None and not starts
+        assert not list(service.publication.root.glob("*/record.json"))
+    finally:
+        path.write_bytes(original)

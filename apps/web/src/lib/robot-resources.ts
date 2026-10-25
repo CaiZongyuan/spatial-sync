@@ -12,7 +12,8 @@ export interface RobotModel {
 export interface ControllerVersion {
   controller: string; version: number; embodiment: string; robotModel: string; policy: string | null;
   program: string; programArtifact?: { id: string; contentHash: string } | null;
-  action: { space: string; hz: number | null }; observation: string | null;
+  action: { space: string; hz: number | null; hzSource?: string; hzUnknownReason?: string };
+  observation: string | null;
   task: string | null; scene: string; evaluationId: string | null; contentHash: string;
 }
 export interface RobotEmbodiment {

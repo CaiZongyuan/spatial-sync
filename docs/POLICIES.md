@@ -171,4 +171,67 @@ available. `verify-observation-source` separately checks the actual hook/Task,
 dispatch, succeeded process, weights, versions, IDs and hashes against the
 capture receipt. Its `capture_contract_verified` status validates those source
 facts; it explicitly does not establish actual training quality or independent
-observation semantics. All these operations retain `qualified:false`.
+observation semantics. The frozen Policy package retains `qualified:false`.
+
+## Native observation qualification
+
+Reviewed source profiles live in the repository's `library/observation-profiles/`.
+The authenticated Job input selects a profile by exact Task hash and RSL version;
+a Task or HTTP caller cannot register one. Without a matching profile, native
+qualification remains unavailable. The default registry currently has no admitted
+real training profile.
+
+The owned environment observer tracks successful step/reset calls independently
+of view IPC. For the pinned RSL MLP boundary, the collector copies actual inputs
+to the actor normalizer only during `alg.act`, records matching physical state
+and raw previous actions, and excludes SGD calls. A reviewed Task provider maps
+physical channels; it cannot return the actor vector or previous action as proof.
+The verifier requires256 distinct environment/epoch/physics-step witnesses,
+the exact succeeded fenced Job/export/Task/Scene, reviewed implementation hashes
+and maximum recomputed observation error ≤1e-4. Normalization stays inside the
+exported graph. Unknown exporters or external normalization remain unverified.
+
+Native artifacts use `observations/native-samples.json` and
+`observations/native-capture.json` with the same check/verify commands above.
+Derived qualification is separate from the Policy package's immutable creation
+flag. Controlled constructor adapters used by transaction tests retain their
+controlled provenance and do not establish actual learned/contact quality.
+
+## Request human Controller promotion
+
+```powershell
+lw policy promote policy/fr3-pick-tube@1 --scene robot-and-tubes@2 --evaluation eval-EXAMPLE --request-id promotion-EXAMPLE --json
+lw promotion show promotion-EXAMPLE --json
+```
+
+Use the promotion ID returned by the first command. `policy_promote` and
+`controller_promotion_show` are the equivalent generic MCP tools. Requests use
+`POST /api/v1/controller-promotions`; no command sets a qualified flag or human
+decision. The bundled `lab-train-evaluate` skill follows approved work and public
+train evidence through this same pipeline.
+
+Admission requires this exact Candidate to remain the current accepted train
+row, its complete prior comparable Reference and trusted observation qualification.
+The platform recomputes acceptance against that prior Reference, then charges
+both private test scopes to the existing approved Plan budget and shared queue.
+Test results never advance the train Reference. Ordinary Evaluation, Session,
+recording, Notebook, runtime, cost-detail and Inbox reads hide private evidence.
+
+The existing approval page fetches a human-only review with train/test scores
+and a red warning when Candidate test is below Reference. Approval publishes an
+immutable derived Scene, immutable Controller version and current pointer in
+that order. Retries verify and reuse reserved destinations. A concurrent current
+or Reference change blocks the old intent. Normal Scene validation remains in
+force; a controlled structural fixture does not certify physical stability.
+
+The robot resource page shows the committed default Scene, version, composition
+and exact train Evaluation. Policy action frequency comes from the actual frozen
+Task's `control.hz`, with `action.hzSource`; an undeclared script tick frequency
+stays unknown with its reason. Model parameters and licence remain unknown when
+their source does not establish them. Active Sessions keep their loaded identity.
+
+New interactive Sessions require a committed human proof matching actual Scene,
+Controller, complete bindings and immutable material. An imported policy binding
+alone cannot authorize execution. A later Training Plan revision/revocation
+blocks new evaluation work but preserves an already committed deployment proof;
+rollback requires a new explicit transaction.

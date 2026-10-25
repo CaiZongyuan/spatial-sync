@@ -20,7 +20,7 @@ export function ControllerPromotionReview({ id, canRead, ready, reportStatus, re
     if (!canRead) return;
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
     void request<Review>(`/controller-promotions/${encodeURIComponent(id)}/review`, { signal: controller.signal })
-      .then(value => { if (!disposed) { setReview(value); ready(Boolean(value.test)); reportStatus(value.status); } })
+      .then(value => { if (!disposed) { setReview(value); ready(Boolean(value.test) && value.status === 'awaiting_human'); reportStatus(value.status); } })
       .catch(failure => { if (!disposed) setError(controller.signal.aborted ? '读取超时，请重试' : (failure as Error).message); })
       .finally(() => clearTimeout(timeout));
     return () => { disposed = true; controller.abort(); clearTimeout(timeout); };

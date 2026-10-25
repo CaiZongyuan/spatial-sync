@@ -27,7 +27,7 @@ function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotMod
         <div><dt>设备程序</dt><dd><code>{current?.program ?? binding?.program ?? '未接入'}</code></dd></div>
         {current?.programArtifact && <div><dt>脚本版本</dt><dd><code>{current.programArtifact.id}</code><small>{current.programArtifact.contentHash}</small></dd></div>}
         {current && <div><dt>默认部署场景</dt><dd><Link to="/scenes/$name/$rev" params={{ name: current.scene.split('@')[0], rev: current.scene.split('@')[1] }}>{current.scene} →</Link></dd></div>}
-        <div><dt>动作空间 / 频率</dt><dd>{current?.action.space ?? model?.actionSpace ?? '未接入'}<small>{current?.action.hz ? `${current.action.hz} Hz` : '频率未单独声明'}</small></dd></div>
+        <div><dt>动作空间 / 频率</dt><dd>{current?.action.space ?? model?.actionSpace ?? '未接入'}<small>{current?.action.hz ? `${current.action.hz} Hz` : '频率未单独声明'}</small><small>{current?.action.hzSource ?? current?.action.hzUnknownReason}</small></dd></div>
         <div><dt>观测</dt><dd>{current?.observation ?? (binding ? '内置 Program / PhysicsPort；无策略 obs_spec' : '未接入')}</dd></div>
         <div><dt>评估成绩</dt><dd>{current?.evaluationId ? `评估引用 ${current.evaluationId}` : '暂无 Controller 评估结果'}</dd></div></dl>
       {model && <p className="resource-note">{model.capability.notes}</p>}

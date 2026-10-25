@@ -5,17 +5,19 @@ import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
 from packages.info.approvals import ApprovalConflict
-from packages.info.evaluation_identity import comparable, comparison_identity
+from packages.info.evaluation_identity import comparable, comparison_identity, verify_identity
 from packages.info.evaluations import evaluation_decision, wilson_interval
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.common import NAME, LibraryError, document
 from packages.library.robot_resources import Embodiment, RobotModel
 from packages.library.transactions import durable_json
+from packages.policies.library import read_json
 from packages.programs.simulation import (
     admitted_subject,
     parse_subject,
@@ -186,6 +188,19 @@ class ControllerPromotions:
         identifier = f"{candidate['kind']}-{fingerprint({'candidate': candidate, 'model': facts})[:24]}"
         return RobotModel.model_validate({"id": identifier, **facts}).model_dump(mode="json")
 
+    def _current_identity(self, record):
+        try:
+            snapshot = record.get("identitySnapshot")
+            if (not isinstance(snapshot, dict) or snapshot.get("unknownReason") is not None
+                    or snapshot["candidateIdentity"] != record.get("candidateIdentity")
+                    or record["runtimeHash"] != self.manager.evaluations._runtime_hash):
+                raise ValueError("Fixed Candidate implementation evidence is unavailable")
+            verify_identity(snapshot, directory=self.manager.evaluations.store.root / "identity-inputs")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise PlanError(
+                "not_comparable", "Recoverable evaluation inputs are unavailable or changed"
+            ) from error
+
     def _prepare(self, body, actor):
         with self._lock, self.manager.evaluations.store.reference_guard():
             inputs = body.model_dump(mode="json")
@@ -207,6 +222,8 @@ class ControllerPromotions:
                 _refuse("candidate_not_accepted" if not rows else "train_reference_changed")
             train = accepted_train_evidence(store, current[0]["candidateIdentity"], scene,
                                             evaluation_id=current[0]["evaluationId"])
+            for row in (train.current_accepted, train.prior_reference):
+                self._current_identity(store.records[row["evaluationId"]])
             template = store.records[train.current_accepted["evaluationId"]]
             subject = admitted_subject(template)
             if subject is None:
@@ -235,13 +252,23 @@ class ControllerPromotions:
             embodiment, controller = self._controller(scene, subject.target.entityKey)
             model = self._model(subject, embodiment, train.current_accepted)
             candidate = subject.document()["candidateIdentity"]
+            if candidate["kind"] == "policy":
+                _, package = self.manager.policies.resolve(candidate["id"])
+                runtime_task = read_json(package / "task.json")
+                action = {"space": model["actionSpace"], "hz": runtime_task["control"]["hz"],
+                          "hzSource": candidate["id"] + "/task.json#/control/hz"}
+                task_id = candidate["task"]
+            else:
+                action = {"space": model["actionSpace"], "hz": None,
+                          "hzUnknownReason": "Runner-owned script ticks have no declared material frequency"}
+                task_id = subject.codeApproval.task
             fields = {"embodiment": embodiment["id"], "robotModel": model["id"],
                       "policy": body.subject if candidate["kind"] == "policy" else None,
                       "program": subject.binding["program"],
                       "programArtifact": {key: candidate[key] for key in ("id", "contentHash")}
                       if candidate["kind"] == "program" else None,
-                      "action": {"space": model["actionSpace"], "hz": None},
-                      "observation": candidate.get("observationSha256"), "task": candidate.get("task"),
+                      "action": action,
+                      "observation": candidate.get("observationSha256"), "task": task_id,
                       "evaluationId": train.current_accepted["evaluationId"]}
             identifier = "promotion-" + uuid.uuid4().hex
             context = {"baseScene": {"id": scene.id, "contentHash": scene.content_hash},
@@ -268,6 +295,14 @@ class ControllerPromotions:
                               status="queued", episodes=[], attemptedEpisodes=0, at=row["at"],
                               allocatedEpisodes=count, controllerPromotion={"id": identifier, "side": side,
                               "contextHash": value["evaluationContextHash"]})
+                snapshot = record["identitySnapshot"]
+                recovery = self.manager.evaluations.store.root / "identity-inputs"
+                raw = (recovery / snapshot["recovery"]["file"]).read_bytes()
+                if sha256(raw).hexdigest() != snapshot["recovery"]["sha256"]:
+                    _refuse("not_comparable")
+                snapshot["recovery"]["file"] = evaluation_id + ".zip"
+                with (recovery / snapshot["recovery"]["file"]).open("xb") as stream:
+                    stream.write(raw)
                 value["runs"][side] = evaluation_id
                 value["evaluationRecords"].append(record)
             return self._save(value)
@@ -302,6 +337,8 @@ class ControllerPromotions:
         current = accepted_train_evidence(self.manager.evaluations.store,
             subject.document()["candidateIdentity"], scene,
             evaluation_id=context["currentAccepted"]["evaluationId"])
+        for row in (current.current_accepted, current.prior_reference):
+            self._current_identity(self.manager.evaluations.store.records[row["evaluationId"]])
         if (current.current_accepted != context["currentAccepted"]
                 or current.prior_reference != context["priorReference"]
                 or suite.content_hash != context["suite"]["contentHash"]
@@ -349,6 +386,7 @@ class ControllerPromotions:
         evidence = {}
         for side, identifier in value["runs"].items():
             record = store.records.get(identifier, {})
+            self._current_identity(record)
             row = record.get("result", {})
             template = value["context"]["priorReference" if side == "reference" else "currentAccepted"]
             episodes = record.get("episodes", [])
@@ -408,6 +446,8 @@ class ControllerPromotions:
 
     def review(self, identifier):
         value = self.refresh(identifier)
+        if value["status"] == "awaiting_human":
+            self._validate(value)
         result = self.public(value)
         evidence = value["context"].get("testEvidence")
         if evidence:
@@ -427,6 +467,8 @@ class ControllerPromotions:
             expected = {"approve": "approved", "deny": "denied", "revoke": "revoked"}[decision]
             if actor.kind != "user" or value.get("approvalId") != approval.approvalId:
                 raise ApprovalConflict("Exact human deployment authority is required")
+            if self.publication.committed(value["id"]):
+                value = self._publish(value)
             if value["status"] == "published":
                 if decision == "approve" and current.status == "approved":
                     return self.public(value)
@@ -445,6 +487,12 @@ class ControllerPromotions:
             value["status"] = expected
             self._save(value)
             return self.public(self._publish(value) if decision == "approve" else value)
+
+    def can_revoke(self, approval):
+        value = self.get(approval.subjectId)
+        if approval.status not in ("approved", "denied") or value["status"] == "published":
+            return False
+        return not self.publication.committed(value["id"])
 
     def _publication_context(self, record):
         value = self.get(record["id"])

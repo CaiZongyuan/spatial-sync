@@ -45,8 +45,7 @@ def install_approval_routes(app, manager, role_for):
         plan_can_revoke = bool(plan_current
                                and all(step.status == "pending" for step in plan.plan.steps))
         promotion = record.details.get("controllerPromotionId")
-        promotion_revoke = bool(promotion and record.status in ("approved", "denied")
-                                and manager.controller_promotions.get(promotion)["status"] != "published")
+        promotion_revoke = bool(promotion and manager.controller_promotions.can_revoke(record))
         return {
             **record.model_dump(mode="json"),
             "canRevoke": promotion_revoke or (
