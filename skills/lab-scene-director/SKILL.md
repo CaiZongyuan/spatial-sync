@@ -196,7 +196,7 @@ supporting evidence; the S/P report remains the validation result.
 For the seating demo, observe the tube beyond the two-second validation interval;
 the manual Newton regression checks sixty seconds of seating. Close the owned
 Session through `DELETE /api/v1/sessions/{sessionId}` or the Web close button.
-`lw cancel` cancels device invocations and does not close a Session.
+`lw cancel <invocation-id>` cancels device invocations and does not close a Session.
 
 ## 7. Receive and submit external reports
 
