@@ -37,6 +37,13 @@ class BrokenEmbedder:
         raise RuntimeError("model is not available in this environment")
 
 
+class AlternateHashEmbedder(HashEmbedder):
+    info = EmbedderInfo(
+        id="alternate-standin", version="1", kind="deterministic-stand-in", real=False,
+        runtime="numpy-hash", dimension=512,
+    )
+
+
 class QueryFailingEmbedder:
     info = EmbedderInfo(
         id="query-failing-model", version="0", kind="real-cpu-multilingual", real=True,
@@ -304,3 +311,31 @@ def test_duplicate_copy_of_a_catalog_keeps_the_same_index_version(tmp_path):
     duplicate = catalog(copied)
     assert duplicate.semantic.version == original.semantic.version
     assert copy.deepcopy(original.semantic.document()) == duplicate.semantic.document()
+
+
+def test_semantic_index_change_with_the_same_snapshot_invalidates_a_cursor():
+    query = "a container for storing lab supplies"
+    first = catalog(CORPUS_CATALOG).search(
+        EmptyLibrary(), q=query, scope="online", limit=2,
+    )
+    assert first["nextCursor"]
+    changed = catalog(CORPUS_CATALOG, embedder=AlternateHashEmbedder())
+    with pytest.raises(LibraryError) as error:
+        changed.search(
+            EmptyLibrary(), q=query, scope="online", limit=2, cursor=first["nextCursor"],
+        )
+    assert error.value.status == 400
+    assert error.value.detail["code"] == "cursor_mismatch"
+
+
+def test_empty_semantic_index_is_labelled_and_returns_a_zero_result(tmp_path):
+    source = json.loads(CORPUS_CATALOG.read_text(encoding="utf-8"))
+    source["entries"] = []
+    path = tmp_path / "empty.json"
+    path.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    value = catalog(path)
+    result = value.search(EmptyLibrary(), q="a container for storing lab supplies", scope="online")
+    assert result["semantic"]["enabled"] is True
+    assert result["semantic"]["reason"] == "empty_index"
+    assert result["semantic"]["index"]["entryCount"] == 0
+    assert result["results"] == []
