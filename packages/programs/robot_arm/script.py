@@ -136,6 +136,7 @@ class ScriptProgram(RobotArmPhysicsFacts):
             self._hold(ctx)
             ctx.set(phase="fault" if self.handle.invocation.status == "failed" else "idle")
             self.handle = None
+            self._facts(ctx)
 
     def start(self, inv, ctx):
         if inv.action == "stop":
