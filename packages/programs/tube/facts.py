@@ -4,12 +4,14 @@ import math
 
 import numpy as np
 
+UPRIGHT_COSINE = math.cos(math.radians(20))
+
 
 def upright(quaternion):
     q = np.asarray(quaternion, dtype=float)
     norm = float(q @ q)
     return (
-        norm > 0 and np.isfinite(norm) and 1 - 2 * (q[0] ** 2 + q[1] ** 2) / norm > math.cos(math.radians(20))
+        norm > 0 and math.isfinite(norm) and 1 - 2 * (q[0] ** 2 + q[1] ** 2) / norm > UPRIGHT_COSINE
     )
 
 
@@ -22,8 +24,18 @@ def _site_positions(pose, sites):
         delta = pose[None, :, :3] - sites[:, None, :3]
         q = q[:, None, :]
     inverse = -q[..., :3]
-    turn = 2 * np.cross(inverse, delta)
-    return delta + q[..., 3, None] * turn + np.cross(inverse, turn)
+    x, y, z = inverse[..., 0], inverse[..., 1], inverse[..., 2]
+    dx, dy, dz = delta[..., 0], delta[..., 1], delta[..., 2]
+    # Both 3D cross products preserve the original multiply/subtract/add order.
+    tx = 2 * (y * dz - z * dy)
+    ty = 2 * (z * dx - x * dz)
+    tz = 2 * (x * dy - y * dx)
+    w = q[..., 3]
+    return np.stack(
+        (dx + w * tx + (y * tz - z * ty),
+         dy + w * ty + (z * tx - x * tz),
+         dz + w * tz + (x * ty - y * tx)), axis=-1
+    )
 
 
 def site_relative_velocities(previous_pose, pose, previous_sites, sites, dt):
@@ -43,12 +55,19 @@ def tube_location(pose, velocity, site_poses, site_keys, *, held=False):
     """Velocity is one vector for static Sites, or one relative vector per Site."""
     if held:
         return "held"
-    pose, sites = np.asarray(pose, dtype=float), np.asarray(site_poses, dtype=float)
-    if not np.all(np.isfinite(pose)) or not upright(pose[3:]) or len(sites) == 0:
+    pose, sites = tuple(map(float, pose)), np.asarray(site_poses, dtype=float)
+    if not all(map(math.isfinite, pose)) or not upright(pose[3:]) or len(sites) == 0:
         return "loose"
-    delta = sites[:, :3] - pose[:3]
-    speeds = np.linalg.norm(np.atleast_2d(velocity), axis=1)
-    matches = np.flatnonzero(
-        (np.linalg.norm(delta[:, :2], axis=1) < 0.015) & (np.abs(delta[:, 2]) < 0.02) & (speeds < 0.05)
-    )
-    return site_keys[int(matches[0])] if len(matches) else "loose"
+    velocities = np.atleast_2d(velocity)
+    if len(velocities) not in (1, len(sites)):
+        raise ValueError("Velocity requires one vector or one vector per Site")
+    x, y, z = pose[:3]
+    for index, site in enumerate(sites):
+        if abs(float(site[2]) - z) < 0.02:
+            dx, dy = float(site[0]) - x, float(site[1]) - y
+            if math.sqrt(dx * dx + dy * dy) < 0.015:
+                # Keep input precision and the strict speed limit; distant Sites need no norm.
+                row = 0 if len(velocities) == 1 else index
+                if np.linalg.norm(velocities[row:row + 1], axis=1)[0] < 0.05:
+                    return site_keys[index]
+    return "loose"
