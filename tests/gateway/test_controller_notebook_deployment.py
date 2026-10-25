@@ -155,6 +155,11 @@ def test_notebook_separates_approval_publication_and_actual_default_without_priv
         no_ready_source = client.get(route).json()
         assert no_ready_source["candidate"]["score"] is None
         assert no_ready_source["defaultProgram"] == committed["defaultProgram"]
+        failed["key"] = {"source": "synthetic"}
+        store.save(failed)
+        assert client.get(route).json()["defaultProgram"] is None
+        failed.pop("key")
+        store.save(failed)
         assert client.post("/api/v1/approvals/" + plan["approvalId"] + "/decision",
                            json={"decision": "revoke"}).status_code == 200
         assert client.get(route).json()["defaultProgram"] == committed["defaultProgram"]
@@ -171,6 +176,10 @@ def test_notebook_separates_approval_publication_and_actual_default_without_priv
             assert history["deployment"]["promotionStatus"] == "published"
             assert history["deployment"]["publicationStatus"] == "unavailable"
             assert history["deployment"]["current"] is None
+            proof.write_text("{}", encoding="utf-8")
+            assert client.get(route).json()["defaultProgram"] is None
         finally:
+            if proof.exists():
+                proof.unlink()
             missing.rename(proof)
         assert not starts

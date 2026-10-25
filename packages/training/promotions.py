@@ -179,7 +179,7 @@ class ControllerPromotions:
             except (PlanError, LibraryError, OSError, ValueError):
                 try:
                     committed = self.publication.committed(value["id"])
-                except (PlanError, LibraryError, OSError, ValueError):
+                except (PlanError, LibraryError, OSError, ValueError, KeyError, TypeError):
                     committed = None
                 if value["status"] == "published" or committed is not False:
                     projection["publicationStatus"] = "unavailable"
