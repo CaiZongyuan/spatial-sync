@@ -155,14 +155,12 @@ def test_canonical_packages_are_stable_and_preserve_references(tmp_path):
     assert (scene / "stage.usda").read_bytes() == before
 
 
-def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
-    library = library_with_box(tmp_path)
-    plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
-    request = authoring_request(plan, library_roots=[library])
-    layout = {
+def valid_layout(plan, request):
+    return {
         "schema": "lw.scene-layout/1",
         "scene": plan.scene.name,
         "planSha256": plan_digest(plan),
+        "requestSha256": request_digest(request),
         "mode": "human-edited",
         "blender": {"version": "4.5.9", "blendSha256": "a" * 64},
         "instances": [
@@ -177,8 +175,10 @@ def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
         "procedural": [
             {
                 "instanceId": item["instanceId"],
-                "type": item.get("type"),
-                "dimensionsM": item.get("dimensionsM"),
+                "type": item["type"],
+                "dimensionsM": item["dimensionsM"],
+                "localBoundsM": item["localBoundsM"],
+                "meshSha256": item["meshSha256"],
                 "holeCount": item.get("holeCount"),
                 "collision": item.get("collision"),
             }
@@ -186,6 +186,13 @@ def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
             if item["kind"] == "procedural"
         ],
     }
+
+
+def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
+    library = library_with_box(tmp_path)
+    plan = load_plan(PLANS / "tube-rack-demo-v1.yaml")
+    request = authoring_request(plan, library_roots=[library])
+    layout = valid_layout(plan, request)
     moved = json.loads(json.dumps(layout))
     moved["instances"][0]["positionM"] = [0.7, 0.0, 0.75]
     out = tmp_path / "moved"
@@ -198,20 +205,78 @@ def test_layout_manifest_drives_pose_and_rejects_drift(tmp_path):
     )
     assert result["sceneContentHash"]
 
+    cases = []
     missing = json.loads(json.dumps(layout))
     missing["instances"] = missing["instances"][:-1]
-    with pytest.raises(PlanError, match="missing"):
-        build(plan, tmp_path / "missing", library_roots=[library], layout=missing)
-
+    cases.append(("missing", missing, "missing"))
     renamed = json.loads(json.dumps(layout))
     renamed["instances"][0]["entityKey"] = "/World/Lab/Other"
-    with pytest.raises(PlanError, match="entityKey"):
-        build(plan, tmp_path / "renamed", library_roots=[library], layout=renamed)
-
+    cases.append(("renamed", renamed, "entityKey"))
     stale = json.loads(json.dumps(layout))
     stale["planSha256"] = "0" * 64
-    with pytest.raises(PlanError, match="another plan"):
-        build(plan, tmp_path / "stale", library_roots=[library], layout=stale)
+    cases.append(("stale", stale, "another plan"))
+    no_request = json.loads(json.dumps(layout))
+    del no_request["requestSha256"]
+    cases.append(("no-request", no_request, "requestSha256"))
+    wrong_request = json.loads(json.dumps(layout))
+    wrong_request["requestSha256"] = "0" * 64
+    cases.append(("wrong-request", wrong_request, "different Blender authoring request"))
+    no_provenance = json.loads(json.dumps(layout))
+    del no_provenance["blender"]
+    cases.append(("no-provenance", no_provenance, "provenance"))
+    wrong_version = json.loads(json.dumps(layout))
+    wrong_version["blender"]["version"] = "4.4.0"
+    cases.append(("wrong-version", wrong_version, "Blender 4.5.9"))
+    no_mode = json.loads(json.dumps(layout))
+    del no_mode["mode"]
+    cases.append(("no-mode", no_mode, "mode"))
+    no_mesh = json.loads(json.dumps(layout))
+    del no_mesh["procedural"][0]["meshSha256"]
+    cases.append(("no-mesh", no_mesh, "mesh differs"))
+    changed_mesh = json.loads(json.dumps(layout))
+    changed_mesh["procedural"][0]["meshSha256"] = "0" * 64
+    cases.append(("changed-mesh", changed_mesh, "mesh differs"))
+    wrong_dimensions = json.loads(json.dumps(layout))
+    wrong_dimensions["procedural"][0]["dimensionsM"][0] += 0.01
+    cases.append(("dimensions", wrong_dimensions, "dimensions"))
+    wrong_holes = json.loads(json.dumps(layout))
+    wrong_holes["procedural"][0]["holeCount"] = 5
+    cases.append(("holes", wrong_holes, "hole count"))
+    wrong_collision = json.loads(json.dumps(layout))
+    wrong_collision["procedural"][0]["collision"] = "holes"
+    cases.append(("collision", wrong_collision, "collision mode"))
+    for name, document, message in cases:
+        try:
+            build(plan, tmp_path / name, library_roots=[library], layout=document)
+        except PlanError as error:
+            assert message in str(error), (name, str(error))
+            continue
+        raise AssertionError(f"{name} did not raise PlanError")
+
+
+def test_scene_package_is_not_replaced_by_another_plan(tmp_path):
+    library = library_with_box(tmp_path)
+    out = tmp_path / "shared"
+    build_plan(tmp_path, "tube-rack-demo-v1.yaml", out, library)
+    scene = out / "scenes/tube-rack-demo"
+    before = {path.name: path.read_bytes() for path in scene.iterdir()}
+    with pytest.raises(FactoryError, match="immutable factory package"):
+        build_plan(tmp_path, "tube-rack-demo-v2.yaml", out, library)
+    assert {path.name: path.read_bytes() for path in scene.iterdir()} == before
+    assert not (out / "assets/environment/six-hole-tube-rack/2").exists()
+
+
+def test_trusted_stage_must_stay_inside_its_package(tmp_path):
+    library = library_with_box(tmp_path)
+    package = library / "assets/environment/cardboard-box/1"
+    metadata = yaml.safe_load((package / "asset.yaml").read_text(encoding="utf-8"))
+    metadata["stage"] = "../escape.usda"
+    (package / "asset.yaml").write_text(
+        yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8"
+    )
+    (package.parent / "escape.usda").write_text("#usda 1.0\n", encoding="utf-8")
+    with pytest.raises(PlanError, match="package-local|outside its package"):
+        build_plan(tmp_path, "tube-rack-demo-v1.yaml", tmp_path / "escape", library)
 
 
 def test_rack_repair_changes_collision_and_keeps_visual(tmp_path):
@@ -311,6 +376,17 @@ def test_robot_is_referenced_with_scene_initial_joint_state(tmp_path):
     assert stage.GetPrimAtPath("/World/Lab/RobotA/fr3_joint6").GetAttribute(
         "newton:angular:position"
     ).Get() == pytest.approx(90.0)
+    link = stage.GetPrimAtPath("/World/Lab/RobotA/fr3_link0")
+    assert link.GetAttribute("physics:mass").Get() == pytest.approx(2.3966000080108643)
+    assert link.GetAttribute("physics:diagonalInertia").Get() == pytest.approx(
+        (0.0067344354, 0.010765565, 0.0115)
+    )
+    assert stage.GetPrimAtPath("/World/Lab/RobotA/fr3_base_joint").IsA(
+        UsdPhysics.FixedJoint
+    )
+    assert stage.GetPrimAtPath("/World/Lab/RobotA/fr3_joint1").IsA(
+        UsdPhysics.RevoluteJoint
+    )
     robot = next(item for item in result["assets"] if item["id"] == "robot/fr3@1")
     assert robot["source"] == "library"
     assert robot["contentHash"] == digest_dir(Path(BUILTIN_LIBRARY) / "assets/robot/fr3/1")

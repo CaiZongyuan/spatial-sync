@@ -547,10 +547,18 @@ def _library_assets(plan, roots):
         if not isinstance(metadata, dict) or metadata.get("id") != pin.id:
             raise PlanError("trusted asset metadata does not match its pinned identity: " + pin.ref)
         stage = metadata.get("stage")
-        if not isinstance(stage, str) or Path(stage).suffix not in (".usd", ".usda", ".usdc"):
+        stage_path = Path(stage) if isinstance(stage, str) else None
+        if (
+            stage_path is None
+            or stage_path.is_absolute()
+            or "\\" in stage
+            or ".." in stage_path.parts
+            or stage_path.suffix not in (".usd", ".usda", ".usdc")
+        ):
             raise PlanError("trusted asset does not declare a package-local USD stage: " + pin.ref)
-        if not (path / stage).is_file():
-            raise PlanError("trusted asset stage file is missing: " + pin.ref)
+        stage_file = (path / stage_path).resolve()
+        if not stage_file.is_file() or not stage_file.is_relative_to(path.resolve()):
+            raise PlanError("trusted asset stage file is missing or outside its package: " + pin.ref)
         digest = _package_digest(path)
         if pin.contentHash is not None and digest != pin.contentHash:
             raise PlanError("trusted asset content hash differs from the pin: " + pin.ref)
@@ -879,6 +887,18 @@ def _read_package(path):
     return files
 
 
+def _check_package(path, files):
+    path = Path(path)
+    if not path.exists():
+        return
+    if not path.is_dir():
+        raise FactoryError(f"package destination is not a directory: {path}")
+    if _read_package(path) != files:
+        raise FactoryError(
+            "refusing to overwrite an immutable factory package: " + str(path)
+        )
+
+
 def _write_package(path, files, *, immutable):
     path = Path(path)
     if path.exists():
@@ -888,7 +908,7 @@ def _write_package(path, files, *, immutable):
             existing = _read_package(path)
             if existing != files:
                 raise FactoryError(
-                    "refusing to overwrite an immutable procedural asset version: " + str(path)
+                    "refusing to overwrite an immutable factory package: " + str(path)
                 )
             return
         shutil.rmtree(path)
@@ -908,23 +928,33 @@ def _write_package(path, files, *, immutable):
         raise
 
 
-def _layout(plan, layout):
+def _layout(plan, layout, expected_request_sha):
     if not isinstance(layout, dict):
         raise PlanError("layout manifest must be a mapping")
     if layout.get("schema") != LAYOUT_SCHEMA:
         raise PlanError("layout manifest has an unsupported schema")
-    if layout.get("scene") not in (None, plan.scene.name):
+    if layout.get("scene") != plan.scene.name:
         raise PlanError("layout manifest belongs to another scene")
     expected = plan_digest(plan)
-    if layout.get("planSha256") not in (None, expected):
+    if layout.get("planSha256") != expected:
         raise PlanError("layout manifest belongs to another plan version")
-    blender = layout.get("blender") or {}
+    request_sha = layout.get("requestSha256")
+    if not isinstance(request_sha, str) or HASH.fullmatch(request_sha) is None:
+        raise PlanError("layout.requestSha256 must be a SHA-256 digest")
+    if request_sha != expected_request_sha:
+        raise PlanError("layout was produced from a different Blender authoring request")
+    blender = layout.get("blender")
+    if not isinstance(blender, dict):
+        raise PlanError("layout requires Blender provenance")
     version = blender.get("version")
-    if version is not None and not str(version).startswith(BLENDER_VERSION):
+    if version != BLENDER_VERSION:
         raise PlanError(f"layout must come from Blender {BLENDER_VERSION}")
     blend = blender.get("blendSha256")
-    if blend is not None and HASH.fullmatch(str(blend)) is None:
+    if not isinstance(blend, str) or HASH.fullmatch(blend) is None:
         raise PlanError("blender.blendSha256 must be a SHA-256 digest")
+    mode = layout.get("mode")
+    if mode not in ("script", "human-edited"):
+        raise PlanError("layout.mode must be script or human-edited")
     entries = layout.get("instances")
     if not isinstance(entries, list):
         raise PlanError("layout manifest requires an instances list")
@@ -940,8 +970,8 @@ def _layout(plan, layout):
             raise PlanError("layout contains an unknown instance: " + str(identifier))
         seen.add(identifier)
         instance = next(item for item in plan.instances if item.instanceId == identifier)
-        if entry.get("entityKey") not in (None, instance.entityKey):
-            raise PlanError("layout changed the stable entityKey: " + str(identifier))
+        if entry.get("entityKey") != instance.entityKey:
+            raise PlanError("layout changed or omitted the stable entityKey: " + str(identifier))
         transforms[identifier] = Transform.model_validate(
             {"positionM": entry.get("positionM"), "rotationDeg": entry.get("rotationDeg", [0, 0, 0])}
         )
@@ -966,34 +996,40 @@ def _layout(plan, layout):
             raise PlanError("layout contains a duplicate procedural entry")
         seen_procedural.add(identifier)
         spec = procedural_specs[identifier]
-        geometry = (
-            rack_geometry(spec.rack.model_dump())
-            if spec.type == "six-hole-tube-rack"
-            else tube_geometry(spec.tube.model_dump())
-        )
-        if entry.get("type") not in (None, spec.type):
+        if spec.type == "six-hole-tube-rack":
+            geometry = rack_geometry(spec.rack.model_dump())
+            mesh = rack_mesh_json(spec.rack.model_dump())
+        else:
+            geometry = tube_geometry(spec.tube.model_dump())
+            mesh = tube_mesh_json(spec.tube.model_dump())
+        if entry.get("type") != spec.type:
             raise PlanError("layout procedural type differs from the plan")
         if spec.type == "six-hole-tube-rack":
-            if entry.get("holeCount") not in (None, len(geometry.sites)):
+            if entry.get("holeCount") != len(geometry.sites):
                 raise PlanError("layout rack hole count differs from the plan")
-            if entry.get("collision") not in (None, spec.rack.collision):
+            if entry.get("collision") != spec.rack.collision:
                 raise PlanError("layout rack collision mode differs from the plan")
         dimensions = entry.get("dimensionsM")
-        if dimensions is not None:
-            if len(dimensions) != 3 or any(
+        if (
+            not isinstance(dimensions, list)
+            or len(dimensions) != 3
+            or any(
                 not isinstance(value, (int, float))
                 or not math.isfinite(value)
                 or abs(float(value) - expected) > 1e-4
                 for value, expected in zip(dimensions, geometry.dimensions_m)
-            ):
-                raise PlanError("layout procedural dimensions differ from the plan")
+            )
+        ):
+            raise PlanError("layout procedural dimensions differ from the plan")
+        if entry.get("meshSha256") != _mesh_sha256(mesh):
+            raise PlanError("layout procedural mesh differs from the plan")
     if seen_procedural != set(procedural_specs):
         raise PlanError("layout is missing procedural instances")
     summary = {
-        "mode": layout.get("mode") or "script",
+        "mode": mode,
         "version": version,
         "blendSha256": blend,
-        "requestSha256": layout.get("requestSha256"),
+        "requestSha256": request_sha,
     }
     return transforms, summary
 
@@ -1006,15 +1042,17 @@ def build(plan, output, *, library_roots=None, layout=None):
     transforms = {instance.instanceId: instance.transform for instance in plan.instances}
     layout_summary = None
     if layout is not None:
-        transforms, layout_summary = _layout(plan, layout)
+        expected_request_sha = request_digest(authoring_request(plan, library_roots=roots))
+        transforms, layout_summary = _layout(plan, layout, expected_request_sha)
     assets = dict(trusted)
+    pending = []
     for spec in plan.procedural:
         if spec.type == "six-hole-tube-rack":
             files, geometry = rack_package(spec.model_dump())
         else:
             files, geometry = tube_package(spec.model_dump())
         destination = output / "assets" / spec.id / str(spec.version)
-        _write_package(destination, files, immutable=True)
+        pending.append((destination, files))
         assets[spec.ref] = {
             "id": spec.ref,
             "source": "procedural",
@@ -1027,7 +1065,14 @@ def build(plan, output, *, library_roots=None, layout=None):
     scene = plan.scene
     scene_files = _scene_files(plan, transforms, assets, layout_summary)
     scene_path = output / "scenes" / scene.name
-    _write_package(scene_path, scene_files, immutable=False)
+    # Check every destination before writing so a conflicting scene cannot leave
+    # a half-published set of new asset versions.
+    for destination, files in pending:
+        _check_package(destination, files)
+    _check_package(scene_path, scene_files)
+    for destination, files in pending:
+        _write_package(destination, files, immutable=True)
+    _write_package(scene_path, scene_files, immutable=True)
     manifest = {
         "schema": BUILD_SCHEMA,
         "recipe": RECIPE,
@@ -1120,6 +1165,7 @@ def authoring_request(plan, *, library_roots=None):
             entry["visualMeshSha256"] = hashlib.sha256(
                 json.dumps(entry["visualMesh"], sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()
+            entry["meshSha256"] = _mesh_sha256(entry["visualMesh"])
         instances.append(entry)
     return {
         "schema": REQUEST_SCHEMA,
@@ -1141,7 +1187,12 @@ def authoring_request(plan, *, library_roots=None):
 
 
 def request_digest(request):
-    canonical = json.dumps(request, sort_keys=True, separators=(",", ":"))
+    payload = deepcopy(request)
+    payload.pop("requestSha256", None)
+    for instance in payload.get("instances") or []:
+        if isinstance(instance, dict):
+            instance.pop("meshSha256", None)
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -1151,3 +1202,20 @@ def _mesh_bounds(mesh):
         [min(vertex[axis] for vertex in vertices) for axis in range(3)],
         [max(vertex[axis] for vertex in vertices) for axis in range(3)],
     ]
+
+
+def _clean_number(value):
+    number = round(float(value), 6)
+    return 0.0 if number == 0 else number
+
+
+def _mesh_sha256(mesh):
+    vertices = sorted(
+        [_clean_number(vertex[0]), _clean_number(vertex[1]), _clean_number(vertex[2])]
+        for vertex in mesh["vertices"]
+    )
+    faces = sorted([int(index) for index in face] for face in mesh["faces"])
+    payload = json.dumps(
+        {"vertices": vertices, "faces": faces}, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

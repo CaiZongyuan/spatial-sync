@@ -75,6 +75,10 @@ def _write_json(path, value):
 
 def _request_digest(request):
     payload = {key: value for key, value in request.items() if key != "requestSha256"}
+    payload["instances"] = [
+        {key: value for key, value in instance.items() if key != "meshSha256"}
+        for instance in payload.get("instances") or []
+    ]
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -213,6 +217,10 @@ def _open_workspace(request, blend):
         raise AuthoringError(
             "saved Blender workspace belongs to another plan version; open the factory's current plan"
         )
+    if scene.get("factory_request_sha256") != _request_digest(request):
+        raise AuthoringError(
+            "saved Blender workspace belongs to another authoring request; regenerate the request"
+        )
 
 
 def _local_bounds(empty):
@@ -249,6 +257,52 @@ def _clean(value):
     return 0.0 if number == 0 else number
 
 
+def _mesh_sha256(vertices, faces):
+    normalized = sorted(
+        [_clean(vertex[0]), _clean(vertex[1]), _clean(vertex[2])] for vertex in vertices
+    )
+    normalized_faces = sorted([int(index) for index in face] for face in faces)
+    payload = json.dumps(
+        {"vertices": normalized, "faces": normalized_faces},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _object_mesh_sha256(empty):
+    vertices, faces = [], []
+    inverse = empty.matrix_world.inverted()
+    meshes = [obj for obj in empty.children_recursive if obj.type == "MESH"]
+    for obj in meshes:
+        relative = inverse @ obj.matrix_world
+        offset = len(vertices)
+        for vertex in obj.data.vertices:
+            point = relative @ vertex.co
+            vertices.append([point.x, point.y, point.z])
+        for polygon in obj.data.polygons:
+            faces.append([offset + int(index) for index in polygon.vertices])
+    return _mesh_sha256(vertices, faces)
+
+
+def _validate_request(request):
+    root_text = request.get("libraryRoot")
+    if not isinstance(root_text, str):
+        raise AuthoringError("authoring request is missing its library root")
+    root = Path(root_text).resolve()
+    for instance in request["instances"]:
+        if instance.get("kind") != "trusted":
+            continue
+        stage_text = instance.get("stagePath")
+        if not isinstance(stage_text, str):
+            raise AuthoringError("trusted instance is missing its stage path")
+        stage = Path(stage_text).resolve()
+        if not stage.is_file() or not stage.is_relative_to(root):
+            raise AuthoringError(
+                f"trusted stage escapes the installed library: {stage_text}"
+            )
+
+
 def _extract_layout(request, mode, blend, blend_sha):
     instances, procedural = [], []
     for instance in request["instances"]:
@@ -279,11 +333,21 @@ def _extract_layout(request, mode, blend, blend_sha):
                     f"mesh in {name} differs from the factory parameters; "
                     "change the plan parameters and build a new asset version"
                 )
+            expected_mesh = instance.get("meshSha256") or _mesh_sha256(
+                instance["visualMesh"]["vertices"], instance["visualMesh"]["faces"]
+            )
+            mesh_sha = _object_mesh_sha256(empty)
+            if mesh_sha != expected_mesh:
+                raise AuthoringError(
+                    f"mesh in {name} differs from the factory parameters; "
+                    "change the plan parameters and build a new asset version"
+                )
             entry = {
                 "instanceId": instance["instanceId"],
                 "type": instance["type"],
                 "dimensionsM": list(instance["dimensionsM"]),
                 "localBoundsM": bounds,
+                "meshSha256": mesh_sha,
                 "seed": instance.get("seed", 0),
             }
             if instance["type"] == "six-hole-tube-rack":
@@ -315,6 +379,7 @@ def main(argv):
     request = _read_json(args.request)
     if request.get("schema") != REQUEST_SCHEMA:
         raise AuthoringError("authoring request has an unsupported schema")
+    _validate_request(request)
     mode = args.mode or ("human-edited" if args.open_blend else "script")
     if args.open_blend:
         _open_workspace(request, args.open_blend)

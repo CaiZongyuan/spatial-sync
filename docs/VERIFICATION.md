@@ -436,6 +436,21 @@ uv run --no-sync python factory/verify.py evidence --cache .scratch/sf0/cache --
 uv run --no-sync python factory/verify.py blender --blender <blender.exe> --mcp <mcp-for-blender.exe> --out .scratch/sf0/evidence/blender.json
 ```
 
+The pinned combination is Blender 4.5.9 LTS, MCP for Blender 2.2.2 at commit
+`5a3618fccb2d982d0dd61e7a1879912c3100073b`, addon `bl_info` 1.8,
+`BLENDER_MCP_SAFE_MODE=1`, `DISABLE_TELEMETRY=true`, no auto-started socket and
+all third-party providers disabled. The Blender probe runs a background script;
+the MCP probe uses the official client to check safe-mode rejection. The 2.2.2
+wheel omits `blender_mcp.config`, so telemetry is recorded as unavailable rather
+than verified; the addon socket is only for authoring and is not a sandbox.
+Raw downloads and probe output live in `.scratch/sf0/`; no NVIDIA asset, model
+weight or Blender binary enters Git.
+
+The SF implementation tickets record their supported external agent client and
+any model/cost authorization in the relevant issue. Real agent calls are not part
+of ordinary CI. Factory acceptance separately checks actual Blender authoring,
+received-version isolation, real Newton CPU validation and offline use.
+
 ## Scene authoring factory (SF3)
 
 The pure scene plan, procedural geometry, OpenUSD composition and layout
@@ -463,21 +478,6 @@ committed tests use no Blender, network or GPU. Record the Blender version, plan
 and request hashes, layout mode, immutable content hashes, S/P checks, viewport
 capture and any remaining failure in `.scratch/`; an image or a redrawn report
 is not a physics result.
-
-The pinned combination is Blender 4.5.9 LTS, MCP for Blender 2.2.2 at commit
-`5a3618fccb2d982d0dd61e7a1879912c3100073b`, addon `bl_info` 1.8,
-`BLENDER_MCP_SAFE_MODE=1`, `DISABLE_TELEMETRY=true`, no auto-started socket and
-all third-party providers disabled. The Blender probe runs a background script;
-the MCP probe uses the official client to check safe-mode rejection. The 2.2.2
-wheel omits `blender_mcp.config`, so telemetry is recorded as unavailable rather
-than verified; the addon socket is only for authoring and is not a sandbox.
-Raw downloads and probe output live in `.scratch/sf0/`; no NVIDIA asset, model
-weight or Blender binary enters Git.
-
-The SF implementation tickets record their supported external agent client and
-any model/cost authorization in the relevant issue. Real agent calls are not part
-of ordinary CI. Factory acceptance separately checks actual Blender authoring,
-received-version isolation, real Newton CPU validation and offline use.
 
 ## Scene Factory catalog (SF1a)
 

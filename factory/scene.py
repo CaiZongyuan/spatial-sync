@@ -4,7 +4,8 @@
       --out .scratch/sf3/blender/request-v1.json
     python factory/scene.py build --plan factory/plans/tube-rack-demo-v1.yaml \
       --out .scratch/sf3/factory/v1 --layout .scratch/sf3/blender/layout-v1.json
-    python factory/scene.py demo --out .scratch/sf3/factory
+    python factory/scene.py demo --out .scratch/sf3/factory \
+      --library <library-with-cardboard-box@1>
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from factory.authoring import (  # noqa: E402
     BUILTIN_LIBRARY,
+    FactoryError,
     PlanError,
     authoring_request,
     build,
@@ -98,7 +100,7 @@ def main(argv=None):
         if args.command == "build":
             return command_build(args)
         return command_demo(args)
-    except (PlanError, ValueError, OSError) as exc:
+    except (PlanError, FactoryError, ValueError, OSError) as exc:
         print(json.dumps({"error": type(exc).__name__, "message": str(exc)}, indent=2))
         return 1
 

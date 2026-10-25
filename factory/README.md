@@ -58,7 +58,7 @@ it opens a saved human edit, rejects changed procedural bounds, and records the
 as a visual reference; the pure generator writes the OpenUSD `library:`
 references, so no Blender round trip is assumed to preserve physics.
 
-The test-only plans pin a synthetic six-hole rack: version 1 uses one solid
+The demo plans pin a synthetic six-hole rack: version 1 uses one solid
 collision box, version 2 rebuilds collision around every hole. The gateway runs
 the actual S/P checks; a visual hole that keeps a sealed collision is the
 intended failure case. Real Blender, Newton and viewport receipts stay under
