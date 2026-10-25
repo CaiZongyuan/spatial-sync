@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-25T02:41:53.233028+00:00",
+  "capturedAt": "2026-10-25T07:34:17.173790+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -229,7 +229,7 @@
     },
     {
       "path": "packages/programs/centrifuge/newton.py",
-      "sha256": "c5ef3c5a4605f90b7207abf169475ca5d97a16005102b726687533089920d753"
+      "sha256": "9d7aacf1b39aacc293badfcbe4b6ea59958e67a7285f582b8a3ee8d2595b789b"
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
@@ -395,10 +395,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "2ac1abee6cfad5dc24648992ffb11cc3f5985e5a70715a3ba97a1f91ad8214b0",
-    "catalog.json": "3ff9d86fb8fcdff9ba0f1343b7eee78afaf7d1e95ebe7be7e1c9578efdd9b20f",
-    "state.json": "3ef49b6888d15e680437c0c90a0580d65c5901ad5b8d86ddbdbbde025aa1a332",
-    "snapshot.bin": "96c5672c4b442834977351667a67a785cbff43f6e10535e0343fb2b6142655d0",
+    "manifest.json": "c2e3f493704cf67a58d153592c850f38f101418efcbd70e2048b31d0deb963e4",
+    "catalog.json": "ea6677baf3cb39cdd76bb938b4506201a75d5994bccdeedb41dd49ac398d9edd",
+    "state.json": "39f6e570594f119d0db6a86b55de17d10e7a6477b6faf908aa7a732bb12fb4b2",
+    "snapshot.bin": "60f207360e884e80f3d1d3aecef43e4eb64adde441ff0a0aed3050229e03b3f3",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
