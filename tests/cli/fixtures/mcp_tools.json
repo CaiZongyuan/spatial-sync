@@ -694,6 +694,18 @@
           "default": null,
           "title": "Scene"
         },
+        "asset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset"
+        },
         "draft": {
           "anyOf": [
             {
