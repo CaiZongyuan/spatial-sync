@@ -10,15 +10,19 @@ PREFIX = "share/spatial-sync/skills/"
 def _declared_skill_data_files():
     documents = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     files = documents["tool"]["setuptools"]["data-files"]
+    return {key: sources for key, sources in files.items() if key.startswith(PREFIX)}
+
+
+def _shipped_skill_data_files():
     return {
         key.removeprefix(PREFIX): sources
-        for key, sources in files.items()
-        if key.startswith(PREFIX) and "/archive/" not in key
+        for key, sources in _declared_skill_data_files().items()
+        if "/archive/" not in key
     }
 
 
 def test_every_bundled_skill_is_declared_in_the_wheel_data_files():
-    declared = _declared_skill_data_files()
+    declared = _shipped_skill_data_files()
     shipped = {path.parent.name: path for path in (ROOT / "skills").glob("*/SKILL.md")}
 
     assert set(shipped) == set(declared)
