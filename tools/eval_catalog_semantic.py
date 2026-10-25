@@ -155,10 +155,22 @@ def _grouped(queries, records):
     return groups
 
 
+def _cpu_model():
+    """The CPU marketing name, which platform.processor() omits on Linux."""
+    cpuinfo = Path("/proc/cpuinfo")
+    if not cpuinfo.is_file():
+        return None
+    for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.lower().startswith("model name"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
 def _environment():
     values = {
         "platform": platform.platform(),
         "processor": platform.processor() or platform.machine(),
+        "cpuModel": _cpu_model(),
         "machine": platform.machine(),
         "cpuCount": os.cpu_count(),
         "python": platform.python_version(),
@@ -215,6 +227,8 @@ def _benchmark(catalog, queries, count, runs):
                 timings.append(elapsed)
         return {
             "records": len(loaded),
+            "model": semantic.embedder.info.document(),
+            "index": semantic.document()["index"],
             "indexBuildMs": round(build_ms, 3),
             "queries": len(queries) * max(1, runs),
             "p50Ms": round(statistics.median(timings), 3) if timings else None,
