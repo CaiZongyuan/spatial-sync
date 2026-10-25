@@ -35,6 +35,35 @@ handling and the usage decision use them. Use `uv run --with pillow --no-sync`
 or a local environment that already has them; do not change `uv.lock`, because
 captured scene previews include its digest as a build input.
 
+## Scene authoring (SF3)
+
+`factory/plans/` holds canonical scene plans. `authoring_request` turns a plan
+into the Blender workspace request (trusted asset stage paths, procedural visual
+meshes, stable instance IDs and dressing). `build` writes the immutable asset and
+scene packages; a layout manifest from Blender or another editor supplies poses
+only, and must match the plan content hash and instance identities.
+
+```python
+from factory.authoring import authoring_request, build, load_plan
+
+plan = load_plan("factory/plans/tube-rack-demo-v2.yaml")
+request = authoring_request(plan, library_roots=[my_library])
+result = build(plan, out, library_roots=[my_library], layout=layout)
+```
+
+Run `factory/blender_author.py` through Blender 4.5.9 background Python. Without
+`--open-blend` it creates and records a scripted workspace; with `--open-blend`
+it opens a saved human edit, rejects changed procedural bounds, and records the
+`human-edited` mode plus the saved `.blend` hash. Blender imports trusted USD only
+as a visual reference; the pure generator writes the OpenUSD `library:`
+references, so no Blender round trip is assumed to preserve physics.
+
+The demo plans pin a synthetic six-hole rack: version 1 uses one solid
+collision box, version 2 rebuilds collision around every hole. The gateway runs
+the actual S/P checks; a visual hole that keeps a sealed collision is the
+intended failure case. Real Blender, Newton and viewport receipts stay under
+`.scratch/`; `tests/unit/test_scene_authoring.py` is the GPU-free CI lane.
+
 ## Restricted derivation
 
 Supported inputs are exactly the five pinned source packages in `simready.py`, at

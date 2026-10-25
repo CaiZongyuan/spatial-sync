@@ -465,6 +465,34 @@ any model/cost authorization in the relevant issue. Real agent calls are not par
 of ordinary CI. Factory acceptance separately checks actual Blender authoring,
 received-version isolation, real Newton CPU validation and offline use.
 
+## Scene authoring factory (SF3)
+
+The pure scene plan, procedural geometry, OpenUSD composition and layout
+receipts are GPU-free and run in the core lane:
+
+```powershell
+uv run --no-sync python -m pytest tests/unit/test_scene_authoring.py -q
+```
+
+`factory/plans/` contains the reproducible plans. A build returns the canonical
+asset and scene packages; Blender is only a layout workspace and never writes
+USD. The background authoring entry records the scripted or human-edited path:
+
+```powershell
+<blender.exe> --background --factory-startup --python factory/blender_author.py -- `
+  --request <request.json> --blend <workspace.blend> --layout <layout.json>
+<blender.exe> --background --python factory/blender_author.py -- `
+  --request <request.json> --open-blend <edited.blend> --layout <layout.json>
+```
+
+Real evidence uses an installed trusted asset library, imports the generated
+packages through the normal gateway, and validates/launches the exact scene
+version. It is separate from CI: the gateway never imports `factory/`, and the
+committed tests use no Blender, network or GPU. Record the Blender version, plan
+and request hashes, layout mode, immutable content hashes, S/P checks, viewport
+capture and any remaining failure in `.scratch/`; an image or a redrawn report
+is not a physics result.
+
 ## Scene Factory catalog (SF1a)
 
 The committed snapshot is `catalog/simready.json`; search needs no network, cache
