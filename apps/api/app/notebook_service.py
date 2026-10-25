@@ -330,11 +330,16 @@ class NotebookService:
         }
 
     def public_entry(self, entry):
-        """Current comparison evidence is a read projection, separate from historical decisions/audits."""
+        """Current comparison/deployment facts are projections, separate from historical receipts."""
         if entry.get("layer") == "agent":
             return self.manager.agent_rsi.public_notebook_entry(entry)
         result = deepcopy(entry)
         record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
+        promotions = getattr(self.manager, "controller_promotions", None)
+        deployment = promotions.notebook_deployment(record) if promotions is not None else None
+        if deployment is not None and deployment != entry["deployment"]:
+            result["recordedDeployment"] = deepcopy(entry["deployment"])
+            result["deployment"] = deployment
         if record.get("notebookContext") is None:
             current = entry["comparison"] | {
                 "state": "unknown",
@@ -356,6 +361,29 @@ class NotebookService:
             result["comparison"] = current
         return result
 
+    def _fixed_scope(self, entry):
+        record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
+        context = record.get("notebookContext") or {}
+        try:
+            task = self.manager.tasks.show(context["plan"]["task"])
+            inputs = context["comparisonInputs"]
+            suite = self.manager.evaluations.suites.resolve(record["suite"])
+            observed_source = (record.get("key") or {}).get("source")
+            if (task["contentHash"] != context["taskContentHash"]
+                    or task["task"]["scene"] != inputs["scene"]
+                    or task["sceneContentHash"] != inputs["sceneContentHash"]
+                    or suite.id != inputs["suite"]
+                    or suite.content_hash != record["suiteContentHash"]
+                    or suite.content_hash != inputs["suiteContentHash"]
+                    or suite.metadata["scene"] != inputs["scene"]
+                    or suite.metadata["sceneContentHash"] != inputs["sceneContentHash"]
+                    or observed_source not in (None, suite.metadata["source"])):
+                return None
+            return (inputs["scene"], inputs["sceneContentHash"], suite.metadata["source"],
+                    task["task"]["robot"])
+        except (LibraryError, KeyError, TypeError, ValueError):
+            return None
+
     def loop(self, goal):
         if goal in self.manager.agent_rsi.goals():
             return self.manager.agent_rsi.loop(goal)
@@ -366,8 +394,10 @@ class NotebookService:
             rounds.setdefault(entry["plan"]["id"], len(rounds) + 1)
             plans.append({"round": rounds[entry["plan"]["id"]], **entry})
         latest = entries[-1] if entries else None
-        original = self.manager.evaluations.store.records.get(latest["evaluationId"], {}) if latest else {}
-        scene = original.get("notebookContext", {}).get("comparisonInputs", {}).get("scene")
+        scopes = {self._fixed_scope(entry) for entry in entries}
+        promotions = getattr(self.manager, "controller_promotions", None)
+        default = (promotions.notebook_default(next(iter(scopes)))
+                   if promotions is not None and len(scopes) == 1 and None not in scopes else None)
         return {
             "goalId": goal,
             "rounds": plans,
@@ -383,11 +413,5 @@ class NotebookService:
             if latest
             else None,
             "deployment": latest["deployment"] if latest else {"status": "not_requested"},
-            "defaultProgram": {
-                "program": latest["subject"],
-                "scene": scene,
-                "evaluationId": latest["evaluationId"],
-            }
-            if latest
-            else None,
+            "defaultProgram": default,
         }

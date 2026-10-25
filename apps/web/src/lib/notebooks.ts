@@ -1,6 +1,7 @@
 import { request } from './api';
 import type { Actor } from './protocol';
 import type { TrainingPlanDocument } from './training';
+import type { CandidateIdentity } from './evaluations';
 
 export type HypothesisVerdict = 'confirmed' | 'refuted' | 'inconclusive';
 export interface LoopBudget {
@@ -29,6 +30,7 @@ export interface NotebookEntry {
   entryId: string; evaluationId: string; goalId: string; round?: number;
   plan: { id: string; revision: number; task: string; goalId: string; goal: string; title: string; changedFields: string[]; targetSuccessRate?: number | null };
   suite: string; subject: string; candidateVersion: string | null;
+  candidateIdentity?: CandidateIdentity | null;
   status: 'completed' | 'failed' | 'cancelled'; at: string; endedAt: string | null;
   score: { successes: number; episodes: number; score: number; ci95: number[] } | null;
   attemptedEpisodes: number | null;
@@ -37,7 +39,10 @@ export interface NotebookEntry {
     reason: string | null; conditionsGroup: string; referenceEvaluationId: string | null;
     referenceScore: number | null; remainingGapReduction: number | null; gapReason: string | null };
   recordedComparison?: NotebookEntry['comparison'];
-  deployment: { status: string; approvalId?: string | null };
+  deployment: { status: string; approvalId?: string | null; promotionId?: string; promotionStatus?: string;
+    publicationStatus?: 'not_committed' | 'committed' | 'unavailable'; current?: boolean | null;
+    scene?: { id: string; contentHash: string }; controller?: { id: string; version: number; contentHash: string } };
+  recordedDeployment?: NotebookEntry['deployment'];
   hypotheses: NotebookHypothesis[]; recordings: string[]; errorCode: string | null;
   knownJobGpuHours: number | null; costCoverage: string;
 }
@@ -46,7 +51,9 @@ export interface GoalLoop {
   reference: NotebookEntry['comparison'] | null;
   candidate: { evaluationId: string; subject: string; version: string | null; score: NotebookEntry['score']; reportedDecision: NotebookEntry['reportedDecision'] } | null;
   deployment: NotebookEntry['deployment'];
-  defaultProgram: { program: string; scene: string | null; evaluationId: string } | null;
+  defaultProgram: { program: string; subject?: string; status?: 'committed' | 'scene_binding';
+    programArtifact?: { id: string; contentHash: string } | null; scene: string | null; evaluationId: string | null;
+    controller?: { id: string; version: number; contentHash: string } } | null;
 }
 export const listGoals = (signal?: AbortSignal, layer?: 'embodied' | 'agent') =>
   request<{ goals: string[] }>(`/loops${layer ? `?layer=${layer}` : ''}`, { signal });

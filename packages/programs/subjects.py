@@ -5,8 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from copy import deepcopy
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, TypeVar
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from packages.info.declarations import EntityBindingDeclaration
 from packages.library.common import LibraryError
 
 if TYPE_CHECKING:
@@ -37,6 +41,24 @@ class SimulationSubject(Protocol):
 
 
 Subject = TypeVar("Subject", bound=SimulationSubject)
+Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+Text = Annotated[str, Field(min_length=1)]
+
+
+class SubjectSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, serialize_by_alias=True)
+
+
+class EvaluationScene(SubjectSchema):
+    id: Text
+    contentHash: Hash
+    source: Literal["newton"]
+
+
+class BindingTarget(SubjectSchema):
+    entityKey: Text
+    interface: Text
+    action: Text
 
 
 def fingerprint(value):
@@ -47,6 +69,35 @@ def fingerprint(value):
 
 def _invalid(code, message):
     return LibraryError(code, message, 409)
+
+
+def canonical_binding(binding, registry):
+    """Match Catalog normalization without constructing any Program."""
+    value = deepcopy(binding)
+    program = registry[value["program"]]
+    if value["type"] != program.type:
+        raise ValueError("Declared Program/interface differ")
+    value["config"] = program.Config.model_validate(value["config"]).model_dump(mode="json")
+    return EntityBindingDeclaration.model_validate(value).model_dump(
+        mode="json", by_alias=True, exclude_none=True, exclude={"alerts"}
+    )
+
+
+def fixed_bindings(scene, source, registry):
+    """Read verified instantiated declarations shared by both simulation adapters."""
+    scene.require_launchable()
+    try:
+        bindings = scene.report()["effectiveBindings"][source]
+        if not bindings:
+            raise ValueError("No verified effective bindings")
+        result = {value["key"]: canonical_binding(value, registry) for value in bindings}
+        if len(result) != len(bindings):
+            raise ValueError("Duplicate effective binding")
+        return result
+    except (KeyError, TypeError, ValueError) as error:
+        raise _invalid(
+            "subject_binding_unavailable", "Verified evaluation bindings are unavailable"
+        ) from error
 
 
 def _require_target(subject):

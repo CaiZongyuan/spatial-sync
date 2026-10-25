@@ -4,10 +4,12 @@ from packages.info.catalog import Catalog, load_catalog
 from packages.programs.centrifuge.newton import CentrifugeProgram
 from packages.programs.robot_arm.newton import RobotArmProgram
 from packages.programs.robot_arm.policy import PolicyProgram
+from packages.programs.robot_arm.script import ScriptProgram
 from packages.programs.tube.newton import TubeProgram
 
 REGISTRY = {
-    program.id: program for program in (RobotArmProgram, PolicyProgram, TubeProgram, CentrifugeProgram)
+    program.id: program
+    for program in (RobotArmProgram, PolicyProgram, ScriptProgram, TubeProgram, CentrifugeProgram)
 }
 
 

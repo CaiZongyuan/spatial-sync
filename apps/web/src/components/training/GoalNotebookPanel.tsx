@@ -1,9 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { request } from '../../lib/api';
+import { suiteSegment } from '../../lib/evaluations';
 import { ApprovalInboxContext } from '../../lib/approvals';
 import { getGoalLoop, listGoals, type GoalLoop, type HypothesisVerdict, type NotebookEntry } from '../../lib/notebooks';
 import { LoopBudgetSummary } from './LoopBudgetSummary';
+import { ProgramEvidence } from '../ProgramEvidence';
 import './notebooks.css';
 
 const verdicts = { confirmed: '达成预测', refuted: '预测被反驳', inconclusive: '证据不足' };
@@ -43,6 +45,18 @@ function ScoreChart({ entries }: { entries: NotebookEntry[] }) {
     </svg>}
     <p className="rsi-note">实心点表示平台记录接受且比较条件一致。条件不同或证据缺失时不连成提升曲线。统计接受仍要求 Wilson 下界严格高于参照点估计。</p>
   </figure>;
+}
+
+const deploymentApprovals: Record<string, string> = { not_requested: '未申请部署', pending: '待人工审查',
+  approved: '已批准，待确认发布', denied: '已拒绝', revoked: '已撤销', expired: '已失效', unavailable: '部署证据未知' };
+function deploymentLabel(value: NotebookEntry['deployment']) {
+  if (value.publicationStatus === 'committed') return value.current === true ? '已发布 · 当前默认'
+    : value.current === false ? '已发布 · 历史版本' : '已发布 · 当前状态未知';
+  if (value.publicationStatus === 'unavailable') return '历史发布凭据待核验';
+  if (value.promotionStatus === 'testing') return '验证中';
+  if (value.promotionStatus === 'blocked' || value.promotionStatus === 'cleanup_blocked') return '发布受阻';
+  if (value.promotionStatus === 'inconclusive' || value.promotionStatus === 'failed') return '验证未完成';
+  return deploymentApprovals[value.status] ?? value.status;
 }
 
 export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoalChange: (goal: string) => void }) {
@@ -98,12 +112,16 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
         <div className="rsi-pair"><article><span>本轮参照</span><strong>{percent(latest?.comparison.referenceScore)}</strong><small>{latest?.comparison.referenceEvaluationId ?? '尚无参照评估'}</small></article>
           <article><span>最新候选</span><strong>{percent(latest?.score?.score)}</strong><small>{latest?.subject ?? '等待平台评估'}</small></article>
           <article><span>候选接受</span><strong>{latest?.reportedDecision ? decisions[latest.reportedDecision] : '暂无完整决定'}</strong><small>与假设支持、人工部署分别记录</small></article>
-          <article><span>部署审批</span><strong>{data.deployment.status === 'not_requested' ? '未申请部署' : data.deployment.status}</strong><small>本看板读取记录，不执行提升</small></article></div>
+          <article><span>最新候选部署</span><strong>{deploymentLabel(data.deployment)}</strong><small>人工决定与当前默认分别记录</small></article></div>
         <div className="rsi-main-grid"><ScoreChart entries={entries} /><LoopBudgetSummary budget={data.budget} /></div>
-        {data.defaultProgram && <p className="rsi-note">固定评估场景默认程序：<code>{data.defaultProgram.program}</code> · {data.defaultProgram.scene ?? '场景未知'}。候选接受不会改变该绑定。</p>}
+        <p className="rsi-note">{data.defaultProgram ? <>{data.defaultProgram.status === 'committed' ? '当前默认程序' : '固定评估场景程序'}：<code>{data.defaultProgram.program}</code>
+          {data.defaultProgram.subject && data.defaultProgram.subject !== data.defaultProgram.program && <> · <code>{data.defaultProgram.subject}</code></>}
+          {' · '}{data.defaultProgram.scene ?? '场景未知'}。候选接受与人工发布分别记录。</> : '当前默认程序证据未知。'}{' '}
+          <Link to="/resources/robots">查看实际 Controller 与版本历史 →</Link></p>
         <div className="resource-table-scroll"><table className="rsi-records" aria-label="实验记录表"><thead><tr><th>轮次 / 固定计划</th><th>平台成绩 / 95% CI</th><th>差距比例</th><th>假设支持</th><th>接受 / 部署 / 证据</th></tr></thead>
           <tbody>{entries.map(entry => <tr key={entry.entryId} data-entry-id={entry.entryId}>
-            <td><strong>第 {entry.round} 轮 · r{entry.plan.revision}</strong><Link to="/plans/$planId" params={{ planId: entry.plan.id }}>{entry.plan.title}</Link><small>{entry.plan.task}</small><code>{entry.candidateVersion?.slice(0, 12) ?? '版本未知'}</code></td>
+            <td><strong>第 {entry.round} 轮 · r{entry.plan.revision}</strong><Link to="/plans/$planId" params={{ planId: entry.plan.id }}>{entry.plan.title}</Link><small>{entry.plan.task}</small><code>{entry.candidateVersion?.slice(0, 12) ?? '版本未知'}</code>
+              <ProgramEvidence identity={entry.candidateIdentity} /></td>
             <td>{entry.score ? <>{entry.score.successes}/{entry.score.episodes} · {percent(entry.score.score)}<small>[{percent(entry.score.ci95[0])}, {percent(entry.score.ci95[1])}]</small></> : <>无完整成绩<small>{entry.status} · {entry.errorCode ?? '未完成'}</small></>}<small>评估尝试 {entry.attemptedEpisodes ?? '未知'} · 已知作业 GPU {entry.knownJobGpuHours == null ? '未知' : entry.knownJobGpuHours.toFixed(3)}h</small></td>
             <td>{percent(entry.comparison.remainingGapReduction)}<small>{entry.comparison.gapReason === 'reference_at_ceiling' ? '参照已满分，分母为零' : entry.comparison.reason ?? (entry.comparison.remainingGapReduction == null ? '缺少可比参照' : '(新 − 旧) / (1 − 旧)')}</small>
               {entry.recordedComparison && <details><summary>历史比较快照（不作为本轮依据）</summary><small>{entry.recordedComparison.state} · 差距比例 {percent(entry.recordedComparison.remainingGapReduction)}</small><small>{entry.recordedComparison.referenceEvaluationId ?? '历史未记录参照'}</small></details>}</td>
@@ -112,8 +130,9 @@ export function GoalNotebookPanel({ goal, onGoalChange }: { goal?: string; onGoa
               {hypothesis.overrides.map(audit => <small key={audit.requestId}>{audit.actor.name} · {new Date(audit.atMs).toLocaleString()}：{audit.note}</small>)}
               {approvals.inbox?.role === 'operator' && <button type="button" onClick={() => { setOverrideError(undefined); setEditor({ entry: entry.entryId, hypothesis: hypothesis.definition.id, verdict: hypothesis.effectiveVerdict, note: '', requestId: crypto.randomUUID() }); }}>人工改判 {hypothesis.definition.id}</button>}
             </div>)}</td>
-            <td><strong>{entry.reportedDecision ? decisions[entry.reportedDecision] : '无接受决定'}</strong><small>{entry.deployment.status === 'not_requested' ? '未申请部署' : entry.deployment.status}</small><small>{entry.comparison.state === 'comparable' ? '比较条件一致' : entry.comparison.reason ?? '首轮参照'}</small>
-              <Link to="/eval/$suiteId" params={{ suiteId: entry.suite }}>查看平台评估 →</Link>{entry.recordings.map(id => <Link key={id} to="/replay/$recordingId" params={{ recordingId: id }}>回放 {id.slice(-8)} →</Link>)}</td>
+            <td><strong>{entry.reportedDecision ? decisions[entry.reportedDecision] : '无接受决定'}</strong><small>{deploymentLabel(entry.deployment)}</small><small>{entry.comparison.state === 'comparable' ? '比较条件一致' : entry.comparison.reason ?? '首轮参照'}</small>
+              {entry.recordedDeployment && <details><summary>评估完成时的部署记录</summary><small>{deploymentApprovals[entry.recordedDeployment.status] ?? entry.recordedDeployment.status}</small></details>}
+              <Link to="/eval/$suiteId" params={{ suiteId: suiteSegment(entry.suite) }}>查看平台评估 →</Link>{entry.recordings.map(id => <Link key={id} to="/replay/$recordingId" params={{ recordingId: id }}>回放 {id.slice(-8)} →</Link>)}</td>
           </tr>)}</tbody></table>{!entries.length && <p className="rsi-note">暂无关联评估。实验记录在平台评估结束后写入，失败和无效结果也保留。</p>}</div>
         {editor && <form className="rsi-override" onSubmit={event => { event.preventDefault(); void save(); }}><h3>人工改判 · {editor.hypothesis}</h3>
           <label>有效判定 <select aria-label="人工假设判定" value={editor.verdict} onChange={event => setEditor({ ...editor, verdict: event.target.value as HypothesisVerdict })}>{Object.entries(verdicts).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

@@ -1,0 +1,8 @@
+.program-evidence { max-width: 100%; margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface); font-size: 11px; }
+.program-evidence summary { cursor: pointer; color: var(--accent-ink); font-weight: 500; }
+.program-evidence > code { display: block; margin-top: 10px; overflow-wrap: anywhere; }
+.program-evidence dl { display: grid; gap: 4px; margin: 8px 0; }
+.program-evidence dl > div { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+.program-evidence dt, .program-evidence p { color: var(--muted); }
+.program-evidence dd { margin: 0; overflow-wrap: anywhere; }
+.program-evidence p { margin: 8px 0 0; font-size: 11px; line-height: 1.5; }

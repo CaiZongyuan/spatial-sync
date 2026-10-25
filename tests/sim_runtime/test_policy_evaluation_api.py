@@ -24,8 +24,11 @@ from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_controller_publication import ControlledPublicationValidator
 
 
-async def evaluate(client, suite, subject, *, expected="completed"):
-    submitted = await client.post("/api/v1/evaluations", json={"subject": subject, "suite": suite.id})
+async def evaluate(client, suite, subject, *, expected="completed", plan=None):
+    body = {"subject": subject, "suite": suite.id}
+    if plan is not None:
+        body.update(planId=plan["id"], planRevision=plan["revision"])
+    submitted = await client.post("/api/v1/evaluations", json=body)
     assert submitted.status_code == 202, submitted.text
     identifier = submitted.json()["evaluationId"]
     deadline = time.monotonic() + 60

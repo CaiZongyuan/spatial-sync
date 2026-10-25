@@ -16,3 +16,5 @@
 .training-interview { padding: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; }
 .training-plan-panel { padding: 20px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; }
 @media (max-width: 1100px) { .training-plan-details { grid-template-columns: minmax(0, 1fr); } }
+.program-review code, .program-review a { overflow-wrap: anywhere; }
+.program-review pre { white-space: pre-wrap; overflow-wrap: anywhere; }

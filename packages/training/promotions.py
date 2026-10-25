@@ -148,6 +148,108 @@ class ControllerPromotions:
             "id", "status", "subject", "scene", "requestId", "approvalId", "error", "deployment"
         ) if key in value}
 
+    def notebook_deployment(self, record):
+        """Read public train deployment facts without refreshing or exposing private tests."""
+        if record.get("split") != "train":
+            return None
+        matches = []
+        for path in self.root.glob("promotion-*.json"):
+            value = self.get(path.stem)
+            context = value.get("context", {})
+            accepted = context.get("currentAccepted", {})
+            if (accepted.get("evaluationId") != record["evaluationId"]
+                    or accepted.get("candidateIdentity") != record.get("candidateIdentity")):
+                continue
+            if fingerprint(context) != value.get("contextHash"):
+                return {"status": "unavailable", "publicationStatus": "unavailable"}
+            projection = {"status": "pending" if value["status"] in ("testing", "awaiting_human")
+                          else "unavailable", "promotionId": value["id"],
+                          "promotionStatus": value["status"], "publicationStatus": "not_committed",
+                          "current": None}
+            approval = self.manager.approvals.records.get(value.get("approvalId"))
+            if approval is not None:
+                if (approval.subject != "policy" or approval.subjectId != value["id"]
+                        or approval.details.get("controllerPromotionId") != value["id"]
+                        or approval.details.get("contextHash") != value["contextHash"]):
+                    projection["status"] = "unavailable"
+                else:
+                    projection.update(status=approval.status, approvalId=approval.approvalId)
+            try:
+                permit = read_committed_permit(self.manager.settings.state_root, value["id"])
+            except (PlanError, LibraryError, OSError, ValueError):
+                try:
+                    committed = self.publication.committed(value["id"])
+                except (PlanError, LibraryError, OSError, ValueError, KeyError, TypeError):
+                    committed = None
+                if value["status"] == "published" or committed is not False:
+                    projection["publicationStatus"] = "unavailable"
+            else:
+                projection.update(publicationStatus="committed", scene=permit["scene"],
+                                  controller={key: permit["controller"][key]
+                                              for key in ("id", "version", "contentHash")})
+                try:
+                    current = self.resources.controller(permit["controller"]["id"])
+                    projection["current"] = self._is_current(current, permit)
+                except (LibraryError, OSError, ValueError):
+                    pass
+            matches.append(projection)
+        if len(matches) > 1:
+            return {"status": "unavailable", "reason": "multiple_promotions"}
+        return matches[0] if matches else None
+
+    @staticmethod
+    def _is_current(controller, permit):
+        actual = controller.get("current") or {}
+        frozen = permit["controller"]
+        return (controller["currentVersion"] == frozen["version"]
+                and actual.get("contentHash") == frozen["contentHash"]
+                and all(actual.get(key) == value for key, value in frozen["document"].items()))
+
+    def notebook_default(self, scope):
+        """Resolve one fixed Goal slot to actual committed current, or its plain Scene binding."""
+        scene_id, scene_hash, source, target = scope
+        try:
+            scene = self.manager.library.resolve(scene_id, source=source)
+            if scene.content_hash != scene_hash:
+                return None
+            controller = None
+            if source == "newton":
+                try:
+                    _, controller = self._controller(scene, target)
+                except PlanError as error:
+                    if error.detail["code"] != "promotion_embodiment_unavailable":
+                        raise
+                    if scene_requires_material_authorization(scene, source):
+                        original = self.authorize_scene(scene)
+                        controller = self.resources.controller(original["controller"]["id"])
+            if controller is not None and controller["currentVersion"] is not None:
+                deployed = self.manager.library.resolve(controller["current"]["scene"],
+                                                        launch=True, source=source)
+                permit = self.authorize_scene(deployed)
+                if (permit is None or permit["target"]["entityKey"] != target
+                        or not self._is_current(controller, permit)):
+                    return None
+                document = permit["controller"]["document"]
+                artifact = document.get("programArtifact")
+                subject = document.get("policy") or (artifact or {}).get("id") or document["program"]
+                return {"status": "committed", "program": document["program"],
+                        "subject": subject,
+                        "programArtifact": artifact, "scene": deployed.id,
+                        "evaluationId": document["evaluationId"],
+                        "controller": {key: permit["controller"][key]
+                                       for key in ("id", "version", "contentHash")}}
+            if scene_requires_material_authorization(scene, source):
+                return None
+            scene.require_launchable()
+            bindings = scene.declarations(source).declarations
+            matching = [item.binding for item in bindings if item.binding.get("key") == target]
+            if len(matching) == 1:
+                return {"status": "scene_binding", "program": matching[0]["program"],
+                        "scene": scene.id, "evaluationId": None}
+        except (PlanError, LibraryError, OSError, ValueError, KeyError, TypeError):
+            pass
+        return None
+
     def _controller(self, scene, target):
         matches = [
             value for value in self.resources._documents("embodiments", Embodiment).values()
@@ -202,6 +304,17 @@ class ControllerPromotions:
                 "not_comparable", "Recoverable evaluation inputs are unavailable or changed"
             ) from error
 
+    def _funding(self, subject, suite, scene, plan_id, revision):
+        funding = self.manager.notebooks.prepare_evaluation(
+            SimpleNamespace(planId=plan_id, planRevision=revision), suite, scene
+        )
+        if subject.candidateIdentity.kind == "program":
+            from packages.programs.authorization import require_program_approval
+
+            require_program_approval(self.manager, subject.candidateIdentity.id, suite, scene,
+                                     plan_id=funding["planId"], plan_revision=funding["planRevision"])
+        return funding
+
     def _prepare(self, body, actor):
         with self._lock, self.manager.evaluations.store.reference_guard():
             inputs = body.model_dump(mode="json")
@@ -246,9 +359,7 @@ class ControllerPromotions:
                 plan_id = self.manager.jobs.get(subject.candidateIdentity.jobId)["planId"]
             if plan_id is None:
                 _refuse("promotion_plan_required")
-            funding = self.manager.notebooks.prepare_evaluation(
-                SimpleNamespace(planId=plan_id, planRevision=body.planRevision), suite, scene
-            )
+            funding = self._funding(subject, suite, scene, plan_id, body.planRevision)
             funding["allocatedEpisodes"] = count
             embodiment, controller = self._controller(scene, subject.target.entityKey)
             model = self._model(subject, embodiment, train.current_accepted)
@@ -350,9 +461,7 @@ class ControllerPromotions:
             if self.qualify(value["subject"], context["qualification"]["check"]) != context["qualification"]:
                 _refuse("promotion_qualification_changed")
         funding = context["funding"]
-        fresh = self.manager.notebooks.prepare_evaluation(
-            SimpleNamespace(planId=funding["planId"], planRevision=funding["planRevision"]), suite, scene
-        )
+        fresh = self._funding(subject, suite, scene, funding["planId"], funding["planRevision"])
         fresh["allocatedEpisodes"] = funding["allocatedEpisodes"]
         embodiment, controller = self._controller(scene, subject.target.entityKey)
         if (fresh != funding or embodiment != context["embodiment"] or controller != context["controller"]

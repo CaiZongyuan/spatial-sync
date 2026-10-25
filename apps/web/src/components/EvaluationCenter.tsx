@@ -7,6 +7,7 @@ import { agentScore, compareEvaluations, currentReference, evaluationDate, score
   type EvaluationScore, type EvaluationSuite } from '../lib/evaluations';
 import { Icon } from './Icon';
 import { AgentEvaluations } from './AgentEvaluations';
+import { ProgramEvidence } from './ProgramEvidence';
 import '../evaluations.css';
 
 const decisionLabels = { baseline: '正式基线', accepted: '已接受', rejected: '未接受', reported: '已报告' };
@@ -32,7 +33,7 @@ function AcceptanceRules({ layer }: { layer?: EvaluationSuite['layer'] }) {
     {layer !== 'embodied' && <p>Agent Candidate 的 train 均分必须严格高于同条件 Reference，且每题至少运行 3 次。可比较条件包括评估集版本、模型与思考等级。</p>}
     <p>{layer === 'agent' ? '完整有效的 train 评估追加为已报告结果。Reference、接受与提升保持独立。' : '首次完整评估成为正式基线。后续已接受版本成为新的参照；未接受的候选仍保留在计分板。'}</p>
     <div className="eval-rule-formula">{layer === 'agent' ? <>mean(Candidate) &gt; mean(Reference)</> : <>CI<sub>95%, lower</sub>(Candidate) &gt; score(Reference)</>}</div>
-    <small>held-out test 仅在申请提升时运行并揭示。本页只读取 train；提升流程尚未接入。</small>
+    <small>held-out test 由提升流程私有运行，结果仅供人工审查。本页只读取公开 train。</small>
   </section>;
 }
 
@@ -148,13 +149,14 @@ function Scoreboard({ suite, rows, selected, select }: { suite: EvaluationSuite;
       {!rows.length && <tr><td colSpan={8} className="eval-empty">尚无完整 train 评估。首次完整运行将建立正式基线。</td></tr>}
       <tr className="eval-locked" data-testid="held-out-test-row"><th scope="row"><Icon name="lock" /> held-out test</th><td colSpan={7}>锁定 · 仅在申请提升时运行并揭示；题目、种子与结果不公开。</td></tr>
     </tbody></table></div>
-    <p className="eval-footnote">版本来自本次评估的实际运行代码指纹。训练成本与已注册 Controller 版本尚未接入。</p>
+    <p className="eval-footnote">版本来自本次评估的实际运行代码指纹。本表未提供训练成本。<Link to="/resources/robots">查看已发布 Controller 与版本历史 →</Link></p>
     {rows.length > 1 && <Comparison key={rows[0].subject} suite={suite.id} rows={rows} />}
   </section>;
 }
 
 function EpisodeDetails({ suite, row, record }: { suite: EmbodiedEvaluationSuite; row?: EvaluationScore; record?: EvaluationRecord }) {
   return <section className="eval-panel"><header><div><span className="eyebrow">EMBODIED BREAKDOWN</span><h2>分阶段通过率与评估回合</h2></div><span>{row ? shortVersion(row.version) : '等待评估'}</span></header>
+    <ProgramEvidence identity={record?.candidateIdentity ?? row?.candidateIdentity} />
     {row ? <><code className="eval-selected-id">{row.evaluationId}</code><div className="eval-phases">{suite.milestones.map(stage => {
       const phase = row.phases?.[stage];
       return <div key={stage}><label htmlFor={`phase-${stage}`}>{stage}</label><progress id={`phase-${stage}`} max={1} value={phase?.rate ?? 0} />
@@ -163,7 +165,8 @@ function EpisodeDetails({ suite, row, record }: { suite: EmbodiedEvaluationSuite
       {record?.episodes.length ? <div className="eval-table-scroll"><table aria-label="评估回合"><thead><tr><th>train 回合</th><th>任务成功</th>{suite.milestones.map(stage => <th key={stage}>{stage}</th>)}<th>失败阶段</th><th>动作结果</th><th>录制</th><th>资源清理</th></tr></thead><tbody>
         {record.episodes.map((episode, i) => <tr key={`${episode.caseId}:${i}`}><th scope="row">{episode.caseId}</th><td>{episode.status === 'invalid' ? '实验无效' : episode.status === 'cancelled' ? '已取消' : episode.success === true ? '成功' : episode.success === false ? '失败' : '未知'}{episode.reason && <small>{episode.reason === 'task_timeout' ? '任务时限耗尽' : episode.reason}</small>}</td>
           {suite.milestones.map(stage => <td key={stage}>{episode.milestones[stage] === undefined ? '未记录' : episode.milestones[stage] ? '通过' : '未通过'}</td>)}
-          <td>{episode.failedStage ?? '—'}</td><td>{episode.invocationStatus ?? '未知'}<small>{episode.invocationId}</small></td>
+          <td>{episode.failedStage ?? '—'}</td><td>{episode.invocationStatus ?? '未知'}<small>{episode.invocationId}</small>
+            <ProgramEvidence execution={episode.programExecution} /></td>
           <td>{episode.recordingId ? <Link to="/replay/$recordingId" params={{ recordingId: episode.recordingId }}>查看回放 ↗</Link> : '未记录'}</td>
           <td>{episode.cleanupComplete === true ? '已确认' : episode.cleanupComplete === false ? '未确认' : '未知'}</td></tr>)}</tbody></table></div> : <p className="eval-empty">此评估暂无公开回合明细。</p>}
     <details className="eval-public-cases"><summary>公开 train 回合与覆盖</summary><ul>{suite.episodes.map(episode => <li key={episode.id}><code>{episode.id}</code> · {Object.entries(episode.params).map(([name, value]) => `${name}: ${JSON.stringify(value)}`).join(' → ')}</li>)}</ul>

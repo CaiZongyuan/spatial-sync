@@ -320,6 +320,47 @@ class GatewayClient:
     async def suite_push(self, directory, *, actor="cli:lw"):
         return await self._upload_directory(directory, "/api/v1/suites", actor)
 
+    async def program_inspect(self, directory, *, actor="cli:lw"):
+        return await self._upload_directory(directory, "/api/v1/programs/inspect", actor)
+
+    async def program_push(self, directory, *, actor="cli:lw"):
+        return await self._upload_directory(directory, "/api/v1/programs", actor)
+
+    async def program_list(self):
+        return (await self.request("GET", "/api/v1/programs"))["programs"]
+
+    @staticmethod
+    def _program_path(id):
+        match = re.fullmatch(r"program/robot_arm\.script\.([a-z0-9]+(?:-[a-z0-9]+)*)@([1-9][0-9]*)", id)
+        if not match:
+            raise ValueError("Select an exact program/robot_arm.script.name@revision")
+        return f"/api/v1/programs/{match[1]}/{match[2]}"
+
+    async def program_show(self, id):
+        return await self.request("GET", self._program_path(id))
+
+    async def program_promote(self, id, scene, evaluation=None, plan=None, revision=None,
+                              request_id=None, *, actor="cli:lw"):
+        self._program_path(id)
+        return await self.controller_promotion_request(
+            id, scene, evaluation, plan=plan, revision=revision, request_id=request_id, actor=actor
+        )
+
+    async def program_source(self, id, filename):
+        content = await self.request(
+            "GET", self._program_path(id) + "/files/" + quote(filename, safe="/"), response_bytes=True
+        )
+        return {"id": id, "path": filename, "content": content.decode("utf-8")}
+
+    async def program_export(self, id, output):
+        content = await self.request("GET", self._program_path(id) + "/archive", response_bytes=True)
+        try:
+            with Path(output).open("xb") as stream:
+                stream.write(content)
+        except OSError as exc:
+            raise ValueError("Program output must be a new writable file") from exc
+        return {"id": id, "output": output}
+
     async def tasks_list(self):
         return (await self.request("GET", "/api/v1/tasks"))["tasks"]
 

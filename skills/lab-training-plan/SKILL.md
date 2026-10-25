@@ -1,6 +1,6 @@
 ---
 name: lab-training-plan
-description: 与人逐轮制定具身训练计划，记录可测量假设和完整访谈，并提交平台人工审批。用于制定或修订计划，不执行训练作业。
+description: 制定或修订具身 Policy 训练、脚本 Program 评估计划，选择执行路径，记录可测量假设与访谈并提交人工审批。
 ---
 
 # 训练计划
@@ -25,14 +25,18 @@ lw loop show goal/fr3-pick-tube --json
 - 目标与基线：失败在哪里，哪个评估指标应该从多少变到多少。
 - 单一改动与因果假设：本轮改什么，哪些条件固定，怎样判定假设失败。
 - Task、场景与评估：不可变版本、覆盖参数与种子、成功标准。
-- 算法、模型与超参：推荐沿用上一轮，除非它们正是被检验的变量。
-- 作业种子与预算：GPU 小时和评估回合数应在剩余闭环预算内，由人决定。
+- 执行路径：可解释、范围有限的确定性控制优先推荐脚本；需要从数据学习泛化时推荐数值 Policy。说明依据，并让人确定本轮选择。
+- Policy 的算法、模型、超参与作业种子：推荐沿用上一轮，除非它们正是被检验的变量。执行仍受实际 GPU 授权约束。
+- 脚本的冻结代码、声明配置与 Newton 兼容性：明确要评审的源码和哈希；脚本计划使用空 Jobs 与零 GPU 预算。
+- 预算：评估尝试和墙钟保持原目标累计池；Policy 的 GPU 小时由人确定。
 
 把每个问题、推荐答案、人的原始回答和最终决定完整写入与 `plan.yaml` 同目录的 `interview.md`，用三列 Markdown 表格（问题、Agent 推荐、人的回答）逐行记录。这份记录随提交快照到审批，后改本地文件不会改动已提交计划。
 
 ## 固定 Task
 
 Task 是 Isaac Lab 下游源码包，`pyproject.toml` 声明 `isaaclab.tasks` entry point。`task.yaml` 包含 `name`、`title`、精确 `scene` 版本、`robot`、`implements`、`episode.params`、平台 `success` 条件、`control`、包内 `observation` 文件和 `isaaclab` 配置；同时声明固定 `evaluation`（场景、回合数、种子、参数覆盖）及 `loopBudget`（`gpuHours`、`episodes`、`days`，可选 `llmUsd`）。T1 使用已有 FR3 的 `robot-and-tubes@2`。
+
+脚本路径仍引用真实固定 Task；它的控制逻辑放在独立 Program 包中，Task 推送保持静态快照。选择与 Task 的 Scene、robot、接口动作一致的固定 Suite，后续两条路径都由该 Suite 判定实际状态。
 
 ```bash
 lw task push tasks/fr3-pick-tube --json
@@ -42,7 +46,7 @@ lw task show task/fr3-pick-tube@1 --json
 
 检查返回的版本和 `contentHash`。同内容重推会返回已有版本；推送只做静态快照，不运行包里的代码。
 
-## 示范输入
+## Policy 示范输入
 
 已有成功回合时，先按精确来源 Task 读取示范；需要标记时使用实际录制 ID。已关联具身 train 评估的录制可省略 `--task`，普通会话必须指明固定来源 Task。
 
@@ -62,9 +66,24 @@ demonstrations:
 
 `purpose` 可为 `reset` 或 `imitation`。Task 的 Python 代码消费节点提供的集合/录制本地路径，平台只固定数据输入。新示范生成新集合版本；已有 Task 和 Job 不自动升级。重复标记返回首次版本，按任务列出的 `set` 是当前集合；计划明确选择实际读过的固定版本，不写“latest”。标记数据不批准训练。
 
+## 脚本代码快照
+
+选择脚本时，先完成源码、声明配置和 `program.yaml`，再静态检查并推送实际工作目录：
+
+```bash
+lw program inspect programs/fr3-pick-tube --json
+lw program push programs/fr3-pick-tube --json
+lw program show program/robot_arm.script.fr3-pick-tube@1 --json
+lw program source program/robot_arm.script.fr3-pick-tube@1 controller.py --json
+```
+
+用返回的实际 ID 替换示例。推送得到未授权加载的不可变快照；复制其真实 `contentHash`、代码与配置哈希，并检查实际源文件。相同字节重试复用版本，dirty 文件或配置变更产生新版本。Plan 关联不修改归档。
+
+完成条件：冻结版本可读、Task/Suite/目标兼容、完整源码与配置可供人审。代码只在精确批准后由自有 Newton Runner 加载；Live 与 Synthetic 不支持脚本。实际 Config 默认值或归一化必须与声明完全一致。
+
 ## 提交
 
-计划必须给出以下内容；替换 Task 版本、上一轮、假设和访谈，不臆造历史：
+计划必须给出实际 Task、Goal、评估、可测量假设、理由与访谈；没有历史时明确首轮。以下完整示例采用 Policy 路径：
 
 ```yaml
 kind: training
@@ -88,6 +107,21 @@ notebookRead: []
 interview: interview.md
 ```
 
+脚本路径保留上面的真实共同字段，执行字段使用下列内容，写成一份无重复键的 Plan。`id` 和 `contentHash` 必须来自已经推送并实际读过的快照：
+
+```yaml
+program:
+  id: program/robot_arm.script.fr3-pick-tube@1
+  contentHash: <actual-contentHash-from-push>
+algorithm: {}
+model: {}
+hyperparameters: {}
+jobs: {seeds: []}
+budget: {gpuHours: 0, episodes: 16}
+```
+
+这样只申请代码评审与有限平台评估，不创建 PPO 或 GPU Job。新代码/配置需要新的快照和精确 Plan 修订；已有版本的批准不能借给另一版本。
+
 每条假设都需要 `id`、`cause`、`change` 和 `predict.metric` / `predict.to`。目标是有限数值或数值比较，例如 `>= 0.80`；“更好”不是可测量预期。`predict.from` 可省略，第一轮理由应说明无历史；有上一轮时加 `previous: plan-0006`，`notebookRead` 填实际已读条目。
 
 ```bash
@@ -97,12 +131,22 @@ lw plan show plan-0007 --json
 
 使用实际返回的计划 ID 与审批 ID，向人说明预算、假设及相对上一轮的变化，并给出 Web 待审批页。人在审批页或交互终端决定；MCP 没有审批工具。被驳回后回到访谈，按反馈用 `lw plan revise plan-0007 plan.yaml --json` 提交新修订。算法、模型、Task、奖励或声明的 seeds 改变都要经过新的审批。计划批准仅表示意图获批，训练执行另受作业与 GPU 授权约束。
 
+脚本审批页必须展示该快照的实际源码、配置及哈希，再由人批准。读取实际返回的当前 Plan 修订与 approvalId，确认批准仍对应同一 Program ID/hash；快照本身和普通 Scene 导入都不是部署授权。
+
 同一 Plan ID 的修订共享预算池并保持目标；独立新一轮用新 Plan ID 和 `previous`。
 审批若返回 `loop_budget_changed`，重新读取预算并提交新修订，让人看到当前依据；已有批准重试不创建新授权。
 后续具身评估用实际 Plan ID 与固定修订关联，平台才会将结果和尝试消耗写入该目标：
 
 ```bash
-lw eval run robot_arm.virtual --suite suite/lab-demo-pick-place@1 --plan plan-0007 --revision 1 --json
+lw eval run policy/fr3-pick-tube@1 --suite suite/fr3-pick-tube@1 --plan plan-0007 --revision 1 --json
+lw eval run program/robot_arm.script.fr3-pick-tube@1 --suite suite/fr3-pick-tube@1 --plan plan-0007 --revision 1 --json
+lw eval show eval-EXAMPLE --json
+lw notebook show goal/fr3-pick-tube --json
+lw loop show goal/fr3-pick-tube --json
 ```
 
-上例只示意接口；选择与实际 Task 场景和动作一致的评估集。实验记录只提供 train 投影，使用平台返回的失败/无效证据，保留未知；下一轮的统计接受规则仍按当前规格执行。
+按所选路径只执行对应一行，用真实版本、Suite、Plan ID 与修订替换示例。两路共用现有队列、动作管线、评分、录制和 Notebook；脚本在准入及每回合前复核精确代码批准。核对实际原生执行回执与回放，再读取固定 Suite 的成绩。动作成功或回调计数不等于任务成功；比较条件未知时保留已知代码身份和未知项。
+
+实验记录只提供 train 投影，失败、取消和无效尝试按实际消耗保留。满足既有接受规则后，使用已交付的共享 Controller 提升流程与人审入口；人审提交的新 Scene/Controller 及完整 material/binding proof 才授权普通模拟部署。保持实验的原固定 Suite/Scene，读取实际提升状态，不能用修改默认绑定或导入 Scene 代替事务。下一轮重新读本目标的预算、实验记录和人工决定。
+
+脚本 Candidate 使用 `lw program promote program/robot_arm.script.pick-tube@1 --scene robot-and-tubes@2 --evaluation eval-example --plan plan-example --revision 1 --request-id promotion-example --json` 申请同一提升事务，再用 `lw promotion show promotion-example --json` 读取返回的实际提升 ID。所选资金 Plan 必须批准同一精确程序版本与内容哈希；人工审查和私有 test 结果不进入 agent 上下文。
