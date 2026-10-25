@@ -193,6 +193,10 @@ Launch only an exact launchable version and only when the active slot belongs to
 this work. Prefer one check at a time on a CPU host, and close the session you
 started before changing scenes. A running viewport, screenshot or recording is
 supporting evidence; the S/P report remains the validation result.
+For the seating demo, observe the tube beyond the two-second validation interval;
+the manual Newton regression checks sixty seconds of seating. Close the owned
+Session through `DELETE /api/v1/sessions/{sessionId}` or the Web close button.
+`lw cancel` cancels device invocations and does not close a Session.
 
 ## 7. Receive and submit external reports
 
@@ -205,9 +209,27 @@ lw authoring ls --scene <name@rev> --json
 lw authoring show <submission-id> --json
 ```
 
-The document has a stable `submissionId`, `source`, `sourceVersion`,
-`reportedAt`, a `draftId` or an exact canonical Asset/Scene version plus content
-hash, a plain-text summary of at most 64 KiB, gaps and artifact references. A
+Start with this draft submission, replacing its identity, time and summary:
+
+```json
+{
+  "submissionId": "scene-director-graybox-v1",
+  "source": "scene-director",
+  "sourceVersion": "1",
+  "reportedAt": "2026-10-25T00:00:00+00:00",
+  "draftId": "tube-workspace",
+  "summary": "The person confirmed the graybox in the original conversation.",
+  "gaps": ["Scene not yet imported or validated."],
+  "artifacts": [{"name": "graybox", "reference": "artifact://tube-workspace/graybox-v1"}]
+}
+```
+
+For an imported version, bind `object` as
+`{"kind":"scene","id":"<returned name@rev>","contentHash":"<returned sha256 hex>"}`
+(or `kind: "asset"` with its returned exact ID). Use `artifacts` entries with
+`name` and `reference`; the gateway retains their opaque text. The input contains
+only submission fields: `schema`, `receivedAt` and `summaryBytes` belong to the
+gateway's response. The summary is plain text, at most 64 KiB. A
 replay is idempotent and returns the first receipt. Never include attachment
 bytes, local paths or secrets; references are opaque text. Reports state what
 the external factory says it did and when. They never replace platform

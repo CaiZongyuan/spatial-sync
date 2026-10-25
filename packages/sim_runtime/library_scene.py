@@ -200,6 +200,7 @@ def attach_visuals(builder, stage, graph, paths):
     bodies = {str(path): index for path, index in paths["path_body_map"].items()}
     shape_paths = {str(path): index for path, index in paths["path_shape_map"].items()}
     visuals, static_visuals, dressing = {}, {}, []
+    dressing_assets = set()
     warnings = list(getattr(builder, "spatial_warnings", ()))
     for prim in stage.Traverse():
         key = str(prim.GetPath())
@@ -207,22 +208,37 @@ def attach_visuals(builder, stage, graph, paths):
             continue
         owners = [layers[spec.layer.identifier] for spec in prim.GetPrimStack()
                   if spec.layer.identifier in layers and str(spec.path) == "/Asset"]
-        if not owners:
+        cube = (
+            not owners and key.startswith("/World/Dressing/") and prim.IsA(UsdGeom.Cube)
+            and not any(prefix in dressing_assets for prefix in prim.GetPath().GetPrefixes())
+        )
+        if not owners and not cube:
             continue
-        # The strongest asset root describes this composed placement.
-        asset = owners[0]
-        filename = asset["metadata"].get("visual")
         transform = Gf.Transform(cache.GetLocalToWorldTransform(prim))
         rotation = transform.GetRotation().GetQuat()
         world = wp.transform(tuple(transform.GetTranslation()),
                              wp.quat(*rotation.GetImaginary(), rotation.GetReal()))
         scale = list(map(float, transform.GetScale()))
+        if cube:
+            size = float(UsdGeom.Cube(prim).GetSizeAttr().Get())
+            dressing.append({
+                "entityKey": key, "kind": "static", "name": prim.GetName(),
+                "initialPose": {"p": list(map(float, world[:3])), "q": list(map(float, world[3:]))},
+                "visuals": [{"kind": "primitive", "geometry": {
+                    "type": "box", "halfExtents": [abs(value) * size / 2 for value in scale],
+                }}], "colliders": [],
+            })
+            continue
+        # The strongest asset root describes this composed placement.
+        asset = owners[0]
+        filename = asset["metadata"].get("visual")
         if not filename:
             warnings.append({"code": "asset_fallback", "entityKey": key,
                              "message": "Referenced asset has no provided PBR GLB: " + asset["id"]})
         visual = {"kind": "glb", "url": visual_url(asset, filename), "assetUpAxis": "Z",
                   "scale": scale, "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 1]}} if filename else None
         if key.startswith("/World/Dressing/"):
+            dressing_assets.add(prim.GetPath())
             dressing.append({"entityKey": key, "kind": "static", "name": prim.GetName(),
                              "initialPose": {"p": list(map(float, world[:3])),
                                              "q": list(map(float, world[3:]))},

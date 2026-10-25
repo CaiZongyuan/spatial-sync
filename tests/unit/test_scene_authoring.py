@@ -19,12 +19,26 @@ from factory.authoring import (
     plan_digest,
     request_digest,
 )
-from factory.procedural import package_digest, rack_geometry
+from factory.procedural import package_digest, rack_geometry, rack_usd
 from packages.library.metadata import asset_metadata, scene_metadata
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLANS = REPO_ROOT / "factory/plans"
 FIXTURE_TABLE = REPO_ROOT / "examples/usd-library/assets/usd-fixture-table"
+
+
+@pytest.mark.parametrize("collision", ["solid", "holes"])
+def test_usd_collision_boxes_keep_their_design_centers_and_sizes(collision):
+    params = plan_document("tube-rack-demo-v1.yaml")["procedural"][0]["rack"]
+    params["collision"] = collision
+    stage = Usd.Stage.CreateInMemory()
+    stage.GetRootLayer().ImportFromString(rack_usd(params))
+    for box in rack_geometry(params).collision:
+        prim = stage.GetPrimAtPath("/Asset/" + box.name)
+        transform = UsdGeom.XformCache().GetLocalToWorldTransform(prim)
+        assert tuple(transform.ExtractTranslation()) == pytest.approx(box.center)
+        bounds = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default"]).ComputeWorldBound(prim)
+        assert tuple(bounds.ComputeAlignedRange().GetSize()) == pytest.approx(box.size)
 
 
 def library_with_box(tmp_path):
@@ -137,7 +151,11 @@ def test_canonical_packages_are_stable_and_preserve_references(tmp_path):
     ).read_text(encoding="utf-8")
     rack = stage.GetPrimAtPath("/World/Lab/Rack")
     assert rack and [child.GetPath().name for child in rack.GetChildren()].count("HoleA1") == 1
-    assert stage.GetPrimAtPath("/World/Dressing/Bench").IsValid()
+    bench = stage.GetPrimAtPath("/World/Dressing/Bench")
+    assert bench.IsValid()
+    assert tuple(UsdGeom.XformCache().GetLocalToWorldTransform(bench).ExtractTranslation()) == (
+        0.15, 0.0, 0.725
+    )
     assert not list(out.rglob("*.usdc"))
     assert list(out.rglob("visual.glb"))
 
@@ -383,6 +401,12 @@ def test_robot_is_referenced_with_scene_initial_joint_state(tmp_path):
     out = tmp_path / "robot"
     result = build(plan, out, library_roots=[BUILTIN_LIBRARY])
     stage = stage_of(out / "scenes/robot-reference", [out, BUILTIN_LIBRARY])
+    assert UsdGeom.GetStageMetersPerUnit(stage) == 1.0
+    assert UsdGeom.GetStageUpAxis(stage) == UsdGeom.Tokens.z
+    position = UsdGeom.XformCache().GetLocalToWorldTransform(
+        stage.GetPrimAtPath("/World/Lab/RobotA")
+    ).ExtractTranslation()
+    assert tuple(position) == pytest.approx((-0.45, 0.0, 0.75))
     assert "library:assets/robot/fr3/1/asset.usdc" in (
         out / "scenes/robot-reference/stage.usda"
     ).read_text(encoding="utf-8")

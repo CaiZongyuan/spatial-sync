@@ -508,6 +508,32 @@ and request hashes, layout mode, immutable content hashes, S/P checks, viewport
 capture and any remaining failure in `.scratch/`; an image or a redrawn report
 is not a physics result.
 
+## Scene Director acceptance (SF5)
+
+[The authoring guide](SCENE_FACTORY.md) describes owned startup, external
+confirmation, import/repair, reuse and unsent-workfile isolation. The shipped
+`lab-scene-director` skill contains the runnable command sequence and report
+input. Its JSON example is submitted through the actual CLI/HTTP seam by:
+
+```powershell
+uv run --no-sync python -m pytest tests/cli/test_authoring_commands.py tests/unit/test_scene_authoring.py -q
+uv run --no-sync python tools/check_platform_skills.py
+uv run --no-sync python -m pytest tests/sim_runtime/test_library_scene.py -k "factory_repaired or authored_cube" -q
+```
+
+Real Agent acceptance pins the runtime/model/effort and records its original
+conversation, tools, returned versions, applicable S/P checks and actual usage.
+Pass `LW_URL` explicitly into the MCP subprocess environment. Authoring Report
+inputs contain submission fields; `schema`, `receivedAt` and `summaryBytes` are
+gateway response fields. An external completion claim never changes validation.
+Reuse earlier real-tool evidence when it covers the same scope, identifying
+which observations were reused. Genuine human Blender edits and scripted edits
+must remain separately attributable. Paid runs stay outside ordinary CI.
+The Newton factory regression observes the seated tube for sixty simulated
+seconds: a two-second validation report alone cannot prove continued seating.
+The Dressing regression checks that an authored Cube appears in the Manifest
+without adding any physics bodies or shapes.
+
 ## Scene Factory catalog (SF1a)
 
 The committed snapshot is `catalog/simready.json`; search needs no network, cache

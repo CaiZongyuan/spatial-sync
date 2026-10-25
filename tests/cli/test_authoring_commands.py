@@ -91,6 +91,23 @@ async def cli_async(environment, *arguments, code=0):
     return await asyncio.to_thread(cli, environment, *arguments, code=code)
 
 
+def test_scene_director_report_example_can_be_submitted(tmp_path):
+    skill = (ROOT / "skills/lab-scene-director/SKILL.md").read_text(encoding="utf-8")
+    document = json.loads(skill.split("```json\n", 1)[1].split("```", 1)[0])
+    example = tmp_path / "graybox-report.json"
+    example.write_text(json.dumps(document), encoding="utf-8")
+    url, process, log = launch(tmp_path)
+    try:
+        receipt = cli(environment_for(url), "authoring", "submit", str(example))
+        assert receipt["draftId"] == document["draftId"]
+        assert receipt["object"] is None
+        assert receipt["summary"] == document["summary"]
+        assert receipt["receivedAt"]
+    finally:
+        stop(process)
+        log.close()
+
+
 def submit(_http, content_hash, submission_id, **overrides):
     document = {
         "submissionId": submission_id,

@@ -64,6 +64,13 @@ the actual S/P checks; a visual hole that keeps a sealed collision is the
 intended failure case. Real Blender, Newton and viewport receipts stay under
 `.scratch/`; `tests/unit/test_scene_authoring.py` is the GPU-free CI lane.
 
+The current generator recipes are `sf3-blender-factory-v2` and
+`sf3-procedural-v2`. They apply Cube translation before scale so collision
+centers match the design in meters. Legacy v1 plans remain readable; rebuilding
+uses the current generator and produces new immutable content. Saved legacy
+packages and recordings keep their original bytes. The manual Newton lane also
+checks sixty seconds of seating and visible, nonphysical Cube Dressing.
+
 ## Restricted derivation
 
 Supported inputs are exactly the five pinned source packages in `simready.py`, at
