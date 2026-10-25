@@ -64,6 +64,7 @@ from packages.acquisition import AcquisitionService
 from packages.agent_evaluation.scope import is_internal_observation
 from packages.assets.registry import AssetRegistry
 from packages.catalog import AssetCatalog
+from packages.catalog.sync import CatalogSync
 from packages.info.invocations import HistoryUnavailable
 from packages.info.plans import PlanError
 from packages.library.authoring import AuthoringReports
@@ -159,6 +160,7 @@ def create_app(
     platform_sampler=None,
     live_transport_factory=None,
     catalog_path: Path | None = None,
+    catalog_sync_source=None,
     acquisition_runner=None,
     acquisition_limits=None,
     acquisition_disk_usage=None,
@@ -226,6 +228,7 @@ def create_app(
     authoring = AuthoringReports(
         settings.state_root, library_assets, lambda: manager.library
     )
+    catalog_sync = CatalogSync(settings.state_root, catalog, source_factory=catalog_sync_source)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -237,6 +240,7 @@ def create_app(
             manager.library.refresh()
             library_assets.startup()
             await asyncio.to_thread(catalog.startup)
+            await asyncio.to_thread(catalog_sync.startup)
             await acquisitions.startup()
             await recordings.startup()
             await evaluations.startup()
@@ -255,7 +259,10 @@ def create_app(
             yield
         finally:
             try:
-                await acquisitions.close()
+                try:
+                    await catalog_sync.close()
+                finally:
+                    await acquisitions.close()
             finally:
                 try:
                     try:
@@ -314,6 +321,7 @@ def create_app(
     app.state.platform_monitor = monitor
     app.state.library_assets = library_assets
     app.state.catalog = catalog
+    app.state.catalog_sync = catalog_sync
     app.state.acquisitions = acquisitions
     app.state.authoring_reports = authoring
     app.state.training_views = views
@@ -359,6 +367,8 @@ def create_app(
     install_inbox_routes(app, manager)
     install_library_routes(app, library_assets, lambda: manager.library, manager,
                            lambda headers: _role(headers, settings), catalog, authoring)
+    from apps.api.app.catalog_sync_routes import install_catalog_sync_routes
+    install_catalog_sync_routes(app, catalog_sync, lambda headers: _role(headers, settings))
     install_acquisition_routes(app, acquisitions)
     request_times = defaultdict(deque)
 

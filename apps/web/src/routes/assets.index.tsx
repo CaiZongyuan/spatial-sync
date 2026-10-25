@@ -6,6 +6,7 @@ import { AssetThumbnails } from '../components/AssetThumbnails';
 import { AssetGapChips, CompletenessDots } from '../components/AssetCompleteness';
 import { CatalogCandidateList, CatalogDetailPanel, CatalogSnapshotBar, CatalogZeroResult } from '../components/CatalogCandidates';
 import { AcquisitionRecords } from '../components/AcquisitionPanel';
+import { CatalogSyncPanel } from '../components/CatalogSyncPanel';
 
 type Search = {
   scope?: CatalogScope; view?: 'card' | 'list'; kind?: AssetKind; usage?: CatalogUsage;
@@ -86,6 +87,7 @@ function AssetLibrary() {
     <div className="asset-library-toolbar"><span>{scope === 'local' ? assets ? `${assets.length} 件素材 · 圆点依次为六项完整度` : '正在读取素材…' : catalogToolbar}</span>
       {scope === 'local' && <div className="asset-view-toggle" role="group" aria-label="视图">{(['card', 'list'] as const).map(view => <button key={view} aria-pressed={(search.view ?? 'card') === view} onClick={() => change({ view })}>{view === 'card' ? '▦ 卡片' : '☷ 列表'}</button>)}</div>}
     </div>
+    {scope !== 'local' && <CatalogSyncPanel onPublished={() => setAttempt(value => value + 1)} />}
     <section className="asset-filters" aria-label="素材筛选">
       <div className="asset-scope-toggle" role="group" aria-label="范围">{(['local', 'online', 'all'] as const).map(value =>
         <button key={value} aria-pressed={scope === value} onClick={() => change({ scope: value })}>{scopeLabels[value]}</button>)}</div>

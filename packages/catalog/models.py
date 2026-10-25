@@ -9,13 +9,14 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from packages.library.common import KINDS
 
 CATALOG_SCHEMA = "lw.asset-catalog/1"
+SYNCED_CATALOG_SCHEMA = "lw.asset-catalog/2"
 SEARCH_SCHEMA = "lw.catalog-search/1"
 ENTRY_SCHEMA = "lw.catalog-entry/1"
 ESTIMATE_SCHEMA = "lw.catalog-estimate/1"
@@ -23,7 +24,7 @@ SNAPSHOT_PREFIX = "sha256:"
 
 REVISION = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
-PACKAGE = re.compile(r"[a-z0-9][a-z0-9_.-]*")
+PACKAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 LOCAL_ASSET_ID = re.compile(
     r"(?:robot|device|labware|environment)/[a-z0-9]+(?:-[a-z0-9]+)*"
 )
@@ -119,10 +120,10 @@ def _bilingual_lists(value, name, *, item_maximum=100_000, maximum=128):
 @dataclass(frozen=True)
 class Source:
     url: str
-    files: int
-    bytes: int
-    root_usd: str
-    bom_items: int
+    files: int | None
+    bytes: int | None
+    root_usd: str | None
+    bom_items: int | None
     bom_not_in_bom: tuple[str, ...]
 
     def document(self):
@@ -138,8 +139,8 @@ class Source:
 
 @dataclass(frozen=True)
 class LicenseEvidence:
-    file: str
-    sha256: str
+    file: str | None
+    sha256: str | None
 
 
 @dataclass(frozen=True)
@@ -151,12 +152,13 @@ class LicenseAttachment:
 
 @dataclass(frozen=True)
 class License:
-    name: str
+    name: str | None
     admitted: bool
     obligations: tuple[str, ...]
-    in_bom: bool
+    in_bom: bool | None
     evidence: LicenseEvidence
     attachments: tuple[LicenseAttachment, ...]
+    unknown: bool = False
 
     def document(self):
         return {
@@ -238,7 +240,7 @@ class CatalogEntry:
     provider: str
     revision: str
     package_id: str
-    local_asset_id: str
+    local_asset_id: str | None
     kind: str
     source: Source
     names: dict
@@ -250,6 +252,8 @@ class CatalogEntry:
     adaptation: Adaptation
     upstream_validation: UpstreamValidation
     acquisition: Acquisition
+    preview: dict | None = None
+    discovery: dict | None = None
 
     @property
     def id(self):
@@ -265,6 +269,14 @@ class CatalogEntry:
 
     def unknown_attributes(self):
         unknown = []
+        if self.kind == "unknown":
+            unknown.append("kind")
+        if self.source.bytes is None:
+            unknown.append("sourceBytes")
+        if self.source.files is None:
+            unknown.append("sourceFiles")
+        if self.license.unknown:
+            unknown.append("license")
         if self.adaptation.dimensions_m is None:
             unknown.append("dimensionsM")
         for name in USAGE_NAMES:
@@ -284,11 +296,12 @@ class CatalogSnapshot:
     coverage: str
     entry_count: int
     limits: dict
+    sync: dict | None = None
 
     def document(self, now=None):
         now = now or datetime.now(UTC)
         age = max(0, int((now - self.indexed_at).total_seconds()))
-        return {
+        result = {
             "id": self.id,
             "provider": self.provider,
             "providerRevision": self.revision,
@@ -299,6 +312,9 @@ class CatalogSnapshot:
             "networkRequired": False,
             "ageSeconds": age,
         }
+        if self.sync is not None:
+            result["sync"] = self.sync
+        return result
 
 
 def unavailable_snapshot_document():
@@ -484,6 +500,62 @@ def _limits(value):
     return limits
 
 
+def _discovered_entry(value, provider, revision):
+    """Unreviewed source facts cannot manufacture an acquisition admission.
+
+    Version 1 remains strict. Version 2 additionally represents discovery-only
+    packages with genuinely unknown sizes, classifications and license evidence.
+    The trusted seed overlay is embedded by the synchronizer only at its exact
+    reviewed revision; it is never taken from an upstream metadata document.
+    """
+    data = _mapping(value, "entries[]")
+    package = _string(data.get("packageId"), "packageId", maximum=200)
+    if not PACKAGE.fullmatch(package) or package in (".", ".."):
+        raise CatalogFormatError("Invalid discovered package ID")
+    source = _mapping(data.get("source"), "source")
+
+    def optional_integer(name):
+        value = source.get(name)
+        return None if value is None else _integer(value, f"source.{name}")
+
+    preview = _mapping(data.get("preview"), "preview")
+    url = preview.get("url")
+    if url is not None and not re.fullmatch(
+        r"/api/v1/library/catalog/previews/[0-9a-f]{64}\.(?:png|jpg|webp)", url
+    ):
+        raise CatalogFormatError("A cached preview must be a local content-addressed image")
+    preview = {
+        "kind": "cached" if url else "unavailable", "url": url,
+        "reason": _string(preview.get("reason"), "preview.reason", maximum=2000),
+    }
+    discovery = _mapping(data.get("discovery"), "discovery")
+    if "curated" in data:
+        curated = _entry(data["curated"], provider, revision)
+        if curated.package_id != package:
+            raise CatalogFormatError("Curated overlay must match the discovered package")
+        return replace(curated, preview=preview, discovery=discovery)
+    name = _string(data.get("title"), "title", maximum=2000)
+    license_name = data.get("declaredLicense")
+    if license_name is not None:
+        license_name = _string(license_name, "declaredLicense", maximum=1000)
+    missing = "Not reviewed for adaptation or acquisition; source declarations are not platform checks."
+    return CatalogEntry(
+        provider, revision, package, None, "unknown",
+        Source(_string(source.get("url"), "source.url", maximum=10000),
+               optional_integer("files"), optional_integer("bytes"), source.get("rootUsd"),
+               optional_integer("bomItems"), ()),
+        {"en": name, "zh": name}, {"en": [package], "zh": []},
+        {"en": "Name derived from the upstream package ID; " + missing,
+         "zh": "名称由上游包 ID 整理；尚未审查许可、适配或物理用途。"},
+        {"en": [], "zh": []},
+        License(license_name, False, (), None, LicenseEvidence(None, None), (), unknown=True),
+        {name: UsageFact(None, True, missing) for name in USAGE_NAMES},
+        Adaptation("gap", (missing,), None, None, None, "not reviewed", ()),
+        UpstreamValidation("not reviewed", "unknown", "unknown", (), "not verified"),
+        Acquisition(False, (missing,)), preview, discovery,
+    )
+
+
 def load_catalog(path):
     """Read and validate the exact bytes that define the snapshot identity."""
     raw = Path(path).read_bytes()
@@ -492,8 +564,9 @@ def load_catalog(path):
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CatalogFormatError(f"Catalog is not valid UTF-8 JSON: {exc}") from exc
     data = _mapping(data, "catalog")
-    if data.get("schema") != CATALOG_SCHEMA:
-        raise CatalogFormatError(f"catalog.schema must be {CATALOG_SCHEMA}")
+    synced = data.get("schema") == SYNCED_CATALOG_SCHEMA
+    if data.get("schema") not in (CATALOG_SCHEMA, SYNCED_CATALOG_SCHEMA):
+        raise CatalogFormatError(f"catalog.schema must be {CATALOG_SCHEMA} or {SYNCED_CATALOG_SCHEMA}")
     provider = _string(data.get("provider"), "provider", maximum=100)
     dataset = _string(data.get("dataset"), "dataset", maximum=300)
     revision = _string(data.get("revision"), "revision", maximum=40)
@@ -508,8 +581,8 @@ def load_catalog(path):
         raise CatalogFormatError("indexedAt must include a timezone")
     coverage = _string(data.get("coverage"), "coverage", maximum=10_000)
     entries = []
-    for value in _list(data.get("entries"), "entries", maximum=10000):
-        entry = _entry(value, provider, revision)
+    for value in _list(data.get("entries"), "entries", maximum=100000 if synced else 10000):
+        entry = (_discovered_entry if synced else _entry)(value, provider, revision)
         entries.append(entry)
     package_ids = [entry.package_id for entry in entries]
     if len(package_ids) != len(set(package_ids)):
@@ -524,5 +597,6 @@ def load_catalog(path):
         coverage=coverage,
         entry_count=len(entries),
         limits=_limits(data.get("limits")),
+        sync=_mapping(data.get("sync"), "sync") if synced else None,
     )
     return snapshot, tuple(entries)

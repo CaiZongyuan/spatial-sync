@@ -1,0 +1,11 @@
+.catalog-sync-panel { margin: 16px 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.catalog-sync-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.catalog-sync-heading h2 { margin: 0; font-size: 15px; }
+.catalog-sync-heading p { margin: 5px 0 10px; color: var(--muted); font-size: 12px; }
+.catalog-sync-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.catalog-sync-panel button { padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
+.catalog-sync-panel button:disabled { opacity: .5; cursor: default; }
+.catalog-sync-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+.catalog-sync-progress details { width: 100%; overflow-wrap: anywhere; }
+.catalog-sync-progress summary { cursor: pointer; }
+@media (max-width: 600px) { .catalog-sync-heading { align-items: flex-start; flex-direction: column; gap: 4px; } .catalog-sync-panel { padding: 14px; } }

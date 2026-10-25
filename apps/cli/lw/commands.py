@@ -818,6 +818,31 @@ COMMANDS = (
         mcp_name="library_describe",
     ),
     Command(
+        path=("catalog", "sync"),
+        help="Synchronize the complete SimReady directory and upstream previews; model files stay on demand.",
+        method="catalog_sync",
+        arguments=(Argument("wait", ("--wait",), bool, "Poll for completion, at most 120 seconds", False),),
+        mcp_name="catalog_sync", actor=True,
+    ),
+    Command(
+        path=("catalog", "sync-status"),
+        help="Read the latest sync and published coverage, or one persistent sync ID.",
+        method="catalog_sync_status",
+        arguments=(Argument("id", ("--id",), str | None, "Sync ID; omit for current coverage", None),),
+        mcp_name="catalog_sync_status",
+    ),
+    Command(
+        path=("catalog", "sync-cancel"), help="Cancel a sync while keeping the published search snapshot.",
+        method="catalog_sync_cancel", arguments=(Argument("id", ("id",), str, "Sync ID"),),
+        mcp_name="catalog_sync_cancel", actor=True,
+    ),
+    Command(
+        path=("catalog", "sync-retry"),
+        help="Retry a finished sync, reusing unchanged metadata and previews.",
+        method="catalog_sync_retry", arguments=(Argument("id", ("id",), str, "Sync ID"),),
+        mcp_name="catalog_sync_retry", actor=True,
+    ),
+    Command(
         path=("catalog", "search"),
         help=(
             "Search local assets and online catalog candidates in one bounded response; source "

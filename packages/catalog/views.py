@@ -70,8 +70,14 @@ def _local_preview(local_assets):
     return None
 
 
-def preview_document(local_assets):
-    return _local_preview(local_assets) or {
+def preview_document(local_assets, entry=None):
+    local = _local_preview(local_assets)
+    cached = getattr(entry, "preview", None)
+    if cached and cached.get("url") and (not local or not str(local.get("url")).lower().endswith(
+        (".png", ".jpg", ".jpeg", ".webp")
+    )):
+        return dict(cached)
+    return local or cached or {
         "kind": "unavailable",
         "url": None,
         "reason": "Source preview is not cached; acquisition resolves it.",
@@ -91,7 +97,7 @@ def evidence_document(entry):
         },
         "adaptation": {
             "status": entry.adaptation.status,
-            "report": f"reports/{entry.package_id}.json",
+            "report": f"reports/{entry.package_id}.json" if entry.local_asset_id else None,
         },
         "upstreamValidation": {
             "declaredBy": entry.upstream_validation.declared_by,
@@ -129,7 +135,7 @@ def _base_document(entry, local_assets):
         "descriptions": dict(entry.descriptions),
         "tags": {language: list(values) for language, values in entry.tags.items()},
         "source": entry.source.document(),
-        "license": entry.license.document() | {"unknown": False},
+        "license": entry.license.document() | {"unknown": entry.license.unknown},
         "usage": {name: entry.usage[name].document() for name in ("dressing", "staticCollision")},
         "adaptation": entry.adaptation.document(),
         "upstreamValidation": entry.upstream_validation.document(),
@@ -137,7 +143,8 @@ def _base_document(entry, local_assets):
         "installed": installed_document(local_assets, limit=20),
         "unknown": entry.unknown_attributes(),
         "evidence": evidence_document(entry),
-        "preview": preview_document(local_assets),
+        "preview": preview_document(local_assets, entry),
+        **({"discovery": entry.discovery} if entry.discovery is not None else {}),
         "estimate": estimate_pointer(entry),
     }
 
@@ -246,9 +253,10 @@ def estimate_document(catalog, entry, local_assets):
     source_bytes = entry.source.bytes
     adapted = entry.adaptation.output_bytes
     adapted_upper = adapted if adapted is not None else limits["adaptedPackageBytes"]
-    required = source_bytes + adapted_upper + limits["freeDiskMinBytes"]
+    required = (None if source_bytes is None
+                else source_bytes + adapted_upper + limits["freeDiskMinBytes"])
     within = (
-        source_bytes <= limits["sourcePackageBytes"]
+        source_bytes is not None and source_bytes <= limits["sourcePackageBytes"]
         and adapted_upper <= limits["adaptedPackageBytes"]
         and source_bytes <= limits["batchBytes"]
     )
@@ -258,7 +266,7 @@ def estimate_document(catalog, entry, local_assets):
         "source": {
             "bytes": source_bytes,
             "files": entry.source.files,
-            "licenseFiles": [entry.license.evidence.file],
+            "licenseFiles": [entry.license.evidence.file] if entry.license.evidence.file else [],
             "bomItems": entry.source.bom_items,
             "bomNotInBom": list(entry.source.bom_not_in_bom),
         },
