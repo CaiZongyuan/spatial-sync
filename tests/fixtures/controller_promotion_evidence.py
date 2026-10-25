@@ -14,7 +14,7 @@ def controlled_qualification(policy, check=None):
             "evidenceMode": "controlled", "policy": policy}
 
 
-def seed_controlled_train(manager, policy, job, *, successes=10):
+def seed_controlled_train(manager, policy, job, *, successes=10, episodes=10):
     scene = manager.library.resolve(policy["scene"], launch=True, source="newton")
     suite = native_suite(manager, scene, name="promotion-controlled", heldout=True)
     manager.evaluations.suites.refresh()
@@ -22,7 +22,7 @@ def seed_controlled_train(manager, policy, job, *, successes=10):
     store = manager.evaluations.store
     identity = {"environment": "controlled-environment", "judge": "controlled-judge"}
     key = {"suite": suite.id, "suiteContentHash": suite.content_hash,
-           "scene": scene.id, "sceneContentHash": scene.content_hash, **identity}
+           "scene": scene.id, "sceneContentHash": scene.content_hash, "source": "newton", **identity}
     for label, candidate, passed, decision in (
         ("reference", {"kind": "program", "id": "robot_arm.newton", "contentHash": "1" * 64}, 0, "baseline"),
         ("candidate", subject.document()["candidateIdentity"], successes, "accepted"),
@@ -35,14 +35,15 @@ def seed_controlled_train(manager, policy, job, *, successes=10):
                "candidateIdentity": candidate, "key": deepcopy(key), "split": "train",
                "comparisonIdentity": deepcopy(identity), "decision": decision,
                "reference": "eval-controlled-reference" if label == "candidate" else None,
-               "episodes": 10, "successes": passed, "score": passed / 10,
-               "ci95": wilson_interval(passed, 10), "at": "2026-10-25T00:00:00+00:00"}
+               "episodes": episodes, "successes": passed, "score": passed / episodes,
+               "ci95": wilson_interval(passed, episodes), "at": "2026-10-25T00:00:00+00:00"}
         record = {"evaluationId": identifier, "suite": suite.id, "suiteContentHash": suite.content_hash,
                   "subject": requested, "candidateIdentity": candidate,
                   "split": "train", "status": "completed", "result": row,
                   "identitySnapshot": snapshot, "runtimeHash": manager.evaluations._runtime_hash,
+                  "evidenceMode": "controlled",
                   "episodes": [{"status": "valid", "success": index < passed,
-                                "cleanupComplete": True} for index in range(10)], "at": row["at"]}
+                                "cleanupComplete": True} for index in range(episodes)], "at": row["at"]}
         if label == "candidate":
             record.update(policySubject=subject.document(), planId=job["planId"])
         store.append(row)

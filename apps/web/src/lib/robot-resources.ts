@@ -15,6 +15,9 @@ export interface ControllerVersion {
   action: { space: string; hz: number | null; hzSource?: string; hzUnknownReason?: string };
   observation: string | null;
   task: string | null; scene: string; evaluationId: string | null; contentHash: string;
+  evaluationEvidence?: { status: 'measured' | 'unknown'; evaluationId?: string; suite?: string;
+    successes?: number; episodes?: number; score?: number; decision?: string;
+    currentEvidence: 'verified' | 'unknown'; evidenceMode?: string; url?: string };
 }
 export interface RobotEmbodiment {
   id: string; title: string; kind: 'sim' | 'real'; asset: string; controller: string | null;

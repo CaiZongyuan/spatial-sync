@@ -96,6 +96,10 @@ with httpx.Client(base_url=sys.argv[1], trust_env=False, timeout=30) as client:
     await expect(robot).toContainText('Controller fr3-arm · v1');
     await expect(robot).toContainText('policy/training-probe@1'); await expect(robot).toContainText('30 Hz');
     await expect(robot).toContainText('默认部署场景'); await expect(robot).toContainText('robot-and-tubes@3');
+    await expect(robot).toContainText('1 / 1 · 100.0%');
+    await expect(robot).toContainText('公开 train · 已接受 · 当前输入证据已核验');
+    await expect(robot).toContainText('受控工程分数');
+    await expect(robot.getByRole('link', { name: 'eval-controlled-candidate →', exact: true }).first()).toHaveAttribute('href', '/eval/promotion-controlled%401');
     await expect(robot.getByRole('table')).toContainText('eval-controlled-candidate');
     await page.setViewportSize({ width: 900, height: 1000 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -225,7 +225,9 @@ or Reference change blocks the old intent. Normal Scene validation remains in
 force; a controlled structural fixture does not certify physical stability.
 
 The robot resource page shows the committed default Scene, version, composition
-and exact train Evaluation. Policy action frequency comes from the actual frozen
+and measured public train successes/episodes/rate/decision with its Evaluation
+link. Current recoverable input evidence is marked separately; missing proof
+stays unknown, and test results never enter this projection. Policy action frequency comes from the actual frozen
 Task's `control.hz`, with `action.hzSource`; an undeclared script tick frequency
 stays unknown with its reason. Model parameters and licence remain unknown when
 their source does not establish them. Active Sessions keep their loaded identity.

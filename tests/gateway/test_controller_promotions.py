@@ -228,6 +228,43 @@ def test_human_review_exposes_approved_publication_recovery_without_restarting(p
     assert len(service.resources.controller("fr3-arm")["versions"]) == 1 and not starts
 
 
+def test_resource_current_and_history_project_only_actual_public_train_results(promotion_inputs):
+    client, service, policy, scene, starts = promotion_inputs
+    promotion = request(client, policy, scene)
+    complete_controlled_tests(service, promotion)
+    review = client.get(f"/api/v1/controller-promotions/{promotion['id']}/review").json()
+    result = client.post(
+        "/api/v1/approvals/" + review["approvalId"] + "/decision", json={"decision": "approve"}
+    )
+    assert result.status_code == 200 and result.json()["status"] == "published", result.text
+    current = client.get("/api/v1/controllers/fr3-arm").json()["current"]["evaluationEvidence"]
+    assert current["status"] == "measured" and current["successes"] == current["episodes"] == 10
+    assert current["score"] == 1.0 and current["decision"] == "accepted"
+    assert current["currentEvidence"] == "verified" and current["evidenceMode"] == "controlled"
+    robot = client.get("/api/v1/embodiments/fr3-sim").json()
+    assert robot["currentController"]["evaluationEvidence"] == current
+    assert robot["controllerHistory"][0]["evaluationEvidence"] == current
+    store = service.manager.evaluations.store
+    original = deepcopy(store.records[current["evaluationId"]])
+    private = deepcopy(original) | {"split": "test"}
+    private["result"]["split"] = "test"
+    store.save(private)
+    try:
+        hidden = client.get("/api/v1/controllers/fr3-arm").json()["current"]["evaluationEvidence"]
+        assert hidden == {"status": "unknown", "currentEvidence": "unknown"}
+    finally:
+        store.save(original)
+    blob = store.root / "identity-inputs" / original["identitySnapshot"]["recovery"]["file"]
+    raw = blob.read_bytes()
+    blob.write_bytes(raw + b"controlled evidence loss")
+    try:
+        historical = client.get("/api/v1/controllers/fr3-arm").json()["current"]["evaluationEvidence"]
+        assert historical["score"] == 1.0 and historical["currentEvidence"] == "unknown"
+    finally:
+        blob.write_bytes(raw)
+    assert not starts
+
+
 def test_both_private_sides_require_the_existing_total_budget_before_either_is_queued(promotion_inputs):
     client, service, policy, scene, starts = promotion_inputs
     store = service.manager.evaluations.store

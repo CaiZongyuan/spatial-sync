@@ -61,7 +61,9 @@ async def train(body: Seed):
     manager = app.state.manager
     policy, _ = manager.policies.resolve(body.policy)
     scene = await anyio.to_thread.run_sync(
-        seed_controlled_train, manager, policy, manager.jobs.get(policy["jobId"])
+        lambda: seed_controlled_train(
+            manager, policy, manager.jobs.get(policy["jobId"]), successes=1, episodes=1
+        )
     )
     return {"evidenceMode": "controlled", "scene": scene.id, "sourceStarts": len(starts)}
 
