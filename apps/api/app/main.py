@@ -61,6 +61,7 @@ from apps.api.app.stream_broadcaster import ClientConnection
 from apps.api.app.structured_logging import configure_gateway_logging
 from apps.api.app.task_routes import install_task_routes
 from packages.acquisition import AcquisitionService
+from packages.agent_evaluation.scope import is_internal_observation
 from packages.assets.registry import AssetRegistry
 from packages.catalog import AssetCatalog
 from packages.info.invocations import HistoryUnavailable
@@ -386,14 +387,15 @@ def create_app(
                 and not request.url.path.endswith("/actions")
             ):
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=403)
-            now = time.monotonic()
-            key = request.client.host if request.client else "unknown"
-            times = request_times[key]
-            while times and now - times[0] > 60:
-                times.popleft()
-            if len(times) >= settings.remote_requests_per_minute:
-                return JSONResponse({"detail": {"code": "rate_limited"}}, status_code=429)
-            times.append(now)
+            if not is_internal_observation(request):
+                now = time.monotonic()
+                key = request.client.host if request.client else "unknown"
+                times = request_times[key]
+                while times and now - times[0] > 60:
+                    times.popleft()
+                if len(times) >= settings.remote_requests_per_minute:
+                    return JSONResponse({"detail": {"code": "rate_limited"}}, status_code=429)
+                times.append(now)
         return await call_next(request)
 
     if settings.remote:
