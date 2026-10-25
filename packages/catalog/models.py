@@ -317,9 +317,15 @@ class CatalogSnapshot:
         if self.sync is not None:
             result["sync"] = self.sync
         if self.sources:
-            result["sources"] = list(self.sources[:20])
+            summaries = []
+            for source in self.sources[:20]:
+                candidate = [*summaries, source]
+                if len(json.dumps(candidate, ensure_ascii=False, separators=(",", ":")).encode()) > 8192:
+                    break
+                summaries = candidate
+            result["sources"] = summaries
             result["sourceCount"] = len(self.sources)
-            result["sourcesTruncated"] = len(self.sources) > 20
+            result["sourcesTruncated"] = len(summaries) < len(self.sources)
         return result
 
 

@@ -262,7 +262,8 @@ def test_many_sources_keep_search_response_and_cursor_bounded(tmp_path):
     for index in range(100):
         group = copy.deepcopy(seed)
         group["provider"] = ("source-" + str(index)).ljust(96, "a")
-        group["dataset"] = "d" * 300
+        group["dataset"] = "数" * 300
+        group["coverage"] = "报" * 1000
         groups.append(group)
     path = tmp_path / "many.json"
     path.write_text(
@@ -275,7 +276,9 @@ def test_many_sources_keep_search_response_and_cursor_bounded(tmp_path):
         assert len(response.content) <= 32768
         assert len(value["results"]) == 1 and value["nextCursor"]
         assert value["snapshot"]["sourceCount"] == 100 and value["snapshot"]["sourcesTruncated"]
-        assert len(value["snapshot"]["sources"]) == 20
+        assert 0 < len(value["snapshot"]["sources"]) <= 20
+        assert len(json.dumps(value["snapshot"]["sources"], ensure_ascii=False,
+                              separators=(",", ":")).encode()) <= 8192
         params["cursor"] = value["nextCursor"]
         assert client.get(SEARCH, params=params).json()["results"][0]["id"] != value["results"][0]["id"]
 
