@@ -65,14 +65,25 @@ def scan_samples(raw):
         entities = message["entities"] if kind == "entity.snapshot" else message["changes"]
         if kind == "entity.snapshot" and not store.apply(model):
             continue
-        # The one-change view owns its list; the validated batch stays unchanged.
+        # Unique keys can reduce together; immutable prior states retain time/revision evidence.
+        previous = (
+            {change.key: store.entities.get(change.key) for change in model.changes}
+            if kind == "entity.observations" else {}
+        )
+        batched = kind == "entity.observations" and len(previous) == len(model.changes)
+        if batched and not store.apply(model):
+            continue
+        # Duplicate keys still need each intermediate state in recorded FIFO order.
         update = (
             model.model_copy(update={"changes": model.changes[:1]})
-            if kind == "entity.observations" else None
+            if kind == "entity.observations" and not batched else None
         )
         for entity_index, entity in enumerate(entities):
-            old = store.entities.get(entity["key"]) if kind == "entity.observations" else None
-            if kind == "entity.observations":
+            old = (
+                previous.get(entity["key"]) if batched
+                else store.entities.get(entity["key"]) if kind == "entity.observations" else None
+            )
+            if kind == "entity.observations" and not batched:
                 # A batch can contain the same key more than once. Advance in
                 # FIFO order, exactly as the live reducer does for that batch.
                 update.changes[0] = model.changes[entity_index]
