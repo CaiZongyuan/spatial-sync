@@ -232,9 +232,20 @@ def test_corpus_is_frozen_labeled_and_measures_the_expected_contract():
     )
     real = {entry.id for entry in entries if not entry.package_id.startswith("fixture_")}
     assert BOX in real
-    assert corpus["labels"]["status"] == "initial"
-    assert "not user-adjudicated" in corpus["labels"]["labeledBy"]
-    assert len(corpus["labels"]["adjudication"]) >= 4
+    assert corpus["labels"]["status"] == "confirmed"
+    assert "confirmed by the user" in corpus["labels"]["labeledBy"]
+    adjudicated = set(corpus["labels"]["adjudication"])
+    assert adjudicated == {
+        "zh-use-01",
+        "zh-use-02",
+        "zh-use-05",
+        "zh-unknown-01",
+        "en-use-01",
+        "en-use-05",
+        "en-cond-01",
+        "en-unknown-01",
+    }
+    assert adjudicated <= {query["id"] for query in corpus["queries"]}
     queries = corpus["queries"]
     assert len(queries) == 40
     for language in ("zh", "en"):
