@@ -13,7 +13,6 @@ turns an external scene request into trusted asset selection, acquisition, Blend
 authoring, exact-version import/validation and received Authoring Reports. All
 skills reserve approvals and
 Vault writes for a person, including when a user asks an agent to bypass them.
-Later workflows are explicitly marked unavailable in this release.
 
 These are shipped product files. Repository development skills remain in
 `.agents/skills/` and are managed separately.
