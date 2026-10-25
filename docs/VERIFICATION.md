@@ -520,6 +520,47 @@ same owned fixture gateway as the asset library:
 pnpm --filter @spatial-sync/web exec playwright test catalog-search.spec.ts
 ```
 
+## Scene Factory semantic recall (SF1b)
+
+Natural-language use queries may add CPU semantic recall when keyword matching
+finds no online candidate. Recall is only a soft recall/ranking layer: exact
+identities, scope, hard filters, cursors, snapshots, the 32 KiB response budget
+and unknown-attribute semantics are unchanged. Every response carries
+`semantic.model`, `semantic.index` and the existing `snapshot` versions.
+
+CI uses the deterministic, offline `lw-hash-concept-standin`; it is labelled
+`deterministic-stand-in` with `real: false` and is not real-model evidence. The
+Web snapshot bar, CLI and MCP show the same HTTP document. A real CPU model can
+be plugged in for separate evidence; its weights are never committed:
+
+```powershell
+lw catalog search -q "用来装实验室废弃物的容器" --scope online --json
+lw catalog search -q "a container for storing lab supplies" --scope online --json
+uv run --no-sync python tools/eval_catalog_semantic.py --output .scratch/sf1b/eval-standin.json
+uv run --no-sync python tools/eval_catalog_semantic.py --benchmark-records 1000 --output .scratch/sf1b/eval-standin-1000.json
+```
+
+The versioned corpus is `tests/fixtures/catalog/semantic/catalog.json` (5 real
+SimReady entries plus 100 synthetic bilingual fixtures) and `queries.json`
+(40 queries, 20 per language, at least eight retained per language, with
+snapshot ID and initial Agent relevance labels). Synthetic source, license,
+size, adaptation and usage fields are fixtures, not source facts. The label
+file flags conflicts for user spot-check and adjudication; user adjudication and
+Linux/WSL 1000-record P95 remain user-gated and are not claimed by this check.
+Real-model evidence uses a standalone environment, for example:
+
+```powershell
+uv run --with fastembed --no-sync python tools/eval_catalog_semantic.py `
+  --embedder fastembed --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 `
+  --output .scratch/sf1b/eval-real.json
+```
+
+This downloads a model only for that evidence run; no third-party weights or
+bytes enter Git and no paid or remote inference is used. The deterministic
+tests are `tests/unit/test_catalog_semantic.py`, the gateway semantic case in
+`tests/gateway/test_catalog_search.py`, and the shared HTTP/CLI/MCP journey in
+`tests/cli/test_catalog_commands.py`.
+
 ## Scene Factory acquisition worker (SF2)
 
 The gateway never imports `factory/`; the acquisition runner starts

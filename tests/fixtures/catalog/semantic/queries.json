@@ -1,0 +1,608 @@
+{
+  "schema": "lw.catalog-semantic-eval/1",
+  "createdAt": "2026-10-25T00:00:00+00:00",
+  "catalog": {
+    "path": "catalog.json",
+    "snapshot": "sha256:a938e86ab6690b9f7a22a5d02a2308174b50d01db04f5b71ab3b199e9c3940d4",
+    "records": 105,
+    "realRecords": 5,
+    "syntheticRecords": 100,
+    "note": "The five SimReady records are copied unchanged from catalog/simready.json. The other 100 are synthetic bilingual fixtures; their source, license, size, adaptation and usage fields are not real source facts."
+  },
+  "labels": {
+    "status": "initial",
+    "labeledBy": "Agent initial labels; not user-adjudicated",
+    "definition": "Relevant means the record serves the stated use without violating an explicit hard condition; unknown attributes never count as satisfying a condition.",
+    "adjudication": [
+      "zh-use-01",
+      "zh-use-02",
+      "zh-use-05",
+      "zh-unknown-01",
+      "en-use-01",
+      "en-use-05",
+      "en-cond-01",
+      "en-unknown-01"
+    ],
+    "adjudicationNote": "Conflicts flagged for user spot-check and adjudication before the labels are frozen."
+  },
+  "splits": {
+    "retained": {
+      "zh": [
+        "zh-exact-02",
+        "zh-alias-02",
+        "zh-use-03",
+        "zh-use-04",
+        "zh-use-06",
+        "zh-cond-03",
+        "zh-cond-04",
+        "zh-cond-05",
+        "zh-unknown-02",
+        "zh-zero-02"
+      ],
+      "en": [
+        "en-exact-02",
+        "en-alias-02",
+        "en-use-03",
+        "en-use-04",
+        "en-use-06",
+        "en-cond-03",
+        "en-cond-04",
+        "en-cond-05",
+        "en-unknown-02",
+        "en-zero-02"
+      ]
+    },
+    "tuned": {
+      "zh": [
+        "zh-exact-01",
+        "zh-alias-01",
+        "zh-use-01",
+        "zh-use-02",
+        "zh-use-05",
+        "zh-cond-01",
+        "zh-cond-02",
+        "zh-unknown-01",
+        "zh-zero-01",
+        "zh-exact-id-01"
+      ],
+      "en": [
+        "en-exact-01",
+        "en-alias-01",
+        "en-use-01",
+        "en-use-02",
+        "en-use-05",
+        "en-cond-01",
+        "en-cond-02",
+        "en-unknown-01",
+        "en-zero-01",
+        "en-exact-id-01"
+      ]
+    }
+  },
+  "queries": [
+    {
+      "id": "zh-exact-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "exact_name",
+      "text": "小型收纳箱",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_storage_box_small_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "zh-exact-02",
+      "language": "zh",
+      "split": "retained",
+      "kind": "exact_id",
+      "text": "simready/fixture_microcentrifuge_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_microcentrifuge_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "zh-alias-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "alias",
+      "text": "整理箱",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_storage_box_small_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "zh-alias-02",
+      "language": "zh",
+      "split": "retained",
+      "kind": "alias",
+      "text": "白大褂",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_coat_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "zh-use-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "use",
+      "text": "用来在货架上整理小型实验用品的容器",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_storage_box_small_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_shelf_bin_green_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_stackable_basket_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_parts_bin_clear_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results",
+      "adjudication": "Shelf bin and wire basket are adjacent storage candidates; confirm whether both count as relevant."
+    },
+    {
+      "id": "zh-use-02",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "use",
+      "text": "搬运重型箱子穿过实验室的带轮工具",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_platform_trolley_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_hand_truck_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_utility_cart_steel_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results",
+      "adjudication": "Hand truck and utility cart are plausible secondary matches; confirm the intended set."
+    },
+    {
+      "id": "zh-use-03",
+      "language": "zh",
+      "split": "retained",
+      "kind": "use",
+      "text": "在实验过程中放置仪器的工作台面",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_mobile_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-use-04",
+      "language": "zh",
+      "split": "retained",
+      "kind": "use",
+      "text": "清洗玻璃器皿和工具的水槽",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_sink_unit_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-use-05",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "use",
+      "text": "收集实验室废弃物并推到处理点的带轮容器",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_wheeled_bin_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_waste_container_yellow_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results",
+      "adjudication": "Yellow waste container has no explicit wheel; confirm whether it is relevant."
+    },
+    {
+      "id": "zh-use-06",
+      "language": "zh",
+      "split": "retained",
+      "kind": "use",
+      "text": "在冰点以下存放样品的大型设备",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_freezer_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-cond-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "conditions",
+      "text": "收纳箱",
+      "filters": {
+        "usage": "staticCollision"
+      },
+      "relevant": [
+        "simready/fixture_storage_box_small_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-cond-02",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "conditions",
+      "text": "工具推车",
+      "filters": {
+        "usage": "dressing",
+        "maxDimensionM": 1.0
+      },
+      "relevant": [
+        "simready/fixture_utility_cart_steel_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-cond-03",
+      "language": "zh",
+      "split": "retained",
+      "kind": "conditions",
+      "text": "储物柜",
+      "filters": {
+        "licenseAdmitted": true,
+        "maxDimensionM": 1.0
+      },
+      "relevant": [
+        "simready/fixture_drawer_cabinet_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-cond-04",
+      "language": "zh",
+      "split": "retained",
+      "kind": "conditions",
+      "text": "工作台",
+      "filters": {
+        "usage": "staticCollision",
+        "minDimensionM": 1.0
+      },
+      "relevant": [
+        "simready/fixture_lab_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_mobile_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-cond-05",
+      "language": "zh",
+      "split": "retained",
+      "kind": "conditions",
+      "text": "玻璃烧杯",
+      "filters": {
+        "usage": "dressing",
+        "licenseAdmitted": true
+      },
+      "relevant": [
+        "simready/fixture_glass_beaker_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "zh-unknown-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "unknown",
+      "text": "实验室升降台",
+      "filters": {
+        "usage": "staticCollision"
+      },
+      "relevant": [],
+      "expect": "hard_filters",
+      "adjudication": "The named record is known but its usage is unknown; confirm that zero is intended."
+    },
+    {
+      "id": "zh-unknown-02",
+      "language": "zh",
+      "split": "retained",
+      "kind": "unknown",
+      "text": "通风柜",
+      "filters": {
+        "maxDimensionM": 2.0
+      },
+      "relevant": [],
+      "expect": "hard_filters"
+    },
+    {
+      "id": "zh-zero-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "zero",
+      "text": "量子反应堆",
+      "filters": {},
+      "relevant": [],
+      "expect": "zero"
+    },
+    {
+      "id": "zh-zero-02",
+      "language": "zh",
+      "split": "retained",
+      "kind": "zero",
+      "text": "深海潜水器机械臂",
+      "filters": {},
+      "relevant": [],
+      "expect": "zero"
+    },
+    {
+      "id": "zh-exact-id-01",
+      "language": "zh",
+      "split": "tuned",
+      "kind": "exact_id",
+      "text": "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "filters": {},
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "en-exact-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "exact_name",
+      "text": "Laboratory bench",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "en-exact-02",
+      "language": "en",
+      "split": "retained",
+      "kind": "exact_id",
+      "text": "simready/fixture_digital_multimeter_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_digital_multimeter_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "en-alias-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "alias",
+      "text": "workbench",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "en-alias-02",
+      "language": "en",
+      "split": "retained",
+      "kind": "alias",
+      "text": "specimen box",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_sample_box_insulated_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    },
+    {
+      "id": "en-use-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "use",
+      "text": "a container that keeps samples cold while moving between rooms",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_sample_box_insulated_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results",
+      "adjudication": "Laboratory freezer and cryogenic box also keep samples cold; confirm the moving-container scope."
+    },
+    {
+      "id": "en-use-02",
+      "language": "en",
+      "split": "tuned",
+      "kind": "use",
+      "text": "equipment for separating liquids by spinning small tubes",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_microcentrifuge_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-use-03",
+      "language": "en",
+      "split": "retained",
+      "kind": "use",
+      "text": "surface for setting up instruments during an experiment",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_mobile_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-use-04",
+      "language": "en",
+      "split": "retained",
+      "kind": "use",
+      "text": "device for sterilizing glassware with steam",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_autoclave_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-use-05",
+      "language": "en",
+      "split": "tuned",
+      "kind": "use",
+      "text": "rolling container for collecting lab waste and taking it to disposal",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_wheeled_bin_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_waste_container_yellow_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results",
+      "adjudication": "The yellow waste container is not described as rolling; confirm relevance."
+    },
+    {
+      "id": "en-use-06",
+      "language": "en",
+      "split": "retained",
+      "kind": "use",
+      "text": "protective clothing worn over clothes to keep spills off",
+      "filters": {},
+      "relevant": [
+        "simready/fixture_lab_coat_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-cond-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "conditions",
+      "text": "storage box",
+      "filters": {
+        "usage": "staticCollision"
+      },
+      "relevant": [
+        "simready/fixture_storage_box_small_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_storage_crate_blue_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results",
+      "adjudication": "Crate is a storage container but not literally a box; confirm whether both are relevant."
+    },
+    {
+      "id": "en-cond-02",
+      "language": "en",
+      "split": "tuned",
+      "kind": "conditions",
+      "text": "cart",
+      "filters": {
+        "usage": "dressing",
+        "maxDimensionM": 1.0
+      },
+      "relevant": [
+        "simready/fixture_utility_cart_steel_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_cleaning_cart_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_lab_trolley_small_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_luggage_cart_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_platform_trolley_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-cond-03",
+      "language": "en",
+      "split": "retained",
+      "kind": "conditions",
+      "text": "cabinet",
+      "filters": {
+        "licenseAdmitted": true,
+        "maxDimensionM": 1.0
+      },
+      "relevant": [
+        "simready/fixture_drawer_cabinet_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-cond-04",
+      "language": "en",
+      "split": "retained",
+      "kind": "conditions",
+      "text": "bench",
+      "filters": {
+        "usage": "staticCollision",
+        "minDimensionM": 1.0
+      },
+      "relevant": [
+        "simready/fixture_lab_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/fixture_mobile_bench_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-cond-05",
+      "language": "en",
+      "split": "retained",
+      "kind": "conditions",
+      "text": "beaker",
+      "filters": {
+        "usage": "dressing",
+        "licenseAdmitted": true
+      },
+      "relevant": [
+        "simready/fixture_glass_beaker_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "results"
+    },
+    {
+      "id": "en-unknown-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "unknown",
+      "text": "Laboratory jack",
+      "filters": {
+        "usage": "staticCollision"
+      },
+      "relevant": [],
+      "expect": "hard_filters",
+      "adjudication": "The named record has unknown usage by fixture design; confirm that zero is intended."
+    },
+    {
+      "id": "en-unknown-02",
+      "language": "en",
+      "split": "retained",
+      "kind": "unknown",
+      "text": "Fume hood",
+      "filters": {
+        "maxDimensionM": 2.0
+      },
+      "relevant": [],
+      "expect": "hard_filters"
+    },
+    {
+      "id": "en-zero-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "zero",
+      "text": "quantum flux capacitor",
+      "filters": {},
+      "relevant": [],
+      "expect": "zero"
+    },
+    {
+      "id": "en-zero-02",
+      "language": "en",
+      "split": "retained",
+      "kind": "zero",
+      "text": "deep sea submersible robot arm",
+      "filters": {},
+      "relevant": [],
+      "expect": "zero"
+    },
+    {
+      "id": "en-exact-id-01",
+      "language": "en",
+      "split": "tuned",
+      "kind": "exact_id",
+      "text": "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "filters": {},
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "expect": "exact"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   catalogEntryPath, catalogEstimatePath, catalogSearchPath, formatAge, formatBytes,
-  shortRevision, usageLabel,
+  semanticLabel, shortRevision, usageLabel, type CatalogSemantic,
 } from './catalog';
 
 it('builds unified search URLs with explicit scope and no empty filters', () => {
@@ -48,4 +48,23 @@ it('labels snapshot freshness without inventing a value', () => {
   expect(formatAge(172800)).toBe('2 天前');
   expect(shortRevision(null)).toBe('未知');
   expect(shortRevision('abcdef0123456789')).toBe('abcdef012345…');
+});
+
+it('labels the deterministic semantic stand-in and never calls it real', () => {
+  const base: CatalogSemantic = {
+    schema: 'lw.catalog-semantic/1', enabled: true, applied: true, reason: 'semantic_recall',
+    model: {
+      id: 'lw-hash-concept-standin', version: '1', kind: 'deterministic-stand-in',
+      real: false, runtime: 'numpy-hash', dimension: 512,
+    },
+    index: { version: 'sha256:' + 'a'.repeat(64), entryCount: 105 },
+    threshold: 0.18, hits: 3, notice: 'stand-in',
+  };
+  expect(semanticLabel(base)).toContain('CI 替身（非真实模型）');
+  const real: CatalogSemantic = {
+    ...base,
+    model: { ...base.model!, id: 'fastembed:demo', kind: 'real-cpu-multilingual', real: true },
+  };
+  expect(semanticLabel(real)).toContain('语义检索 fastembed:demo@1');
+  expect(semanticLabel(undefined)).toBe('语义检索未启用');
 });

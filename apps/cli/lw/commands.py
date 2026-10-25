@@ -793,7 +793,9 @@ COMMANDS = (
             "sizes are bytes and dimensions are metres. scope is all|local|online, usage is "
             "dressing|staticCollision, license is admitted|not_admitted, sort is "
             "relevance|name|sourceBytes, and limit is 1..50 (default 10). cursor continues the "
-            "next page. Unknown attributes never satisfy a hard filter."
+            "next page. Natural-language use queries may add CPU semantic recall after keyword "
+            "matching misses; hard filters and exact IDs are never relaxed. Unknown attributes "
+            "never satisfy a hard filter."
         ),
         method="catalog_search",
         arguments=(

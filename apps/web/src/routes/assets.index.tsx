@@ -105,7 +105,7 @@ function AssetLibrary() {
       </tr>)}</tbody></table></div></section>}</AssetThumbnails>) : catalogError ? <div className="asset-empty" role="alert">{catalogError}<button onClick={() => setAttempt(attempt + 1)}>重试</button></div>
       : !catalog ? <div className="asset-empty" role="status">正在检索目录…</div>
         : <>
-          <CatalogSnapshotBar snapshot={catalog.snapshot} />
+          <CatalogSnapshotBar snapshot={catalog.snapshot} semantic={catalog.semantic} />
           {catalog.interpretedQuery.notes.length > 0 && <ul className="catalog-notes" aria-label="查询说明">{catalog.interpretedQuery.notes.map(note => <li key={note}>{note}</li>)}</ul>}
           {catalog.zeroResult ? <CatalogZeroResult response={catalog} onAction={actOnZero} />
             : <CatalogCandidateList response={catalog} onLoadMore={() => void loadMore()} loadingMore={more.loading} loadMoreError={more.error} onDetail={setDetail} />}

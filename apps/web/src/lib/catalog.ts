@@ -31,6 +31,32 @@ export interface CatalogMatch {
   satisfied: string[];
   unsatisfied: string[];
   unknown: string[];
+  semanticScore?: number;
+}
+
+export interface CatalogSemanticModel {
+  id: string;
+  version: string;
+  kind: 'deterministic-stand-in' | 'real-cpu-multilingual';
+  real: boolean;
+  runtime: string;
+  dimension: number;
+  requested?: string;
+  fallbackReason?: string;
+}
+
+export interface CatalogSemantic {
+  schema: 'lw.catalog-semantic/1';
+  enabled: boolean;
+  applied: boolean;
+  reason: string;
+  model: CatalogSemanticModel | null;
+  index: { version: string; entryCount: number } | null;
+  threshold: number | null;
+  minCoverage?: number | null;
+  coverageBypass?: number | null;
+  hits: number;
+  notice: string;
 }
 
 export interface CatalogLicense {
@@ -118,6 +144,7 @@ export interface CatalogSearchResponse {
   appliedFilters: Record<string, string | number | boolean>;
   unknownPolicy: 'excluded';
   snapshot: CatalogSnapshot;
+  semantic: CatalogSemantic;
   counts: {
     returned: number;
     matching: number;
@@ -299,3 +326,13 @@ export function formatAge(seconds: number | null | undefined): string {
 
 export const shortRevision = (revision: string | null | undefined) =>
   revision ? `${revision.slice(0, 12)}…` : '未知';
+
+/** Visible model label; a stand-in is never presented as a real model. */
+export function semanticLabel(semantic: CatalogSemantic | undefined): string {
+  if (!semantic || !semantic.enabled || !semantic.model) return '语义检索未启用';
+  const model = semantic.model;
+  const name = `${model.id}@${model.version}`;
+  return model.real
+    ? `语义检索 ${name} · 索引 ${shortRevision(semantic.index?.version)}`
+    : `语义检索 CI 替身（非真实模型）· ${name} · 索引 ${shortRevision(semantic.index?.version)}`;
+}

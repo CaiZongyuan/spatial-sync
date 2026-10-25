@@ -8,6 +8,7 @@ from pathlib import Path
 from packages.catalog.local import LocalAsset, read_provenance
 from packages.catalog.models import CatalogFormatError, CatalogSnapshot, load_catalog
 from packages.catalog.search import search_catalog
+from packages.catalog.semantic import SemanticIndex, build_semantic_index
 from packages.catalog.views import entry_document, estimate_document
 from packages.library.common import LibraryError
 
@@ -21,7 +22,7 @@ class AssetCatalog:
     startup: local-only library journeys keep working.
     """
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, *, embedder=None):
         self.path = Path(path) if path is not None else None
         self.available = False
         self.error = None
@@ -29,6 +30,8 @@ class AssetCatalog:
         self.entries = ()
         self.by_id = {}
         self.by_package = {}
+        self.embedder = embedder
+        self.semantic: SemanticIndex | None = None
 
     def startup(self):
         try:
@@ -42,6 +45,7 @@ class AssetCatalog:
             self.entries = ()
             self.by_id = {}
             self.by_package = {}
+            self.semantic = None
             LOGGER.warning("Asset catalog unavailable: %s", exc)
             return
         self.available = True
@@ -50,6 +54,10 @@ class AssetCatalog:
         self.entries = entries
         self.by_id = {entry.id: entry for entry in entries}
         self.by_package = {entry.package_id: entry for entry in entries}
+        # The index is built from this snapshot only; the stand-in needs no
+        # network, cache or model weights. A configured real embedder that
+        # cannot load falls back to the stand-in and keeps that fact visible.
+        self.semantic = build_semantic_index(entries, snapshot.id, embedder=self.embedder)
 
     def require(self):
         if not self.available or self.snapshot is None:
