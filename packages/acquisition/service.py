@@ -524,7 +524,12 @@ class AcquisitionService:
     def _catalog_entry(self, record):
         if self.catalog is None or not getattr(self.catalog, "available", False):
             return None
-        return getattr(self.catalog, "by_package", {}).get(record.source["packageId"])
+        try:
+            return self.catalog.entry(
+                record.source["provider"], record.source["packageId"], record.source["revision"]
+            )
+        except LibraryError:
+            return None
 
     def _succeed(self, record, staged, job, adapted_bytes):
         asset_version = job.get("assetVersion")

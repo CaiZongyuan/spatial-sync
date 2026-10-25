@@ -40,21 +40,21 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
         record = start(client)
         assert record["status"] == "succeeded", record
         assert record["discovered"] == record["indexed"] == 2
-        assert record["previewsCached"] == 2
+        assert record["previewsCached"] == 0
         assert record["metadataFailed"] == record["previewsFailed"] == 0
         assert record["networkBytes"] > len(PNG)
         published = client.get(SEARCH, params={"scope": "online"}).json()
         assert {item["source"]["packageId"] for item in published["results"]} == set(upstream.names)
-        assert all(item["preview"]["kind"] == "cached" for item in published["results"])
+        assert all(item["preview"]["kind"] == "on-demand" for item in published["results"])
         image_url = published["results"][0]["preview"]["url"]
         image = client.get(image_url)
         assert image.content == PNG
         assert image.headers["content-type"] == "image/png"
-        assert "immutable" in image.headers["cache-control"]
+        assert "max-age=" in image.headers["cache-control"]
         stale = client.get(SEARCH, params={"scope": "online", "cursor": before["nextCursor"]})
         assert stale.status_code == 400 and stale.json()["detail"]["code"] == "stale_cursor"
         unknown = next(item for item in published["results"] if item["source"]["packageId"].startswith("CT_"))
-        assert unknown["license"]["name"] == "CC-BY-4.0"
+        assert unknown["license"]["name"] is None  # Search never hydrates source details.
         assert unknown["license"]["unknown"] and not unknown["license"]["admitted"]
         assert unknown["kind"] == "unknown" and unknown["usage"]["dressing"] is None
         rejected = client.post("/api/v1/library/acquisitions", json={"ref": unknown["ref"]})
@@ -65,7 +65,8 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
 
         upstream.requests.clear()
         reused = start(client)
-        assert reused["metadataReused"] == reused["previewsReused"] == 2
+        assert reused["metadataReused"] == reused["previewsReused"] == 0
+        assert len(upstream.requests) == 3  # Revision and two directory pages only.
         assert not any("/resolve/" in path for path in upstream.requests)
 
         old_box = f"simready/box_cardboard_a01@{REVISION}"
@@ -112,12 +113,15 @@ def test_unknown_metadata_excludes_hard_size_filters_and_does_not_invent_a_previ
     with TestClient(create_app(catalog_sync_source=upstream.source)) as client:
         record = start(client)
         assert record["status"] == "succeeded"
-        assert record["metadataFailed"] == record["previewsFailed"] == 1
+        assert record["metadataFailed"] == record["previewsFailed"] == 0
         assert record["previewsMissing"] == 0
         response = client.get(SEARCH, params={"scope": "online", "q": "CT_fixture_a01"}).json()
         item = response["results"][0]
         assert item["source"]["bytes"] is None
-        assert item["preview"]["kind"] == "unavailable"
+        assert item["preview"]["kind"] == "on-demand"
+        unavailable = client.get(item["preview"]["url"])
+        assert unavailable.status_code == 503
+        assert unavailable.json()["detail"]["code"] == "catalog_content_unavailable"
         filtered = client.get(SEARCH, params={
             "scope": "online", "q": "CT_fixture_a01", "minSourceBytes": 0,
         }).json()
@@ -180,7 +184,7 @@ def test_pagination_cannot_leave_the_pinned_source_or_publish_a_partial_director
         before = client.get(SEARCH).json()["snapshot"]["id"]
         record = start(client)
         assert record["status"] == "failed"
-        assert "left the fixed dataset/revision" in record["errors"][-1]["message"]
+        assert any("left the fixed dataset/revision" in error["message"] for error in record["errors"])
         assert client.get(SEARCH).json()["snapshot"]["id"] == before
 
 

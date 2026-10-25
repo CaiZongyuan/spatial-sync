@@ -18,6 +18,9 @@ export interface CatalogSnapshot {
   ageSeconds: number | null;
   sync?: { discovered: number; indexed: number; metadataFailed: number;
     previewsCached: number; previewsReused: number; previewsMissing: number; previewsFailed: number };
+  sources?: { provider: string; dataset: string; revision: string; entryCount: number; indexedAt: string }[];
+  sourceCount?: number;
+  sourcesTruncated?: boolean;
 }
 
 export interface CatalogZeroResult {
@@ -106,7 +109,7 @@ export interface CatalogLocalResult {
 }
 
 export interface CatalogPreview {
-  kind: 'local' | 'remote' | 'cached' | 'unavailable';
+  kind: 'local' | 'remote' | 'cached' | 'on-demand' | 'unavailable';
   url: string | null;
   reason?: string | null;
 }
@@ -205,6 +208,7 @@ export interface CatalogEntryDocument {
   evidence: Record<string, unknown>;
   preview: CatalogPreview;
   previewTruncated?: boolean;
+  discovery?: { metadataComplete?: boolean; metadataError?: string | null };
   estimate: { resource: string; id: string; tool: string; path: string };
 }
 
@@ -236,6 +240,7 @@ export interface CatalogSearchFilters {
   q?: string;
   scope: CatalogScope;
   kind?: string;
+  provider?: string;
   usage?: CatalogUsage;
   approximate?: boolean;
   limit?: number;
@@ -248,6 +253,7 @@ export function catalogSearchParams(filters: CatalogSearchFilters): URLSearchPar
   if (filters.q) params.set('q', filters.q);
   params.set('scope', filters.scope);
   if (filters.kind) params.set('kind', filters.kind);
+  if (filters.provider) params.set('provider', filters.provider);
   if (filters.usage) params.set('usage', filters.usage);
   if (filters.approximate) params.set('approximate', 'true');
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
@@ -271,15 +277,17 @@ export interface CatalogSyncRecord {
   networkBytes: number; cacheBytes: number; snapshotId: string | null;
   errors: { package: string | null; message: string }[];
   message?: string | null;
+  sources?: { provider: string; status: 'succeeded' | 'failed'; indexed?: number; message?: string }[];
 }
 export interface CatalogSyncState {
   current: CatalogSyncRecord | null; snapshot: CatalogSnapshot | null;
   limits: { workers: number; cacheBytes: number; transferBytes: number; responseBytes: number };
+  sources?: { provider: string; dataset: string; entryCount: number }[];
 }
 export const getCatalogSync = (signal?: AbortSignal) =>
   request<CatalogSyncState>('/library/catalog/sync', { signal });
-export const startCatalogSync = () =>
-  request<CatalogSyncRecord>('/library/catalog/sync', { method: 'POST' });
+export const startCatalogSync = (provider?: string) =>
+  request<CatalogSyncRecord>(`/library/catalog/sync${provider ? `?provider=${encodeURIComponent(provider)}` : ''}`, { method: 'POST' });
 export const cancelCatalogSync = (id: string) =>
   request<CatalogSyncRecord>(`/library/catalog/sync/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 export const retryCatalogSync = (id: string) =>

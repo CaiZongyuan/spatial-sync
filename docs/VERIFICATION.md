@@ -77,11 +77,12 @@ only a generated fake credential locally, never through HTTP or in the user's Va
 The deterministic public journey uses a paginated upstream HTTP fixture, the
 production synchronizer, offline restart, cached images and fixed-revision
 admission. CLI/MCP use a separately owned real loopback gateway. The browser
-case owns its fixture API/Web and checks cancel/retry, cached preview loading,
+case owns its fixture API/Web and checks cancel/retry, zero content requests
+during directory update, viewport-only previews, pagination, source filtering,
 failed-sync snapshot retention and narrow layout; it downloads no external data.
 
 ```powershell
-uv run --no-sync python -m pytest tests/gateway/test_catalog_sync.py tests/cli/test_catalog_sync_commands.py -q
+uv run --no-sync python -m pytest tests/gateway/test_catalog_sync.py tests/gateway/test_catalog_lazy.py tests/cli/test_catalog_sync_commands.py -q
 pnpm --filter @spatial-sync/web exec playwright test catalog-sync.spec.ts
 ```
 

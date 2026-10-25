@@ -17,6 +17,7 @@ from packages.library.common import KINDS
 
 CATALOG_SCHEMA = "lw.asset-catalog/1"
 SYNCED_CATALOG_SCHEMA = "lw.asset-catalog/2"
+COLLECTION_SCHEMA = "lw.asset-catalog/3"
 SEARCH_SCHEMA = "lw.catalog-search/1"
 ENTRY_SCHEMA = "lw.catalog-entry/1"
 ESTIMATE_SCHEMA = "lw.catalog-estimate/1"
@@ -297,6 +298,7 @@ class CatalogSnapshot:
     entry_count: int
     limits: dict
     sync: dict | None = None
+    sources: tuple = ()
 
     def document(self, now=None):
         now = now or datetime.now(UTC)
@@ -314,6 +316,16 @@ class CatalogSnapshot:
         }
         if self.sync is not None:
             result["sync"] = self.sync
+        if self.sources:
+            summaries = []
+            for source in self.sources[:20]:
+                candidate = [*summaries, source]
+                if len(json.dumps(candidate, ensure_ascii=False, separators=(",", ":")).encode()) > 8192:
+                    break
+                summaries = candidate
+            result["sources"] = summaries
+            result["sourceCount"] = len(self.sources)
+            result["sourcesTruncated"] = len(summaries) < len(self.sources)
         return result
 
 
@@ -520,12 +532,13 @@ def _discovered_entry(value, provider, revision):
 
     preview = _mapping(data.get("preview"), "preview")
     url = preview.get("url")
-    if url is not None and not re.fullmatch(
+    expected = f"/api/v1/library/catalog/entries/{provider}/{package}/{revision}/preview"
+    if url is not None and url != expected and not re.fullmatch(
         r"/api/v1/library/catalog/previews/[0-9a-f]{64}\.(?:png|jpg|webp)", url
     ):
         raise CatalogFormatError("A cached preview must be a local content-addressed image")
     preview = {
-        "kind": "cached" if url else "unavailable", "url": url,
+        "kind": "on-demand" if url == expected else "cached" if url else "unavailable", "url": url,
         "reason": _string(preview.get("reason"), "preview.reason", maximum=2000),
     }
     discovery = _mapping(data.get("discovery"), "discovery")
@@ -563,7 +576,44 @@ def load_catalog(path):
         data = json.loads(raw.decode("utf-8"), parse_constant=_reject_constant)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CatalogFormatError(f"Catalog is not valid UTF-8 JSON: {exc}") from exc
+    return parse_catalog(data, raw)
+
+
+def parse_catalog(data, raw=None):
+    raw = raw if raw is not None else json.dumps(data, sort_keys=True, allow_nan=False).encode()
     data = _mapping(data, "catalog")
+    if data.get("schema") == COLLECTION_SCHEMA:
+        groups = _list(data.get("sources"), "sources", maximum=100)
+        snapshots, entries = [], []
+        for group in groups:
+            group = _mapping(group, "sources[]")
+            if group.get("schema") not in (CATALOG_SCHEMA, SYNCED_CATALOG_SCHEMA):
+                raise CatalogFormatError("A collection source must be a v1 or v2 catalog")
+            snapshot, values = parse_catalog(group)
+            snapshots.append(snapshot)
+            entries.extend(values)
+        if not snapshots or len({s.provider for s in snapshots}) != len(snapshots):
+            raise CatalogFormatError("Collection providers must be present and unique")
+        if len(entries) > 100000:
+            raise CatalogFormatError("Collection exceeds 100000 entries")
+        latest = max(snapshots, key=lambda s: s.indexed_at)
+        single = snapshots[0] if len(snapshots) == 1 else None
+        return CatalogSnapshot(
+            id=SNAPSHOT_PREFIX + hashlib.sha256(raw).hexdigest(),
+            provider=single.provider if single else "multiple",
+            dataset=single.dataset if single else "multiple",
+            revision=single.revision if single else hashlib.sha1(raw).hexdigest(),
+            indexed_at=latest.indexed_at, indexed_at_text=latest.indexed_at_text,
+            coverage="Searches retained source indexes; coverage is reported separately for each source.",
+            entry_count=len(entries), limits=_limits(data.get("limits")),
+            sync={key: sum((s.sync or {}).get(key, 0) for s in snapshots) for key in (
+                "discovered", "indexed", "metadataFailed", "previewsCached", "previewsReused",
+                "previewsMissing", "previewsFailed",
+            )},
+            sources=tuple({"provider": s.provider, "dataset": s.dataset,
+                           "revision": s.revision, "entryCount": s.entry_count,
+                           "indexedAt": s.indexed_at_text, "coverage": s.coverage[:240]} for s in snapshots),
+        ), tuple(entries)
     synced = data.get("schema") == SYNCED_CATALOG_SCHEMA
     if data.get("schema") not in (CATALOG_SCHEMA, SYNCED_CATALOG_SCHEMA):
         raise CatalogFormatError(f"catalog.schema must be {CATALOG_SCHEMA} or {SYNCED_CATALOG_SCHEMA}")
@@ -583,6 +633,8 @@ def load_catalog(path):
     entries = []
     for value in _list(data.get("entries"), "entries", maximum=100000 if synced else 10000):
         entry = (_discovered_entry if synced else _entry)(value, provider, revision)
+        if synced:
+            entry = replace(entry, discovery=entry.discovery | {"dataset": dataset})
         entries.append(entry)
     package_ids = [entry.package_id for entry in entries]
     if len(package_ids) != len(set(package_ids)):

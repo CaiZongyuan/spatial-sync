@@ -73,6 +73,13 @@ def _local_preview(local_assets):
 def preview_document(local_assets, entry=None):
     local = _local_preview(local_assets)
     cached = getattr(entry, "preview", None)
+    if entry is not None and entry.discovery is not None:
+        cached = {
+            "kind": "on-demand",
+            "url": (f"/api/v1/library/catalog/entries/{entry.provider}/"
+                    f"{entry.package_id}/{entry.revision}/preview"),
+            "reason": "Preview loads when visible and reuses the bounded local cache.",
+        }
     if cached and cached.get("url") and (not local or not str(local.get("url")).lower().endswith(
         (".png", ".jpg", ".jpeg", ".webp")
     )):

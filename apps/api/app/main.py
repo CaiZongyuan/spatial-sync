@@ -161,6 +161,7 @@ def create_app(
     live_transport_factory=None,
     catalog_path: Path | None = None,
     catalog_sync_source=None,
+    catalog_sources=None,
     acquisition_runner=None,
     acquisition_limits=None,
     acquisition_disk_usage=None,
@@ -228,11 +229,17 @@ def create_app(
     authoring = AuthoringReports(
         settings.state_root, library_assets, lambda: manager.library
     )
-    catalog_sync = CatalogSync(settings.state_root, catalog, source_factory=catalog_sync_source)
+    from packages.catalog.resources import CatalogResources
+    from packages.catalog.sources import CatalogSources
+
+    sources = CatalogSources(catalog_sources, simready_factory=catalog_sync_source)
+    catalog.resources = CatalogResources(settings.state_root, sources)
+    catalog_sync = CatalogSync(settings.state_root, catalog, sources=sources)
 
     @asynccontextmanager
     async def lifespan(app):
         try:
+            catalog.resources.limiter = anyio.CapacityLimiter(8)
             await manager.startup()
             await asyncio.to_thread(runtime_records.startup)
             # Resolve the operator's roots at startup, before any owned workers or recordings.
@@ -260,6 +267,7 @@ def create_app(
         finally:
             try:
                 try:
+                    catalog.resources.close()
                     await catalog_sync.close()
                 finally:
                     await acquisitions.close()

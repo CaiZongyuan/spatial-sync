@@ -138,12 +138,12 @@ def install_library_routes(
             view=view,
             document_digest=documentDigest,
         )
-        return await anyio.to_thread.run_sync(describe)
+        return await anyio.to_thread.run_sync(describe, limiter=getattr(catalog.resources, "limiter", None))
 
     @app.get("/api/v1/library/catalog/entries/{provider}/{package}/{revision}/estimate")
     async def estimate_catalog_entry(provider: str, package: str, revision: str):
         estimate = functools.partial(catalog.estimate, provider, package, revision, library=assets)
-        return await anyio.to_thread.run_sync(estimate)
+        return await anyio.to_thread.run_sync(estimate, limiter=getattr(catalog.resources, "limiter", None))
 
     @app.get("/api/v1/library/assets/{kind}/{name}")
     @app.get("/api/v1/library/assets/{kind}/{name}/{rev}")
