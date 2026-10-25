@@ -73,7 +73,9 @@ function AssetLibrary() {
         q: search.q, scope, kind: search.kind, usage: search.usage,
         approximate: search.approximate, limit: 20, cursor: catalog.nextCursor,
       });
-      setCatalog(previous => previous ? { ...next, results: [...previous.results, ...next.results] } : next);
+      setCatalog(previous => previous?.snapshot.id === catalog.snapshot.id
+        && previous.nextCursor === catalog.nextCursor
+        ? { ...next, results: [...previous.results, ...next.results] } : previous);
       setMore({ loading: false });
     } catch (error) {
       setMore({ loading: false, error: (error as Error).message });
