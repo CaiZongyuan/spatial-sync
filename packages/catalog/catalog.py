@@ -37,6 +37,15 @@ class AssetCatalog:
         self.archive_paths: tuple[Path, ...] = ()
         self._historical = {}
         self.resources = None
+        self.metadata_store = None
+        self._metadata_views = None
+
+    def attach_metadata(self, store):
+        """Keep maintenance storage independent; adapt it only for consumption."""
+        from packages.catalog.maintained import ReleasedViews
+        with self._lock:
+            self.metadata_store = store
+            self._metadata_views = ReleasedViews(self, store)
 
     def startup(self):
         try:
@@ -101,6 +110,14 @@ class AssetCatalog:
                         break
             if entry is not None:
                 return entry
+            if self.metadata_store is not None:
+                from packages.catalog.maintained import adapt_entry
+                try:
+                    document = self.metadata_store.entry(identity)
+                except (KeyError, ValueError):
+                    document = None
+                if document is not None:
+                    return adapt_entry(document)
             raise LibraryError(
                 "unknown_catalog_entry",
                 "Unknown catalog entry identity",
@@ -143,12 +160,24 @@ class AssetCatalog:
 
     def search(self, library, **kwargs):
         with self._lock:
-            return search_catalog(self, library, **kwargs)
+            release = kwargs.pop("release", None)
+            selected = self
+            if self._metadata_views is not None:
+                selected = self._metadata_views.select(release, kwargs.get("cursor"))
+            elif release and (self.snapshot is None or release != self.snapshot.id):
+                raise LibraryError("release_expired", "Released view is unavailable; "
+                                   "repeat the search without release", 409)
+            return search_catalog(selected, library, **kwargs)
 
     def describe(self, provider, package, revision, *, library=None, view="summary",
-                 document_digest=None):
+                 document_digest=None, release=None):
+        if self._metadata_views is not None:
+            with self._lock:
+                selected = self._metadata_views.select(release)
+            return selected.describe(provider, package, revision, library=library, view=view,
+                                     document_digest=document_digest)
         entry = self.entry(provider, package, revision)
-        if self.resources is not None:
+        if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
         with self._lock:
             local = [
@@ -157,9 +186,13 @@ class AssetCatalog:
             ]
             return entry_document(self, entry, local, view=view, document_digest=document_digest)
 
-    def estimate(self, provider, package, revision, *, library=None):
+    def estimate(self, provider, package, revision, *, library=None, release=None):
+        if self._metadata_views is not None:
+            with self._lock:
+                selected = self._metadata_views.select(release)
+            return selected.estimate(provider, package, revision, library=library)
         entry = self.entry(provider, package, revision)
-        if self.resources is not None:
+        if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
         with self._lock:
             local = [

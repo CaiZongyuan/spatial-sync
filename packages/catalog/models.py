@@ -255,6 +255,9 @@ class CatalogEntry:
     acquisition: Acquisition
     preview: dict | None = None
     discovery: dict | None = None
+    # Organized metadata is a released discovery layer, never acquisition or
+    # physics admission. Older committed/synchronized catalogs omit it.
+    metadata: dict | None = None
 
     @property
     def id(self):
@@ -299,6 +302,7 @@ class CatalogSnapshot:
     limits: dict
     sync: dict | None = None
     sources: tuple = ()
+    metadata_release: dict | None = None
 
     def document(self, now=None):
         now = now or datetime.now(UTC)
@@ -326,6 +330,8 @@ class CatalogSnapshot:
             result["sources"] = summaries
             result["sourceCount"] = len(self.sources)
             result["sourcesTruncated"] = len(summaries) < len(self.sources)
+        if self.metadata_release is not None:
+            result["metadataRelease"] = self.metadata_release
         return result
 
 
