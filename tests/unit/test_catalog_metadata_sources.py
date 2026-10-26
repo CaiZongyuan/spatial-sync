@@ -57,6 +57,7 @@ def test_simready_full_identity_pages_object_preview_and_incremental_inputs(tmp_
             file(f"{name}/com.nvidia.simready.packaging.json"),
             file(f"{name}/.thumbs/preview.png", 100),
             file(f"{name}/.thumbs/normal.png", 1),
+            file(f"{name}/Textures/source_assets/.thumbs/preview.png", 1),
             file(f"{name}/simready_usd/model.usd", 1000),
         ]
         routes[resolve + f"/{name}/com.nvidia.simready.packaging.json"] = {

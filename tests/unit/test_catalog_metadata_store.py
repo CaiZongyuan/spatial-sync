@@ -250,3 +250,41 @@ def test_restore_write_failure_and_tampered_release_leave_active_data_unchanged(
     with pytest.raises(MetadataError, match="index differs"):
         original.restore(tampered)
     assert original.latest_release() == release
+
+
+def test_restore_builds_actual_consumer_index_before_activation(tmp_path):
+    source = MetadataStore(tmp_path / "source")
+    inventory = stage(source, REV_B)
+    replacement = source.publish([inventory["id"]])
+    destination = MetadataStore(tmp_path / "destination")
+    original_inventory = stage(destination)
+    original = destination.publish([original_inventory["id"]])
+
+    def failed_consumer(release, entries):
+        assert release["id"] == replacement["id"]
+        assert entries[0]["revision"] == REV_B
+        assert destination.latest_release() == original
+        raise RuntimeError("Actual consumer index failed")
+
+    with pytest.raises(RuntimeError, match="Actual consumer"):
+        destination.restore(source.export(), release_preparer=failed_consumer)
+    assert destination.latest_release() == original
+
+
+def test_categories_are_shared_with_vocabulary_and_fact_attribution_survives_correction(tmp_path):
+    store = MetadataStore(tmp_path)
+    inventory = stage(store)
+    before = store.pending(inventory["id"])[0]
+    assert "labware" in {value["id"] for value in store.vocabulary()["categories"]}
+    with pytest.raises(MetadataError, match="vocabulary"):
+        store.submit_organization(
+            inventory["id"], "beaker", {"category": "invented-category"}, input_digest=before["inputDigest"]
+        )
+    organized = store.submit_organization(
+        inventory["id"], "beaker", {"category": "container"}, input_digest=before["inputDigest"]
+    )
+    assert organized["fieldProvenance"]["category"]["kind"] == "organization"
+    store.correct("simready", "beaker", {"category": "labware"}, base_version=0, reason="Source review")
+    corrected = store.inventory_entry(inventory["id"], "beaker")
+    assert corrected["fieldProvenance"]["category"]["kind"] == "manual"
+    assert corrected["facts"]["dimensionsM"] is None

@@ -130,6 +130,7 @@ def normalized_entry(collection_id, source_revision, value):
         raise MetadataError("invalid_metadata", "facts must be an object")
     result.setdefault("preview", {"state": "not_collected", "role": None, "path": None, "sha256": None})
     result.setdefault("evidence", [])
+    result.setdefault("fieldProvenance", {})
     result.setdefault("source", {})
     result.setdefault("vocabularyVersion", VOCABULARY_VERSION)
     result.setdefault("contentDigest", None)

@@ -201,6 +201,8 @@ class MetadataStore:
                 "invalid_inventory", "Inventory must be a bounded entry list with explicit completeness"
             )
         normalized = [normalized_entry(collection_id, source_revision, value) for value in entries]
+        for entry in normalized:
+            self._validate_category(entry)
         identities = [value["upstreamId"] for value in normalized]
         if len(set(identities)) != len(identities):
             raise MetadataError("duplicate_identity", "An inventory repeats an upstream identity")
@@ -259,6 +261,7 @@ class MetadataStore:
     @staticmethod
     def _compose(db, entry):
         result = deepcopy(entry)
+        result.setdefault("fieldProvenance", {})
         keys = (entry["collectionId"], entry["upstreamId"], entry["inputDigest"])
         row = db.execute(
             "SELECT version,selection_version FROM organization_heads "
@@ -275,6 +278,13 @@ class MetadataStore:
                 ).fetchone()[0]
             )
             apply_fields(result, data["fields"])
+            for field in data["fields"]:
+                result["fieldProvenance"][field] = {
+                    "kind": "organization",
+                    "resultVersion": data["version"],
+                    "versions": data["versions"],
+                    "receipt": data["receipt"],
+                }
             result["organization"] = {key: deepcopy(value) for key, value in data.items() if key != "fields"}
             result["organization"]["resultVersion"] = row[0]
         if row is not None:
@@ -292,6 +302,12 @@ class MetadataStore:
         ):
             correction = json.loads(row[0])
             apply_fields(result, correction["fields"])
+            for field in correction["fields"]:
+                result["fieldProvenance"][field] = {
+                    "kind": "manual",
+                    "correctionId": correction["id"],
+                    "reason": correction["reason"],
+                }
             result["corrections"].append(correction)
         return result
 
@@ -337,6 +353,7 @@ class MetadataStore:
         submission_key=None,
     ):
         fields = organization_fields(result)
+        self._validate_category(fields)
         payload = {
             "inventoryId": inventory_id,
             "upstreamId": upstream_id,
@@ -460,6 +477,7 @@ class MetadataStore:
     def correct(self, collection_id, upstream_id, fields, *, base_version=None, reason):
         self.collection(collection_id)
         fields = organization_fields(fields)
+        self._validate_category(fields)
         text(upstream_id, "upstreamId", 512)
         text(reason, "reason", 2048)
         with self.transaction() as db:
@@ -501,6 +519,13 @@ class MetadataStore:
                 (collection_id, upstream_id, version),
             )
         return value
+
+    def _validate_category(self, fields):
+        category = fields.get("category")
+        if category is not None and category not in {
+            value["id"] for value in self.vocabulary()["categories"]
+        }:
+            raise MetadataError("unknown_category", "Category is absent from the current vocabulary", 409)
 
     def corrections(self, collection_id=None, upstream_id=None):
         with self.transaction(write=False) as db:
@@ -738,7 +763,7 @@ class MetadataStore:
                 blobs["sha256:" + path.name] = base64.b64encode(data).decode("ascii")
         return {"schema": SCHEMA, "tables": tables, "blobs": blobs}
 
-    def restore(self, document):
+    def restore(self, document, *, release_preparer=None):
         if (
             not isinstance(document, dict)
             or document.get("schema") != SCHEMA
@@ -787,6 +812,18 @@ class MetadataStore:
             ):
                 raise MetadataError("invalid_backup", "Backup active release is absent")
             self._validate_restored(db)
+            if latest is not None and release_preparer is not None:
+                identifier = json.loads(latest[0])
+                release = json.loads(
+                    db.execute("SELECT document FROM releases WHERE id=?", (identifier,)).fetchone()[0]
+                )
+                entries = [
+                    json.loads(row[0])
+                    for row in db.execute(
+                        "SELECT document FROM release_entries WHERE release_id=? ORDER BY id", (identifier,)
+                    )
+                ]
+                release_preparer(deepcopy(release), deepcopy(entries))
         return {"schema": SCHEMA, "restored": True, "release": self.latest_release(), "blobs": len(decoded)}
 
     def _validate_restored(self, db):

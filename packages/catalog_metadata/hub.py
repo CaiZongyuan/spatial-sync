@@ -39,6 +39,7 @@ def safe_path(value):
         or not value
         or len(value) > 2048
         or "\\" in value
+        or ":" in value
         or value.startswith("/")
         or any(part in (".", "..") for part in value.split("/"))
         or any(ord(char) < 32 for char in value)
@@ -109,6 +110,8 @@ class HFHubReader:
             "networkBytes": 0,
             "previewBytes": 0,
             "embeddedPreviewBytes": 0,
+            "embeddedPreviewDecodedBytes": 0,
+            "previewBytesScope": "parquet-compressed-preview-columns-and-explicit-image-bodies",
             "cacheBytes": 0,
             "seconds": 0,
             "modelInputTokens": None,
@@ -383,9 +386,9 @@ class HFHubReader:
 
     def read_preview(self, profile, entry, retry=False):
         preview = entry.get("preview", {})
-        if preview.get("role") != "object" or not preview.get("path"):
+        if preview.get("role") != "object":
             raise MetadataError("preview_unavailable", "No object preview is available", 404)
-        key = preview.get("sha256")
+        key = preview.get("cachedSha256") or preview.get("sha256")
         if key and not re.fullmatch(r"sha256:[0-9a-f]{64}", key):
             raise MetadataError("invalid_digest", "Preview content digest must be SHA-256")
         if key and self.cache_root is not None and not retry:
@@ -396,6 +399,10 @@ class HFHubReader:
                     return data, image_type(data)
             except OSError:
                 pass
+        if not preview.get("path"):
+            raise MetadataError(
+                "preview_unavailable", "Object preview is not cached and has no stable source path", 404
+            )
         data = self.read_file(
             profile,
             preview.get("revision") or entry["revision"],
@@ -403,7 +410,8 @@ class HFHubReader:
             kind="preview",
             retry=retry,
         )
-        if key and "sha256:" + hashlib.sha256(data).hexdigest() != key:
+        source_key = preview.get("sha256")
+        if source_key and "sha256:" + hashlib.sha256(data).hexdigest() != source_key:
             raise MetadataError(
                 "preview_digest_mismatch", "Source preview changed from its pinned content digest", 409
             )
@@ -428,7 +436,8 @@ class HFHubReader:
         if type(limit) is not int or not 1 <= limit <= 50:
             raise MetadataError("invalid_limit", "Discovery limit must be 1..50")
         values, _ = self._json(
-            f"{self.origin}/api/datasets?filter=3d&limit={limit}&sort=lastModified&direction=-1", cached=False
+            f"{self.origin}/api/datasets?filter=modality%3A3d&limit={limit}&sort=lastModified&direction=-1",
+            cached=False,
         )
         if not isinstance(values, list):
             raise MetadataError("invalid_discovery", "HF discovery response must be a list")

@@ -93,11 +93,24 @@ def _preview(hub, profile, revision, choice):
 
 
 def _entry(hub, profile, revision, upstream_id, **fields):
+    evidence = [value["id"] for value in fields.get("evidence", [])]
+    provenance = {
+        field: {"kind": "publisher" if evidence else "extracted", "evidence": evidence}
+        for field in ("name", "aliases", "summary", "category", "tags", "domains", "uses", "facts", "preview")
+        if field in fields
+    }
+    if (
+        fields.get("name", {}).get("en") == _name(upstream_id)
+        or fields.get("name", {}).get("en") == upstream_id
+    ):
+        provenance["name"] = {"kind": "extracted", "method": "upstream-identifier", "evidence": evidence}
+    provenance.update(fields.pop("fieldProvenance", {}))
     return normalized_entry(
         profile["id"],
         revision,
         {
             "upstreamId": upstream_id,
+            "fieldProvenance": provenance,
             "source": {
                 "provider": "huggingface",
                 "dataset": profile["dataset"],
@@ -189,6 +202,12 @@ def _simready(hub, profile, revision):
                         "invalid_source_manifest", "SimReady package manifest must be an object"
                     )
                 fields["sourceMetadata"] = manifest
+                if isinstance(manifest.get("license"), str):
+                    facts["license"] = {
+                        "name": manifest["license"],
+                        "scope": "publisher package manifest",
+                        "evidencePath": manifest_path,
+                    }
                 label = manifest.get("name") or manifest.get("displayName")
                 if isinstance(label, str) and label.strip():
                     fields["name"]["en"] = label.strip()
@@ -200,7 +219,8 @@ def _simready(hub, profile, revision):
                     fields["tags"] = [
                         value for value in tags[:64] if isinstance(value, str) and value.strip()
                     ]
-            fields["preview"] = _preview(hub, profile, revision, preview_choice(files))
+            object_files = [value for value in files if value["path"].startswith(identity + "/.thumbs/")]
+            fields["preview"] = _preview(hub, profile, revision, preview_choice(object_files))
             facts["variants"] = [
                 {
                     "id": value["path"],
@@ -239,7 +259,7 @@ def _decode_rows(data, path):
         rows = value.get("rows") if isinstance(value, dict) else value
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
             raise MetadataError("invalid_source_table", "A metadata table must contain rows")
-        return rows
+        return rows, 0
     try:
         import pyarrow.parquet as parquet
     except ImportError as exc:
@@ -249,10 +269,18 @@ def _decode_rows(data, path):
             409,
         ) from exc
     try:
-        table = parquet.read_table(io.BytesIO(data))
+        file = parquet.ParquetFile(io.BytesIO(data))
+        compressed_preview_bytes = 0
+        for row_index in range(file.metadata.num_row_groups):
+            group = file.metadata.row_group(row_index)
+            for column_index in range(group.num_columns):
+                column = group.column(column_index)
+                if column.path_in_schema == "preview" or column.path_in_schema.startswith("preview."):
+                    compressed_preview_bytes += column.total_compressed_size
+        table = file.read()
         if table.num_rows > 100000:
             raise MetadataError("source_inventory_limit", "Metadata table exceeds 100000 rows")
-        return table.to_pylist()
+        return table.to_pylist(), compressed_preview_bytes
     except MetadataError:
         raise
     except Exception as exc:
@@ -278,10 +306,18 @@ def _scenario(hub, profile, revision):
             raise
         declared_license, license_proof = None, None
     for file in sorted(files, key=lambda value: value["path"]):
-        data = hub.read_file(profile, revision, file["path"])
+        before_network = hub.usage["networkBytes"]
+        data = hub.read_file(
+            profile, revision, file["path"], content_digest=file.get("lfs", {}).get("oid") or file.get("oid")
+        )
         proof = _evidence(hub, profile, revision, file["path"], data)
         evidence.append(proof)
-        for row in _decode_rows(data, file["path"]):
+        decoded_rows, compressed_preview_bytes = _decode_rows(data, file["path"])
+        if hub.usage["networkBytes"] > before_network:
+            hub.usage["embeddedPreviewBytes"] += compressed_preview_bytes
+            hub.usage["previewBytes"] += compressed_preview_bytes
+            hub.progress(dict(hub.usage))
+        for row in decoded_rows:
             identity = row.get("id") or row.get("example_id") or row.get("uid")
             if identity is None:
                 raise MetadataError(
@@ -324,9 +360,8 @@ def _scenario(hub, profile, revision):
             preview = _preview(hub, profile, revision, choice)
             if isinstance(embedded_bytes, bytes):
                 key = hub.cache(embedded_bytes)
-                hub.usage["embeddedPreviewBytes"] += len(embedded_bytes)
-                hub.usage["previewBytes"] += len(embedded_bytes)
-                preview.update(state="available", sha256=key, embedded=True)
+                hub.usage["embeddedPreviewDecodedBytes"] += len(embedded_bytes)
+                preview.update(state="available", cachedSha256=key, embedded=True)
                 if preview.get("path") is None:
                     preview.update(path=embedded.get("path"), role="object")
             safe_row = {key: value for key, value in row.items() if key != "preview"}
@@ -377,6 +412,80 @@ def _scenario(hub, profile, revision):
     )
 
 
+def _chemlab_indexes(hub, profile, revision):
+    evidence = []
+    try:
+        catalog, proof = _read_json(hub, profile, revision, "catalog/catalog.json")
+        rows = catalog.get("assets") if isinstance(catalog, dict) else None
+        if not isinstance(rows, list):
+            raise MetadataError("invalid_source_table", "ChemLab instrument catalog must enumerate assets")
+    except MetadataError as exc:
+        if exc.code != "source_missing":
+            raise
+        data = hub.read_file(profile, revision, "catalog/catalog.csv")
+        proof = _evidence(hub, profile, revision, "catalog/catalog.csv", data)
+        try:
+            rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"), newline="")))
+        except (UnicodeError, csv.Error) as exc:
+            raise MetadataError("invalid_source_table", "ChemLab catalog CSV is invalid") from exc
+    evidence.append(proof)
+    indexed = {row.get("id"): row for row in rows}
+    if len(indexed) != len(rows) or not all(isinstance(key, str) for key in indexed):
+        raise MetadataError("duplicate_identity", "ChemLab instrument catalog repeats or omits identity")
+    labware_count = 0
+    try:
+        index, proof = _read_json(hub, profile, revision, "assets/labware/asset_index.json")
+    except MetadataError as exc:
+        if exc.code != "source_missing":
+            raise
+        return indexed, evidence, len(rows), labware_count
+    if not isinstance(index, dict) or not isinstance(index.get("assets"), list):
+        raise MetadataError("invalid_source_table", "ChemLab utensil/furniture index must enumerate assets")
+    evidence.append(proof)
+    try:
+        rich, rich_proof = _read_json(hub, profile, revision, "assets/labware/catalog.json")
+        if not isinstance(rich, dict):
+            raise MetadataError("invalid_source_table", "ChemLab labware catalog must be structured")
+        evidence.append(rich_proof)
+    except MetadataError as exc:
+        if exc.code != "source_missing":
+            raise
+        rich = {}
+    extra = {**rich.get("types", {}), **rich.get("furniture", {})}
+    for asset in index["assets"]:
+        identity = asset.get("asset_type_id")
+        if not isinstance(identity, str) or identity in indexed:
+            raise MetadataError("duplicate_identity", "ChemLab union repeats or omits identity")
+        details = extra.get(identity, {})
+        contract = asset.get("contract_path")
+        path = details.get("dir") or (
+            "assets/labware/" + str(PurePosixPath(contract).parent) if contract else None
+        )
+        indexed[identity] = {
+            "id": identity,
+            "name": details.get("name_en"),
+            "name_zh": asset.get("name_zh"),
+            "path": path,
+            "size_m": details.get("size_m"),
+            "files": {kind: details.get("model_" + kind) for kind in ("glb", "urdf", "blend")},
+            "maker": details.get("maker"),
+            "model": details.get("model"),
+            "n_components": asset.get("component_count"),
+            "n_joints": len(details["joints"]) if isinstance(details.get("joints"), dict) else None,
+            "sourceCategory": asset.get("category"),
+            "sourceLicense": details.get("licence"),
+            "glb_up": "z" if rich.get("conventions", {}).get("up_axis") == "+Z" else None,
+            "sourceIndex": asset,
+            "sourceCatalog": details,
+        }
+        labware_count += 1
+    if index.get("asset_count", labware_count) != labware_count:
+        raise MetadataError(
+            "inventory_incomplete", "ChemLab utensil/furniture index count is inconsistent", 409
+        )
+    return indexed, evidence, len(rows), labware_count
+
+
 def _chemlab(hub, profile, revision):
     manifest, proof = _read_json(hub, profile, revision, "release_manifest.json")
     if not isinstance(manifest, dict) or not isinstance(manifest.get("assets"), dict):
@@ -384,8 +493,7 @@ def _chemlab(hub, profile, revision):
             "invalid_source_manifest", "ChemLab release manifest must enumerate its asset identity map"
         )
     raw_assets = manifest["assets"]
-    data = hub.read_file(profile, revision, "catalog/catalog.csv")
-    catalog_proof = _evidence(hub, profile, revision, "catalog/catalog.csv", data)
+    indexed, catalog_evidence, catalog_rows, labware_rows = _chemlab_indexes(hub, profile, revision)
     try:
         license_data = hub.read_file(profile, revision, "LICENSE-ASSETS.md")
         license_proof = _evidence(
@@ -396,12 +504,7 @@ def _chemlab(hub, profile, revision):
         if exc.code != "source_missing":
             raise
         declared_license, license_proof = None, None
-    try:
-        rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"), newline="")))
-    except (UnicodeError, csv.Error) as exc:
-        raise MetadataError("invalid_source_table", "ChemLab catalog CSV is invalid") from exc
-    indexed = {value.get("id"): value for value in rows}
-    if len(indexed) != len(rows) or any(not key or key not in raw_assets for key in indexed):
+    if any(key not in raw_assets for key in indexed):
         raise MetadataError(
             "inventory_incomplete", "ChemLab table identities do not reconcile with its release union", 409
         )
@@ -425,18 +528,29 @@ def _chemlab(hub, profile, revision):
             prefix = matches[0] if len(matches) == 1 else None
         files = [value for value in tree if prefix and value["path"].startswith(prefix.rstrip("/") + "/")]
         actual_files += len(files)
-        dimensions = [_finite_number(row.get("size_" + axis + "_m"), positive=True) for axis in "xyz"]
+        raw_size = row.get("size_m")
+        dimensions = (
+            [_finite_number(value, positive=True) for value in raw_size]
+            if isinstance(raw_size, list) and len(raw_size) == 3
+            else [_finite_number(row.get("size_" + axis + "_m"), positive=True) for axis in "xyz"]
+        )
         if any(value is None for value in dimensions):
             dimensions = None
-        formats = [name for name in ("glb", "urdf") if row.get(name)]
-        variants = [{"id": name, "format": name, "path": row[name]} for name in formats]
+        source_files = row.get("files", row)
+        formats = [name for name in ("glb", "urdf", "blend") if source_files.get(name)]
+        variants = [{"id": name, "format": name, "path": source_files[name]} for name in formats]
         category = {"instrument": "instrument", "furniture": "furniture", "labware": "labware"}.get(
             raw_category
         )
         preview_files = files + [
             value for value in tree if value["path"].startswith("previews/" + suffix + "/")
         ]
-        choice = preview_choice(preview_files)
+        explicit_preview = row.get("thumb") or row.get("hero")
+        if explicit_preview:
+            safe_path(explicit_preview)
+            matching = next((value for value in tree if value["path"] == explicit_preview), None)
+            preview_files.append({**(matching or {}), "path": explicit_preview, "role": "object"})
+        choice = preview_choice(preview_files, explicit=explicit_preview)
         entries.append(
             _entry(
                 hub,
@@ -446,7 +560,7 @@ def _chemlab(hub, profile, revision):
                 name={"en": row.get("name") or _name(suffix or identity), "zh": row.get("name_zh") or ""},
                 aliases={
                     "en": [v for v in (row.get("chem_id"), row.get("maker"), row.get("model")) if v],
-                    "zh": [],
+                    "zh": [row["domain_zh"]] if row.get("domain_zh") else [],
                 },
                 category=category,
                 domains=[row["domain_name"]] if row.get("domain_name") else [],
@@ -459,7 +573,7 @@ def _chemlab(hub, profile, revision):
                         "files": [(v["path"], v.get("oid")) for v in files],
                     }
                 ),
-                evidence=([proof, catalog_proof] if row else [proof])
+                evidence=([proof, *catalog_evidence] if row else [proof])
                 + ([license_proof] if license_proof else []),
                 preview=_preview(hub, profile, revision, choice),
                 facts={
@@ -493,11 +607,14 @@ def _chemlab(hub, profile, revision):
         {
             "entries": len(entries),
             "expectedEntries": len(raw_assets),
-            "catalogRows": len(rows),
+            "catalogRows": catalog_rows,
+            "labwareRows": labware_rows,
+            "metadataRecords": len(indexed),
+            "metadataMissing": len(raw_assets) - len(indexed),
             "subsets": dict(categories),
             "files": actual_files,
         },
-        [proof, catalog_proof] + ([license_proof] if license_proof else []),
+        [proof, *catalog_evidence] + ([license_proof] if license_proof else []),
         [],
     )
 
