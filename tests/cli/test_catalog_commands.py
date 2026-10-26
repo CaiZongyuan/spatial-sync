@@ -320,3 +320,45 @@ async def test_catalog_search_show_estimate_pages_errors_and_local_shape(gateway
             )
             assert mcp_conflict.is_error
             assert "invalid_filter" in mcp_conflict.content[0].text
+
+
+async def test_local_gap_filter_uses_same_http_behavior_through_installed_cli_and_mcp(gateway_url):
+    environment = client_environment(gateway_url)
+    transport = StdioServerParameters(command=str(LW), args=["mcp"], env=environment)
+    with httpx.Client(base_url=gateway_url, trust_env=False, timeout=20) as http:
+        upload_correlated_box(http)
+        params = {"q": "CLI box", "scope": "local", "kind": "environment", "gaps": True}
+        expected = http.get("/api/v1/library/search", params=params)
+        assert expected.status_code == 200, expected.text
+        document = expected.json()
+        assert [item["id"] for item in document["results"]] == ["environment/cli-box@1"]
+        assert document["results"][0]["local"]["asset"]["gapCount"] > 0
+        assert search_view(await cli_async(
+            environment, "catalog", "search", "-q", "CLI box", "--scope", "local",
+            "--kind", "environment", "--gaps",
+        )) == search_view(document)
+        legacy = http.get("/api/v1/library/assets", params={
+            "q": "CLI box", "kind": "environment", "gaps": True,
+        }).json()["assets"]
+        assert await cli_async(
+            environment, "library", "search", "-q", "CLI box", "--kind", "environment", "--gaps",
+        ) == legacy
+        async with Client(transport, mode="legacy") as mcp:
+            assert search_view(await result(
+                mcp, "catalog_search", query="CLI box", scope="local", kind="environment", gaps=True,
+            )) == search_view(document)
+            assert await result(
+                mcp, "library_search", query="CLI box", kind="environment", gaps=True,
+            ) == legacy
+            complete = http.get("/api/v1/library/search", params={**params, "gaps": False}).json()
+            assert complete["results"] == []
+            assert search_view(await result(
+                mcp, "catalog_search", query="CLI box", scope="local", kind="environment", gaps=False,
+            )) == search_view(complete)
+            rejected = await mcp.call_tool("catalog_search", {"scope": "online", "gaps": True})
+            assert rejected.is_error
+            assert error_code(mcp_error(rejected)) == "invalid_filter"
+        rejected = await cli_async(
+            environment, "catalog", "search", "--scope", "online", "--gaps", code=1,
+        )
+        assert rejected["error"]["statusCode"] == 400 and error_code(rejected) == "invalid_filter"

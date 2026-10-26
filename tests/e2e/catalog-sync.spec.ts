@@ -59,6 +59,7 @@ test('lightweight indexing, visible previews, retries and failed-source preserva
     await sync.getByRole('button', { name: '重试更新' }).click();
     await expect(sync).toContainText('目录已更新');
     await expect(sync).toContainText('2 项在线素材');
+    await page.getByRole('button', { name: '查看最新目录', exact: true }).click();
     await expect(page.locator('.catalog-card.is-online')).toHaveCount(2);
     const first = page.locator('.catalog-card.is-online').first();
     await expect(first.locator('img')).toHaveAttribute('src', /\/api\/v1\/library\/catalog\/entries\/.+\/preview$/);
@@ -70,8 +71,8 @@ test('lightweight indexing, visible previews, retries and failed-source preserva
     await page.getByRole('searchbox', { name: '搜索素材' }).fill('CT_fixture_a01');
     await expect(page.locator('.catalog-card.is-online')).toHaveCount(1);
     await expect(page.locator('.catalog-card.is-online')).toContainText('未审查／上游声明');
-    await page.locator('.catalog-card.is-online').getByRole('button', { name: '详情与估算' }).click();
-    await expect(page.getByRole('region', { name: '候选详情与估算' })).toContainText('尚未审查；声明不等于获取准入');
+    await page.locator('.catalog-card.is-online').getByRole('button', { name: /查看.*详情/ }).click();
+    await expect(page.getByRole('region', { name: '候选详情', exact: true })).toContainText('尚未审查；声明不等于获取准入');
     await sync.getByRole('button', { name: '更新目录', exact: true }).click();
     await expect(sync).toContainText('目录已更新');
     const published = (await (await http.get(`${api}/api/v1/library/catalog/sync`)).json()).snapshot.id;

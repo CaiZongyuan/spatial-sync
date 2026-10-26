@@ -5,6 +5,7 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -13,6 +14,60 @@ from packages.catalog.sources import CatalogSource
 from tests.fixtures.catalog_source import PNG, REVISION, CatalogSourceFixture
 from tests.gateway.test_catalog_search import correlated_asset, upload
 from tests.gateway.test_catalog_sync import BASE, SEARCH, start
+
+
+def test_legacy_lazy_preview_excludes_smaller_normal_and_material_thumbnails():
+    upstream = CatalogSourceFixture()
+    upstream.names = ["air_filter_a01"]
+    original = upstream.handle
+
+    def handle(request):
+        response = original(request)
+        if "/tree/" in request.url.path and request.url.path.endswith("/air_filter_a01"):
+            return httpx.Response(200, json=[*response.json(),
+                {"type": "file", "path": "air_filter_a01/source_assets/.thumbs/normal.png", "size": 1},
+                {"type": "file", "path": "air_filter_a01/Textures/.thumbs/material.png", "size": 2},
+            ])
+        return response
+
+    upstream.handle = handle
+    with TestClient(create_app(catalog_sync_source=upstream.source)) as client:
+        assert start(client)["status"] == "succeeded"
+        upstream.requests.clear()
+        candidate = client.get(SEARCH, params={"scope": "online"}).json()["results"][0]
+        image = client.get(candidate["preview"]["url"])
+        assert image.status_code == 200 and image.content == PNG
+        assert any(path.endswith("/simready_usd/.thumbs/small.png") for path in upstream.requests)
+        assert not any("/source_assets/" in path or "/Textures/" in path for path in upstream.requests)
+
+
+def test_known_texture_selection_in_old_lazy_cache_is_refreshed_without_full_maintenance():
+    upstream = CatalogSourceFixture()
+    upstream.names = ["air_filter_a01"]
+    app = create_app(catalog_sync_source=upstream.source)
+    with TestClient(app) as client:
+        assert start(client)["status"] == "succeeded"
+        entry = app.state.catalog.entries[0]
+        resources = app.state.catalog.resources
+        key = resources._key(entry)
+        wrong_image = PNG + b"normal-map-fixture"
+        filename = hashlib.sha256(wrong_image).hexdigest() + ".png"
+        resources._store(resources.root / "previews" / filename, wrong_image)
+        resources._store(resources.root / "previews" / (key + ".json"),
+                         json.dumps({"file": filename}).encode())
+        resources._store(resources.root / "metadata" / (key + ".json"), json.dumps({
+            "source": {"files": 1, "bytes": 1, "rootUsd": None}, "detailsLoaded": True,
+            "thumbnailPath": "air_filter_a01/source_assets/.thumbs/normal.png", "previewFile": filename,
+        }).encode())
+        upstream.requests.clear()
+        candidate = client.get(SEARCH, params={"scope": "online"}).json()["results"][0]
+        image = client.get(candidate["preview"]["url"])
+        assert image.status_code == 200 and image.content == PNG
+        assert any(path.endswith("/simready_usd/.thumbs/small.png") for path in upstream.requests)
+        upstream.requests.clear()
+        upstream.fail_listing = True
+        assert client.get(candidate["preview"]["url"]).content == PNG
+        assert not upstream.requests
 
 
 def test_directory_and_search_never_read_package_details_or_images():

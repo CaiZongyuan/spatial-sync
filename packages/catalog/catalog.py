@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 from pathlib import Path
+from urllib.parse import quote
 
 from packages.catalog.local import LocalAsset, read_provenance
 from packages.catalog.models import REVISION, CatalogFormatError, CatalogSnapshot, load_catalog
 from packages.catalog.search import search_catalog
 from packages.catalog.semantic import SemanticIndex, build_semantic_index
-from packages.catalog.views import entry_document, estimate_document
+from packages.catalog.views import canonical_json, entry_document, estimate_document
 from packages.library.common import LibraryError
 
 LOGGER = logging.getLogger(__name__)
@@ -37,6 +39,27 @@ class AssetCatalog:
         self.archive_paths: tuple[Path, ...] = ()
         self._historical = {}
         self.resources = None
+        self.metadata_store = None
+        self._metadata_views = None
+
+    def attach_metadata(self, store):
+        """Keep maintenance storage independent; adapt it only for consumption."""
+        from packages.catalog.maintained import ReleasedViews
+        with self._lock:
+            self.metadata_store = store
+            self._metadata_views = ReleasedViews(self, store)
+
+    def prepare_metadata_release(self, release, documents, *, vocabulary=None):
+        """Build and persist the real consuming index before core activation."""
+        if self._metadata_views is not None:
+            with self._lock:
+                base = copy.copy(self)
+                base._historical = dict(self._historical)
+                views = self._metadata_views
+            # Published legacy entries/snapshots are immutable. Capturing their
+            # references is brief; model work and disk writes never hold the
+            # reader lock while maintenance prepares a new publication.
+            return views.prepare(release, documents, base=base, vocabulary=vocabulary)
 
     def startup(self):
         try:
@@ -91,6 +114,12 @@ class AssetCatalog:
             self.require()
             identity = f"{provider}/{package}@{revision}"
             entry = self.by_id.get(identity) or self._historical.get(identity)
+            # ASGI transports can decode the package path before routing. Use
+            # its canonical encoded form only after exact lookup, preserving a
+            # literal '%' in an upstream ID as a distinct identity.
+            encoded_identity = f"{provider}/{quote(package, safe='._-')}@{revision}"
+            if entry is None:
+                entry = self.by_id.get(encoded_identity) or self._historical.get(encoded_identity)
             if (entry is None or entry.discovery is None) and REVISION.fullmatch(revision):
                 for path in reversed(self.archive_paths):
                     _, entries = load_catalog(path)
@@ -101,6 +130,17 @@ class AssetCatalog:
                         break
             if entry is not None:
                 return entry
+            if self.metadata_store is not None:
+                from packages.catalog.maintained import adapt_entry
+                try:
+                    document = self.metadata_store.entry(identity)
+                except (KeyError, ValueError):
+                    try:
+                        document = self.metadata_store.entry(encoded_identity)
+                    except (KeyError, ValueError):
+                        document = None
+                if document is not None:
+                    return adapt_entry(document)
             raise LibraryError(
                 "unknown_catalog_entry",
                 "Unknown catalog entry identity",
@@ -143,12 +183,42 @@ class AssetCatalog:
 
     def search(self, library, **kwargs):
         with self._lock:
-            return search_catalog(self, library, **kwargs)
+            release = kwargs.pop("release", None)
+            selected = self
+            if self._metadata_views is not None:
+                selected = self._metadata_views.select(release, kwargs.get("cursor"))
+            elif release and (self.snapshot is None or release != self.snapshot.id):
+                raise LibraryError("release_expired", "Released view is unavailable; "
+                                   "repeat the search without release", 409)
+            return search_catalog(selected, library, **kwargs)
+
+    def release_document(self, identifier, *, offset=0, limit=4096):
+        """Read an exact retained release in bounded Unicode-safe JSON chunks."""
+        if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 4096):
+            raise LibraryError("invalid_release_page", "Use offset >= 0 and a limit from 1 to 4096", 400)
+        if self.metadata_store is None:
+            raise LibraryError("catalog_unavailable", "Metadata storage is not configured", 503)
+        document = self.metadata_store.release(identifier)
+        text = canonical_json(document)
+        if offset > len(text):
+            raise LibraryError("invalid_release_page", "Release offset is past the document", 400)
+        content = text[offset:offset + limit]
+        next_offset = offset + len(content)
+        return {"schema": "lw.catalog-release-text/1", "id": document["id"], "encoding": "utf-8",
+                "offsetUnit": "unicode_code_points", "offset": offset, "limit": limit,
+                "totalCharacters": len(text), "text": content,
+                "nextOffset": next_offset if next_offset < len(text) else None}
 
     def describe(self, provider, package, revision, *, library=None, view="summary",
-                 document_digest=None):
+                 document_digest=None, release=None):
+        if self._metadata_views is not None:
+            with self._lock:
+                selected = self._metadata_views.select(release)
+            if selected is not self:
+                return selected.describe(provider, package, revision, library=library, view=view,
+                                         document_digest=document_digest)
         entry = self.entry(provider, package, revision)
-        if self.resources is not None:
+        if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
         with self._lock:
             local = [
@@ -157,9 +227,14 @@ class AssetCatalog:
             ]
             return entry_document(self, entry, local, view=view, document_digest=document_digest)
 
-    def estimate(self, provider, package, revision, *, library=None):
+    def estimate(self, provider, package, revision, *, library=None, release=None):
+        if self._metadata_views is not None:
+            with self._lock:
+                selected = self._metadata_views.select(release)
+            if selected is not self:
+                return selected.estimate(provider, package, revision, library=library)
         entry = self.entry(provider, package, revision)
-        if self.resources is not None:
+        if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
         with self._lock:
             local = [

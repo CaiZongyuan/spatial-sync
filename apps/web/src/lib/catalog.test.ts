@@ -13,6 +13,10 @@ it('builds unified search URLs with explicit scope and no empty filters', () => 
     .toBe('/library/search?scope=local');
   expect(catalogSearchPath({ scope: 'online', cursor: 'abc-_' }))
     .toBe('/library/search?scope=online&cursor=abc-_');
+  const restored = new URL(catalogSearchPath({ scope: 'online', category: 'container', tag: 'labware',
+    page: 3, limit: 24, sort: 'name', release: 'sha256:fixture' }), 'http://localhost');
+  expect(Object.fromEntries(restored.searchParams)).toEqual({ scope: 'online', category: 'container',
+    tag: 'labware', page: '3', limit: '24', sort: 'name', release: 'sha256:fixture' });
 });
 
 it('addresses bounded catalog detail and estimate documents by fixed identity', () => {

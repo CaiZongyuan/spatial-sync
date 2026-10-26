@@ -303,6 +303,10 @@ def test_missing_custom_catalog_keeps_legacy_and_local_search_working(tmp_path):
             f"/api/v1/library/catalog/entries/simready/box_cardboard_a01/{REVISION}"
         )
         assert lookup.status_code == 503
+        estimate = client.get(
+            f"/api/v1/library/catalog/entries/simready/box_cardboard_a01/{REVISION}/estimate"
+        )
+        assert estimate.status_code == 503
 
 
 def test_custom_catalog_path_is_loaded_and_reported(tmp_path):

@@ -73,7 +73,7 @@ def _local_preview(local_assets):
 def preview_document(local_assets, entry=None):
     local = _local_preview(local_assets)
     cached = getattr(entry, "preview", None)
-    if entry is not None and entry.discovery is not None:
+    if entry is not None and entry.discovery is not None and entry.metadata is None:
         cached = {
             "kind": "on-demand",
             "url": (f"/api/v1/library/catalog/entries/{entry.provider}/"
@@ -152,6 +152,7 @@ def _base_document(entry, local_assets):
         "evidence": evidence_document(entry),
         "preview": preview_document(local_assets, entry),
         **({"discovery": entry.discovery} if entry.discovery is not None else {}),
+        **({"metadata": entry.metadata} if entry.metadata is not None else {}),
         "estimate": estimate_pointer(entry),
     }
 
@@ -166,6 +167,18 @@ def _bound(document, maximum):
     if serialized_size(value) <= maximum:
         return value
     value["previewTruncated"] = True
+    metadata = value.get("metadata")
+    if metadata is not None:
+        # Evidence is fetched separately; detail size stays bounded even when
+        # the source contains very long raw fields or many references.
+        for name in ("evidence", "variants", "conflicts"):
+            while (isinstance(metadata.get(name), list) and metadata[name]
+                   and serialized_size(value) > maximum):
+                metadata[name].pop()
+        if serialized_size(value) > maximum:
+            value["metadata"] = {name: metadata.get(name) for name in (
+                "id", "collectionId", "category", "organization", "release", "vocabularyVersion",
+            )}
     steps = (
         ("license", "attachments"),
         ("source", "bomNotInBom"),
@@ -317,6 +330,9 @@ def compact_candidate(candidate):
     for key in ("ref", "id"):
         value[key] = clip(value.get(key), 300)
     value["kind"] = clip(value.get("kind"), 50)
+    if "category" in value:
+        value["category"] = clip(value["category"], 100)
+        value["tags"] = clip_list(value.get("tags", []), 5, 80)
     value["title"] = clip(value.get("title"), 200)
     value["names"] = {language: clip(text, 200) for language, text in value["names"].items()}
     value["descriptions"] = {

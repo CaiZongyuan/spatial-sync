@@ -1,0 +1,748 @@
+{
+  "schema": "lw.metadata-quality-selection/1",
+  "records": [
+    {
+      "collectionId": "simready",
+      "upstreamId": "box_cardboard_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "bin_waste_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/bin_waste_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "bin_waste_a02",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/bin_waste_a02@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "IV_pole_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/IV_pole_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "refrigerator_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/refrigerator_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "appliance_refrigerator_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/appliance_refrigerator_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "bucket_utility_red_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/bucket_utility_red_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "bucket_utility_gray_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/bucket_utility_gray_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "box_cardboard_open_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/box_cardboard_open_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "box_cardboard_b01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/box_cardboard_b01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "food_produce_orange_b01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/food_produce_orange_b01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "bodyPart_headLight_left_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/bodyPart_headLight_left_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "drum_plastic_blue_a02",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/drum_plastic_blue_a02@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "electricalSystem_engine_control_module_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/electricalSystem_engine_control_module_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "serviceTool_camera_inspectionKit_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/serviceTool_camera_inspectionKit_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "pallet_block_a09",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/pallet_block_a09@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "food_egg_chicken_b07",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/food_egg_chicken_b07@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "consumable_microfiber_towel_wrinkled_c01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/consumable_microfiber_towel_wrinkled_c01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "sign_hospital_sidewall_a07",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/sign_hospital_sidewall_a07@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "blinds_window_2m_closed_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/blinds_window_2m_closed_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "pack_paper_office_gray_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/pack_paper_office_gray_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "conveyor_belt_a35",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/conveyor_belt_a35@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "paint_supplies_palletknife_a05",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/paint_supplies_palletknife_a05@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "food_produce_mango_i01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/food_produce_mango_i01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "kitchenware_kettle_p01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/kitchenware_kettle_p01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "powerTool_welding_station_c01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/powerTool_welding_station_c01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "pallet_assembly_a06",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/pallet_assembly_a06@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "box_printer_white_b02",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/box_printer_white_b02@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "crate_gray_a14",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/crate_gray_a14@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "food_processed_jam_c01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/food_processed_jam_c01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "handTool_wrench_15_16in_b01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/handTool_wrench_15_16in_b01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "drainage_pumpSystem_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/drainage_pumpSystem_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "medicine_c03",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/medicine_c03@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "box_corrugated_white_a20",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/box_corrugated_white_a20@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "trolley_emergency_a01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/trolley_emergency_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "container_recycle_green_b03",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/container_recycle_green_b03@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "food_produce_apple_m01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/food_produce_apple_m01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "factory_bolt_m20_tight",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/factory_bolt_m20_tight@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "kitchenware_fork_g01",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/kitchenware_fork_g01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "simready",
+      "upstreamId": "paint_container_bottle_yellowLight_a04",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "id": "simready/paint_container_bottle_yellowLight_a04@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_1AkDv3PPnoifejY5SasRRnL8",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_1AkDv3PPnoifejY5SasRRnL8@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_1HEvULBZRruNJUjkdTjcqDX9",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_1HEvULBZRruNJUjkdTjcqDX9@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_32YByDGjPViGn8xZj9ZxFNMP",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_32YByDGjPViGn8xZj9ZxFNMP@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_38H2VuMiXnBwPFj7p5WbE48k",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_38H2VuMiXnBwPFj7p5WbE48k@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_4HvXzgYcWfE5WaT1FcK9R1ZQ",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_4HvXzgYcWfE5WaT1FcK9R1ZQ@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_4tjXgQMGuqmPBWoBpRxNkwo2",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_4tjXgQMGuqmPBWoBpRxNkwo2@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_7mrASsNgxXqFYGdSfZm4xVZS",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_7mrASsNgxXqFYGdSfZm4xVZS@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_3oW36JBRZkHvqUxMaFqtLfBe",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_3oW36JBRZkHvqUxMaFqtLfBe@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_rgA9PZomGUr6NvM8s5J6cgVz",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_rgA9PZomGUr6NvM8s5J6cgVz@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_uGeK6fH2wdJWzynT14mrhyik",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_uGeK6fH2wdJWzynT14mrhyik@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_cD95XHNVZWZXi3mfTh2tWN2c",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_cD95XHNVZWZXi3mfTh2tWN2c@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_roc1fdFA6V8Mn93DiR5NjKw9",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_roc1fdFA6V8Mn93DiR5NjKw9@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_h12AiMPYJi4go3G253EAah5M",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_h12AiMPYJi4go3G253EAah5M@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_mbNRB9MAHUpAu6N7pkyrn9Bn",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_mbNRB9MAHUpAu6N7pkyrn9Bn@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_vaXKhK5Qhwu8SqvWLd4wZ2Yu",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_vaXKhK5Qhwu8SqvWLd4wZ2Yu@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_sTtXN5PTQFX2Bj47YXePEn9G",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_sTtXN5PTQFX2Bj47YXePEn9G@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_eWzMXMN154Nwgxtd6gRZA2pS",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_eWzMXMN154Nwgxtd6gRZA2pS@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_Y3iVyGQJ8LiGhRbvKHyrtSMJ",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_Y3iVyGQJ8LiGhRbvKHyrtSMJ@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_kHXqk4QynhrkbnpiD9C8A5zo",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_kHXqk4QynhrkbnpiD9C8A5zo@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_oXqsCwEFAvghvWFfS3yU7Hqs",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_oXqsCwEFAvghvWFfS3yU7Hqs@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_nbRax67WVei7km9miyYw8xx2",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_nbRax67WVei7km9miyYw8xx2@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_f1Hcjps2osHHgFuaNEkFpL4q",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_f1Hcjps2osHHgFuaNEkFpL4q@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_cU3famZvCemZTX5HittN4MDT",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_cU3famZvCemZTX5HittN4MDT@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_GywxXFB6Pb2npYADkRwTiqnb",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_GywxXFB6Pb2npYADkRwTiqnb@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_WUekFRC59JE36pPdYGnABkE1",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_WUekFRC59JE36pPdYGnABkE1@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_MCUkbpQByzFd7qAnNTCXWyVT",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_MCUkbpQByzFd7qAnNTCXWyVT@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_ypc4Yb7WGwPa5qEocv2k673D",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_ypc4Yb7WGwPa5qEocv2k673D@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_VKKCk5EX1kBuk9FwTGzQsd8w",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_VKKCk5EX1kBuk9FwTGzQsd8w@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_ngoUp5Uxs7upSnqwK6crZxLC",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_ngoUp5Uxs7upSnqwK6crZxLC@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_4CugiH9JaXc8YzkjEA7zTyHa",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_4CugiH9JaXc8YzkjEA7zTyHa@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "75f5c6b128053234",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/75f5c6b128053234@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_n8W3tXBB9yLQuUEb82YrQNYS",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_n8W3tXBB9yLQuUEb82YrQNYS@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_7EpG6Qq9gNcytR26qgqKHcaS",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_7EpG6Qq9gNcytR26qgqKHcaS@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_bf5dhAFkZE3iv6ugcY1YNxrW",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_bf5dhAFkZE3iv6ugcY1YNxrW@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_qcyGY943sNeW9kVUeRdEzCrC",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_qcyGY943sNeW9kVUeRdEzCrC@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_GPuZMdobUQDpkGtBzDfoEvnU",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_GPuZMdobUQDpkGtBzDfoEvnU@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_RqhcuSGjiNpiPQiPbyn9YBKN",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_RqhcuSGjiNpiPQiPbyn9YBKN@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_SgEqMuZYtP37sqjBwUrPCfV7",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_SgEqMuZYtP37sqjBwUrPCfV7@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_rc9vDsejZEnGMXSBSssE8idQ",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_rc9vDsejZEnGMXSBSssE8idQ@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "scenario",
+      "upstreamId": "scenario:asset_wdfnQqFJS1AhiFigDyNspXbx",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "id": "scenario/scenario%3Aasset_wdfnQqFJS1AhiFigDyNspXbx@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.mt_xpr204e",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.mt_xpr204e@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.eppendorf_5910ri",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.eppendorf_5910ri@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ika_plate_rctdigital",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ika_plate_rctdigital@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ika_rv10_digital_v",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ika_rv10_digital_v@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.binder_fd056",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.binder_fd056@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.elma_elmasonics60h",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.elma_elmasonics60h@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.retsch_pm100",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.retsch_pm100@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.buchi_lyovapor_l250_pro",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.buchi_lyovapor_l250_pro@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.freeman_ft4powder",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.freeman_ft4powder@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ta_tamiv",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ta_tamiv@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.alicat_mc_1slpm_rev6",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.alicat_mc_1slpm_rev6@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.rigaku_miniflex600_external_cooling",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.rigaku_miniflex600_external_cooling@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ta_dsc2500",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ta_dsc2500@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.elementar_isoprimeprecision",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.elementar_isoprimeprecision@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.nabertherm_l9",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.nabertherm_l9@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ziath_dp5_mirage_2023",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ziath_dp5_mirage_2023@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.edinburgh_fls1000tcspc",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.edinburgh_fls1000tcspc@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.novocontrol_alphat",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.novocontrol_alphat@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ossila_dipcoater",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ossila_dipcoater@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ch_chi920d",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ch_chi920d@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.antonpaar_autosorb6100",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.antonpaar_autosorb6100@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.vici_euta_2sd6mwe",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.vici_euta_2sd6mwe@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.buchi_hydrolexh",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.buchi_hydrolexh@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.ika_c6000",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.ika_c6000@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.leco_onh836",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.leco_onh836@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.malvern_leneo",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.malvern_leneo@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.julabo_corio_cd200f",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.julabo_corio_cd200f@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.inficon_ul1000fab",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.inficon_ul1000fab@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.jasco_j1500",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.jasco_j1500@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "instrument.carbolite_tf1_12_60_300",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/instrument.carbolite_tf1_12_60_300@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.agilent_vial_2ml_screw",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.agilent_vial_2ml_screw@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.duran_gl45_1000ml_clear",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.duran_gl45_1000ml_clear@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "furniture.metro_super_erecta_1848_4shelf",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/furniture.metro_super_erecta_1848_4shelf@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "furniture.liebherr_lkv3910",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/furniture.liebherr_lkv3910@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.duran_gl45_100ml_clear",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.duran_gl45_100ml_clear@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.nalgene_wm_hdpe_250ml",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.nalgene_wm_hdpe_250ml@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.nalgene_wm_hdpe_1000ml",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.nalgene_wm_hdpe_1000ml@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.norell_nmr_tube_5mm_7in",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.norell_nmr_tube_5mm_7in@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "furniture.asecos_cs_195_105_standards",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/furniture.asecos_cs_195_105_standards@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    {
+      "collectionId": "chemlab",
+      "upstreamId": "labware.corning_96_wellplate_360ul_flat",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "id": "chemlab/labware.corning_96_wellplate_360ul_flat@3b67020dcccb22e60be3235f32b39d03da5959ab"
+    }
+  ],
+  "note": "120 genuine upstream identities (40 per source); source metadata/images/models are not bundled. Rebuild product records at the pinned revisions and use this fixed identity selection.",
+  "sourceInputs": {
+    "simready": {
+      "dataset": "nvidia/simready-assets",
+      "revision": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "identityCount": 2575
+    },
+    "scenario": {
+      "dataset": "scenario-labs/3d-collection",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "metadataPath": "data/train-00000-of-00001.parquet",
+      "metadataSha256": "84c86df61303c2b033671153b7e329dc8a691209c2a7fb98f5a695eebe698040",
+      "examples": 1342,
+      "outputFiles": 1500
+    },
+    "chemlab": {
+      "dataset": "MBZUAI/ChemLab-Assets",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "nativeInstrumentMetadataSha256": "3ac0fd91a0e34197b29f8d875f750c9ab6155b0eec1283dde270d97a52611706",
+      "nativeLabwareIndexSha256": "bcedc80fe01fba7402ee7ea3a9a630dc8626ea7c78c641307100f9bb13c40cb6",
+      "identityCount": 265
+    }
+  }
+}

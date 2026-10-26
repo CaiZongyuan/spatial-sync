@@ -37,6 +37,8 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
     with TestClient(app) as client:
         upload(client, correlated_asset())
         before = client.get(SEARCH, params={"scope": "online", "limit": 1}).json()
+        original = client.get(SEARCH, params={"scope": "online", "limit": 50,
+                                             "release": before["snapshot"]["id"]}).json()
         record = start(client)
         assert record["status"] == "succeeded", record
         assert record["discovered"] == record["indexed"] == 2
@@ -44,6 +46,7 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
         assert record["metadataFailed"] == record["previewsFailed"] == 0
         assert record["networkBytes"] > len(PNG)
         published = client.get(SEARCH, params={"scope": "online"}).json()
+        assert published["snapshot"]["id"] != before["snapshot"]["id"]
         assert {item["source"]["packageId"] for item in published["results"]} == set(upstream.names)
         assert all(item["preview"]["kind"] == "on-demand" for item in published["results"])
         image_url = published["results"][0]["preview"]["url"]
@@ -51,8 +54,14 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
         assert image.content == PNG
         assert image.headers["content-type"] == "image/png"
         assert "max-age=" in image.headers["cache-control"]
-        stale = client.get(SEARCH, params={"scope": "online", "cursor": before["nextCursor"]})
-        assert stale.status_code == 400 and stale.json()["detail"]["code"] == "stale_cursor"
+        continued = client.get(SEARCH, params={"scope": "online", "cursor": before["nextCursor"]})
+        assert continued.status_code == 200, continued.text
+        assert continued.json()["snapshot"]["id"] == before["snapshot"]["id"]
+        assert continued.json()["results"] == original["results"][before["counts"]["returned"]:]
+        unavailable = client.get(SEARCH, params={"scope": "online", "release": "sha256:" + "0" * 64})
+        assert unavailable.status_code == 409
+        assert unavailable.json()["detail"]["code"] == "release_expired"
+        assert "repeat the search" in unavailable.json()["detail"]["message"]
         unknown = next(item for item in published["results"] if item["source"]["packageId"].startswith("CT_"))
         assert unknown["license"]["name"] is None  # Search never hydrates source details.
         assert unknown["license"]["unknown"] and not unknown["license"]["admitted"]

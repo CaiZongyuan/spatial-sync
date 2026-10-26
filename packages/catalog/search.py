@@ -50,7 +50,7 @@ SORTS = ("relevance", "name", "sourceBytes")
 UNKNOWN_POLICY = "excluded"
 
 CATALOG_ID = re.compile(
-    r"(?P<provider>[a-z0-9][a-z0-9-]*)/(?P<package>[A-Za-z0-9][A-Za-z0-9_.-]*)"
+    r"(?P<provider>[a-z0-9][a-z0-9-]*)/(?P<package>[A-Za-z0-9][A-Za-z0-9_.%~-]*)"
     r"@(?P<revision>[0-9a-f]{40})"
 )
 LOCAL_ID = re.compile(
@@ -103,6 +103,9 @@ class Filters:
     max_source_bytes: int | None = None
     min_dimension_m: float | None = None
     max_dimension_m: float | None = None
+    category: str | None = None
+    tag: str | None = None
+    gaps: bool | None = None
 
     def applied(self):
         values = (
@@ -115,6 +118,9 @@ class Filters:
             ("maxSourceBytes", self.max_source_bytes),
             ("minDimensionM", self.min_dimension_m),
             ("maxDimensionM", self.max_dimension_m),
+            ("category", self.category),
+            ("tag", self.tag),
+            ("gaps", self.gaps),
         )
         return {name: value for name, value in values if value is not None}
 
@@ -255,6 +261,11 @@ def _entry_fields(entry):
         ("provider", entry.provider, 30),
         ("kind", entry.kind, 20),
     ])
+    metadata = entry.metadata or {}
+    if metadata.get("category"):
+        fields.append(("category", metadata["category"], 60))
+    for name in ("domains", "uses"):
+        fields.extend((name, term, 50) for term in metadata.get(name, []) if isinstance(term, str))
     return fields
 
 
@@ -304,6 +315,13 @@ def _max_dimension(dimensions):
 
 def _online_status(entry, local_versions, filters):
     status = {}
+    metadata = entry.metadata or {}
+    if filters.category is not None:
+        category = metadata.get("category")
+        status["category"] = category == filters.category if category is not None else None
+    if filters.tag is not None:
+        tags = metadata.get("tags")
+        status["tag"] = filters.tag in tags if tags is not None else None
     if filters.kind is not None:
         status["kind"] = None if entry.kind == "unknown" else entry.kind == filters.kind
     if filters.provider is not None:
@@ -334,6 +352,16 @@ def _local_status(local, filters):
     metadata = local.version.metadata
     usage = _local_usage(local)
     status = {}
+    if filters.gaps is not None:
+        summary = local.version.summary()
+        status["gaps"] = bool(summary.get("gapCount")) == filters.gaps
+    metadata_entry = local.entry.metadata if local.entry is not None else None
+    if filters.category is not None:
+        category = (metadata_entry or {}).get("category")
+        status["category"] = category == filters.category if category is not None else None
+    if filters.tag is not None:
+        tags = (metadata_entry or {}).get("tags")
+        status["tag"] = filters.tag in tags if tags is not None else None
     if filters.kind is not None:
         status["kind"] = metadata.get("kind") == filters.kind
     if filters.provider is not None:
@@ -525,6 +553,12 @@ def _candidate(match, filters, language, correlated, by_bare_id):
             "unknown": entry.unknown_attributes(),
             "detail": {"resource": "catalog", "id": entry.id, "tool": "catalog_show"},
             "preview": preview_document(locals_, entry),
+            **({"category": entry.metadata.get("category"),
+                "tags": entry.metadata.get("tags", [])[:5],
+                "metadata": {"release": entry.metadata.get("release"),
+                             "organization": entry.metadata.get("organization"),
+                             "vocabularyVersion": entry.metadata.get("vocabularyVersion")}}
+               if entry.metadata is not None else {}),
         }
     local = match.local
     version = local.version
@@ -695,11 +729,11 @@ def _zero(reason, messages, excluded_by, suggestions):
 
 
 def _zero_document(scope, interpreted, filters, snapshot, reason, messages, excluded_by,
-                   suggestions, semantic=None):
+                   suggestions, semantic=None, counts=None):
     document = _summary_response(
         scope, interpreted, filters, snapshot,
-        {"returned": 0, "matching": 0, "localMatching": 0, "onlineMatching": 0,
-         "approximate": 0, "budgetTruncated": False},
+        counts or {"returned": 0, "matching": 0, "localMatching": 0, "onlineMatching": 0,
+                   "approximate": 0, "budgetTruncated": False},
         [], None, False, _zero(reason, messages, excluded_by, suggestions), semantic=semantic,
     )
     if not _fits(document):
@@ -755,14 +789,28 @@ def search_catalog(
     sort="relevance",
     limit=DEFAULT_LIMIT,
     cursor=None,
+    category=None,
+    tag=None,
+    page=None,
+    gaps=None,
     now=None,
 ):
     if scope not in SCOPES:
         raise ValueError("scope must be all, local or online")
+    if gaps is not None and (scope != "local" or type(gaps) is not bool):
+        raise LibraryError("invalid_filter", "gaps is a boolean filter for scope=local", 400)
     if sort not in SORTS:
         raise ValueError("sort must be relevance, name or sourceBytes")
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT:
         raise LibraryError("invalid_limit", f"limit must be an integer from 1 to {MAX_LIMIT}", 400)
+    if page is not None and (isinstance(page, bool) or not isinstance(page, int)
+                             or page < 1 or page > 100000):
+        raise LibraryError("invalid_page", "page must be an integer from 1 to 100000", 400)
+    if page is not None and cursor is not None:
+        raise LibraryError("invalid_page", "Use page or cursor, not both", 400)
+    for name, value in (("category", category), ("tag", tag)):
+        if value is not None and (not isinstance(value, str) or not value or len(value) > 100):
+            raise LibraryError("invalid_filter", f"{name} must contain 1..100 characters", 400)
     for name, value in (("minDimensionM", min_dimension_m), ("maxDimensionM", max_dimension_m)):
         if value is not None and not math.isfinite(value):
             raise LibraryError("invalid_filter", f"{name} must be a finite number", 400)
@@ -776,6 +824,7 @@ def search_catalog(
         max_source_bytes=max_source_bytes,
         min_dimension_m=min_dimension_m,
         max_dimension_m=max_dimension_m,
+        category=category, tag=tag, gaps=gaps,
     )
     if scope in ("all", "online"):
         catalog.require()
@@ -783,6 +832,8 @@ def search_catalog(
     text = (q or "").strip()
     language = "zh" if _cjk(text) else "en"
     keywords, preferences, notes, numeric_terms = _interpret(text, filters)
+    if getattr(catalog, "publication_error", None):
+        notes.insert(0, catalog.publication_error)
     exact = _exact_selector(text) if text else None
     if exact is not None:
         keywords = [clip(text, 80)]
@@ -818,7 +869,7 @@ def search_catalog(
         text, scope, filters, sort, approximate,
         semantic_index.version if semantic_index is not None else None,
     )
-    offset = 0
+    offset = ((page or 1) - 1) * limit
     if cursor is not None:
         payload = _decode_cursor(cursor)
         if payload["snapshot"] != snapshot_id:
@@ -940,6 +991,10 @@ def search_catalog(
                 [f"The exact candidate '{identity}' exceeds the 32 KiB compact budget; read "
                  "it through its library or catalog detail."],
                 [], [], semantic=semantic_document,
+                counts={"returned": 0, "matching": 1,
+                        "localMatching": 1 if match.type == "local" else 0,
+                        "onlineMatching": 1 if match.type == "online" else 0,
+                        "approximate": 0, "budgetTruncated": True},
             )
         return response
 
@@ -1112,23 +1167,16 @@ def search_catalog(
         return _zero_document(scope, interpreted, filters, snapshot, reason, messages,
                               excluded_by, suggestions, semantic=semantic_document)
 
-    if offset >= len(ordered):
+    if page is None and offset >= len(ordered):
         raise LibraryError(
             "invalid_cursor",
             "Cursor offset is past the matching candidates; repeat the search",
             400,
         )
-    page = ordered[offset: offset + limit]
-    results = [
-        compact_candidate(_candidate(item, filters, language, correlated, by_bare_id))
-        for item in page
-    ]
-    budget = False
-
-    def build(values):
-        next_offset = offset + len(values)
+    def build(values, start, budget, page_number=None):
+        next_offset = start + len(values)
         has_more = next_offset < len(ordered)
-        return _summary_response(
+        response = _summary_response(
             scope, interpreted, filters, snapshot,
             {"returned": len(values), "matching": len(ordered), "localMatching": local_count,
              "onlineMatching": online_count,
@@ -1139,26 +1187,53 @@ def search_catalog(
             None,
             semantic=semantic_document,
         )
+        if page_number is not None:
+            # Reserve the maximum digit count while computing page boundaries.
+            # A page can contain fewer than limit items under the byte bound;
+            # its successor starts at the actual returned offset, never skips.
+            response["pagination"] = {"page": page_number, "pageSize": limit,
+                                      "totalPages": 100000, "offset": start}
+        return response
 
-    response = build(results)
-    while not _fits(response) and results:
-        budget = True
-        results.pop()
-        response = build(results)
-    if not results:
+    def bounded_page(start, page_number=None):
+        values = [compact_candidate(_candidate(item, filters, language, correlated, by_bare_id))
+                  for item in ordered[start:start + limit]]
+        budget = False
+        response = build(values, start, budget, page_number)
+        while not _fits(response) and values:
+            budget = True
+            values.pop()
+            response = build(values, start, budget, page_number)
+        return response
+
+    if page is not None:
+        start, total_pages, selected = 0, 0, None
+        while start < len(ordered):
+            total_pages += 1
+            response = bounded_page(start, total_pages)
+            if not response["results"]:
+                break
+            if total_pages == page:
+                selected = response
+            start += len(response["results"])
+        if start < len(ordered):
+            response = None
+        elif selected is None:
+            raise LibraryError("invalid_page", "Page is past the matching candidates; "
+                               "choose an earlier page", 400)
+        else:
+            selected["pagination"]["totalPages"] = total_pages
+            return selected
+    else:
+        response = bounded_page(offset)
+    if response is None or not response["results"]:
         return _zero_document(
             scope, interpreted, filters, snapshot, "response_budget",
             ["The matching page exceeds the 32 KiB compact budget even after trimming; "
              "narrow the query or request a single candidate by exact ID."],
             [], [], semantic=semantic_document,
+            counts={"returned": 0, "matching": len(ordered), "localMatching": local_count,
+                    "onlineMatching": online_count, "approximate": len(approximate_matches),
+                    "budgetTruncated": True},
         )
-    if not _fits(response):
-        _shrink(response)
-        if not _fits(response):
-            return _zero_document(
-                scope, interpreted, filters, snapshot, "response_budget",
-                ["The matching page exceeds the 32 KiB compact budget even after trimming; "
-                 "narrow the query or request a single candidate by exact ID."],
-                [], [], semantic=semantic_document,
-            )
     return response

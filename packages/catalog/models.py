@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from packages.library.common import KINDS
 
@@ -255,6 +256,9 @@ class CatalogEntry:
     acquisition: Acquisition
     preview: dict | None = None
     discovery: dict | None = None
+    # Organized metadata is a released discovery layer, never acquisition or
+    # physics admission. Older committed/synchronized catalogs omit it.
+    metadata: dict | None = None
 
     @property
     def id(self):
@@ -299,6 +303,7 @@ class CatalogSnapshot:
     limits: dict
     sync: dict | None = None
     sources: tuple = ()
+    metadata_release: dict | None = None
 
     def document(self, now=None):
         now = now or datetime.now(UTC)
@@ -326,6 +331,27 @@ class CatalogSnapshot:
             result["sources"] = summaries
             result["sourceCount"] = len(self.sources)
             result["sourcesTruncated"] = len(summaries) < len(self.sources)
+        if self.metadata_release is not None:
+            release = self.metadata_release
+            collections = release.get("collections", [])
+            summary = {key: release[key] for key in (
+                "id", "schema", "createdAt", "entryCount", "indexVersion",
+                "vocabularyVersion", "vocabularyDigest",
+            ) if key in release}
+            summary.update(collections=[], collectionCount=len(collections),
+                           collectionsTruncated=bool(collections), details={
+                               "id": release["id"], "resource": "catalog-release",
+                               "path": "/api/v1/library/catalog/releases/" + quote(release["id"], safe=""),
+                           })
+            for collection in collections[:20]:
+                candidate = summary | {
+                    "collections": [*summary["collections"], collection],
+                    "collectionsTruncated": len(summary["collections"]) + 1 < len(collections),
+                }
+                if len(json.dumps(candidate, ensure_ascii=False, separators=(",", ":")).encode()) > 8192:
+                    break
+                summary = candidate
+            result["metadataRelease"] = summary
         return result
 
 

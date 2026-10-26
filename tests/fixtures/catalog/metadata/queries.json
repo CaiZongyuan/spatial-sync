@@ -1,0 +1,480 @@
+{
+  "schema": "lw.catalog-metadata-quality/1",
+  "labeler": "PM independently labelled from fixed publisher metadata before reading retrieval results",
+  "labelsStatus": "Initial labels fixed before retrieval tuning; sampled use intents confirmed by the user on2026-10-26 with no changes.",
+  "recordCount": 120,
+  "revisions": {
+    "simready": "524747d9b5e1f21b5b18b56041788c01d745f1a1",
+    "scenario": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+    "chemlab": "3b67020dcccb22e60be3235f32b39d03da5959ab"
+  },
+  "queries": [
+    {
+      "id": "en-exact-box",
+      "language": "en",
+      "text": "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "tuned",
+      "kind": "exact_id"
+    },
+    {
+      "id": "zh-exact-box",
+      "language": "zh",
+      "text": "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "tuned",
+      "kind": "exact_id"
+    },
+    {
+      "id": "en-balance-name",
+      "language": "en",
+      "text": "Analytical balance",
+      "relevant": [
+        "chemlab/instrument.mt_xpr204e@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "tuned",
+      "kind": "name"
+    },
+    {
+      "id": "zh-balance-name",
+      "language": "zh",
+      "text": "分析天平",
+      "relevant": [
+        "chemlab/instrument.mt_xpr204e@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "tuned",
+      "kind": "name"
+    },
+    {
+      "id": "en-waste-use",
+      "language": "en",
+      "text": "waste disposal bin",
+      "relevant": [
+        "simready/bin_waste_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/bin_waste_a02@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "tuned",
+      "kind": "use"
+    },
+    {
+      "id": "zh-waste-use",
+      "language": "zh",
+      "text": "收集废弃物的垃圾桶",
+      "relevant": [
+        "simready/bin_waste_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/bin_waste_a02@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "tuned",
+      "kind": "use"
+    },
+    {
+      "id": "en-frog",
+      "language": "en",
+      "text": "cartoon frog",
+      "relevant": [
+        "scenario/scenario%3Aasset_1HEvULBZRruNJUjkdTjcqDX9@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "tuned",
+      "kind": "description"
+    },
+    {
+      "id": "zh-frog",
+      "language": "zh",
+      "text": "卡通青蛙",
+      "relevant": [
+        "scenario/scenario%3Aasset_1HEvULBZRruNJUjkdTjcqDX9@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "tuned",
+      "kind": "description"
+    },
+    {
+      "id": "en-category",
+      "language": "en",
+      "text": "container",
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/bin_waste_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/bucket_utility_red_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "tuned",
+      "kind": "category",
+      "filters": {
+        "category": "container"
+      }
+    },
+    {
+      "id": "zh-category",
+      "language": "zh",
+      "text": "容器",
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/bin_waste_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/bucket_utility_red_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "tuned",
+      "kind": "category",
+      "filters": {
+        "category": "container"
+      }
+    },
+    {
+      "id": "en-tag",
+      "language": "en",
+      "text": "labware",
+      "relevant": [
+        "chemlab/labware.agilent_vial_2ml_screw@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.duran_gl45_1000ml_clear@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.duran_gl45_100ml_clear@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.nalgene_wm_hdpe_250ml@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.nalgene_wm_hdpe_1000ml@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.norell_nmr_tube_5mm_7in@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.corning_96_wellplate_360ul_flat@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "tuned",
+      "kind": "tag",
+      "filters": {
+        "tag": "labware"
+      }
+    },
+    {
+      "id": "zh-tag",
+      "language": "zh",
+      "text": "实验器具",
+      "relevant": [
+        "chemlab/labware.agilent_vial_2ml_screw@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.duran_gl45_1000ml_clear@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.duran_gl45_100ml_clear@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.nalgene_wm_hdpe_250ml@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.nalgene_wm_hdpe_1000ml@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.norell_nmr_tube_5mm_7in@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/labware.corning_96_wellplate_360ul_flat@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "tuned",
+      "kind": "tag",
+      "filters": {
+        "tag": "labware"
+      }
+    },
+    {
+      "id": "en-unknown-training",
+      "language": "en",
+      "text": "",
+      "relevant": [],
+      "split": "tuned",
+      "kind": "unknown",
+      "expect": "hard_filters",
+      "filters": {
+        "provider": "scenario",
+        "maxDimensionM": 1
+      }
+    },
+    {
+      "id": "zh-unknown-training",
+      "language": "zh",
+      "text": "",
+      "relevant": [],
+      "split": "tuned",
+      "kind": "unknown",
+      "expect": "hard_filters",
+      "filters": {
+        "provider": "scenario",
+        "maxDimensionM": 1
+      }
+    },
+    {
+      "id": "en-zero-training",
+      "language": "en",
+      "text": "zzqx nonexistent molecular dragon",
+      "relevant": [],
+      "split": "tuned",
+      "kind": "zero",
+      "expect": "zero"
+    },
+    {
+      "id": "zh-zero-training",
+      "language": "zh",
+      "text": "不存在的分子龙zzqx",
+      "relevant": [],
+      "split": "tuned",
+      "kind": "zero",
+      "expect": "zero"
+    },
+    {
+      "id": "en-exact-scenario",
+      "language": "en",
+      "text": "scenario/scenario%3Aasset_1AkDv3PPnoifejY5SasRRnL8@55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "relevant": [
+        "scenario/scenario%3Aasset_1AkDv3PPnoifejY5SasRRnL8@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "retained",
+      "kind": "exact_id"
+    },
+    {
+      "id": "zh-exact-scenario",
+      "language": "zh",
+      "text": "scenario/scenario%3Aasset_1AkDv3PPnoifejY5SasRRnL8@55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "relevant": [
+        "scenario/scenario%3Aasset_1AkDv3PPnoifejY5SasRRnL8@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "retained",
+      "kind": "exact_id"
+    },
+    {
+      "id": "en-refrigerator",
+      "language": "en",
+      "text": "refrigerated storage appliance",
+      "relevant": [
+        "simready/refrigerator_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/appliance_refrigerator_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "zh-refrigerator",
+      "language": "zh",
+      "text": "冷藏储存用的冰箱",
+      "relevant": [
+        "simready/refrigerator_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/appliance_refrigerator_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "en-packaging",
+      "language": "en",
+      "text": "cardboard packaging box",
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/box_cardboard_b01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/box_cardboard_open_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "zh-packaging",
+      "language": "zh",
+      "text": "纸板包装箱",
+      "relevant": [
+        "simready/box_cardboard_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/box_cardboard_b01@524747d9b5e1f21b5b18b56041788c01d745f1a1",
+        "simready/box_cardboard_open_a01@524747d9b5e1f21b5b18b56041788c01d745f1a1"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "en-weighing",
+      "language": "en",
+      "text": "weigh a laboratory sample",
+      "relevant": [
+        "chemlab/instrument.mt_xpr204e@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "zh-weighing",
+      "language": "zh",
+      "text": "称量实验室样品的天平",
+      "relevant": [
+        "chemlab/instrument.mt_xpr204e@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "en-centrifuge",
+      "language": "en",
+      "text": "refrigerated centrifuge",
+      "relevant": [
+        "chemlab/instrument.eppendorf_5910ri@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "name"
+    },
+    {
+      "id": "zh-centrifuge",
+      "language": "zh",
+      "text": "冷冻离心机",
+      "relevant": [
+        "chemlab/instrument.eppendorf_5910ri@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "name"
+    },
+    {
+      "id": "en-evaporator",
+      "language": "en",
+      "text": "rotary evaporation of a solvent",
+      "relevant": [
+        "chemlab/instrument.ika_rv10_digital_v@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "zh-evaporator",
+      "language": "zh",
+      "text": "旋转蒸发溶剂的仪器",
+      "relevant": [
+        "chemlab/instrument.ika_rv10_digital_v@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "en-stirrer",
+      "language": "en",
+      "text": "magnetic hotplate for stirring",
+      "relevant": [
+        "chemlab/instrument.ika_plate_rctdigital@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "zh-stirrer",
+      "language": "zh",
+      "text": "磁力加热搅拌器",
+      "relevant": [
+        "chemlab/instrument.ika_plate_rctdigital@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "use"
+    },
+    {
+      "id": "en-barrel",
+      "language": "en",
+      "text": "wooden barrel with metal bands",
+      "relevant": [
+        "scenario/scenario%3Aasset_32YByDGjPViGn8xZj9ZxFNMP@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "retained",
+      "kind": "description"
+    },
+    {
+      "id": "zh-barrel",
+      "language": "zh",
+      "text": "带金属箍的木桶",
+      "relevant": [
+        "scenario/scenario%3Aasset_32YByDGjPViGn8xZj9ZxFNMP@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "retained",
+      "kind": "description"
+    },
+    {
+      "id": "en-succulent",
+      "language": "en",
+      "text": "succulent plant in terracotta pot",
+      "relevant": [
+        "scenario/scenario%3Aasset_38H2VuMiXnBwPFj7p5WbE48k@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "retained",
+      "kind": "description"
+    },
+    {
+      "id": "zh-succulent",
+      "language": "zh",
+      "text": "陶盆里的多肉植物",
+      "relevant": [
+        "scenario/scenario%3Aasset_38H2VuMiXnBwPFj7p5WbE48k@55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+      ],
+      "split": "retained",
+      "kind": "description"
+    },
+    {
+      "id": "en-furniture",
+      "language": "en",
+      "text": "furniture",
+      "relevant": [
+        "chemlab/furniture.metro_super_erecta_1848_4shelf@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/furniture.liebherr_lkv3910@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/furniture.asecos_cs_195_105_standards@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "category",
+      "filters": {
+        "category": "furniture"
+      }
+    },
+    {
+      "id": "zh-furniture",
+      "language": "zh",
+      "text": "家具",
+      "relevant": [
+        "chemlab/furniture.metro_super_erecta_1848_4shelf@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/furniture.liebherr_lkv3910@3b67020dcccb22e60be3235f32b39d03da5959ab",
+        "chemlab/furniture.asecos_cs_195_105_standards@3b67020dcccb22e60be3235f32b39d03da5959ab"
+      ],
+      "split": "retained",
+      "kind": "category",
+      "filters": {
+        "category": "furniture"
+      }
+    },
+    {
+      "id": "en-unknown-retained",
+      "language": "en",
+      "text": "",
+      "relevant": [],
+      "split": "retained",
+      "kind": "unknown",
+      "expect": "hard_filters",
+      "filters": {
+        "provider": "scenario",
+        "maxSourceBytes": 1
+      }
+    },
+    {
+      "id": "zh-unknown-retained",
+      "language": "zh",
+      "text": "",
+      "relevant": [],
+      "split": "retained",
+      "kind": "unknown",
+      "expect": "hard_filters",
+      "filters": {
+        "provider": "scenario",
+        "maxSourceBytes": 1
+      }
+    },
+    {
+      "id": "en-zero-retained",
+      "language": "en",
+      "text": "unobtainium teleportation spoon zzqx",
+      "relevant": [],
+      "split": "retained",
+      "kind": "zero",
+      "expect": "zero"
+    },
+    {
+      "id": "zh-zero-retained",
+      "language": "zh",
+      "text": "瞬间传送勺zzqx",
+      "relevant": [],
+      "split": "retained",
+      "kind": "zero",
+      "expect": "zero"
+    }
+  ],
+  "initialLabelsSha256": "eaa5512bf822773e15d5edc4205a860bd4daa4a716b6c7f580f13f230b4f7a0a",
+  "heldOutPolicy": "Implementers received only16 tuning queries. The24 held-out queries (12 per language;10 positive and2 zero/unknown) stayed sealed until implementation repair freeze. Do not tune against held-out answers.",
+  "spotCheck": {
+    "initialLabelsSha256": "eaa5512bf822773e15d5edc4205a860bd4daa4a716b6c7f580f13f230b4f7a0a",
+    "status": "user-confirmed sampled intent, no changes",
+    "acceptedTopics": [
+      "containers include cardboard/waste/barrel",
+      "analytical balance for weighing samples",
+      "rotary evaporator for solvent evaporation",
+      "frog/succulent source descriptions"
+    ],
+    "labelScope": "source-grounded retrieval relevance, independent of admission or physical validation"
+  }
+}

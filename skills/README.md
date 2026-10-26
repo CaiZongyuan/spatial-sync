@@ -10,7 +10,9 @@ imports existing Claude Code captures, refreshes their messages and reported
 usage, and reads normalized evidence. `lab-agent-evaluate` coordinates public
 cases with an external runtime and reads platform-owned grades. `lab-scene-director`
 turns an external scene request into trusted asset selection, acquisition, Blender
-authoring, exact-version import/validation and received Authoring Reports. All
+authoring, exact-version import/validation and received Authoring Reports.
+`lab-catalog-maintain` organizes evidence-backed HF metadata in bounded batches,
+retains manual corrections and publishes immutable catalog releases. All
 skills reserve approvals and
 Vault writes for a person, including when a user asks an agent to bypass them.
 
@@ -23,7 +25,7 @@ lw skills install --target "/path/to/agent skills" --json
 ```
 
 `--target` is the parent skill directory: the installer creates the shipped
-skill directories (`lab`, `lab-agent-evaluate`, `lab-eval-build`,
+skill directories (`lab`, `lab-agent-evaluate`, `lab-catalog-maintain`, `lab-eval-build`,
 `lab-harness-optimize`, `lab-library`, `lab-operate`, `lab-runtime-records`,
 `lab-scene-director`, `lab-train-evaluate` and `lab-training-plan`) beneath it.
 Quoted paths containing spaces work.

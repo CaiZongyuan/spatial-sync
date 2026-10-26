@@ -88,6 +88,11 @@ def install_library_routes(
         scope: Literal["all", "local", "online"] = "all",
         kind: str | None = None,
         provider: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
+        release: str | None = None,
+        page: int | None = None,
+        gaps: bool | None = None,
         usage: Literal["dressing", "staticCollision"] | None = None,
         licenseAdmitted: bool | None = None,
         installed: bool | None = None,
@@ -107,6 +112,11 @@ def install_library_routes(
             scope=scope,
             kind=kind,
             provider=provider,
+            category=category,
+            tag=tag,
+            release=release,
+            page=page,
+            gaps=gaps,
             usage=usage,
             license_admitted=licenseAdmitted,
             installed=installed,
@@ -128,6 +138,7 @@ def install_library_routes(
         revision: str,
         view: Literal["summary", "full"] = "summary",
         documentDigest: str | None = None,
+        release: str | None = None,
     ):
         describe = functools.partial(
             catalog.describe,
@@ -137,12 +148,19 @@ def install_library_routes(
             library=assets,
             view=view,
             document_digest=documentDigest,
+            release=release,
         )
         return await anyio.to_thread.run_sync(describe, limiter=getattr(catalog.resources, "limiter", None))
 
+    @app.get("/api/v1/library/catalog/releases/{identifier}")
+    async def catalog_release(identifier: str, offset: int = 0, limit: int = 4096):
+        read = functools.partial(catalog.release_document, identifier, offset=offset, limit=limit)
+        return await anyio.to_thread.run_sync(read)
+
     @app.get("/api/v1/library/catalog/entries/{provider}/{package}/{revision}/estimate")
-    async def estimate_catalog_entry(provider: str, package: str, revision: str):
-        estimate = functools.partial(catalog.estimate, provider, package, revision, library=assets)
+    async def estimate_catalog_entry(provider: str, package: str, revision: str, release: str | None = None):
+        estimate = functools.partial(catalog.estimate, provider, package, revision,
+                                     library=assets, release=release)
         return await anyio.to_thread.run_sync(estimate, limiter=getattr(catalog.resources, "limiter", None))
 
     @app.get("/api/v1/library/assets/{kind}/{name}")

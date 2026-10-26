@@ -15,7 +15,14 @@ from dataclasses import replace
 from pathlib import Path
 
 from packages.catalog.models import Source
-from packages.catalog.source import DATASET, SourceError, SyncCancelled, image_extension
+from packages.catalog.source import (
+    DATASET,
+    SimReadySource,
+    SourceError,
+    SyncCancelled,
+    image_extension,
+    object_preview_path,
+)
 from packages.library.common import LibraryError
 
 MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024
@@ -126,9 +133,13 @@ class CatalogResources:
                     and isinstance(value.get("source"), dict)
                     and (not value.get("errors") or time.time() - value.get("cachedAt", 0) < 30)
                 ):
-                    if not full or value.get("detailsLoaded", True):
+                    preview_valid = (not isinstance(source, SimReadySource)
+                                     or value.get("thumbnailPath") is None
+                                     or object_preview_path(entry.package_id, value["thumbnailPath"]))
+                    if (not full and preview_valid) or (full and value.get("detailsLoaded", True)):
                         return value
-                    inventory = value
+                    if full or preview_valid:
+                        inventory = value
             except (ValueError, TypeError):
                 pass
         value = (
@@ -214,7 +225,21 @@ class CatalogResources:
             filename = None
             if raw:
                 try:
-                    filename = json.loads(raw).get("file")
+                    saved = json.loads(raw)
+                    if not isinstance(saved, dict):
+                        saved = {}
+                    filename = saved.get("file")
+                    if isinstance(source, SimReadySource):
+                        selected_path = saved.get("path")
+                        if selected_path is None:
+                            # Old pointers carried only a digest. Their cached
+                            # inventory still establishes which image it was.
+                            cached = self._read(self.root / "metadata" / (key + ".json"))
+                            cached_document = json.loads(cached) if cached else None
+                            selected_path = (cached_document.get("thumbnailPath")
+                                             if isinstance(cached_document, dict) else None)
+                        if not object_preview_path(entry.package_id, selected_path):
+                            filename = None
                 except ValueError:
                     pass
             if not filename:
@@ -232,7 +257,7 @@ class CatalogResources:
             extension = image_extension(data)
             filename = hashlib.sha256(data).hexdigest() + "." + extension
             self._store(self.root / "previews" / filename, data)
-            self._store(pointer, json.dumps({"file": filename}).encode())
+            self._store(pointer, json.dumps({"file": filename, "path": thumbnail, "role": "object"}).encode())
             return data, extension
 
         return self._request(entry, load, kind="preview", retry=retry)

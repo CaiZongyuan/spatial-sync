@@ -1,4 +1,5 @@
 import { request } from './api';
+import type { AssetVersion } from './asset-library';
 
 // The unified catalog search stays device-agnostic: it only exposes catalog
 // candidates, their fixed source identity and bounded acquisition evidence.
@@ -21,6 +22,10 @@ export interface CatalogSnapshot {
   sources?: { provider: string; dataset: string; revision: string; entryCount: number; indexedAt: string }[];
   sourceCount?: number;
   sourcesTruncated?: boolean;
+  metadataRelease?: {
+    id: string; vocabularyVersion: string; entryCount: number;
+    collections: { id: string; revision: string; coverage: Record<string, number | boolean | null> }[];
+  };
 }
 
 export interface CatalogZeroResult {
@@ -93,7 +98,7 @@ export interface CatalogLocalAsset {
   implementedTypes: string[];
   gaps: string[];
   gapCount: number;
-  completeness: Record<string, unknown>;
+  completeness: AssetVersion['completeness'];
   validationStatus: string | null;
   thumbnailUrl: string | null;
   visualUrl: string | null;
@@ -112,6 +117,8 @@ export interface CatalogPreview {
   kind: 'local' | 'remote' | 'cached' | 'on-demand' | 'unavailable';
   url: string | null;
   reason?: string | null;
+  state?: 'not_collected' | 'available' | 'missing' | 'failed' | 'suspect';
+  role?: string | null;
 }
 
 export interface CatalogCandidate {
@@ -133,6 +140,22 @@ export interface CatalogCandidate {
   detail: { resource: string; id: string; tool: string };
   preview: CatalogPreview;
   local?: CatalogLocalResult;
+  category?: string | null;
+  tags?: string[];
+  metadata?: { release: string; organization?: { status: string; version: number }; vocabularyVersion: string };
+}
+
+export function localAssetVersion(candidate: CatalogCandidate): AssetVersion | undefined {
+  const local = candidate.local;
+  if (candidate.type !== 'local' || !local) return undefined;
+  return {
+    ...local.asset, id: local.id, assetId: local.id.split('@')[0], assetVersion: local.id,
+    rev: local.rev, kind: local.asset.kind as AssetVersion['kind'],
+    title: local.asset.title ?? candidate.title,
+    description: candidate.descriptions.zh || candidate.descriptions.en || '',
+    root: local.root, contentHash: local.contentHash,
+    validationStatus: local.asset.validationStatus ?? 'unknown',
+  };
 }
 
 export interface CatalogSearchResponse {
@@ -162,6 +185,7 @@ export interface CatalogSearchResponse {
   nextCursor: string | null;
   truncated: boolean;
   zeroResult: CatalogZeroResult | null;
+  pagination?: { page: number; pageSize: number; totalPages: number; offset: number };
 }
 
 export interface CatalogUsageFact { eligible: boolean | null; unknown: boolean; evidence: string }
@@ -210,6 +234,12 @@ export interface CatalogEntryDocument {
   previewTruncated?: boolean;
   discovery?: { metadataComplete?: boolean; metadataError?: string | null };
   estimate: { resource: string; id: string; tool: string; path: string };
+  metadata?: {
+    id: string; category?: string | null; tags?: string[]; domains?: string[]; uses?: string[];
+    facts?: Record<string, unknown>; organization?: { status: string; version: number };
+    evidence?: { id?: string; kind?: string; origin?: string; path?: string; sha256?: string; fields?: string[] }[];
+    release?: string; vocabularyVersion?: string;
+  };
 }
 
 export interface CatalogEstimateDocument {
@@ -245,6 +275,12 @@ export interface CatalogSearchFilters {
   approximate?: boolean;
   limit?: number;
   cursor?: string;
+  category?: string;
+  tag?: string;
+  release?: string;
+  page?: number;
+  sort?: 'relevance' | 'name' | 'sourceBytes';
+  gaps?: boolean;
 }
 
 /** Query parameters for the bounded unified search. Empty values are omitted. */
@@ -258,6 +294,12 @@ export function catalogSearchParams(filters: CatalogSearchFilters): URLSearchPar
   if (filters.approximate) params.set('approximate', 'true');
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
   if (filters.cursor) params.set('cursor', filters.cursor);
+  if (filters.category) params.set('category', filters.category);
+  if (filters.tag) params.set('tag', filters.tag);
+  if (filters.release) params.set('release', filters.release);
+  if (filters.page !== undefined) params.set('page', String(filters.page));
+  if (filters.sort) params.set('sort', filters.sort);
+  if (filters.gaps !== undefined) params.set('gaps', String(filters.gaps));
   return params;
 }
 
@@ -298,19 +340,21 @@ const entryBase = (provider: string, packageId: string, revision: string) =>
 
 export const catalogEntryPath = (
   provider: string, packageId: string, revision: string, view: CatalogEntryView = 'summary',
-) => `${entryBase(provider, packageId, revision)}?view=${view}`;
+  release?: string,
+) => `${entryBase(provider, packageId, revision)}?view=${view}${release ? `&release=${encodeURIComponent(release)}` : ''}`;
 
-export const catalogEstimatePath = (provider: string, packageId: string, revision: string) =>
-  `${entryBase(provider, packageId, revision)}/estimate`;
+export const catalogEstimatePath = (provider: string, packageId: string, revision: string, release?: string) =>
+  `${entryBase(provider, packageId, revision)}/estimate${release ? `?release=${encodeURIComponent(release)}` : ''}`;
 
 export const getCatalogEntry = (
   provider: string, packageId: string, revision: string, view: CatalogEntryView = 'full',
   signal?: AbortSignal,
-) => request<CatalogEntryDocument>(catalogEntryPath(provider, packageId, revision, view), { signal });
+  release?: string,
+) => request<CatalogEntryDocument>(catalogEntryPath(provider, packageId, revision, view, release), { signal });
 
 export const getCatalogEstimate = (
-  provider: string, packageId: string, revision: string, signal?: AbortSignal,
-) => request<CatalogEstimateDocument>(catalogEstimatePath(provider, packageId, revision), { signal });
+  provider: string, packageId: string, revision: string, signal?: AbortSignal, release?: string,
+) => request<CatalogEstimateDocument>(catalogEstimatePath(provider, packageId, revision, release), { signal });
 
 export const usageLabels: Record<CatalogUsage, string> = {
   dressing: '布景',
@@ -321,6 +365,8 @@ export const filterLabels: Record<string, string> = {
   kind: '种类', provider: '来源', usage: '用途', licenseAdmitted: '许可准入',
   installed: '本地已安装', minSourceBytes: '最小来源字节', maxSourceBytes: '最大来源字节',
   minDimensionM: '最小尺寸', maxDimensionM: '最大尺寸',
+  category: '物体类别', tag: '标签',
+  gaps: '缺口',
 };
 
 export const zeroReasonLabels: Record<CatalogZeroResult['reason'], string> = {

@@ -77,7 +77,7 @@ async def test_startup_failure_after_recovery_closes_the_owned_journal(tmp_path,
         requestedBy=Actor(),
         createdAtMs=1,
     )
-    store.path.parent.mkdir()
+    store.path.parent.mkdir(exist_ok=True)
     store.path.write_text(record.model_dump_json() + "\n", "utf-8")
 
     def fail_startup():
