@@ -198,6 +198,8 @@ Builder 建好评估集后，对当前对象跑一次完整评估，记为**正�
 - 满足规则的 Candidate 才能申请提升；申请提升时运行 test 集，结果随审批卡片展示。test 分数低于 Reference 的 test 分数时，审批卡片标红，由人决定。
 - 接受后 Candidate 成为新的 Reference；Harness 或 Controller 版本加一。
 
+本期保留上述 v1 规则及历史决定。接受表示满足既定筛选规则，不能据此额外宣称统计显著或独立泛化；每题 3 次本身不消除波动，反复使用同一 test 集也不构成新的独立证据。Reference 成功率为 100% 时，有限样本无法通过严格提高成功率的 Wilson 规则；证据不足保持不接受。本期不新增非劣/成本接受路径、追加样本政策或新的统计方法，真实实验允许没有候选获胜。
+
 ## 8. 角色与信息隔离
 
 | 角色 | 由谁承担 | 读取 | 不得读取 |
@@ -210,6 +212,8 @@ Builder 建好评估集后，对当前对象跑一次完整评估，记为**正�
 - 隔离靠平台 API 的访问控制加 skill 约定：私有评分条件与 test 集不经任何对 Optimizer 开放的 CLI / MCP 命令返回；Agent 运行器的工作目录里不放评分文件。
 - 每次工具调用都在 Trace 中。发现私有信息进入 Optimizer 上下文时，回滚正在测试的 Candidate，计划标记为"污染"并停止。
 - 人仍在关口审批：训练计划、提升、超预算（素材规格 §10.4）。
+
+本期权限验收限定为认证的平台 HTTP/CLI/MCP 与配置为受限 MCP 的外部 runtime：使用 remote/operator-token 模式，Target/Optimizer 仅获各自 grant，省略或伪造 actor/token 不能取得人工审批权。私有 test、native 记录、录制、Notebook 与成本明细沿同一权限边界核验；人工审批继续可用。外部 Shell、文件、网络及管理员能力由 runtime 配置负责，匿名本机开发模式与任意外部工具不在该隔离保证内。平台不提供 OS 沙箱。
 
 ## 9. RSI 工具包
 
@@ -354,7 +358,9 @@ A2 ──► R4 资源：Embodiment、Controller、Robot Model 目录
 
 **R2 / #44 B**：外部 runtime 接公开任务并报告完成，平台拥有每题至少 3 次的完整范围、实际 Session/Trace/final/私有 grade、reported 记分板与 A 计量快照。只跑一题的 verification 不发布完整结果；脚本化 CPU 交接证明不冒充真实模型能力。真实 runtime 单题须另有明确授权，完整验收见 [external evaluation](LAB_EXTERNAL_AGENT_EVALUATION_SPEC_V1.md)。R3 优化/提升和统计政策保持单独范围。
 
-**R3**：`lab-harness-optimize`、Harness 快照与回滚、Agent 层接受规则。验收：一轮 Candidate 被接受、一轮被拒绝并回滚；实验记录与成本中心对得上。
+本期 R2 工程验收采用完整脚本化 10 题 × 3 次真实 Synthetic Session、失败/取消/关口拒绝及计量检查，加一次真实 runtime 单题闭环。两者均已交付；完整真实模型 30 次执行移出本轮关票条件。正式完整评估的次数、可信评分与 Reference/提升要求保持不变。
+
+**R3**：`lab-harness-optimize`、Harness 快照与回滚、Agent 层接受规则。验收：一轮 Candidate 被接受、一轮被拒绝并实际恢复文件；实验记录与成本中心对得上。本期使用脚本驱动的实际平台评分验证接受/拒绝、污染停止、人审与恢复；真实模型的一轮 Harness 改进仍是未完成的质量目标。
 
 **R4**：Embodiment 与 Controller 文件、机器人卡片、Robot Model 目录（含至少 3 个只登记的 VLA 条目与 1 个可运行条目）。验收：提升策略后，机器人卡片显示新的 Controller 版本与评估成绩。
 
