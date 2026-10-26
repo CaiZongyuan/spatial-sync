@@ -3,6 +3,15 @@
 Desktop web is the approved scope. Use one checkout's source and frozen locks.
 Only one session can be active; tests must not share a manual session.
 
+The current delivery accepts platform engineering and a local demonstration
+workbench, as approved on 2026-10-26. Reuse the recorded Newton CPU policy/script
+journeys and the complete scripted external-Agent matrix plus the real one-case
+runtime smoke. These establish the platform paths; learned contact pickPlace,
+independent trainer256 qualification, successful physical Demonstrations used
+for real training and a real-model Harness improvement remain unverified.
+Candidate qualification, formal complete-Suite repeats, human approvals,
+private-data boundaries and the mandatory regression checks remain in force.
+
 ## Launch
 
 Follow the root README. Health is `GET /api/v1/health`. Use Synthetic Laboratory
@@ -330,13 +339,26 @@ Demonstrations. Legacy recording replay remains supported; missing historical
 program implementation identity stays unknown and missing scene identity cannot
 be inferred from current files.
 
-The latency budgets in information specification section12 use this development
+The performance budgets in information specification section12 use this development
 machine's Linux/WSL2 environment, as used for the I3 acceptance, as the reference.
 Windows results are diagnostic references and do not gate delivery. Before
 optimizing a performance issue, compare the candidate and acceptance baseline
 under the same environment, workload and measurement boundary; use
 `check-benchmark` to assess the comparison. #70 tracks the Windows difference
 and does not block I5 or another ticket. Record the I5 MCP journey on Linux.
+
+For the current local-workbench delivery, section12.1 accepts light HTTP P95
+<=10ms; loaded HTTP, Synthetic observation and registered wait P95 <=100ms;
+transform cadence degradation <=15%. Keep the original 1,000 entities,15Hz
+generation/publication,10Hz HTTP,two Readers,3x12s windows and default GC.
+Source and both Readers must sustain >=10,000 changes/s with identical complete
+counts/digests, zero reliable loss/pending, completed admitted actions and valid
+ordering/revisions. Newton and log budgets retain their existing values.
+Keep the original strict-budget result unchanged and report the stage decision
+separately; a former `qualified:false` receipt must not be rewritten as passing.
+The existing benchmark output schema and original 2--5ms optimization targets
+remain unchanged. Reuse an existing measurement only when its actual source,
+locks, workload and measurement boundaries cover the delivery candidate.
 
 Run the I5 runner on Linux/WSL2 with the frozen simulation/USD extras, installed
 web dependencies and Playwright Chromium, and an authenticated Claude Code CLI
