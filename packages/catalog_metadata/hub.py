@@ -85,6 +85,7 @@ class HFHubReader:
         self.client = client or httpx.Client(timeout=self.budgets["timeout"], follow_redirects=False)
         self.cancel = cancel or threading.Event()
         self.progress = progress or (lambda usage: None)
+        self._progress_lock = threading.RLock()
         self.origin = (origin or os.environ.get("LW_CATALOG_HF_ENDPOINT") or "https://huggingface.co").rstrip(
             "/"
         )
@@ -123,6 +124,23 @@ class HFHubReader:
 
     def close(self):
         self.client.close()
+
+    def notify(self, event=None):
+        with self._progress_lock:
+            value = deepcopy(event) if event is not None else deepcopy(self.usage)
+            if event is not None:
+                value["usage"] = deepcopy(self.usage)
+            try:
+                return self.progress(value)
+            except MetadataError:
+                raise
+            except Exception as exc:
+                raise MetadataError(
+                    "checkpoint_failed",
+                    "Source maintenance checkpoint was rejected",
+                    409,
+                    usage=deepcopy(self.usage),
+                ) from exc
 
     def check(self):
         self.usage["seconds"] = time.monotonic() - self.started
@@ -255,7 +273,7 @@ class HFHubReader:
                             usage=deepcopy(self.usage),
                         )
                     self.usage["requests"] += 1
-                    self.progress(deepcopy(self.usage))
+                    self.notify()
                     with self.client.stream(
                         "GET",
                         target,
@@ -273,7 +291,7 @@ class HFHubReader:
                             if kind == "preview":
                                 self._external_preview_bytes += len(chunk)
                                 self.usage["previewBytes"] += len(chunk)
-                            self.progress(deepcopy(self.usage))
+                            self.notify()
                             if self.usage["networkBytes"] > self.budgets["networkBytes"]:
                                 raise MetadataError(
                                     "budget_exhausted",
@@ -457,7 +475,7 @@ class HFHubReader:
             result = enumerate_collection(self, profile, source_revision)
         except MetadataError as exc:
             exc.details.setdefault("usage", deepcopy(self.usage))
-            self.progress(deepcopy(self.usage))
+            self.notify()
             raise
         self.check()
         result["usage"] = deepcopy(self.usage)

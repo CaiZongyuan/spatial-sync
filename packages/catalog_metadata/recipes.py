@@ -142,13 +142,11 @@ def _integer(value):
     return int(number) if number is not None and number.is_integer() else None
 
 
-def _simready(hub, profile, revision):
-    root = list(hub.tree(profile, revision))
-    packages = [value for value in root if value["type"] == "directory" and not value["path"].startswith(".")]
-    entries, errors, file_total = [], [], 0
-    for package in packages:
-        identity = package["path"]
-        facts = {
+def _simready_fields(package):
+    return {
+        "name": {"en": _name(package["path"]), "zh": ""},
+        "contentDigest": package.get("oid"),
+        "facts": {
             "formats": ["usd"],
             "sourceBytes": None,
             "fileCount": None,
@@ -159,14 +157,42 @@ def _simready(hub, profile, revision):
             "joints": None,
             "license": None,
             "variants": [],
-        }
-        fields = {
-            "name": {"en": _name(identity), "zh": ""},
-            "contentDigest": package.get("oid"),
-            "facts": facts,
-            "evidence": [],
-            "preview": {"state": "not_collected", "role": None, "path": None, "sha256": None},
-        }
+        },
+        "evidence": [],
+        "preview": {"state": "not_collected", "role": None, "path": None, "sha256": None},
+    }
+
+
+def _simready(hub, profile, revision):
+    root = list(hub.tree(profile, revision))
+    packages = [value for value in root if value["type"] == "directory" and not value["path"].startswith(".")]
+    if not packages:
+        raise MetadataError("inventory_incomplete", "SimReady identity enumeration was empty", 409)
+    manifest = {
+        "collectionId": profile["id"],
+        "revision": revision,
+        "complete": True,
+        "evidence": [],
+        "recipeVersion": RECIPE_VERSION,
+        "counts": {
+            "entries": len(packages),
+            "expectedEntries": len(packages),
+            "packages": len(packages),
+            "extracted": 0,
+            "extractionFailures": 0,
+            "files": None,
+        },
+        "entries": [
+            _entry(hub, profile, revision, package["path"], **_simready_fields(package))
+            for package in packages
+        ],
+    }
+    hub.notify({"inventory": manifest})
+    entries, errors, file_total = [], [], 0
+    for package in packages:
+        identity = package["path"]
+        fields = _simready_fields(package)
+        facts = fields["facts"]
         try:
             locator = {
                 "kind": "package-tree",
@@ -233,12 +259,19 @@ def _simready(hub, profile, revision):
                 if re.search(r"/simready_usd/[^/]+\.usd[ac]?$", value["path"])
             ]
         except MetadataError as exc:
-            if exc.code in ("budget_exhausted", "maintenance_cancelled", "source_access_restricted"):
+            if exc.code in ("budget_exhausted", "maintenance_cancelled", "checkpoint_failed"):
                 raise
             errors.append({"upstreamId": identity, "code": exc.code, "message": exc.message})
             fields["extractionError"] = {"code": exc.code, "message": exc.message}
             fields["preview"]["state"] = "failed"
-        entries.append(_entry(hub, profile, revision, identity, **fields))
+        entry = _entry(hub, profile, revision, identity, **fields)
+        entry["extractionStatus"] = "failed" if "extractionError" in entry else "extracted"
+        # extractionStatus is part of the source input, so bind it before any
+        # task or checkpoint receives the normalized entry.
+        entry.pop("inputDigest")
+        entry = normalized_entry(profile["id"], revision, entry)
+        entries.append(entry)
+        hub.notify({"entry": entry})
     return (
         entries,
         {
@@ -247,6 +280,7 @@ def _simready(hub, profile, revision):
             "packages": len(packages),
             "files": file_total,
             "extractionFailures": len(errors),
+            "extracted": len(entries) - len(errors),
         },
         [],
         errors,
@@ -316,7 +350,7 @@ def _scenario(hub, profile, revision):
         if hub.usage["networkBytes"] > before_network:
             hub.usage["embeddedPreviewBytes"] += compressed_preview_bytes
             hub.usage["previewBytes"] += compressed_preview_bytes
-            hub.progress(dict(hub.usage))
+            hub.notify()
         for row in decoded_rows:
             identity = row.get("id") or row.get("example_id") or row.get("uid")
             if identity is None:
@@ -334,8 +368,6 @@ def _scenario(hub, profile, revision):
                 path = output.get("path") or output.get("relative_path") or output.get("file")
                 if path:
                     safe_path(path)
-                    if path in seen_outputs:
-                        raise MetadataError("duplicate_output", "Scenario output file is repeated")
                     seen_outputs.add(path)
                 variants.append(
                     {
@@ -403,7 +435,7 @@ def _scenario(hub, profile, revision):
             "entries": len(entries),
             "expectedEntries": len(entries),
             "tableRows": len(entries),
-            "outputFiles": output_count,
+            "outputFiles": len(seen_outputs),
             "variants": output_count,
             "shards": len(files),
         },

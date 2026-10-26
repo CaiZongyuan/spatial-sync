@@ -30,6 +30,7 @@ from .models import (
     revision,
     source_profile,
     text,
+    vocabulary_document,
 )
 
 TABLES = (
@@ -174,10 +175,7 @@ class MetadataStore:
         return json.loads(row[0])
 
     def set_vocabulary(self, document, *, base_version=None):
-        if not isinstance(document, dict) or not isinstance(document.get("categories"), list):
-            raise MetadataError("invalid_vocabulary", "Vocabulary needs a version and category list")
-        text(document.get("version"), "vocabulary.version", 160)
-        canonical(document)
+        document = vocabulary_document(document)
         with self.transaction() as db:
             current = json.loads(
                 db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
@@ -666,7 +664,7 @@ class MetadataStore:
                 }
             )
             if release_preparer is not None:
-                release_preparer(deepcopy(document), deepcopy(entries))
+                release_preparer(deepcopy(document), deepcopy(entries), vocabulary=deepcopy(vocabulary))
             if prior is None:
                 db.execute("INSERT INTO releases VALUES(?,?)", (identifier, canonical(document)))
                 db.executemany(
@@ -839,7 +837,18 @@ class MetadataStore:
                         "SELECT document FROM release_entries WHERE release_id=? ORDER BY id", (identifier,)
                     )
                 ]
-                release_preparer(deepcopy(release), deepcopy(entries))
+                row = db.execute(
+                    "SELECT document FROM metadata_state WHERE key=?",
+                    ("vocabulary:" + release["vocabularyVersion"],),
+                ).fetchone()
+                vocabulary = (
+                    json.loads(row[0])
+                    if row is not None
+                    else json.loads(
+                        db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
+                    )
+                )
+                release_preparer(deepcopy(release), deepcopy(entries), vocabulary=deepcopy(vocabulary))
         return {"schema": SCHEMA, "restored": True, "release": self.latest_release(), "blobs": len(decoded)}
 
     def _validate_restored(self, db):
@@ -850,7 +859,16 @@ class MetadataStore:
         if len(set(datasets)) != len(datasets):
             raise MetadataError("invalid_backup", "Backup duplicates a dataset identity")
         collection_ids = {value["id"] for value in profiles}
+        vocabularies = {}
+        for row in db.execute(
+            "SELECT key,document FROM metadata_state WHERE key='vocabulary' OR key LIKE 'vocabulary:%'"
+        ):
+            value = vocabulary_document(json.loads(row[1]))
+            if value["version"] in vocabularies and vocabularies[value["version"]] != value:
+                raise MetadataError("invalid_backup", "Backup changes an immutable vocabulary version")
+            vocabularies[value["version"]] = value
         inventories = {}
+        inputs = set()
         for row in db.execute("SELECT * FROM inventories"):
             value = json.loads(row["document"])
             values = [
@@ -883,6 +901,56 @@ class MetadataStore:
             if expected != row["id"] or value["counts"]["entries"] != len(values):
                 raise MetadataError("invalid_backup", "Backup inventory digest or count is inconsistent")
             inventories[row["id"]] = {item["id"]: item for item in values}
+            inputs.update((item["collectionId"], item["upstreamId"], item["inputDigest"]) for item in values)
+        for row in db.execute("SELECT * FROM inventory_entries"):
+            value = json.loads(row["document"])
+            if (
+                row["inventory_id"] not in inventories
+                or row["upstream_id"] != value["upstreamId"]
+                or row["input_digest"] != value["inputDigest"]
+            ):
+                raise MetadataError("invalid_backup", "Backup inventory lookup keys are inconsistent")
+        for row in db.execute("SELECT * FROM organizations"):
+            value = json.loads(row["document"])
+            organization_fields(value["fields"])
+            if (row["collection_id"], row["upstream_id"], row["input_digest"]) not in inputs or value.get(
+                "version"
+            ) != row["version"]:
+                raise MetadataError(
+                    "invalid_backup", "Backup organization result has an invalid input/version"
+                )
+        for row in db.execute("SELECT * FROM organization_heads"):
+            keys = (row["collection_id"], row["upstream_id"], row["input_digest"])
+            selected = db.execute(
+                "SELECT 1 FROM organizations WHERE collection_id=? AND upstream_id=? "
+                "AND input_digest=? AND version=?",
+                (*keys, row["version"]),
+            ).fetchone()
+            if (
+                keys not in inputs
+                or (row["version"] and selected is None)
+                or row["selection_version"] < row["version"]
+            ):
+                raise MetadataError("invalid_backup", "Backup organization selection is inconsistent")
+        for row in db.execute("SELECT * FROM corrections"):
+            value = json.loads(row["document"])
+            organization_fields(value["fields"])
+            key = digest(
+                {
+                    field: value[field]
+                    for field in ("collectionId", "upstreamId", "version", "fields", "reason")
+                }
+            )
+            if (
+                value.get("id") != row["id"]
+                or key != row["id"]
+                or value["collectionId"] != row["collection_id"]
+                or value["upstreamId"] != row["upstream_id"]
+                or value["version"] != row["version"]
+                or row["collection_id"] not in collection_ids
+                or row["active"] not in (0, 1)
+            ):
+                raise MetadataError("invalid_backup", "Backup manual correction is inconsistent")
         for row in db.execute("SELECT id,document FROM releases"):
             value = json.loads(row[1])
             entries = [
@@ -892,6 +960,15 @@ class MetadataStore:
             entries.sort(key=lambda item: (item["collectionId"], item["upstreamId"]))
             if value.get("id") != row[0] or value.get("entryCount") != len(entries):
                 raise MetadataError("invalid_backup", "Backup release identity or count is inconsistent")
+            vocabulary = vocabularies.get(value.get("vocabularyVersion"))
+            if vocabulary is None or digest(vocabulary) != value.get("vocabularyDigest"):
+                raise MetadataError(
+                    "invalid_backup", "Backup release vocabulary differs from its pinned digest"
+                )
+            for entry in entries:
+                self._validate_category(entry, vocabulary=vocabulary)
+                if entry.get("vocabularyVersion") != vocabulary["version"]:
+                    raise MetadataError("invalid_backup", "Backup entry has a different vocabulary version")
             expected_entries = {}
             for collection in value["collections"]:
                 inventory_id = collection["inventoryId"]

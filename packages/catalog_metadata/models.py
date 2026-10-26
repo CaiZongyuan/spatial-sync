@@ -169,6 +169,27 @@ def apply_fields(entry, fields):
     return entry
 
 
+def vocabulary_document(value):
+    if not isinstance(value, dict):
+        raise MetadataError("invalid_vocabulary", "Vocabulary must be an object")
+    text(value.get("version"), "vocabulary.version", 160)
+    for key, maximum in (("categories", 512), ("tags", 10000)):
+        values = value.get(key, [])
+        if not isinstance(values, list) or len(values) > maximum:
+            raise MetadataError("invalid_vocabulary", f"Vocabulary {key} exceed their bounded list")
+        identities = []
+        for item in values:
+            if not isinstance(item, dict):
+                raise MetadataError("invalid_vocabulary", "Vocabulary terms must be objects")
+            identities.append(text(item.get("id"), "vocabulary.id", 160))
+            organization_fields({"name": item.get("name"), "aliases": item.get("aliases", {})})
+        if len(identities) != len(set(identities)):
+            raise MetadataError("invalid_vocabulary", "Vocabulary repeats a term identity")
+    if "categories" not in value or len(canonical(value).encode()) > 2 * 1024 * 1024:
+        raise MetadataError("invalid_vocabulary", "Vocabulary categories are required within 2 MiB")
+    return deepcopy(value)
+
+
 DEFAULT_PROFILES = (
     {
         "id": "simready",

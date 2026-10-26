@@ -323,6 +323,52 @@ def test_retry_after_and_discovery_do_not_enable_unselected_datasets(tmp_path):
     assert reader.usage["requests"] == 2
 
 
+def test_complete_simready_identity_manifest_is_checkpointed_before_deep_budget_exhaustion(tmp_path):
+    tree = f"/api/datasets/nvidia/simready-assets/tree/{REVISION}"
+    requests, progress = [], []
+    routes = {
+        tree: [
+            {"type": "directory", "path": "beaker", "oid": "c" * 40},
+            {"type": "directory", "path": "bucket", "oid": "d" * 40},
+        ]
+    }
+    reader = HFHubReader(
+        client=upstream(routes, requests),
+        cache_root=tmp_path,
+        budgets={"requests": 1},
+        progress=progress.append,
+    )
+    with pytest.raises(MetadataError) as stopped:
+        reader.enumerate(profile("simready"), REVISION)
+    assert stopped.value.code == "budget_exhausted"
+    manifest = next(event["inventory"] for event in progress if "inventory" in event)
+    assert manifest["complete"]
+    assert manifest["counts"]["entries"] == manifest["counts"]["expectedEntries"] == 2
+    assert manifest["counts"]["extracted"] == 0
+    assert {value["upstreamId"] for value in manifest["entries"]} == {"beaker", "bucket"}
+    assert {value["contentDigest"] for value in manifest["entries"]} == {"c" * 40, "d" * 40}
+    assert len(requests) == 1
+
+
+def test_checkpoint_rejection_is_not_retried_as_an_upstream_failure(tmp_path):
+    tree = f"/api/datasets/nvidia/simready-assets/tree/{REVISION}"
+    requests = []
+
+    def reject_checkpoint(event):
+        if "inventory" in event:
+            raise httpx.ConnectError("Host checkpoint unavailable")
+
+    reader = HFHubReader(
+        client=upstream({tree: [{"type": "directory", "path": "beaker"}]}, requests),
+        cache_root=tmp_path,
+        progress=reject_checkpoint,
+    )
+    with pytest.raises(MetadataError) as stopped:
+        reader.enumerate(profile("simready"), REVISION)
+    assert stopped.value.code == "checkpoint_failed"
+    assert len(requests) == 1
+
+
 def test_preview_eviction_preserves_metadata_and_restore_keeps_cached_images_offline(tmp_path):
     store = MetadataStore(tmp_path / "store")
     image_a = b"\x89PNG\r\n\x1a\nAAA"

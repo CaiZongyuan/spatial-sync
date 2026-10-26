@@ -260,7 +260,7 @@ def test_restore_builds_actual_consumer_index_before_activation(tmp_path):
     original_inventory = stage(destination)
     original = destination.publish([original_inventory["id"]])
 
-    def failed_consumer(release, entries):
+    def failed_consumer(release, entries, **kwargs):
         assert release["id"] == replacement["id"]
         assert entries[0]["revision"] == REV_B
         assert destination.latest_release() == original
