@@ -310,7 +310,7 @@ test('unavailable WebGL keeps the asset library and detail readable', async ({ p
 
 test('asset API and model failures show retry paths and recover through real responses', async ({ page }) => {
   let unavailable = true;
-  await page.route('**/api/v1/library/assets?*', route => unavailable ? route.fulfill({ status: 503, json: { detail: 'Asset index temporarily unavailable' } }) : route.continue());
+  await page.route('**/api/v1/library/search?*', route => unavailable ? route.fulfill({ status: 503, json: { detail: 'Asset index temporarily unavailable' } }) : route.continue());
   await page.goto('/assets');
   await expect(page.getByRole('alert')).toContainText('Asset index temporarily unavailable');
   unavailable = false;

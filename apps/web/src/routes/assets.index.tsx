@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { assetKinds, assetParams, dimensionsLabel, type AssetKind } from '../lib/asset-library';
 import { filterLabels, localAssetVersion, searchCatalog, type CatalogCandidate, type CatalogScope, type CatalogSearchFilters, type CatalogSearchResponse, type CatalogUsage } from '../lib/catalog';
 import { AssetThumbnails } from '../components/AssetThumbnails';
@@ -49,18 +49,27 @@ function AssetLibrary() {
   const [newPublication, setNewPublication] = useState(false);
   const pageSize = search.pageSize ?? 24;
   const currentPage = search.page ?? 1;
+  const completedQuery = useRef<string | undefined>(undefined);
   useEffect(() => {
-    const controller = new AbortController();
-    setCatalog(undefined); setCatalogError(undefined);
     const filters: CatalogSearchFilters = {
       q: search.q, scope, provider: search.provider, kind: search.kind, usage: search.usage,
       approximate: search.approximate, limit: pageSize, page: currentPage, sort: search.sort,
       category: search.category, tag: search.tag, release: search.release,
       gaps: search.gaps,
     };
+    const queryKey = JSON.stringify({ filters, attempt });
+    // Writing the returned release into the URL identifies this response; it
+    // does not start another query or remount an in-progress thumbnail capture.
+    if (completedQuery.current === queryKey) return;
+    completedQuery.current = undefined;
+    const controller = new AbortController();
+    setCatalog(undefined); setCatalogError(undefined);
     void searchCatalog(filters, controller.signal)
       .then(value => {
         if (controller.signal.aborted) return;
+        completedQuery.current = JSON.stringify({
+          filters: { ...filters, release: filters.release ?? value.snapshot.id ?? undefined }, attempt,
+        });
         setCatalog(value);
         if (!search.release && value.snapshot.id) void navigate({
           search: previous => ({ ...previous, release: value.snapshot.id!, page: currentPage, pageSize }), replace: true,
