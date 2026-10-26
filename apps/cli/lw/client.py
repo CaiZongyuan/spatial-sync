@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
@@ -178,7 +179,7 @@ class GatewayClient:
                              license=None, installed=False, notInstalled=False,
                              minSourceBytes=None, maxSourceBytes=None, minDimensionM=None,
                              maxDimensionM=None, approximate=False, sort="relevance", limit=10,
-                             cursor=None):
+                             cursor=None, category=None, tag=None, release=None, page=None):
         if installed and notInstalled:
             raise GatewayError(
                 "installed and notInstalled are mutually exclusive",
@@ -202,6 +203,7 @@ class GatewayClient:
             "sort": sort if sort != "relevance" else None,
             "limit": limit if limit != 10 else None,
             "cursor": cursor,
+            "category": category, "tag": tag, "release": release, "page": page,
         }.items() if value is not None}
         return await self.request("GET", "/api/v1/library/search", params=params)
 
@@ -216,14 +218,100 @@ class GatewayClient:
             quote(part, safe="") for part in (provider, package, revision)
         )
 
-    async def catalog_show(self, id, view="summary", documentDigest=None):
+    async def catalog_show(self, id, view="summary", documentDigest=None, release=None):
         params = {"view": view}
         if documentDigest is not None:
             params["documentDigest"] = documentDigest
+        if release is not None:
+            params["release"] = release
         return await self.request("GET", self._catalog_path(id), params=params)
 
-    async def catalog_estimate(self, id):
-        return await self.request("GET", self._catalog_path(id) + "/estimate")
+    async def catalog_estimate(self, id, release=None):
+        return await self.request("GET", self._catalog_path(id) + "/estimate",
+                                  params={"release": release} if release else None)
+
+    @staticmethod
+    def _maintenance_path(id=None):
+        return "/api/v1/library/catalog/maintenance" + ("/runs/" + quote(id, safe="") if id else "")
+
+    async def catalog_collections(self):
+        return await self.request("GET", self._maintenance_path() + "/collections")
+
+    async def catalog_collection_put(self, profile, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path() + "/collections", json=profile, actor=actor)
+
+    async def catalog_collection_set(self, id, document, *, actor="cli:lw"):
+        return await self.request("PATCH", self._maintenance_path() + "/collections/" + quote(id, safe=""),
+                                  json=document, actor=actor)
+
+    async def catalog_discover(self, limit=20, *, actor="cli:lw"):
+        return await self.request("GET", self._maintenance_path() + "/discover", params={"limit": limit}, actor=actor)
+
+    async def catalog_maintain(self, collection, revision=None, budgets=None, wait=False, requestId=None, *, actor="cli:lw"):
+        result = await self.request("POST", self._maintenance_path() + "/runs", actor=actor,
+                                    json={"collectionId": collection, "revision": revision,
+                                          "budgets": budgets, "requestId": requestId})
+        deadline = time.monotonic() + 120
+        while wait and result["status"] in ("queued", "running") and time.monotonic() < deadline:
+            await asyncio.sleep(.2)
+            result = await self.catalog_maintenance_status(result["id"])
+        return result
+
+    async def catalog_maintenance_status(self, id=None):
+        return await self.request("GET", self._maintenance_path(id))
+
+    async def catalog_maintenance_cancel(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/cancel", actor=actor)
+
+    async def catalog_maintenance_resume(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/resume", actor=actor)
+
+    async def catalog_maintenance_retry(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/retry", actor=actor)
+
+    async def catalog_batch_claim(self, id, limit=24, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/claim", json={"limit": limit}, actor=actor)
+
+    async def catalog_batch_submit(self, id, batch, document, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/batches/" + quote(batch, safe="") + "/submit",
+                                  json=document, actor=actor)
+
+    async def catalog_batch_error(self, id, batch, document, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/batches/" + quote(batch, safe="") + "/error",
+                                  json=document, actor=actor)
+
+    async def catalog_evidence(self, digest, offset=0):
+        if offset < 0:
+            raise ValueError("Evidence offset must be nonnegative")
+        content = await self.request("GET", self._maintenance_path() + "/evidence/" + quote(digest, safe=""),
+                                     params={"view": "raw"}, response_bytes=True)
+        chunk = content[offset:offset + 32768]
+        try:
+            text = chunk.decode("utf-8")
+            encoding = "utf-8"
+        except UnicodeDecodeError:
+            text, encoding = base64.b64encode(chunk).decode("ascii"), "base64"
+        return {"sha256": digest, "bytes": len(content), "offset": offset, "encoding": encoding,
+                "content": text, "nextOffset": offset + len(chunk) if offset + len(chunk) < len(content) else None}
+
+    async def catalog_correction_put(self, document, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path() + "/corrections", json=document, actor=actor)
+
+    async def catalog_correction_retract(self, id, baseVersion=None, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path() + "/corrections/" + quote(id, safe="") + "/retract",
+                                  json={"baseVersion": baseVersion}, actor=actor)
+
+    async def catalog_organization_select(self, document, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path() + "/organization/select", json=document, actor=actor)
+
+    async def catalog_metadata_publish(self, document=None, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path() + "/publish", json=document or {}, actor=actor)
+
+    async def catalog_metadata_export(self, *, actor="cli:lw"):
+        return await self.request("GET", self._maintenance_path() + "/export", actor=actor)
+
+    async def catalog_metadata_restore(self, document, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path() + "/restore", json=document, actor=actor)
 
     async def catalog_sync(self, wait=False, provider=None, *, actor="cli:lw"):
         value = await self.request("POST", "/api/v1/library/catalog/sync", actor=actor,

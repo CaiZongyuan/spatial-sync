@@ -162,6 +162,9 @@ def create_app(
     catalog_path: Path | None = None,
     catalog_sync_source=None,
     catalog_sources=None,
+    metadata_store=None,
+    metadata_agent_profile=None,
+    metadata_launch_workers=True,
     acquisition_runner=None,
     acquisition_limits=None,
     acquisition_disk_usage=None,
@@ -235,6 +238,13 @@ def create_app(
     sources = CatalogSources(catalog_sources, simready_factory=catalog_sync_source)
     catalog.resources = CatalogResources(settings.state_root, sources)
     catalog_sync = CatalogSync(settings.state_root, catalog, sources=sources)
+    from packages.catalog_metadata import MetadataError, MetadataStore
+    from packages.catalog_metadata.maintenance import MetadataMaintenance
+
+    metadata_store = metadata_store or MetadataStore(settings.state_root / "catalog-metadata")
+    metadata_maintenance = MetadataMaintenance(
+        metadata_store, agent_profile=metadata_agent_profile, launch_workers=metadata_launch_workers,
+    )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -248,6 +258,9 @@ def create_app(
             library_assets.startup()
             await asyncio.to_thread(catalog.startup)
             await asyncio.to_thread(catalog_sync.startup)
+            await metadata_maintenance.startup()
+            catalog.attach_metadata(metadata_store)
+            metadata_maintenance.release_preparer = catalog.prepare_metadata_release
             await acquisitions.startup()
             await recordings.startup()
             await evaluations.startup()
@@ -267,8 +280,12 @@ def create_app(
         finally:
             try:
                 try:
-                    catalog.resources.close()
-                    await catalog_sync.close()
+                    try:
+                        await metadata_maintenance.close()
+                    finally:
+                        metadata_store.close()
+                        catalog.resources.close()
+                        await catalog_sync.close()
                 finally:
                     await acquisitions.close()
             finally:
@@ -303,6 +320,12 @@ def create_app(
     async def library_error(request, error):
         return JSONResponse({"detail": error.detail}, status_code=error.status)
 
+    @app.exception_handler(MetadataError)
+    async def metadata_error(request, error):
+        return JSONResponse(
+            {"detail": {"code": error.code, "message": error.message, **error.details}}, status_code=error.status,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, error):
         acquisition = reject_invalid_acquisition(request, error)
@@ -330,6 +353,8 @@ def create_app(
     app.state.library_assets = library_assets
     app.state.catalog = catalog
     app.state.catalog_sync = catalog_sync
+    app.state.metadata_store = metadata_store
+    app.state.metadata_maintenance = metadata_maintenance
     app.state.acquisitions = acquisitions
     app.state.authoring_reports = authoring
     app.state.training_views = views
@@ -377,10 +402,14 @@ def create_app(
                            lambda headers: _role(headers, settings), catalog, authoring)
     from apps.api.app.catalog_sync_routes import install_catalog_sync_routes
     install_catalog_sync_routes(app, catalog_sync, lambda headers: _role(headers, settings))
+    from apps.api.app.catalog_metadata_routes import install_catalog_metadata_routes
+    install_catalog_metadata_routes(app, metadata_maintenance, lambda headers: _role(headers, settings))
     install_acquisition_routes(app, acquisitions)
     request_times = defaultdict(deque)
 
     async def access_control(request: Request, call_next):
+        if app.state.metadata_worker_auth(request):
+            return await call_next(request)
         if (manager.jobs.authenticated_node(request.headers) and re.fullmatch(
             r"/api/v1/(?:nodes/local/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
             request.url.path,
