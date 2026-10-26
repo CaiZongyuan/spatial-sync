@@ -359,7 +359,7 @@ def _scenario(hub, profile, revision):
             choice = {**preview_file, "role": "object"} if preview_file.get("path") else None
             preview = _preview(hub, profile, revision, choice)
             if isinstance(embedded_bytes, bytes):
-                key = hub.cache(embedded_bytes)
+                key = hub.cache(embedded_bytes, kind="preview")
                 hub.usage["embeddedPreviewDecodedBytes"] += len(embedded_bytes)
                 preview.update(state="available", cachedSha256=key, embedded=True)
                 if preview.get("path") is None:

@@ -190,6 +190,68 @@ def test_wrong_revision_pagination_cannot_publish_partial_inventory(tmp_path):
         reader.enumerate(profile("simready"), REVISION)
 
 
+def test_chemlab_native_indexes_import_bilingual_names_and_explicit_object_thumbnails(tmp_path):
+    tree = f"/api/datasets/MBZUAI/ChemLab-Assets/tree/{REVISION}"
+    resolve = f"/datasets/MBZUAI/ChemLab-Assets/resolve/{REVISION}"
+    routes = {
+        tree: [
+            file("assets/balance/model.glb"),
+            file("media/thumb/balance.webp", 100),
+            file("assets/labware/containers/beaker/model.glb"),
+        ],
+        resolve + "/release_manifest.json": {
+            "assets": {"instrument.balance": {"shipped": 1}, "labware.beaker": {"shipped": 1}}
+        },
+        resolve + "/catalog/catalog.json": {
+            "assets": [
+                {
+                    "id": "instrument.balance",
+                    "name": "Balance",
+                    "name_zh": "天平",
+                    "path": "assets/balance",
+                    "size_m": [0.2, 0.3, 0.4],
+                    "files": {"glb": "assets/balance/model.glb"},
+                    "thumb": "media/thumb/balance.webp",
+                }
+            ]
+        },
+        resolve + "/assets/labware/asset_index.json": {
+            "asset_count": 1,
+            "assets": [
+                {
+                    "asset_type_id": "labware.beaker",
+                    "name_zh": "烧杯",
+                    "component_count": 1,
+                    "contract_path": "containers/beaker/asset.contract.json",
+                }
+            ],
+        },
+        resolve + "/assets/labware/catalog.json": {
+            "types": {
+                "labware.beaker": {
+                    "name_en": "Glass beaker",
+                    "size_m": [0.1, 0.1, 0.15],
+                    "dir": "assets/labware/containers/beaker",
+                    "model_glb": "assets/labware/containers/beaker/model.glb",
+                }
+            },
+            "conventions": {"up_axis": "+Z"},
+        },
+    }
+    reader = HFHubReader(client=upstream(routes, []), cache_root=tmp_path)
+    result = reader.enumerate(profile("chemlab"), REVISION)
+    assert result["counts"]["metadataRecords"] == 2
+    assert result["counts"]["metadataMissing"] == 0
+    assert result["counts"]["catalogRows"] == result["counts"]["labwareRows"] == 1
+    balance = next(value for value in result["entries"] if value["upstreamId"] == "instrument.balance")
+    beaker = next(value for value in result["entries"] if value["upstreamId"] == "labware.beaker")
+    assert balance["preview"]["path"] == "media/thumb/balance.webp"
+    assert beaker["name"] == {"en": "Glass beaker", "zh": "烧杯"}
+    assert beaker["facts"]["dimensionsM"] == [0.1, 0.1, 0.15]
+    assert beaker["facts"]["coordinateSystem"] == {"up": "z"}
+    assert beaker["fieldProvenance"]["facts"]["kind"] == "publisher"
+
+
 def test_controlled_demand_preview_cache_and_primary_file_rejection(tmp_path):
     resolve = f"/datasets/nvidia/simready-assets/resolve/{REVISION}/beaker/preview.png"
     image = b"\x89PNG\r\n\x1a\n" + b"fixture"
@@ -259,3 +321,31 @@ def test_retry_after_and_discovery_do_not_enable_unselected_datasets(tmp_path):
     assert values[0]["enabled"] is False
     assert values[0]["access"] == "restricted"
     assert reader.usage["requests"] == 2
+
+
+def test_preview_eviction_preserves_metadata_and_restore_keeps_cached_images_offline(tmp_path):
+    store = MetadataStore(tmp_path / "store")
+    image_a = b"\x89PNG\r\n\x1a\nAAA"
+    image_b = b"\x89PNG\r\n\x1a\nBBB"
+    reader = HFHubReader(
+        cache_root=store.blob_root, client=upstream({}, []), budgets={"imageCacheBytes": len(image_a)}
+    )
+    proof_key = reader.cache(b"retained publisher evidence")
+    first_key = reader.cache(image_a, kind="preview")
+    second_key = reader.cache(image_b, kind="preview")
+    images = list((store.blob_root / "previews").iterdir())
+    assert len(images) == 1
+    assert sum(path.stat().st_size for path in images) <= len(image_a)
+    assert store.blob(proof_key) == b"retained publisher evidence"
+    cached_key = "sha256:" + images[0].name
+    assert cached_key in (first_key, second_key)
+    restored = MetadataStore(tmp_path / "restored")
+    restored.restore(store.export())
+    offline_requests = []
+    offline = HFHubReader(cache_root=restored.blob_root, client=upstream({}, offline_requests, offline=True))
+    entry = {
+        "revision": REVISION,
+        "preview": {"role": "object", "path": "missing/upstream.png", "cachedSha256": cached_key},
+    }
+    assert offline.read_preview(profile("simready"), entry)[0] in (image_a, image_b)
+    assert offline_requests == []

@@ -25,6 +25,7 @@ DEFAULT_BUDGETS = {
     "metadataBytes": 2 * 1024 * 1024,
     "tableBytes": 32 * 1024 * 1024,
     "previewBytes": 0,
+    "imageCacheBytes": 2 * 1024 * 1024 * 1024,
     "seconds": 1800,
     "timeout": 20,
     "attempts": 3,
@@ -105,6 +106,7 @@ class HFHubReader:
         if self.cache_root is not None:
             self.cache_root.mkdir(parents=True, exist_ok=True)
             (self.cache_root / "locators").mkdir(exist_ok=True)
+            (self.cache_root / "previews").mkdir(exist_ok=True)
         self.usage = {
             "requests": 0,
             "networkBytes": 0,
@@ -154,28 +156,54 @@ class HFHubReader:
             document = json.loads(index.read_text("utf-8"))
             if not re.fullmatch(r"sha256:[0-9a-f]{64}", document["sha256"]):
                 return None
-            data = (self.cache_root / document["sha256"][7:]).read_bytes()
+            directory = self.cache_root / "previews" if document.get("kind") == "preview" else self.cache_root
+            path = directory / document["sha256"][7:]
+            data = path.read_bytes()
             if "sha256:" + hashlib.sha256(data).hexdigest() != document["sha256"]:
                 return None
+            path.touch()
         except (OSError, KeyError, ValueError, TypeError):
             return None
         self.usage["cacheBytes"] += len(data)
         return data, document.get("next")
 
-    def cache(self, data, *, locator=None, next_url=None):
+    def cache(self, data, *, locator=None, next_url=None, kind="metadata"):
         key = "sha256:" + hashlib.sha256(data).hexdigest()
         if self.cache_root is not None:
-            path = self.cache_root / key[7:]
+            directory = self.cache_root / "previews" if kind == "preview" else self.cache_root
+            path = directory / key[7:]
             if not path.exists():
-                temporary = path.with_suffix("." + str(threading.get_ident()) + ".tmp")
+                temporary = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
                 temporary.write_bytes(data)
                 temporary.replace(path)
             if locator is not None:
                 index = self.cache_root / "locators" / (digest(locator)[7:] + ".json")
-                temporary = index.with_suffix("." + str(threading.get_ident()) + ".tmp")
-                temporary.write_text(canonical({"sha256": key, "next": next_url}), "utf-8")
+                temporary = index.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+                temporary.write_text(canonical({"sha256": key, "next": next_url, "kind": kind}), "utf-8")
                 temporary.replace(index)
+            if kind == "preview":
+                self._trim_preview_cache()
         return key
+
+    def _trim_preview_cache(self):
+        candidates = []
+        for path in (self.cache_root / "previews").iterdir():
+            if not re.fullmatch(r"[0-9a-f]{64}", path.name):
+                continue
+            try:
+                stat = path.stat()
+                candidates.append((stat.st_mtime_ns, path, stat.st_size))
+            except FileNotFoundError:
+                pass
+        size = sum(item[2] for item in candidates)
+        for _, path, length in sorted(candidates):
+            if size <= self.budgets["imageCacheBytes"]:
+                break
+            try:
+                path.unlink()
+                size -= length
+            except FileNotFoundError:
+                size -= length
 
     def _pause(self, seconds):
         until = time.monotonic() + max(0, seconds)
@@ -285,7 +313,7 @@ class HFHubReader:
                         response.raise_for_status()
                         next_url = response.links.get("next", {}).get("url")
                         if cached:
-                            self.cache(bytes(data), locator=locator, next_url=next_url)
+                            self.cache(bytes(data), locator=locator, next_url=next_url, kind=kind)
                         return bytes(data), next_url
                 else:
                     raise MetadataError("source_redirect_limit", "Source exceeded the redirect bound")
@@ -381,7 +409,7 @@ class HFHubReader:
                 return found[0]
         data, _ = self._fetch(url, limit=limit, kind=kind, cached=not retry)
         if content_digest:
-            self.cache(data, locator=content_locator)
+            self.cache(data, locator=content_locator, kind=kind)
         return data
 
     def read_preview(self, profile, entry, retry=False):
@@ -392,13 +420,16 @@ class HFHubReader:
         if key and not re.fullmatch(r"sha256:[0-9a-f]{64}", key):
             raise MetadataError("invalid_digest", "Preview content digest must be SHA-256")
         if key and self.cache_root is not None and not retry:
-            try:
-                data = (self.cache_root / key.removeprefix("sha256:")).read_bytes()
-                if "sha256:" + hashlib.sha256(data).hexdigest() == key:
-                    self.usage["cacheBytes"] += len(data)
-                    return data, image_type(data)
-            except OSError:
-                pass
+            for directory in (self.cache_root / "previews", self.cache_root):
+                try:
+                    path = directory / key.removeprefix("sha256:")
+                    data = path.read_bytes()
+                    if "sha256:" + hashlib.sha256(data).hexdigest() == key:
+                        path.touch()
+                        self.usage["cacheBytes"] += len(data)
+                        return data, image_type(data)
+                except OSError:
+                    pass
         if not preview.get("path"):
             raise MetadataError(
                 "preview_unavailable", "Object preview is not cached and has no stable source path", 404

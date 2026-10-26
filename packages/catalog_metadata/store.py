@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -53,6 +54,7 @@ class MetadataStore:
         self.database_path = self.root / "metadata.sqlite3"
         self.blob_root = self.root / "blobs"
         self.blob_root.mkdir(exist_ok=True)
+        (self.blob_root / "previews").mkdir(exist_ok=True)
         with self.transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
@@ -201,8 +203,9 @@ class MetadataStore:
                 "invalid_inventory", "Inventory must be a bounded entry list with explicit completeness"
             )
         normalized = [normalized_entry(collection_id, source_revision, value) for value in entries]
+        vocabulary = self.vocabulary()
         for entry in normalized:
-            self._validate_category(entry)
+            self._validate_category(entry, vocabulary=vocabulary)
         identities = [value["upstreamId"] for value in normalized]
         if len(set(identities)) != len(identities):
             raise MetadataError("duplicate_identity", "An inventory repeats an upstream identity")
@@ -520,11 +523,10 @@ class MetadataStore:
             )
         return value
 
-    def _validate_category(self, fields):
+    def _validate_category(self, fields, *, vocabulary=None):
         category = fields.get("category")
-        if category is not None and category not in {
-            value["id"] for value in self.vocabulary()["categories"]
-        }:
+        vocabulary = vocabulary or self.vocabulary()
+        if category is not None and category not in {value["id"] for value in vocabulary["categories"]}:
             raise MetadataError("unknown_category", "Category is absent from the current vocabulary", 409)
 
     def corrections(self, collection_id=None, upstream_id=None):
@@ -619,6 +621,9 @@ class MetadataStore:
             vocabulary = json.loads(
                 db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
             )
+            for entry in entries:
+                self._validate_category(entry, vocabulary=vocabulary)
+                entry["vocabularyVersion"] = vocabulary["version"]
             # Build every index before moving the active pointer. A callback may
             # perform a consumer's index validation; failures roll back activation.
             index = [
@@ -726,9 +731,10 @@ class MetadataStore:
         if not isinstance(data, bytes) or len(data) > 32 * 1024 * 1024:
             raise MetadataError("blob_limit", "A metadata blob must be at most 32 MiB")
         key = "sha256:" + hashlib.sha256(data).hexdigest()
-        path = self.blob_path(key)
+        self.blob_path(key)
+        path = (self.blob_root / "previews" if kind == "preview" else self.blob_root) / key[7:]
         if not path.exists():
-            temporary = path.with_suffix(".tmp")
+            temporary = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
             temporary.write_bytes(data)
             temporary.replace(path)
         return {"sha256": key, "kind": kind, "bytes": len(data), **metadata}
@@ -739,7 +745,9 @@ class MetadataStore:
         name = key[7:]
         if any(char not in "0123456789abcdef" for char in name):
             raise MetadataError("invalid_digest", "Invalid evidence digest")
-        return self.blob_root / name
+        path = self.blob_root / name
+        preview_path = self.blob_root / "previews" / name
+        return preview_path if not path.exists() and preview_path.exists() else path
 
     def blob(self, key):
         try:
@@ -753,15 +761,20 @@ class MetadataStore:
     def export(self):
         with self.transaction(write=False) as db:
             tables = {table: [dict(row) for row in db.execute("SELECT * FROM " + table)] for table in TABLES}
-        blobs, total = {}, 0
-        for path in sorted(self.blob_root.iterdir()):
+        blobs, kinds, total = {}, {}, 0
+        paths = [*self.blob_root.iterdir(), *(self.blob_root / "previews").iterdir()]
+        for path in sorted(paths):
             if path.is_file() and len(path.name) == 64:
+                if "sha256:" + path.name in blobs:
+                    continue
                 data = self.blob("sha256:" + path.name)
                 total += len(data)
                 if total > 256 * 1024 * 1024:
                     raise MetadataError("export_limit", "Exported evidence exceeds 256 MiB")
                 blobs["sha256:" + path.name] = base64.b64encode(data).decode("ascii")
-        return {"schema": SCHEMA, "tables": tables, "blobs": blobs}
+                if path.parent.name == "previews":
+                    kinds["sha256:" + path.name] = "preview"
+        return {"schema": SCHEMA, "tables": tables, "blobs": blobs, "blobKinds": kinds}
 
     def restore(self, document, *, release_preparer=None):
         if (
@@ -785,7 +798,10 @@ class MetadataStore:
         # Unreferenced blobs are harmless if a later transaction fails. Writing
         # first prevents an active release from ever referring to unwritten data.
         for key, data in decoded.items():
-            self.put_blob(data)
+            kind = document.get("blobKinds", {}).get(key, "metadata")
+            if kind not in ("metadata", "preview"):
+                raise MetadataError("invalid_backup", "Backup has an unsupported blob role")
+            self.put_blob(data, kind=kind)
             self.blob(key)
         with self.transaction() as db:
             # Restoring replaces only this module's metadata, never local assets,
