@@ -7,9 +7,11 @@ or a replacement for the separately reconciled real-source inventory.
 import copy
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
+from packages.catalog_metadata import MetadataStore
 
 REVISION = "b" * 40
 
@@ -136,3 +138,44 @@ def test_page_locations_follow_real_byte_bound_and_pin_release_across_publish_an
         missing = client.get("/api/v1/library/search", params={"release": "sha256:" + "0" * 64})
         assert missing.status_code == 409
         assert "repeat the search" in missing.text
+
+
+def test_failed_index_retains_release_and_encoded_identity_is_exact(tmp_path, monkeypatch):
+    from packages.catalog import maintained
+
+    documents = PublishedStore(tmp_path, count=2).documents
+    documents[0]["upstreamId"] = "scenario:asset_abc"
+    documents[0].pop("id")
+    store = MetadataStore(tmp_path)
+    initial = store.stage_inventory("scenario", REVISION, documents, complete=True)
+    store.publish([initial["id"]])
+    app = create_app()
+    with TestClient(app) as client:
+        app.state.catalog.attach_metadata(store)
+        filters = {"scope": "online", "provider": "scenario"}
+        before = client.get("/api/v1/library/search", params=filters).json()
+        identity = f"scenario/scenario%3Aasset_abc@{REVISION}"
+        exact = client.get("/api/v1/library/search", params={"scope": "online", "q": identity})
+        assert exact.status_code == 200, exact.text
+        assert exact.json()["results"][0]["id"] == identity
+        detail = client.get(f"/api/v1/library/catalog/entries/scenario/scenario%253Aasset_abc/{REVISION}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["id"] == identity
+        documents[1]["name"]["en"] = "Changed object"
+        changed = store.stage_inventory("scenario", REVISION, documents, complete=True)
+        build = maintained.build_semantic_index
+
+        def broken_index(*args, **kwargs):
+            raise RuntimeError("Consumer index build failed")
+
+        monkeypatch.setattr(maintained, "build_semantic_index", broken_index)
+        with pytest.raises(RuntimeError, match="Consumer index build failed"):
+            store.publish([changed["id"]], release_preparer=app.state.catalog.prepare_metadata_release)
+        assert store.latest_release()["id"] == before["snapshot"]["metadataRelease"]["id"]
+        still = client.get("/api/v1/library/search", params={"scope": "online", "provider": "scenario"})
+        assert still.status_code == 200
+        assert still.json()["snapshot"]["id"] == before["snapshot"]["id"]
+        monkeypatch.setattr(maintained, "build_semantic_index", build)
+        store.publish([changed["id"]], release_preparer=app.state.catalog.prepare_metadata_release)
+        after = client.get("/api/v1/library/search", params=filters).json()
+        assert after["snapshot"]["id"] != before["snapshot"]["id"]

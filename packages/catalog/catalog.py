@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
+from urllib.parse import quote
 
 from packages.catalog.local import LocalAsset, read_provenance
 from packages.catalog.models import REVISION, CatalogFormatError, CatalogSnapshot, load_catalog
@@ -46,6 +47,17 @@ class AssetCatalog:
         with self._lock:
             self.metadata_store = store
             self._metadata_views = ReleasedViews(self, store)
+
+    def validate_metadata(self, documents):
+        from packages.catalog.maintained import adapt_entry
+        entries = [adapt_entry(document, self.by_id.get(document["id"])) for document in documents]
+        build_semantic_index(entries, "metadata-validation", embedder=self.embedder)
+
+    def prepare_metadata_release(self, release, documents):
+        """Build and persist the real consuming index before core activation."""
+        if self._metadata_views is not None:
+            with self._lock:
+                return self._metadata_views.prepare(release, documents)
 
     def startup(self):
         try:
@@ -100,6 +112,12 @@ class AssetCatalog:
             self.require()
             identity = f"{provider}/{package}@{revision}"
             entry = self.by_id.get(identity) or self._historical.get(identity)
+            # ASGI transports can decode the package path before routing. Use
+            # its canonical encoded form only after exact lookup, preserving a
+            # literal '%' in an upstream ID as a distinct identity.
+            encoded_identity = f"{provider}/{quote(package, safe='._-')}@{revision}"
+            if entry is None:
+                entry = self.by_id.get(encoded_identity) or self._historical.get(encoded_identity)
             if (entry is None or entry.discovery is None) and REVISION.fullmatch(revision):
                 for path in reversed(self.archive_paths):
                     _, entries = load_catalog(path)
@@ -115,7 +133,10 @@ class AssetCatalog:
                 try:
                     document = self.metadata_store.entry(identity)
                 except (KeyError, ValueError):
-                    document = None
+                    try:
+                        document = self.metadata_store.entry(encoded_identity)
+                    except (KeyError, ValueError):
+                        document = None
                 if document is not None:
                     return adapt_entry(document)
             raise LibraryError(

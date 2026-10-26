@@ -824,6 +824,8 @@ def search_catalog(
     text = (q or "").strip()
     language = "zh" if _cjk(text) else "en"
     keywords, preferences, notes, numeric_terms = _interpret(text, filters)
+    if getattr(catalog, "publication_error", None):
+        notes.insert(0, catalog.publication_error)
     exact = _exact_selector(text) if text else None
     if exact is not None:
         keywords = [clip(text, 80)]

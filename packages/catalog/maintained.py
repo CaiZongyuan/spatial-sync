@@ -10,6 +10,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
+from collections import OrderedDict
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from urllib.parse import urlencode
@@ -31,6 +33,8 @@ from packages.catalog.search import _decode_cursor
 from packages.catalog.semantic import build_semantic_index
 from packages.catalog.views import canonical_json
 from packages.library.common import LibraryError
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _pair(value, fallback=""):
@@ -138,7 +142,16 @@ class ReleasedViews:
         self.store = store
         self.root = store.root / "query-views"
         self.root.mkdir(parents=True, exist_ok=True)
-        self._views = {}
+        self._views = OrderedDict()
+        self._active = None
+
+    def _remember(self, value):
+        identifier = value.snapshot.id
+        self._views[identifier] = value
+        self._views.move_to_end(identifier)
+        while len(self._views) > 4:
+            self._views.popitem(last=False)
+        return value
 
     def select(self, release=None, cursor=None):
         pinned = _decode_cursor(cursor)["snapshot"] if cursor else None
@@ -181,11 +194,50 @@ class ReleasedViews:
                 "legacy": self.catalog.snapshot.id if self.catalog.snapshot else None,
             }).encode()).hexdigest()
         if identifier in self._views:
-            return self._views[identifier]
+            value = self._views[identifier]
+        else:
+            try:
+                value = self._build(release, identifier)
+            except Exception as exc:
+                LOGGER.warning("New catalog view is not ready; retaining active view: %s", exc)
+                previous = self._active
+                if previous is None:
+                    try:
+                        active = json.loads((self.root / "active.json").read_text(encoding="utf-8"))
+                        previous = self._read(active["id"])
+                    except (OSError, ValueError, KeyError, LibraryError):
+                        pass
+                if previous is None:
+                    raise
+                previous.publication_error = (
+                    "A new catalog view could not be prepared; this search uses the previous release."
+                )
+                return previous
+        if value.snapshot is not None:
+            pointer = self.root / "active.json"
+            temporary = pointer.with_suffix(".tmp")
+            try:
+                temporary.write_text(canonical_json({"id": value.snapshot.id}), encoding="utf-8")
+                temporary.replace(pointer)
+            except OSError:
+                # The immutable view itself was durably prepared before its
+                # core release activated. The prior active pointer remains.
+                LOGGER.warning("Could not refresh the active catalog cache pointer")
+            self._active = value
+        return value
+
+    def prepare(self, release, documents):
+        identifier = "sha256:" + hashlib.sha256(canonical_json({
+            "metadata": release["id"],
+            "legacy": self.catalog.snapshot.id if self.catalog.snapshot else None,
+        }).encode()).hexdigest()
+        return self._build(release, identifier, documents)
+
+    def _build(self, release, identifier, documents=None):
         entries = self.catalog.entries
         snapshot = self.catalog.snapshot
         if release is not None:
-            documents = self.store.entries(release["id"])
+            documents = self.store.entries(release["id"]) if documents is None else documents
             providers = {item["collectionId"] for item in documents}
             vocabulary = self.store.vocabulary(release.get("vocabularyVersion"))
             entries = [entry for entry in entries if entry.provider not in providers]
@@ -204,8 +256,7 @@ class ReleasedViews:
             return self.catalog
         value = self._clone(snapshot, entries)
         self._persist(value)
-        self._views[identifier] = value
-        return value
+        return self._remember(value)
 
     def _persist(self, value):
         snapshot = asdict(value.snapshot)
@@ -242,5 +293,4 @@ class ReleasedViews:
         except (OSError, ValueError, KeyError, TypeError):
             raise LibraryError("release_expired", "Released view is unavailable; "
                                "repeat the search without release", 409)
-        self._views[identifier] = value
-        return value
+        return self._remember(value)
