@@ -87,8 +87,9 @@ def organization_fields(value):
         if field in result:
             if not isinstance(result[field], dict) or set(result[field]) - {"en", "zh"}:
                 raise MetadataError("invalid_metadata", f"{field} must contain en/zh text")
-            result[field] = {lang: text(v, f"{field}.{lang}", empty=True)
-                             for lang, v in result[field].items()}
+            result[field] = {
+                lang: text(v, f"{field}.{lang}", empty=True) for lang, v in result[field].items()
+            }
     for field in ("tags", "domains", "uses"):
         if field in result:
             values = result[field]
@@ -132,6 +133,7 @@ def normalized_entry(collection_id, source_revision, value):
     result.setdefault("source", {})
     result.setdefault("vocabularyVersion", VOCABULARY_VERSION)
     result.setdefault("contentDigest", None)
+
     # Locator revisions alone do not change source contents. Every descriptive,
     # technical and preview input does, including content digests of evidence.
     def input_value(value):
@@ -140,11 +142,14 @@ def normalized_entry(collection_id, source_revision, value):
         if isinstance(value, list):
             return [input_value(item) for item in value]
         if isinstance(value, str):
-            return value.replace("/" + source_revision + "/", "/{revision}/")
+            return re.sub(r"(?<=/)" + re.escape(source_revision) + r"(?=/|$)", "{revision}", value)
         return value
 
-    source_input = {key: value for key, value in result.items()
-                    if key not in ("id", "revision", "inputDigest", "organization", "correctionVersion", "corrections")}
+    source_input = {
+        key: value
+        for key, value in result.items()
+        if key not in ("id", "revision", "inputDigest", "organization", "correctionVersion", "corrections")
+    }
     computed_digest = digest(input_value(source_input))
     if result.get("inputDigest", computed_digest) != computed_digest:
         raise MetadataError("invalid_metadata", "inputDigest differs from its complete source input")
@@ -164,21 +169,62 @@ def apply_fields(entry, fields):
 
 
 DEFAULT_PROFILES = (
-    {"id": "simready", "dataset": "nvidia/simready-assets", "recipe": "simready", "enabled": False,
-     "associated": [{"role": "viewer", "url": "https://huggingface.co/spaces/nvidia/simready-central"}]},
-    {"id": "scenario", "dataset": "scenario-labs/3d-collection", "recipe": "scenario", "enabled": False,
-     "associated": []},
-    {"id": "chemlab", "dataset": "MBZUAI/ChemLab-Assets", "recipe": "chemlab", "enabled": False,
-     "associated": [{"role": "documentation", "url": "https://github.com/mbzuai-nlp/ChemLab-Assets"}]},
+    {
+        "id": "simready",
+        "dataset": "nvidia/simready-assets",
+        "recipe": "simready",
+        "enabled": False,
+        "associated": [
+            {
+                "role": "viewer",
+                "url": "https://huggingface.co/spaces/nvidia/simready-central",
+                "revision": "e131715eb52d323bd903b1e51f81fb86bce96081",
+                "path": "README.md",
+            }
+        ],
+    },
+    {
+        "id": "scenario",
+        "dataset": "scenario-labs/3d-collection",
+        "recipe": "scenario",
+        "enabled": False,
+        "associated": [],
+    },
+    {
+        "id": "chemlab",
+        "dataset": "MBZUAI/ChemLab-Assets",
+        "recipe": "chemlab",
+        "enabled": False,
+        "associated": [
+            {
+                "role": "documentation",
+                "url": "https://github.com/mbzuai-nlp/ChemLab-Assets",
+                "revision": "abee1cc5c38ed856979e13736417e3bfbd124d17",
+                "path": "README_zh.md",
+            }
+        ],
+    },
 )
 
 
 def default_vocabulary():
-    categories = (("container", "Container", "容器"), ("instrument", "Instrument", "仪器"),
-                  ("furniture", "Furniture", "家具"), ("tool", "Tool", "工具"),
-                  ("equipment", "Equipment", "设备"), ("organic", "Organic object", "有机物"),
-                  ("vehicle", "Vehicle", "交通工具"), ("structure", "Structure", "建筑结构"),
-                  ("other", "Other", "其他"))
-    return {"version": VOCABULARY_VERSION, "categories": [
-        {"id": key, "name": {"en": en, "zh": zh}, "aliases": {"en": [], "zh": []}}
-        for key, en, zh in categories], "tags": []}
+    categories = (
+        ("container", "Container", "容器"),
+        ("instrument", "Instrument", "仪器"),
+        ("furniture", "Furniture", "家具"),
+        ("tool", "Tool", "工具"),
+        ("equipment", "Equipment", "设备"),
+        ("labware", "Labware", "实验器具"),
+        ("organic", "Organic object", "有机物"),
+        ("vehicle", "Vehicle", "交通工具"),
+        ("structure", "Structure", "建筑结构"),
+        ("other", "Other", "其他"),
+    )
+    return {
+        "version": VOCABULARY_VERSION,
+        "categories": [
+            {"id": key, "name": {"en": en, "zh": zh}, "aliases": {"en": [], "zh": []}}
+            for key, en, zh in categories
+        ],
+        "tags": [],
+    }

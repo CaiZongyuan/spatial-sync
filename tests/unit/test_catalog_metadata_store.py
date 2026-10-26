@@ -12,8 +12,12 @@ REV_B = "b" * 40
 
 
 def item(identifier="beaker", **fields):
-    return {"upstreamId": identifier, "name": {"en": "Beaker", "zh": "烧杯"},
-            "facts": {"dimensionsM": None, "sourceBytes": None}, **fields}
+    return {
+        "upstreamId": identifier,
+        "name": {"en": "Beaker", "zh": "烧杯"},
+        "facts": {"dimensionsM": None, "sourceBytes": None},
+        **fields,
+    }
 
 
 def stage(store, revision=REV_A, entries=None, complete=True):
@@ -58,13 +62,24 @@ def test_manual_correction_rejects_stale_batch_and_remains_after_reorganization(
     store = MetadataStore(tmp_path)
     inventory = stage(store)
     before = store.pending(inventory["id"])[0]
-    correction = store.correct("simready", "beaker", {"name": {"zh": "人工名称"}},
-                               base_version=0, reason="Reviewed the source")
+    correction = store.correct(
+        "simready", "beaker", {"name": {"zh": "人工名称"}}, base_version=0, reason="Reviewed the source"
+    )
     with pytest.raises(MetadataError, match="Manual correction changed"):
-        store.submit_organization(inventory["id"], "beaker", {"name": {"zh": "模型名称"}},
-                                  input_digest=before["inputDigest"], correction_version=0)
-    entry = store.submit_organization(inventory["id"], "beaker", {"name": {"zh": "模型名称"}},
-                                      input_digest=before["inputDigest"], correction_version=1)
+        store.submit_organization(
+            inventory["id"],
+            "beaker",
+            {"name": {"zh": "模型名称"}},
+            input_digest=before["inputDigest"],
+            correction_version=0,
+        )
+    entry = store.submit_organization(
+        inventory["id"],
+        "beaker",
+        {"name": {"zh": "模型名称"}},
+        input_digest=before["inputDigest"],
+        correction_version=1,
+    )
     assert entry["name"]["zh"] == "人工名称"
     first = store.publish([inventory["id"]])
     store.retract(correction["id"], base_version=1)
@@ -77,12 +92,17 @@ def test_submission_replay_after_restart_is_idempotent_and_reuse_is_by_input(tmp
     store = MetadataStore(tmp_path)
     inventory = stage(store)
     before = store.pending(inventory["id"])[0]
-    arguments = {"input_digest": before["inputDigest"], "correction_version": 0,
-                 "versions": {"skill": "maintenance/1", "recipe": "hf/1"},
-                 "submission_key": "run-1:batch-1:beaker"}
+    arguments = {
+        "input_digest": before["inputDigest"],
+        "correction_version": 0,
+        "versions": {"skill": "maintenance/1", "recipe": "hf/1"},
+        "submission_key": "run-1:batch-1:beaker",
+    }
     entry = store.submit_organization(inventory["id"], "beaker", {"tags": ["laboratory"]}, **arguments)
     store = MetadataStore(tmp_path)
-    assert store.submit_organization(inventory["id"], "beaker", {"tags": ["laboratory"]}, **arguments) == entry
+    assert (
+        store.submit_organization(inventory["id"], "beaker", {"tags": ["laboratory"]}, **arguments) == entry
+    )
     assert entry["organization"]["version"] == 1
     with pytest.raises(MetadataError, match="different data"):
         store.submit_organization(inventory["id"], "beaker", {"tags": ["wrong"]}, **arguments)
@@ -97,8 +117,12 @@ def test_organization_cannot_invent_technical_facts_and_export_restores_history(
     inventory = stage(store)
     before = store.pending(inventory["id"])[0]
     with pytest.raises(MetadataError, match="descriptive fields only"):
-        store.submit_organization(inventory["id"], "beaker", {"facts": {"dimensionsM": [1, 2, 3]}},
-                                  input_digest=before["inputDigest"])
+        store.submit_organization(
+            inventory["id"],
+            "beaker",
+            {"facts": {"dimensionsM": [1, 2, 3]}},
+            input_digest=before["inputDigest"],
+        )
     evidence = store.put_blob(b"source text", origin="publisher")
     store.correct("simready", "beaker", {"tags": ["reviewed"]}, reason="Human review")
     release = store.publish([inventory["id"]])
@@ -112,8 +136,13 @@ def test_organization_cannot_invent_technical_facts_and_export_restores_history(
 def test_composed_release_retains_other_collection_and_reconciles_counts(tmp_path):
     store = MetadataStore(tmp_path)
     one = stage(store)
-    two = store.stage_inventory("chemlab", REV_A, [item("instrument")], complete=True,
-                                counts={"entries": 1, "expectedEntries": 1, "files": 4, "variants": 2})
+    two = store.stage_inventory(
+        "chemlab",
+        REV_A,
+        [item("instrument")],
+        complete=True,
+        counts={"entries": 1, "expectedEntries": 1, "files": 4, "variants": 2},
+    )
     old = store.publish([one["id"], two["id"]])
     replacement = stage(store, REV_B)
     new = store.publish([replacement["id"]])
@@ -159,7 +188,9 @@ def test_changed_preview_tags_and_evidence_change_source_input(tmp_path):
     store = MetadataStore(tmp_path)
     first = stage(store, entries=[item(preview={"path": "normal.png", "role": "texture"})])
     before = store.inventory_entries(first["id"])[0]
-    second = stage(store, entries=[item(tags=["publisher-tag"], preview={"path": "object.png", "role": "object"})])
+    second = stage(
+        store, entries=[item(tags=["publisher-tag"], preview={"path": "object.png", "role": "object"})]
+    )
     after = store.inventory_entries(second["id"])[0]
     assert first["id"] != second["id"]
     assert before["inputDigest"] != after["inputDigest"]
@@ -170,7 +201,9 @@ def test_changed_preview_tags_and_evidence_change_source_input(tmp_path):
 def test_dataset_alias_registration_is_not_an_independent_collection(tmp_path):
     store = MetadataStore(tmp_path)
     with pytest.raises(MetadataError, match="already has a collection"):
-        store.register_collection({"id": "duplicate", "dataset": "nvidia/simready-assets", "recipe": "simready"})
+        store.register_collection(
+            {"id": "duplicate", "dataset": "nvidia/simready-assets", "recipe": "simready"}
+        )
 
 
 def test_organization_selection_can_be_retracted_without_losing_result_history(tmp_path):

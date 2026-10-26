@@ -31,8 +31,19 @@ from .models import (
     text,
 )
 
-TABLES = ("collections", "inventories", "inventory_entries", "organizations", "organization_heads",
-          "corrections", "correction_heads", "submissions", "releases", "release_entries", "metadata_state")
+TABLES = (
+    "collections",
+    "inventories",
+    "inventory_entries",
+    "organizations",
+    "organization_heads",
+    "corrections",
+    "correction_heads",
+    "submissions",
+    "releases",
+    "release_entries",
+    "metadata_state",
+)
 
 
 class MetadataStore:
@@ -53,7 +64,8 @@ class MetadataStore:
                 CREATE TABLE IF NOT EXISTS inventory_entries(inventory_id TEXT NOT NULL,
                     upstream_id TEXT NOT NULL, input_digest TEXT NOT NULL, document TEXT NOT NULL,
                     PRIMARY KEY(inventory_id,upstream_id));
-                CREATE TABLE IF NOT EXISTS organizations(collection_id TEXT NOT NULL, upstream_id TEXT NOT NULL,
+                CREATE TABLE IF NOT EXISTS organizations(collection_id TEXT NOT NULL,
+                    upstream_id TEXT NOT NULL,
                     input_digest TEXT NOT NULL, version INTEGER NOT NULL, document TEXT NOT NULL,
                     PRIMARY KEY(collection_id,upstream_id,input_digest,version));
                 CREATE TABLE IF NOT EXISTS organization_heads(collection_id TEXT NOT NULL,
@@ -61,9 +73,11 @@ class MetadataStore:
                     selection_version INTEGER NOT NULL,
                     PRIMARY KEY(collection_id,upstream_id,input_digest));
                 CREATE TABLE IF NOT EXISTS corrections(id TEXT PRIMARY KEY,collection_id TEXT NOT NULL,
-                    upstream_id TEXT NOT NULL,version INTEGER NOT NULL,document TEXT NOT NULL,active INTEGER NOT NULL);
+                    upstream_id TEXT NOT NULL,version INTEGER NOT NULL,
+                    document TEXT NOT NULL,active INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS correction_heads(collection_id TEXT NOT NULL,
-                    upstream_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(collection_id,upstream_id));
+                    upstream_id TEXT NOT NULL,version INTEGER NOT NULL,
+                    PRIMARY KEY(collection_id,upstream_id));
                 CREATE TABLE IF NOT EXISTS submissions(id TEXT PRIMARY KEY,payload_digest TEXT NOT NULL,
                     document TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS releases(id TEXT PRIMARY KEY,document TEXT NOT NULL);
@@ -75,11 +89,19 @@ class MetadataStore:
             """)
             columns = {row[1] for row in db.execute("PRAGMA table_info(organization_heads)")}
             if "selection_version" not in columns:
-                db.execute("ALTER TABLE organization_heads ADD COLUMN selection_version INTEGER NOT NULL DEFAULT 0")
+                db.execute(
+                    "ALTER TABLE organization_heads ADD COLUMN selection_version INTEGER NOT NULL DEFAULT 0"
+                )
                 db.execute("UPDATE organization_heads SET selection_version=version")
             for profile in DEFAULT_PROFILES:
-                db.execute("INSERT OR IGNORE INTO collections VALUES(?,?)", (profile["id"], canonical(source_profile(profile))))
-            db.execute("INSERT OR IGNORE INTO metadata_state VALUES('vocabulary',?)", (canonical(default_vocabulary()),))
+                db.execute(
+                    "INSERT OR IGNORE INTO collections VALUES(?,?)",
+                    (profile["id"], canonical(source_profile(profile))),
+                )
+            db.execute(
+                "INSERT OR IGNORE INTO metadata_state VALUES('vocabulary',?)",
+                (canonical(default_vocabulary()),),
+            )
 
     @contextmanager
     def transaction(self, *, write=True):
@@ -116,18 +138,31 @@ class MetadataStore:
         with self.transaction() as db:
             current = db.execute("SELECT document FROM collections WHERE id=?", (profile["id"],)).fetchone()
             if current is not None and json.loads(current[0])["dataset"] != profile["dataset"]:
-                raise MetadataError("collection_identity_conflict", "A registered collection cannot change dataset identity", 409)
+                raise MetadataError(
+                    "collection_identity_conflict",
+                    "A registered collection cannot change dataset identity",
+                    409,
+                )
             for row in db.execute("SELECT id,document FROM collections WHERE id!=?", (profile["id"],)):
                 if json.loads(row[1])["dataset"].casefold() == profile["dataset"].casefold():
-                    raise MetadataError("collection_identity_conflict", "This HF dataset already has a collection identity", 409)
-            db.execute("INSERT INTO collections VALUES(?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document",
-                       (profile["id"], canonical(profile)))
+                    raise MetadataError(
+                        "collection_identity_conflict",
+                        "This HF dataset already has a collection identity",
+                        409,
+                    )
+            db.execute(
+                "INSERT INTO collections VALUES(?,?) ON CONFLICT(id) "
+                "DO UPDATE SET document=excluded.document",
+                (profile["id"], canonical(profile)),
+            )
         return profile
 
     def vocabulary(self, version=None):
         with self.transaction(write=False) as db:
-            row = db.execute("SELECT document FROM metadata_state WHERE key=?",
-                             ("vocabulary" if version is None else "vocabulary:" + version,)).fetchone()
+            row = db.execute(
+                "SELECT document FROM metadata_state WHERE key=?",
+                ("vocabulary" if version is None else "vocabulary:" + version,),
+            ).fetchone()
             if row is None and version is not None:
                 row = db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()
                 if row is not None and json.loads(row[0])["version"] != version:
@@ -142,7 +177,9 @@ class MetadataStore:
         text(document.get("version"), "vocabulary.version", 160)
         canonical(document)
         with self.transaction() as db:
-            current = json.loads(db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0])
+            current = json.loads(
+                db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
+            )
             if base_version is not None and base_version != current["version"]:
                 raise MetadataError("vocabulary_conflict", "Vocabulary changed; reload before editing", 409)
             for value in (current, document):
@@ -154,11 +191,15 @@ class MetadataStore:
             db.execute("UPDATE metadata_state SET document=? WHERE key='vocabulary'", (canonical(document),))
         return deepcopy(document)
 
-    def stage_inventory(self, collection_id, source_revision, entries, *, complete, counts=None, evidence=None):
+    def stage_inventory(
+        self, collection_id, source_revision, entries, *, complete, counts=None, evidence=None
+    ):
         self.collection(collection_id)
         revision(source_revision)
         if type(complete) is not bool or not isinstance(entries, list) or len(entries) > 100000:
-            raise MetadataError("invalid_inventory", "Inventory must be a bounded entry list with explicit completeness")
+            raise MetadataError(
+                "invalid_inventory", "Inventory must be a bounded entry list with explicit completeness"
+            )
         normalized = [normalized_entry(collection_id, source_revision, value) for value in entries]
         identities = [value["upstreamId"] for value in normalized]
         if len(set(identities)) != len(identities):
@@ -166,23 +207,46 @@ class MetadataStore:
         counts = deepcopy(counts or {})
         counts.setdefault("entries", len(normalized))
         if counts["entries"] != len(normalized):
-            raise MetadataError("inventory_count_mismatch", "Entry count differs from the actual identity list")
+            raise MetadataError(
+                "inventory_count_mismatch", "Entry count differs from the actual identity list"
+            )
         expected = counts.get("expectedEntries")
         if complete and (not normalized or (expected is not None and expected != len(normalized))):
-            raise MetadataError("inventory_incomplete", "Complete inventory must reconcile all expected identities", 409)
+            raise MetadataError(
+                "inventory_incomplete", "Complete inventory must reconcile all expected identities", 409
+            )
         normalized.sort(key=lambda value: value["upstreamId"])
-        key = digest({"collectionId": collection_id, "revision": source_revision,
-                      "complete": complete, "entries": normalized, "counts": counts, "evidence": evidence or []})
-        document = {"id": key, "collectionId": collection_id, "revision": source_revision,
-                    "complete": complete, "counts": counts, "evidence": evidence or [], "createdAt": now()}
+        key = digest(
+            {
+                "collectionId": collection_id,
+                "revision": source_revision,
+                "complete": complete,
+                "entries": normalized,
+                "counts": counts,
+                "evidence": evidence or [],
+            }
+        )
+        document = {
+            "id": key,
+            "collectionId": collection_id,
+            "revision": source_revision,
+            "complete": complete,
+            "counts": counts,
+            "evidence": evidence or [],
+            "createdAt": now(),
+        }
         with self.transaction() as db:
             prior = db.execute("SELECT document FROM inventories WHERE id=?", (key,)).fetchone()
             if prior is not None:
                 return json.loads(prior[0])
-            db.execute("INSERT INTO inventories VALUES(?,?,?,?,?)",
-                       (key, collection_id, source_revision, int(complete), canonical(document)))
-            db.executemany("INSERT INTO inventory_entries VALUES(?,?,?,?)",
-                           ((key, v["upstreamId"], v["inputDigest"], canonical(v)) for v in normalized))
+            db.execute(
+                "INSERT INTO inventories VALUES(?,?,?,?,?)",
+                (key, collection_id, source_revision, int(complete), canonical(document)),
+            )
+            db.executemany(
+                "INSERT INTO inventory_entries VALUES(?,?,?,?)",
+                ((key, v["upstreamId"], v["inputDigest"], canonical(v)) for v in normalized),
+            )
         return document
 
     def inventory(self, identifier):
@@ -196,23 +260,36 @@ class MetadataStore:
     def _compose(db, entry):
         result = deepcopy(entry)
         keys = (entry["collectionId"], entry["upstreamId"], entry["inputDigest"])
-        row = db.execute("SELECT version,selection_version FROM organization_heads WHERE collection_id=? AND upstream_id=? AND input_digest=?",
-                         keys).fetchone()
+        row = db.execute(
+            "SELECT version,selection_version FROM organization_heads "
+            "WHERE collection_id=? AND upstream_id=? AND input_digest=?",
+            keys,
+        ).fetchone()
         result["organization"] = {"version": 0, "status": "pending"}
         if row is not None and row[0]:
-            data = json.loads(db.execute("SELECT document FROM organizations WHERE collection_id=? AND upstream_id=? "
-                                         "AND input_digest=? AND version=?", (*keys, row[0])).fetchone()[0])
+            data = json.loads(
+                db.execute(
+                    "SELECT document FROM organizations WHERE collection_id=? AND upstream_id=? "
+                    "AND input_digest=? AND version=?",
+                    (*keys, row[0]),
+                ).fetchone()[0]
+            )
             apply_fields(result, data["fields"])
             result["organization"] = {key: deepcopy(value) for key, value in data.items() if key != "fields"}
             result["organization"]["resultVersion"] = row[0]
         if row is not None:
             result["organization"]["version"] = row[1]
         correction_key = keys[:2]
-        row = db.execute("SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?", correction_key).fetchone()
+        row = db.execute(
+            "SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?", correction_key
+        ).fetchone()
         result["correctionVersion"] = row[0] if row is not None else 0
         result["corrections"] = []
-        for row in db.execute("SELECT document FROM corrections WHERE collection_id=? AND upstream_id=? AND active=1 "
-                              "ORDER BY version", correction_key):
+        for row in db.execute(
+            "SELECT document FROM corrections WHERE collection_id=? AND upstream_id=? AND active=1 "
+            "ORDER BY version",
+            correction_key,
+        ):
             correction = json.loads(row[0])
             apply_fields(result, correction["fields"])
             result["corrections"].append(correction)
@@ -221,13 +298,20 @@ class MetadataStore:
     def inventory_entries(self, identifier):
         self.inventory(identifier)
         with self.transaction(write=False) as db:
-            return [self._compose(db, json.loads(row[0])) for row in db.execute(
-                "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id", (identifier,))]
+            return [
+                self._compose(db, json.loads(row[0]))
+                for row in db.execute(
+                    "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id",
+                    (identifier,),
+                )
+            ]
 
     def inventory_entry(self, identifier, upstream_id):
         with self.transaction(write=False) as db:
-            row = db.execute("SELECT document FROM inventory_entries WHERE inventory_id=? AND upstream_id=?",
-                             (identifier, upstream_id)).fetchone()
+            row = db.execute(
+                "SELECT document FROM inventory_entries WHERE inventory_id=? AND upstream_id=?",
+                (identifier, upstream_id),
+            ).fetchone()
             if row is None:
                 raise MetadataError("unknown_entry", "Unknown inventory entry", 404)
             return self._compose(db, json.loads(row[0]))
@@ -235,72 +319,143 @@ class MetadataStore:
     def pending(self, identifier, limit=24):
         if type(limit) is not int or not 1 <= limit <= 50:
             raise MetadataError("invalid_limit", "Batch limit must be 1..50")
-        return [v for v in self.inventory_entries(identifier) if v["organization"]["status"] != "organized"][:limit]
+        return [v for v in self.inventory_entries(identifier) if v["organization"]["status"] != "organized"][
+            :limit
+        ]
 
-    def submit_organization(self, inventory_id, upstream_id, result, *, input_digest, base_version=0,
-                            correction_version=None, versions=None, receipt=None, submission_key=None):
+    def submit_organization(
+        self,
+        inventory_id,
+        upstream_id,
+        result,
+        *,
+        input_digest,
+        base_version=0,
+        correction_version=None,
+        versions=None,
+        receipt=None,
+        submission_key=None,
+    ):
         fields = organization_fields(result)
-        payload = {"inventoryId": inventory_id, "upstreamId": upstream_id, "inputDigest": input_digest,
-                   "fields": fields, "baseVersion": base_version, "correctionVersion": correction_version,
-                   "versions": versions, "receipt": receipt}
+        payload = {
+            "inventoryId": inventory_id,
+            "upstreamId": upstream_id,
+            "inputDigest": input_digest,
+            "fields": fields,
+            "baseVersion": base_version,
+            "correctionVersion": correction_version,
+            "versions": versions,
+            "receipt": receipt,
+        }
         payload_digest = digest(payload)
         with self.transaction() as db:
             if submission_key:
-                previous = db.execute("SELECT payload_digest,document FROM submissions WHERE id=?", (submission_key,)).fetchone()
+                previous = db.execute(
+                    "SELECT payload_digest,document FROM submissions WHERE id=?", (submission_key,)
+                ).fetchone()
                 if previous is not None:
                     if previous[0] != payload_digest:
-                        raise MetadataError("submission_conflict", "Submission key was already used for different data", 409)
+                        raise MetadataError(
+                            "submission_conflict", "Submission key was already used for different data", 409
+                        )
                     return json.loads(previous[1])
-            row = db.execute("SELECT document FROM inventory_entries WHERE inventory_id=? AND upstream_id=?",
-                             (inventory_id, upstream_id)).fetchone()
+            row = db.execute(
+                "SELECT document FROM inventory_entries WHERE inventory_id=? AND upstream_id=?",
+                (inventory_id, upstream_id),
+            ).fetchone()
             if row is None:
                 raise MetadataError("unknown_entry", "Unknown inventory entry", 404)
             entry = self._compose(db, json.loads(row[0]))
             if input_digest != entry["inputDigest"]:
                 raise MetadataError("input_conflict", "Organization input no longer matches", 409)
             if base_version != entry["organization"]["version"]:
-                raise MetadataError("organization_conflict", "Organization changed; reload before submitting", 409)
+                raise MetadataError(
+                    "organization_conflict", "Organization changed; reload before submitting", 409
+                )
             if correction_version is not None and correction_version != entry["correctionVersion"]:
-                raise MetadataError("correction_conflict", "Manual correction changed; reload before submitting", 409)
+                raise MetadataError(
+                    "correction_conflict", "Manual correction changed; reload before submitting", 409
+                )
             keys = (entry["collectionId"], upstream_id, input_digest)
-            next_version = db.execute("SELECT COALESCE(MAX(version),0)+1 FROM organizations "
-                                      "WHERE collection_id=? AND upstream_id=? AND input_digest=?", keys).fetchone()[0]
-            data = {"version": next_version, "status": "organized", "fields": fields,
-                    "versions": versions or {}, "receipt": receipt, "createdAt": now()}
+            next_version = db.execute(
+                "SELECT COALESCE(MAX(version),0)+1 FROM organizations "
+                "WHERE collection_id=? AND upstream_id=? AND input_digest=?",
+                keys,
+            ).fetchone()[0]
+            data = {
+                "version": next_version,
+                "status": "organized",
+                "fields": fields,
+                "versions": versions or {},
+                "receipt": receipt,
+                "createdAt": now(),
+            }
             db.execute("INSERT INTO organizations VALUES(?,?,?,?,?)", (*keys, next_version, canonical(data)))
-            db.execute("INSERT INTO organization_heads VALUES(?,?,?,?,?) ON CONFLICT(collection_id,upstream_id,input_digest) "
-                       "DO UPDATE SET version=excluded.version,selection_version=excluded.selection_version",
-                       (*keys, next_version, entry["organization"]["version"] + 1))
+            db.execute(
+                "INSERT INTO organization_heads VALUES(?,?,?,?,?) "
+                "ON CONFLICT(collection_id,upstream_id,input_digest) "
+                "DO UPDATE SET version=excluded.version,selection_version=excluded.selection_version",
+                (*keys, next_version, entry["organization"]["version"] + 1),
+            )
             response = self._compose(db, json.loads(row[0]))
             if submission_key:
-                db.execute("INSERT INTO submissions VALUES(?,?,?)", (submission_key, payload_digest, canonical(response)))
+                db.execute(
+                    "INSERT INTO submissions VALUES(?,?,?)",
+                    (submission_key, payload_digest, canonical(response)),
+                )
         return response
 
     def organization_history(self, collection_id, upstream_id, input_digest):
         with self.transaction(write=False) as db:
-            return [json.loads(row[0]) for row in db.execute("SELECT document FROM organizations "
+            return [
+                json.loads(row[0])
+                for row in db.execute(
+                    "SELECT document FROM organizations "
                     "WHERE collection_id=? AND upstream_id=? AND input_digest=? ORDER BY version",
-                    (collection_id, upstream_id, input_digest))]
+                    (collection_id, upstream_id, input_digest),
+                )
+            ]
 
     def select_organization(self, collection_id, upstream_id, input_digest, version, *, base_version=None):
         if type(version) is not int or version < 0:
             raise MetadataError("invalid_version", "Organization selection must be a non-negative version")
         keys = (collection_id, upstream_id, input_digest)
         with self.transaction() as db:
-            head = db.execute("SELECT version,selection_version FROM organization_heads WHERE collection_id=? "
-                              "AND upstream_id=? AND input_digest=?", keys).fetchone()
+            head = db.execute(
+                "SELECT version,selection_version FROM organization_heads WHERE collection_id=? "
+                "AND upstream_id=? AND input_digest=?",
+                keys,
+            ).fetchone()
             current = head[1] if head else 0
             if base_version is not None and base_version != current:
-                raise MetadataError("organization_conflict", "Organization selection changed; reload before selecting", 409)
-            if version and db.execute("SELECT 1 FROM organizations WHERE collection_id=? AND upstream_id=? "
-                                      "AND input_digest=? AND version=?", (*keys, version)).fetchone() is None:
+                raise MetadataError(
+                    "organization_conflict", "Organization selection changed; reload before selecting", 409
+                )
+            if (
+                version
+                and db.execute(
+                    "SELECT 1 FROM organizations WHERE collection_id=? AND upstream_id=? "
+                    "AND input_digest=? AND version=?",
+                    (*keys, version),
+                ).fetchone()
+                is None
+            ):
                 raise MetadataError("unknown_organization", "Unknown organization result version", 404)
             selection = current if head is not None and head[0] == version else current + 1
-            db.execute("INSERT INTO organization_heads VALUES(?,?,?,?,?) ON CONFLICT(collection_id,upstream_id,input_digest) "
-                       "DO UPDATE SET version=excluded.version,selection_version=excluded.selection_version",
-                       (*keys, version, selection))
-        return {"collectionId": collection_id, "upstreamId": upstream_id, "inputDigest": input_digest,
-                "version": selection, "resultVersion": version, "status": "organized" if version else "pending"}
+            db.execute(
+                "INSERT INTO organization_heads VALUES(?,?,?,?,?) "
+                "ON CONFLICT(collection_id,upstream_id,input_digest) "
+                "DO UPDATE SET version=excluded.version,selection_version=excluded.selection_version",
+                (*keys, version, selection),
+            )
+        return {
+            "collectionId": collection_id,
+            "upstreamId": upstream_id,
+            "inputDigest": input_digest,
+            "version": selection,
+            "resultVersion": version,
+            "status": "organized" if version else "pending",
+        }
 
     def correct(self, collection_id, upstream_id, fields, *, base_version=None, reason):
         self.collection(collection_id)
@@ -308,97 +463,194 @@ class MetadataStore:
         text(upstream_id, "upstreamId", 512)
         text(reason, "reason", 2048)
         with self.transaction() as db:
-            row = db.execute("SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?",
-                             (collection_id, upstream_id)).fetchone()
+            row = db.execute(
+                "SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?",
+                (collection_id, upstream_id),
+            ).fetchone()
             current = row[0] if row else 0
             if base_version is not None and base_version != current:
-                raise MetadataError("correction_conflict", "Manual correction changed; reload before editing", 409)
+                raise MetadataError(
+                    "correction_conflict", "Manual correction changed; reload before editing", 409
+                )
             version = current + 1
-            key = digest({"collectionId": collection_id, "upstreamId": upstream_id, "version": version,
-                          "fields": fields, "reason": reason})
-            value = {"id": key, "collectionId": collection_id, "upstreamId": upstream_id, "version": version,
-                     "fields": fields, "reason": reason, "createdAt": now()}
-            db.execute("INSERT INTO corrections VALUES(?,?,?,?,?,1)",
-                       (key, collection_id, upstream_id, version, canonical(value)))
-            db.execute("INSERT INTO correction_heads VALUES(?,?,?) ON CONFLICT(collection_id,upstream_id) "
-                       "DO UPDATE SET version=excluded.version", (collection_id, upstream_id, version))
+            key = digest(
+                {
+                    "collectionId": collection_id,
+                    "upstreamId": upstream_id,
+                    "version": version,
+                    "fields": fields,
+                    "reason": reason,
+                }
+            )
+            value = {
+                "id": key,
+                "collectionId": collection_id,
+                "upstreamId": upstream_id,
+                "version": version,
+                "fields": fields,
+                "reason": reason,
+                "createdAt": now(),
+            }
+            db.execute(
+                "INSERT INTO corrections VALUES(?,?,?,?,?,1)",
+                (key, collection_id, upstream_id, version, canonical(value)),
+            )
+            db.execute(
+                "INSERT INTO correction_heads VALUES(?,?,?) ON CONFLICT(collection_id,upstream_id) "
+                "DO UPDATE SET version=excluded.version",
+                (collection_id, upstream_id, version),
+            )
         return value
 
     def corrections(self, collection_id=None, upstream_id=None):
         with self.transaction(write=False) as db:
-            rows = db.execute("SELECT document,active FROM corrections ORDER BY collection_id,upstream_id,version")
-            return [{**json.loads(row[0]), "active": bool(row[1])} for row in rows
-                    if (collection_id is None or json.loads(row[0])["collectionId"] == collection_id)
-                    and (upstream_id is None or json.loads(row[0])["upstreamId"] == upstream_id)]
+            rows = db.execute(
+                "SELECT document,active FROM corrections ORDER BY collection_id,upstream_id,version"
+            )
+            return [
+                {**json.loads(row[0]), "active": bool(row[1])}
+                for row in rows
+                if (collection_id is None or json.loads(row[0])["collectionId"] == collection_id)
+                and (upstream_id is None or json.loads(row[0])["upstreamId"] == upstream_id)
+            ]
 
     def retract(self, correction_id, *, base_version=None):
         with self.transaction() as db:
-            row = db.execute("SELECT document,active FROM corrections WHERE id=?", (correction_id,)).fetchone()
+            row = db.execute(
+                "SELECT document,active FROM corrections WHERE id=?", (correction_id,)
+            ).fetchone()
             if row is None:
                 raise MetadataError("unknown_correction", "Unknown correction", 404)
             result = json.loads(row[0])
             keys = (result["collectionId"], result["upstreamId"])
-            head = db.execute("SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?", keys).fetchone()[0]
+            head = db.execute(
+                "SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?", keys
+            ).fetchone()[0]
             if base_version is not None and base_version != head:
-                raise MetadataError("correction_conflict", "Manual correction changed; reload before retracting", 409)
+                raise MetadataError(
+                    "correction_conflict", "Manual correction changed; reload before retracting", 409
+                )
             if row[1]:
                 db.execute("UPDATE corrections SET active=0 WHERE id=?", (correction_id,))
-                db.execute("UPDATE correction_heads SET version=? WHERE collection_id=? AND upstream_id=?", (head + 1, *keys))
+                db.execute(
+                    "UPDATE correction_heads SET version=? WHERE collection_id=? AND upstream_id=?",
+                    (head + 1, *keys),
+                )
             return {**result, "active": False, "correctionVersion": head + int(bool(row[1]))}
 
-    def publish(self, inventory_ids=None, *, index_builder=None):
+    def publish(self, inventory_ids=None, *, index_builder=None, release_preparer=None):
         with self.transaction() as db:
             selected = {}
             latest = db.execute("SELECT document FROM metadata_state WHERE key='latestRelease'").fetchone()
             if latest is not None:
-                release = json.loads(db.execute("SELECT document FROM releases WHERE id=?", (json.loads(latest[0]),)).fetchone()[0])
+                release = json.loads(
+                    db.execute(
+                        "SELECT document FROM releases WHERE id=?", (json.loads(latest[0]),)
+                    ).fetchone()[0]
+                )
                 selected = {v["id"]: v["inventoryId"] for v in release["collections"]}
             if inventory_ids is None:
                 rows = db.execute("SELECT id,collection_id FROM inventories WHERE complete=1 ORDER BY rowid")
                 selected.update({row[1]: row[0] for row in rows})
             else:
                 for key in inventory_ids:
-                    row = db.execute("SELECT collection_id,complete FROM inventories WHERE id=?", (key,)).fetchone()
+                    row = db.execute(
+                        "SELECT collection_id,complete FROM inventories WHERE id=?", (key,)
+                    ).fetchone()
                     if row is None:
                         raise MetadataError("unknown_inventory", "Unknown publication inventory", 404)
                     if not row[1]:
-                        raise MetadataError("inventory_incomplete", "Incomplete enumeration cannot replace a collection", 409)
+                        raise MetadataError(
+                            "inventory_incomplete", "Incomplete enumeration cannot replace a collection", 409
+                        )
                     selected[row[0]] = key
             if not selected:
                 raise MetadataError("no_inventory", "There is no complete inventory to publish", 409)
             entries, collections = [], []
             for collection_id, inventory_id in sorted(selected.items()):
-                inv = json.loads(db.execute("SELECT document FROM inventories WHERE id=?", (inventory_id,)).fetchone()[0])
-                values = [self._compose(db, json.loads(row[0])) for row in db.execute(
-                    "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id", (inventory_id,))]
+                inv = json.loads(
+                    db.execute("SELECT document FROM inventories WHERE id=?", (inventory_id,)).fetchone()[0]
+                )
+                values = [
+                    self._compose(db, json.loads(row[0]))
+                    for row in db.execute(
+                        "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id",
+                        (inventory_id,),
+                    )
+                ]
                 entries.extend(values)
-                collections.append({"id": collection_id, "revision": inv["revision"], "inventoryId": inventory_id,
-                                    "coverage": {**inv["counts"], "inventoryComplete": True,
-                                                 "organized": sum(v["organization"]["status"] == "organized" for v in values)}})
-            vocabulary = json.loads(db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0])
+                collections.append(
+                    {
+                        "id": collection_id,
+                        "revision": inv["revision"],
+                        "inventoryId": inventory_id,
+                        "coverage": {
+                            **inv["counts"],
+                            "inventoryComplete": True,
+                            "organized": sum(v["organization"]["status"] == "organized" for v in values),
+                        },
+                    }
+                )
+            vocabulary = json.loads(
+                db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
+            )
             # Build every index before moving the active pointer. A callback may
             # perform a consumer's index validation; failures roll back activation.
-            index = [{"id": value["id"], "text": canonical({key: value.get(key) for key in
-                      ("name", "aliases", "summary", "category", "tags", "domains", "uses")})} for value in entries]
+            index = [
+                {
+                    "id": value["id"],
+                    "text": canonical(
+                        {
+                            key: value.get(key)
+                            for key in ("name", "aliases", "summary", "category", "tags", "domains", "uses")
+                        }
+                    ),
+                }
+                for value in entries
+            ]
             index_version = digest(index)
             if index_builder is not None:
                 index_builder(deepcopy(entries))
-            content = {"schema": SCHEMA, "collections": collections, "entries": entries,
-                       "vocabularyVersion": vocabulary["version"], "vocabularyDigest": digest(vocabulary),
-                       "indexVersion": index_version}
+            content = {
+                "schema": SCHEMA,
+                "collections": collections,
+                "entries": entries,
+                "vocabularyVersion": vocabulary["version"],
+                "vocabularyDigest": digest(vocabulary),
+                "indexVersion": index_version,
+            }
             identifier = digest(content)
             prior = db.execute("SELECT document FROM releases WHERE id=?", (identifier,)).fetchone()
-            document = json.loads(prior[0]) if prior else {
-                "id": identifier, "schema": SCHEMA, "createdAt": now(), "collections": collections,
-                "vocabularyVersion": vocabulary["version"], "vocabularyDigest": digest(vocabulary),
-                "indexVersion": index_version, "entryCount": len(entries)}
+            document = (
+                json.loads(prior[0])
+                if prior
+                else {
+                    "id": identifier,
+                    "schema": SCHEMA,
+                    "createdAt": now(),
+                    "collections": collections,
+                    "vocabularyVersion": vocabulary["version"],
+                    "vocabularyDigest": digest(vocabulary),
+                    "indexVersion": index_version,
+                    "entryCount": len(entries),
+                }
+            )
+            if release_preparer is not None:
+                release_preparer(deepcopy(document), deepcopy(entries))
             if prior is None:
                 db.execute("INSERT INTO releases VALUES(?,?)", (identifier, canonical(document)))
-                db.executemany("INSERT INTO release_entries VALUES(?,?,?,?)", (
-                    (identifier, value["id"], canonical(value), item["text"])
-                    for value, item in zip(entries, index, strict=True)))
-            db.execute("INSERT INTO metadata_state VALUES('latestRelease',?) ON CONFLICT(key) "
-                       "DO UPDATE SET document=excluded.document", (canonical(identifier),))
+                db.executemany(
+                    "INSERT INTO release_entries VALUES(?,?,?,?)",
+                    (
+                        (identifier, value["id"], canonical(value), item["text"])
+                        for value, item in zip(entries, index, strict=True)
+                    ),
+                )
+            db.execute(
+                "INSERT INTO metadata_state VALUES('latestRelease',?) ON CONFLICT(key) "
+                "DO UPDATE SET document=excluded.document",
+                (canonical(identifier),),
+            )
         return document
 
     def release(self, identifier=None):
@@ -408,8 +660,9 @@ class MetadataStore:
                 identifier = json.loads(row[0]) if row else None
             row = db.execute("SELECT document FROM releases WHERE id=?", (identifier,)).fetchone()
         if row is None:
-            raise MetadataError("unknown_release", "Catalog release is unavailable; start a fresh query", 409,
-                                restart=True)
+            raise MetadataError(
+                "unknown_release", "Catalog release is unavailable; start a fresh query", 409, restart=True
+            )
         return json.loads(row[0])
 
     def latest_release(self):
@@ -423,15 +676,23 @@ class MetadataStore:
     def entries(self, release_id=None):
         release = self.release(release_id)
         with self.transaction(write=False) as db:
-            return [json.loads(row[0]) for row in db.execute(
-                "SELECT document FROM release_entries WHERE release_id=? ORDER BY id", (release["id"],))]
+            return [
+                json.loads(row[0])
+                for row in db.execute(
+                    "SELECT document FROM release_entries WHERE release_id=? ORDER BY id", (release["id"],)
+                )
+            ]
 
     def entry(self, identity, release_id=None):
         with self.transaction(write=False) as db:
             if release_id is None:
-                row = db.execute("SELECT document FROM release_entries WHERE id=? ORDER BY rowid DESC LIMIT 1", (identity,)).fetchone()
+                row = db.execute(
+                    "SELECT document FROM release_entries WHERE id=? ORDER BY rowid DESC LIMIT 1", (identity,)
+                ).fetchone()
             else:
-                row = db.execute("SELECT document FROM release_entries WHERE release_id=? AND id=?", (release_id, identity)).fetchone()
+                row = db.execute(
+                    "SELECT document FROM release_entries WHERE release_id=? AND id=?", (release_id, identity)
+                ).fetchone()
         if row is None:
             raise MetadataError("unknown_entry", "Unknown exact catalog entry", 404)
         return json.loads(row[0])
@@ -478,7 +739,11 @@ class MetadataStore:
         return {"schema": SCHEMA, "tables": tables, "blobs": blobs}
 
     def restore(self, document):
-        if not isinstance(document, dict) or document.get("schema") != SCHEMA or set(document.get("tables", {})) != set(TABLES):
+        if (
+            not isinstance(document, dict)
+            or document.get("schema") != SCHEMA
+            or set(document.get("tables", {})) != set(TABLES)
+        ):
             raise MetadataError("invalid_backup", "Unsupported metadata backup")
         decoded = {}
         for key, value in document.get("blobs", {}).items():
@@ -510,16 +775,24 @@ class MetadataStore:
                 for row in rows:
                     if not isinstance(row, dict) or set(row) != set(columns):
                         raise MetadataError("invalid_backup", "Backup row differs from the metadata schema")
-                    db.execute("INSERT INTO " + table + " VALUES(" + ",".join("?" for _ in columns) + ")",
-                               tuple(row[column] for column in columns))
+                    db.execute(
+                        "INSERT INTO " + table + " VALUES(" + ",".join("?" for _ in columns) + ")",
+                        tuple(row[column] for column in columns),
+                    )
             latest = db.execute("SELECT document FROM metadata_state WHERE key='latestRelease'").fetchone()
-            if latest and db.execute("SELECT 1 FROM releases WHERE id=?", (json.loads(latest[0]),)).fetchone() is None:
+            if (
+                latest
+                and db.execute("SELECT 1 FROM releases WHERE id=?", (json.loads(latest[0]),)).fetchone()
+                is None
+            ):
                 raise MetadataError("invalid_backup", "Backup active release is absent")
             self._validate_restored(db)
         return {"schema": SCHEMA, "restored": True, "release": self.latest_release(), "blobs": len(decoded)}
 
     def _validate_restored(self, db):
-        profiles = [source_profile(json.loads(row[0])) for row in db.execute("SELECT document FROM collections")]
+        profiles = [
+            source_profile(json.loads(row[0])) for row in db.execute("SELECT document FROM collections")
+        ]
         datasets = [value["dataset"].casefold() for value in profiles]
         if len(set(datasets)) != len(datasets):
             raise MetadataError("invalid_backup", "Backup duplicates a dataset identity")
@@ -527,34 +800,57 @@ class MetadataStore:
         inventories = {}
         for row in db.execute("SELECT * FROM inventories"):
             value = json.loads(row["document"])
-            values = [json.loads(item[0]) for item in db.execute("SELECT document FROM inventory_entries "
-                     "WHERE inventory_id=? ORDER BY upstream_id", (row["id"],))]
-            if (value.get("id") != row["id"] or value.get("collectionId") != row["collection_id"]
-                    or row["collection_id"] not in collection_ids or value.get("revision") != row["revision"]
-                    or value.get("complete") is not bool(row["complete"])):
+            values = [
+                json.loads(item[0])
+                for item in db.execute(
+                    "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id",
+                    (row["id"],),
+                )
+            ]
+            if (
+                value.get("id") != row["id"]
+                or value.get("collectionId") != row["collection_id"]
+                or row["collection_id"] not in collection_ids
+                or value.get("revision") != row["revision"]
+                or value.get("complete") is not bool(row["complete"])
+            ):
                 raise MetadataError("invalid_backup", "Backup inventory identity is inconsistent")
             revision(row["revision"])
             normalized = [normalized_entry(row["collection_id"], row["revision"], item) for item in values]
-            expected = digest({"collectionId": row["collection_id"], "revision": row["revision"],
-                               "complete": bool(row["complete"]), "entries": normalized,
-                               "counts": value["counts"], "evidence": value["evidence"]})
+            expected = digest(
+                {
+                    "collectionId": row["collection_id"],
+                    "revision": row["revision"],
+                    "complete": bool(row["complete"]),
+                    "entries": normalized,
+                    "counts": value["counts"],
+                    "evidence": value["evidence"],
+                }
+            )
             if expected != row["id"] or value["counts"]["entries"] != len(values):
                 raise MetadataError("invalid_backup", "Backup inventory digest or count is inconsistent")
             inventories[row["id"]] = {item["id"]: item for item in values}
         for row in db.execute("SELECT id,document FROM releases"):
             value = json.loads(row[1])
-            entries = [json.loads(item[0]) for item in db.execute("SELECT document FROM release_entries "
-                       "WHERE release_id=?", (row[0],))]
+            entries = [
+                json.loads(item[0])
+                for item in db.execute("SELECT document FROM release_entries WHERE release_id=?", (row[0],))
+            ]
             entries.sort(key=lambda item: (item["collectionId"], item["upstreamId"]))
             if value.get("id") != row[0] or value.get("entryCount") != len(entries):
                 raise MetadataError("invalid_backup", "Backup release identity or count is inconsistent")
             expected_entries = {}
             for collection in value["collections"]:
                 inventory_id = collection["inventoryId"]
-                inv = db.execute("SELECT collection_id,revision,complete FROM inventories WHERE id=?",
-                                 (inventory_id,)).fetchone()
-                if (inv is None or not inv[2] or inv[0] != collection["id"]
-                        or inv[1] != collection["revision"]):
+                inv = db.execute(
+                    "SELECT collection_id,revision,complete FROM inventories WHERE id=?", (inventory_id,)
+                ).fetchone()
+                if (
+                    inv is None
+                    or not inv[2]
+                    or inv[0] != collection["id"]
+                    or inv[1] != collection["revision"]
+                ):
                     raise MetadataError("invalid_backup", "Backup release has an invalid inventory reference")
                 expected_entries.update(inventories[inventory_id])
                 if collection["coverage"]["entries"] != len(inventories[inventory_id]):
@@ -563,14 +859,33 @@ class MetadataStore:
                 raise MetadataError("invalid_backup", "Backup release inventory identities are inconsistent")
             if any(entry["inputDigest"] != expected_entries[entry["id"]]["inputDigest"] for entry in entries):
                 raise MetadataError("invalid_backup", "Backup release changed a source input identity")
-            index = [{"id": entry["id"], "text": canonical({key: entry.get(key) for key in
-                      ("name", "aliases", "summary", "category", "tags", "domains", "uses")})} for entry in entries]
-            content = {"schema": SCHEMA, "collections": value["collections"], "entries": entries,
-                       "vocabularyVersion": value["vocabularyVersion"],
-                       "vocabularyDigest": value["vocabularyDigest"], "indexVersion": digest(index)}
+            index = [
+                {
+                    "id": entry["id"],
+                    "text": canonical(
+                        {
+                            key: entry.get(key)
+                            for key in ("name", "aliases", "summary", "category", "tags", "domains", "uses")
+                        }
+                    ),
+                }
+                for entry in entries
+            ]
+            content = {
+                "schema": SCHEMA,
+                "collections": value["collections"],
+                "entries": entries,
+                "vocabularyVersion": value["vocabularyVersion"],
+                "vocabularyDigest": value["vocabularyDigest"],
+                "indexVersion": digest(index),
+            }
             if value["indexVersion"] != content["indexVersion"] or row[0] != digest(content):
                 raise MetadataError("invalid_backup", "Backup release or index digest is inconsistent")
-            actual_index = {item[0]: item[1] for item in db.execute("SELECT id,search_text FROM release_entries "
-                            "WHERE release_id=?", (row[0],))}
+            actual_index = {
+                item[0]: item[1]
+                for item in db.execute(
+                    "SELECT id,search_text FROM release_entries WHERE release_id=?", (row[0],)
+                )
+            }
             if actual_index != {item["id"]: item["text"] for item in index}:
                 raise MetadataError("invalid_backup", "Backup index differs from its release")
