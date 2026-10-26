@@ -10,6 +10,7 @@
 > | Lab Assets and Scenes | 库、素材包、场景包、验证报告、agent 接口与人工关口 | A1–A3 |
 > | [Lab Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md) | 外部 Agent 对话、素材检索／获取、Blender 工厂与结果管理 | SF0–SF5（SF1 分 a/b） |
 > | [Scene Factory 全量目录](LAB_SCENE_FACTORY_SPEC_V1.md#15-全量素材目录同步186加载策略修订-192) | 全量轻量索引、分页检索、预览／详情懒加载、多来源隔离；不含制作过程页面 | SF6 / #186 / #192 |
+> | [HF 资产元数据维护](LAB_ASSET_METADATA_PLATFORM_SPEC_V1.md) | HF Dataset 为中心、本机轻量元数据库、后台 Agent skills、完整清单与增量整理、共享检索及分页 | #196，待实施 |
 > | Lab Live Operations | 物联网设备、实验室实况、告警、历史、收件箱、操作计划与路径预览 | L1–L3 |
 > | Lab Training | 作业、计算节点、训练视图、评估、策略、脚本程序、示范、实验记录 | T0–T3 |
 > | Lab RSI | 两层改进对象、Agent 运行器、评估中心、成本中心、资源 | R1–R4 |

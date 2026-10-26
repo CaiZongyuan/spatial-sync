@@ -30,8 +30,32 @@ The local collection of every imported Asset version that people and agents can 
 _Avoid_: Registry, repository
 
 **External Asset Catalog** (外部素材目录):
-A discoverable collection of offerings from external publishers that people and agents can acquire to prepare local Assets.
+A maintained collection of offerings from external publishers, described with shared categories, tags and other metadata so people and agents can discover and compare them before preparing local Assets.
 _Avoid_: Asset Library (the imported local collection), marketplace
+
+**Source Collection** (来源集合):
+An external publisher's dataset or asset collection maintained as one catalog scope, with its related data, documentation and browsing locations. Its inventory has explicit content types and counting units.
+_Avoid_: Provider (a hosting or integration role), URL (one location)
+
+**Catalog Entry** (目录条目):
+One external offering discovered within a Source Collection, retaining its upstream identity and associated source versions. It can have several file representations and becomes an installed Asset only after preparation and import.
+_Avoid_: Asset (the prepared local package), file (one representation or supporting resource)
+
+**Catalog Metadata** (目录元数据):
+The names, aliases, categories, tags, summaries and other descriptions associated with an external offering, used by people and agents to find and assess it. Publisher statements, agent descriptions and platform validation retain their distinct meaning.
+_Avoid_: Asset (the prepared local package), Validation Report (the outcome of platform checks)
+
+**Catalog Category** (目录类别):
+A shared classification of what an external offering represents, such as medical equipment / anesthesia machine or furniture / worktable. It can be more specific than the Asset kind assigned to a local Asset.
+_Avoid_: Asset kind (the local Asset's broad kind), EntityType (device behavior)
+
+**Catalog Maintenance Run** (目录维护运行):
+One attempt to build or refresh a Source Collection's Catalog Metadata, including its processed scope, unresolved gaps and outcome.
+_Avoid_: Acquisition (preparing a local Asset), training Job, laboratory Session
+
+**Catalog Release** (目录发布版本):
+A published, identifiable state of the External Asset Catalog that people and agents can browse and query consistently. It states which source versions and organized descriptions it contains.
+_Avoid_: Source revision, Asset version, Scene Version
 
 **Source Package** (来源包):
 The original material supplied by an external publisher for one item, including its dependencies and license notices, from which an Asset is prepared.

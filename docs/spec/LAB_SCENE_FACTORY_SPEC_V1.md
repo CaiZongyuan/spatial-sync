@@ -10,7 +10,7 @@
 >
 > 启动与操作：[Scene Factory 指引](../SCENE_FACTORY.md)。
 >
-> 下一期增量：[#186](https://github.com/CaiZongyuan/spatial-sync/issues/186)，仅全量目录同步，见 §15。用户已取消 Agent 场景制作过程可视化；历史独立原型不属于本期实施。
+> 目录同步范围：[#186](https://github.com/CaiZongyuan/spatial-sync/issues/186)，见 §15。后续元数据维护增量见 [HF 资产元数据维护规格](LAB_ASSET_METADATA_PLATFORM_SPEC_V1.md)（[#196](https://github.com/CaiZongyuan/spatial-sync/issues/196)，待实施）。用户已取消 Agent 场景制作过程可视化；历史独立原型不属于本期实施。
 
 ## 1. 交付目标
 
@@ -302,3 +302,5 @@ Blender USD 往返存在层／变体／材质边界；MCP 提供控制能力，�
 - 目录更新只访问注册来源的轻量枚举；详情／预览请求独立于更新任务。跟随的分页限制在该来源／revision。默认并发上限 8、请求超时 20 秒、最多 3 次尝试；单份元数据或预览不超过 2 MiB，目录更新传输上限 2 GiB，按需内容缓存上限 2 GiB 并可淘汰重取。优先选择实际字节最小的缩略图；限流尊重 Retry-After／RateLimit。旧快照与用户导入素材不参与内容缓存淘汰。
 - Web、CLI、MCP 通过共享 HTTP 启动、观察、取消、重试。目录更新在后台进行，当前搜索继续可用；未更新时使用已提交的离线精选快照。Web 用精简状态与来源筛选，不将全量图片下载当作检索准备步骤；按需图片经受控服务端读取，不直接请求外部图片。
 - 验收覆盖完整分页、增量复用、单包缺口、取消／中断／重启、失败保留旧快照、精确旧版本与准入隔离、三端一致和浏览器旅程；CI 用可控来源，无在线全量、付费模型或 GPU 依赖。另以真实来源身份集合对账记录实际覆盖、字节、缺口和全量检索耗时。执行仓库 Mandatory checks，原始回执留 `.scratch/`。
+
+2026-10-26 后续增量以 [HF 资产元数据维护规格](LAB_ASSET_METADATA_PLATFORM_SPEC_V1.md)为准：保持本节浏览路径的轻量同步、按需预览与获取边界，另增独立后台维护路径，按预算读取元数据并持久整理为共享检索内容。Hugging Face Dataset 是主要维护单位，GitHub／项目站等作为关联资料；元数据核心与 Lab World 获取、验证和设备模型解耦，首期复用现有 API 宿主。该能力尚未实施。
