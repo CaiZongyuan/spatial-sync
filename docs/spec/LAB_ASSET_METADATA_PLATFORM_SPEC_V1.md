@@ -1,6 +1,6 @@
 # Hugging Face 资产元数据维护平台
 
-> Specification v1.0 · 2026-10-26 · 用户已确认方向，待实施。
+> Specification v1.0 · 2026-10-26 · 用户已确认方向；实现、运行配置与验证见维护指引。
 >
 > 跟踪：[Spec #196](https://github.com/CaiZongyuan/spatial-sync/issues/196)。实施票、状态与交付证据在该 issue 维护。
 >
@@ -147,5 +147,5 @@
 - 首批一手输入：[SimReady 数据集](https://huggingface.co/datasets/nvidia/simready-assets/tree/524747d9b5e1f21b5b18b56041788c01d745f1a1)、[SimReady Central 说明](https://huggingface.co/spaces/nvidia/simready-central/blob/e131715eb52d323bd903b1e51f81fb86bce96081/README.md)、[Scenario 数据集说明](https://huggingface.co/datasets/scenario-labs/3d-collection/blob/55b4c002b4c1529fc48da3dff98516c3069bfa3f/README.md)、[ChemLab 数据集](https://huggingface.co/datasets/MBZUAI/ChemLab-Assets/tree/3b67020dcccb22e60be3235f32b39d03da5959ab)、[ChemLab 项目说明](https://github.com/mbzuai-nlp/ChemLab-Assets/blob/abee1cc5c38ed856979e13736417e3bfbd124d17/README_zh.md)。
 - 来源事实：Scenario 为 1,342 个例子、1,500 个输出文件，其主要元信息约 17 MB；ChemLab 发布清单列 265 个资产身份（203 仪器、48 器具、14 家具），Viewer 的 203 行只覆盖仪器；SimReady Space 的索引数不能代替另一版本的原始包数。实施时以选定版本重新对账。
 - 代码、模型、目录、图片和逐项数据的许可范围分别记录。ChemLab 代码 MIT 与资产／目录／预览 CC-BY-NC 等声明不同；这些事实用于准确描述来源，不在本规格中扩大现有获取准入。
-- 建议交付顺序：完整清单与持久模型 → 后台 skills 自动维护与恢复 → 一致发布、共享检索及分页 UI → 持续发现与定向修复。实施票作为本 spec 的原生子票，真实阻塞使用 issue dependencies；本次先发布 spec，不创建或启动实施批次。
+- 建议交付顺序：完整清单与持久模型 → 后台 skills 自动维护与恢复 → 一致发布、共享检索及分页 UI → 持续发现与定向修复。实施票作为本 spec 的原生子票，真实阻塞使用 issue dependencies；实施与验收由 #197、#198、#199、#200 跟踪；真实 Agent 组织质量按已配置运行时和具体预算另留证据。
 - 模型与运行时使用本机已配置 profile，新增运行时集成保持最小范围。采集、缓存、模型用量与时长参数在实施票记录默认值和真实回执；规格确认不代表授权无限资源或额外付费执行。
