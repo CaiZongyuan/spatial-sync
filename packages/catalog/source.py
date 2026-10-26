@@ -22,6 +22,12 @@ MAX_PACKAGES = 100000
 MAX_PAGES = 10000
 
 
+def object_preview_path(package, path):
+    from packages.catalog_metadata.recipes import preview_choice
+    return (isinstance(path, str) and path.startswith(package + "/simready_usd/.thumbs/")
+            and preview_choice([{"path": path, "size": 0}]) is not None)
+
+
 class SyncCancelled(Exception):
     pass
 
@@ -226,8 +232,7 @@ class SimReadySource:
         # Only the package model's thumbnail directory represents the object.
         # A smaller normal/material preview under Textures or source_assets is
         # not an object image. Maintenance and legacy lazy reads share policy.
-        preview = preview_choice([item for item in files
-                                  if item["path"].startswith(package + "/simready_usd/.thumbs/")])
+        preview = preview_choice([item for item in files if object_preview_path(package, item["path"])])
         return {
             "source": {
                 "files": len(files), "bytes": sum(item["size"] for item in files),

@@ -220,7 +220,8 @@ class ReleasedViews:
                     "A new catalog view could not be prepared; this search uses the previous release."
                 )
                 return previous
-        if value.snapshot is not None:
+        if (value.snapshot is not None
+            and (self._active is None or self._active.snapshot.id != value.snapshot.id)):
             pointer = self.root / "active.json"
             try:
                 self._write(pointer, {"id": value.snapshot.id})

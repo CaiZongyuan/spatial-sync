@@ -49,11 +49,6 @@ class AssetCatalog:
             self.metadata_store = store
             self._metadata_views = ReleasedViews(self, store)
 
-    def validate_metadata(self, documents):
-        from packages.catalog.maintained import adapt_entry
-        entries = [adapt_entry(document, self.by_id.get(document["id"])) for document in documents]
-        build_semantic_index(entries, "metadata-validation", embedder=self.embedder)
-
     def prepare_metadata_release(self, release, documents, *, vocabulary=None):
         """Build and persist the real consuming index before core activation."""
         if self._metadata_views is not None:
