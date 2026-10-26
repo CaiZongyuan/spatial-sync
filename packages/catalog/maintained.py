@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 import tempfile
 import threading
 from collections import OrderedDict
@@ -79,13 +80,17 @@ def adapt_entry(document, legacy=None, *, release_id=None, vocabulary=None):
     preview = document.get("preview", {})
     state = preview.get("state", "not_collected")
     path = preview.get("path")
+    cached_digest = preview.get("cachedSha256") or preview.get("sha256")
+    cached = isinstance(cached_digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", cached_digest)
+    usable = preview.get("role") == "object" and (path or cached) and state not in ("missing", "suspect")
+    preview_query = {"entry": identity}
+    if release_id is not None:
+        preview_query["release"] = release_id
     preview_document = {
-        "kind": "on-demand" if path and state not in ("missing", "suspect") else "unavailable",
+        "kind": "on-demand" if usable else "unavailable",
         "state": state,
         "role": preview.get("role"),
-        "url": "/api/v1/library/catalog/maintenance/preview?" + urlencode({
-            "entry": identity, "release": release_id,
-        }) if path and state not in ("missing", "suspect") else None,
+        "url": "/api/v1/library/catalog/maintenance/preview?" + urlencode(preview_query) if usable else None,
         "reason": preview.get("reason") or {
             "not_collected": "Object preview has not been read; it loads when visible.",
             "missing": "No object preview is supplied by this source.",
@@ -291,7 +296,6 @@ class ReleasedViews:
             temporary.unlink(missing_ok=True)
 
     def _read(self, identifier):
-        import re
         if not isinstance(identifier, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", identifier):
             raise LibraryError("release_expired", "Released view is unavailable; "
                                "repeat the search without release", 409)

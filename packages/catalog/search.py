@@ -105,6 +105,7 @@ class Filters:
     max_dimension_m: float | None = None
     category: str | None = None
     tag: str | None = None
+    gaps: bool | None = None
 
     def applied(self):
         values = (
@@ -119,6 +120,7 @@ class Filters:
             ("maxDimensionM", self.max_dimension_m),
             ("category", self.category),
             ("tag", self.tag),
+            ("gaps", self.gaps),
         )
         return {name: value for name, value in values if value is not None}
 
@@ -350,6 +352,9 @@ def _local_status(local, filters):
     metadata = local.version.metadata
     usage = _local_usage(local)
     status = {}
+    if filters.gaps is not None:
+        summary = local.version.summary()
+        status["gaps"] = bool(summary.get("gapCount")) == filters.gaps
     metadata_entry = local.entry.metadata if local.entry is not None else None
     if filters.category is not None:
         category = (metadata_entry or {}).get("category")
@@ -787,10 +792,13 @@ def search_catalog(
     category=None,
     tag=None,
     page=None,
+    gaps=None,
     now=None,
 ):
     if scope not in SCOPES:
         raise ValueError("scope must be all, local or online")
+    if gaps is not None and (scope != "local" or type(gaps) is not bool):
+        raise LibraryError("invalid_filter", "gaps is a boolean filter for scope=local", 400)
     if sort not in SORTS:
         raise ValueError("sort must be relevance, name or sourceBytes")
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_LIMIT:
@@ -816,7 +824,7 @@ def search_catalog(
         max_source_bytes=max_source_bytes,
         min_dimension_m=min_dimension_m,
         max_dimension_m=max_dimension_m,
-        category=category, tag=tag,
+        category=category, tag=tag, gaps=gaps,
     )
     if scope in ("all", "online"):
         catalog.require()

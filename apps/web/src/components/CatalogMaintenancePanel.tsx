@@ -56,7 +56,7 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
   };
   return <details className="catalog-maintenance" aria-label="元数据维护">
     <summary>元数据维护 <span>{state?.collections.length ?? '…'} 个集合</span></summary>
-    <p className="asset-small-note">清单覆盖与整理覆盖分别统计。维护期间仍可浏览当前发布。</p>
+    <p className="asset-small-note">清单、字段提取与整理覆盖分别统计。维护期间仍可浏览当前发布。</p>
     {state && <p className="asset-small-note">{state.runtime.configured
       ? `Agent Runtime：${state.runtime.profile ?? '已配置'}`
       : 'Agent Runtime 待配置；可提取来源已有字段，自动摘要与分类尚待配置。'}</p>}
@@ -72,7 +72,7 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
           {coverage.inventoryComplete === true && ' · 清单完整'}</p>
         <div className="catalog-maintenance-actions">
           <label><input type="checkbox" checked={collection.enabled} disabled={busy}
-            onChange={event => void act(() => setMetadataCollectionEnabled(collection.id, event.target.checked))} />启用自动维护</label>
+            onChange={event => void act(() => setMetadataCollectionEnabled(collection.id, event.target.checked))} />启用此集合</label>
           <button disabled={busy || !!active} onClick={() => void act(() => startMetadataRun(collection.id))}>维护 {collection.id}</button>
           {active && <button disabled={busy || run.status === 'cancelling'}
             onClick={() => void act(() => controlMetadataRun(run.id, 'cancel'))}>取消维护</button>}
@@ -83,6 +83,9 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
         </div>
         {run && <p role="status">{statusLabels[run.status] ?? run.status} · {stageLabels[run.phase] ?? run.phase}
           {run.coverage && ` · 已索引 ${run.coverage.indexed} · 已整理 ${run.coverage.organized} · 失败 ${run.coverage.failed}`}
+          {run.coverage?.extracted !== undefined && ` · 已提取 ${run.coverage.extracted}`}
+          {run.coverage?.extractionPending !== undefined && ` · 待提取 ${run.coverage.extractionPending}`}
+          {run.coverage?.extractionFailed !== undefined && ` · 提取失败 ${run.coverage.extractionFailed}`}
           {run.usage && ` · 网络 ${formatBytes(run.usage.networkBytes)}`}
           {run.message && ` · ${run.message}`}</p>}
         {run?.errors && run.errors.length > 0 && <details><summary>维护问题</summary><ul>{run.errors.map((value, index) =>

@@ -1,4 +1,5 @@
 import { request } from './api';
+import type { AssetVersion } from './asset-library';
 
 // The unified catalog search stays device-agnostic: it only exposes catalog
 // candidates, their fixed source identity and bounded acquisition evidence.
@@ -97,7 +98,7 @@ export interface CatalogLocalAsset {
   implementedTypes: string[];
   gaps: string[];
   gapCount: number;
-  completeness: Record<string, unknown>;
+  completeness: AssetVersion['completeness'];
   validationStatus: string | null;
   thumbnailUrl: string | null;
   visualUrl: string | null;
@@ -142,6 +143,19 @@ export interface CatalogCandidate {
   category?: string | null;
   tags?: string[];
   metadata?: { release: string; organization?: { status: string; version: number }; vocabularyVersion: string };
+}
+
+export function localAssetVersion(candidate: CatalogCandidate): AssetVersion | undefined {
+  const local = candidate.local;
+  if (candidate.type !== 'local' || !local) return undefined;
+  return {
+    ...local.asset, id: local.id, assetId: local.id.split('@')[0], assetVersion: local.id,
+    rev: local.rev, kind: local.asset.kind as AssetVersion['kind'],
+    title: local.asset.title ?? candidate.title,
+    description: candidate.descriptions.zh || candidate.descriptions.en || '',
+    root: local.root, contentHash: local.contentHash,
+    validationStatus: local.asset.validationStatus ?? 'unknown',
+  };
 }
 
 export interface CatalogSearchResponse {
@@ -266,6 +280,7 @@ export interface CatalogSearchFilters {
   release?: string;
   page?: number;
   sort?: 'relevance' | 'name' | 'sourceBytes';
+  gaps?: boolean;
 }
 
 /** Query parameters for the bounded unified search. Empty values are omitted. */
@@ -284,6 +299,7 @@ export function catalogSearchParams(filters: CatalogSearchFilters): URLSearchPar
   if (filters.release) params.set('release', filters.release);
   if (filters.page !== undefined) params.set('page', String(filters.page));
   if (filters.sort) params.set('sort', filters.sort);
+  if (filters.gaps !== undefined) params.set('gaps', String(filters.gaps));
   return params;
 }
 
@@ -350,6 +366,7 @@ export const filterLabels: Record<string, string> = {
   installed: '本地已安装', minSourceBytes: '最小来源字节', maxSourceBytes: '最大来源字节',
   minDimensionM: '最小尺寸', maxDimensionM: '最大尺寸',
   category: '物体类别', tag: '标签',
+  gaps: '缺口',
 };
 
 export const zeroReasonLabels: Record<CatalogZeroResult['reason'], string> = {

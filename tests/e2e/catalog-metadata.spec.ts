@@ -99,6 +99,86 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   await page.setViewportSize({ width: 400, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await page.screenshot({ path: '../../.scratch/metadata-ui/narrow.png', fullPage: true });
+  // Imported local versions share the exact same metadata conditions. One
+  // associated container matches; a different associated class and unknown
+  // built-in provenance do not satisfy the retained hard filters.
+  await page.setViewportSize({ width: 1440, height: 960 });
+  const imported: string[] = [];
+  for (const matching of [true, false]) {
+    const artifact = await request.get(`${api}/e2e/metadata-catalog/local-package`, { params: { matching } });
+    const result = await request.post(`${api}/api/v1/library/imports`, {
+      data: await artifact.body(), headers: { 'Content-Type': 'application/x-tar' },
+    });
+    expect(result.ok()).toBe(true);
+    imported.push((await result.json()).assetVersion);
+  }
+  const unknown = await (await request.get(`${api}/api/v1/library/search`, {
+    params: { scope: 'local', q: 'asset:robot/fr3@1' },
+  })).json();
+  expect(unknown.results[0].source.provider).toBeNull();
+  await page.getByRole('button', { name: '本地', exact: true }).click();
+  await expect(page.getByLabel('物体类别')).toHaveValue('container');
+  await expect(page.getByLabel('素材标签')).toHaveValue('sample');
+  await expect(page.getByLabel('素材来源')).toHaveValue('scenario');
+  await page.getByRole('button', { name: '▦ 卡片', exact: true }).click();
+  await expect(page.locator('.asset-card')).toHaveCount(1);
+  await expect(page.locator('.asset-card')).toContainText('Metadata associated beaker');
+  await expect(page.locator('.asset-card .asset-dots i')).toHaveCount(6);
+  const localParams = { scope: 'local', category: 'container', tag: 'sample', provider: 'scenario',
+    q: '样品容器', sort: 'name', page: 1, limit: 24, release: released! };
+  const local = await (await request.get(`${api}/api/v1/library/search`, { params: localParams })).json();
+  expect(local.results.map((value: { id: string }) => value.id)).toEqual([imported[0]]);
+  expect(local.counts.matching).toBe(1);
+  await page.getByRole('checkbox', { name: '只看缺口', exact: true }).check();
+  const gaps = await (await request.get(`${api}/api/v1/library/search`, { params: { ...localParams, gaps: true } })).json();
+  await expect(page.locator('.asset-card')).toHaveCount(gaps.counts.returned);
+  expect(gaps.results.every((value: { local: { asset: { gapCount: number } } }) => value.local.asset.gapCount > 0)).toBe(true);
+  await page.getByRole('checkbox', { name: '只看缺口', exact: true }).uncheck();
+  await page.getByRole('button', { name: '☷ 列表', exact: true }).click();
+  await expect(page.locator('.asset-list-table tbody tr')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.asset-list-table tbody tr')).toHaveCount(1);
+  await expect(page.getByLabel('素材排序')).toHaveValue('name');
+  await page.getByLabel('用途', { exact: true }).selectOption('staticCollision');
+  await expect(page.getByRole('heading', { name: '没有匹配的素材', exact: true })).toBeVisible();
+  await page.getByLabel('用途', { exact: true }).selectOption('');
+  await page.getByLabel('素材标签').fill('does-not-exist');
+  await expect(page.getByRole('heading', { name: '没有匹配的素材', exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('tag')).toBe('does-not-exist');
+  await page.goto(`${web}/assets?scope=local`);
+  await expect(page.getByLabel('素材来源').locator('option[value="scenario"]')).toHaveCount(1);
+  await page.getByLabel('素材来源').selectOption('scenario');
+  await page.getByLabel('物体类别').selectOption('container');
+  await page.getByLabel('素材标签').fill('sample');
+  await expect(page.locator('.asset-card')).toHaveCount(1);
+  await expect(page.locator('.asset-card')).toContainText('Metadata associated beaker');
+
+  // Real public task control supplies extraction counters without launching
+  // an upstream or Agent worker in this deterministic browser fixture.
+  const base = `${api}/api/v1/library/catalog/maintenance`;
+  expect((await request.patch(`${base}/collections/scenario`, { data: { enabled: true } })).ok()).toBe(true);
+  const started = await request.post(`${base}/runs`, { data: { collectionId: 'scenario', revision: 'd'.repeat(40) } });
+  expect(started.ok()).toBe(true);
+  const run = (await started.json()).id;
+  const entries = [{ upstreamId: 'progress-1' }, { upstreamId: 'progress-2' }, { upstreamId: 'progress-3' }];
+  expect((await request.post(`${base}/runs/${run}/inventory`, { data: { entries, offset: 0 } })).ok()).toBe(true);
+  expect((await request.post(`${base}/runs/${run}/inventory/complete`, { data: {
+    complete: true, extractionComplete: false, revision: 'd'.repeat(40), counts: { entries: 3 },
+    usage: { requests: 0, networkBytes: 0, previewBytes: 0 },
+  } })).ok()).toBe(true);
+  expect((await request.post(`${base}/runs/${run}/extracted`, { data: { entries: [
+    { upstreamId: 'progress-1', extractionStatus: 'extracted' },
+    { upstreamId: 'progress-2', extractionStatus: 'failed' },
+  ] } })).ok()).toBe(true);
+  await page.goto(`${web}/assets?scope=online&provider=scenario`);
+  const maintenance = page.locator('.catalog-maintenance');
+  await maintenance.locator('summary').first().click();
+  const collection = maintenance.locator('.catalog-maintenance-collection').filter({ has: page.locator('strong', { hasText: 'scenario' }) });
+  await expect(collection).toContainText('已提取 1');
+  await expect(collection).toContainText('待提取 1');
+  await expect(collection).toContainText('提取失败 1');
+  await expect(collection.getByRole('checkbox', { name: '启用此集合', exact: true })).toBeChecked();
+  expect((await request.post(`${base}/runs/${run}/cancel`)).ok()).toBe(true);
   expect(remote).toEqual([]);
   } catch (error) { original.push(error); }
   finally {

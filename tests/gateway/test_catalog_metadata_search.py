@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from packages.catalog_metadata import MetadataStore
+from tests.fixtures.catalog_source import PNG
+from tests.gateway.test_catalog_search import correlated_asset, upload
 
 REVISION = "b" * 40
 
@@ -222,3 +224,67 @@ def test_old_http_search_stays_available_while_new_consumer_index_is_paused(tmp_
             finally:
                 release.set()
             publishing.result(timeout=4)
+
+
+def test_embedded_preview_and_old_exact_preview_stay_readable_from_retained_cache(tmp_path, monkeypatch):
+    from packages.catalog_metadata.hub import HFHubReader
+
+    store = MetadataStore(tmp_path / "metadata")
+    digest = store.put_blob(PNG, kind="preview")["sha256"]
+    entry = {"upstreamId": "embedded-object", "preview": {
+        "state": "available", "role": "object", "path": None,
+        "cachedSha256": digest, "embedded": True,
+    }}
+    initial = store.stage_inventory("scenario", "a" * 40, [entry], complete=True)
+    store.publish([initial["id"]])
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("A cached embedded preview must not contact upstream")
+
+    monkeypatch.setattr(HFHubReader, "_fetch", no_network)
+    app = create_app(metadata_store=store, metadata_launch_workers=False)
+    with TestClient(app) as client:
+        result = client.get("/api/v1/library/search", params={"scope": "online", "provider": "scenario"})
+        assert result.status_code == 200, result.text
+        preview = result.json()["results"][0]["preview"]
+        assert preview["state"] == "available" and preview["kind"] == "on-demand"
+        assert client.get(preview["url"]).content == PNG
+        newer = store.stage_inventory("scenario", "b" * 40, [entry], complete=True)
+        store.publish([newer["id"]], release_preparer=app.state.catalog.prepare_metadata_release)
+        old = client.get("/api/v1/library/catalog/entries/scenario/embedded-object/" + "a" * 40)
+        assert old.status_code == 200, old.text
+        old_url = old.json()["preview"]["url"]
+        assert "release=None" not in old_url
+        assert client.get(old_url).content == PNG
+    with TestClient(create_app(metadata_store=store, metadata_launch_workers=False)) as client:
+        assert client.get(old_url).content == PNG
+        store.blob_path(digest).unlink()
+        unavailable = client.get(old_url)
+        assert unavailable.status_code == 404
+        assert unavailable.json()["detail"]["code"] == "preview_unavailable"
+
+
+def test_shared_local_metadata_filters_exclude_unknown_and_nonmatching_assets(tmp_path):
+    store = MetadataStore(tmp_path / "metadata")
+    revision = "524747d9b5e1f21b5b18b56041788c01d745f1a1"
+    inventory = store.stage_inventory("simready", revision, [{
+        "upstreamId": "box_cardboard_a01", "category": "container", "tags": ["sample"],
+        "aliases": {"en": [], "zh": ["样品容器"]},
+    }], complete=True)
+    store.publish([inventory["id"]])
+    with TestClient(create_app(metadata_store=store, metadata_launch_workers=False)) as client:
+        matching = upload(client, correlated_asset())["assetVersion"]
+        unknown = client.get("/api/v1/library/search", params={"scope": "local"}).json()
+        assert len(unknown["results"]) > 1
+        filters = {"scope": "local", "category": "container", "tag": "sample", "q": "样品容器",
+                   "sort": "name", "page": 1, "limit": 24}
+        filtered = client.get("/api/v1/library/search", params=filters)
+        assert filtered.status_code == 200, filtered.text
+        assert [value["id"] for value in filtered.json()["results"]] == [matching]
+        for different in ({"category": "equipment"}, {"provider": "scenario"}):
+            excluded = client.get("/api/v1/library/search", params={**filters, **different})
+            assert excluded.json()["results"] == []
+        gap_only = client.get("/api/v1/library/search", params={**filters, "gaps": True})
+        assert gap_only.status_code == 200, gap_only.text
+        for value in gap_only.json()["results"]:
+            assert value["local"]["asset"]["gapCount"] > 0

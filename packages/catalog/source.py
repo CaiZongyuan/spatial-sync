@@ -14,18 +14,13 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from packages.catalog.models import PACKAGE, REVISION
+from packages.catalog_metadata.recipes import simready_object_preview_path as object_preview_path
 
 DATASET = "nvidia/simready-assets"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_TRANSFER_BYTES = 2 * 1024 * 1024 * 1024
 MAX_PACKAGES = 100000
 MAX_PAGES = 10000
-
-
-def object_preview_path(package, path):
-    from packages.catalog_metadata.recipes import preview_choice
-    return (isinstance(path, str) and path.startswith(package + "/simready_usd/.thumbs/")
-            and preview_choice([{"path": path, "size": 0}]) is not None)
 
 
 class SyncCancelled(Exception):

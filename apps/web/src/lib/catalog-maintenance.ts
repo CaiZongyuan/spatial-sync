@@ -8,7 +8,8 @@ export interface MetadataRun {
   id: string; collectionId: string; status: string; phase: string;
   processed?: number; failed?: number; pending?: number; message?: string;
   counts?: Record<string, number | null>; usage?: Record<string, number | null>;
-  coverage?: { discovered: number; indexed: number; organized: number; failed: number; reused: number };
+  coverage?: { discovered: number; indexed: number; organized: number; failed: number; reused: number;
+    extracted?: number; extractionPending?: number; extractionFailed?: number };
   errors?: { message: string; entry?: string }[];
 }
 export interface MetadataState {
