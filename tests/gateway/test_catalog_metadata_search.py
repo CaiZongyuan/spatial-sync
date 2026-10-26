@@ -144,6 +144,8 @@ def test_failed_index_retains_release_and_encoded_identity_is_exact(tmp_path, mo
     from packages.catalog import maintained
 
     documents = PublishedStore(tmp_path, count=2).documents
+    for document in documents:
+        document["category"] = "equipment"
     documents[0]["upstreamId"] = "scenario:asset_abc"
     documents[0].pop("id")
     store = MetadataStore(tmp_path)

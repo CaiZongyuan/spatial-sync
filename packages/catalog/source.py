@@ -222,11 +222,12 @@ class SimReadySource:
         root_usds = sorted(path for path in paths if re.fullmatch(
             re.escape(package) + r"/simready_usd/[^/]+\.usd[ac]?", path
         ))
-        previews = sorted(
-            (item for item in files if "/.thumbs/" in item["path"]
-             and item["path"].lower().endswith((".png", ".jpg", ".jpeg", ".webp"))),
-            key=lambda item: (item["size"], "transparent" in item["path"], item["path"]),
-        )
+        from packages.catalog_metadata.recipes import preview_choice
+        # Only the package model's thumbnail directory represents the object.
+        # A smaller normal/material preview under Textures or source_assets is
+        # not an object image. Maintenance and legacy lazy reads share policy.
+        preview = preview_choice([item for item in files
+                                  if item["path"].startswith(package + "/simready_usd/.thumbs/")])
         return {
             "source": {
                 "files": len(files), "bytes": sum(item["size"] for item in files),
@@ -236,7 +237,7 @@ class SimReadySource:
             "declaredLicense": None,
             "packagingPath": manifest if manifest in paths else None,
             "detailsLoaded": False,
-            "thumbnailPath": previews[0]["path"] if previews else None,
+            "thumbnailPath": preview["path"] if preview else None,
             "errors": [],
         }
 
