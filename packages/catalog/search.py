@@ -729,11 +729,11 @@ def _zero(reason, messages, excluded_by, suggestions):
 
 
 def _zero_document(scope, interpreted, filters, snapshot, reason, messages, excluded_by,
-                   suggestions, semantic=None):
+                   suggestions, semantic=None, counts=None):
     document = _summary_response(
         scope, interpreted, filters, snapshot,
-        {"returned": 0, "matching": 0, "localMatching": 0, "onlineMatching": 0,
-         "approximate": 0, "budgetTruncated": False},
+        counts or {"returned": 0, "matching": 0, "localMatching": 0, "onlineMatching": 0,
+                   "approximate": 0, "budgetTruncated": False},
         [], None, False, _zero(reason, messages, excluded_by, suggestions), semantic=semantic,
     )
     if not _fits(document):
@@ -991,6 +991,10 @@ def search_catalog(
                 [f"The exact candidate '{identity}' exceeds the 32 KiB compact budget; read "
                  "it through its library or catalog detail."],
                 [], [], semantic=semantic_document,
+                counts={"returned": 0, "matching": 1,
+                        "localMatching": 1 if match.type == "local" else 0,
+                        "onlineMatching": 1 if match.type == "online" else 0,
+                        "approximate": 0, "budgetTruncated": True},
             )
         return response
 
@@ -1228,5 +1232,8 @@ def search_catalog(
             ["The matching page exceeds the 32 KiB compact budget even after trimming; "
              "narrow the query or request a single candidate by exact ID."],
             [], [], semantic=semantic_document,
+            counts={"returned": 0, "matching": len(ordered), "localMatching": local_count,
+                    "onlineMatching": online_count, "approximate": len(approximate_matches),
+                    "budgetTruncated": True},
         )
     return response

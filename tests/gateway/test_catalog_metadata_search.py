@@ -5,6 +5,7 @@ or a replacement for the separately reconciled real-source inventory.
 """
 
 import copy
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -288,3 +289,65 @@ def test_shared_local_metadata_filters_exclude_unknown_and_nonmatching_assets(tm
         assert gap_only.status_code == 200, gap_only.text
         for value in gap_only.json()["results"]:
             assert value["local"]["asset"]["gapCount"] > 0
+
+
+def test_many_unicode_collection_headers_preserve_bounded_results_and_exact_release_reads(tmp_path):
+    store = MetadataStore(tmp_path / "metadata")
+    inventories = []
+    for index in range(200):
+        collection = "source-" + str(index).zfill(3) + "x" * 60
+        store.register_collection({"id": collection, "dataset": f"fixture/collection-{index}",
+                                   "recipe": "simready"})
+        counts = {"entries": 1}
+        if index == 0:
+            counts["sourceNote"] = "来源说明" * 300
+        inventories.append(store.stage_inventory(collection, REVISION, [{
+            "upstreamId": "box", "name": {"en": f"A object {index:03d}", "zh": "实验室容器" * 200},
+            "summary": {"en": "Synthetic bounded-response fixture.",
+                        "zh": "用于验证长中文摘要的夹具。" * 200},
+        }], complete=True, counts=counts)["id"])
+    released = store.publish(inventories)
+    app = create_app(metadata_store=store, metadata_launch_workers=False)
+    with TestClient(app) as client:
+        first = client.get("/api/v1/library/search", params={"scope": "online", "limit": 1})
+        assert first.status_code == 200, first.text
+        assert len(first.content) <= 32768
+        body = first.json()
+        assert body["zeroResult"] is None and body["counts"]["returned"] == 1
+        assert body["counts"]["matching"] == 200 + len(app.state.catalog.entries)
+        assert body["results"][0]["source"]["provider"].startswith("source-000")
+        assert body["results"][0]["descriptions"]["zh"]
+        header = body["snapshot"]["metadataRelease"]
+        assert header["id"] == released["id"] and header["entryCount"] == 200
+        assert header["collectionCount"] == 200 and header["collectionsTruncated"] is True
+        assert 0 < len(header["collections"]) < 20
+        assert len(json.dumps(header, ensure_ascii=False, separators=(",", ":")).encode()) <= 8192
+        assert first.json()["nextCursor"]
+
+        # The summary points at the exact retained JSON document. Each read is
+        # bounded independently; Unicode characters never split between chunks.
+        offset, pieces = 0, []
+        while True:
+            detail = client.get(header["details"]["path"], params={"offset": offset})
+            assert detail.status_code == 200, detail.text
+            assert len(detail.content) <= 32768
+            fragment = detail.json()
+            assert fragment["id"] == released["id"]
+            pieces.append(fragment["text"])
+            if fragment["nextOffset"] is None:
+                break
+            assert fragment["nextOffset"] > offset
+            offset = fragment["nextOffset"]
+        assert json.loads("".join(pieces)) == released
+
+        changed = store.stage_inventory("source-000" + "x" * 60, "c" * 40,
+                                        [{"upstreamId": "box"}], complete=True)
+        newer = store.publish([changed["id"]], release_preparer=app.state.catalog.prepare_metadata_release)
+        assert newer["id"] != released["id"]
+        continued = client.get("/api/v1/library/search", params={
+            "scope": "online", "limit": 1, "cursor": body["nextCursor"],
+        })
+        assert continued.status_code == 200 and len(continued.content) <= 32768
+        assert continued.json()["counts"]["returned"] == 1
+        assert continued.json()["snapshot"]["id"] == body["snapshot"]["id"]
+        assert continued.json()["snapshot"]["metadataRelease"]["id"] == released["id"]

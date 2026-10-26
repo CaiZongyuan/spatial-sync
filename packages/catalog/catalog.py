@@ -12,7 +12,7 @@ from packages.catalog.local import LocalAsset, read_provenance
 from packages.catalog.models import REVISION, CatalogFormatError, CatalogSnapshot, load_catalog
 from packages.catalog.search import search_catalog
 from packages.catalog.semantic import SemanticIndex, build_semantic_index
-from packages.catalog.views import entry_document, estimate_document
+from packages.catalog.views import canonical_json, entry_document, estimate_document
 from packages.library.common import LibraryError
 
 LOGGER = logging.getLogger(__name__)
@@ -192,13 +192,31 @@ class AssetCatalog:
                                    "repeat the search without release", 409)
             return search_catalog(selected, library, **kwargs)
 
+    def release_document(self, identifier, *, offset=0, limit=4096):
+        """Read an exact retained release in bounded Unicode-safe JSON chunks."""
+        if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 4096):
+            raise LibraryError("invalid_release_page", "Use offset >= 0 and a limit from 1 to 4096", 400)
+        if self.metadata_store is None:
+            raise LibraryError("catalog_unavailable", "Metadata storage is not configured", 503)
+        document = self.metadata_store.release(identifier)
+        text = canonical_json(document)
+        if offset > len(text):
+            raise LibraryError("invalid_release_page", "Release offset is past the document", 400)
+        content = text[offset:offset + limit]
+        next_offset = offset + len(content)
+        return {"schema": "lw.catalog-release-text/1", "id": document["id"], "encoding": "utf-8",
+                "offsetUnit": "unicode_code_points", "offset": offset, "limit": limit,
+                "totalCharacters": len(text), "text": content,
+                "nextOffset": next_offset if next_offset < len(text) else None}
+
     def describe(self, provider, package, revision, *, library=None, view="summary",
                  document_digest=None, release=None):
         if self._metadata_views is not None:
             with self._lock:
                 selected = self._metadata_views.select(release)
-            return selected.describe(provider, package, revision, library=library, view=view,
-                                     document_digest=document_digest)
+            if selected is not self:
+                return selected.describe(provider, package, revision, library=library, view=view,
+                                         document_digest=document_digest)
         entry = self.entry(provider, package, revision)
         if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
@@ -213,7 +231,8 @@ class AssetCatalog:
         if self._metadata_views is not None:
             with self._lock:
                 selected = self._metadata_views.select(release)
-            return selected.estimate(provider, package, revision, library=library)
+            if selected is not self:
+                return selected.estimate(provider, package, revision, library=library)
         entry = self.entry(provider, package, revision)
         if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
