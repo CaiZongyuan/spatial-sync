@@ -38,6 +38,24 @@ older result increments the selection revision. Manual `correct`/`retract` is an
 independent layer and survives future organization. `fieldProvenance` separates
 publisher/extracted values, submitted organization and manual choices.
 
+Host queue reads pass the run's `versions=` into `inventory_entries`,
+`inventory_entry` or `pending`; publication passes the same bindings for its
+selected inventories. A missing or different required skills, skill digest,
+recipe or vocabulary version makes an old result pending without applying its
+fields. The source inputs and immutable organization history remain retained.
+`inventory_source_entries` returns the original inputs for source-resume fallbacks,
+without promoting organized or manually corrected fields to publisher facts.
+An organization selection revision stays monotonic when selecting an older result,
+so a model claim from before an A → B → A choice cannot overwrite that choice.
+
+Vocabulary changes preserve old release vocabulary. Organization-only changes
+can queue repair under the new version. Removing a category used by a selected
+raw source input or an active manual correction is refused with its reason;
+first add/migrate the source mapping or explicitly correct/retract the human
+choice. Public correction, selection and retraction routes require an observed
+non-negative integer `baseVersion`; trusted direct initialization callers retain
+their optional store defaults.
+
 `publish(inventory_ids, release_preparer=...)` retains other selected collections,
 rejects incomplete enumeration, builds a deterministic lexical index, and binds
 all input versions, composed fields, correction selections and vocabulary/index
@@ -53,6 +71,11 @@ Restore verifies input/release/index identities, counts and references, writes
 blobs before activation, and supports the same `release_preparer` callback.
 It replaces only this package's metadata tables, preserving host queue tables
 and all local Assets. A failed restore keeps the prior release active.
+Normal demanded images also export their opaque URL-key-to-digest cache bindings,
+bounded to 100,000 records / 16 MiB. Restore validates the keys, image roles and
+exported blob references, permits no pagination/redirect URL, and preserves a
+cached image even when the publisher supplied no SHA. Existing conflicting cache
+bindings are rejected rather than overwritten during restore.
 
 Reader defaults are 10,000 requests, 256 MiB body transfer, 2 MiB per ordinary
 document/image, 32 MiB per Parquet table, 20-second requests, three attempts,

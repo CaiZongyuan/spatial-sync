@@ -325,6 +325,26 @@ def test_normal_demand_preview_restores_its_http_locator_without_publisher_sha(t
     assert offline_requests == []
 
 
+@pytest.mark.parametrize("corrupt", ["path_key", "missing_blob", "remote_next"])
+def test_preview_locator_restore_rejects_unbound_or_unsafe_associations(tmp_path, corrupt):
+    source = MetadataStore(tmp_path / "source")
+    key = source.put_blob(b"\x89PNG\r\n\x1a\nfixture", kind="preview")["sha256"]
+    backup = source.export()
+    association = {"kind": "preview", "next": None, "sha256": key}
+    locator = "a" * 64
+    if corrupt == "path_key":
+        locator = "../outside"
+    elif corrupt == "missing_blob":
+        association["sha256"] = "sha256:" + "f" * 64
+    else:
+        association["next"] = "https://unregistered.invalid/secret"
+    backup["previewLocators"] = {locator: association}
+    destination = MetadataStore(tmp_path / "destination")
+    with pytest.raises(MetadataError, match="Preview locator"):
+        destination.restore(backup)
+    assert destination.latest_release() is None
+
+
 def test_source_budget_access_and_cancellation_report_actual_usage(tmp_path):
     tree = f"/api/datasets/nvidia/simready-assets/tree/{REVISION}"
     progress, requests = [], []
