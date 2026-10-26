@@ -20,6 +20,13 @@ indexes. The latter's publisher facts and original extensions remain attributed
 to their evidence. A missing field stays unknown. These facts grant no local
 license, adaptation, device or physics admission.
 
+SimReady emits a typed `inventory` progress event as soon as its complete light
+identity manifest is known, before per-package extraction, and typed `entry`
+events after each extraction. Each also carries cumulative `usage`; ordinary
+request progress remains a flat usage document. The host can persist and publish
+the complete identity view independently, checkpoint extracted fields, and keep
+that view available when a later budget or source error interrupts deep work.
+
 `pending(inventory_id, limit=24)` and `inventory_entries` expose bounded tasks or
 the internal complete inventory. `submit_organization` accepts descriptive
 fields only, binding the input digest, organization selection revision, manual
@@ -35,7 +42,9 @@ publisher/extracted values, submitted organization and manual choices.
 rejects incomplete enumeration, builds a deterministic lexical index, and binds
 all input versions, composed fields, correction selections and vocabulary/index
 digests. The host callback receives the final release document and entries to
-prepare its actual search indexes before activation. Failure leaves the old
+prepare its actual search indexes before activation. The callback also receives
+`vocabulary=` with the candidate's pinned vocabulary, including during restore
+while ordinary readers still see the old database. Failure leaves the old
 release active. `release`, `entries` and `entry` retain historical releases and
 exact source references; no local Asset, Scene or Recording is changed.
 

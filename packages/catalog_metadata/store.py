@@ -439,6 +439,13 @@ class MetadataStore:
             raise MetadataError("invalid_version", "Organization selection must be a non-negative version")
         keys = (collection_id, upstream_id, input_digest)
         with self.transaction() as db:
+            known = db.execute(
+                "SELECT 1 FROM inventory_entries e JOIN inventories i ON i.id=e.inventory_id "
+                "WHERE i.collection_id=? AND e.upstream_id=? AND e.input_digest=? LIMIT 1",
+                keys,
+            ).fetchone()
+            if known is None:
+                raise MetadataError("unknown_entry", "Unknown organization input", 404)
             head = db.execute(
                 "SELECT version,selection_version FROM organization_heads WHERE collection_id=? "
                 "AND upstream_id=? AND input_digest=?",
@@ -482,6 +489,13 @@ class MetadataStore:
         text(upstream_id, "upstreamId", 512)
         text(reason, "reason", 2048)
         with self.transaction() as db:
+            known = db.execute(
+                "SELECT 1 FROM inventory_entries e JOIN inventories i ON i.id=e.inventory_id "
+                "WHERE i.collection_id=? AND e.upstream_id=? LIMIT 1",
+                (collection_id, upstream_id),
+            ).fetchone()
+            if known is None:
+                raise MetadataError("unknown_entry", "Unknown correction entry", 404)
             row = db.execute(
                 "SELECT version FROM correction_heads WHERE collection_id=? AND upstream_id=?",
                 (collection_id, upstream_id),

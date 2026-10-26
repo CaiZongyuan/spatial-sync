@@ -1,5 +1,6 @@
 """Observable release/correction/recovery behavior of the local metadata core."""
 
+import json
 import threading
 from copy import deepcopy
 
@@ -288,3 +289,68 @@ def test_categories_are_shared_with_vocabulary_and_fact_attribution_survives_cor
     corrected = store.inventory_entry(inventory["id"], "beaker")
     assert corrected["fieldProvenance"]["category"]["kind"] == "manual"
     assert corrected["facts"]["dimensionsM"] is None
+
+
+def test_restore_prepares_the_pinned_new_vocabulary_while_old_database_stays_readable(tmp_path):
+    source = MetadataStore(tmp_path / "source")
+    inventory = stage(source)
+    old_release = source.publish([inventory["id"]])
+    vocabulary = source.vocabulary()
+    vocabulary["version"] = "lw.catalog-vocabulary/2"
+    vocabulary["categories"][0]["aliases"]["zh"] = ["盛放器"]
+    source.set_vocabulary(vocabulary, base_version="lw.catalog-vocabulary/1")
+    new_release = source.publish([inventory["id"]])
+    destination = MetadataStore(tmp_path / "destination")
+    called = []
+
+    def prepare(release, entries, *, vocabulary):
+        assert destination.vocabulary()["version"] == "lw.catalog-vocabulary/1"
+        assert vocabulary["version"] == release["vocabularyVersion"] == "lw.catalog-vocabulary/2"
+        assert entries[0]["vocabularyVersion"] == vocabulary["version"]
+        called.append(release["id"])
+
+    destination.restore(source.export(), release_preparer=prepare)
+    assert called == [new_release["id"]]
+    assert destination.latest_release() == new_release
+    assert destination.entries(old_release["id"])[0]["vocabularyVersion"] == "lw.catalog-vocabulary/1"
+
+
+@pytest.mark.parametrize("tamper", ["vocabulary", "organization_facts", "lookup_key"])
+def test_restore_rejects_mismatched_vocabulary_untrusted_facts_and_lookup_keys(tmp_path, tamper):
+    source = MetadataStore(tmp_path / "source")
+    inventory = stage(source, REV_B)
+    before = source.pending(inventory["id"])[0]
+    source.submit_organization(
+        inventory["id"], "beaker", {"tags": ["organized"]}, input_digest=before["inputDigest"]
+    )
+    source.publish([inventory["id"]])
+    backup = source.export()
+    if tamper == "vocabulary":
+        row = next(row for row in backup["tables"]["metadata_state"] if row["key"] == "vocabulary")
+        value = json.loads(row["document"])
+        value["categories"][0]["name"]["en"] = "Forged taxonomy"
+        row["document"] = json.dumps(value)
+    elif tamper == "organization_facts":
+        row = backup["tables"]["organizations"][0]
+        value = json.loads(row["document"])
+        value["fields"] = {"facts": {"dimensionsM": [1, 2, 3], "admitted": True}}
+        row["document"] = json.dumps(value)
+    else:
+        backup["tables"]["inventory_entries"][0]["input_digest"] = "sha256:" + "f" * 64
+    destination = MetadataStore(tmp_path / "destination")
+    original_inventory = stage(destination)
+    original = destination.publish([original_inventory["id"]])
+    with pytest.raises(MetadataError):
+        destination.restore(backup)
+    assert destination.latest_release() == original
+
+
+def test_unknown_entries_cannot_create_phantom_corrections_or_organization_selections(tmp_path):
+    store = MetadataStore(tmp_path)
+    with pytest.raises(MetadataError) as correction:
+        store.correct("simready", "missing", {"tags": ["manual"]}, reason="Mistyped identity")
+    assert correction.value.status == 404
+    with pytest.raises(MetadataError) as selection:
+        store.select_organization("simready", "missing", "sha256:" + "f" * 64, 0)
+    assert selection.value.status == 404
+    assert store.corrections() == []

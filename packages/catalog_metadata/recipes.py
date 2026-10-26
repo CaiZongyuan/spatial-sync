@@ -525,6 +525,29 @@ def _chemlab(hub, profile, revision):
             "invalid_source_manifest", "ChemLab release manifest must enumerate its asset identity map"
         )
     raw_assets = manifest["assets"]
+    hub.notify(
+        {
+            "inventory": {
+                "collectionId": profile["id"],
+                "revision": revision,
+                "recipeVersion": RECIPE_VERSION,
+                "complete": True,
+                "evidence": [proof],
+                "counts": {"entries": len(raw_assets), "expectedEntries": len(raw_assets), "extracted": 0},
+                "entries": [
+                    _entry(
+                        hub,
+                        profile,
+                        revision,
+                        identity,
+                        evidence=[proof],
+                        sourceMetadata={"release": declaration},
+                    )
+                    for identity, declaration in sorted(raw_assets.items())
+                ],
+            }
+        }
+    )
     indexed, catalog_evidence, catalog_rows, labware_rows = _chemlab_indexes(hub, profile, revision)
     try:
         license_data = hub.read_file(profile, revision, "LICENSE-ASSETS.md")
@@ -634,6 +657,8 @@ def _chemlab(hub, profile, revision):
                 },
             )
         )
+    for entry in entries:
+        hub.notify({"entry": entry})
     return (
         entries,
         {

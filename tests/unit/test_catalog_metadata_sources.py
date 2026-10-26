@@ -369,6 +369,24 @@ def test_checkpoint_rejection_is_not_retried_as_an_upstream_failure(tmp_path):
     assert len(requests) == 1
 
 
+def test_chemlab_release_identity_union_is_checkpointed_before_detail_budget(tmp_path):
+    resolve = f"/datasets/MBZUAI/ChemLab-Assets/resolve/{REVISION}/release_manifest.json"
+    progress, requests = [], []
+    reader = HFHubReader(
+        client=upstream({resolve: {"assets": {"instrument.balance": {}, "labware.beaker": {}}}}, requests),
+        cache_root=tmp_path,
+        budgets={"requests": 1},
+        progress=progress.append,
+    )
+    with pytest.raises(MetadataError) as stopped:
+        reader.enumerate(profile("chemlab"), REVISION)
+    assert stopped.value.code == "budget_exhausted"
+    manifest = next(event["inventory"] for event in progress if "inventory" in event)
+    assert manifest["complete"]
+    assert {entry["upstreamId"] for entry in manifest["entries"]} == {"instrument.balance", "labware.beaker"}
+    assert len(requests) == 1
+
+
 def test_preview_eviction_preserves_metadata_and_restore_keeps_cached_images_offline(tmp_path):
     store = MetadataStore(tmp_path / "store")
     image_a = b"\x89PNG\r\n\x1a\nAAA"
