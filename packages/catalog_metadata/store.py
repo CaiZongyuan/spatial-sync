@@ -121,7 +121,7 @@ class MetadataStore:
         # DELETE -> WAL transition, bypassing SQLite's connection busy timeout.
         deadline = time.monotonic() + SQLITE_TIMEOUT_SECONDS
         while True:
-            db = sqlite3.connect(self.database_path, timeout=SQLITE_TIMEOUT_SECONDS)
+            db = sqlite3.connect(self.database_path, timeout=max(0, deadline - time.monotonic()))
             try:
                 mode = db.execute("PRAGMA journal_mode=WAL").fetchone()[0]
                 if mode != "wal":
@@ -130,9 +130,9 @@ class MetadataStore:
                     )
                 return
             except sqlite3.OperationalError as exc:
+                primary_code = getattr(exc, "sqlite_errorcode", 0) & 0xFF
                 if (
-                    getattr(exc, "sqlite_errorcode", 0) & 255
-                    not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                    primary_code not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
                     or time.monotonic() >= deadline
                 ):
                     raise
