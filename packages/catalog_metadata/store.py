@@ -312,6 +312,18 @@ class MetadataStore:
             result["corrections"].append(correction)
         return result
 
+    def inventory_source_entries(self, identifier):
+        """Return persisted publisher/extracted inputs without organization overlays."""
+        self.inventory(identifier)
+        with self.transaction(write=False) as db:
+            return [
+                json.loads(row[0])
+                for row in db.execute(
+                    "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id",
+                    (identifier,),
+                )
+            ]
+
     def inventory_entries(self, identifier):
         self.inventory(identifier)
         with self.transaction(write=False) as db:
