@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -56,6 +57,7 @@ class MetadataStore:
         self.blob_root = self.root / "blobs"
         self.blob_root.mkdir(exist_ok=True)
         (self.blob_root / "previews").mkdir(exist_ok=True)
+        (self.blob_root / "locators").mkdir(exist_ok=True)
         with self.transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
@@ -182,6 +184,39 @@ class MetadataStore:
             )
             if base_version is not None and base_version != current["version"]:
                 raise MetadataError("vocabulary_conflict", "Vocabulary changed; reload before editing", 409)
+            categories = {value["id"] for value in document["categories"]}
+            for row in db.execute("SELECT document FROM corrections WHERE active=1"):
+                correction = json.loads(row[0])
+                category = correction["fields"].get("category")
+                if category is not None and category not in categories:
+                    raise MetadataError(
+                        "vocabulary_in_use",
+                        "Correct or retract the active manual category before removing it",
+                        409,
+                        correctionId=correction["id"],
+                        category=category,
+                    )
+            active = db.execute("SELECT document FROM metadata_state WHERE key='latestRelease'").fetchone()
+            if active is not None:
+                released = json.loads(
+                    db.execute(
+                        "SELECT document FROM releases WHERE id=?", (json.loads(active[0]),)
+                    ).fetchone()[0]
+                )
+                for collection in released["collections"]:
+                    for row in db.execute(
+                        "SELECT document FROM inventory_entries WHERE inventory_id=?",
+                        (collection["inventoryId"],),
+                    ):
+                        category = json.loads(row[0]).get("category")
+                        if category is not None and category not in categories:
+                            raise MetadataError(
+                                "vocabulary_in_use",
+                                "Migrate the selected source category before removing it",
+                                409,
+                                collectionId=collection["id"],
+                                category=category,
+                            )
             for value in (current, document):
                 key = "vocabulary:" + value["version"]
                 row = db.execute("SELECT document FROM metadata_state WHERE key=?", (key,)).fetchone()
@@ -260,7 +295,7 @@ class MetadataStore:
         return json.loads(row[0])
 
     @staticmethod
-    def _compose(db, entry):
+    def _compose(db, entry, *, versions=None):
         result = deepcopy(entry)
         result.setdefault("fieldProvenance", {})
         keys = (entry["collectionId"], entry["upstreamId"], entry["inputDigest"])
@@ -270,6 +305,16 @@ class MetadataStore:
             keys,
         ).fetchone()
         result["organization"] = {"version": 0, "status": "pending"}
+        vocabulary = json.loads(
+            db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
+        )
+        expected_versions = {"vocabulary": vocabulary["version"], **(versions or {})}
+        if expected_versions["vocabulary"] != vocabulary["version"]:
+            raise MetadataError(
+                "vocabulary_conflict",
+                "The run vocabulary changed; start maintenance with the current version",
+                409,
+            )
         if row is not None and row[0]:
             data = json.loads(
                 db.execute(
@@ -278,16 +323,21 @@ class MetadataStore:
                     (*keys, row[0]),
                 ).fetchone()[0]
             )
-            apply_fields(result, data["fields"])
-            for field in data["fields"]:
-                result["fieldProvenance"][field] = {
-                    "kind": "organization",
-                    "resultVersion": data["version"],
-                    "versions": data["versions"],
-                    "receipt": data["receipt"],
-                }
             result["organization"] = {key: deepcopy(value) for key, value in data.items() if key != "fields"}
             result["organization"]["resultVersion"] = row[0]
+            if all(data["versions"].get(key) == value for key, value in expected_versions.items()):
+                apply_fields(result, data["fields"])
+                for field in data["fields"]:
+                    result["fieldProvenance"][field] = {
+                        "kind": "organization",
+                        "resultVersion": data["version"],
+                        "versions": data["versions"],
+                        "receipt": data["receipt"],
+                    }
+            else:
+                result["organization"].update(
+                    status="pending", reason="versions_changed", expectedVersions=expected_versions
+                )
         if row is not None:
             result["organization"]["version"] = row[1]
         correction_key = keys[:2]
@@ -324,18 +374,18 @@ class MetadataStore:
                 )
             ]
 
-    def inventory_entries(self, identifier):
+    def inventory_entries(self, identifier, *, versions=None):
         self.inventory(identifier)
         with self.transaction(write=False) as db:
             return [
-                self._compose(db, json.loads(row[0]))
+                self._compose(db, json.loads(row[0]), versions=versions)
                 for row in db.execute(
                     "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id",
                     (identifier,),
                 )
             ]
 
-    def inventory_entry(self, identifier, upstream_id):
+    def inventory_entry(self, identifier, upstream_id, *, versions=None):
         with self.transaction(write=False) as db:
             row = db.execute(
                 "SELECT document FROM inventory_entries WHERE inventory_id=? AND upstream_id=?",
@@ -343,14 +393,16 @@ class MetadataStore:
             ).fetchone()
             if row is None:
                 raise MetadataError("unknown_entry", "Unknown inventory entry", 404)
-            return self._compose(db, json.loads(row[0]))
+            return self._compose(db, json.loads(row[0]), versions=versions)
 
-    def pending(self, identifier, limit=24):
+    def pending(self, identifier, limit=24, *, versions=None):
         if type(limit) is not int or not 1 <= limit <= 50:
             raise MetadataError("invalid_limit", "Batch limit must be 1..50")
-        return [v for v in self.inventory_entries(identifier) if v["organization"]["status"] != "organized"][
-            :limit
-        ]
+        return [
+            v
+            for v in self.inventory_entries(identifier, versions=versions)
+            if v["organization"]["status"] != "organized"
+        ][:limit]
 
     def submit_organization(
         self,
@@ -366,7 +418,6 @@ class MetadataStore:
         submission_key=None,
     ):
         fields = organization_fields(result)
-        self._validate_category(fields)
         payload = {
             "inventoryId": inventory_id,
             "upstreamId": upstream_id,
@@ -395,7 +446,15 @@ class MetadataStore:
             ).fetchone()
             if row is None:
                 raise MetadataError("unknown_entry", "Unknown inventory entry", 404)
-            entry = self._compose(db, json.loads(row[0]))
+            source_entry = json.loads(row[0])
+            vocabulary = json.loads(
+                db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
+            )
+            actual_versions = {"vocabulary": vocabulary["version"], **(versions or {})}
+            if source_entry.get("source", {}).get("recipeVersion"):
+                actual_versions.setdefault("recipe", source_entry["source"]["recipeVersion"])
+            self._validate_category(fields, vocabulary=vocabulary)
+            entry = self._compose(db, source_entry, versions=actual_versions)
             if input_digest != entry["inputDigest"]:
                 raise MetadataError("input_conflict", "Organization input no longer matches", 409)
             if base_version != entry["organization"]["version"]:
@@ -416,7 +475,7 @@ class MetadataStore:
                 "version": next_version,
                 "status": "organized",
                 "fields": fields,
-                "versions": versions or {},
+                "versions": actual_versions,
                 "receipt": receipt,
                 "createdAt": now(),
             }
@@ -427,7 +486,7 @@ class MetadataStore:
                 "DO UPDATE SET version=excluded.version,selection_version=excluded.selection_version",
                 (*keys, next_version, entry["organization"]["version"] + 1),
             )
-            response = self._compose(db, json.loads(row[0]))
+            response = self._compose(db, source_entry, versions=actual_versions)
             if submission_key:
                 db.execute(
                     "INSERT INTO submissions VALUES(?,?,?)",
@@ -449,6 +508,7 @@ class MetadataStore:
     def select_organization(self, collection_id, upstream_id, input_digest, version, *, base_version=None):
         if type(version) is not int or version < 0:
             raise MetadataError("invalid_version", "Organization selection must be a non-negative version")
+        self._validate_observed_version(base_version)
         keys = (collection_id, upstream_id, input_digest)
         with self.transaction() as db:
             known = db.execute(
@@ -478,6 +538,24 @@ class MetadataStore:
                 is None
             ):
                 raise MetadataError("unknown_organization", "Unknown organization result version", 404)
+            if version:
+                selected = json.loads(
+                    db.execute(
+                        "SELECT document FROM organizations WHERE collection_id=? AND upstream_id=? "
+                        "AND input_digest=? AND version=?",
+                        (*keys, version),
+                    ).fetchone()[0]
+                )
+                vocabulary = json.loads(
+                    db.execute("SELECT document FROM metadata_state WHERE key='vocabulary'").fetchone()[0]
+                )
+                self._validate_category(selected["fields"], vocabulary=vocabulary)
+                if selected["versions"].get("vocabulary") != vocabulary["version"]:
+                    raise MetadataError(
+                        "organization_versions_changed",
+                        "This result needs organization under the current vocabulary",
+                        409,
+                    )
             selection = current if head is not None and head[0] == version else current + 1
             db.execute(
                 "INSERT INTO organization_heads VALUES(?,?,?,?,?) "
@@ -498,6 +576,7 @@ class MetadataStore:
         self.collection(collection_id)
         fields = organization_fields(fields)
         self._validate_category(fields)
+        self._validate_observed_version(base_version)
         text(upstream_id, "upstreamId", 512)
         text(reason, "reason", 2048)
         with self.transaction() as db:
@@ -553,6 +632,13 @@ class MetadataStore:
         if category is not None and category not in {value["id"] for value in vocabulary["categories"]}:
             raise MetadataError("unknown_category", "Category is absent from the current vocabulary", 409)
 
+    @staticmethod
+    def _validate_observed_version(value):
+        if value is not None and (type(value) is not int or value < 0):
+            raise MetadataError(
+                "invalid_base_version", "Observed base version must be a non-negative integer"
+            )
+
     def corrections(self, collection_id=None, upstream_id=None):
         with self.transaction(write=False) as db:
             rows = db.execute(
@@ -566,6 +652,7 @@ class MetadataStore:
             ]
 
     def retract(self, correction_id, *, base_version=None):
+        self._validate_observed_version(base_version)
         with self.transaction() as db:
             row = db.execute(
                 "SELECT document,active FROM corrections WHERE id=?", (correction_id,)
@@ -589,7 +676,8 @@ class MetadataStore:
                 )
             return {**result, "active": False, "correctionVersion": head + int(bool(row[1]))}
 
-    def publish(self, inventory_ids=None, *, index_builder=None, release_preparer=None):
+    def publish(self, inventory_ids=None, *, index_builder=None, release_preparer=None, versions=None):
+        inventory_ids = list(inventory_ids) if inventory_ids is not None else None
         with self.transaction() as db:
             selected = {}
             latest = db.execute("SELECT document FROM metadata_state WHERE key='latestRelease'").fetchone()
@@ -623,7 +711,11 @@ class MetadataStore:
                     db.execute("SELECT document FROM inventories WHERE id=?", (inventory_id,)).fetchone()[0]
                 )
                 values = [
-                    self._compose(db, json.loads(row[0]))
+                    self._compose(
+                        db,
+                        json.loads(row[0]),
+                        versions=versions if inventory_ids is None or inventory_id in inventory_ids else None,
+                    )
                     for row in db.execute(
                         "SELECT document FROM inventory_entries WHERE inventory_id=? ORDER BY upstream_id",
                         (inventory_id,),
@@ -798,7 +890,53 @@ class MetadataStore:
                 blobs["sha256:" + path.name] = base64.b64encode(data).decode("ascii")
                 if path.parent.name == "previews":
                     kinds["sha256:" + path.name] = "preview"
-        return {"schema": SCHEMA, "tables": tables, "blobs": blobs, "blobKinds": kinds}
+        locators = {}
+        for path in (self.blob_root / "locators").glob("*.json"):
+            if not re.fullmatch(r"[0-9a-f]{64}", path.stem) or path.stat().st_size > 4096:
+                continue
+            try:
+                value = json.loads(path.read_text("utf-8"))
+            except (OSError, ValueError):
+                continue
+            if (
+                isinstance(value, dict)
+                and value.get("kind") == "preview"
+                and value.get("sha256") in blobs
+                and value.get("next") is None
+            ):
+                locators[path.stem] = value
+                kinds[value["sha256"]] = "preview"
+        self._validate_preview_locators(locators, blobs)
+        return {
+            "schema": SCHEMA,
+            "tables": tables,
+            "blobs": blobs,
+            "blobKinds": kinds,
+            "previewLocators": locators,
+        }
+
+    def _validate_preview_locators(self, locators, blobs):
+        if (
+            not isinstance(locators, dict)
+            or len(locators) > 100000
+            or len(canonical(locators).encode()) > 16 * 1024 * 1024
+        ):
+            raise MetadataError("invalid_backup", "Preview locator metadata exceeds its bounded mapping")
+        for key, value in locators.items():
+            if (
+                not isinstance(key, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", key)
+                or not isinstance(value, dict)
+                or set(value) != {"sha256", "kind", "next"}
+                or value["kind"] != "preview"
+                or value["next"] is not None
+                or not isinstance(value["sha256"], str)
+                or value["sha256"] not in blobs
+            ):
+                raise MetadataError(
+                    "invalid_backup", "Preview locator must bind an exported image content digest"
+                )
+            self.blob_path(value["sha256"])
 
     def restore(self, document, *, release_preparer=None):
         if (
@@ -819,6 +957,16 @@ class MetadataStore:
             decoded[key] = data
         if sum(map(len, decoded.values())) > 256 * 1024 * 1024:
             raise MetadataError("export_limit", "Backup evidence exceeds 256 MiB")
+        locators = document.get("previewLocators", {})
+        self._validate_preview_locators(locators, decoded)
+        for key, value in locators.items():
+            path = self.blob_root / "locators" / (key + ".json")
+            if path.exists() and json.loads(path.read_text("utf-8")) != value:
+                raise MetadataError(
+                    "preview_locator_conflict",
+                    "An existing immutable preview resource has a different cache binding",
+                    409,
+                )
         # Unreferenced blobs are harmless if a later transaction fails. Writing
         # first prevents an active release from ever referring to unwritten data.
         for key, data in decoded.items():
@@ -827,6 +975,14 @@ class MetadataStore:
                 raise MetadataError("invalid_backup", "Backup has an unsupported blob role")
             self.put_blob(data, kind=kind)
             self.blob(key)
+        for key, value in locators.items():
+            if document.get("blobKinds", {}).get(value["sha256"], "metadata") != "preview":
+                raise MetadataError("invalid_backup", "Preview locator blob role is inconsistent")
+            path = self.blob_root / "locators" / (key + ".json")
+            if not path.exists():
+                temporary = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
+                temporary.write_text(canonical(value), "utf-8")
+                temporary.replace(path)
         with self.transaction() as db:
             # Restoring replaces only this module's metadata, never local assets,
             # recordings, maintenance jobs or any other host-owned table.

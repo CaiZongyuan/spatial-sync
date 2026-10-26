@@ -354,3 +354,104 @@ def test_unknown_entries_cannot_create_phantom_corrections_or_organization_selec
         store.select_organization("simready", "missing", "sha256:" + "f" * 64, 0)
     assert selection.value.status == 404
     assert store.corrections() == []
+
+
+def test_raw_inventory_read_excludes_organization_and_manual_overrides(tmp_path):
+    store = MetadataStore(tmp_path)
+    inventory = stage(store)
+    original = store.inventory_source_entries(inventory["id"])[0]
+    store.submit_organization(
+        inventory["id"], "beaker", {"name": {"en": "Agent name"}}, input_digest=original["inputDigest"]
+    )
+    store.correct("simready", "beaker", {"name": {"en": "Human name"}}, base_version=0, reason="Review")
+    assert store.inventory_entry(inventory["id"], "beaker")["name"]["en"] == "Human name"
+    assert store.inventory_source_entries(inventory["id"])[0] == original
+
+
+@pytest.mark.parametrize("changed", ["skills", "skillsDigest", "recipe", "vocabulary"])
+def test_changed_organization_input_versions_queue_work_instead_of_silent_reuse(tmp_path, changed):
+    store = MetadataStore(tmp_path)
+    inventory = stage(store)
+    original = store.pending(inventory["id"])[0]
+    versions = {
+        "skills": "skills/1",
+        "skillsDigest": "digest-a",
+        "recipe": "recipe/1",
+        "vocabulary": store.vocabulary()["version"],
+    }
+    store.submit_organization(
+        inventory["id"],
+        "beaker",
+        {"category": "container", "tags": ["old"]},
+        input_digest=original["inputDigest"],
+        versions=versions,
+    )
+    assert store.pending(inventory["id"], versions=versions) == []
+    expected = {**versions, changed: "new-version"}
+    if changed == "vocabulary":
+        vocabulary = store.vocabulary()
+        vocabulary["version"] = "lw.catalog-vocabulary/2"
+        vocabulary["categories"] = [value for value in vocabulary["categories"] if value["id"] != "container"]
+        vocabulary["categories"].append(
+            {"id": "vessel", "name": {"en": "Vessel", "zh": "容器"}, "aliases": {}}
+        )
+        store.set_vocabulary(vocabulary, base_version=versions["vocabulary"])
+        expected[changed] = vocabulary["version"]
+    queued = store.pending(inventory["id"], versions=expected)
+    assert len(queued) == 1
+    assert queued[0]["organization"]["reason"] == "versions_changed"
+    assert queued[0]["organization"]["version"] == 1
+    assert queued[0]["category"] is None
+    assert queued[0]["tags"] == []
+    category = "vessel" if changed == "vocabulary" else "container"
+    store.submit_organization(
+        inventory["id"],
+        "beaker",
+        {"category": category},
+        base_version=1,
+        input_digest=original["inputDigest"],
+        versions=expected,
+    )
+    assert store.pending(inventory["id"], versions=expected) == []
+    release = store.publish([inventory["id"]], versions=expected)
+    assert store.entries(release["id"])[0]["category"] == category
+
+
+def test_vocabulary_cannot_silently_break_active_manual_or_source_categories(tmp_path):
+    store = MetadataStore(tmp_path)
+    inventory = stage(store, entries=[item(category="container")])
+    store.publish([inventory["id"]])
+    vocabulary = store.vocabulary()
+    vocabulary["version"] = "lw.catalog-vocabulary/2"
+    vocabulary["categories"] = [value for value in vocabulary["categories"] if value["id"] != "container"]
+    with pytest.raises(MetadataError, match="selected source category"):
+        store.set_vocabulary(vocabulary, base_version="lw.catalog-vocabulary/1")
+    assert store.vocabulary()["version"] == "lw.catalog-vocabulary/1"
+    store.correct("simready", "beaker", {"category": "container"}, base_version=0, reason="Human selection")
+    with pytest.raises(MetadataError, match="active manual category"):
+        store.set_vocabulary(vocabulary, base_version="lw.catalog-vocabulary/1")
+
+
+def test_model_submission_cannot_overwrite_manual_selection_after_aba(tmp_path):
+    store = MetadataStore(tmp_path)
+    inventory = stage(store)
+    before = store.pending(inventory["id"])[0]
+    first = store.submit_organization(
+        inventory["id"], "beaker", {"tags": ["first"]}, input_digest=before["inputDigest"]
+    )
+    store.submit_organization(
+        inventory["id"], "beaker", {"tags": ["second"]}, base_version=1, input_digest=before["inputDigest"]
+    )
+    store.select_organization("simready", "beaker", before["inputDigest"], 1, base_version=2)
+    current = store.inventory_entry(inventory["id"], "beaker")
+    assert current["organization"]["resultVersion"] == first["organization"]["resultVersion"] == 1
+    assert current["organization"]["version"] == 3
+    with pytest.raises(MetadataError, match="Organization changed"):
+        store.submit_organization(
+            inventory["id"],
+            "beaker",
+            {"tags": ["stale model"]},
+            base_version=1,
+            input_digest=before["inputDigest"],
+        )
+    assert store.inventory_entry(inventory["id"], "beaker")["tags"] == ["first"]

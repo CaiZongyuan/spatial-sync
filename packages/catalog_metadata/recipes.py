@@ -44,6 +44,15 @@ def preview_choice(files, *, explicit=None):
     return min(candidates, default=(None, None, None), key=lambda value: (value[0], value[1]))[2]
 
 
+def simready_object_preview_path(package, path):
+    """Native package-model thumbnails exclude texture/source-asset thumbnails."""
+    return (
+        isinstance(path, str)
+        and path.startswith(package + "/simready_usd/.thumbs/")
+        and preview_choice([{"path": path, "size": 0}]) is not None
+    )
+
+
 def _file_url(hub, profile, revision, path):
     return f"{hub.origin}/datasets/{profile['dataset']}/resolve/{revision}/{quote(path, safe='/')}"
 
@@ -245,7 +254,7 @@ def _simready(hub, profile, revision):
                     fields["tags"] = [
                         value for value in tags[:64] if isinstance(value, str) and value.strip()
                     ]
-            object_files = [value for value in files if value["path"].startswith(identity + "/.thumbs/")]
+            object_files = [value for value in files if simready_object_preview_path(identity, value["path"])]
             fields["preview"] = _preview(hub, profile, revision, preview_choice(object_files))
             facts["variants"] = [
                 {

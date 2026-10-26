@@ -7,6 +7,7 @@ import pytest
 
 from packages.catalog_metadata import HFHubReader, MetadataError, MetadataStore
 from packages.catalog_metadata.models import DEFAULT_PROFILES
+from packages.catalog_metadata.recipes import preview_choice, simready_object_preview_path
 
 REVISION = "a" * 40
 OTHER_REVISION = "b" * 40
@@ -55,9 +56,9 @@ def test_simready_full_identity_pages_object_preview_and_incremental_inputs(tmp_
     for name in ("beaker", "bucket"):
         routes[tree + "/" + name] = [
             file(f"{name}/com.nvidia.simready.packaging.json"),
-            file(f"{name}/.thumbs/preview.png", 100),
-            file(f"{name}/.thumbs/normal.png", 1),
-            file(f"{name}/Textures/source_assets/.thumbs/preview.png", 1),
+            file(f"{name}/simready_usd/.thumbs/256x256/model.usd.png", 100),
+            file(f"{name}/simready_usd/Textures/.thumbs/256x256/normal.png", 1),
+            file(f"{name}/simready_usd/source_assets/.thumbs/256x256/preview.png", 1),
             file(f"{name}/simready_usd/model.usd", 1000),
         ]
         routes[resolve + f"/{name}/com.nvidia.simready.packaging.json"] = {
@@ -69,7 +70,7 @@ def test_simready_full_identity_pages_object_preview_and_incremental_inputs(tmp_
     assert result["complete"]
     assert result["counts"]["entries"] == 2
     assert {value["upstreamId"] for value in result["entries"]} == {"beaker", "bucket"}
-    assert all(value["preview"]["path"].endswith("preview.png") for value in result["entries"])
+    assert all(value["preview"]["path"].endswith("model.usd.png") for value in result["entries"])
     assert result["usage"]["previewBytes"] == 0
     assert all(not url.endswith((".png", ".usd")) for url in requests)
     store = MetadataStore(tmp_path / "store")
@@ -93,6 +94,25 @@ def test_simready_full_identity_pages_object_preview_and_incremental_inputs(tmp_
         value["inputDigest"] for value in before
     ]
     assert replacement["usage"]["cacheBytes"] > 0
+
+
+def test_native_simready_cached_real_tree_uses_object_directory_before_image_size():
+    package = "airSystem_air_filter_box_a01"
+    # Names and byte sizes are from the existing pinned upstream tree receipt;
+    # no upstream image/model body is part of this fixture.
+    files = [
+        file(package + "/simready_usd/.thumbs/sm_airSystem_air_filter_box_a01_01_thumbnail.png", 514278),
+        file(package + "/simready_usd/.thumbs/256x256/sm_airSystem_air_filter_box_a01_01.usd.png", 1013521),
+        file(package + "/simready_usd/Textures/.thumbs/256x256/t_metal_glossy_a01_tile_nor.png.png", 13507),
+        file(
+            package + "/simready_usd/source_assets/.thumbs/256x256/t_metal_glossy_a01_tile_nor.png.png", 13507
+        ),
+    ]
+    chosen = preview_choice(
+        [value for value in files if simready_object_preview_path(package, value["path"])]
+    )
+    assert chosen["path"] == files[0]["path"]
+    assert chosen["size"] == 514278
 
 
 def test_scenario_table_rows_and_output_variants_have_separate_denominators(tmp_path):
@@ -275,6 +295,34 @@ def test_controlled_demand_preview_cache_and_primary_file_rejection(tmp_path):
     with pytest.raises(MetadataError, match="primary model"):
         reader.read_file(profile("simready"), REVISION, "beaker/model.glb")
     assert len(requests) == 1
+
+
+def test_normal_demand_preview_restores_its_http_locator_without_publisher_sha(tmp_path):
+    source = MetadataStore(tmp_path / "source")
+    path = "beaker/simready_usd/.thumbs/256x256/model.usd.png"
+    url = f"/datasets/nvidia/simready-assets/resolve/{REVISION}/{path}"
+    data = b"\x89PNG\r\n\x1a\nactual-demand-fixture"
+    requests = []
+    entry = {"revision": REVISION, "preview": {"role": "object", "path": path, "sha256": None}}
+    reader = HFHubReader(
+        client=upstream({url: data}, requests),
+        cache_root=source.blob_root,
+        budgets={"previewBytes": 2 * 1024 * 1024},
+    )
+    assert reader.read_preview(profile("simready"), entry) == (data, "image/png")
+    assert len(requests) == 1
+    backup = source.export()
+    assert len(backup["previewLocators"]) == 1
+    restored = MetadataStore(tmp_path / "restored")
+    restored.restore(backup)
+    offline_requests = []
+    offline = HFHubReader(
+        client=upstream({}, offline_requests, offline=True),
+        cache_root=restored.blob_root,
+        budgets={"previewBytes": 2 * 1024 * 1024},
+    )
+    assert offline.read_preview(profile("simready"), entry) == (data, "image/png")
+    assert offline_requests == []
 
 
 def test_source_budget_access_and_cancellation_report_actual_usage(tmp_path):
