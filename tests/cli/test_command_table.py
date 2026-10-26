@@ -28,6 +28,25 @@ async def test_generated_inspections_match_http_cli_and_mcp_and_preserve_all_too
         threshold = schemas["wait_until"]["input"]["properties"].pop("by")
         assert threshold["default"] is None
         assert "by" not in schemas["wait_until"]["input"].get("required", [])
+        # Catalog metadata adds only these optional inputs; legacy calls and outputs remain exact.
+        catalog_additions = {
+            "catalog_search": {
+                "category": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "tag": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "release": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "page": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "gaps": {"type": "boolean"},
+            },
+            "catalog_show": {"release": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+            "catalog_estimate": {"release": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+        }
+        for name, additions in catalog_additions.items():
+            properties = schemas[name]["input"]["properties"]
+            assert set(properties) - set(expected[name]["input"]["properties"]) == set(additions)
+            for field, shape in additions.items():
+                declaration = properties.pop(field)
+                assert declaration == {**shape, "default": None, "title": field.title()}
+                assert field not in schemas[name]["input"].get("required", [])
         assert {name: schemas[name] for name in expected} == expected
         assert all("approv" not in tool.name for tool in tools)
         forbidden = await mcp.call_tool("approve_invocation", {"invocation_id": "inv-do-not-approve"})
