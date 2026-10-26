@@ -59,8 +59,9 @@ test('candidate acquisition shows real progress, cancel, retry and the local ass
     await page.goto(`${web}/assets?scope=online&q=box`);
     const card = page.locator('.catalog-card.is-online');
     await expect(card).toHaveCount(1);
-    await card.getByRole('button', { name: '详情与估算' }).click();
-    const detail = page.getByRole('region', { name: '候选详情与估算' });
+    await card.getByRole('button', { name: /查看.*详情/ }).click();
+    const detail = page.getByRole('region', { name: '候选详情', exact: true });
+    await detail.getByRole('button', { name: '准备获取 · 查看预算' }).click();
     const acquire = detail.getByRole('region', { name: '获取在线候选' });
     await expect(acquire).toContainText('可获取');
     await expect(acquire).toContainText('限额内');

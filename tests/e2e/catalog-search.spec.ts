@@ -98,8 +98,10 @@ test('candidate detail and estimate expose the fixed revision and desk/cart elig
   await page.goto('/assets?scope=online&q=desk');
   const desk = page.locator('.catalog-card.is-online');
   await expect(desk).toHaveCount(1);
-  await desk.getByRole('button', { name: '详情与估算' }).click();
-  const detail = page.getByRole('region', { name: '候选详情与估算' });
+  await desk.getByRole('button', { name: /查看.*详情/ }).click();
+  const detail = page.getByRole('region', { name: '候选详情', exact: true });
+  await detail.getByText('完整身份、未知项与来源依据', { exact: true }).click();
+  await detail.getByRole('button', { name: '准备获取 · 查看预算' }).click();
   await expect(detail).toBeVisible();
   await expect(detail).toContainText(revision);
   await expect(detail).toContainText('Laboratory desk');
@@ -116,9 +118,9 @@ test('candidate detail and estimate expose the fixed revision and desk/cart elig
   await expect(detail).toHaveCount(0);
   await page.getByRole('searchbox', { name: '搜索素材' }).fill('cart');
   await expect(page.locator('.catalog-card.is-online')).toHaveCount(1);
-  await page.locator('.catalog-card.is-online').getByRole('button', { name: '详情与估算' }).click();
-  await expect(page.getByRole('region', { name: '候选详情与估算' })).toContainText('UDIM/UVTILE');
-  await expect(page.getByRole('region', { name: '候选详情与估算' })).toContainText('不可获取');
+  await page.locator('.catalog-card.is-online').getByRole('button', { name: /查看.*详情/ }).click();
+  await expect(page.getByRole('region', { name: '候选详情', exact: true })).toContainText('UDIM/UVTILE');
+  await expect(page.getByRole('region', { name: '候选详情', exact: true })).toContainText('不可获取');
 });
 
 test('switching back to local preserves the existing local search and zero-result behavior', async ({ page }) => {
