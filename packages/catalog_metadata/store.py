@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -47,6 +48,7 @@ TABLES = (
     "release_entries",
     "metadata_state",
 )
+SQLITE_TIMEOUT_SECONDS = 30
 
 
 class MetadataStore:
@@ -58,11 +60,12 @@ class MetadataStore:
         self.blob_root.mkdir(exist_ok=True)
         (self.blob_root / "previews").mkdir(exist_ok=True)
         (self.blob_root / "locators").mkdir(exist_ok=True)
+        self._enable_wal()
         with self.transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise MetadataError("metadata_version", "Unsupported metadata database version", 409)
-            db.executescript("""
+            schema = """
                 CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY, document TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS inventories(id TEXT PRIMARY KEY, collection_id TEXT NOT NULL,
                     revision TEXT NOT NULL, complete INTEGER NOT NULL, document TEXT NOT NULL);
@@ -91,7 +94,12 @@ class MetadataStore:
                 CREATE INDEX IF NOT EXISTS inventory_by_collection ON inventories(collection_id);
                 CREATE TABLE IF NOT EXISTS metadata_state(key TEXT PRIMARY KEY,document TEXT NOT NULL);
                 PRAGMA user_version=1;
-            """)
+            """
+            # executescript would commit BEGIN IMMEDIATE before running the DDL,
+            # releasing the initialization reservation between schema/migration steps.
+            for statement in schema.split(";"):
+                if statement.strip():
+                    db.execute(statement)
             columns = {row[1] for row in db.execute("PRAGMA table_info(organization_heads)")}
             if "selection_version" not in columns:
                 db.execute(
@@ -108,14 +116,37 @@ class MetadataStore:
                 (canonical(default_vocabulary()),),
             )
 
+    def _enable_wal(self):
+        # Concurrent first opens may get SQLITE_BUSY immediately during the
+        # DELETE -> WAL transition, bypassing SQLite's connection busy timeout.
+        deadline = time.monotonic() + SQLITE_TIMEOUT_SECONDS
+        while True:
+            db = sqlite3.connect(self.database_path, timeout=SQLITE_TIMEOUT_SECONDS)
+            try:
+                mode = db.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+                if mode != "wal":
+                    raise MetadataError(
+                        "metadata_journal_mode", "Catalog metadata requires WAL journal mode", 503
+                    )
+                return
+            except sqlite3.OperationalError as exc:
+                if (
+                    getattr(exc, "sqlite_errorcode", 0) & 255
+                    not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                    or time.monotonic() >= deadline
+                ):
+                    raise
+            finally:
+                db.close()
+            time.sleep(min(0.01, max(0, deadline - time.monotonic())))
+
     @contextmanager
     def transaction(self, *, write=True):
-        db = sqlite3.connect(self.database_path, timeout=30)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA foreign_keys=ON")
-        db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+        db = sqlite3.connect(self.database_path, timeout=SQLITE_TIMEOUT_SECONDS)
         try:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA foreign_keys=ON")
+            db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             yield db
             db.commit()
         except BaseException:
