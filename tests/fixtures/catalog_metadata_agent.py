@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -11,8 +12,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--calls", type=Path)
     parser.add_argument("--delay", type=float, default=0)
+    parser.add_argument("--pid-file", type=Path)
     args = parser.parse_args()
     request = json.load(sys.stdin)
+    if args.pid_file:
+        args.pid_file.write_text(str(os.getpid()), encoding="utf-8")
     if args.calls:
         with args.calls.open("a", encoding="utf-8") as output:
             output.write(request["batchId"] + "\n")

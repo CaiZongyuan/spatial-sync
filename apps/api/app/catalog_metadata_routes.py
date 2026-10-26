@@ -159,6 +159,17 @@ def install_catalog_metadata_routes(app, maintenance, role_for):
         operator(request)
         return await call(maintenance.complete_inventory, identifier, await body(request, 1048576))
 
+    @app.post(PREFIX + "/runs/{identifier}/extracted")
+    async def extraction_batch(identifier: str, request: Request):
+        operator(request)
+        value = await body(request, 16777216)
+        return await call(maintenance.ingest_extracted, identifier, value.get("entries"))
+
+    @app.post(PREFIX + "/runs/{identifier}/publish")
+    async def publish_inventory(identifier: str, request: Request):
+        operator(request)
+        return await call(maintenance.publish_inventory, identifier)
+
     @app.post(PREFIX + "/runs/{identifier}/claim")
     async def claim_batch(identifier: str, request: Request):
         operator(request)

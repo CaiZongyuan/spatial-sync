@@ -167,71 +167,152 @@ class Worker:
         response.raise_for_status()
         return response.json()
 
-    def run(self):
+    def read_source(self, record):
         from packages.catalog_metadata.hub import HFHubReader
 
+        previous_usage = record.get("sourceUsage", {})
+        budgets = dict(record["budgets"])
+        budgets["seconds"] = max(0, budgets["seconds"] - record["usage"].get("seconds", 0))
+        for key in ("requests", "networkBytes"):
+            budgets[key] = max(0, budgets[key] - previous_usage.get(key, 0))
+        budgets["previewBytes"] = max(
+            0,
+            budgets["previewBytes"]
+            - (previous_usage.get("previewBytes", 0) - previous_usage.get("embeddedPreviewBytes", 0)),
+        )
+        updates = []
+        saw_manifest = False
+
+        def cumulative(usage):
+            result = dict(usage)
+            for key in ("requests", "networkBytes", "previewBytes", "embeddedPreviewBytes", "cacheBytes"):
+                result[key] = previous_usage.get(key, 0) + usage.get(key, 0)
+            return result
+
+        def flush():
+            if updates:
+                self.request("POST", self.base + "/extracted", json={"entries": list(updates)})
+                updates.clear()
+
+        def progress(event):
+            nonlocal record, saw_manifest
+            usage = event.get("usage", event)
+            self.request("POST", self.base + "/checkpoint", json={"usage": cumulative(usage)})
+            if "inventory" in event:
+                saw_manifest = True
+                inventory = event["inventory"]
+                identities = sorted(entry["upstreamId"] for entry in inventory["entries"])
+                identity_digest = hashlib.sha256(
+                    json.dumps(identities, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest()
+                if record.get("inventoryId"):
+                    if identity_digest != record.get("inventoryIdentityDigest"):
+                        raise ValueError("The resumed manifest changed its fixed identity set")
+                else:
+                    for offset in range(0, len(inventory["entries"]), 24):
+                        self.request(
+                            "POST",
+                            self.base + "/inventory",
+                            json={
+                                "offset": offset,
+                                "entries": inventory["entries"][offset : offset + 24],
+                            },
+                        )
+                    record = self.request(
+                        "POST",
+                        self.base + "/inventory/complete",
+                        json={
+                            **{key: value for key, value in inventory.items() if key != "entries"},
+                            "usage": cumulative(usage),
+                            "extractionComplete": False,
+                        },
+                    )
+                    self.request("POST", self.base + "/publish", json={})
+            if "entry" in event:
+                updates.append(
+                    {
+                        **event["entry"],
+                        "extractionStatus": event.get(
+                            "extractionStatus", event["entry"].get("extractionStatus", "extracted")
+                        ),
+                    }
+                )
+                if len(updates) >= 24:
+                    flush()
+
+        self.request("POST", self.base + "/phase", json={"phase": "enumerating"})
+        reader = HFHubReader(cache_root=self.cache_root, cancel=_CANCEL, budgets=budgets, progress=progress)
+        try:
+            pinned = record.get("sourceRevision") or reader.pin(
+                record["collection"], record.get("requestedRevision")
+            )
+            self.request(
+                "POST",
+                self.base + "/checkpoint",
+                json={
+                    "usage": cumulative(reader.usage),
+                    "sourceRevision": pinned,
+                },
+            )
+            inventory = reader.enumerate(record["collection"], pinned)
+            flush()
+            if not saw_manifest:
+                for offset in range(0, len(inventory["entries"]), 24):
+                    self.request(
+                        "POST",
+                        self.base + "/inventory",
+                        json={
+                            "offset": offset,
+                            "entries": inventory["entries"][offset : offset + 24],
+                        },
+                    )
+            record = self.request(
+                "POST",
+                self.base + "/inventory/complete",
+                json={
+                    **{key: value for key, value in inventory.items() if key != "entries"},
+                    "usage": cumulative(inventory["usage"]),
+                    "refresh": saw_manifest,
+                    "extractionComplete": True,
+                },
+            )
+            return record, False
+        except Exception as exc:
+            from packages.catalog_metadata import MetadataError
+
+            if isinstance(exc, MetadataError) and record.get("inventoryId") and not _CANCEL.is_set():
+                flush()
+                usage = cumulative(exc.details.get("usage", reader.usage))
+                record = self.request(
+                    "POST",
+                    self.base + "/inventory/complete",
+                    json={
+                        "revision": record["sourceRevision"],
+                        "complete": True,
+                        "refresh": True,
+                        "usage": usage,
+                        "extractionComplete": False,
+                        "sourceError": {"code": exc.code, "message": str(exc)[:500]},
+                    },
+                )
+                return record, True
+            details = getattr(exc, "details", None)
+            if isinstance(details, dict) and "usage" in details:
+                details["usage"] = cumulative(details["usage"])
+            raise
+        finally:
+            reader.close()
+
+    def run(self):
         record = self.request("GET", self.base)
         profile = profile_from_environment()
         if public_profile(profile) != record["runtime"]:
             raise ValueError("Configured Agent profile changed; resume with its recorded profile")
-        if record.get("inventoryId") is None:
-            self.request("POST", self.base + "/phase", json={"phase": "enumerating"})
-            previous_usage = record.get("sourceUsage", {})
-            budgets = dict(record["budgets"])
-            for key in ("requests", "networkBytes"):
-                budgets[key] = max(0, budgets[key] - previous_usage.get(key, 0))
-            budgets["previewBytes"] = max(
-                0,
-                budgets["previewBytes"]
-                - (previous_usage.get("previewBytes", 0) - previous_usage.get("embeddedPreviewBytes", 0)),
-            )
-
-            def cumulative(usage):
-                result = dict(usage)
-                for key in ("requests", "networkBytes", "previewBytes", "embeddedPreviewBytes", "cacheBytes"):
-                    result[key] = previous_usage.get(key, 0) + usage.get(key, 0)
-                return result
-
-            reader = HFHubReader(
-                cache_root=self.cache_root,
-                cancel=_CANCEL,
-                budgets=budgets,
-                progress=lambda usage: self.request(
-                    "POST", self.base + "/checkpoint", json={"usage": cumulative(usage)}
-                ),
-            )
-            try:
-                pinned = record.get("sourceRevision") or reader.pin(
-                    record["collection"], record.get("requestedRevision")
-                )
-                self.request(
-                    "POST",
-                    self.base + "/checkpoint",
-                    json={
-                        "usage": cumulative(reader.usage),
-                        "sourceRevision": pinned,
-                    },
-                )
-                inventory = reader.enumerate(record["collection"], pinned)
-                inventory["usage"] = cumulative(inventory["usage"])
-            except Exception as exc:
-                details = getattr(exc, "details", None)
-                if isinstance(details, dict) and "usage" in details:
-                    details["usage"] = cumulative(details["usage"])
-                raise
-            finally:
-                reader.close()
-            entries = inventory.pop("entries")
-            for offset in range(0, len(entries), 24):
-                self.request(
-                    "POST",
-                    self.base + "/inventory",
-                    json={
-                        "entries": entries[offset : offset + 24],
-                        "offset": offset,
-                    },
-                )
-            record = self.request("POST", self.base + "/inventory/complete", json=inventory)
+        if record.get("inventoryId") is None or not record.get("extractionComplete", True):
+            record, stopped = self.read_source(record)
+            if stopped:
+                self.request("POST", self.base + "/finish", json={})
+                return
         self.request("POST", self.base + "/phase", json={"phase": "organizing"})
         if profile is not None:
             while not _CANCEL.is_set():
@@ -260,9 +341,10 @@ class Worker:
                             "remaining": batch["remaining"],
                             "skill": skill,
                             "instructions": (
-                                "Organize bilingual names, aliases, summaries, categories and tags from the supplied "
-                                "source evidence. Preserve source facts and unknowns. Return results with upstreamId, "
-                                "inputDigest and fields; report actual usage and nativeSessionId. Never invent license, "
+                                "Organize bilingual names, aliases, summaries, categories and tags "
+                                "from the supplied source evidence. Preserve source facts and unknowns. "
+                                "Return results with upstreamId, inputDigest and fields; report actual "
+                                "usage and nativeSessionId. Never invent license, "
                                 "dimensions, collision or verification facts."
                             ),
                         },

@@ -99,6 +99,27 @@ The browser command still needs the owned approval gateway required above.
 Real-source full enumeration/coverage and transfer evidence is separate from
 CI. See [catalog/README.md](../catalog/README.md) for manual sync and limits.
 
+### Maintained HF metadata
+
+[Metadata maintenance](CATALOG_MAINTENANCE.md) documents source enablement,
+the trusted runtime profile, budgets, schedules and the installed maintenance
+skill. Source reading, organization and publication are separate from ordinary
+catalog sync and browser reads. No configured runtime means pending organization.
+
+```powershell
+uv run --no-sync python -m pytest tests/unit/test_catalog_metadata_store.py tests/unit/test_catalog_metadata_sources.py tests/gateway/test_catalog_metadata_maintenance.py tests/cli/test_catalog_metadata_commands.py -q
+uv run --no-sync python tools/check_platform_skills.py
+```
+
+The CLI journey owns a real loopback gateway, HF-shaped upstream, worker process
+and deterministic external runtime command. It verifies the installed CLI and
+official MCP transport, unchanged-input reuse, cancellation and child cleanup,
+source-worker crash/resume with retained byte counts, and source budget exhaustion.
+The HTTP checks cover durable receipt replay across gateway restart, manual
+correction conflicts, scoped credentials, bounded evidence and actual consumer
+index failure before publication. They use no paid model, GPU or online source.
+Real full-source coverage and Agent organization quality require separate receipts.
+
 ### Existing runtime records
 
 The GPU-free import journey uses the actual Claude Code stream-format fixture

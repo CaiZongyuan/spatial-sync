@@ -238,22 +238,40 @@ class GatewayClient:
         return await self.request("GET", self._maintenance_path() + "/collections")
 
     async def catalog_collection_put(self, profile, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path() + "/collections", json=profile, actor=actor)
+        return await self.request(
+            "POST", self._maintenance_path() + "/collections", json=profile, actor=actor
+        )
 
     async def catalog_collection_set(self, id, document, *, actor="cli:lw"):
-        return await self.request("PATCH", self._maintenance_path() + "/collections/" + quote(id, safe=""),
-                                  json=document, actor=actor)
+        return await self.request(
+            "PATCH",
+            self._maintenance_path() + "/collections/" + quote(id, safe=""),
+            json=document,
+            actor=actor,
+        )
 
     async def catalog_discover(self, limit=20, *, actor="cli:lw"):
-        return await self.request("GET", self._maintenance_path() + "/discover", params={"limit": limit}, actor=actor)
+        return await self.request(
+            "GET", self._maintenance_path() + "/discover", params={"limit": limit}, actor=actor
+        )
 
-    async def catalog_maintain(self, collection, revision=None, budgets=None, wait=False, requestId=None, *, actor="cli:lw"):
-        result = await self.request("POST", self._maintenance_path() + "/runs", actor=actor,
-                                    json={"collectionId": collection, "revision": revision,
-                                          "budgets": budgets, "requestId": requestId})
+    async def catalog_maintain(
+        self, collection, revision=None, budgets=None, wait=False, requestId=None, *, actor="cli:lw"
+    ):
+        result = await self.request(
+            "POST",
+            self._maintenance_path() + "/runs",
+            actor=actor,
+            json={
+                "collectionId": collection,
+                "revision": revision,
+                "budgets": budgets,
+                "requestId": requestId,
+            },
+        )
         deadline = time.monotonic() + 120
         while wait and result["status"] in ("queued", "running") and time.monotonic() < deadline:
-            await asyncio.sleep(.2)
+            await asyncio.sleep(0.2)
             result = await self.catalog_maintenance_status(result["id"])
         return result
 
@@ -270,42 +288,72 @@ class GatewayClient:
         return await self.request("POST", self._maintenance_path(id) + "/retry", actor=actor)
 
     async def catalog_batch_claim(self, id, limit=24, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path(id) + "/claim", json={"limit": limit}, actor=actor)
+        return await self.request(
+            "POST", self._maintenance_path(id) + "/claim", json={"limit": limit}, actor=actor
+        )
 
     async def catalog_batch_submit(self, id, batch, document, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path(id) + "/batches/" + quote(batch, safe="") + "/submit",
-                                  json=document, actor=actor)
+        return await self.request(
+            "POST",
+            self._maintenance_path(id) + "/batches/" + quote(batch, safe="") + "/submit",
+            json=document,
+            actor=actor,
+        )
 
     async def catalog_batch_error(self, id, batch, document, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path(id) + "/batches/" + quote(batch, safe="") + "/error",
-                                  json=document, actor=actor)
+        return await self.request(
+            "POST",
+            self._maintenance_path(id) + "/batches/" + quote(batch, safe="") + "/error",
+            json=document,
+            actor=actor,
+        )
 
     async def catalog_evidence(self, digest, offset=0):
         if offset < 0:
             raise ValueError("Evidence offset must be nonnegative")
-        content = await self.request("GET", self._maintenance_path() + "/evidence/" + quote(digest, safe=""),
-                                     params={"view": "raw"}, response_bytes=True)
-        chunk = content[offset:offset + 32768]
+        content = await self.request(
+            "GET",
+            self._maintenance_path() + "/evidence/" + quote(digest, safe=""),
+            params={"view": "raw"},
+            response_bytes=True,
+        )
+        chunk = content[offset : offset + 32768]
         try:
             text = chunk.decode("utf-8")
             encoding = "utf-8"
         except UnicodeDecodeError:
             text, encoding = base64.b64encode(chunk).decode("ascii"), "base64"
-        return {"sha256": digest, "bytes": len(content), "offset": offset, "encoding": encoding,
-                "content": text, "nextOffset": offset + len(chunk) if offset + len(chunk) < len(content) else None}
+        return {
+            "sha256": digest,
+            "bytes": len(content),
+            "offset": offset,
+            "encoding": encoding,
+            "content": text,
+            "nextOffset": offset + len(chunk) if offset + len(chunk) < len(content) else None,
+        }
 
     async def catalog_correction_put(self, document, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path() + "/corrections", json=document, actor=actor)
+        return await self.request(
+            "POST", self._maintenance_path() + "/corrections", json=document, actor=actor
+        )
 
     async def catalog_correction_retract(self, id, baseVersion=None, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path() + "/corrections/" + quote(id, safe="") + "/retract",
-                                  json={"baseVersion": baseVersion}, actor=actor)
+        return await self.request(
+            "POST",
+            self._maintenance_path() + "/corrections/" + quote(id, safe="") + "/retract",
+            json={"baseVersion": baseVersion},
+            actor=actor,
+        )
 
     async def catalog_organization_select(self, document, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path() + "/organization/select", json=document, actor=actor)
+        return await self.request(
+            "POST", self._maintenance_path() + "/organization/select", json=document, actor=actor
+        )
 
     async def catalog_metadata_publish(self, document=None, *, actor="cli:lw"):
-        return await self.request("POST", self._maintenance_path() + "/publish", json=document or {}, actor=actor)
+        return await self.request(
+            "POST", self._maintenance_path() + "/publish", json=document or {}, actor=actor
+        )
 
     async def catalog_metadata_export(self, *, actor="cli:lw"):
         return await self.request("GET", self._maintenance_path() + "/export", actor=actor)

@@ -323,7 +323,8 @@ def create_app(
     @app.exception_handler(MetadataError)
     async def metadata_error(request, error):
         return JSONResponse(
-            {"detail": {"code": error.code, "message": error.message, **error.details}}, status_code=error.status,
+            {"detail": {"code": error.code, "message": error.message, **error.details}},
+            status_code=error.status,
         )
 
     @app.exception_handler(RequestValidationError)

@@ -126,6 +126,11 @@ class MetadataMaintenance:
                     run_id TEXT NOT NULL, upstream_id TEXT NOT NULL, state TEXT NOT NULL,
                     document TEXT NOT NULL, PRIMARY KEY(run_id,upstream_id)
                 );
+                CREATE TABLE IF NOT EXISTS maintenance_extracted (
+                    run_id TEXT NOT NULL, upstream_id TEXT NOT NULL,
+                    input_digest TEXT NOT NULL, status TEXT NOT NULL,
+                    PRIMARY KEY(run_id,upstream_id)
+                );
                 CREATE TABLE IF NOT EXISTS maintenance_batches (
                     id TEXT PRIMARY KEY, run_id TEXT NOT NULL, state TEXT NOT NULL,
                     document TEXT NOT NULL
@@ -203,7 +208,17 @@ class MetadataMaintenance:
         allowed = (
             not suffix
             or suffix
-            in ("phase", "checkpoint", "inventory", "inventory/complete", "claim", "finish", "error")
+            in (
+                "phase",
+                "checkpoint",
+                "inventory",
+                "inventory/complete",
+                "claim",
+                "finish",
+                "error",
+                "extracted",
+                "publish",
+            )
             or suffix.startswith("evidence/")
             or (
                 suffix.startswith("batches/")
@@ -360,9 +375,9 @@ class MetadataMaintenance:
                 )
                 self._processes[identifier] = process
                 try:
-                    await asyncio.wait_for(
-                        process.wait(), timeout=self.show(identifier)["budgets"]["seconds"] + 10
-                    )
+                    current = self.show(identifier)
+                    remaining = max(0, current["budgets"]["seconds"] - current["usage"].get("seconds", 0))
+                    await asyncio.wait_for(process.wait(), timeout=remaining + 10)
                 except TimeoutError:
                     await self._stop_process(identifier)
                     self.fail(identifier, "runtime_limit", "Worker exceeded its runtime budget", budget=True)
@@ -487,7 +502,7 @@ class MetadataMaintenance:
                     "SELECT position,document FROM maintenance_items WHERE run_id=? ORDER BY position",
                     (identifier,),
                 ).fetchall()
-            if record["inventoryId"]:
+            if record["inventoryId"] and not document.get("refresh"):
                 return record
             if [row[0] for row in rows] != list(range(len(rows))):
                 raise _error(
@@ -502,16 +517,52 @@ class MetadataMaintenance:
                         "Source execution must report actual request and byte counts",
                     )
                 charged = amount - usage.get("embeddedPreviewBytes", 0) if key == "previewBytes" else amount
-                if charged > record["budgets"][key]:
+                if charged > record["budgets"][key] and not document.get("sourceError"):
                     return self.fail(
                         identifier, "source_budget", "Source usage exceeded the run budget", budget=True
                     )
+            source_revision = document.get("revision") or record.get("sourceRevision")
+            if record.get("sourceRevision") not in (None, source_revision):
+                raise _error(
+                    "source_revision_conflict",
+                    "Inventory refresh cannot change its fixed source revision",
+                    409,
+                )
+            extraction_complete = document.get("extractionComplete", True) is True
+            counts = copy.deepcopy(document.get("counts") or record.get("inventoryCounts") or {})
+            with self.store.transaction() as connection:
+                if extraction_complete:
+                    connection.executemany(
+                        "INSERT OR IGNORE INTO maintenance_extracted VALUES(?,?,?,?)",
+                        (
+                            (
+                                identifier,
+                                json.loads(row[1])["upstreamId"],
+                                _digest(json.loads(row[1])),
+                                "extracted",
+                            )
+                            for row in rows
+                        ),
+                    )
+                extracted = connection.execute(
+                    "SELECT COUNT(*) FROM maintenance_extracted WHERE run_id=?", (identifier,)
+                ).fetchone()[0]
+                extraction_failed = connection.execute(
+                    "SELECT COUNT(*) FROM maintenance_extracted WHERE run_id=? AND status='failed'",
+                    (identifier,),
+                ).fetchone()[0]
+            counts.update(
+                metadataProcessed=extracted,
+                metadataExtracted=extracted - extraction_failed,
+                metadataFailed=extraction_failed,
+                metadataPending=len(rows) - extracted,
+            )
             inventory = self.store.stage_inventory(
                 record["collectionId"],
-                document.get("revision"),
+                source_revision,
                 [json.loads(row[1]) for row in rows],
                 complete=document.get("complete") is True,
-                counts=document.get("counts"),
+                counts=counts,
                 evidence=document.get("evidence"),
             )
             inventory_id = inventory["id"]
@@ -522,7 +573,16 @@ class MetadataMaintenance:
             ]
             with self.store.transaction() as connection:
                 record = self._load(connection, identifier)
-                record["inventoryId"] = inventory_id
+                record.update(
+                    inventoryId=inventory_id,
+                    sourceRevision=source_revision,
+                    inventoryCounts=counts,
+                    extractionComplete=extraction_complete,
+                    sourceError=document.get("sourceError"),
+                    inventoryIdentityDigest=_digest(sorted(json.loads(row[1])["upstreamId"] for row in rows)),
+                )
+                if (document.get("sourceError") or {}).get("code") == "budget_exhausted":
+                    record["budgetExhausted"] = True
                 record["usage"].update(
                     {
                         key: usage.get(key, 0)
@@ -530,18 +590,80 @@ class MetadataMaintenance:
                     }
                 )
                 record["sourceUsage"] = copy.deepcopy(usage)
-                record["coverage"].update(indexed=len(rows), reused=len(rows) - len(pending))
-                record["phase"] = "organizing"
+                record["coverage"].update(
+                    indexed=len(rows),
+                    reused=len(rows) - len(pending),
+                    extracted=extracted - extraction_failed,
+                    extractionFailed=extraction_failed,
+                    extractionPending=len(rows) - extracted,
+                )
+                record["phase"] = "organizing" if extraction_complete else "extracting"
+                connection.execute("DELETE FROM maintenance_tasks WHERE run_id=?", (identifier,))
                 for item in pending:
                     connection.execute(
-                        "INSERT OR IGNORE INTO maintenance_tasks VALUES(?,?,?,?)",
-                        (
-                            identifier,
-                            item["upstreamId"],
-                            "pending",
-                            _json(item),
-                        ),
+                        "INSERT INTO maintenance_tasks VALUES(?,?,?,?)",
+                        (identifier, item["upstreamId"], "pending", _json(item)),
                     )
+                self._save(connection, record)
+                return record
+
+    def ingest_extracted(self, identifier, entries):
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 24:
+            raise _error("invalid_extraction_batch", "Extraction updates contain 1 through 24 known entries")
+        with self._lock, self.store.transaction() as connection:
+            record = self._load(connection, identifier)
+            self._active(record)
+            if record["inventoryId"] is None or record.get("extractionComplete"):
+                raise _error(
+                    "extraction_not_active", "Stage the complete identity inventory before extraction", 409
+                )
+            for entry in entries:
+                upstream = entry.get("upstreamId") if isinstance(entry, dict) else None
+                known = connection.execute(
+                    "SELECT 1 FROM maintenance_items WHERE run_id=? AND upstream_id=?", (identifier, upstream)
+                ).fetchone()
+                if known is None:
+                    raise _error(
+                        "unknown_extraction_identity",
+                        "Extraction cannot add identities outside its manifest",
+                        409,
+                    )
+                connection.execute(
+                    "UPDATE maintenance_items SET document=? WHERE run_id=? AND upstream_id=?",
+                    (_json(entry), identifier, upstream),
+                )
+                status = entry.get("extractionStatus", "extracted")
+                if status not in ("extracted", "failed"):
+                    raise _error("invalid_extraction_status", "Extraction status must be extracted or failed")
+                connection.execute(
+                    "INSERT INTO maintenance_extracted VALUES(?,?,?,?) ON CONFLICT(run_id,upstream_id) "
+                    "DO UPDATE SET input_digest=excluded.input_digest,status=excluded.status",
+                    (identifier, upstream, _digest(entry), status),
+                )
+            extracted = connection.execute(
+                "SELECT COUNT(*) FROM maintenance_extracted WHERE run_id=?", (identifier,)
+            ).fetchone()[0]
+            failed = connection.execute(
+                "SELECT COUNT(*) FROM maintenance_extracted WHERE run_id=? AND status='failed'", (identifier,)
+            ).fetchone()[0]
+            record["coverage"].update(
+                extracted=extracted - failed,
+                extractionFailed=failed,
+                extractionPending=record["coverage"]["indexed"] - extracted,
+            )
+            self._save(connection, record)
+            return record
+
+    def publish_inventory(self, identifier):
+        with self._lock:
+            record = self.show(identifier)
+            self._active(record)
+            if not record["inventoryId"]:
+                raise _error("inventory_not_ready", "Complete identity enumeration before publication", 409)
+            release = self.publish([record["inventoryId"]])
+            with self.store.transaction() as connection:
+                record = self._load(connection, identifier)
+                record["releaseId"] = release["id"]
                 self._save(connection, record)
                 return record
 
@@ -559,6 +681,12 @@ class MetadataMaintenance:
                 )
             if record["budgetExhausted"]:
                 return {"entries": [], "budgetExhausted": True}
+            if not record.get("extractionComplete", True):
+                raise _error(
+                    "source_extraction_in_progress",
+                    "Finish the bounded source extraction before organization",
+                    409,
+                )
             elapsed = time.time() - record["createdAt"]
             if elapsed >= record["budgets"]["seconds"] or (
                 record["runtime"]["configured"]
@@ -568,7 +696,8 @@ class MetadataMaintenance:
                 self._save(connection, record)
                 return {"entries": [], "budgetExhausted": True}
             rows = connection.execute(
-                "SELECT upstream_id,document FROM maintenance_tasks WHERE run_id=? AND state='pending' ORDER BY upstream_id LIMIT ?",
+                "SELECT upstream_id,document FROM maintenance_tasks WHERE run_id=? "
+                "AND state='pending' ORDER BY upstream_id LIMIT ?",
                 (identifier, limit),
             ).fetchall()
             if not rows:
@@ -833,6 +962,9 @@ class MetadataMaintenance:
                     "SELECT COUNT(*) FROM maintenance_tasks WHERE run_id=? AND state!='succeeded'",
                     (identifier,),
                 ).fetchone()[0]
+                pending += record["coverage"].get("extractionPending", 0) + record["coverage"].get(
+                    "extractionFailed", 0
+                )
                 status = (
                     "budget_exhausted"
                     if record["budgetExhausted"]

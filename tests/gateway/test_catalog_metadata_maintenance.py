@@ -1,7 +1,6 @@
 """Public maintenance controls, exact receipts and durable recovery."""
 
 import copy
-import json
 
 from fastapi.testclient import TestClient
 
@@ -199,3 +198,123 @@ def test_zero_model_budget_prevents_claim_and_preserves_old_release(tmp_path):
         assert finished.status_code == 200, finished.text
         assert finished.json()["status"] == "budget_exhausted"
         assert store.latest_release()["entryCount"] == 2
+
+
+def test_worker_grant_is_scoped_and_revoked_on_cancel_even_in_local_mode(tmp_path, monkeypatch):
+    app, _ = gateway(tmp_path)
+    captured = {}
+
+    def retain_token(record, token, callback_url):
+        captured[record["id"]] = token
+
+    monkeypatch.setattr(app.state.metadata_maintenance, "_launch", retain_token)
+    with TestClient(app) as client:
+        run = staged(client)
+        grant = {"Authorization": "Bearer " + captured[run["id"]]}
+        permitted = client.post(
+            BASE + "/runs/" + run["id"] + "/phase", json={"phase": "organizing"}, headers=grant
+        )
+        assert permitted.status_code == 200
+        assert (
+            client.patch(BASE + "/collections/simready", json={"enabled": False}, headers=grant).status_code
+            == 403
+        )
+        assert client.post(BASE + "/runs/meta-other/claim", json={}, headers=grant).status_code == 403
+        assert client.post(BASE + "/runs/" + run["id"] + "/cancel").status_code == 200
+        assert (
+            client.post(
+                BASE + "/runs/" + run["id"] + "/phase", json={"phase": "organizing"}, headers=grant
+            ).status_code
+            == 403
+        )
+
+
+def test_correction_conflict_is_item_scoped_and_manual_fields_survive_retry(tmp_path):
+    app, store = gateway(tmp_path)
+    with TestClient(app) as client:
+        run = staged(client)
+        batch = claimed(client, run["id"])
+        selected = batch["entries"][0]
+        corrected = client.post(
+            BASE + "/corrections",
+            json={
+                "collectionId": "simready",
+                "upstreamId": selected["upstreamId"],
+                "baseVersion": 0,
+                "fields": {"name": {"zh": "人工名称"}},
+                "reason": "Publisher terminology clarified",
+            },
+        )
+        assert corrected.status_code == 200, corrected.text
+        path = BASE + "/runs/" + run["id"] + "/batches/" + batch["id"] + "/submit"
+        submitted = client.post(path, json=receipt(batch))
+        assert submitted.status_code == 200
+        assert [item["status"] for item in submitted.json()["outcomes"]] == ["failed", "succeeded"]
+        assert submitted.json()["outcomes"][0]["error"] == "correction_conflict"
+        finished = client.post(BASE + "/runs/" + run["id"] + "/finish")
+        assert finished.json()["status"] == "partial"
+        resumed = client.post(BASE + "/runs/" + run["id"] + "/resume")
+        assert resumed.status_code == 202
+        repair = claimed(client, run["id"])
+        assert len(repair["entries"]) == 1 and repair["entries"][0]["correctionVersion"] == 1
+        fixed = client.post(
+            BASE + "/runs/" + run["id"] + "/batches/" + repair["id"] + "/submit", json=receipt(repair)
+        )
+        assert fixed.status_code == 200
+        assert client.post(BASE + "/runs/" + run["id"] + "/finish").json()["status"] == "succeeded"
+        selected_entry = next(
+            item for item in store.entries() if item["upstreamId"] == selected["upstreamId"]
+        )
+        assert selected_entry["name"]["zh"] == "人工名称"
+
+
+def test_actual_consumer_index_failure_keeps_published_view_and_retry_works(tmp_path, monkeypatch):
+    from packages.catalog import maintained
+
+    app, store = gateway(tmp_path)
+    original = maintained.build_semantic_index
+    with TestClient(app, raise_server_exceptions=False) as client:
+        before = client.get("/api/v1/library/search", params={"scope": "online"}).json()
+        run = staged(client)
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("Injected actual consuming index failure")
+
+        monkeypatch.setattr(maintained, "build_semantic_index", broken)
+        failed = client.post(BASE + "/runs/" + run["id"] + "/finish")
+        assert failed.status_code == 500
+        assert store.latest_release() is None
+        retained = client.get("/api/v1/library/search", params={"scope": "online"}).json()
+        before["snapshot"].pop("ageSeconds")
+        retained["snapshot"].pop("ageSeconds")
+        assert retained == before
+        monkeypatch.setattr(maintained, "build_semantic_index", original)
+        finished = client.post(BASE + "/runs/" + run["id"] + "/finish")
+        assert finished.status_code == 200, finished.text
+        assert store.latest_release()["id"] == finished.json()["releaseId"]
+        after = client.get("/api/v1/library/search", params={"scope": "online"}).json()
+        assert after["snapshot"]["id"] != before["snapshot"]["id"]
+        assert after["counts"]["matching"] == 2
+
+
+def test_evidence_summary_bounds_binary_and_restart_reservation_usage(tmp_path):
+    app, store = gateway(tmp_path)
+    digest = store.put_blob(b"source " * 10000)["sha256"]
+    binary = store.put_blob(b"\xff\x00" * 1000)["sha256"]
+    with TestClient(app) as client:
+        summary = client.get(BASE + "/evidence/" + digest, params={"limit": 128}).json()
+        assert summary["truncated"] and summary["nextOffset"] == 128
+        assert len(summary["text"].encode()) == 128
+        assert client.get(BASE + "/evidence/" + binary).json()["encoding"] == "binary"
+        assert client.get(BASE + "/evidence/" + digest, params={"view": "raw"}).content == b"source " * 10000
+        run = staged(client)
+        batch = claimed(client, run["id"])
+        assert (
+            client.post(BASE + "/runs/" + run["id"] + "/batches/" + batch["id"] + "/execution").status_code
+            == 200
+        )
+    restarted, _ = gateway(tmp_path)
+    with TestClient(restarted) as client:
+        interrupted = client.get(BASE + "/runs/" + run["id"]).json()
+        assert interrupted["usage"]["modelCalls"] is None and interrupted["usage"]["modelTokens"] is None
+        assert client.post(BASE + "/runs/" + run["id"] + "/resume").status_code == 409

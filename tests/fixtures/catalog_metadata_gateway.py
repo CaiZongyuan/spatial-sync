@@ -104,3 +104,13 @@ async def source_control(request: Request):
     if value.get("clear"):
         REQUESTS.clear()
     return CONTROL
+
+
+@app.post("/e2e/catalog-metadata-worker/{identifier}/crash")
+async def crash_worker(identifier: str):
+    process = app.state.metadata_maintenance._processes.get(identifier)
+    if process is None or process.returncode is not None:
+        return {"killed": False}
+    process.kill()
+    await process.wait()
+    return {"killed": True}
