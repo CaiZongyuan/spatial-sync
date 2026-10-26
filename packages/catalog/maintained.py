@@ -231,22 +231,23 @@ class ReleasedViews:
             self._active = value
         return value
 
-    def prepare(self, release, documents, *, base=None):
+    def prepare(self, release, documents, *, base=None, vocabulary=None):
         base = base or self.catalog
         identifier = "sha256:" + hashlib.sha256(canonical_json({
             "metadata": release["id"],
             "legacy": base.snapshot.id if base.snapshot else None,
         }).encode()).hexdigest()
-        return self._build(release, identifier, documents, base=base)
+        return self._build(release, identifier, documents, base=base, vocabulary=vocabulary)
 
-    def _build(self, release, identifier, documents=None, *, base=None):
+    def _build(self, release, identifier, documents=None, *, base=None, vocabulary=None):
         base = base or self.catalog
         entries = base.entries
         snapshot = base.snapshot
         if release is not None:
             documents = self.store.entries(release["id"]) if documents is None else documents
             providers = {item["collectionId"] for item in documents}
-            vocabulary = self.store.vocabulary(release.get("vocabularyVersion"))
+            if vocabulary is None:
+                vocabulary = self.store.vocabulary(release.get("vocabularyVersion"))
             entries = [entry for entry in entries if entry.provider not in providers]
             entries.extend(adapt_entry(document, base.by_id.get(document["id"]),
                                        release_id=release["id"], vocabulary=vocabulary)

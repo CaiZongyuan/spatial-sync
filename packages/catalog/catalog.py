@@ -54,7 +54,7 @@ class AssetCatalog:
         entries = [adapt_entry(document, self.by_id.get(document["id"])) for document in documents]
         build_semantic_index(entries, "metadata-validation", embedder=self.embedder)
 
-    def prepare_metadata_release(self, release, documents):
+    def prepare_metadata_release(self, release, documents, *, vocabulary=None):
         """Build and persist the real consuming index before core activation."""
         if self._metadata_views is not None:
             with self._lock:
@@ -64,7 +64,7 @@ class AssetCatalog:
             # Published legacy entries/snapshots are immutable. Capturing their
             # references is brief; model work and disk writes never hold the
             # reader lock while maintenance prepares a new publication.
-            return views.prepare(release, documents, base=base)
+            return views.prepare(release, documents, base=base, vocabulary=vocabulary)
 
     def startup(self):
         try:
