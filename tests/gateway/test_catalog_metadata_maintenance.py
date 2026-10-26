@@ -318,3 +318,100 @@ def test_evidence_summary_bounds_binary_and_restart_reservation_usage(tmp_path):
         interrupted = client.get(BASE + "/runs/" + run["id"]).json()
         assert interrupted["usage"]["modelCalls"] is None and interrupted["usage"]["modelTokens"] is None
         assert client.post(BASE + "/runs/" + run["id"] + "/resume").status_code == 409
+
+
+def test_one_executable_batch_reserves_the_remaining_model_allowance(tmp_path):
+    app, _ = gateway(tmp_path)
+    with TestClient(app) as client:
+        run = staged(client, budgets={"modelTokens": 10}, count=3)
+        path = BASE + "/runs/" + run["id"]
+        first = client.post(path + "/claim", json={"limit": 1}).json()
+        assert client.post(path + "/claim", json={"limit": 1}).status_code == 409
+        assert client.post(path + "/batches/" + first["id"] + "/execution").status_code == 200
+        submitted = client.post(path + "/batches/" + first["id"] + "/submit", json=receipt(first))
+        assert submitted.status_code == 200, submitted.text
+        assert submitted.json()["usage"]["modelCalls"] == 1
+        assert submitted.json()["usage"]["modelTokens"] == 10
+        assert submitted.json()["budgetExhausted"]
+        assert client.post(path + "/claim", json={"limit": 1}).json()["entries"] == []
+        assert client.post(path + "/batches/" + first["id"] + "/execution").status_code == 409
+
+
+def test_resume_revokes_unsubmitted_claims_and_preserves_new_owner(tmp_path):
+    app, _ = gateway(tmp_path)
+    with TestClient(app) as client:
+        run = staged(client, count=1)
+        path = BASE + "/runs/" + run["id"]
+        old = claimed(client, run["id"])
+        assert client.post(path + "/cancel").status_code == 200
+        assert client.post(path + "/resume").status_code == 202
+        fresh = claimed(client, run["id"])
+        assert client.post(path + "/batches/" + old["id"] + "/submit", json=receipt(old)).status_code == 409
+        assert client.post(path + "/finish").status_code == 409
+        assert (
+            client.post(path + "/batches/" + fresh["id"] + "/submit", json=receipt(fresh)).status_code == 200
+        )
+        assert client.post(path + "/finish").json()["status"] == "succeeded"
+
+
+def test_http_manual_writes_require_explicit_integer_base_versions(tmp_path):
+    app, _ = gateway(tmp_path)
+    with TestClient(app) as client:
+        staged(client, count=1)
+        correction = {
+            "collectionId": "simready",
+            "upstreamId": "beaker_0",
+            "fields": {"name": {"zh": "更正名称"}},
+            "reason": "Terminology",
+        }
+        assert client.post(BASE + "/corrections", json=correction).status_code == 400
+        assert client.post(BASE + "/corrections", json=correction | {"baseVersion": False}).status_code == 400
+        created = client.post(BASE + "/corrections", json=correction | {"baseVersion": 0})
+        assert created.status_code == 200, created.text
+        assert (
+            client.post(BASE + "/corrections/" + created.json()["id"] + "/retract", json={}).status_code
+            == 400
+        )
+        assert client.post(BASE + "/organization/select", json={"version": 0}).status_code == 400
+
+
+def test_new_vocabulary_queues_old_organization_through_public_run_controls(tmp_path):
+    app, store = gateway(tmp_path)
+    with TestClient(app) as client:
+        first = staged(client)
+        batch = claimed(client, first["id"])
+        assert (
+            client.post(
+                BASE + "/runs/" + first["id"] + "/batches/" + batch["id"] + "/submit", json=receipt(batch)
+            ).status_code
+            == 200
+        )
+        assert client.post(BASE + "/runs/" + first["id"] + "/finish").status_code == 200
+        vocabulary = client.get(BASE + "/vocabulary").json()
+        version = vocabulary["version"]
+        vocabulary["version"] = version + "-revised"
+        assert (
+            client.put(
+                BASE + "/vocabulary", json={"vocabulary": vocabulary, "baseVersion": version}
+            ).status_code
+            == 200
+        )
+        second = staged(client)
+        assert second["versions"]["vocabulary"] == vocabulary["version"]
+        assert second["coverage"]["reused"] == 0
+        pending = claimed(client, second["id"])
+        assert len(pending["entries"]) == 2
+        assert all(
+            entry["organization"]["status"] == "pending" and entry["organization"]["version"] == 1
+            for entry in pending["entries"]
+        )
+        assert all(entry["name"]["zh"] == "" for entry in pending["entries"])
+        assert (
+            client.post(
+                BASE + "/runs/" + second["id"] + "/batches/" + pending["id"] + "/submit",
+                json=receipt(pending),
+            ).status_code
+            == 200
+        )
+        assert client.post(BASE + "/runs/" + second["id"] + "/finish").status_code == 200
+        assert store.latest_release()["vocabularyVersion"] == vocabulary["version"]

@@ -957,7 +957,7 @@ COMMANDS = (
         arguments=(
             Argument("id", ("id",), str, "Correction ID"),
             Argument(
-                "baseVersion", ("--base-version",), int | None, "Current correction selection version", None
+                "baseVersion", ("--base-version",), int, "Current correction selection version"
             ),
         ),
     ),
@@ -979,7 +979,7 @@ COMMANDS = (
             Argument(
                 "document",
                 ("--document",),
-                dict[str, Any] | None,
+                dict[str, Any],
                 "Optional inventory selection JSON/YAML file",
                 None,
             ),
@@ -1047,6 +1047,7 @@ COMMANDS = (
             Argument("kind", ("--kind",), str | None,
                      "Exact asset kind, such as environment, device or labware", None),
             Argument("provider", ("--provider",), str | None, "Exact catalog provider", None),
+            Argument("gaps", ("--gaps",), bool, "Only local Assets with known completeness gaps", None),
             Argument("category", ("--category",), str | None, "Versioned catalog category ID", None),
             Argument("tag", ("--tag",), str | None, "Exact normalized tag", None),
             Argument("release", ("--release",), str | None, "Pinned opaque search release", None),

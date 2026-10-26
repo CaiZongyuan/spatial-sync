@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from packages.catalog_metadata import MetadataError
+from packages.catalog_metadata.ownership import WorkerTree
 from packages.catalog_metadata.worker import (
     SKILLS_VERSION,
     maintenance_skill,
@@ -54,6 +55,8 @@ def _error(code, message, status=400):
 
 
 def validate_budgets(value=None):
+    if value is not None and not isinstance(value, dict):
+        raise _error("invalid_maintenance_budget", "Maintenance budgets must be an object")
     result = dict(DEFAULT_BUDGETS)
     for key, amount in (value or {}).items():
         maximum = BUDGET_MAXIMUMS.get(key)
@@ -104,6 +107,7 @@ class MetadataMaintenance:
         self._lock = threading.RLock()
         self._processes = {}
         self._supervisors = {}
+        self._source_fallbacks = {}
         self._worker_slots = asyncio.Semaphore(2)
         self._scheduler = None
         self._closed = False
@@ -142,7 +146,8 @@ class MetadataMaintenance:
         for row in recovering:
             batch = json.loads(row[2])
             try:
-                self.submit(row[0], row[1], batch["receipt"])
+                if self.show(row[0])["status"] != "cancelled":
+                    self.submit(row[0], row[1], batch["receipt"], recovery=True)
             except MetadataError:
                 # The retained receipt still records the actual call. A stale
                 # result remains recoverable as a conflict, never zero usage.
@@ -169,6 +174,8 @@ class MetadataMaintenance:
         return json.loads(row[0])
 
     def _save(self, connection, record, *, token_hash=None):
+        if record["status"] in TERMINAL:
+            self._source_fallbacks.pop(record["id"], None)
         record["updatedAt"] = time.time()
         if token_hash is None:
             connection.execute(
@@ -246,6 +253,12 @@ class MetadataMaintenance:
         return "http://127.0.0.1:" + str(address[1])
 
     async def start(self, collection_id, *, revision=None, budgets=None, callback_url=None, request_id=None):
+        if revision is not None and (
+            not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)
+        ):
+            raise _error("invalid_revision", "Maintenance requires a fixed dataset revision")
+        if request_id is not None and (not isinstance(request_id, str) or not 1 <= len(request_id) <= 160):
+            raise _error("invalid_request_id", "Maintenance request IDs contain 1 through 160 characters")
         collection = self.store.collection(collection_id)
         if not collection.get("enabled", False):
             raise _error("collection_disabled", "Enable the collection before maintenance", 409)
@@ -351,10 +364,13 @@ class MetadataMaintenance:
         cache_root = self.store.root / "blobs"
         log_root = self.root / identifier
         log_root.mkdir(parents=True, exist_ok=True)
+        tree = None
         try:
             with (log_root / "worker.log").open("ab") as output:
                 control_file = log_root / "cancel"
                 control_file.unlink(missing_ok=True)
+                ready_file = log_root / "guardian.ready"
+                ready_file.unlink(missing_ok=True)
                 process = await asyncio.create_subprocess_exec(
                     os.environ.get("LW_CATALOG_WORKER_PYTHON", sys.executable),
                     "-m",
@@ -367,13 +383,20 @@ class MetadataMaintenance:
                     str(cache_root),
                     "--control-file",
                     str(control_file),
+                    "--guardian-ready",
+                    str(ready_file),
+                    "--parent-pid",
+                    str(os.getpid()),
                     cwd=Path(__file__).resolve().parents[2],
                     env=env,
                     stdout=output,
                     stderr=output,
                     creationflags=getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0),
+                    start_new_session=os.name != "nt",
                 )
                 self._processes[identifier] = process
+                tree = WorkerTree(process)
+                ready_file.write_text("ready", encoding="utf-8")
                 try:
                     current = self.show(identifier)
                     remaining = max(0, current["budgets"]["seconds"] - current["usage"].get("seconds", 0))
@@ -388,8 +411,11 @@ class MetadataMaintenance:
             await self._stop_process(identifier)
             raise
         except OSError:
+            await self._stop_process(identifier)
             self.fail(identifier, "worker_start_failed", "Unable to start the local metadata worker")
         finally:
+            if tree is not None:
+                tree.close()
             self._processes.pop(identifier, None)
             self._supervisors.pop(identifier, None)
 
@@ -451,7 +477,35 @@ class MetadataMaintenance:
         if record["status"] not in ACTIVE:
             raise _error("maintenance_not_active", "Resume the checkpoint before submitting more work", 409)
 
-    def ingest(self, identifier, entries, offset):
+    def _source_fallback(self, identifier):
+        if identifier in self._source_fallbacks:
+            return self._source_fallbacks[identifier]
+        record = self.show(identifier)
+        latest = self.store.latest_release()
+        previous = next(
+            (
+                item
+                for item in (latest or {}).get("collections", [])
+                if item["id"] == record["collectionId"] and item["revision"] == record.get("sourceRevision")
+            ),
+            None,
+        )
+        result = {"entries": {}, "complete": False}
+        if previous:
+            result["entries"] = {
+                entry["upstreamId"]: entry
+                for entry in self.store.inventory_source_entries(previous["inventoryId"])
+            }
+            coverage = previous.get("coverage", {})
+            result["complete"] = (
+                coverage.get("metadataPending") == 0 and coverage.get("metadataFailed", 0) == 0
+            )
+        if len(self._source_fallbacks) >= 4:
+            self._source_fallbacks.pop(next(iter(self._source_fallbacks)))
+        self._source_fallbacks[identifier] = result
+        return result
+
+    def ingest(self, identifier, entries, offset, *, minimal=False):
         if (
             not isinstance(entries, list)
             or not 1 <= len(entries) <= 24
@@ -461,6 +515,7 @@ class MetadataMaintenance:
             raise _error(
                 "invalid_inventory_batch", "Inventory batches contain at most 24 entries and an offset"
             )
+        fallback = self._source_fallback(identifier) if minimal else {"entries": {}}
         with self._lock, self.store.transaction() as connection:
             record = self._load(connection, identifier)
             self._active(record)
@@ -472,6 +527,14 @@ class MetadataMaintenance:
                     raise _error(
                         "invalid_inventory_batch", "Every inventory entry requires its stable upstream ID"
                     )
+                previous_source = fallback["entries"].get(upstream)
+                if previous_source is not None:
+                    entry = previous_source
+                    if fallback["complete"] or entry.get("extractionStatus") == "extracted":
+                        connection.execute(
+                            "INSERT OR IGNORE INTO maintenance_extracted VALUES(?,?,?,?)",
+                            (identifier, upstream, _digest(entry), "extracted"),
+                        )
                 previous = connection.execute(
                     "SELECT document,position FROM maintenance_items WHERE run_id=? AND upstream_id=?",
                     (identifier, upstream),
@@ -568,7 +631,7 @@ class MetadataMaintenance:
             inventory_id = inventory["id"]
             pending = [
                 entry
-                for entry in self.store.inventory_entries(inventory_id)
+                for entry in self.store.inventory_entries(inventory_id, versions=record["versions"])
                 if entry["organization"]["status"] != "organized"
             ]
             with self.store.transaction() as connection:
@@ -660,7 +723,19 @@ class MetadataMaintenance:
             self._active(record)
             if not record["inventoryId"]:
                 raise _error("inventory_not_ready", "Complete identity enumeration before publication", 409)
-            release = self.publish([record["inventoryId"]])
+            latest = self.store.latest_release()
+            previous = next(
+                (
+                    item
+                    for item in (latest or {}).get("collections", [])
+                    if item["id"] == record["collectionId"]
+                    and item["revision"] == record.get("sourceRevision")
+                ),
+                None,
+            )
+            release = (
+                latest if previous else self.publish([record["inventoryId"]], versions=record["versions"])
+            )
             with self.store.transaction() as connection:
                 record = self._load(connection, identifier)
                 record["releaseId"] = release["id"]
@@ -686,6 +761,15 @@ class MetadataMaintenance:
                     "source_extraction_in_progress",
                     "Finish the bounded source extraction before organization",
                     409,
+                )
+            held = connection.execute(
+                "SELECT COUNT(*) FROM maintenance_batches WHERE run_id=? "
+                "AND state IN ('claimed','submitting')",
+                (identifier,),
+            ).fetchone()[0]
+            if held:
+                raise _error(
+                    "maintenance_batch_in_progress", "Complete the current batch before claiming another", 409
                 )
             elapsed = time.time() - record["createdAt"]
             if elapsed >= record["budgets"]["seconds"] or (
@@ -733,7 +817,34 @@ class MetadataMaintenance:
                 )
             return batch
 
-    def submit(self, identifier, batch_id, document):
+    def _refresh_model_usage(self, connection, record, *, settle=False):
+        calls, tokens, unknown = 0, 0, False
+        unknown_tokens = False
+        rows = connection.execute(
+            "SELECT state,document FROM maintenance_batches WHERE run_id=?", (record["id"],)
+        )
+        for row in rows:
+            batch = json.loads(row[1])
+            if "receipt" in batch:
+                calls += 1
+                amount = _tokens(batch["receipt"])
+                if amount is None:
+                    unknown_tokens = True
+                else:
+                    tokens += amount
+            elif batch.get("executionReserved") or (row[0] == "failed" and not batch.get("didNotExecute")):
+                unknown = True
+        record["usage"]["modelCalls"] = None if unknown else calls
+        record["usage"]["modelTokens"] = None if unknown or unknown_tokens or not calls else tokens
+        if settle:
+            record["budgetExhausted"] = bool(
+                record["budgetExhausted"]
+                or unknown
+                or unknown_tokens
+                or (calls and tokens >= record["budgets"]["modelTokens"])
+            )
+
+    def submit(self, identifier, batch_id, document, *, recovery=False):
         with self._lock:
             with self.store.transaction() as connection:
                 record = self._load(connection, identifier)
@@ -753,7 +864,14 @@ class MetadataMaintenance:
                         409,
                     )
                 return batch["response"]
-            self._active(record)
+            if not recovery:
+                self._active(record)
+            if row[0] not in ("claimed", "submitting"):
+                raise _error(
+                    "stale_maintenance_batch",
+                    "This batch no longer owns active work; claim a fresh batch",
+                    409,
+                )
             if row[0] == "submitting" and batch["submissionDigest"] != digest:
                 raise _error(
                     "batch_submission_conflict", "A retained execution receipt already owns this batch", 409
@@ -770,7 +888,7 @@ class MetadataMaintenance:
             by_id = {item.get("upstreamId"): item for item in results if isinstance(item, dict)}
             if set(by_id) != {entry["upstreamId"] for entry in batch["entries"]}:
                 raise _error("invalid_batch_result", "Batch results must match the exact claimed identities")
-            tokens = _tokens(document)
+            _tokens(document)
             execution = document.get("execution") or {}
             if not isinstance(execution, dict):
                 raise _error("invalid_execution_receipt", "Execution evidence must be an object")
@@ -790,27 +908,12 @@ class MetadataMaintenance:
             batch.update(submissionDigest=digest, receipt=document)
             with self.store.transaction() as connection:
                 record = self._load(connection, identifier)
-                if not batch.get("usageAccounted"):
-                    previous_calls = batch.get("modelCallsBefore", record["usage"]["modelCalls"])
-                    previous_tokens = batch.get("modelTokensBefore", record["usage"]["modelTokens"])
-                    record["usage"]["modelCalls"] = None if previous_calls is None else previous_calls + 1
-                    record["usage"]["modelTokens"] = (
-                        None
-                        if tokens is None
-                        or previous_calls is None
-                        or (previous_tokens is None and previous_calls > 0)
-                        else (previous_tokens or 0) + tokens
-                    )
-                    record["budgetExhausted"] = (
-                        tokens is None
-                        or (record["usage"]["modelTokens"] or 0) >= record["budgets"]["modelTokens"]
-                    )
-                    batch["usageAccounted"] = True
-                    self._save(connection, record)
                 connection.execute(
                     "UPDATE maintenance_batches SET state='submitting',document=? WHERE id=?",
                     (_json(batch), batch_id),
                 )
+                self._refresh_model_usage(connection, record, settle=True)
+                self._save(connection, record)
             saved_receipt = self.store.put_blob(
                 (original if original is not None else _json(document)).encode("utf-8"),
                 kind="runtime-receipt",
@@ -888,16 +991,27 @@ class MetadataMaintenance:
                 raise _error("batch_not_claimed", "Only a claimed batch can reserve runtime execution", 409)
             batch = json.loads(row[1])
             if not batch.get("executionReserved"):
-                batch.update(
-                    executionReserved=True,
-                    modelCallsBefore=record["usage"]["modelCalls"],
-                    modelTokensBefore=record["usage"]["modelTokens"],
-                )
-                record["usage"].update(modelCalls=None, modelTokens=None)
+                other = connection.execute(
+                    "SELECT COUNT(*) FROM maintenance_batches WHERE run_id=? AND id!=? "
+                    "AND state IN ('claimed','submitting')",
+                    (identifier, batch_id),
+                ).fetchone()[0]
+                if (
+                    record["budgetExhausted"]
+                    or other
+                    or (record["usage"]["modelTokens"] or 0) >= record["budgets"]["modelTokens"]
+                ):
+                    raise _error(
+                        "model_budget_reserved",
+                        "No unreserved model allowance remains for this execution",
+                        409,
+                    )
+                batch["executionReserved"] = True
                 record["message"] = "Runtime execution reserved; its actual receipt and usage are pending"
                 connection.execute(
                     "UPDATE maintenance_batches SET document=? WHERE id=?", (_json(batch), batch_id)
                 )
+                self._refresh_model_usage(connection, record)
                 self._save(connection, record)
             return {"reserved": True}
 
@@ -915,6 +1029,9 @@ class MetadataMaintenance:
                 return record
             batch = json.loads(row[1])
             batch["error"] = {"code": code, "message": message[:500]}
+            batch["didNotExecute"] = execution_started is False
+            if execution_started is False:
+                batch["executionReserved"] = False
             for entry in batch["entries"]:
                 connection.execute(
                     "UPDATE maintenance_tasks SET state='failed' WHERE run_id=? AND upstream_id=?",
@@ -926,13 +1043,7 @@ class MetadataMaintenance:
             )
             record["coverage"]["failed"] += len(batch["entries"])
             # A failed execution may still have incurred tokens; retain unknown.
-            if execution_started is False:
-                record["usage"]["modelCalls"] = batch.get("modelCallsBefore", record["usage"]["modelCalls"])
-                record["usage"]["modelTokens"] = batch.get(
-                    "modelTokensBefore", record["usage"]["modelTokens"]
-                )
-            else:
-                record["usage"].update(modelCalls=None, modelTokens=None)
+            self._refresh_model_usage(connection, record, settle=True)
             record["budgetExhausted"] = True
             record["message"] = (
                 "Agent execution failed; actual model use is unknown, so further calls stopped"
@@ -955,7 +1066,7 @@ class MetadataMaintenance:
                     "batches_in_progress", "Complete or report claimed batches before publication", 409
                 )
             self.phase(identifier, "checking")
-            release = self.publish([record["inventoryId"]])
+            release = self.publish([record["inventoryId"]], versions=record["versions"])
             with self.store.transaction() as connection:
                 record = self._load(connection, identifier)
                 pending = connection.execute(
@@ -985,8 +1096,10 @@ class MetadataMaintenance:
                 self._save(connection, record, token_hash="")
                 return record
 
-    def publish(self, inventory_ids=None):
+    def publish(self, inventory_ids=None, *, versions=None):
         options = {"index_builder": self.index_builder}
+        if versions is not None:
+            options["versions"] = versions
         if self.release_preparer is not None:
             options["release_preparer"] = self.release_preparer
         return self.store.publish(inventory_ids, **options)
@@ -1038,6 +1151,13 @@ class MetadataMaintenance:
 
     async def resume(self, identifier, *, callback_url=None):
         token = "lw-meta-" + secrets.token_urlsafe(32)
+        with self.store.transaction(write=False) as connection:
+            receipts = connection.execute(
+                "SELECT id,document FROM maintenance_batches WHERE run_id=? AND state='submitting'",
+                (identifier,),
+            ).fetchall()
+        for row in receipts:
+            self.submit(identifier, row[0], json.loads(row[1])["receipt"], recovery=True)
         previous = self.show(identifier)
         if previous["usage"]["modelCalls"] is None or (
             previous["usage"]["modelCalls"] > 0 and previous["usage"]["modelTokens"] is None
@@ -1046,7 +1166,9 @@ class MetadataMaintenance:
                 "execution_usage_unknown", "An execution has no final receipt; use a new bounded retry", 409
             )
         current_entries = (
-            self.store.inventory_entries(previous["inventoryId"]) if previous.get("inventoryId") else []
+            self.store.inventory_entries(previous["inventoryId"], versions=previous["versions"])
+            if previous.get("inventoryId")
+            else []
         )
         with self._lock, self.store.transaction() as connection:
             record = self._load(connection, identifier)
@@ -1075,6 +1197,10 @@ class MetadataMaintenance:
                 "UPDATE maintenance_tasks SET state='pending' WHERE run_id=? AND state!='succeeded'",
                 (identifier,),
             )
+            connection.execute(
+                "UPDATE maintenance_batches SET state='abandoned' WHERE run_id=? AND state='claimed'",
+                (identifier,),
+            )
             for entry in current_entries:
                 state = "succeeded" if entry["organization"]["status"] == "organized" else "pending"
                 connection.execute(
@@ -1097,13 +1223,17 @@ class MetadataMaintenance:
                 await asyncio.sleep(30)
                 if not self._callback_url:
                     continue
+                with self.store.transaction(write=False) as connection:
+                    rows = connection.execute(
+                        "SELECT document FROM maintenance_runs WHERE rowid IN "
+                        "(SELECT MAX(rowid) FROM maintenance_runs GROUP BY collection_id)"
+                    ).fetchall()
+                latest = {run["collectionId"]: run for run in (json.loads(row[0]) for row in rows)}
                 for profile in self.store.collections():
                     interval = profile.get("scheduleSeconds", 0)
                     if not profile.get("enabled") or not isinstance(interval, (int, float)) or interval < 60:
                         continue
-                    recent = next(
-                        (run for run in self.status()["runs"] if run["collectionId"] == profile["id"]), None
-                    )
+                    recent = latest.get(profile["id"])
                     if recent and (
                         recent["status"] in ACTIVE or time.time() - recent["updatedAt"] < interval
                     ):

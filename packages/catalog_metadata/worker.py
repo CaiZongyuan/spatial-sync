@@ -24,6 +24,12 @@ SKILLS_VERSION = "lw.catalog-maintenance/1"
 _CANCEL = threading.Event()
 
 
+class WorkerHTTPError(RuntimeError):
+    def __init__(self, code, message, status):
+        super().__init__(f"HTTP {status}: {message}")
+        self.code, self.status = code, status
+
+
 def maintenance_skill():
     path = Path(__file__).resolve().parents[2] / "skills" / "lab-catalog-maintain" / "SKILL.md"
     return path.read_text(encoding="utf-8")
@@ -140,7 +146,7 @@ def execute_agent(profile, request, *, root, cancel=_CANCEL):
 
 
 class Worker:
-    def __init__(self, url, run_id, cache_root, control_file=None):
+    def __init__(self, url, run_id, cache_root, control_file=None, parent_pid=None):
         self.run_id = run_id
         self.cache_root = Path(cache_root)
         self.client = httpx.Client(
@@ -155,7 +161,9 @@ class Worker:
 
             def watch():
                 while not _CANCEL.is_set():
-                    if Path(control_file).exists():
+                    if Path(control_file).exists() or (
+                        os.name != "nt" and parent_pid and os.getppid() != parent_pid
+                    ):
                         _CANCEL.set()
                         return
                     _CANCEL.wait(0.1)
@@ -164,7 +172,14 @@ class Worker:
 
     def request(self, method, path, **kwargs):
         response = self.client.request(method, path, **kwargs)
-        response.raise_for_status()
+        if response.is_error:
+            try:
+                detail = response.json().get("detail", {})
+                code = str(detail.get("code", "worker_http_error"))[:80]
+                message = str(detail.get("message", "Maintenance HTTP request failed"))[:400]
+            except (ValueError, AttributeError):
+                code, message = "worker_http_error", "Maintenance HTTP request failed"
+            raise WorkerHTTPError(code, message, response.status_code)
         return response.json()
 
     def read_source(self, record):
@@ -216,6 +231,7 @@ class Worker:
                             json={
                                 "offset": offset,
                                 "entries": inventory["entries"][offset : offset + 24],
+                                "minimal": True,
                             },
                         )
                     record = self.request(
@@ -229,14 +245,7 @@ class Worker:
                     )
                     self.request("POST", self.base + "/publish", json={})
             if "entry" in event:
-                updates.append(
-                    {
-                        **event["entry"],
-                        "extractionStatus": event.get(
-                            "extractionStatus", event["entry"].get("extractionStatus", "extracted")
-                        ),
-                    }
-                )
+                updates.append(event["entry"])
                 if len(updates) >= 24:
                     flush()
 
@@ -384,10 +393,18 @@ def main(argv=None):
     parser.add_argument("--run", required=True)
     parser.add_argument("--cache-root", required=True)
     parser.add_argument("--control-file")
+    parser.add_argument("--guardian-ready")
+    parser.add_argument("--parent-pid", type=int)
     args = parser.parse_args(argv)
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: _CANCEL.set())
-    worker = Worker(args.url, args.run, args.cache_root, args.control_file)
+    if args.guardian_ready:
+        deadline = time.monotonic() + 10
+        while not Path(args.guardian_ready).exists():
+            if _CANCEL.is_set() or time.monotonic() > deadline:
+                return 1
+            _CANCEL.wait(0.02)
+    worker = Worker(args.url, args.run, args.cache_root, args.control_file, args.parent_pid)
     try:
         worker.run()
     except Exception as exc:
@@ -401,11 +418,13 @@ def main(argv=None):
                     "usage": getattr(exc, "details", {}).get("usage"),
                 },
             )
-        except httpx.HTTPError:
+        except (httpx.HTTPError, WorkerHTTPError):
             pass
         return 1
     finally:
         worker.close()
+        if args.parent_pid and os.name != "nt" and os.getppid() != args.parent_pid:
+            os.killpg(os.getpgrp(), signal.SIGKILL)
     return 0
 
 

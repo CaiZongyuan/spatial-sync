@@ -179,7 +179,7 @@ class GatewayClient:
                              license=None, installed=False, notInstalled=False,
                              minSourceBytes=None, maxSourceBytes=None, minDimensionM=None,
                              maxDimensionM=None, approximate=False, sort="relevance", limit=10,
-                             cursor=None, category=None, tag=None, release=None, page=None):
+                             cursor=None, category=None, tag=None, release=None, page=None, gaps=None):
         if installed and notInstalled:
             raise GatewayError(
                 "installed and notInstalled are mutually exclusive",
@@ -203,7 +203,7 @@ class GatewayClient:
             "sort": sort if sort != "relevance" else None,
             "limit": limit if limit != 10 else None,
             "cursor": cursor,
-            "category": category, "tag": tag, "release": release, "page": page,
+            "category": category, "tag": tag, "release": release, "page": page, "gaps": gaps,
         }.items() if value is not None}
         return await self.request("GET", "/api/v1/library/search", params=params)
 

@@ -276,3 +276,82 @@ async def test_complete_manifest_publishes_before_deep_budget_and_keeps_full_sea
     assert stopped["usage"]["modelCalls"] == 0 and not calls.exists()
     requests = http.get("/e2e/catalog-metadata-source").json()["requests"]
     assert len(requests) == 1 and not any(path.endswith((".usd", ".png")) for path in requests)
+
+
+async def test_native_chemlab_extracted_entries_keep_their_complete_source_digest(metadata_gateway):
+    http, environment, calls, directory = metadata_gateway
+    assert http.patch(BASE + "/collections/chemlab", json={"enabled": True}).status_code == 200
+    budgets = directory / "budgets.json"
+    budgets.write_text(json.dumps({"modelTokens": 0}), encoding="utf-8")
+    run = await cli(
+        environment,
+        "catalog",
+        "maintain",
+        "chemlab",
+        "--revision",
+        REVISION,
+        "--budgets",
+        str(budgets),
+        "--wait",
+    )
+    assert run["status"] == "budget_exhausted", run
+    assert run["coverage"]["indexed"] == run["coverage"]["extracted"] == 3
+    assert run["coverage"]["extractionFailed"] == run["coverage"]["extractionPending"] == 0
+    assert run["extractionComplete"] and run["usage"]["modelCalls"] == 0 and not calls.exists()
+    found = http.get(
+        "/api/v1/library/search", params={"provider": "chemlab", "scope": "online", "q": "天平"}
+    ).json()
+    assert found["counts"]["matching"] == 1
+    selection = directory / "publish.json"
+    selection.write_text(json.dumps({"inventoryIds": [run["inventoryId"]]}), encoding="utf-8")
+    published = await cli(environment, "catalog", "metadata-publish", "--document", str(selection))
+    assert published == http.post(BASE + "/publish", json={"inventoryIds": [run["inventoryId"]]}).json()
+
+
+@pytest.mark.parametrize("metadata_gateway", [{"runtimeDelay": 4}], indirect=True)
+async def test_worker_crash_closes_owned_runtime_tree_and_preserves_unknown_usage(metadata_gateway):
+    http, environment, _, directory = metadata_gateway
+    http.patch(BASE + "/collections/simready", json={"enabled": True})
+    run = await cli(environment, "catalog", "maintain", "simready", "--revision", REVISION)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not (directory / "runtime.pid").exists():
+        await asyncio.sleep(0.02)
+    assert (directory / "runtime.pid").exists()
+    pid = int((directory / "runtime.pid").read_text())
+    assert psutil.pid_exists(pid)
+    assert http.post("/e2e/catalog-metadata-worker/" + run["id"] + "/crash").json()["killed"]
+    deadline = time.monotonic() + 2
+    while psutil.pid_exists(pid) and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    assert not psutil.pid_exists(pid)
+    stopped = http.get(BASE + "/runs/" + run["id"]).json()
+    assert stopped["status"] == "failed" and stopped["usage"]["modelCalls"] is None
+    assert stopped["usage"]["modelTokens"] is None
+
+
+async def test_same_revision_repeat_budget_failure_keeps_prior_rich_fields(metadata_gateway):
+    http, environment, calls, _ = metadata_gateway
+    http.patch(BASE + "/collections/simready", json={"enabled": True})
+    first = await cli(environment, "catalog", "maintain", "simready", "--revision", REVISION, "--wait")
+    assert first["status"] == "succeeded", first
+    before = http.get("/api/v1/library/search", params={"provider": "simready", "scope": "online"}).json()
+    before_entries = {item["id"]: item for item in before["results"]}
+    assert all(item["source"]["bytes"] > 0 for item in before_entries.values())
+    http.post("/e2e/catalog-metadata-source", json={"clearLocators": True})
+    created = http.post(
+        BASE + "/runs",
+        json={"collectionId": "simready", "revision": REVISION, "budgets": {"requests": 1, "modelTokens": 0}},
+    ).json()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        stopped = http.get(BASE + "/runs/" + created["id"]).json()
+        if stopped["status"] not in ("queued", "running"):
+            break
+        await asyncio.sleep(0.02)
+    assert stopped["status"] == "budget_exhausted", stopped
+    after = http.get("/api/v1/library/search", params={"provider": "simready", "scope": "online"}).json()
+    assert {item["id"] for item in after["results"]} == set(before_entries)
+    for item in after["results"]:
+        assert item["source"]["bytes"] == before_entries[item["id"]]["source"]["bytes"]
+        assert item["names"] == before_entries[item["id"]]["names"]
+    assert len(calls.read_text().splitlines()) == 1

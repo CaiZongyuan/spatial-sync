@@ -15,6 +15,37 @@ from apps.api.app.main import create_app
 REVISION = "a" * 40
 REQUESTS = []
 CONTROL = {"delay": 0, "fail": False}
+CHEMLAB_RESOLVE = "/datasets/MBZUAI/ChemLab-Assets/resolve/" + REVISION
+CHEMLAB_ROUTES = {
+    CHEMLAB_RESOLVE + "/release_manifest.json": {
+        "assets": {
+            "instrument.balance": {"shipped": 1},
+            "labware.beaker": {"shipped": 1},
+            "furniture.desk": {"shipped": 1},
+        }
+    },
+    CHEMLAB_RESOLVE + "/catalog/catalog.json": {
+        "assets": [
+            {
+                "id": "instrument.balance",
+                "name": "Balance",
+                "name_zh": "天平",
+                "path": "assets/balance",
+                "size_m": [0.2, 0.3, 0.4],
+                "files": {"glb": "assets/balance/model.glb"},
+            }
+        ]
+    },
+    "/api/datasets/MBZUAI/ChemLab-Assets/tree/" + REVISION: [
+        {
+            "type": "file",
+            "path": "assets/" + name + "/model.glb",
+            "size": 10,
+            "oid": "d" * 40,
+        }
+        for name in ("balance", "beaker", "desk")
+    ],
+}
 
 
 class Upstream(BaseHTTPRequestHandler):
@@ -31,7 +62,9 @@ class Upstream(BaseHTTPRequestHandler):
         if CONTROL["fail"]:
             self.send_error(503)
             return
-        if path == prefix:
+        if path in CHEMLAB_ROUTES:
+            value = CHEMLAB_ROUTES[path]
+        elif path == prefix:
             value = [
                 {"type": "directory", "path": name, "oid": ("b" if index == 0 else "c") * 40}
                 for index, name in enumerate(("beaker", "bucket"))
@@ -103,6 +136,9 @@ async def source_control(request: Request):
     CONTROL["fail"] = value.get("fail", False) is True
     if value.get("clear"):
         REQUESTS.clear()
+    if value.get("clearLocators"):
+        for path in (app.state.metadata_store.blob_root / "locators").glob("*.json"):
+            path.unlink()
     return CONTROL
 
 

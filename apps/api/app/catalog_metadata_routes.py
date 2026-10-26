@@ -43,6 +43,12 @@ def install_catalog_metadata_routes(app, maintenance, role_for):
     async def call(function, *args, **kwargs):
         return await anyio.to_thread.run_sync(functools.partial(function, *args, **kwargs))
 
+    def base_version(value):
+        version = value.get("baseVersion")
+        if type(version) is not int or version < 0:
+            raise MetadataError("invalid_base_version", "Supply the current nonnegative integer baseVersion")
+        return version
+
     @app.get(PREFIX)
     async def maintenance_status():
         return await call(maintenance.status)
@@ -141,7 +147,13 @@ def install_catalog_metadata_routes(app, maintenance, role_for):
     async def inventory_batch(identifier: str, request: Request):
         operator(request)
         value = await body(request, 16777216)
-        return await call(maintenance.ingest, identifier, value.get("entries"), value.get("offset"))
+        return await call(
+            maintenance.ingest,
+            identifier,
+            value.get("entries"),
+            value.get("offset"),
+            minimal=value.get("minimal") is True,
+        )
 
     @app.post(PREFIX + "/runs/{identifier}/checkpoint")
     async def source_checkpoint(identifier: str, request: Request):
@@ -270,7 +282,7 @@ def install_catalog_metadata_routes(app, maintenance, role_for):
             value.get("collectionId"),
             value.get("upstreamId"),
             value.get("fields"),
-            base_version=value.get("baseVersion"),
+            base_version=base_version(value),
             reason=value.get("reason", "Manual correction"),
         )
 
@@ -278,7 +290,7 @@ def install_catalog_metadata_routes(app, maintenance, role_for):
     async def retract(identifier: str, request: Request):
         operator(request)
         value = await body(request, 4096)
-        return await call(store.retract, identifier, base_version=value.get("baseVersion"))
+        return await call(store.retract, identifier, base_version=base_version(value))
 
     @app.post(PREFIX + "/organization/select")
     async def select_organization(request: Request):
@@ -290,7 +302,7 @@ def install_catalog_metadata_routes(app, maintenance, role_for):
             value.get("upstreamId"),
             value.get("inputDigest"),
             value.get("version"),
-            base_version=value.get("baseVersion"),
+            base_version=base_version(value),
         )
 
     @app.get(PREFIX + "/organization/history")
