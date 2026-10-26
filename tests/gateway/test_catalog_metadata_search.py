@@ -5,6 +5,8 @@ or a replacement for the separately reconciled real-source inventory.
 """
 
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -181,3 +183,42 @@ def test_failed_index_retains_release_and_encoded_identity_is_exact(tmp_path, mo
         store.publish([changed["id"]], release_preparer=app.state.catalog.prepare_metadata_release)
         after = client.get("/api/v1/library/search", params=filters).json()
         assert after["snapshot"]["id"] != before["snapshot"]["id"]
+
+
+def test_old_http_search_stays_available_while_new_consumer_index_is_paused(tmp_path, monkeypatch):
+    from packages.catalog import maintained
+
+    documents = PublishedStore(tmp_path, count=2).documents
+    for document in documents:
+        document["category"] = "equipment"
+    store = MetadataStore(tmp_path)
+    initial = store.stage_inventory("scenario", REVISION, documents, complete=True)
+    store.publish([initial["id"]])
+    app = create_app()
+    entered, release = threading.Event(), threading.Event()
+    with TestClient(app) as client:
+        app.state.catalog.attach_metadata(store)
+        filters = {"scope": "online", "provider": "scenario"}
+        before = client.get("/api/v1/library/search", params=filters).json()
+        documents[1]["name"]["en"] = "Changed object"
+        changed = store.stage_inventory("scenario", REVISION, documents, complete=True)
+        build = maintained.build_semantic_index
+
+        def paused_index(*args, **kwargs):
+            entered.set()
+            assert release.wait(8), "Test index build was never released"
+            return build(*args, **kwargs)
+
+        monkeypatch.setattr(maintained, "build_semantic_index", paused_index)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            publishing = pool.submit(store.publish, [changed["id"]],
+                                     release_preparer=app.state.catalog.prepare_metadata_release)
+            try:
+                assert entered.wait(4)
+                reading = pool.submit(client.get, "/api/v1/library/search", params=filters)
+                response = reading.result(timeout=2)
+                assert response.status_code == 200
+                assert response.json()["snapshot"]["id"] == before["snapshot"]["id"]
+            finally:
+                release.set()
+            publishing.result(timeout=4)

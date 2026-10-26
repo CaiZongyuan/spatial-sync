@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 from pathlib import Path
@@ -57,7 +58,13 @@ class AssetCatalog:
         """Build and persist the real consuming index before core activation."""
         if self._metadata_views is not None:
             with self._lock:
-                return self._metadata_views.prepare(release, documents)
+                base = copy.copy(self)
+                base._historical = dict(self._historical)
+                views = self._metadata_views
+            # Published legacy entries/snapshots are immutable. Capturing their
+            # references is brief; model work and disk writes never hold the
+            # reader lock while maintenance prepares a new publication.
+            return views.prepare(release, documents, base=base)
 
     def startup(self):
         try:

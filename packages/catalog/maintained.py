@@ -11,6 +11,8 @@ import copy
 import hashlib
 import json
 import logging
+import tempfile
+import threading
 from collections import OrderedDict
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
@@ -143,14 +145,16 @@ class ReleasedViews:
         self.root = store.root / "query-views"
         self.root.mkdir(parents=True, exist_ok=True)
         self._views = OrderedDict()
+        self._views_lock = threading.RLock()
         self._active = None
 
     def _remember(self, value):
         identifier = value.snapshot.id
-        self._views[identifier] = value
-        self._views.move_to_end(identifier)
-        while len(self._views) > 4:
-            self._views.popitem(last=False)
+        with self._views_lock:
+            self._views[identifier] = value
+            self._views.move_to_end(identifier)
+            while len(self._views) > 4:
+                self._views.popitem(last=False)
         return value
 
     def select(self, release=None, cursor=None):
@@ -159,16 +163,19 @@ class ReleasedViews:
             raise LibraryError("cursor_mismatch", "Cursor belongs to a different released view", 400)
         identifier = release or pinned
         if identifier:
-            if identifier in self._views:
-                return self._views[identifier]
+            with self._views_lock:
+                value = self._views.get(identifier)
+            if value is not None:
+                return value
             return self._read(identifier)
         return self._current()
 
-    def _clone(self, snapshot, entries):
+    def _clone(self, snapshot, entries, *, base=None):
         # A clone has no maintenance hook, so all established search/detail
         # behavior operates against this single immutable version.
         from packages.catalog.catalog import AssetCatalog
-        value = AssetCatalog(self.catalog.path, embedder=self.catalog.embedder)
+        base = base or self.catalog
+        value = AssetCatalog(base.path, embedder=base.embedder)
         value.available = True
         value.snapshot = snapshot
         value.entries = tuple(entries)
@@ -177,9 +184,9 @@ class ReleasedViews:
         for entry in entries:
             counts[entry.package_id] = counts.get(entry.package_id, 0) + 1
         value.by_package = {entry.package_id: entry for entry in entries if counts[entry.package_id] == 1}
-        value._historical = {**self.catalog._historical, **self.catalog.by_id}
-        value.archive_paths = self.catalog.archive_paths
-        value.resources = self.catalog.resources
+        value._historical = {**base._historical, **base.by_id}
+        value.archive_paths = base.archive_paths
+        value.resources = base.resources
         value.metadata_store = self.store
         value.semantic = build_semantic_index(entries, snapshot.id, embedder=value.embedder)
         return value
@@ -193,9 +200,9 @@ class ReleasedViews:
                 "metadata": release["id"],
                 "legacy": self.catalog.snapshot.id if self.catalog.snapshot else None,
             }).encode()).hexdigest()
-        if identifier in self._views:
-            value = self._views[identifier]
-        else:
+        with self._views_lock:
+            value = self._views.get(identifier)
+        if value is None:
             try:
                 value = self._build(release, identifier)
             except Exception as exc:
@@ -215,10 +222,8 @@ class ReleasedViews:
                 return previous
         if value.snapshot is not None:
             pointer = self.root / "active.json"
-            temporary = pointer.with_suffix(".tmp")
             try:
-                temporary.write_text(canonical_json({"id": value.snapshot.id}), encoding="utf-8")
-                temporary.replace(pointer)
+                self._write(pointer, {"id": value.snapshot.id})
             except OSError:
                 # The immutable view itself was durably prepared before its
                 # core release activated. The prior active pointer remains.
@@ -226,35 +231,37 @@ class ReleasedViews:
             self._active = value
         return value
 
-    def prepare(self, release, documents):
+    def prepare(self, release, documents, *, base=None):
+        base = base or self.catalog
         identifier = "sha256:" + hashlib.sha256(canonical_json({
             "metadata": release["id"],
-            "legacy": self.catalog.snapshot.id if self.catalog.snapshot else None,
+            "legacy": base.snapshot.id if base.snapshot else None,
         }).encode()).hexdigest()
-        return self._build(release, identifier, documents)
+        return self._build(release, identifier, documents, base=base)
 
-    def _build(self, release, identifier, documents=None):
-        entries = self.catalog.entries
-        snapshot = self.catalog.snapshot
+    def _build(self, release, identifier, documents=None, *, base=None):
+        base = base or self.catalog
+        entries = base.entries
+        snapshot = base.snapshot
         if release is not None:
             documents = self.store.entries(release["id"]) if documents is None else documents
             providers = {item["collectionId"] for item in documents}
             vocabulary = self.store.vocabulary(release.get("vocabularyVersion"))
             entries = [entry for entry in entries if entry.provider not in providers]
-            entries.extend(adapt_entry(document, self.catalog.by_id.get(document["id"]),
+            entries.extend(adapt_entry(document, base.by_id.get(document["id"]),
                                        release_id=release["id"], vocabulary=vocabulary)
                            for document in documents)
             created = release["createdAt"]
             timestamp = datetime.fromisoformat(created).astimezone(UTC)
-            base = snapshot or CatalogSnapshot(identifier, "multiple", "multiple", "0" * 40,
-                                               timestamp, created, "", 0, dict(DEFAULT_LIMITS))
-            snapshot = replace(base, id=identifier, entry_count=len(entries),
+            snapshot_base = snapshot or CatalogSnapshot(identifier, "multiple", "multiple", "0" * 40,
+                                                        timestamp, created, "", 0, dict(DEFAULT_LIMITS))
+            snapshot = replace(snapshot_base, id=identifier, entry_count=len(entries),
                                indexed_at=timestamp, indexed_at_text=created,
                                coverage="Complete inventories; organization coverage is reported per source.",
                                metadata_release=release)
         if snapshot is None:
             return self.catalog
-        value = self._clone(snapshot, entries)
+        value = self._clone(snapshot, entries, base=base)
         self._persist(value)
         return self._remember(value)
 
@@ -266,9 +273,20 @@ class ReleasedViews:
         raw = canonical_json(document).encode()
         wrapper = {"sha256": hashlib.sha256(raw).hexdigest(), "document": document}
         path = self.root / (value.snapshot.id.removeprefix("sha256:") + ".json")
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(canonical_json(wrapper), encoding="utf-8")
-        temporary.replace(path)
+        self._write(path, wrapper)
+
+    @staticmethod
+    def _write(path, document):
+        # Preparation and an independent read may finish the same immutable
+        # view concurrently. Each atomic write owns its temporary path.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.stem + ".", suffix=".tmp", delete=False) as output:
+            output.write(canonical_json(document))
+            temporary = type(path)(output.name)
+        try:
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _read(self, identifier):
         import re
