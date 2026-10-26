@@ -107,8 +107,9 @@ skill. Source reading, organization and publication are separate from ordinary
 catalog sync and browser reads. No configured runtime means pending organization.
 
 ```powershell
-uv run --no-sync python -m pytest tests/unit/test_catalog_metadata_store.py tests/unit/test_catalog_metadata_sources.py tests/gateway/test_catalog_metadata_maintenance.py tests/cli/test_catalog_metadata_commands.py -q
+uv run --no-sync python -m pytest tests/unit/test_catalog_metadata_store.py tests/unit/test_catalog_metadata_sources.py tests/gateway/test_catalog_metadata_maintenance.py tests/gateway/test_catalog_metadata_search.py tests/cli/test_catalog_metadata_commands.py -q
 uv run --no-sync python tools/check_platform_skills.py
+pnpm --filter @spatial-sync/web exec playwright test catalog-metadata.spec.ts
 ```
 
 The CLI journey owns a real loopback gateway, HF-shaped upstream, worker process
@@ -119,6 +120,16 @@ The HTTP checks cover durable receipt replay across gateway restart, manual
 correction conflicts, scoped credentials, bounded evidence and actual consumer
 index failure before publication. They use no paid model, GPU or online source.
 Real full-source coverage and Agent organization quality require separate receipts.
+The browser command needs the owned approval gateway described above and owns an
+additional isolated API/Web fixture. It covers pinned pages and URL restoration,
+local hard conditions and gaps, cached object previews, evidence, extraction
+coverage and estimates only after acquisition intent.
+
+The fixed real-source identity selection and independent bilingual labels are in
+`tests/fixtures/catalog/metadata/`; publisher metadata and model/image bytes are
+not bundled. Use `tools/eval_catalog_metadata.py` with frozen product records and
+an explicit query file. Report held-out denominators by language, exact and hard
+conditions, and loaded-query P95 separately from model loading and index build.
 
 ### Existing runtime records
 
