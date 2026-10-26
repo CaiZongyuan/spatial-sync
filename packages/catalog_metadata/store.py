@@ -492,6 +492,11 @@ class MetadataStore:
             decoded[key] = data
         if sum(map(len, decoded.values())) > 256 * 1024 * 1024:
             raise MetadataError("export_limit", "Backup evidence exceeds 256 MiB")
+        # Unreferenced blobs are harmless if a later transaction fails. Writing
+        # first prevents an active release from ever referring to unwritten data.
+        for key, data in decoded.items():
+            self.put_blob(data)
+            self.blob(key)
         with self.transaction() as db:
             # Restoring replaces only this module's metadata, never local assets,
             # recordings, maintenance jobs or any other host-owned table.
@@ -510,6 +515,62 @@ class MetadataStore:
             latest = db.execute("SELECT document FROM metadata_state WHERE key='latestRelease'").fetchone()
             if latest and db.execute("SELECT 1 FROM releases WHERE id=?", (json.loads(latest[0]),)).fetchone() is None:
                 raise MetadataError("invalid_backup", "Backup active release is absent")
-        for data in decoded.values():
-            self.put_blob(data)
+            self._validate_restored(db)
         return {"schema": SCHEMA, "restored": True, "release": self.latest_release(), "blobs": len(decoded)}
+
+    def _validate_restored(self, db):
+        profiles = [source_profile(json.loads(row[0])) for row in db.execute("SELECT document FROM collections")]
+        datasets = [value["dataset"].casefold() for value in profiles]
+        if len(set(datasets)) != len(datasets):
+            raise MetadataError("invalid_backup", "Backup duplicates a dataset identity")
+        collection_ids = {value["id"] for value in profiles}
+        inventories = {}
+        for row in db.execute("SELECT * FROM inventories"):
+            value = json.loads(row["document"])
+            values = [json.loads(item[0]) for item in db.execute("SELECT document FROM inventory_entries "
+                     "WHERE inventory_id=? ORDER BY upstream_id", (row["id"],))]
+            if (value.get("id") != row["id"] or value.get("collectionId") != row["collection_id"]
+                    or row["collection_id"] not in collection_ids or value.get("revision") != row["revision"]
+                    or value.get("complete") is not bool(row["complete"])):
+                raise MetadataError("invalid_backup", "Backup inventory identity is inconsistent")
+            revision(row["revision"])
+            normalized = [normalized_entry(row["collection_id"], row["revision"], item) for item in values]
+            expected = digest({"collectionId": row["collection_id"], "revision": row["revision"],
+                               "complete": bool(row["complete"]), "entries": normalized,
+                               "counts": value["counts"], "evidence": value["evidence"]})
+            if expected != row["id"] or value["counts"]["entries"] != len(values):
+                raise MetadataError("invalid_backup", "Backup inventory digest or count is inconsistent")
+            inventories[row["id"]] = {item["id"]: item for item in values}
+        for row in db.execute("SELECT id,document FROM releases"):
+            value = json.loads(row[1])
+            entries = [json.loads(item[0]) for item in db.execute("SELECT document FROM release_entries "
+                       "WHERE release_id=?", (row[0],))]
+            entries.sort(key=lambda item: (item["collectionId"], item["upstreamId"]))
+            if value.get("id") != row[0] or value.get("entryCount") != len(entries):
+                raise MetadataError("invalid_backup", "Backup release identity or count is inconsistent")
+            expected_entries = {}
+            for collection in value["collections"]:
+                inventory_id = collection["inventoryId"]
+                inv = db.execute("SELECT collection_id,revision,complete FROM inventories WHERE id=?",
+                                 (inventory_id,)).fetchone()
+                if (inv is None or not inv[2] or inv[0] != collection["id"]
+                        or inv[1] != collection["revision"]):
+                    raise MetadataError("invalid_backup", "Backup release has an invalid inventory reference")
+                expected_entries.update(inventories[inventory_id])
+                if collection["coverage"]["entries"] != len(inventories[inventory_id]):
+                    raise MetadataError("invalid_backup", "Backup release coverage is inconsistent")
+            if set(expected_entries) != {entry["id"] for entry in entries}:
+                raise MetadataError("invalid_backup", "Backup release inventory identities are inconsistent")
+            if any(entry["inputDigest"] != expected_entries[entry["id"]]["inputDigest"] for entry in entries):
+                raise MetadataError("invalid_backup", "Backup release changed a source input identity")
+            index = [{"id": entry["id"], "text": canonical({key: entry.get(key) for key in
+                      ("name", "aliases", "summary", "category", "tags", "domains", "uses")})} for entry in entries]
+            content = {"schema": SCHEMA, "collections": value["collections"], "entries": entries,
+                       "vocabularyVersion": value["vocabularyVersion"],
+                       "vocabularyDigest": value["vocabularyDigest"], "indexVersion": digest(index)}
+            if value["indexVersion"] != content["indexVersion"] or row[0] != digest(content):
+                raise MetadataError("invalid_backup", "Backup release or index digest is inconsistent")
+            actual_index = {item[0]: item[1] for item in db.execute("SELECT id,search_text FROM release_entries "
+                            "WHERE release_id=?", (row[0],))}
+            if actual_index != {item["id"]: item["text"] for item in index}:
+                raise MetadataError("invalid_backup", "Backup index differs from its release")
