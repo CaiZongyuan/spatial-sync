@@ -87,7 +87,8 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   await expect(page.getByRole('alert')).toContainText('第 2 页加载失败');
   await expect(page.locator('.catalog-skeleton-card')).toHaveCount(0);
   await page.getByRole('alert').getByRole('button', { name: '重试', exact: true }).click();
-  await expect(cards).toHaveCount(24);
+  // The 36-entry fixture has a final partial page of 12.
+  await expect(cards).toHaveCount(12);
   await expect(page.locator('.catalog-skeleton-card')).toHaveCount(0);
   await expect(cards.first()).not.toHaveAttribute('data-candidate', /asset_000@/);
   expect(new URL(page.url()).searchParams.get('release')).toBe(released);
