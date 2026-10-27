@@ -19,23 +19,35 @@ MAX_ENTRIES = 128
 
 def validate_png(payload):
     try:
-        if (len(payload) < 33 or len(payload) > MAX_PNG_BYTES
-                or payload[:8] != b"\x89PNG\r\n\x1a\n" or payload[8:16] != b"\x00\x00\x00\rIHDR"):
+        if (
+            len(payload) < 33
+            or len(payload) > MAX_PNG_BYTES
+            or payload[:8] != b"\x89PNG\r\n\x1a\n"
+            or payload[8:16] != b"\x00\x00\x00\rIHDR"
+        ):
             raise ValueError()
-        width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", payload[16:29])
-        if (not (1 <= width <= 2048 and 1 <= height <= 2048) or depth != 8 or color not in (2, 6)
-                or compression != 0 or filtering != 0 or interlace != 0):
+        width, height, depth, color, compression, filtering, interlace = struct.unpack(
+            ">IIBBBBB", payload[16:29]
+        )
+        if (
+            not (1 <= width <= 2048 and 1 <= height <= 2048)
+            or depth != 8
+            or color not in (2, 6)
+            or compression != 0
+            or filtering != 0
+            or interlace != 0
+        ):
             raise ValueError()
         compressed = bytearray()
         offset, ended = 8, False
         while offset + 12 <= len(payload):
-            length = struct.unpack(">I", payload[offset:offset + 4])[0]
-            kind = payload[offset + 4:offset + 8]
+            length = struct.unpack(">I", payload[offset : offset + 4])[0]
+            kind = payload[offset + 4 : offset + 8]
             end = offset + 12 + length
             if end > len(payload):
                 raise ValueError()
-            data = payload[offset + 8:offset + 8 + length]
-            if zlib.crc32(kind + data) != struct.unpack(">I", payload[end - 4:end])[0]:
+            data = payload[offset + 8 : offset + 8 + length]
+            if zlib.crc32(kind + data) != struct.unpack(">I", payload[end - 4 : end])[0]:
                 raise ValueError()
             if kind == b"IDAT":
                 compressed.extend(data)
@@ -52,12 +64,21 @@ def validate_png(payload):
         expected = height * stride
         decoder = zlib.decompressobj()
         pixels = decoder.decompress(compressed, expected + 1)
-        if (not ended or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail
-                or len(pixels) != expected or any(pixels[index] > 4 for index in range(0, expected, stride))):
+        if (
+            not ended
+            or not decoder.eof
+            or decoder.unused_data
+            or decoder.unconsumed_tail
+            or len(pixels) != expected
+            or any(pixels[index] > 4 for index in range(0, expected, stride))
+        ):
             raise ValueError()
     except (ValueError, struct.error, zlib.error):
-        raise LibraryError("invalid_thumbnail", "Provide a static non-interlaced 8-bit RGB/RGBA PNG, "
-                           "up to 2048px and 1 MiB", 422) from None
+        raise LibraryError(
+            "invalid_thumbnail",
+            "Provide a static non-interlaced 8-bit RGB/RGBA PNG, up to 2048px and 1 MiB",
+            422,
+        ) from None
 
 
 class ThumbnailStore:
@@ -80,8 +101,11 @@ class ThumbnailStore:
                 if path.is_symlink() or self.root.is_symlink() or self.root.is_junction():
                     return None
                 value = json.loads(path.read_bytes())
-                if (value["key"] != key or len(value["image"]) != 64
-                        or any(char not in "0123456789abcdef" for char in value["image"])):
+                if (
+                    value["key"] != key
+                    or len(value["image"]) != 64
+                    or any(char not in "0123456789abcdef" for char in value["image"])
+                ):
                     return None
                 paths = tuple(Path(item) for item in value["paths"])
                 recorded = tuple(tuple(item) if item is not None else None for item in value["stamps"])
@@ -89,8 +113,13 @@ class ThumbnailStore:
                     return None
                 watched = tuple(sorted({*paths, path, self.root / (value["image"] + ".png")}))
                 expected = dict(zip(paths, recorded, strict=True))
-                expected.update(zip((path, self.root / (value["image"] + ".png")),
-                                    stamps((path, self.root / (value["image"] + ".png"))), strict=True))
+                expected.update(
+                    zip(
+                        (path, self.root / (value["image"] + ".png")),
+                        stamps((path, self.root / (value["image"] + ".png"))),
+                        strict=True,
+                    )
+                )
                 self.cache.put(key, value, watched, tuple(expected[item] for item in watched))
             except (OSError, ValueError, KeyError, TypeError):
                 return None
@@ -122,10 +151,16 @@ class ThumbnailStore:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
         key = self.key(resource, version, theme)
-        durable_json(self.root / (key + ".json"), {
-            "schema": "lw.library-thumbnail/1", "key": key, "image": image,
-            "paths": [str(path) for path in paths], "stamps": recorded,
-        })
+        durable_json(
+            self.root / (key + ".json"),
+            {
+                "schema": "lw.library-thumbnail/1",
+                "key": key,
+                "image": image,
+                "paths": [str(path) for path in paths],
+                "stamps": recorded,
+            },
+        )
         self.cache.clear()
         self._prune()
         return {"thumbnailUrl": "/api/v1/library/thumbnails/" + image + ".png"}
