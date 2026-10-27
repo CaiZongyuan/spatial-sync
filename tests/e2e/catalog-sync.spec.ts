@@ -73,7 +73,13 @@ test('lightweight indexing, visible previews, retries and failed-source preserva
     await expect(page.locator('.catalog-card.is-online')).toContainText('未审查／上游声明');
     await page.locator('.catalog-card.is-online').getByRole('button', { name: /查看.*详情/ }).click();
     await expect(page.getByRole('region', { name: '候选详情', exact: true })).toContainText('尚未审查；声明不等于获取准入');
+    const successfulUpdate = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/library/catalog/sync');
     await sync.getByRole('button', { name: '更新目录', exact: true }).click();
+    const update = await successfulUpdate;
+    expect(update.ok()).toBe(true);
+    const successfulRun = await update.json();
+    await expect.poll(async () => (await (await http.get(`${api}/api/v1/library/catalog/sync/${successfulRun.id}`)).json()).status).toBe('succeeded');
     await expect(sync).toContainText('目录已更新');
     const published = (await (await http.get(`${api}/api/v1/library/catalog/sync`)).json()).snapshot.id;
     await control(0, true);
