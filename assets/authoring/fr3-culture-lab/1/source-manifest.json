@@ -1,0 +1,26 @@
+{
+  "FR3_LICENSE": {
+    "sha256": "4b25434e6ec2012e28a484f1d7924a0fd1a8bf232c2be2d50d584d299d04d6d6",
+    "bytes": 12926
+  },
+  "FR3_NOTICE": {
+    "sha256": "13991525876741e3dc94c46e0afce111dc0a5c6156c89bbbefd06547b84738fd",
+    "bytes": 581
+  },
+  "laboratory_final.blend": {
+    "sha256": "c19aa24f7b78e9a799098fbba44fa3f24e8a13a5293ac49cd5c0fdcb9f96947f",
+    "bytes": 8375266
+  },
+  "reconstruction.zip": {
+    "sha256": "d1c24b1fcbe95ee37aa1b7e3fca5841349acdd6c196941bcc56f7ea4f86399df",
+    "bytes": 7935625
+  },
+  "reference.png": {
+    "sha256": "2b03d68fb9b0cc8136473d30dd4027dfc4ca00951ec03deae2e2fc43986f08c9",
+    "bytes": 2004322
+  },
+  "scene-director.md": {
+    "sha256": "aef4fd106c042b1f7206a5fbe3052be1ed3f25919f74196fb243f9364c2c2fb0",
+    "bytes": 6839
+  }
+}

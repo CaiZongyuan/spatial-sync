@@ -1,0 +1,12 @@
+id: environment/fr3-culture-laboratory-2
+kind: environment
+title: "FR3 cell-culture laboratory \xB7 laboratory-2"
+description: Static visual contribution from the image/prompt Blender scene. No collision,
+  device behavior or robot-control qualification.
+stage: asset.usdc
+visual: visual.glb
+dressing: true
+dimensionsM:
+- 4.153715977899253
+- 4.1136567514251965
+- 1.994573351894033

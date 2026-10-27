@@ -40,6 +40,15 @@ Use one API worker and one authoritative Runner. While the environment is in
 use, checks should use `uv run --no-sync` to preserve installed extras.
 Shipped scenes and Franka assets work offline.
 
+The built-in scene library also includes **fr3-culture-reference@1**, the
+image/prompt-authored laboratory's static visual assets. Its editable Blender
+source and reconstruction archive are retained under
+[`assets/authoring/fr3-culture-lab/1`](assets/authoring/fr3-culture-lab/1/README.md).
+It can be previewed without Blender; its robot and instruments are Dressing,
+with no collision, device-operation or training qualification. The separate
+[baked workbench experiment](docs/SCENE_FACTORY.md#baked-material-workbench-experiment)
+demonstrates the existing interactive FR3 action pipeline.
+
 | Scene | Source | Purpose |
 | --- | --- | --- |
 | `lab-demo` | synthetic | Deterministic laboratory without a physics dependency |

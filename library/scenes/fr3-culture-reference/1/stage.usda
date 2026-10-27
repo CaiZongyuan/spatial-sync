@@ -1,0 +1,12 @@
+#usda 1.0
+(defaultPrim = "World"
+ metersPerUnit = 1
+ upAxis = "Z")
+def Xform "World" {
+ def Xform "Lab" {}
+ def Xform "Dressing" {
+  def Xform "Part01" (references = @library:assets/environment/fr3-culture-laboratory-1/1/asset.usdc@</Asset>) {}
+  def Xform "Part02" (references = @library:assets/environment/fr3-culture-laboratory-2/1/asset.usdc@</Asset>) {}
+  def Xform "Part03" (references = @library:assets/robot/fr3-culture-robot-1/1/asset.usdc@</Asset>) {}
+ }
+}

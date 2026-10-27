@@ -1,0 +1,12 @@
+id: robot/fr3-culture-robot-1
+kind: robot
+title: "FR3 cell-culture laboratory \xB7 robot-1"
+description: Static visual contribution from the image/prompt Blender scene. No collision,
+  device behavior or robot-control qualification.
+stage: asset.usdc
+visual: visual.glb
+dressing: true
+dimensionsM:
+- 0.6746427672959463
+- 0.2529215484031653
+- 0.9923217076712945

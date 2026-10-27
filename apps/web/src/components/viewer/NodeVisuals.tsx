@@ -9,6 +9,10 @@ import { IDENTITY } from '../../lib/scene/pose';
 import { ViewerThemeContext } from '../../lib/scene/viewer-theme';
 
 const skipPicking = () => {};
+const authoredAppearances = new WeakMap<Material, {
+  transparent: boolean; opacity: number; wireframe: boolean; depthWrite: boolean;
+  color?: Color; emissive?: Color; emissiveIntensity?: number;
+}>();
 
 function Asset({
   visual,
@@ -33,22 +37,27 @@ function Asset({
         ? child.material
         : [child.material];
       materials.forEach((material) => {
-        if (!material.userData.authoredAppearance) material.userData.authoredAppearance = {
+        if (!authoredAppearances.has(material)) authoredAppearances.set(material, {
           transparent: material.transparent, opacity: material.opacity,
-          wireframe: 'wireframe' in material ? material.wireframe : false,
-        };
-        const authored = material.userData.authoredAppearance;
+          wireframe: 'wireframe' in material ? Boolean(material.wireframe) : false,
+          depthWrite: material.depthWrite,
+          ...(material instanceof MeshStandardMaterial ? {
+            color: material.color.clone(), emissive: material.emissive.clone(),
+            emissiveIntensity: material.emissiveIntensity,
+          } : {}),
+        });
+        const authored = authoredAppearances.get(material)!;
         if ('wireframe' in material) material.wireframe = collider || authored.wireframe;
         material.transparent = ghost || collider || authored.transparent;
         material.opacity = ghost ? .24 : collider ? 0.7 : authored.opacity;
-        if (ghost) material.depthWrite = false;
-        if (material instanceof MeshStandardMaterial) {
-          material.emissive.set(selected ? theme.accent : '#000000');
-          if (!material.userData.authoredColor) material.userData.authoredColor = material.color.clone();
-          material.color.copy(material.userData.authoredColor);
-          if (!material.map) material.color.lerp(new Color(authored.transparent ? theme.glass : material.metalness > .5 ? theme.steel : theme.body), .35);
+        material.depthWrite = ghost ? false : authored.depthWrite;
+        if (material instanceof MeshStandardMaterial && authored.color && authored.emissive) {
+          material.color.copy(authored.color);
+          material.emissive.copy(authored.emissive);
+          material.emissiveIntensity = authored.emissiveIntensity!;
+          if (selected) { material.emissive.set(theme.accent); material.emissiveIntensity = .4; }
           if (ghost) { material.color.set(theme.accent); material.emissive.set(theme.accent); }
-          material.emissiveIntensity = ghost ? .12 : selected ? 0.4 : 0;
+          if (ghost) material.emissiveIntensity = .12;
         } else if (ghost && 'color' in material && material.color instanceof Color) material.color.set(theme.accent);
       });
     });

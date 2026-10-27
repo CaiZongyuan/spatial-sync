@@ -1,0 +1,18 @@
+Image/prompt laboratory scene contribution
+
+This editable project was supplied by the user from assets/modeling and is
+included in CaiZongyuan/spatial-sync on the user's explicit instruction to submit
+the assets and merge them into main (issue #214, 2026-10-27).
+
+The laboratory architecture, equipment approximations, props and their derived
+visuals may be stored and distributed as this repository contribution. No
+additional general-purpose open-source licence for that authored laboratory
+content is asserted by the conversion tooling.
+
+Official Franka visual geometry retains its original FR3_LICENSE and FR3_NOTICE.
+Those upstream terms apply to the Franka source geometry, not automatically to
+the independently authored laboratory content or reference image. The original
+source commit and conversion limitations are preserved in reconstruction.zip.
+
+This is a visual reference. The supplied Blender hierarchy is not a qualified
+robot controller, collision model, device program or training result.

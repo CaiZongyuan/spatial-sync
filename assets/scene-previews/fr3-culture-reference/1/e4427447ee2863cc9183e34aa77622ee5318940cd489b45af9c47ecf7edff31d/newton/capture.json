@@ -1,0 +1,442 @@
+{
+  "schema": "lw.scene-preview/1",
+  "sceneVersion": "fr3-culture-reference@1",
+  "sceneContentHash": "e4427447ee2863cc9183e34aa77622ee5318940cd489b45af9c47ecf7edff31d",
+  "templateAssets": [],
+  "libraryAssets": [
+    {
+      "id": "environment/fr3-culture-laboratory-1@1",
+      "contentHash": "eddcee7d7e6420d0a93ad0caec7f1494975914cda33e57b24589c0766be410a9"
+    },
+    {
+      "id": "environment/fr3-culture-laboratory-2@1",
+      "contentHash": "876290709d2f8dc78d9e8f6e6fdb5d5f9a3116eebbf6bf7694d3c7a97f7aa1ca"
+    },
+    {
+      "id": "robot/fr3-culture-robot-1@1",
+      "contentHash": "4b3d608867efb4232f9261d8f245ea6e4a7c24a2bc0983b0303635a78c06db36"
+    }
+  ],
+  "source": "newton",
+  "capturedAt": "2026-10-27T15:11:11.131485+00:00",
+  "simTime": 0.0,
+  "runtime": {
+    "python": "3.13.14",
+    "source": "NewtonSource",
+    "device": "cpu",
+    "numpy": "2.5.4",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "mujoco": "3.15.0",
+    "usd-core": "26.8"
+  },
+  "dependencyDigest": "sha256-text-lf-v1",
+  "dependencies": [
+    {
+      "path": "apps/api/app/recordings.py",
+      "sha256": "0d855e201aa3fd583b4d8499c97358b5ca2a25695f4119b6601b9c11725debe1"
+    },
+    {
+      "path": "apps/api/app/sources/newton_source.py",
+      "sha256": "0aabec809d01320d5580934813c55fe5c347bb7bfa664bdecc57ca6b05d0554c"
+    },
+    {
+      "path": "assets/registry.yaml",
+      "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/asset.usdc",
+      "sha256": "40a7ba812c827bff61a0f5e479a4f7ab7b444a5997eca585ba106dd39d86e890"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/asset.yaml",
+      "sha256": "4d105fe73928a7af5825b677333221c9827d5745a32be141622ead4c258f923a"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/CONTRIBUTION_NOTICE.txt",
+      "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/LICENSE",
+      "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/provenance.json",
+      "sha256": "b393cf5e4fff0f984a9d6bdd05c83fec159341cd9fb645fd676ab87fab5585a5"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/validation.json",
+      "sha256": "1a19ec0fb2ce36bedbcc1aa94430c616e60d0fa13c124f31d9f60ab05eb0d1ce"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/visual.glb",
+      "sha256": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/asset.usdc",
+      "sha256": "e6cedc650d0f2460c9ed4fd0e1ce470b68dd5be43752ca9c1aeaa1e8bcf27bd3"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/asset.yaml",
+      "sha256": "2fe68080a59c484020739c42c5f992b6ef4b3f7523a33a6c30ddbb027f6aa05f"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/CONTRIBUTION_NOTICE.txt",
+      "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/LICENSE",
+      "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/provenance.json",
+      "sha256": "262ecdd62ef9c871f5d812b9a2951abade78265a40b18254589ecec54e6896b7"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/validation.json",
+      "sha256": "2406634f7159aee4712fabf9451d8072032edd21bfe8a2dc5df7114cee645cba"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/visual.glb",
+      "sha256": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/asset.usdc",
+      "sha256": "3cdb7a251c2fda5c869fe2afc8d5f85c68d5f68ed3ae4c6da855c68e61e17e9d"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/asset.yaml",
+      "sha256": "dcde2238814980a3eae4ff7aa6fec614afbfe03122564ece095f1fe505855f80"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/CONTRIBUTION_NOTICE.txt",
+      "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/LICENSE",
+      "sha256": "4b25434e6ec2012e28a484f1d7924a0fd1a8bf232c2be2d50d584d299d04d6d6"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/NOTICE",
+      "sha256": "13991525876741e3dc94c46e0afce111dc0a5c6156c89bbbefd06547b84738fd"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/provenance.json",
+      "sha256": "9ced78cbcb08e2ac98492419f96800b442b978cdc5e6de0481568d9aac5e3469"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/validation.json",
+      "sha256": "bf444b55d3ffe1ada681d4712455f465c8f910899e6c318aecd91b3e310404fb"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/visual.glb",
+      "sha256": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89"
+    },
+    {
+      "path": "library/scenes/fr3-culture-reference/1/devices.yaml",
+      "sha256": "e08e43d413862c95d618d9421b55ae74bdde37d3adce633d2efe35beb39a561c"
+    },
+    {
+      "path": "library/scenes/fr3-culture-reference/1/locations.yaml",
+      "sha256": "b980644c7a2c307b3c761610617115c680eed0856963ddd4e0cf8cbe0850156f"
+    },
+    {
+      "path": "library/scenes/fr3-culture-reference/1/scene.yaml",
+      "sha256": "9ad84f6cb7c99d3346e979587b51dc5d14b9f580d43989c98911a92c46e0e538"
+    },
+    {
+      "path": "library/scenes/fr3-culture-reference/1/stage.usda",
+      "sha256": "55bbb9ff1c3f69166b319a083544de2877aa732bece9a6a13f6b7e36210872ed"
+    },
+    {
+      "path": "library/scenes/fr3-culture-reference/1/validation.json",
+      "sha256": "cd180399633f7eeaa3f79d92be7606d11d41a5c70300699d348f2d57120e375f"
+    },
+    {
+      "path": "packages/assets/bindings.py",
+      "sha256": "185b964f2ec3a0baf89eaca9fdd21bb7ff999217c5cd82a51d3f1c6b0a183768"
+    },
+    {
+      "path": "packages/assets/registry.py",
+      "sha256": "e32fe4f33a836f804d21ef8df7c75830cb12589d87fd3ea4cc40ebcc69d35bac"
+    },
+    {
+      "path": "packages/info/binding_validation.py",
+      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
+    },
+    {
+      "path": "packages/info/catalog.py",
+      "sha256": "d5381f5e85392f177b373cc2982ed01d4d4a374ca8601202080723721979d0bf"
+    },
+    {
+      "path": "packages/info/conditions.py",
+      "sha256": "15024a91f38dda4a563dca1f5f56fce9c14571a9adbf1b0e5b54519f936afa31"
+    },
+    {
+      "path": "packages/info/diff.py",
+      "sha256": "563f0f513d3ab680840f8e77a75f69915ff2a6aadf2372e077e4e206e41cce7e"
+    },
+    {
+      "path": "packages/info/preview.py",
+      "sha256": "d2a220d901d28ed544b6b8b58640b2e448c92109e72a1464c770a63c56d09beb"
+    },
+    {
+      "path": "packages/info/program.py",
+      "sha256": "5ad4d11b8c606218b20cfd2e019122027eb76b3f3b5b1b457acb284b2010ab62"
+    },
+    {
+      "path": "packages/info/schema_subset.py",
+      "sha256": "9319ae25883f9b9ce29f60e095dc39fa8b88378d459bf04401e3c9f32ce1eb14"
+    },
+    {
+      "path": "packages/info/store.py",
+      "sha256": "39d4d745fa2ee348576274f020faef5740ec1631adcdbfc52429531ef19551f2"
+    },
+    {
+      "path": "packages/library/archive.py",
+      "sha256": "a4fbe2023cb623821cd667d59154b3ff3031baf6497f22ca852fcdfc8a768dcf"
+    },
+    {
+      "path": "packages/library/common.py",
+      "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
+    },
+    {
+      "path": "packages/library/grasp_calibration.py",
+      "sha256": "2f1d5f20e91eac29f7bbf1e52abc7d18544ce572b224c7e698d3e3d1b1aedbfd"
+    },
+    {
+      "path": "packages/library/physics_checks.py",
+      "sha256": "677a51826cf8575b7d04dea5cabb083cfdf82b92b51291a089c6a696a72e5b0d"
+    },
+    {
+      "path": "packages/library/posture.py",
+      "sha256": "8a32866440c8a3a3f456177f7e9940af5aa63431acfd4e692e130300605dc9f3"
+    },
+    {
+      "path": "packages/library/previews.py",
+      "sha256": "c8156cc7fc85a0f7ac46f9496e187e9e7f485d13b4e17904defca8e2cef1292d"
+    },
+    {
+      "path": "packages/library/python_stages.py",
+      "sha256": "0b12938421d212aba6fe683495a3a867513f58fcd7cc44d0fa5609146d2ee90b"
+    },
+    {
+      "path": "packages/library/reports.py",
+      "sha256": "0270bcbc18f81f16cad23382143ae56cbd809cf521a322e377c9372c23121b58"
+    },
+    {
+      "path": "packages/library/scenes.py",
+      "sha256": "805068260dbc1e09c6e631b4111c0c960905ec34231a0bd6f5945b625c28ad50"
+    },
+    {
+      "path": "packages/library/structural.py",
+      "sha256": "c1f8a50eff5736d8f0064dc8c0c76dda21d46d3a71ad76a2476cf432392072ee"
+    },
+    {
+      "path": "packages/library/templates.py",
+      "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
+    },
+    {
+      "path": "packages/library/transactions.py",
+      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+    },
+    {
+      "path": "packages/library/visuals.py",
+      "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
+    },
+    {
+      "path": "packages/policies/inference.py",
+      "sha256": "4e889dfecc1949b5c7355c538e03df1a5eba04a7e1ddc7b6535dc460ca33d7d4"
+    },
+    {
+      "path": "packages/policies/library.py",
+      "sha256": "840502289a2c92f205c790d6211e97db3e855fb6769bcc6b552ad10d8331d757"
+    },
+    {
+      "path": "packages/policies/observations.py",
+      "sha256": "906d4674db3c0dc66533b5d855b12f9594e8b9ad9fb74d7896989419d95d5ff5"
+    },
+    {
+      "path": "packages/policies/subjects.py",
+      "sha256": "5f3062058a2d1ac44fd9401650182e206d7a02e06d829f614dd005bef10210e6"
+    },
+    {
+      "path": "packages/programs/centrifuge/loading.py",
+      "sha256": "db0164853e17dba34d4a0da099ff451876cea0a8645e3a72f9c9c5b6c35c0dc3"
+    },
+    {
+      "path": "packages/programs/centrifuge/newton.py",
+      "sha256": "fdd8b5af1fc8a8ccdf4e88ba540f83909ef3a82668bea9b983c742b82137566d"
+    },
+    {
+      "path": "packages/programs/centrifuge/virtual.py",
+      "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
+    },
+    {
+      "path": "packages/programs/metadata.py",
+      "sha256": "56d8c4482d99a831759314183dc26c1aa87bc0436dfc9e31c913dd7343faedb9"
+    },
+    {
+      "path": "packages/programs/robot_arm/grasp.py",
+      "sha256": "de6f1642f223b6b5b99b179c5faa75734fe87faf45b0846d53ab3292b9b78076"
+    },
+    {
+      "path": "packages/programs/robot_arm/newton.py",
+      "sha256": "fad20040863ef3f7556bc3394c3fbd32a38fdc1da4c1df72e66bdaf47f7ed444"
+    },
+    {
+      "path": "packages/programs/robot_arm/physical.py",
+      "sha256": "13ef7e6adf32c4ee1cffbff51921ff33e9cfefe7239764f2dcb7efb034edddf2"
+    },
+    {
+      "path": "packages/programs/robot_arm/policy.py",
+      "sha256": "88fc42c6c7cf9deae5d4cfa79828c66d4b9a2b2a502e558ee5e4af2793cf3308"
+    },
+    {
+      "path": "packages/programs/robot_arm/preview.py",
+      "sha256": "dc8105fe8dcc35eac48aee705eda043abd828753898ab4db3f5cedd5c4abbe32"
+    },
+    {
+      "path": "packages/programs/robot_arm/script.py",
+      "sha256": "23ffa152ab63e61dd0a6de9d5089665a8458fe0349a55cfd3af00461af9947f7"
+    },
+    {
+      "path": "packages/programs/robot_arm/taught.py",
+      "sha256": "b98ae93e03c041353f47e387264eafd35434cbb1bf5a288e9638226f4533c5eb"
+    },
+    {
+      "path": "packages/programs/robot_arm/trajectory.py",
+      "sha256": "3286496f51a35d6c8ccf74ea71a2315e0d84741fddc21ec960b02172ec7d3bbf"
+    },
+    {
+      "path": "packages/programs/simulation.py",
+      "sha256": "3725e9108d01a2c99452efef40d919303028c67664d080ca50b205a344d08e2d"
+    },
+    {
+      "path": "packages/programs/subjects.py",
+      "sha256": "6ceda10f646c83ed52e1b63c9084cb5ee1975b4a9c0ab10149779b26098d2f0f"
+    },
+    {
+      "path": "packages/programs/tube/facts.py",
+      "sha256": "5e7bba76e2cebc0e8cc3d5c3276e6384bb692d410b0cfae6bc943b9fddd4880e"
+    },
+    {
+      "path": "packages/programs/tube/newton.py",
+      "sha256": "b459557c9ebf471a4dc8f3b59e046dd06de21858ff15834ce2c1075e6a2906ca"
+    },
+    {
+      "path": "packages/protocol/internal.py",
+      "sha256": "f19e453b1041c2d1abe4e95de3e7d9ee08dee9e7ddf925918376f188f3dde0d5"
+    },
+    {
+      "path": "packages/protocol/json.py",
+      "sha256": "a83bb80a434ab37920308a428532ed3c9322a36550fadc30d526e7f5c8257baf"
+    },
+    {
+      "path": "packages/protocol/math.py",
+      "sha256": "bf639235a2eaa29cbb50435ef86982f1e5c9c9401832c5c62d5a7e08bb56ccd5"
+    },
+    {
+      "path": "packages/protocol/schema/__init__.py",
+      "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
+    },
+    {
+      "path": "packages/sim_runtime/info_catalog.py",
+      "sha256": "21d6b1dcd3a8857ab68948ede0304320451b2adb560ffcfecfc1163910d13a09"
+    },
+    {
+      "path": "packages/sim_runtime/info_host.py",
+      "sha256": "8ee402ef48076ab40830a8248a83906196c9074447a881b85cc2df40fe0414e1"
+    },
+    {
+      "path": "packages/sim_runtime/labels.py",
+      "sha256": "6a7e15745ed11483b44016756a0e5852574d5d4dc7c522509ab82c3d47c12e67"
+    },
+    {
+      "path": "packages/sim_runtime/library_scene.py",
+      "sha256": "b060a98385ded2daf28963bf035ae36714725501c3d5b3f9cfe0e75ca3060dc8"
+    },
+    {
+      "path": "packages/sim_runtime/loaders.py",
+      "sha256": "abfe7e2ae46e214fbdf0b486f93a9c9cebd61b300d391d46a4e5b485382163e0"
+    },
+    {
+      "path": "packages/sim_runtime/manifest_export.py",
+      "sha256": "90426a9d331412fca70ac3b9e1b5b08e8ee56acc1e33066601eda5401f5eebed"
+    },
+    {
+      "path": "packages/sim_runtime/mesh_assets.py",
+      "sha256": "f1afb5032d7e96c281d951da75d68bbfb1d9ddd98845aa20b28b9d5d7fed30a4"
+    },
+    {
+      "path": "packages/sim_runtime/pacer.py",
+      "sha256": "ca65d0768522b5df8e19bfca06363eac46c57b33eae49d3b1ea8ea298907d96d"
+    },
+    {
+      "path": "packages/sim_runtime/physics_port.py",
+      "sha256": "5b001190fd70465bd6fdabc49f667ea0312dd38e15dbbf9c36bda4a49574b94b"
+    },
+    {
+      "path": "packages/sim_runtime/pose_filter.py",
+      "sha256": "b71cd4cc76aee5cbc8f00e87e27a46ac103f8f3d03da02afabde32201a3853e2"
+    },
+    {
+      "path": "packages/sim_runtime/runner.py",
+      "sha256": "08c724a180e6d73dfcdfb308651767e9d173d55618ac9c00790bb3fa75438fa4"
+    },
+    {
+      "path": "packages/sim_runtime/simulation.py",
+      "sha256": "57ab038fd95086e631caa60b21ec7d9c7961d7eb52781a399d5844c2fb9a63a0"
+    },
+    {
+      "path": "packages/sim_runtime/sites.py",
+      "sha256": "80278752f333b60c791fcef05624f27fdfbcb19c2aaf0382d9d5d8b06665e3ae"
+    },
+    {
+      "path": "packages/sim_runtime/transform_extractor.py",
+      "sha256": "44d2e51ee72be19bf9df8fc92e4bdb74c8451ee8488c153f16353a6a5fcdebe1"
+    },
+    {
+      "path": "packages/sim_runtime/welds.py",
+      "sha256": "f2c06d387a5ea01d597d91232835279d7bf3541f3122586b56cc0fece85cdad6"
+    },
+    {
+      "path": "packages/transport/__init__.py",
+      "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
+    },
+    {
+      "path": "packages/transport/source_state.py",
+      "sha256": "908e14b3f755c0729626f31e0c745107794cb315c3ee757c32e3d009f04efb70"
+    },
+    {
+      "path": "tools/capture_scene_preview.py",
+      "sha256": "403324d42000d8d25a344debf6a0e79a3fff947a5858ce068ef69bc60070ca9e"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "36a5ef21cceee821461647e2525a347d5c761023ece5e81070af0e54c9712daf"
+    }
+  ],
+  "documents": {
+    "manifest": "manifest.json",
+    "catalog": "catalog.json",
+    "spatial": "snapshot.bin",
+    "state": "state.json"
+  },
+  "files": {
+    "manifest.json": "2dedd735323834f59fb745569f0e7aa60ab7c8d302a292b335973d9b180e76db",
+    "catalog.json": "5a6602bae5ec825c8616af1485d6b6efaf9c39bae214b8f39aa6411828a3624f",
+    "state.json": "85f8fd050a6640b5ae264e3b4beee4d4830bf5ebc57321a53aa4690cba0b2b60",
+    "snapshot.bin": "f1d7a90f582988eceebd41b36584fe18f216c54dd1fec4b0d8f837dfb470fd50",
+    "assets/sha256-5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71.glb": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71",
+    "assets/sha256-5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12.glb": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12",
+    "assets/sha256-a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89.glb": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89"
+  },
+  "counts": {
+    "physicalEntities": 0,
+    "bindings": 0,
+    "groups": 2
+  },
+  "bounds": null,
+  "thumbnail": {}
+}

@@ -1,0 +1,153 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "scene:fr3-culture-reference@1",
+  "ranAt": "2026-10-27T14:05:25.254686+00:00",
+  "toolVersions": {
+    "usd-core": "26.8",
+    "pydantic": "2.12.4",
+    "pyyaml": "6.0.3",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "python": "3.13.14"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Package metadata and declared files match their schemas"
+    },
+    {
+      "id": "S2",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Stage must use Z up and metersPerUnit=1"
+    },
+    {
+      "id": "S3",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Entity paths must be ASCII under /World/Lab and separate from dressing"
+    },
+    {
+      "id": "S4",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Asset provenance check applies to asset versions",
+      "notApplicable": true
+    },
+    {
+      "id": "S5",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Declared types and Config spatial references exist"
+    },
+    {
+      "id": "S6",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Dressing has 3 USD reference groups; merged GLB count has not been checked",
+      "dressingReferenceCount": 3
+    },
+    {
+      "id": "S7",
+      "tier": "structural",
+      "status": "pass",
+      "message": "USD dependencies resolve only to package-local or indexed library files"
+    },
+    {
+      "id": "S8",
+      "tier": "structural",
+      "status": "warn",
+      "message": "No inspectable taught joint configuration is declared",
+      "notApplicable": true
+    },
+    {
+      "id": "P1",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Newton model loaded with finite state",
+      "measurements": {
+        "observedArrays": [
+          "body_mass",
+          "body_inertia",
+          "shape_transform",
+          "shape_scale"
+        ]
+      }
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Scene has no bounded articulated joints",
+      "notApplicable": true
+    },
+    {
+      "id": "P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Scene has no configured taught arm locations",
+      "notApplicable": true
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Mass/density check applies to individual asset packages",
+      "notApplicable": true
+    },
+    {
+      "id": "P2",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Model has no FREE rigid bodies",
+      "notApplicable": true
+    },
+    {
+      "id": "P3",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Model has no collision shapes",
+      "notApplicable": true,
+      "measurements": {
+        "simTime": 1.9999999999999942
+      }
+    }
+  ],
+  "launchable": true,
+  "untypedEntities": [],
+  "referencedAssets": [
+    {
+      "id": "environment/fr3-culture-laboratory-1@1",
+      "contentHash": "eddcee7d7e6420d0a93ad0caec7f1494975914cda33e57b24589c0766be410a9"
+    },
+    {
+      "id": "environment/fr3-culture-laboratory-2@1",
+      "contentHash": "876290709d2f8dc78d9e8f6e6fdb5d5f9a3116eebbf6bf7694d3c7a97f7aa1ca"
+    },
+    {
+      "id": "robot/fr3-culture-robot-1@1",
+      "contentHash": "4b3d608867efb4232f9261d8f245ea6e4a7c24a2bc0983b0303635a78c06db36"
+    }
+  ],
+  "inspection": "Recorded structure and Newton CPU physics checks",
+  "effectiveBindings": {
+    "newton": []
+  },
+  "entityCount": 0,
+  "bindingCount": 0,
+  "physics": {
+    "status": "completed",
+    "device": "cpu",
+    "ranAt": "2026-10-27T14:05:29.147704+00:00",
+    "toolVersions": {
+      "newton": "1.7.0",
+      "warp-lang": "1.18.0",
+      "usd-core": "26.8",
+      "python": "3.13.14"
+    },
+    "simulationSeconds": 1.9999999999999942,
+    "freeBodyCount": 0
+  }
+}

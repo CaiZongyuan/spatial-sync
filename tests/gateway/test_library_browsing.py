@@ -84,6 +84,7 @@ def test_latest_full_inventory_preserves_legacy_versions_and_exact_history():
         latest = client.get("/api/v1/library/scenes?latest=true").json()["scenes"]
         assert {s["id"] for s in latest} == {
             "lab-demo@3", "robot-and-tubes@2", "falling-boxes@1", "usd-lab@1",
+            "fr3-culture-reference@1",
         }
         history = client.get("/api/v1/library/scenes/lab-demo/1")
         assert history.status_code == 200

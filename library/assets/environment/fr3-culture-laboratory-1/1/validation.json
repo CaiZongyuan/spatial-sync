@@ -1,0 +1,170 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "asset:environment/fr3-culture-laboratory-1@1",
+  "ranAt": "2026-10-27T14:04:51.236750+00:00",
+  "toolVersions": {
+    "usd-core": "26.8",
+    "pydantic": "2.12.4",
+    "pyyaml": "6.0.3",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "python": "3.13.14"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Package metadata and declared files match their schemas"
+    },
+    {
+      "id": "S2",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Stage must use Z up and metersPerUnit=1"
+    },
+    {
+      "id": "S3",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Asset root and default prim must be /Asset"
+    },
+    {
+      "id": "S4",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Original license and declared file hashes exist and match"
+    },
+    {
+      "id": "S5",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Declared types and Config spatial references exist"
+    },
+    {
+      "id": "S6",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Visual budget: 349916 triangles; package-local textures <=4096x4096"
+    },
+    {
+      "id": "S7",
+      "tier": "structural",
+      "status": "pass",
+      "message": "USD dependencies resolve only to package-local or indexed library files"
+    },
+    {
+      "id": "S8",
+      "tier": "structural",
+      "status": "warn",
+      "message": "No inspectable taught joint configuration is declared",
+      "notApplicable": true
+    },
+    {
+      "id": "P1",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Newton model loaded with finite state",
+      "measurements": {
+        "observedArrays": [
+          "body_mass",
+          "body_inertia",
+          "shape_transform",
+          "shape_scale"
+        ]
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Dressing has no rigid-body mass",
+      "notApplicable": true
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Initial scene joint check applies to scene packages",
+      "notApplicable": true
+    },
+    {
+      "id": "P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Taught positions belong to a scene",
+      "notApplicable": true
+    },
+    {
+      "id": "P2",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Model has no FREE rigid bodies",
+      "notApplicable": true
+    },
+    {
+      "id": "P3",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Maximum measured penetration: 0.000 mm (limit 2 mm)",
+      "measurements": {
+        "otherEntityKey": null,
+        "contactCount": 0,
+        "depthM": 0.0,
+        "limitM": 0.002,
+        "worldStaticShapeCount": 1,
+        "excludedWorldStaticPairCount": 0,
+        "simTime": 1.9999999999999942
+      }
+    }
+  ],
+  "launchable": true,
+  "untypedEntities": [],
+  "referencedAssets": [],
+  "inspection": "Recorded structure and Newton CPU physics checks",
+  "completeness": [
+    {
+      "id": "collision",
+      "status": "not_applicable",
+      "message": "Authored collision geometry"
+    },
+    {
+      "id": "massInertia",
+      "status": "not_applicable",
+      "message": "Authored mass and inertia"
+    },
+    {
+      "id": "visual",
+      "status": "present",
+      "message": "PBR visual and visual budget"
+    },
+    {
+      "id": "license",
+      "status": "present",
+      "message": "Original license and source hashes"
+    },
+    {
+      "id": "jointSites",
+      "status": "not_applicable",
+      "message": "Named joints and sites"
+    },
+    {
+      "id": "types",
+      "status": "missing",
+      "message": "Implemented entity types"
+    }
+  ],
+  "physics": {
+    "status": "completed",
+    "device": "cpu",
+    "ranAt": "2026-10-27T14:04:55.546817+00:00",
+    "toolVersions": {
+      "newton": "1.7.0",
+      "warp-lang": "1.18.0",
+      "usd-core": "26.8",
+      "python": "3.13.14"
+    },
+    "simulationSeconds": 1.9999999999999942,
+    "freeBodyCount": 0
+  }
+}

@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page, type TestInfo } from '
 import type {} from '../../apps/web/src/components/Workbench';
 import type {} from '../../apps/web/src/components/PlansPage';
 import type { AvailablePreview, PlanDocument } from '../../apps/web/src/lib/plans/model';
+import type { PreviewInspection } from '../../apps/web/src/components/viewer/MotionPreviewLayer';
 
 export const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 export const centrifuge = '/World/Lab/Centrifuge';
@@ -52,14 +53,20 @@ export async function stopSession(request: APIRequestContext, sessionId: string,
 export async function geometry(page: Page, preview: AvailablePreview, detail = false) {
   // Retained plan history can put this viewport below the fold; rendering pauses offscreen.
   await page.getByTestId('scene-viewport').scrollIntoViewIfNeeded();
-  const inspect = () => page.evaluate(detail => detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry(), detail);
-  await page.waitForFunction(({ detail, points }) => {
-    const value = detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry();
-    return Boolean(value && value.points.length === points &&
+  let readySnapshot: PreviewInspection | undefined;
+  // Camera fitting and preview refresh may commit independently. Retain the
+  // same ready snapshot we checked, rather than reading again after an await.
+  await expect.poll(async () => {
+    const value = await page.evaluate(detail => {
+      if (document.querySelector('[data-testid="scene-viewport"]')?.getAttribute('data-camera-fitted') !== 'true') return;
+      return detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry();
+    }, detail);
+    const ready = Boolean(value && value.points.length === preview.points.length &&
       Object.values(value.ghosts).every(body => body.meshes > 0 && body.source !== 'loading'));
-  }, { detail, points: preview.points.length }, { timeout: 10_000 });
-  await expect(page.getByTestId('scene-viewport')).toHaveAttribute('data-camera-fitted', 'true');
-  const actual = (await inspect())!;
+    if (ready) readySnapshot = value;
+    return ready;
+  }, { timeout: 10_000 }).toBe(true);
+  const actual = readySnapshot!;
   expect(actual.policyDriven).toBe(false);
   expect(actual.target).toEqual(preview.targetPose.p);
   expect(actual.targetInView, 'Actual target projects inside the rendered viewport').toBe(true);
