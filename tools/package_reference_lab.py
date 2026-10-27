@@ -7,6 +7,7 @@ This packages visual Dressing only; it does not derive robot physics or behavior
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -29,17 +30,32 @@ def build(derived, source, output):
     recipe = json.loads((derived / "derivation.json").read_text(encoding="utf-8"))
     if recipe["sourceSha256"] != fingerprint(source / "laboratory_final.blend")["sha256"]:
         raise ValueError("Derived visuals do not match the retained source")
-    references = []
+    prepared, names = [], set()
     for chunk in recipe["chunks"]:
+        name, group = chunk["name"], chunk["group"]
+        if group not in ("laboratory", "robot") or not re.fullmatch(group + r"-[1-9][0-9]*", name):
+            raise ValueError("Invalid derived chunk identity")
+        if name in names or chunk["visual"] != name + ".glb" or chunk["stage"] != name + ".usdc":
+            raise ValueError("Derived chunk filenames must match a unique identity")
+        names.add(name)
+        for filename in (chunk["visual"], chunk["stage"]):
+            path = derived / filename
+            if path.is_symlink() or not path.resolve().is_relative_to(derived):
+                raise ValueError("Derived files must stay inside the input directory")
         identifier = "fr3-culture-" + chunk["name"]
         kind = "robot" if chunk["group"] == "robot" else "environment"
-        package = output / "assets" / kind / identifier / "1"
+        package = (output / "assets" / kind / identifier / "1").resolve()
+        if not package.is_relative_to(output):
+            raise ValueError("Package destination escapes the output directory")
         if package.exists():
             raise ValueError("Use a fresh output; asset versions are immutable: " + str(package))
-        package.mkdir(parents=True)
         visual = derived / chunk["visual"]
         if fingerprint(visual)["sha256"] != chunk["sha256"]:
             raise ValueError("Derived visual changed: " + chunk["visual"])
+        prepared.append((chunk, kind, identifier, package, visual))
+    references = []
+    for chunk, kind, identifier, package, visual in prepared:
+        package.mkdir(parents=True)
         shutil.copyfile(visual, package / "visual.glb")
         glb_budget(package / "visual.glb")
         bounds = trimesh.load_scene(visual, process=False).bounds
