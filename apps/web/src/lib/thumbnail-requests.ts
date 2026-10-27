@@ -48,6 +48,7 @@ export async function loadThumbnail(url: string, signal: AbortSignal): Promise<B
     if (timedOut && !signal.aborted) throw new ThumbnailError('timeout');
     throw error;
   } finally {
+    controller.abort();
     clearTimeout(timer); signal.removeEventListener('abort', cancel); active--; pump();
   }
 }

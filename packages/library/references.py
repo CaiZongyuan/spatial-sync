@@ -53,6 +53,63 @@ class ReferenceInspection:
     def scenes(self):
         return self._scenes()
 
+    def dependencies(self, version, kind, *, found=None):
+        """Verify exact pins, including native USD for versions without an S7 report.
+
+        The scanner may collect partial IDs for diagnostics; a returned map is complete.
+        """
+        collection = self.assets if kind == "asset" else self.scenes
+        relative = version.path.relative_to(collection.roots[version.root]).as_posix()
+        collection.indexed_file(version.root, relative + f"/{kind}.yaml")
+        reports = dependency_reports(version, kind)
+        dependencies = found if found is not None else set()
+        if kind == "scene":
+            dependencies.update(references(version.bindings))
+            dependencies.update(getattr(version, "template_assets", ()))
+            dependencies.update(getattr(version, "runtime_assets", ()))
+        seen_hashes = {}
+        for report in reports:
+            entries = report.get("referencedAssets", [])
+            if not isinstance(entries, list):
+                raise ValueError("Invalid recorded asset dependencies")
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise ValueError("Invalid recorded asset dependency")
+                identifier = template_id(entry.get("id"))
+                dependencies.add(identifier)  # Hashless exact IDs still retain a reference.
+                digest = entry.get("contentHash")
+                if digest is not None:
+                    if not isinstance(digest, str) or not HASH.fullmatch(digest):
+                        raise ValueError("Invalid recorded dependency hash")
+                    if identifier in seen_hashes and seen_hashes[identifier] != digest:
+                        raise ValueError("Conflicting historical dependency hashes")
+                    seen_hashes[identifier] = digest
+        if not version.metadata["stage"].startswith("python:"):
+            latest = version.report()
+            check = next((item for item in (latest or {}).get("checks", [])
+                          if item["id"] == "S7"), None)
+            if not check:
+                key = (kind, version.id, version.content_hash)
+                if key not in self._inspected:
+                    self._inspected[key] = self.validator.run_structure(
+                        version.path, kind, f"{kind}:{version.id}",
+                        version.metadata, self.assets, getattr(version, "bindings", None),
+                        getattr(version, "locations", None),
+                    )
+                latest = self._inspected[key]
+                check = next((item for item in latest["checks"] if item["id"] == "S7"), None)
+            for entry in (latest or {}).get("referencedAssets", []):
+                dependencies.add(template_id(entry.get("id")))
+            if not check or check["status"] != "pass":
+                raise ValueError("USD dependency inspection did not complete")
+        hashes = {}
+        for identifier in dependencies:
+            dependency = self.assets.resolve(identifier)
+            if identifier in seen_hashes and dependency.content_hash != seen_hashes[identifier]:
+                raise ValueError("Recorded dependency bytes differ: " + identifier)
+            hashes[identifier] = dependency.content_hash
+        return hashes
+
     def scan(self, target, kind):
         found, unknown = [], []
 
@@ -136,49 +193,7 @@ class ReferenceInspection:
                     continue
                 dependencies = set()
                 try:
-                    relative = version.path.relative_to(collection.roots[version.root]).as_posix()
-                    collection.indexed_file(version.root, relative + f"/{owner_kind}.yaml")
-                    reports = dependency_reports(version, owner_kind)
-                    dependencies = set(references(version.bindings)) if owner_kind == "scene" else set()
-                    seen_hashes = {}
-                    for report in reports:
-                        entries = report.get("referencedAssets", [])
-                        if not isinstance(entries, list):
-                            raise ValueError("Invalid recorded asset dependencies")
-                        for entry in entries:
-                            if not isinstance(entry, dict):
-                                raise ValueError("Invalid recorded asset dependency")
-                            identifier = template_id(entry.get("id"))
-                            dependencies.add(identifier)  # Hashless exact IDs still retain a reference.
-                            digest = entry.get("contentHash")
-                            if digest is not None:
-                                if not isinstance(digest, str) or not HASH.fullmatch(digest):
-                                    raise ValueError("Invalid recorded dependency hash")
-                                if identifier in seen_hashes and seen_hashes[identifier] != digest:
-                                    raise ValueError("Conflicting historical dependency hashes")
-                                seen_hashes[identifier] = digest
-                    if not version.metadata["stage"].startswith("python:"):
-                        latest = version.report()
-                        check = next((item for item in (latest or {}).get("checks", [])
-                                      if item["id"] == "S7"), None)
-                        if not check:
-                            key = (owner_kind, version.id, version.content_hash)
-                            if key not in self._inspected:
-                                self._inspected[key] = self.validator.run_structure(
-                                    version.path, owner_kind, f"{owner_kind}:{version.id}",
-                                    version.metadata, self.assets, getattr(version, "bindings", None),
-                                    getattr(version, "locations", None),
-                                )
-                            latest = self._inspected[key]
-                            check = next((item for item in latest["checks"] if item["id"] == "S7"), None)
-                        for entry in (latest or {}).get("referencedAssets", []):
-                            dependencies.add(template_id(entry.get("id")))
-                        if not check or check["status"] != "pass":
-                            raise ValueError("USD dependency inspection did not complete")
-                    for identifier in dependencies:
-                        dependency = self.assets.resolve(identifier)
-                        if identifier in seen_hashes and dependency.content_hash != seen_hashes[identifier]:
-                            raise ValueError("Recorded dependency bytes differ: " + identifier)
+                    self.dependencies(version, owner_kind, found=dependencies)
                     if kind == "asset" and target.id in dependencies:
                         reference(owner_kind, version.id, "Exact template, USD or historical dependency")
                 except (OSError, ValueError, LibraryError) as exc:

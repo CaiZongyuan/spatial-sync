@@ -243,19 +243,53 @@ def test_waiting_for_journal_read_lock_does_not_block_health(tmp_path, monkeypat
         assert reading.result(timeout=5).status_code == 200
 
 
-def test_retained_dependencies_remain_protected_from_legacy_and_ordinary_deletion():
+def test_dispatch_and_failed_task_callback_do_not_wait_on_journal_lock(tmp_path, monkeypatch):
+    user_version(tmp_path / "user-library", 4)
+    with TestClient(create_app()) as client, ThreadPoolExecutor(2) as pool:
+        service = client.app.state.manager.library_removals
+        request = body(client)
+        record = service.submit(RemovalRequest.model_validate(request), Actor(kind="user", name="test"))
+        monkeypatch.setattr(service, "submit", lambda *args: record)
+        completed = Event()
+
+        def fail(identifier):
+            completed.set()
+            raise OSError("injected worker failure")
+
+        monkeypatch.setattr(service, "execute", fail)
+        with service.lock:
+            submitted = pool.submit(client.post, ROOT, json=request)
+            assert submitted.result(timeout=2).status_code == 202
+            assert completed.wait(2)
+            assert pool.submit(client.get, "/api/v1/health").result(timeout=2).status_code == 200
+            assert record["id"] in service.errors
+
+
+@pytest.mark.parametrize("reportless", [False, True])
+def test_retained_dependencies_remain_protected_from_legacy_and_ordinary_deletion(tmp_path, reportless):
     from test_asset_imports import package_files, upload
 
+    files = package_files()
+    files["asset.yaml"] = files["asset.yaml"].replace(b"test-tube", b"indirect")
+    files["asset.usda"] = (
+        b'#usda 1.0\n(defaultPrim = "Asset"\nupAxis = "Z"\n'
+        b'metersPerUnit = 1)\ndef Xform "Asset" (references = '
+        b"@library:assets/labware/test-tube/1/asset.usda@) {}\n"
+    )
+    if reportless:
+        for name, contents in (("test-tube", package_files()), ("indirect", files)):
+            destination = tmp_path / "user-library/assets/labware" / name / "1"
+            destination.mkdir(parents=True)
+            for filename, content in contents.items():
+                (destination / filename).write_bytes(content)
     with TestClient(create_app()) as client:
-        dependency = upload(client).json()
-        files = package_files()
-        files["asset.yaml"] = files["asset.yaml"].replace(b"test-tube", b"indirect")
-        files["asset.usda"] = (
-            b'#usda 1.0\n(defaultPrim = "Asset"\nupAxis = "Z"\n'
-            b'metersPerUnit = 1)\ndef Xform "Asset" (references = '
-            b"@library:assets/labware/test-tube/1/asset.usda@) {}\n"
-        )
-        owner = upload(client, files).json()
+        if reportless:
+            dependency = client.get("/api/v1/library/assets/labware/test-tube/1").json()
+            owner = client.get("/api/v1/library/assets/labware/indirect/1").json()
+            dependency["assetVersion"], owner["assetVersion"] = dependency["id"], owner["id"]
+        else:
+            dependency = upload(client).json()
+            owner = upload(client, files).json()
         request = {
             "resource": "asset",
             "id": owner["assetVersion"],
@@ -264,6 +298,7 @@ def test_retained_dependencies_remain_protected_from_legacy_and_ordinary_deletio
         }
         removed = settled(client, client.post(ROOT, json=request).json())
         assert removed["status"] == "committed", removed
+        assert removed["dependencies"][dependency["assetVersion"]] == dependency["contentHash"]
         target = "/api/v1/library/assets/labware/test-tube/1"
         legacy = client.delete(target)
         assert legacy.status_code == 409 and legacy.json()["detail"]["references"][0]["kind"] == "recovery"

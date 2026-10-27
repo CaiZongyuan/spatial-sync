@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from packages.library.archive import destination_parent, import_lock, package_files
 from packages.library.common import LibraryError, content_hash
-from packages.library.references import dependency_reports
 from packages.library.reports import HASH, SUBJECT
 from packages.library.transactions import durable_json, reserve_revision
 from packages.protocol.schema import Actor
@@ -154,11 +153,12 @@ class LibraryRemovals:
     def start(self, identifier, *, restore=False):
         if self.closing:
             return
-        with self.lock:
-            record = self.records[identifier]
-            if record["status"] != ("restoring" if restore else "queued"):
-                return
-            attempt = record["restoreAttempt"] if restore else 0
+        # Writers publish complete record snapshots by replacement. Dispatch and done callbacks
+        # run on the event loop and must not acquire the lock held during durable writes.
+        record = self.records[identifier]
+        if record["status"] != ("restoring" if restore else "queued"):
+            return
+        attempt = record["restoreAttempt"] if restore else 0
         key = (identifier, restore, attempt)
         if key in self.tasks:
             return
@@ -175,16 +175,15 @@ class LibraryRemovals:
             # The journal owns errors; retrieve task failures so shutdown has no orphaned exception.
             if not result.cancelled():
                 if result.exception() is not None:
-                    with self.lock:
-                        # A committed journal remains authoritative even if secondary audit cleanup failed.
-                        current = self.records[identifier]
-                        unfinished = (
-                            current["status"] == "restoring" and current["restoreAttempt"] == attempt
-                            if restore
-                            else current["status"] in ("queued", "checking")
-                        )
-                        if unfinished:
-                            self.errors.add(identifier)
+                    # A committed journal remains authoritative even if secondary audit cleanup failed.
+                    current = self.records[identifier]
+                    unfinished = (
+                        current["status"] == "restoring" and current["restoreAttempt"] == attempt
+                        if restore
+                        else current["status"] in ("queued", "checking")
+                    )
+                    if unfinished:
+                        self.errors.add(identifier)
 
         task.add_done_callback(finished)
 
@@ -230,15 +229,6 @@ class LibraryRemovals:
         prefix = "assets" if record["resource"] == "asset" else "scenes"
         return destination_parent(self.root, (prefix, *record["versionId"].replace("@", "/").split("/")))
 
-    def _dependencies(self, version, kind):
-        identifiers = set()
-        for report in dependency_reports(version, kind):
-            identifiers.update(item["id"] for item in report.get("referencedAssets", []))
-        if kind == "scene":
-            identifiers.update(version.template_assets)
-            identifiers.update(version.runtime_assets)
-        return {identifier: self.legacy.assets.resolve(identifier).content_hash for identifier in identifiers}
-
     def _retire_approvals(self, record):
         for identifier in record["supersededApprovals"]:
             approval = self.legacy.approvals.records.get(identifier)
@@ -277,7 +267,14 @@ class LibraryRemovals:
                 self.legacy._refresh()
                 inspection = self.legacy.inspection.scan(version, kind)
                 self.legacy._allowed(inspection)
-                dependencies = self._dependencies(version, kind)
+                try:
+                    dependencies = self.legacy.inspection.dependencies(version, kind)
+                except (OSError, ValueError, LibraryError) as exc:
+                    raise LibraryError(
+                        "reference_inspection_incomplete", "Cannot establish recovery dependencies", 409,
+                        complete=False,
+                        uninspected=[{"kind": kind, "id": version.id, "reason": str(exc)}],
+                    ) from exc
                 reserve_revision(self.root, f"{kind}:{record['versionId'].partition('@')[0]}", version.rev)
                 # Revalidate raw bytes and path confinement at the move boundary.
                 self.legacy._target(f"{kind}:{version.id}")
