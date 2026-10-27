@@ -6,6 +6,7 @@ from pydantic import Field
 
 from packages.info.program import ProgramConfig, Reject
 
+from .loading import physical_loading
 from .virtual import balanced
 
 
@@ -27,8 +28,18 @@ class CentrifugeProgram:
             port.bind_joint(ctx.config.spindleJoint),
             port.bind_joint(ctx.config.lidJoint),
         )
-        self.slot_bodies = [port.bind_site(key).body for key in ctx.config.slotSites]
+        self.sites = port.bind_sites(ctx.config.slotSites)
+        self.slot_bodies = [site.body for site in self.sites]
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
+        self.bounds = None
+        self.rotor = (self.slot_bodies[0] if len(set(self.slot_bodies)) == 1
+                      else self.spindle.child)
+        if self.rotor >= 0:
+            try:
+                self.bounds = {body: port.collision_bounds(body)
+                               for body in {self.rotor, *self.tubes.values()}}
+            except ValueError:
+                pass  # Missing collision geometry is unconfirmed, never an empty rotor.
         self.handle, self.stopping, self.stop_angle = None, False, None
         self.elapsed, self.running = 0.0, 0.0
         self.rotor_velocity = 0.0
@@ -39,6 +50,7 @@ class CentrifugeProgram:
             rpm=0,
             remainingSeconds=0,
             slots=self._slots(ctx),
+            loadSafe=not self._loading(ctx)[1],
         )
 
     def _slots(self, ctx):
@@ -48,25 +60,41 @@ class CentrifugeProgram:
         ]
 
     def accept(self, inv, ctx):
-        if inv.action == "start" and not balanced(self._slots(ctx)):
+        if inv.action != "start":
+            return
+        slots, issues = self._loading(ctx)
+        if issues:
+            return Reject(code="unsafe_load", message="Rotor loading is unsafe or unconfirmed",
+                          details={"slots": slots, "tubes": issues})
+        if not balanced(slots):
             return Reject(
                 code="imbalanced",
                 message="Load zero, two opposite, or four tubes",
-                details={"slots": self._slots(ctx)},
+                details={"slots": slots},
             )
+
+    def _loading(self, ctx):
+        return physical_loading(ctx.physics, self.tubes, self.sites, ctx.config.slotSites,
+                                self.rotor, self.bounds,
+                                held={key for key in self.tubes if ctx.read(key, "location") == "held"})
 
     def start(self, inv, ctx):
         if inv.action == "stop":
             self.stopping = True
             inv.succeed()
             return
+        if inv.action == "start":
+            rejection = self.accept(inv, ctx)
+            if rejection:
+                inv.fail(rejection.code, rejection.message, **rejection.details)
+                return
         self.handle, self.stopping, self.stop_angle = inv, False, None
         self.elapsed, self.running = 0.0, 0.0
         port = ctx.physics
         if inv.action in ("openLid", "closeLid"):
             port.set_joint_target(self.lid, [1.4 if inv.action == "openLid" else 0])
         else:
-            for slot, tube in zip(self.slot_bodies, self._slots(ctx), strict=True):
+            for slot, tube in zip(self.slot_bodies, self._loading(ctx)[0], strict=True):
                 if tube:
                     port.weld(slot, self.tubes[tube])
                     self.welded.append((slot, self.tubes[tube]))
@@ -80,7 +108,7 @@ class CentrifugeProgram:
         port = ctx.physics
         ctx.set(lidOpen=bool(port.joint_q(self.lid)[0] > 0.1))
         if ctx.fact_due:
-            ctx.set(slots=self._slots(ctx))
+            ctx.set(slots=self._slots(ctx), loadSafe=not self._loading(ctx)[1])
         inv = self.handle
         if inv is None:
             return

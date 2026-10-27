@@ -37,6 +37,18 @@ properties:
         - 'null'
       minItems: 4
       maxItems: 4
+    description: Reliably seated tubes; null does not prove the rotor area is empty.
+  loadSafe:
+    schema:
+      type: boolean
+    description: Loading is confirmed safe; false includes unsafe or unknown loading.
+alerts:
+  unsafeLoad:
+    when: {property: loadSafe, equals: false}
+    forSeconds: 1
+    severity: warning
+    message: Rotor loading is unsafe or unconfirmed; start is blocked
+    hint: Inspect the rotor and settle or remove the reported tubes before starting
 actions:
   openLid:
     params: {}
@@ -76,7 +88,8 @@ actions:
       equals: idle
     longRunning: true
     timeoutSeconds: 3700
-    description: Run then decelerate; imbalanced rejects nonopposite loading.
+    description: Run then decelerate; unsafe_load rejects unsafe or unknown loading before
+      motion, and imbalanced rejects nonopposite loading. Loading is checked again at startup.
   stop:
     params: {}
     required: []

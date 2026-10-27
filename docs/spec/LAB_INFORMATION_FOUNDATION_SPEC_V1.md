@@ -603,6 +603,10 @@ nominalTarget    = bottomSiteWorld + [0, 0, h]
 
 - `lidOpen`：铰链角度 > 0.1 rad。`openLid` / `closeLid` 设置铰链位置目标，角度误差 < 0.02 rad 时调用成功。
 - `slots`：读取每支试管的 `location`，落在本机孔位 Site 上的试管按孔位顺序填入。
+- `slots` 中的 null 只表示没有可靠落座的试管，不证明该处或转子区域无物。新增布尔属性 `loadSafe` 表示装载安全已被确认；异常或未知均为 false，不改变旧属性和旧录制的解释（#212，用户已确认）。
+- Newton 的装载保护独立读取当前物理快照：从本机孔位所属转子与各配置试管的真实碰撞体得到局部包围盒，将转子包围盒沿局部 +Z 向上扩展一个最大管高，作为保守的装载危险区域。检查整个管体包围盒与该区域相交，不能仅检查管底；区域内每支管须按 §6.6 的实际姿态/相对速度可靠落座且每孔唯一。缺失/非有限几何或位姿、零长度四元数，以及无法确认的装载均不安全。区域外 loose 不阻断；此保守包围盒不宣称精确碰撞或质量平衡资格。
+- `start` 在受理和实际开始驱动/焊接之前均重新核验物理装载；不安全以 `unsafe_load` 拒绝（已受理但开始前变坏则 failed），details 给出试管及原因。先校验装载，再执行既有平衡规则；不能把倾斜管并入正常 slots 来使它通过。`loadSafe=false` 持续 1 s 由设备 YAML 规则发出装载警告，安全后按既有告警机制清除。告警不代替启动边界检查。
+- Synthetic 没有自由动力学，`loadSafe` 仅确认其符号装载：声明 Site 上试管须 upright、每孔唯一，未知值/held 不算安全；其 loose 位置由既有源固定在转子外，不声称空间碰撞检测。与 Newton 使用相同属性、错误码、告警和启动复核规则。
 - `start` 的 `accept()` 检查转子平衡：装管数必须为 0、2 或 4；为 2 时必须是 1 与 3 或 2 与 4。否则以 `imbalanced` 拒绝，`details` 给出当前装载。
 - **运行流程**：焊接孔位中的试管 → accelerating（1,000 rpm/s 爬升）→ running（持续 `durationSeconds`，仿真时间）→ decelerating → 转子停在下一个整圈位置 → idle → 解除焊接 → 调用成功，发出 `runCompleted` 事件。
 - `progress` = 已用时 / 计划总时长。
@@ -624,6 +628,12 @@ nominalTarget    = bottomSiteWorld + [0, 0, h]
 - 事件 `dropped`：`location` 从 `held` 变为 `loose`，且机械臂当时没有在执行 place 的释放步骤。
 - 判定逻辑写成纯函数（`tube/facts.py`，输入位姿数组，输出位置），CI 中用合成位姿单测。
 - 20 支试管 × 16 个 Site 每秒 10 次，成本可以忽略。实体数增长到数百时再考虑批量程序（一次处理同类全部实体），MVP 不做。
+
+### 6.6.1 放置完成与示教拒绝（#212）
+
+Newton `place` / `pickPlace` 的放置验证须在实际物理采样上连续 1 s 满足目标 Site 的位置、upright 和相对速度判据；异常采样将连续计时归零，缺失或无效采样不能沿用旧 location。验证阶段最多 3 s，未收敛以 `place_failed` 结束。夹爪宽度稳定不是管体稳定。这只是动作完成的有限时间保证，不代替场景长期保持、离心后解除 weld 的验收或下一动作的联锁。
+
+Teach Location 前置条件失败保留全部 failed 条件，并在 details 中指出 `parameter`（location/from/to）及 `location`；执行中重新检查失败同样指出当前 Teach Location。源端清角约束不能被误读为目标不可达。Plan 的即时 expect 与历史 done 含义不变。
 
 ### 6.7 虚拟程序（Synthetic 宿主）
 

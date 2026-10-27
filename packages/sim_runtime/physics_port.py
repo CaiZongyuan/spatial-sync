@@ -1,6 +1,7 @@
 """Indexed CPU snapshot and one buffered actuator commit per control tick."""
 
 from dataclasses import dataclass
+from itertools import product
 from time import monotonic
 
 import numpy as np
@@ -17,6 +18,7 @@ class JointRef:
     q: slice
     qd: slice
     target: slice
+    child: int = -1
 
 
 @dataclass(frozen=True)
@@ -34,11 +36,13 @@ class PhysicsPort:
                           for node in manifest.nodes if node.kind == "body"}
         q, qd = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
         targets = model.joint_target_q_start.numpy()
+        children = model.joint_child.numpy()
         self.joints = {
             "/" + label.strip("/"): JointRef(
                 slice(int(q[i]), int(q[i + 1])),
                 slice(int(qd[i]), int(qd[i + 1])),
                 slice(int(targets[i]), int(targets[i + 1])),
+                int(children[i]),
             )
             for i, label in enumerate(model.joint_label)
         }
@@ -50,6 +54,7 @@ class PhysicsPort:
         }
         self._site_groups = {}
         self._site_motion_history = {}
+        self._collision_bounds = {}
         self._targets = tuple(
             wp.clone(array, device="cpu", pinned=model.device.is_cuda)
             for array in (simulation.control.joint_target_q, simulation.control.joint_target_qd)
@@ -88,6 +93,34 @@ class PhysicsPort:
         if token not in self._site_groups:
             self._site_groups[token] = tuple(self.sites[key] for key in keys)
         return self._site_groups[token]
+
+    def collision_bounds(self, body):
+        """Immutable collision-only AABB in body coordinates, in metres.
+
+        Newton's scaled shape-local bounds include mesh vertices and analytic
+        primitive support. Sites and visual-only shapes cannot enlarge them.
+        """
+        if body not in self._collision_bounds:
+            import newton
+
+            model = self.sim.model
+            owners, flags = model.shape_body.numpy(), model.shape_flags.numpy()
+            lower = model.shape_collision_aabb_lower.numpy()
+            upper = model.shape_collision_aabb_upper.numpy()
+            transforms = model.shape_transform.numpy()
+            points = []
+            for index in np.flatnonzero(owners == body):
+                if not int(flags[index]) & int(newton.ShapeFlags.COLLIDE_SHAPES):
+                    continue
+                transform = wp.transform(transforms[index, :3], transforms[index, 3:])
+                points.extend(wp.transform_point(transform, wp.vec3(*point)) for point in product(
+                    *zip(lower[index], upper[index], strict=True)))
+            if not points or not np.isfinite(points).all():
+                raise ValueError("Body collision bounds are unavailable or nonfinite")
+            bounds = np.array([np.min(points, axis=0), np.max(points, axis=0)], dtype=float)
+            bounds.setflags(write=False)
+            self._collision_bounds[body] = bounds
+        return self._collision_bounds[body]
 
     def capture(self):
         # These are the only state transfers programs consume. On CPU .numpy()
