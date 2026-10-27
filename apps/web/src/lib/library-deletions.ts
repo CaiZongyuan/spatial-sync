@@ -18,10 +18,21 @@ export interface DeletionDetails {
   resource: 'asset' | 'scene'; id: string; root: 'user'; contentHash: string;
   inspection: ReferenceInspection; execution: DeletionExecution;
 }
-export function requestLibraryDeletion(resource: 'asset' | 'scene', id: string) {
-  const [name, revision] = id.split('@');
-  const path = resource === 'asset' ? `assets/${name.split('/').map(encodeURIComponent).join('/')}` : `scenes/${encodeURIComponent(name)}`;
-  return request<{ code: 'pending_approval'; approvalId: string }>(`/library/${path}/${encodeURIComponent(revision)}`, {
-    method: 'DELETE', headers: { 'X-Actor': 'user:web' },
-  }).then(value => { window.dispatchEvent(new Event('lab:approvals-changed')); return value; });
+export interface LibraryRemoval {
+  schema: 'lw.library-deletion/1'; id: string; resource: 'asset' | 'scene'; versionId: string;
+  contentHash: string; requestId: string; createdAtMs: number; retainedBytes: number;
+  status: 'queued' | 'checking' | 'committed' | 'blocked' | 'failed' | 'restoring' | 'restored';
+  error?: (Partial<ReferenceInspection> & { code: string; message: string }) | null;
 }
+const removedPath = (id: string) => `/library/deletions/${encodeURIComponent(id)}`;
+export const removalPending = (value: LibraryRemoval) => ['queued', 'checking', 'restoring'].includes(value.status);
+export const requestLibraryDeletion = (resource: 'asset' | 'scene', id: string, contentHash: string, requestId: string) =>
+  request<LibraryRemoval>('/library/deletions', { method: 'POST', headers: { 'X-Actor': 'user:web' },
+    body: JSON.stringify({ resource, id, contentHash, requestId }) });
+export const getLibraryRemoval = (id: string, signal?: AbortSignal) =>
+  request<LibraryRemoval>(removedPath(id), { signal });
+export const restoreLibraryVersion = (id: string) => request<LibraryRemoval>(`${removedPath(id)}/restore`, {
+  method: 'POST', headers: { 'X-Actor': 'user:web' },
+});
+export const listLibraryRemovals = (signal?: AbortSignal) =>
+  request<{ deletions: LibraryRemoval[] }>('/library/deletions', { signal });

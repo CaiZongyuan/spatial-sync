@@ -416,3 +416,6 @@ A2 ─► SF0 可行性 ─► SF1a 基础检索 ─┬─► SF1b 语义增强 
 - **单活跃会话**仍然成立：两层评估顺序占用会话，交互操作在评估期间排队；训练视图不是会话。
 - **硬件约束**：本机 RTX 3070 Ti Laptop 8 GB；训练 2048 个环境约 12.6 s/iter，期间 GPU 被独占。
 - **参考**：PenguinHarness（模型 × Harness、版本与快照、角色与信息隔离、评估中心、成本中心）；EmbodiedRSI、EmbodiedSmith、EmbodiedSWE、Kinex、Artisan、RSIGym（见训练规格与 RSI 规格的参考节）。
+
+
+#206 ?????????????? [LAB_LIBRARY_OPERATIONS_SPEC_V1.md](LAB_LIBRARY_OPERATIONS_SPEC_V1.md)????????????????/????/??/??????????

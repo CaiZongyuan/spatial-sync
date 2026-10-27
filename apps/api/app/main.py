@@ -72,6 +72,7 @@ from packages.library.common import REPO_ROOT
 from packages.library.deletions import LibraryDeletions
 from packages.library.description_views import description_view
 from packages.library.previews import PreviewRepository
+from packages.library.removals import LibraryRemovals
 from packages.library.scenes import LibraryError
 from packages.library.validation import StructuralValidator
 from packages.live.bindings import load_bindings
@@ -211,6 +212,7 @@ def create_app(
         tasks=manager.tasks,
         jobs=manager.jobs.reference_snapshot,
     )
+    manager.library_removals = LibraryRemovals(manager.library_deletions)
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
     acquisitions = AcquisitionService(
         settings.state_root,
@@ -254,6 +256,7 @@ def create_app(
             await asyncio.to_thread(runtime_records.startup)
             # Resolve the operator's roots at startup, before any owned workers or recordings.
             await asyncio.to_thread(manager.library_deletions.recover)
+            await asyncio.to_thread(manager.library_removals.recover)
             manager.library.refresh()
             library_assets.startup()
             await asyncio.to_thread(catalog.startup)
@@ -278,6 +281,7 @@ def create_app(
                 await manager.live.start()
             yield
         finally:
+            await manager.library_removals.close()
             try:
                 try:
                     try:

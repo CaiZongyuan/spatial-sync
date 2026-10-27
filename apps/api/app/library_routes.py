@@ -17,6 +17,7 @@ from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
 from packages.library.authoring import LIST_DEFAULT, invalid_authoring
 from packages.library.description_views import description_view
 from packages.library.imports import LibraryImports
+from packages.library.removals import RemovalRequest
 from packages.library.validation import StructuralValidator
 
 
@@ -73,6 +74,35 @@ def install_library_routes(
     @app.delete("/api/v1/library/assets/{kind}/{name}/{rev}")
     async def delete_asset(kind: str, name: str, rev: str, request: Request):
         return await request_deletion("asset", f"{kind}/{name}@{rev}", request)
+
+    @app.post("/api/v1/library/deletions", status_code=202)
+    async def remove_version(body: RemovalRequest, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        record = await anyio.to_thread.run_sync(
+            manager.library_removals.submit, body, actor_from_headers(request.headers)
+        )
+        manager.library_removals.start(record["id"])
+        return record
+
+    @app.get("/api/v1/library/deletions")
+    async def removed_versions(requestId: str | None = None):
+        return {"deletions": [record for record in manager.library_removals.list()
+                              if requestId is None or record["requestId"] == requestId]}
+
+    @app.get("/api/v1/library/deletions/{identifier}")
+    async def removal_record(identifier: str):
+        return manager.library_removals.show(identifier)
+
+    @app.post("/api/v1/library/deletions/{identifier}/restore", status_code=202)
+    async def restore_version(identifier: str, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        record = await anyio.to_thread.run_sync(
+            manager.library_removals.request_restore, identifier, actor_from_headers(request.headers)
+        )
+        manager.library_removals.start(identifier, restore=True)
+        return record
 
     @app.delete("/api/v1/library/scenes/{name}/{rev}")
     async def delete_scene(name: str, rev: str, request: Request):

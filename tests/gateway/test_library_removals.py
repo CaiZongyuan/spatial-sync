@@ -1,0 +1,144 @@
+"""Ordinary HTTP removal/restore uses the real immutable bytes and legacy reference guards."""
+
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+from scene_support import user_version
+
+from apps.api.app.main import create_app
+from apps.api.app.settings import Settings
+from packages.protocol.schema import Actor
+
+TARGET = "/api/v1/library/scenes/lab-demo/4"
+ROOT = "/api/v1/library/deletions"
+AGENT = {"X-Actor": "agent:library-test"}
+
+
+def settled(client, record):
+    deadline = time.monotonic() + 10
+    while record["status"] in ("queued", "checking", "restoring"):
+        assert time.monotonic() < deadline, record
+        time.sleep(0.02)
+        response = client.get(ROOT + "/" + record["id"])
+        assert response.status_code == 200, response.text
+        record = response.json()
+    return record
+
+
+def body(client, request_id="ordinary-delete"):
+    value = client.get(TARGET).json()
+    return {
+        "resource": "scene",
+        "id": value["id"],
+        "contentHash": value["contentHash"],
+        "requestId": request_id,
+    }
+
+
+def test_agent_removal_restore_idempotence_and_legacy_approval(tmp_path):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        original = client.get(TARGET).json()
+        request = body(client)
+        legacy = client.delete(TARGET).json()
+        response = client.post(ROOT, json=request, headers=AGENT)
+        assert response.status_code == 202, response.text
+        removed = settled(client, response.json())
+        assert removed["status"] == "committed" and removed["retainedBytes"] > 0, removed
+        assert client.get(TARGET).status_code == 404
+        assert client.get("/api/v1/approvals").json()["pendingCount"] == 0
+        approval = client.get("/api/v1/approvals/" + legacy["approvalId"]).json()
+        assert approval["status"] == "unavailable" and approval["decisions"] == []
+        assert settled(client, client.post(ROOT, json=request, headers=AGENT).json()) == removed
+        changed = client.post(ROOT, json=request | {"contentHash": "a" * 64}, headers=AGENT)
+        assert changed.status_code == 409 and changed.json()["detail"]["code"] == "request_conflict"
+        restored = settled(client, client.post(ROOT + "/" + removed["id"] + "/restore", headers=AGENT).json())
+        assert restored["status"] == "restored" and restored["retainedBytes"] == 0
+        assert client.get(TARGET).json()["contentHash"] == original["contentHash"]
+        assert client.post(ROOT + "/" + removed["id"] + "/restore").json() == restored
+        assert client.get("/api/v1/approvals").json()["pendingCount"] == 0
+    with TestClient(create_app()) as client:
+        assert client.get(TARGET).json()["contentHash"] == original["contentHash"]
+        assert client.get(ROOT + "/" + removed["id"]).json()["status"] == "restored"
+
+
+def test_removal_keeps_active_session_reference_and_readonly_guards(tmp_path):
+    user_version(tmp_path / "user-library", 4)
+    with TestClient(create_app()) as client:
+        request = body(client)
+        builtin = client.get("/api/v1/library/scenes/lab-demo/1").json()
+        denied = client.post(
+            ROOT, json=request | {"id": builtin["id"], "contentHash": builtin["contentHash"]}
+        )
+        assert denied.status_code == 403
+        assert client.post(ROOT, json=request | {"contentHash": "a" * 64}).status_code == 409
+        session = client.post("/api/v1/sessions", json={"sceneVersion": "lab-demo@4"})
+        assert session.status_code == 201, session.text
+        try:
+            record = settled(client, client.post(ROOT, json=request).json())
+            assert record["status"] == "blocked" and record["error"]["code"] == "version_in_use"
+            assert record["error"]["references"] and client.get(TARGET).status_code == 200
+            assert client.get("/api/v1/approvals").json()["pendingCount"] == 0
+        finally:
+            client.delete("/api/v1/sessions/" + session.json()["sessionId"])
+
+
+def test_retained_bytes_are_verified_before_restore(tmp_path):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        removed = settled(client, client.post(ROOT, json=body(client)).json())
+        package = app.state.manager.library_removals.directory(removed["id"]) / "package"
+        package.joinpath("locations.yaml").write_text("locations: {}", encoding="utf-8")
+        restored = settled(client, client.post(ROOT + "/" + removed["id"] + "/restore").json())
+        assert restored["status"] == "committed" and restored["error"]["code"] == "version_changed"
+        assert client.get(TARGET).status_code == 404 and package.exists()
+
+
+def test_interrupted_removal_rolls_back_and_interrupted_restore_completes(tmp_path, monkeypatch):
+    class Interrupted(BaseException):
+        pass
+
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        service = app.state.manager.library_removals
+        monkeypatch.setattr(service, "start", lambda *args, **kwargs: None)
+        record = client.post(ROOT, json=body(client)).json()
+        package = service.directory(record["id"]) / "package"
+        refresh = service.legacy._refresh
+
+        def fail_after_move():
+            if package.exists():
+                raise Interrupted()
+            return refresh()
+
+        with monkeypatch.context() as patch:
+            patch.setattr(service.legacy, "_refresh", fail_after_move)
+            with pytest.raises(Interrupted):
+                service.execute(record["id"])
+        assert package.exists()
+    with TestClient(create_app()) as client:
+        assert client.get(TARGET).status_code == 200
+        assert client.get(ROOT + "/" + record["id"]).json()["status"] == "failed"
+        removed = settled(client, client.post(ROOT, json=body(client, "second-request")).json())
+        service = client.app.state.manager.library_removals
+        service.request_restore(removed["id"], Actor(kind="user", name="test"))
+        with monkeypatch.context() as patch:
+            patch.setattr(service.legacy, "_refresh", lambda: (_ for _ in ()).throw(Interrupted()))
+            with pytest.raises(Interrupted):
+                service.restore(removed["id"])
+    with TestClient(create_app()) as client:
+        assert client.get(TARGET).status_code == 200
+        assert client.get(ROOT + "/" + removed["id"]).json()["status"] == "restored"
+
+
+def test_viewer_cannot_remove_or_restore(tmp_path):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app(Settings(remote=True, operator_token="test-operator", viewer_token="test-viewer"))
+    with TestClient(app, headers={"Authorization": "Bearer test-viewer"}) as client:
+        request = body(client)
+        assert client.post(ROOT, json=request).status_code == 403
+        assert client.post(ROOT + "/deletion-" + "a" * 32 + "/restore").status_code == 403

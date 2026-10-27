@@ -521,12 +521,47 @@ class GatewayClient:
             raise ValueError("Validation requires an exact asset or scene version with @rev")
         return await self.request("POST", self._library_path(id) + "/validate", actor=actor, timeout=240)
 
-    async def library_remove(self, id, *, actor="cli:lw"):
+    async def library_remove(self, id, requestId=None, *, actor="cli:lw"):
         if not re.fullmatch(
             r"(?:(?:robot|device|labware|environment)/)?[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*", id,
         ):
             raise ValueError("Deletion requires an exact asset kind/name@rev or scene name@rev")
-        return await self.request("DELETE", self._library_path(id), actor=actor)
+        previous = None
+        if requestId is not None:
+            kind, _, name = actor.partition(":")
+            previous = next((record for record in await self.library_deletion_list(requestId)
+                             if record["requestedBy"] == {"kind": kind, "name": name}), None)
+        detail = previous if previous else await self.library_describe(id, view="summary")
+        record = await self.request("POST", "/api/v1/library/deletions", actor=actor, json={
+            "resource": "asset" if "/" in id else "scene", "id": id,
+            "contentHash": detail["contentHash"], "requestId": requestId or uuid.uuid4().hex,
+        })
+        return await self._wait_deletion(record)
+
+    async def library_deletion_list(self, requestId=None):
+        return (await self.request("GET", "/api/v1/library/deletions",
+                                   params={"requestId": requestId} if requestId else {}))["deletions"]
+
+    async def library_deletion_show(self, id):
+        return await self.request("GET", "/api/v1/library/deletions/" + quote(id, safe=""))
+
+    async def library_deletion_restore(self, id, *, actor="cli:lw"):
+        record = await self.request("POST", "/api/v1/library/deletions/" + quote(id, safe="") + "/restore",
+                                    actor=actor)
+        return await self._wait_deletion(record)
+
+    async def _wait_deletion(self, record):
+        deadline = time.monotonic() + 30
+        while record["status"] in ("queued", "checking", "restoring") and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+            record = await self.library_deletion_show(record["id"])
+        if record["status"] in ("queued", "checking", "restoring"):
+            raise GatewayError("Deletion still running; use lw deletion show " + record["id"],
+                               status_code=408, detail={"code": "deletion_pending", "record": record})
+        if record.get("error"):
+            raise GatewayError(record["error"]["message"], status_code=409,
+                               detail=record["error"] | {"deletionId": record["id"]})
+        return record
 
     async def library_import(self, directory, *, actor="cli:lw"):
         return await self._upload_directory(directory, "/api/v1/library/imports", actor)
