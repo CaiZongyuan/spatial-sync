@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import hmac
 import json
+import logging
 import math
 import os
 import re
@@ -266,6 +267,13 @@ def create_app(
             await asyncio.to_thread(catalog_sync.startup)
             await metadata_maintenance.startup()
             catalog.attach_metadata(metadata_store)
+            # Restore a retained publication before the gateway accepts page reads.
+            try:
+                if await asyncio.to_thread(metadata_store.latest_release) is not None:
+                    await asyncio.to_thread(catalog.search, library_assets,
+                                            scope="online", limit=1, page=1, view="cards")
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Catalog query warm-up unavailable: %s", exc)
             metadata_maintenance.release_preparer = catalog.prepare_metadata_release
             await acquisitions.startup()
             await recordings.startup()

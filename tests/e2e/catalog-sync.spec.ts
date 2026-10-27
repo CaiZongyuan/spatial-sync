@@ -58,7 +58,7 @@ test('lightweight indexing, visible previews, retries and failed-source preserva
     await control(0);
     await sync.getByRole('button', { name: '重试更新' }).click();
     await expect(sync).toContainText('目录已更新');
-    await expect(sync).toContainText('2 项在线素材');
+    await expect(sync).toContainText('来源同步快照 · 2 条');
     await page.getByRole('button', { name: '查看最新目录', exact: true }).click();
     await expect(page.locator('.catalog-card.is-online')).toHaveCount(2);
     const first = page.locator('.catalog-card.is-online').first();

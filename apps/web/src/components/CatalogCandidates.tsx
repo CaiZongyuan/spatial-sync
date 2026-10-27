@@ -3,8 +3,8 @@ import { Link } from '@tanstack/react-router';
 import {
   filterLabels, formatAge, formatBytes, getCatalogEntry, getCatalogEstimate, semanticLabel,
   usageLabel, usageLabels, zeroReasonLabels,
-  type CatalogCandidate, type CatalogEntryDocument, type CatalogEstimateDocument,
-  type CatalogSearchResponse, type CatalogSemantic, type CatalogSnapshot,
+  type CatalogSelection, type CatalogEntryDocument, type CatalogEstimateDocument,
+  type CatalogSearchResponse, type CatalogCardResponse, type CatalogSemantic, type CatalogSnapshot,
 } from '../lib/catalog';
 import { assetKinds, dimensionsLabel } from '../lib/asset-library';
 import { evidencePath } from '../lib/catalog-maintenance';
@@ -35,7 +35,7 @@ export function CatalogSnapshotBar({ snapshot, semantic }: {
 }
 
 export function CatalogZeroResult({ response, onAction }: {
-  response: CatalogSearchResponse;
+  response: CatalogSearchResponse | CatalogCardResponse;
   onAction: (action: 'remove_filter' | 'broaden_scope' | 'enable_approximation', filter?: string) => void;
 }) {
   const zero = response.zeroResult!;
@@ -54,7 +54,7 @@ export function CatalogZeroResult({ response, onAction }: {
 const previewLabels = {
   not_collected: '预览未采集', available: '物体预览', missing: '来源缺少物体图', failed: '预览读取失败', suspect: '预览待检查',
 };
-function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
+function CandidatePreview({ candidate }: { candidate: CatalogSelection }) {
   const frame = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [failed, setFailed] = useState(candidate.preview.state === 'failed');
@@ -85,8 +85,9 @@ function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
       }}>重试预览</button></div> : visible ? <><img
         src={`${localUrl}${attempt ? `${localUrl.includes('?') ? '&' : '?'}retry=1&attempt=${attempt}` : ''}`}
         className="catalog-cached-preview" alt={`${candidate.title} 的物体预览`}
+        style={{ opacity: loaded ? 1 : 0 }}
         onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />
-        {!loaded && <span className="catalog-preview-loading" role="status">正在读取预览…</span>}</>
+        {!loaded && <span className="catalog-preview-loading catalog-image-skeleton" role="status" aria-label="正在加载物体预览" />}</>
         : <div className="catalog-preview-placeholder"><b>{reason}</b><small>滚动到此处时读取</small></div>}
     </div>;
   return <div className="catalog-preview-placeholder" ref={frame} role="img" aria-label={reason}>
@@ -95,7 +96,7 @@ function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
 }
 
 function OnlineCandidateCard({ candidate, index, onDetail }: {
-  candidate: CatalogCandidate; index: number; onDetail: () => void;
+  candidate: CatalogSelection; index: number; onDetail: () => void;
 }) {
   const approximate = candidate.match.unsatisfied.length > 0 || candidate.match.unknown.length > 0;
   const secondaryName = candidate.title === candidate.names.zh ? candidate.names.en : candidate.names.zh;
@@ -114,7 +115,7 @@ function OnlineCandidateCard({ candidate, index, onDetail }: {
     <span className="catalog-card-order" aria-hidden="true">{index + 1}</span>
   </article>;
 }
-function LocalCandidateCard({ candidate, index }: { candidate: CatalogCandidate; index: number }) {
+function LocalCandidateCard({ candidate, index }: { candidate: CatalogSelection; index: number }) {
   const asset = candidate.local!.asset;
   const kind = asset.kind ?? candidate.kind;
   const name = candidate.local!.id.split('/')[1]?.split('@')[0] ?? '';
@@ -129,7 +130,7 @@ function LocalCandidateCard({ candidate, index }: { candidate: CatalogCandidate;
 }
 
 export function CatalogCandidateList({ response, view = 'card', onDetail }: {
-  response: CatalogSearchResponse; view?: 'card' | 'list'; onDetail: (candidate: CatalogCandidate) => void;
+  response: CatalogSearchResponse | CatalogCardResponse; view?: 'card' | 'list'; onDetail: (candidate: CatalogSelection) => void;
 }) {
   return <div className={`catalog-result-grid${view === 'list' ? ' is-list' : ''}`}>{response.results.map((candidate, index) => candidate.type === 'online'
     ? <OnlineCandidateCard key={`online:${candidate.id}`} candidate={candidate} index={index + (response.pagination?.offset ?? 0)} onDetail={() => onDetail(candidate)} />
@@ -147,7 +148,7 @@ function EvidenceRecord({ digest }: { digest: string }) {
 }
 
 export function CatalogDetailPanel({ candidate, release, onClose }: {
-  candidate: CatalogCandidate; release?: string; onClose: () => void;
+  candidate: CatalogSelection; release?: string; onClose: () => void;
 }) {
   const [entry, setEntry] = useState<CatalogEntryDocument>();
   const [estimate, setEstimate] = useState<CatalogEstimateDocument>();

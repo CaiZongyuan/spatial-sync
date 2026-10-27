@@ -1,0 +1,14 @@
+.catalog-loading-status{display:flex;align-items:center;gap:9px;margin:0 0 16px;color:var(--muted);font-size:12.5px}
+.catalog-loading-dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.catalog-skeleton-copy{display:grid;gap:11px;padding-top:5px;min-width:0}
+.catalog-skeleton-line{display:block;width:92%;height:11px;border-radius:5px}
+.catalog-skeleton-line.is-short{width:45%}.catalog-skeleton-line.is-title{width:75%;height:16px;margin:3px 0}
+.catalog-skeleton-surface,.catalog-image-skeleton{background:linear-gradient(100deg,var(--surface-2) 25%,color-mix(in srgb,var(--ink) 10%,var(--surface-2)) 40%,var(--surface-2) 60%);background-size:300% 100%;animation:catalog-loading-shimmer 1.8s ease-in-out infinite}
+.catalog-result-grid.is-list .catalog-skeleton-card{grid-template-columns:112px minmax(0,1fr);align-items:center;min-height:112px}
+.catalog-result-grid.is-list .catalog-skeleton-copy{padding:10px 16px;max-width:600px}
+.catalog-result-grid.is-list .catalog-skeleton-card .catalog-card-figure{width:112px;aspect-ratio:4/3}
+.catalog-demand-preview{position:relative}
+.catalog-demand-preview .catalog-image-skeleton{position:absolute;inset:0;width:100%;height:100%}
+.catalog-cached-preview{transition:opacity .15s ease}
+@keyframes catalog-loading-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){.catalog-skeleton-surface,.catalog-image-skeleton{animation:none}.catalog-cached-preview{transition:none}}

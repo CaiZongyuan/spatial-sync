@@ -45,9 +45,40 @@ test('released metadata has compact cards, encoded identities, bounded pages and
     }, { timeout: 30_000 }).toBe(true);
   const remote: string[] = [];
   page.on('request', value => { if (/huggingface\.co|cdn-lfs/.test(value.url())) remote.push(value.url()); });
+  let releasePage!: () => void;
+  let failSearch = false;
+  let releaseImages!: () => void;
+  const imageGate = new Promise<void>(resolve => { releaseImages = resolve; });
+  await page.route('**/api/v1/library/catalog/maintenance/preview?**', async route => {
+    await imageGate; await route.continue();
+  });
+  let pageGate: Promise<void> | undefined = new Promise(resolve => { releasePage = resolve; });
+  await page.route('**/api/v1/library/search?**', async route => {
+    const gate = pageGate;
+    if (gate) await gate;
+    if (failSearch) { failSearch = false; await route.abort('failed'); return; }
+    await route.continue();
+  });
   await page.goto(`${web}/assets?scope=online&provider=scenario`);
   const cards = page.locator('.catalog-card.is-online');
+  await expect(page.getByRole('status', { name: '素材加载状态' })).toContainText('第 1 页');
+  await expect(page.locator('.catalog-skeleton-card')).toHaveCount(24);
+  await expect(page.locator('.catalog-skeleton-card').first()).toBeVisible();
+  await expect(page.getByLabel('每页条目')).toHaveValue('24');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await page.locator('.catalog-skeleton-surface').first().evaluate(value => getComputedStyle(value).animationName)).toBe('none');
+  await page.screenshot({ path: '../../.scratch/metadata-ui/skeleton.png', fullPage: false });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  pageGate = undefined; releasePage();
   await expect(cards.first()).toContainText('Fixture beaker');
+  await expect(cards).toHaveCount(24);
+  const figure = await cards.first().locator('.catalog-card-figure').boundingBox();
+  const imageSkeleton = await cards.first().locator('.catalog-image-skeleton').boundingBox();
+  expect(figure).not.toBeNull(); expect(imageSkeleton).not.toBeNull();
+  expect(imageSkeleton!.y).toBeGreaterThanOrEqual(figure!.y);
+  expect(imageSkeleton!.y + imageSkeleton!.height).toBeLessThanOrEqual(figure!.y + figure!.height + 1);
+  await cards.first().getByRole('button', { name: /详情/ }).click({ trial: true });
+  releaseImages();
   await expect(page.getByLabel('每页条目')).toHaveValue('24');
   const originalUrl = page.url();
   const released = new URL(originalUrl).searchParams.get('release');
@@ -57,8 +88,20 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   const fixture = await (await request.get(`${api}/e2e/metadata-catalog`)).json();
   expect(fixture.selectedPreview.path).toBe('previews/object.png');
   expect(fixture.requests.estimates).toBe(0);
+  pageGate = new Promise(resolve => { releasePage = resolve; });
   await page.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(page).toHaveURL(/page=2/);
+  await expect(page.getByRole('status', { name: '素材加载状态' })).toContainText('第 2 页');
+  await expect(page.locator('.catalog-skeleton-card')).toHaveCount(24);
+  await expect(page.getByRole('button', { name: '下一页', exact: true })).toBeDisabled();
+  failSearch = true;
+  pageGate = undefined; releasePage();
+  await expect(page.getByRole('alert')).toContainText('第 2 页加载失败');
+  await expect(page.locator('.catalog-skeleton-card')).toHaveCount(0);
+  await page.getByRole('alert').getByRole('button', { name: '重试', exact: true }).click();
+  // The 36-entry fixture has a final partial page of 12.
+  await expect(cards).toHaveCount(12);
+  await expect(page.locator('.catalog-skeleton-card')).toHaveCount(0);
   await expect(cards.first()).not.toHaveAttribute('data-candidate', /asset_000@/);
   expect(new URL(page.url()).searchParams.get('release')).toBe(released);
   await page.getByLabel('页位置').fill('1');

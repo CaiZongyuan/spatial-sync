@@ -145,7 +145,18 @@ export interface CatalogCandidate {
   metadata?: { release: string; organization?: { status: string; version: number }; vocabularyVersion: string };
 }
 
-export function localAssetVersion(candidate: CatalogCandidate): AssetVersion | undefined {
+export interface CatalogCard extends Pick<CatalogCandidate,
+  'type' | 'ref' | 'id' | 'kind' | 'title' | 'names' | 'descriptions' | 'preview' | 'match' | 'local' | 'category' | 'tags'> {
+  source: Pick<CatalogCandidate['source'], 'provider' | 'packageId' | 'revision'>;
+  license: Pick<CatalogLicense, 'name' | 'admitted' | 'unknown'>;
+  usage: Pick<CatalogCandidate['usage'], 'dressing' | 'staticCollision'>;
+  installed: { latest: string | null; versions: { id: string }[] };
+  acquisition: { eligible: boolean };
+  metadata?: { release: string | null };
+}
+export type CatalogSelection = CatalogCandidate | CatalogCard;
+
+export function localAssetVersion(candidate: CatalogSelection): AssetVersion | undefined {
   const local = candidate.local;
   if (candidate.type !== 'local' || !local) return undefined;
   return {
@@ -186,6 +197,11 @@ export interface CatalogSearchResponse {
   truncated: boolean;
   zeroResult: CatalogZeroResult | null;
   pagination?: { page: number; pageSize: number; totalPages: number; offset: number };
+}
+
+export interface CatalogCardResponse extends Omit<CatalogSearchResponse, 'schema' | 'results'> {
+  schema: 'lw.catalog-cards/1';
+  results: CatalogCard[];
 }
 
 export interface CatalogUsageFact { eligible: boolean | null; unknown: boolean; evidence: string }
@@ -308,6 +324,12 @@ export const catalogSearchPath = (filters: CatalogSearchFilters) =>
 
 export const searchCatalog = (filters: CatalogSearchFilters, signal?: AbortSignal) =>
   request<CatalogSearchResponse>(catalogSearchPath(filters), { signal });
+
+export const searchCatalogCards = async (filters: CatalogSearchFilters, signal?: AbortSignal) => {
+  const value = await request<CatalogCardResponse>(`${catalogSearchPath(filters)}&view=cards`, { signal });
+  if (value.schema !== 'lw.catalog-cards/1') throw new Error('素材目录服务版本需要更新，请重启后端服务后重试。');
+  return value;
+};
 
 export interface CatalogSyncRecord {
   schema: 'lw.catalog-sync/1'; id: string;
