@@ -298,9 +298,10 @@ def build(request, output):
     text("Wall identity", "LAB WORLD / SAMPLE PREPARATION", (-1.10, .96, .99), .045, dark)
     for name in ("bench", "instrument", "rack", "tube", "room"):
         export_asset(name, output)
-    # Assemble the saved authoring view after exporting asset-local coordinates.
+    # Save an asset workspace with one preview instance of each authored visual.
+    # The canonical scene adds the trusted robot and the remaining tube instances.
     offsets = {"instrument": (.56, .12, .828), "rack": (.20, -.20, .828),
-               "tube": (.165, -.2175, .834)}
+               "tube": (.155, -.2175, .834)}
     for obj in bpy.context.scene.objects:
         offset = offsets.get(obj.get("sample_asset"), (0, 0, 0))
         obj.location.x += offset[0]
