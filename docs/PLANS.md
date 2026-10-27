@@ -36,6 +36,11 @@ including `expect`; the response contains the Plan and actual per-step results.
 declared timeout. It never retries failed/running steps or makes approval decisions.
 A transport failure leaves effects uncertain; inspect the existing invocation
 and Plan before further work. The gateway still executes only individual actions.
+Use one controller per Plan while running: the existing per-step API does not
+atomically reserve ordinary actions across concurrent clients. The runner uses
+each refreshed Plan to skip newly completed steps and stop on active/failed steps.
+The run's `failed` status describes this local attempt. It preserves the server's
+Plan lifecycle, which can remain `running` with a failed step for later review.
 
 The three-step example above demonstrates the available mechanisms. For a single
 immediate outcome, use `do` with `expect`; an additional identical wait/check is

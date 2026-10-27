@@ -58,6 +58,10 @@ changing condition, and `check` for an additional assertion. Repeating the same
 condition with all three mechanisms is unnecessary. Preserve interlocks and
 required outcomes when combining checks. Derive plans from the current Catalog,
 rather than assuming a fixed device sequence.
+An `expect` may reference another entity: after a transfer, the destination's
+occupancy array can verify the complete loading configuration in that same step.
+Use the final state read for remaining outcomes instead of adding identical
+standalone checks. Immediate expectations do not establish later physical stability.
 
 ```text
 lw plan create <plan.yaml> --json
@@ -72,6 +76,8 @@ at the first failure or uncertain result. Inspect its `status`, `plan`, `results
 and any `stoppedStep`; completion requires both the run and Plan to be completed.
 Use the actual returned revision; `1` above is an example. Its `--timeout` bounds
 each action wait; explicit wait steps use timeoutSeconds.
+Use one controller per Plan during execution; the per-step API does not provide
+an atomic claim across simultaneous clients.
 
 For decisions between steps, use a connected persistent MCP client or execute
 individual steps. The `do` command waits by default; MCP mirrors the same generic actions

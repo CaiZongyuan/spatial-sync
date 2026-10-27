@@ -1218,9 +1218,13 @@ class GatewayClient:
         self._session_explicit = True
         revision = plan["revision"]
         results = []
-        for step in plan["steps"]:
+        for step_id in [item["id"] for item in plan["steps"]]:
+            step = next(item for item in plan["steps"] if item["id"] == step_id)
             if step["status"] in ("done", "skipped"):
                 continue
+            if step["status"] != "pending":
+                return {"status": "failed", "stoppedStep": step_id, "plan": plan, "results": results,
+                        "elapsedSeconds": time.monotonic() - started}
             context = {"planId": id, "stepId": step["id"], "planRevision": revision, "actor": actor}
             if "do" in step:
                 action = step["do"]
