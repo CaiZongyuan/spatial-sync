@@ -298,6 +298,7 @@ def demo(args):
     runtime.mkdir(exist_ok=True)
     env = os.environ | {"LW_LIBRARY": str(runtime / "library"), "SPATIAL_STATE_ROOT": str(runtime / "state"),
                         "SPATIAL_RECORDINGS_ROOT": str(runtime / "recordings"),
+                        "SPATIAL_SCENE_PREVIEWS_ROOT": str(runtime / "previews"),
                         "SPATIAL_ALLOWED_ORIGINS": f"http://127.0.0.1:{args.web_port}",
                         "SPATIAL_API_URL": args.url, "SPATIAL_NEWTON_DEVICE": "cpu"}
     processes, logs, session = [], [], None
@@ -325,6 +326,10 @@ def demo(args):
         else:
             raise RuntimeError("Owned API did not become ready")
         identifier = asyncio.run(install(args))
+        with (runtime / "preview.log").open("w", encoding="utf-8") as log:
+            subprocess.run([sys.executable, str(ROOT / "tools/capture_scene_preview.py"), identifier,
+                            "--source", "newton", "--cache-root", str(runtime / "previews")],
+                           cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
 
         async def launch():
             async with GatewayClient(args.url) as client:

@@ -16,7 +16,8 @@ uv run --no-sync python tools/realism_sample.py demo --blender <path-to-blender-
 
 The command builds into `.scratch/realism-sample`, starts its own API8074 and
 Web5274, imports the generated packages, uses the returned versions to compose
-`realism-workbench-display`, validates it, then prints the owned Session URL.
+`realism-workbench-display`, validates it, captures its real static preview, then
+prints the owned Session URL.
 Use `--workspace`, `--api-port` and `--web-port` for a separate run. Occupied ports
 are an error; existing services and sessions are left to their owners. Ctrl+C
 closes the command's Session and its API/Web child processes.
