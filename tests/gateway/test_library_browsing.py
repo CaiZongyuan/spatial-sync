@@ -11,6 +11,87 @@ from fastapi.testclient import TestClient
 from apps.api.app.main import create_app
 
 
+def test_latest_scene_pages_select_numeric_revision_before_filters_and_pagination(monkeypatch):
+    app = create_app()
+    with TestClient(app) as client:
+        library = app.state.manager.library
+        prototype = library.versions["lab-demo@1"]
+        declarations = [
+            ("alpha", 1, "Legacy Alpha", ["synthetic"], True),
+            ("alpha", 2, "Older Alpha", ["synthetic"], True),
+            ("alpha", 12, "Current Alpha", ["newton"], False),
+            ("beta", 1, "Beta", ["synthetic"], True),
+            ("beta", 7, "Beta", ["synthetic"], True),
+            ("gamma", 1, "Gamma", ["newton"], True),
+        ]
+        library.versions = {
+            f"{name}@{rev}": replace(prototype, name=name, rev=rev, reports=None,
+                metadata=prototype.metadata | {"title": title, "sources": sources},
+                validation={"checks": [], "launchable": launchable})
+            for name, rev, title, sources, launchable in declarations
+        }
+
+        def unexpected(*args, **kwargs):
+            raise AssertionError("Latest browsing must not resolve geometry or previews")
+
+        monkeypatch.setattr(library, "resolved", unexpected)
+        seen, cursor = [], None
+        while True:
+            response = client.get("/api/v1/library/scenes", params={
+                "view": "summary", "latest": "true", "limit": 1,
+                **({"cursor": cursor} if cursor else {}),
+            })
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["pagination"]["total"] == 3
+            seen.extend(item["id"] for item in body["scenes"])
+            cursor = body["pagination"]["nextCursor"]
+            if cursor is None:
+                break
+        assert seen == ["alpha@12", "beta@7", "gamma@1"]
+        base = {"view": "summary", "latest": "true"}
+        assert [v["id"] for v in client.get("/api/v1/library/scenes", params=base | {
+            "launchable": "true"}).json()["scenes"]] == ["beta@7", "gamma@1"]
+        assert [v["id"] for v in client.get("/api/v1/library/scenes", params=base | {
+            "source": "synthetic"}).json()["scenes"]] == ["beta@7"]
+        assert client.get("/api/v1/library/scenes", params=base | {
+            "q": "Legacy Alpha"}).json()["scenes"] == []
+        assert len(client.get("/api/v1/library/scenes?view=summary").json()["scenes"]) == 6
+
+
+def test_scene_cursor_cannot_switch_latest_mode_even_when_current_membership_matches():
+    app = create_app()
+    with TestClient(app) as client:
+        library = app.state.manager.library
+        prototype = library.versions["lab-demo@1"]
+        library.versions = {f"single-{i}@1": replace(prototype, name=f"single-{i}")
+                            for i in range(3)}
+        first = client.get("/api/v1/library/scenes?view=summary&limit=1&latest=true").json()
+        response = client.get("/api/v1/library/scenes", params={
+            "view": "summary", "limit": 1, "cursor": first["pagination"]["nextCursor"],
+        })
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "library_changed"
+
+
+def test_latest_full_inventory_preserves_legacy_versions_and_exact_history():
+    app = create_app()
+    with TestClient(app) as client:
+        legacy = client.get("/api/v1/library/scenes").json()["scenes"]
+        assert {s["id"] for s in legacy if s["sceneId"] == "lab-demo"} == {
+            "lab-demo@1", "lab-demo@2", "lab-demo@3",
+        }
+        latest = client.get("/api/v1/library/scenes?latest=true").json()["scenes"]
+        assert {s["id"] for s in latest} == {
+            "lab-demo@3", "robot-and-tubes@2", "falling-boxes@1", "usd-lab@1",
+        }
+        history = client.get("/api/v1/library/scenes/lab-demo/1")
+        assert history.status_code == 200
+        assert {v["id"] for v in history.json()["versions"]} == {
+            "lab-demo@1", "lab-demo@2", "lab-demo@3",
+        }
+
+
 def test_asset_search_uses_indexed_sizes_without_traversing_package_geometry(monkeypatch):
     app = create_app()
     with TestClient(app) as client:
@@ -116,10 +197,10 @@ def test_slow_legacy_directory_does_not_block_health(monkeypatch):
         entered, release = Event(), Event()
         original = app.state.manager.library.list
 
-        def slow(*args):
+        def slow(*args, **kwargs):
             entered.set()
             assert release.wait(10)
-            return original(*args)
+            return original(*args, **kwargs)
 
         monkeypatch.setattr(app.state.manager.library, "list", slow)
         listing = pool.submit(client.get, "/api/v1/library/scenes")

@@ -13,6 +13,13 @@ resolve every template or inspect complete preview captures. `q`, `source` and
 100. A cursor binds the query and indexed identities; changed membership gives
 409 `library_changed`. Missing physical counts remain unknown.
 
+The Web scene library opts into `latest=true`: choose each Scene's highest
+numeric revision before search, source/launchability filters and pagination.
+Counts and pages refer to distinct Scenes. A failing latest version remains
+visible; browsing does not substitute an older launchable version. History
+remains in the exact Scene detail's version list. Omitting `latest` preserves
+the complete version inventory used by existing HTTP, CLI and MCP readers.
+
 The response retains `scenes` and adds `pagination` with `total`, `limit`,
 `cursor` and nullable `nextCursor`. Omitting pagination on the old full endpoint
 retains its complete result and existing fields. CLI defaults keep their array
