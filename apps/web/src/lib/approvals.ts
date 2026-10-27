@@ -32,6 +32,7 @@ const changed = 'lab:approvals-changed';
 export interface ApprovalFilters { status?: string; subject?: string; layer?: string; agentId?: string; limit?: number; cursor?: string; include?: string }
 export function useApprovalInbox(enabled = true, filters?: ApprovalFilters) {
   const key = JSON.stringify(filters ?? null);
+  const selectionKey = JSON.stringify(filters ? { ...filters, include: undefined } : null);
   const [response, setResponse] = useState<{ key: string; inbox?: ApprovalInbox; error?: string }>();
   useEffect(() => {
     if (!enabled) return;
@@ -45,9 +46,9 @@ export function useApprovalInbox(enabled = true, filters?: ApprovalFilters) {
         const query = new URLSearchParams({ view: filters ? 'page' : 'summary' });
         for (const [name, value] of Object.entries(filters ?? {})) if (value !== undefined) query.set(name, String(value));
         const value = await request<ApprovalInbox>(`/approvals?${query}`, { signal: controller.signal });
-        if (!disposed) setResponse({ key, inbox: value });
+        if (!disposed) setResponse({ key: selectionKey, inbox: value });
       } catch (failure) {
-        if (!disposed) setResponse(prior => ({ key, inbox: prior?.key === key ? prior.inbox : undefined, error: (failure as Error).message }));
+        if (!disposed) setResponse(prior => ({ key: selectionKey, inbox: prior?.key === selectionKey ? prior.inbox : undefined, error: (failure as Error).message }));
       } finally { clearTimeout(timeout); controller = undefined; }
     };
     void refresh();
@@ -57,8 +58,8 @@ export function useApprovalInbox(enabled = true, filters?: ApprovalFilters) {
       disposed = true; clearInterval(interval); controller?.abort();
       window.removeEventListener(changed, refresh);
     };
-  }, [enabled, key]);
-  return response?.key === key ? { inbox: response.inbox, error: response.error } : {};
+  }, [enabled, key, selectionKey]);
+  return response?.key === selectionKey ? { inbox: response.inbox, error: response.error } : {};
 }
 
 export async function decideApproval(id: string, decision: ApprovalDecision, note: string) {
