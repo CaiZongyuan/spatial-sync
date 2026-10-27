@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T13:34:30.844620+00:00",
+  "capturedAt": "2026-10-27T14:48:25.666020+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -116,12 +116,16 @@
       "sha256": "5f3062058a2d1ac44fd9401650182e206d7a02e06d829f614dd005bef10210e6"
     },
     {
+      "path": "packages/programs/centrifuge/loading.py",
+      "sha256": "db0164853e17dba34d4a0da099ff451876cea0a8645e3a72f9c9c5b6c35c0dc3"
+    },
+    {
       "path": "packages/programs/centrifuge/newton.py",
-      "sha256": "81a366ed4093d3343f9923423542b2d231e23306c9f2ee30e5c783303a440755"
+      "sha256": "fdd8b5af1fc8a8ccdf4e88ba540f83909ef3a82668bea9b983c742b82137566d"
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
+      "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
       "path": "packages/programs/metadata.py",
@@ -133,7 +137,7 @@
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "474686dccb3b4d166a2ee9e3af28333e8cd66beeabe1bd605a3b9ad5c238e1bf"
+      "sha256": "fad20040863ef3f7556bc3394c3fbd32a38fdc1da4c1df72e66bdaf47f7ed444"
     },
     {
       "path": "packages/programs/robot_arm/physical.py",
@@ -217,7 +221,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "b7e94ca8bb22357a1d5480f1f4bd4c8694ee2a76f64516685a0e4757a3bc656e"
+      "sha256": "5b001190fd70465bd6fdabc49f667ea0312dd38e15dbbf9c36bda4a49574b94b"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -225,7 +229,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "69cea68f8e351cb12f3449382bab16f37537d71af1586324f4b6dfd1fca550fd"
+      "sha256": "08c724a180e6d73dfcdfb308651767e9d173d55618ac9c00790bb3fa75438fa4"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -245,7 +249,7 @@
     },
     {
       "path": "packages/sim_runtime/welds.py",
-      "sha256": "29bb0431ac107bff3243976c7359f0f0c7f90b8430346dbd57d6fc50d6454348"
+      "sha256": "f2c06d387a5ea01d597d91232835279d7bf3541f3122586b56cc0fece85cdad6"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -271,10 +275,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "35d4a528e90fd4e0e921cfc4c4a8ed1eee4bc673952915b5fb34a8ea79c8364c",
-    "catalog.json": "22506abc04c0c3c1faecb6b8e5da548f62270ffb95194a4b10e9cd8e0fd23150",
-    "state.json": "8cc5f14540d8ba527d75d9cec16c95724984322baccfd7adec312f4cf69fc62e",
-    "snapshot.bin": "5a5cb9600f02c797af18ec26ec188a5f1075d4017026bb2739b71032e35d50c2"
+    "manifest.json": "e6fec3dc2c89bebaccb045090774c268fb3d21cb423a7d9a31a47240f85d2b51",
+    "catalog.json": "df89b390c9a51f3b57bd9efdbabf35adf46e035fbfe951b13922a8e71620b5cd",
+    "state.json": "bae7a7b6ad802aa3fee14640dd27f9c57141164681c390160b4665c532df555e",
+    "snapshot.bin": "2ffc36c1abd2e9e02d3e596581dbe63494d2a06f2516800acc5ffae5f418edb9"
   },
   "counts": {
     "physicalEntities": 3,

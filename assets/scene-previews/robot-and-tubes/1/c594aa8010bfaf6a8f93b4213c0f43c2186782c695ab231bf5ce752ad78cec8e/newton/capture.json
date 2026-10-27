@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T13:35:05.301324+00:00",
+  "capturedAt": "2026-10-27T14:48:43.158148+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -117,7 +117,7 @@
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
-      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+      "sha256": "06428acb28038cb5a09d1338ac2ce915994f7a6bf26238041f991067948e201a"
     },
     {
       "path": "devices/types/env-sensor.v1.yaml",
@@ -228,12 +228,16 @@
       "sha256": "5f3062058a2d1ac44fd9401650182e206d7a02e06d829f614dd005bef10210e6"
     },
     {
+      "path": "packages/programs/centrifuge/loading.py",
+      "sha256": "db0164853e17dba34d4a0da099ff451876cea0a8645e3a72f9c9c5b6c35c0dc3"
+    },
+    {
       "path": "packages/programs/centrifuge/newton.py",
-      "sha256": "81a366ed4093d3343f9923423542b2d231e23306c9f2ee30e5c783303a440755"
+      "sha256": "fdd8b5af1fc8a8ccdf4e88ba540f83909ef3a82668bea9b983c742b82137566d"
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
+      "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
       "path": "packages/programs/metadata.py",
@@ -245,7 +249,7 @@
     },
     {
       "path": "packages/programs/robot_arm/newton.py",
-      "sha256": "474686dccb3b4d166a2ee9e3af28333e8cd66beeabe1bd605a3b9ad5c238e1bf"
+      "sha256": "fad20040863ef3f7556bc3394c3fbd32a38fdc1da4c1df72e66bdaf47f7ed444"
     },
     {
       "path": "packages/programs/robot_arm/physical.py",
@@ -333,7 +337,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "b7e94ca8bb22357a1d5480f1f4bd4c8694ee2a76f64516685a0e4757a3bc656e"
+      "sha256": "5b001190fd70465bd6fdabc49f667ea0312dd38e15dbbf9c36bda4a49574b94b"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -349,7 +353,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "69cea68f8e351cb12f3449382bab16f37537d71af1586324f4b6dfd1fca550fd"
+      "sha256": "08c724a180e6d73dfcdfb308651767e9d173d55618ac9c00790bb3fa75438fa4"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -369,7 +373,7 @@
     },
     {
       "path": "packages/sim_runtime/welds.py",
-      "sha256": "29bb0431ac107bff3243976c7359f0f0c7f90b8430346dbd57d6fc50d6454348"
+      "sha256": "f2c06d387a5ea01d597d91232835279d7bf3541f3122586b56cc0fece85cdad6"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -395,11 +399,11 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "4ed5f56750b65b1b47a231ecd5f1401803e4765442d05281b4f627be60fd713a",
-    "catalog.json": "8a9b01be5475f4e8b32e3bfb448a228bad5ff2f0ebb6cd98c9548267f6257002",
-    "state.json": "f7103b4099382858fd4a810d134a7cd543b1a0c69f7b23260b2a463f3f092b49",
-    "snapshot.bin": "2a3daa7f726b32a87c80534b3fb51ba73d13c89ad0d218f3a55c5219750557c7",
-    "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
+    "manifest.json": "a62505af6b9e83336f08fa75c486866edafcf0caf784b532d3ddc66d63775525",
+    "catalog.json": "39d5ad486782292519df6c2b2007b6560b878d8ee36aa2b4f0762a5e8154b06b",
+    "state.json": "4ae8e9fcb9f04e6773431e5152f5a38f0243ce203f992c21aecd8895887befb3",
+    "snapshot.bin": "4b144130a84685f5e4aa5b5ebfa563a086d21bfb606fa388484d2959cc398308",
+    "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
     "assets/sha256-363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c.glb": "363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c",
