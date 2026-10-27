@@ -34,3 +34,10 @@ def test_no_declared_skill_data_file_is_missing_from_the_checkout():
     for name, sources in _declared_skill_data_files().items():
         for source in sources:
             assert (ROOT / source).is_file(), f"{name} declares a missing file: {source}"
+
+
+def test_archived_skill_pins_are_shipped_in_the_wheel():
+    declared = _declared_skill_data_files()
+    for path in (ROOT / "skills/archive").glob("*/*/SKILL.md"):
+        relative = path.relative_to(ROOT).as_posix()
+        assert declared[PREFIX + path.parent.relative_to(ROOT / "skills").as_posix()] == [relative]
