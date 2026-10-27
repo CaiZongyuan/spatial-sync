@@ -264,6 +264,8 @@ def test_preview_pixel_and_decode_limits():
 
     with pytest.raises(MetadataError, match="decoded safely"):
         create_thumbnail(b"not an image")
+    with pytest.raises(MetadataError, match="decoded safely"):
+        create_thumbnail(image_bytes()[:-12])
     output = BytesIO()
     Image.new("1", (5000, 4000)).save(output, format="PNG")
     with pytest.raises(MetadataError, match="16 megapixels"):

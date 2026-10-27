@@ -1,6 +1,5 @@
 """Synthetic browser inventory using the real SQLite release and query paths."""
 
-import base64
 import io
 import json
 import os
@@ -14,15 +13,14 @@ from fastapi.responses import Response
 
 from packages.catalog_metadata import MetadataStore
 from packages.catalog_metadata.recipes import preview_choice
+from tests.fixtures.catalog_source import PNG
 from tests.gateway.test_catalog_search import correlated_asset
 
 PREFIX = "/api/v1/library/catalog/maintenance"
 ROOT = Path(os.environ["SPATIAL_STATE_ROOT"]) / "catalog-metadata"
 store = MetadataStore(ROOT)
 REVISION = "d" * 40
-IMAGE = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6f1sAAAAASUVORK5CYII="
-)
+IMAGE = PNG
 blob = store.put_blob(IMAGE, kind="preview")
 evidence_blob = store.put_blob(b'{"fixture":true,"publisherName":"Fixture beaker"}')
 choice = preview_choice([

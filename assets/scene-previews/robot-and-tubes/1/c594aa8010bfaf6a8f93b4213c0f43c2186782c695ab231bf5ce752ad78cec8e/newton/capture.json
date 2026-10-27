@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-25T15:01:46.816123+00:00",
+  "capturedAt": "2026-10-27T05:13:47.120196+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -385,7 +385,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "91ea7867911cc5ade40e16203064f931ac5f43c38b43146eded717ba9a9cdf00"
+      "sha256": "36a5ef21cceee821461647e2525a347d5c761023ece5e81070af0e54c9712daf"
     }
   ],
   "documents": {
@@ -395,10 +395,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "44b6924d0730264cee4011e6f08450caf703ef8cf6bb3b91ddbacdf865d3abca",
-    "catalog.json": "e2ea53fe1eff0b6e67f12d44cd7e428fed8700a1144ac5c225c5b769b058b844",
-    "state.json": "77b8d451dd0d45dac98549bafc83feb3ae50648a74002c7348d7395aa4515a24",
-    "snapshot.bin": "8be09e4cd527024708c1f6a978bf4e21b3115690635df5fd2634c9ca466dd9e2",
+    "manifest.json": "830ccfd82d8334c5950872eb841c4429cd947157182d11ba5e97b36276bcf8e2",
+    "catalog.json": "a5e7f67aeb95d16ec33e440ab47cdc0ce4f7973a9da9c28b70a0f9554024ae50",
+    "state.json": "bfc6708c3587227ac42e8498f2e3219431f57518ba6baf1415d573910061cb2e",
+    "snapshot.bin": "cac46d4bfd6acd832b20a3e7b470b53da79cec974845ef2a7ff702906f341151",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

@@ -274,7 +274,8 @@ class MetadataMaintenance:
         address = request.scope.get("server")
         if not address or address[0] == "testserver" or not isinstance(address[1], int):
             return None
-        return "http://127.0.0.1:" + str(address[1])
+        host = "[::1]" if ":" in address[0] else "127.0.0.1"
+        return "http://" + host + ":" + str(address[1])
 
     async def start(self, collection_id, *, revision=None, budgets=None, callback_url=None, request_id=None,
                     organizer="runtime", previews=False):

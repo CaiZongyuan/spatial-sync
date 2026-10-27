@@ -179,6 +179,41 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   await expect(collection).toContainText('提取失败 1');
   await expect(collection.getByRole('checkbox', { name: '启用此集合', exact: true })).toBeChecked();
   expect((await request.post(`${base}/runs/${run}/cancel`)).ok()).toBe(true);
+  await expect(collection).toContainText('已取消');
+  await page.getByLabel('元数据整理方式').selectOption('external');
+  await page.getByRole('checkbox', { name: '缓存本地 WebP', exact: false }).check();
+  const startingExternal = page.waitForResponse(response => response.url().endsWith('/library/catalog/maintenance/runs')
+    && response.request().method() === 'POST');
+  await collection.getByRole('button', { name: '维护 scenario', exact: true }).click();
+  const external = await (await startingExternal).json();
+  expect(external.organizer).toBe('external');
+  expect(external.previews).toBe(true);
+  const externalPath = `${base}/runs/${external.id}`;
+  expect((await request.post(`${externalPath}/inventory`, { data: {
+    offset: 0, entries: [{ upstreamId: 'external-review', name: { en: 'External bottle', zh: '外部试剂瓶' } }],
+  } })).ok()).toBe(true);
+  expect((await request.post(`${externalPath}/inventory/complete`, { data: {
+    complete: true, revision: 'd'.repeat(40), counts: { entries: 1 },
+    usage: { requests: 0, networkBytes: 0, previewBytes: 0 },
+  } })).ok()).toBe(true);
+  const previews = await (await request.post(`${externalPath}/previews/claim`, { data: {} })).json();
+  expect((await request.post(`${externalPath}/previews/submit`, { data: {
+    upstreamId: previews.entries[0].upstreamId, inputDigest: previews.entries[0].inputDigest,
+    state: 'missing', reason: 'Fixture source provides no object preview',
+  } })).ok()).toBe(true);
+  expect((await request.post(`${externalPath}/await-agent`)).ok()).toBe(true);
+  await expect(collection).toContainText('待外部 Agent 整理');
+  const batch = await (await request.post(`${externalPath}/claim`, { data: {} })).json();
+  expect((await request.post(`${externalPath}/batches/${batch.id}/submit`, { data: {
+    inputKey: batch.inputKey, nativeSessionId: null, usage: { totalTokens: null },
+    results: batch.entries.map((entry: { upstreamId: string; inputDigest: string }) => ({
+      upstreamId: entry.upstreamId, inputDigest: entry.inputDigest,
+      fields: { summary: { zh: '外部 Agent 提交的容器说明' }, category: 'container' },
+    })),
+  } })).ok()).toBe(true);
+  expect((await request.post(`${externalPath}/finish`)).ok()).toBe(true);
+  await expect(collection).toContainText('已完成');
+  await expect(collection).toContainText('本地缩略图 0 · 缺图 1');
   expect(remote).toEqual([]);
   } catch (error) { original.push(error); }
   finally {

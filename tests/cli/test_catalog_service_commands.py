@@ -10,6 +10,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
+import pytest
 from cli_support import LW, ROOT
 
 from tests.fixtures.catalog_source import REVISION, CatalogSourceFixture
@@ -17,7 +18,8 @@ from tests.fixtures.catalog_source import REVISION, CatalogSourceFixture
 BASE = "/api/v1/library/catalog/maintenance"
 
 
-def test_independent_catalog_runs_its_worker_and_cli_without_lab_imports(tmp_path):
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+def test_independent_catalog_runs_its_worker_and_cli_without_lab_imports(tmp_path, host):
     fixture = CatalogSourceFixture()
 
     class Upstream(BaseHTTPRequestHandler):
@@ -49,8 +51,13 @@ def test_independent_catalog_runs_its_worker_and_cli_without_lab_imports(tmp_pat
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
     thread = threading.Thread(target=upstream.serve_forever, daemon=True)
     thread.start()
-    with socket.socket() as reservation:
-        reservation.bind(("127.0.0.1", 0))
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as reservation:
+        try:
+            reservation.bind((host, 0))
+        except OSError:
+            if ":" in host:
+                pytest.skip("IPv6 loopback is unavailable")
+            raise
         port = reservation.getsockname()[1]
     environment = os.environ | {
         "LW_CATALOG_STATE_ROOT": str(tmp_path / "catalog"),
@@ -62,7 +69,7 @@ def test_independent_catalog_runs_its_worker_and_cli_without_lab_imports(tmp_pat
     environment.pop("LW_CATALOG_AGENT_PROFILE", None)
     controller = environment | {
         "PYTHONPATH": str(ROOT / "apps/cli") + os.pathsep + str(ROOT),
-        "LW_URL": "http://127.0.0.1:" + str(port),
+        "LW_URL": "http://" + ("[" + host + "]" if ":" in host else host) + ":" + str(port),
         "LW_TOKEN": "standalone-fixture-only",
     }
 
@@ -85,6 +92,8 @@ def test_independent_catalog_runs_its_worker_and_cli_without_lab_imports(tmp_pat
                 os.getenv("LW_CATALOG_TEST_PYTHON", sys.executable),
                 "-m",
                 "packages.catalog_metadata",
+                "--host",
+                host,
                 "--port",
                 str(port),
             ],

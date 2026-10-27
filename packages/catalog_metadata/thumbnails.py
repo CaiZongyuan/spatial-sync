@@ -23,6 +23,8 @@ def create_thumbnail(data):
             width, height = source.size
             if width * height > MAX_PIXELS:
                 raise MetadataError("preview_pixel_limit", "Preview exceeds 16 megapixels")
+            source.verify()
+        with Image.open(BytesIO(data)) as source:
             source.seek(0)
             source.load()
             original = {"format": source.format, "width": width, "height": height, "bytes": len(data)}
@@ -46,5 +48,5 @@ def create_thumbnail(data):
             }
     except MetadataError:
         raise
-    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
+    except (OSError, ValueError, SyntaxError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
         raise MetadataError("invalid_preview", "Preview image cannot be decoded safely") from exc
