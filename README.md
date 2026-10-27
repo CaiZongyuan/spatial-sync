@@ -245,6 +245,7 @@ uv run --no-sync lw scene validate <scene-version> --json
 uv run --no-sync lw scene show robot-and-tubes --json
 uv run --no-sync lw scene launch lab-demo
 uv run --no-sync lw status
+uv run --no-sync lw plan run <approved-plan-id> --revision <revision> --json
 uv run --no-sync lw ls --type centrifuge/v1
 uv run --no-sync lw show /World/Lab/Centrifuge
 uv run --no-sync lw do /World/Lab/Centrifuge closeLid

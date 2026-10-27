@@ -188,13 +188,14 @@ target: session                      # session | live
 revision: 2
 steps:
   - {id: 1, do: {entity: /World/Lab/RobotA, action: pickPlace, params: {from: rack.A1, to: centrifuge.slot1}},
-     expect: {entity: /World/Lab/Tubes/Tube01, property: location, equals: centrifuge.slot1}}
-  - {id: 2, do: {entity: /World/Lab/RobotA, action: pickPlace, params: {from: rack.A2, to: centrifuge.slot3}}}
-  - {id: 3, check: {entity: /World/Lab/Centrifuge, property: balanced, equals: true}}
+     expect: {entity: /World/Lab/Tubes/Tube01, property: location, equals: /World/Lab/Centrifuge/Rotor/Slot1}}
+  - {id: 2, do: {entity: /World/Lab/RobotA, action: pickPlace, params: {from: rack.A2, to: centrifuge.slot3}},
+     expect: {entity: /World/Lab/Centrifuge, property: slots, equals: [/World/Lab/Tubes/Tube01, null, /World/Lab/Tubes/Tube02, null]}}
+  - {id: 3, do: {entity: /World/Lab/RobotA, action: home}}
   - {id: 4, do: {entity: /World/Lab/Centrifuge, action: closeLid}}
-  - {id: 5, do: {entity: /World/Lab/Centrifuge, action: start, params: {rpm: 3000, durationSeconds: 30}}}
-  - {id: 6, wait: {entity: /World/Lab/Centrifuge, property: phase, equals: idle}, timeoutSeconds: 120}
-  - {id: 7, do: {entity: /World/Lab/Centrifuge, action: openLid}}
+  - {id: 5, do: {entity: /World/Lab/Centrifuge, action: start, params: {rpm: 3000, durationSeconds: 30}},
+     expect: {entity: /World/Lab/Centrifuge, property: phase, equals: idle}}
+  - {id: 6, do: {entity: /World/Lab/Centrifuge, action: openLid}}
 ```
 
 - 步骤类型：`do`（动作调用）、`wait`（等待条件）、`check`（断言属性）。`do` 可带 `expect`。
@@ -205,6 +206,7 @@ steps:
 ### 8.2 执行与关联
 
 - 平台**不执行**计划。agent 逐步执行：
+  - `lw plan run <id> --revision <n>` 在本地客户端复用同一 HTTP 连接，按计划顺序调用既有单步 API；每步核验调用结果和 `expect`，遇到失败、超时或未完成状态即停止，不自动重试。网关不托管执行循环。
   - `lw do <key> <action> ... --plan plan-0012 --step 4`：调用带上计划与步骤，平台把调用状态映射为步骤状态；有 `expect` 时，调用成功且条件成立才算 `done`；
   - `lw wait ... --plan plan-0012 --step 6`、`lw check <key> <property> <op> <value> --plan plan-0012 --step 3`。
 - 不按顺序执行、或执行不在计划里的动作都不会被阻止，但界面会标出"计划外"或"跳步"。

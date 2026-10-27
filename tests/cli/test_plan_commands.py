@@ -100,6 +100,71 @@ async def test_official_stdio_mcp_structured_plans_and_optional_step_references(
         assert plan_id in [item["id"] for item in await result(mcp, "plan_list")]
 
 
+def test_installed_plan_runner_resumes_done_steps_and_handles_condition_steps(lw, tmp_path):
+    document = deepcopy(DOCUMENT)
+    for step, identity in zip(document["steps"], (7, 13, 22), strict=True):
+        step["id"] = identity
+    source = tmp_path / "run.yaml"
+    source.write_text(yaml.safe_dump(document), encoding="utf-8")
+    plan = lw("plan", "create", str(source))
+    previous = lw("do", CENTRIFUGE, "closeLid", "--plan", plan["id"], "--step", "7")
+    run = lw("plan", "run", plan["id"], "--revision", "1")
+    assert run["status"] == run["plan"]["status"] == "completed"
+    assert [item["stepId"] for item in run["results"]] == [13, 22]
+    assert run["plan"]["stepResults"]["7"]["invocationIds"] == [previous["invocationId"]]
+    assert lw("get", CENTRIFUGE, "lidOpen") is False
+    again = lw("plan", "run", plan["id"])
+    assert again["status"] == "completed" and again["results"] == []
+    assert again["plan"]["stepResults"] == run["plan"]["stepResults"]
+
+
+def test_installed_plan_runner_stops_on_failed_expect_and_refuses_retry(lw, tmp_path):
+    document = deepcopy(DOCUMENT)
+    document["steps"][0]["expect"]["equals"] = True
+    document["steps"][1:] = [{"id": 2, "do": {"entity": CENTRIFUGE, "action": "openLid"}}]
+    source = tmp_path / "failed-expect.yaml"
+    source.write_text(yaml.safe_dump(document), encoding="utf-8")
+    plan = lw("plan", "create", str(source))
+    run = lw("plan", "run", plan["id"], code=3)
+    assert run["status"] == "failed" and run["stoppedStep"] == 1
+    assert run["results"][0]["result"]["status"] == "succeeded"
+    assert run["plan"]["steps"][0]["status"] == "failed"
+    assert run["plan"]["stepResults"]["1"]["failed"][0]["actual"] is False
+    assert run["plan"]["steps"][1]["status"] == "pending"
+    assert lw("get", CENTRIFUGE, "lidOpen") is False
+    retry = lw("plan", "run", plan["id"], code=1)
+    assert retry["error"]["detail"]["code"] == "plan_not_runnable"
+
+
+def test_installed_plan_runner_timeout_retains_invocation_and_stops(lw, tmp_path):
+    source = tmp_path / "timeout.yaml"
+    source.write_text(yaml.safe_dump(DOCUMENT), encoding="utf-8")
+    plan = lw("plan", "create", str(source))
+    lw("session", "pause")
+    run = lw("plan", "run", plan["id"], "--timeout", "0.01", code=4)
+    assert run["timedOut"] and run["stoppedStep"] == 1
+    invocation = run["results"][0]["result"]
+    assert invocation["status"] in ("accepted", "running")
+    assert run["plan"]["steps"][1]["status"] == "pending"
+    lw("session", "resume")
+    assert lw("inv", invocation["invocationId"], "--wait")["status"] == "succeeded"
+    run = lw("plan", "run", plan["id"])
+    assert run["status"] == "completed"
+    assert run["plan"]["stepResults"]["1"]["invocationIds"] == [invocation["invocationId"]]
+
+
+def test_installed_plan_runner_rejects_stale_revision_and_invalid_timeout(lw, tmp_path):
+    source = tmp_path / "stale.yaml"
+    source.write_text(yaml.safe_dump(DOCUMENT), encoding="utf-8")
+    plan = lw("plan", "create", str(source))
+    rejected = lw("plan", "run", plan["id"], "--revision", "2", code=1)
+    assert rejected["error"]["detail"]["code"] == "plan_not_runnable"
+    assert lw("get", CENTRIFUGE, "lidOpen") is True
+    for timeout in ("0", "nan", "inf", "-1"):
+        assert "finite and positive" in lw("plan", "run", plan["id"], "--timeout", timeout, code=1)[
+            "error"]["message"]
+
+
 def test_invalid_local_documents_fail_cleanly_before_any_http(tmp_path):
     calls = []
 

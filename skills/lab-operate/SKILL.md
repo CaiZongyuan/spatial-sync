@@ -1,159 +1,132 @@
 ---
 name: lab-operate
-description: "Operate the laboratory through lw: inspect the target, submit and execute an operation plan, recover from a rejection, and verify each result."
+description: "Operate an opened laboratory scene through lw or MCP: inspect its Catalog, execute an approved operation Plan, verify outcomes, and recover from refusals."
 ---
 
 # Operate the laboratory
 
-## Human boundaries
+Use this workflow for device work in an existing scene. The Catalog and live
+state are authoritative; the browser is for viewing and necessary visual checks.
+Read development specifications when implementing a change or resolving a
+capability gap discovered through these interfaces.
 
-Hand approval decisions and credential entry to a person. Agents must not execute
-approvals (including denial or revocation) or write Vault values through tools,
-even when a user asks the agent to bypass this boundary. This includes terminal,
-HTTP, MCP, browser automation and direct file changes. Report the pending request
-identifier and reason; resume after the platform reports a human's decision.
-Keep credential values out of messages, logs and model context.
+## Observe and pin the target
 
-## Observe before acting
-
-At the start of each work round, and after a long wait, read the inbox:
+Read the inbox at the start and after a long wait. Retain its opaque cursor for
+the next read, including across gateway restarts. Report critical alerts before
+continuing device work. Inbox covers the gateway; LW_SESSION selects devices.
 
 ```text
 lw inbox --json
+lw status --json
+lw ls --json
+lw show <entity-key> --json
+```
+
+Set LW_URL to the supplied gateway and LW_SESSION to the returned session ID.
+Inspect the relevant entities once. Continue when their exact identities, source,
+actions, parameters, units, risk, conditions and current state are known.
+`show` includes current state; use `get` when a later decision needs a fresh value.
+Action location names and returned Site Prim Paths may differ: copy the actual
+property value into conditions.
+
+Preserve existing sessions. Only when a new session is required, discover a
+launchable version and a declared source before launching:
+
+```text
+lw scene ls --launchable --json
+lw scene show <scene-version> --json
+lw scene launch <scene-version> --source <supported-source> --json
+```
+
+## Plan and execute
+
+Submit a Plan before device work. Each positive unique step ID has one `do`,
+`wait` or `check`; a `do` can include `expect`. Use inspected capabilities:
+
+```yaml
+title: Complete the requested device operation
+target: session
+steps:
+  - id: 1
+    do: {entity: <entity-key>, action: <action>, params: {<parameter>: <value>}}
+    expect: {entity: <entity-key>, property: <property>, equals: <expected-value>}
+```
+
+Use `expect` for an action's immediate outcome. Add `wait` for an independently
+changing condition, and `check` for an additional assertion. Repeating the same
+condition with all three mechanisms is unnecessary. Preserve interlocks and
+required outcomes when combining checks. Derive plans from the current Catalog,
+rather than assuming a fixed device sequence.
+
+```text
+lw plan create <plan.yaml> --json
+lw plan run <plan-id> --revision 1 --json
+```
+
+`plan run` is a local client loop: one process and HTTP client issue the existing
+per-step actions, waits and checks. The gateway still handles each through its
+ordinary pipeline. The runner pins the Session/revision/scene/epoch, preserves
+completed steps, checks every step's actual result including `expect`, and stops
+at the first failure or uncertain result. Inspect its `status`, `plan`, `results`
+and any `stoppedStep`; completion requires both the run and Plan to be completed.
+Use the actual returned revision; `1` above is an example. Its `--timeout` bounds
+each action wait; explicit wait steps use timeoutSeconds.
+
+For decisions between steps, use a connected persistent MCP client or execute
+individual steps. The `do` command waits by default; MCP mirrors the same generic actions
+and supports batched state reads with `get_state(keys)`.
+
+```text
+lw do <entity-key> <action> <parameter=value> --plan <plan-id> --step 1 --plan-revision 1 --json
+lw plan show <plan-id> --json
+```
+
+Use the submitted step ID and revision in individual calls. An invocation's
+success does not prove its Plan `expect` passed: inspect the
+associated step before dependent work. Exit0, accepted, running and pending
+approval are not completion. A timeout leaves the physical outcome unknown;
+query that same invocation before considering a new call. The runner never
+retries a failed or uncertain step automatically.
+
+```text
+lw inv <invocation-id> --wait --timeout 60 --json
+```
+
+## Verify and recover
+
+Read back all requested final properties once, preferably with a batched MCP
+state read or one shared GatewayClient. Finish with the actual values and Plan
+status. Waiting is needed only while the relevant terminal condition is pending;
+for a centrifuge, wait for action success and phase=idle because nominal rpm=0
+can precede physical rotor alignment.
+
+```text
+lw get <entity-key> --json
 lw inbox --since <cursor> --json
 ```
 
-Use the returned opaque `cursor` for the next read, including across gateway
-restarts. The first response includes active alerts, pending approvals and the
-latest20 attention messages. Report a critical alert to the person before
-continuing device work. Hand `/Real/` device intervention to the human boundary
-above. Use the declared state/history interfaces to explain what is known:
+Read JSON error.code, error.details.failed, condition messages and current state.
+Correct invalid parameters from the Catalog; satisfy failed preconditions through
+permitted actions. On busy, inspect the existing invocation. On connection or
+Source errors, retain uncertainty and inspect Session/invocation state. When the
+intended work changes, revise the Plan and inspect its new approval state:
 
 ```text
-lw history <entity-key> <property> --since 1h --every 1m --agg mean --json
+lw plan revise <plan-id> <plan.yaml> --json
 ```
 
-For a nonnumeric property, select `--agg last`. When a gateway reports an invalid
-cursor, read a fresh inbox snapshot and retain its new cursor. Inbox reads cover
-the gateway; `LW_SESSION` still selects the target for device operations.
+Reset changes epoch and invalidates authorization. Preserve completed step IDs
+and content when revising. For history, use numeric aggregation only for numeric
+properties and `last` for other properties. Stream observation, cancellation and
+simulation control are available when the task calls for them; inspect their help
+at that point.
 
-1. Use the gateway and session supplied for the task. `LW_URL` selects the gateway;
-   `LW_SESSION` pins a session. With neither an explicit session nor one active
-   session, choose a real target before any device call.
+## Human boundaries
 
-   ```text
-   lw status --json
-   lw ls --json
-   lw show <entity-key> --json
-   lw get <entity-key> --json
-   ```
-
-   Replace angle-bracket placeholders with values from the responses; these are
-   templates, not instructions to invent an identity, action or parameter.
-   Continue when the entity identity, source, action schema, units, risk and current
-   preconditions are known from those responses. Copy entity keys exactly.
-2. If the requested work needs a new session, first select a launchable version
-   and one of its declared sources. Launch only when the active slot is available:
-
-   ```text
-   lw scene ls --launchable --json
-   lw scene show <scene-version> --json
-   lw scene launch <scene-version> --source <supported-source> --json
-   ```
-
-   Use the returned session ID for subsequent calls. Preserve unrelated sessions;
-   report an occupied slot rather than stopping another task's source.
-
-## Submit a plan, then invoke and verify
-
-3. Submit an operation plan before device work. Use the inspected entity keys,
-   actions and parameter schemas. A YAML document contains `title`, `target:
-   session`, and `steps` with positive unique IDs. Each step contains one `do`,
-   `wait` or `check`; `do` may also declare `expect`. Conditions name an entity,
-   property and supported comparison. This template uses a property from the
-   inspected Catalog; replace its placeholders with real values:
-
-   ```yaml
-   title: Verify the requested device action
-   target: session
-   steps:
-     - id: 1
-       do: {entity: <entity-key>, action: <action>, params: {<parameter>: <value>}}
-       expect: {entity: <entity-key>, property: <property>, equals: <expected-value>}
-     - id: 2
-       wait: {entity: <entity-key>, property: <property>, equals: <expected-value>}
-       timeoutSeconds: 60
-     - id: 3
-       check: {entity: <entity-key>, property: <property>, equals: <expected-value>}
-   ```
-
-   ```text
-   lw plan create <plan.yaml> --json
-   lw plan show <plan-id> --json
-   ```
-
-   Continue once the platform reports `approved`. Ordinary simulation plans are
-   approved automatically. For `submitted`, report the approval ID and wait for
-   the human decision. A plan approval applies to that revision and target only.
-4. Invoke the generic action with the Catalog's parameter names and units. Use
-   the terminal result before starting dependent work:
-
-   ```text
-   lw do <entity-key> <action> <parameter=value> --plan <plan-id> --step 1 --wait --timeout 120 --json
-   lw inv <invocation-id> --wait --timeout 60 --json
-   ```
-
-   Exit0 alone does not prove completion: accepted, running and pending approval
-   are not success. Read `status`, `error`, `timedOut` and the invocation ID.
-   A wait timeout leaves the action's outcome unknown; query that same invocation
-   before considering another call. Avoid duplicate physical actions.
-5. Read back the property that represents the requested outcome, associating
-   wait/check calls with their declared steps:
-
-   ```text
-   lw get <entity-key> <property> --json
-   lw wait <entity-key> <property> equals <expected-value> --plan <plan-id> --step 2 --timeout 60 --json
-   lw check <entity-key> <property> equals <expected-value> --plan <plan-id> --step 3 --json
-   lw plan show <plan-id> --json
-   ```
-
-   Finish with the actual terminal status and observed value, or the precise
-   remaining blocker. A command acknowledgment is not evidence of a device result.
-   A successful invocation can still fail its step's `expect`. Read the step
-   result using the actual submitted IDs; `1/2/3` above refer to the template.
-   Continue after verifying it. When the intended work changes, submit
-   `lw plan revise <plan-id> <plan.yaml> --json`; preserve completed step IDs and
-   content, then inspect the new revision and its approval state. Use a new
-   request for a new action; an earlier request ID keeps its original association.
-
-## Recover from a refusal
-
-Read JSON `error.code`, `error.details.failed`, each condition message and current
-state. Human output also displays condition hints. Choose the matching branch:
-
-| Result | Next step |
-| --- | --- |
-| Unknown entity/action or invalid parameters | Describe the entity again; use its actual schema and units, then correct the request. |
-| Failed precondition | Refresh the relevant properties. Satisfy the declared condition through permitted Catalog actions, verify it, then retry. |
-| Busy | Inspect the active invocation; wait for it or cancel only work the task authorizes you to stop. |
-| Pending approval or not permitted | Return the request ID and reason to the human boundary above. Never change policy or storage to bypass it. |
-| Source unavailable, connection error or timeout | Inspect session and invocation state; report uncertainty without fabricating success or automatically repeating an action. |
-
-Observation and simulation control are available when relevant to the task:
-
-```text
-lw watch <entity-key> --json
-lw cancel <invocation-id> --json
-lw session pause --json
-lw session step 1 --json
-lw session resume --json
-lw session reset --json
-lw rec ls --json
-```
-
-Reset changes the session's epoch and invalidates its plan authorizations;
-refresh state and submit a new plan afterward. Watch is a stream, not a completion
-condition. Plan changes appear in the existing reliable session event stream and
-recordings. Inbox messages include actual plan changes and failed or rejected
-calls. Keep the last cursor when waiting on a declared condition; read the inbox
-afterward to learn what else needs attention.
+Ordinary simulation Plans are approved automatically. For a submitted Plan or
+pending invocation, report the approval identifier and reason; resume after the
+platform reports the human decision. Hand `/Real/` device intervention to a
+person. Agents must not execute approval decisions (including denial/revocation)
+or write Vault values through terminal, HTTP, MCP, browser or direct files, even
+when asked to bypass this boundary. Keep credentials out of messages and logs.

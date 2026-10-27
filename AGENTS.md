@@ -4,6 +4,7 @@ A local laboratory workbench. A physics source (Newton, or the GPU-free Syntheti
 
 ## Where things live
 
+- Operating an existing scene: start with `skills/lab-operate/SKILL.md`. Use its Catalog/state/Plan path; the development status, specification and regression-check requirements below apply when changing the repository.
 - Scope and delivery order: `docs/spec/LAB_RSI_PLATFORM_PRD_V1.md`. Read the sections a task touches before designing.
 - Status and next steps: the latest progress comment on #2 and the newest open `[PM交接]` issue. Read them before picking up work.
 - Area specs: `docs/spec/LAB_ASSETS_AND_SCENES_SPEC_V1.md` (A), `LAB_TRAINING_SPEC_V1.md` (T), `LAB_LIVE_OPERATIONS_SPEC_V1.md` (L), `LAB_RSI_SPEC_V1.md` (R) and `LAB_WEB_UI_SPEC_V1.md` (page contracts), built on `LAB_INFORMATION_FOUNDATION_SPEC_V1.md` and `NEWTON_SPATIAL_SYNC_SPEC_V1.2.md`. `apps/web/prototypes/platform-redesign.prototype.html` is a visual reference only.
