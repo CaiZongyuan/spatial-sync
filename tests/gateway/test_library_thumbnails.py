@@ -8,7 +8,7 @@ from test_asset_imports import package_files, upload
 from apps.api.app.main import create_app
 
 PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6kG8AAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNoaGj4DwAFhAKAjM1mJgAAAABJRU5ErkJggg=="
 )
 
 
@@ -29,6 +29,8 @@ def test_thumbnail_is_persistent_and_invalidated_by_package_changes(tmp_path):
         assert client.get(url).status_code == 404
         response = client.post(url, content=PNG, headers={"Content-Type": "image/png"})
         assert response.status_code == 200, response.text
+        assert client.get(url).content == PNG
+        (tmp_path / "unrelated-state.json").write_text("{}", encoding="utf-8")
         assert client.get(url).content == PNG
         assert client.get(response.json()["thumbnailUrl"]).content == PNG
         assert client.get("/api/v1/health").json()["sessionCount"] == 0

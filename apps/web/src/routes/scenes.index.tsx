@@ -44,7 +44,7 @@ function SceneLibrary() {
   const change = (next: Partial<Search>) => void navigate({ search: previous => ({ ...previous, ...next, cursor: undefined }), replace: true });
   const page = (cursor?: string | null) => void navigate({ search: previous => ({ ...previous, cursor: cursor ?? undefined }) });
   return <main className="scene-library-page">
-    <header className="scene-page-heading"><div><h1>场景库</h1><p>选择一个不可变版本，检查场景后启动会话。</p></div>
+    <header className="scene-page-heading"><div><h1>场景库</h1><p>列表显示最近验证结果；打开版本查看详情，启动前会再次检查。</p></div>
       <span className="scene-result-count">{scenes ? `${current?.pagination?.total ?? scenes.length} 个版本` : '读取中…'}</span></header>
     <section className="scene-toolbar" aria-label="场景筛选">
       <label className="scene-search"><Icon name="search" /><input aria-label="搜索场景" type="search" placeholder="搜索场景…" value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
@@ -62,6 +62,7 @@ function SceneLibrary() {
           <div className="scene-thumbnail">{thumbnails(scene)}</div><div className="scene-card-caption"><b>图 {index + 1}</b><code>{scene.id}</code></div>
           <h2>{scene.title}</h2><div className="scene-card-origin">{scene.sources.map(sourceLabel).join(' / ')} · {rootLabel(scene.root)}</div>
           <div className="scene-card-meta"><LaunchStatus scene={scene} /><span title={scene.countsReason ?? '初始快照统计'}>{scene.entityCount ?? '—'} 实体 · {scene.deviceCount ?? '—'} 绑定</span></div>
+          {scene.validatedAt && <small className="scene-note">最近验证 {new Date(scene.validatedAt).toLocaleString()}</small>}
           {scene.entityCount === null && <p className="scene-counts-reason">{scene.countsReason}</p>}
           <p className={scene.launchable ? 'scene-note' : 'scene-failure'}>{scene.launchReason ?? scene.description}</p>
         </Link>)}</div> : <div className="scene-table-wrap"><table className="scene-library-table"><thead><tr><th>预览</th><th>场景</th><th>物理源</th><th>构建 · 来源</th><th>实体 / 绑定</th><th>验证</th><th>备注</th></tr></thead><tbody>{scenes.map(scene => <tr key={scene.id}>

@@ -179,7 +179,7 @@ class GatewayClient:
         if paged:
             if resource != "scenes":
                 raise ValueError("Use catalog search to paginate assets; these page options are for scenes")
-            params |= {"view": "summary", "limit": limit or 20}
+            params |= {"view": "summary", "limit": 20 if limit is None else limit}
             if cursor is not None:
                 params["cursor"] = cursor
         value = await self.request("GET", "/api/v1/library/" + resource, params=params)
@@ -550,7 +550,8 @@ class GatewayClient:
         try:
             record = await self.request("POST", "/api/v1/library/deletions", actor=actor, json={
                 "resource": "asset" if "/" in id else "scene", "id": id,
-                "contentHash": detail["contentHash"], "requestId": requestId or uuid.uuid4().hex,
+                "contentHash": detail["contentHash"],
+                "requestId": requestId if requestId is not None else uuid.uuid4().hex,
             })
         except GatewayError as exc:
             if exc.status_code == 404 and not (isinstance(exc.detail, dict)
@@ -566,7 +567,15 @@ class GatewayClient:
             params["requestId"] = requestId
         if cursor is not None:
             params["cursor"] = cursor
-        return await self.request("GET", "/api/v1/library/deletions", params=params)
+        try:
+            return await self.request("GET", "/api/v1/library/deletions", params=params)
+        except GatewayError as exc:
+            if exc.status_code == 404:
+                raise GatewayError(
+                    "This gateway has no recoverable-removal endpoint; check its URL and version",
+                    status_code=409, detail={"code": "library_deletion_unsupported"},
+                ) from None
+            raise
 
     async def library_deletion_show(self, id):
         return await self.request("GET", "/api/v1/library/deletions/" + quote(id, safe=""))

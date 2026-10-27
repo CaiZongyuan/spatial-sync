@@ -71,3 +71,41 @@ def test_summary_pages_cover_index_without_opening_models_or_previews(monkeypatc
         })
         assert stale.status_code == 409 and stale.json()["detail"]["code"] == "library_changed"
         assert client.get("/api/v1/library/scenes?view=summary&limit=101").status_code == 422
+        library.versions = {"verbose@1": replace(prototype, name="verbose", metadata=prototype.metadata | {
+            "title": "Large title " * 1000, "description": "long description " * 10000,
+        })}
+        bounded = client.get("/api/v1/library/scenes?view=summary&limit=20")
+        assert len(bounded.content) < 8192
+        assert bounded.json()["scenes"][0]["id"] == "verbose@1"
+        assert bounded.json()["scenes"][0]["summaryTruncated"] is True
+
+
+def test_mutation_during_dependency_inspection_is_not_cached(monkeypatch):
+    from template_support import reference_files, scene_files, upload
+
+    from packages.library.scenes import SceneVersion
+
+    app = create_app()
+    with TestClient(app) as client:
+        asset = upload(client, reference_files()).json()
+        assert upload(client, scene_files()[0]).status_code == 200
+        library = app.state.manager.library
+        library._resolved.clear()
+        metadata = app.state.library_assets.resolve(asset["assetVersion"]).path / "asset.yaml"
+        original = SceneVersion.with_templates
+        changed = False
+
+        def racing(version, roots):
+            nonlocal changed
+            value = original(version, roots)
+            if version.id == "template-slice@1" and not changed:
+                changed = True
+                metadata.write_bytes(metadata.read_bytes() + b"\n# concurrent forbidden in-place edit\n")
+            return value
+
+        monkeypatch.setattr(SceneVersion, "with_templates", racing)
+        assert client.get("/api/v1/library/scenes/template-slice/1").status_code == 200
+        detail = client.get("/api/v1/library/scenes/template-slice/1").json()
+        assert detail["launchable"] is False and detail["templateResolution"]["status"] == "failed"
+        assert client.post("/api/v1/sessions", json={"sceneVersion": "template-slice@1"}).status_code == 409
+        assert client.get("/api/v1/health").json()["sessionCount"] == 0

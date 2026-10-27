@@ -19,6 +19,7 @@ class LibraryDeletions:
                  tasks=None, jobs=None):
         self.assets, self._scenes, self.approvals = assets, scenes, approvals
         self.root = assets.roots["user"]
+        self.normal_removal = lambda record: None
         self.inspection = ReferenceInspection(assets, scenes, recordings, sessions, validator,
                                               suites=suites, live=live, tasks=tasks, jobs=jobs)
 
@@ -72,7 +73,8 @@ class LibraryDeletions:
             for record in self.approvals.records.values():
                 if (record.subject == "deletion" and record.subjectId == f"{kind}:{version.id}"
                         and record.status == "pending"
-                        and record.details.get("contentHash") == version.content_hash):
+                        and record.details.get("contentHash") == version.content_hash
+                        and not self.normal_removal(record)):
                     return record
             return self.approvals.submit(
                 subject="deletion", subject_id=f"{kind}:{version.id}", requester=actor,
@@ -90,6 +92,12 @@ class LibraryDeletions:
 
     def describe(self, record):
         """A durable committed withdrawal remains visible if its final audit append failed."""
+        ordinary = self.normal_removal(record)
+        if ordinary and record.status == "pending":
+            return record.model_copy(update={"status": "unavailable", "details": record.details | {
+                "execution": {"status": "blocked", "error": {"code": "version_withdrawn",
+                    "message": "Version was moved to recovery storage", "deletionId": ordinary}},
+            }})
         directory = self.root / ".deletions" / record.approvalId
         path = directory / "receipt.json"
         if not path.exists():
@@ -195,6 +203,8 @@ class LibraryDeletions:
     def decide(self, approval_id, decision, actor, note):
         with self.assets._lock, import_lock(self.root):
             record = self.approvals.records[approval_id]
+            if decision == "approve" and self.normal_removal(record):
+                raise ApprovalConflict("The ordinary removal superseded this approval")
             directory = self._receipt_directory(approval_id)
             receipt_path = directory / "receipt.json"
             receipt = self._read_receipt(directory, record) if receipt_path.exists() else None

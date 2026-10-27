@@ -43,6 +43,7 @@ class RemovalRecord(BaseModel):
     dependencies: dict[str, str] = Field(default_factory=dict)
     error: dict | None = None
     restoredBy: Actor | None = None
+    supersededApprovals: list[str] = Field(default_factory=list)
 
 
 class LibraryRemovals:
@@ -53,6 +54,7 @@ class LibraryRemovals:
         self.lock = threading.RLock()
         self.tasks = {}
         self.errors = set()
+        self.legacy.normal_removal = self.superseding
 
     def directory(self, identifier):
         if not IDENTITY.fullmatch(identifier):
@@ -73,7 +75,15 @@ class LibraryRemovals:
     def _save(self, record):
         value = RemovalRecord.model_validate(record).model_dump(mode="json", by_alias=True)
         with self.lock:
-            durable_json(self.directory(value["id"]) / "operation.json", value)
+            try:
+                durable_json(self.directory(value["id"]) / "operation.json", value)
+            except OSError:
+                try:
+                    if self._read(value["id"]) == value:
+                        self.records[value["id"]] = value
+                except (OSError, ValueError, LibraryError):
+                    pass
+                raise
             self.records[value["id"]] = value
         return deepcopy(value)
 
@@ -159,7 +169,25 @@ class LibraryRemovals:
 
     async def close(self):
         if self.tasks:
-            await asyncio.gather(*list(self.tasks.values()), return_exceptions=True)
+            pending = asyncio.gather(*list(self.tasks.values()), return_exceptions=True)
+            try:
+                await asyncio.shield(pending)
+            except asyncio.CancelledError:
+                await pending
+                raise
+
+    def superseding(self, approval):
+        with self.lock:
+            return next(
+                (
+                    record["id"]
+                    for record in self.records.values()
+                    if approval.approvalId in record["supersededApprovals"]
+                    and approval.subjectId == f"{record['resource']}:{record['versionId']}"
+                    and approval.details.get("contentHash") == record["contentHash"]
+                ),
+                None,
+            )
 
     def _destination(self, record):
         prefix = "assets" if record["resource"] == "asset" else "scenes"
@@ -175,12 +203,9 @@ class LibraryRemovals:
         return {identifier: self.legacy.assets.resolve(identifier).content_hash for identifier in identifiers}
 
     def _retire_approvals(self, record):
-        for approval in list(self.legacy.approvals.records.values()):
-            if (
-                approval.subject == "deletion"
-                and approval.subjectId == f"{record['resource']}:{record['versionId']}"
-                and approval.status == "pending"
-            ):
+        for identifier in record["supersededApprovals"]:
+            approval = self.legacy.approvals.records.get(identifier)
+            if approval is not None and approval.status == "pending" and self.superseding(approval):
                 self.legacy.approvals._save(
                     approval.model_copy(
                         update={
@@ -227,8 +252,22 @@ class LibraryRemovals:
                     raise ValueError("Package changed during removal")
                 self.legacy._refresh()
                 retained = sum((package / name).stat().st_size for name in package_files(package))
+                superseded = [
+                    approval.approvalId
+                    for approval in self.legacy.approvals.records.values()
+                    if approval.subject == "deletion"
+                    and approval.status == "pending"
+                    and approval.subjectId == f"{kind}:{version.id}"
+                    and approval.details.get("contentHash") == record["contentHash"]
+                ]
                 record = self._save(
-                    record | {"status": "committed", "dependencies": dependencies, "retainedBytes": retained}
+                    record
+                    | {
+                        "status": "committed",
+                        "dependencies": dependencies,
+                        "retainedBytes": retained,
+                        "supersededApprovals": superseded,
+                    }
                 )
             except (OSError, ValueError, LibraryError) as exc:
                 # A replacement followed by an fsync error has still crossed the commit point.
@@ -236,6 +275,7 @@ class LibraryRemovals:
                 if actual["status"] == "committed":
                     with self.lock:
                         self.records[identifier] = actual
+                    self._retire_approvals(actual)
                     return actual
                 if package.exists():
                     if destination.exists() or content_hash(package) != record["contentHash"]:
@@ -323,7 +363,13 @@ class LibraryRemovals:
         with self.legacy.assets._lock, import_lock(self.root):
             root = destination_parent(self.root, (".trash",))
             for directory in sorted(root.iterdir()) if root.exists() else ():
+                self.directory(directory.name)
+                if not (directory / "operation.json").exists():
+                    if any(directory.iterdir()):
+                        raise ValueError("Removal journal requires inspection")
+                    continue
                 record = self._read(directory.name)
+                original = deepcopy(record)
                 destination = self._destination(record)
                 package = directory / "package"
                 if record["status"] in ("queued", "checking"):
@@ -357,6 +403,9 @@ class LibraryRemovals:
                         raise ValueError("Retained removal bytes require inspection")
                     else:
                         record = record | {"status": "committed"}
-                self._save(record)
-                if record["status"] == "committed":
+                if record != original:
+                    self._save(record)
+                else:
+                    self.records[record["id"]] = record
+                if record["supersededApprovals"]:
                     self._retire_approvals(record)

@@ -48,10 +48,17 @@ test('real asset API, URL filters, shared thumbnails and FR3 completeness stay s
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/v1/sessions')) live.push(request.url()); });
   page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) live.push(socket.url()); });
   page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/assets/robot/fr3/1');
+  await expect(page.getByLabel('素材静态模型预览')).toHaveAttribute('data-model-state', 'ready');
+  for (const theme of ['light', 'dark']) {
+    await page.getByLabel('Color theme').selectOption(theme);
+    await page.getByRole('button', { name: '生成列表缩略图' }).click();
+    await expect(page.getByText('已保存列表缩略图。', { exact: true })).toBeVisible();
+  }
   await page.goto('/assets');
   await page.getByLabel('Color theme').selectOption('dark');
   await expect(page.getByRole('heading', { name: '素材库', exact: true })).toBeVisible();
-  const image = page.getByRole('img', { name: 'robot/fr3@1 的素材模型' });
+  const image = page.getByRole('img', { name: 'robot/fr3@1 的静态预览' });
   await expect(image).toBeVisible();
   await expect(page.locator('canvas')).toHaveCount(0);
   const frameBounds = await opaqueBounds(image);
@@ -110,43 +117,33 @@ test('real asset API, URL filters, shared thumbnails and FR3 completeness stay s
   await testInfo.attach('asset-public-receipt', { path: receipt, contentType: 'application/json' });
 });
 
-test('theme changes during an asset capture retain the complete model in one canvas', async ({ page }) => {
+test('late old-theme thumbnail upload cannot replace the current static preview', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
-  await page.addInitScript(() => {
-    const nativeFrame = window.requestAnimationFrame.bind(window);
-    const nativeCancel = window.cancelAnimationFrame.bind(window);
-    const queued = new Map<number, FrameRequestCallback>();
-    let next = 0;
-    window.requestAnimationFrame = callback => { queued.set(++next, callback); return next; };
-    window.cancelAnimationFrame = id => { queued.delete(id); };
-    Reflect.set(window, '__assetFrames', async (release: boolean) => {
-      if (release) { window.requestAnimationFrame = nativeFrame; window.cancelAnimationFrame = nativeCancel; }
-      const callbacks = [...queued.values()]; queued.clear();
-      await new Promise<void>(resolve => nativeFrame(time => { callbacks.forEach(callback => callback(time)); resolve(); }));
-    });
-    const seen = new WeakSet<HTMLCanvasElement>(); let count = 0;
-    Reflect.set(window, '__assetCanvasCount', () => count);
-    new MutationObserver(() => document.querySelectorAll('canvas').forEach(canvas => {
-      if (!seen.has(canvas)) { seen.add(canvas); count++; }
-    })).observe(document, { childList: true, subtree: true });
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  await page.route('**/api/v1/library/thumbnails?*', async route => {
+    if (route.request().method() !== 'POST' || new URL(route.request().url()).searchParams.get('theme') !== 'light') return route.continue();
+    const response = await route.fetch(); started(); await held;
+    await route.fulfill({ response }).catch(() => {});
   });
   try {
-    await page.goto('/assets');
-    await expect(page.locator('.asset-model-viewport')).toHaveAttribute('data-model-state', 'ready');
-    // Render the loaded model once, then hold the pending capture while changing the real control.
-    await page.evaluate(() => Reflect.get(window, '__assetFrames')(false));
+    await page.goto('/assets/robot/fr3/1');
+    await expect(page.getByLabel('素材静态模型预览')).toHaveAttribute('data-model-state', 'ready');
+    await page.getByRole('button', { name: '生成列表缩略图' }).click(); await ready;
     await page.getByLabel('Color theme').selectOption('dark');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await page.evaluate(() => Reflect.get(window, '__assetFrames')(true));
-    const image = page.getByRole('img', { name: 'robot/fr3@1 的素材模型' });
-    await expect(image).toBeVisible();
+    await expect(page.getByRole('button', { name: '生成列表缩略图' })).toBeEnabled();
+    await page.getByRole('button', { name: '生成列表缩略图' }).click();
+    await expect(page.getByText('已保存列表缩略图。', { exact: true })).toBeVisible();
+    release();
+    await page.goto('/assets?kind=robot&q=Franka');
+    const image = page.getByRole('img', { name: 'robot/fr3@1 的静态预览' });
+    await expect(image).toBeVisible(); await expect(image).toHaveAttribute('src', /theme=dark/);
     const bounds = await opaqueBounds(image);
     expect(bounds.right).toBeGreaterThan(bounds.left);
     expect(bounds.bottom).toBeGreaterThan(bounds.top);
-    expect(bounds.top).toBeGreaterThan(0);
-    expect(bounds.bottom).toBeLessThan(bounds.height - 1);
-    expect(await page.evaluate(() => Reflect.get(window, '__assetCanvasCount')())).toBe(1);
-  } finally { await page.evaluate(() => Reflect.get(window, '__assetFrames')(true)).catch(() => {}); }
+    await expect(page.locator('canvas')).toHaveCount(0);
+  } finally { release(); }
 });
 
 test('asset navigation adapts above content at narrow widths with either sidebar preference', async ({ page }, testInfo) => {

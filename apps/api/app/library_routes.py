@@ -18,6 +18,7 @@ from apps.api.app.library_validation import program_schemas
 from packages.catalog import AssetCatalog
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
 from packages.library.authoring import LIST_DEFAULT, invalid_authoring
+from packages.library.common import REPO_ROOT
 from packages.library.description_views import description_view
 from packages.library.imports import LibraryImports
 from packages.library.previews import dependency_path
@@ -85,9 +86,13 @@ def install_library_routes(
     async def remove_version(body: RemovalRequest, request: Request):
         if role_for(request.headers) != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
-        record = await anyio.to_thread.run_sync(
-            manager.library_removals.submit, body, actor_from_headers(request.headers)
-        )
+        try:
+            record = await anyio.to_thread.run_sync(
+                manager.library_removals.submit, body, actor_from_headers(request.headers)
+            )
+        except OSError:
+            raise HTTPException(503, {"code": "deletion_persistence_unavailable",
+                                      "message": "Removal request could not be saved"}) from None
         manager.library_removals.start(record["id"])
         return record
 
@@ -122,9 +127,13 @@ def install_library_routes(
     async def restore_version(identifier: str, request: Request):
         if role_for(request.headers) != "operator":
             raise HTTPException(403, {"code": "not_permitted"})
-        record = await anyio.to_thread.run_sync(
-            manager.library_removals.request_restore, identifier, actor_from_headers(request.headers)
-        )
+        try:
+            record = await anyio.to_thread.run_sync(
+                manager.library_removals.request_restore, identifier, actor_from_headers(request.headers)
+            )
+        except OSError:
+            raise HTTPException(503, {"code": "deletion_persistence_unavailable",
+                                      "message": "Restore request could not be saved"}) from None
         manager.library_removals.start(identifier, restore=True)
         return record
 
@@ -190,7 +199,11 @@ def install_library_routes(
         def save():
             version = thumbnail_version(resource, id, contentHash)
             variant = theme
-            paths = tree_paths(version.path)
+            collection = assets if resource == "asset" else scenes()
+            paths = tree_paths(version.path, collection.roots[version.root])
+            renderer = REPO_ROOT / "apps/web/src"
+            paths.update(tree_paths(renderer, renderer))
+            paths.add(REPO_ROOT / "pnpm-lock.yaml")
             if resource == "scene":
                 version = scenes().resolve(id)
                 selected = source or version.metadata["sources"][0]
@@ -202,10 +215,13 @@ def install_library_routes(
                 if capturedAt != capture["capturedAt"]:
                     raise HTTPException(409, {"code": "preview_changed"})
                 variant += ":" + selected
-                paths.update(tree_paths(directory))
+                capture_root = next(root for root in manager.library_previews.roots
+                                    if directory.is_relative_to(root))
+                paths.update(tree_paths(directory, capture_root))
                 paths.update(dependency_path(item) for item in capture["dependencies"])
                 for snapshot in (*version.template_assets.values(), *version.runtime_assets.values()):
-                    paths.update(tree_paths(Path(snapshot["path"])))
+                    path = Path(snapshot["path"])
+                    paths.update(tree_paths(path, path.parents[3]))
             watched = tuple(sorted(paths))
             recorded = stamps(watched)
             if resource == "scene":

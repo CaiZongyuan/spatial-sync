@@ -142,3 +142,73 @@ def test_viewer_cannot_remove_or_restore(tmp_path):
         request = body(client)
         assert client.post(ROOT, json=request).status_code == 403
         assert client.post(ROOT + "/deletion-" + "a" * 32 + "/restore").status_code == 403
+
+
+def test_submit_after_replacement_failure_reuses_the_durable_request(tmp_path, monkeypatch):
+    import packages.library.removals as removals
+
+    user_version(tmp_path / "user-library", 4)
+    with TestClient(create_app()) as client:
+        request = body(client)
+        durable = removals.durable_json
+
+        def uncertain(path, value):
+            durable(path, value)
+            if value.get("status") == "queued":
+                raise OSError("injected directory fsync failure after replacement")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(removals, "durable_json", uncertain)
+            assert client.post(ROOT, json=request).status_code == 503
+        existing = client.get(ROOT).json()["deletions"]
+        assert len(existing) == 1 and client.get(TARGET).status_code == 200
+        removed = settled(client, client.post(ROOT, json=request).json())
+        assert removed["id"] == existing[0]["id"] and removed["status"] == "committed"
+        assert len(client.get(ROOT).json()["deletions"]) == 1
+
+
+def test_failed_first_journal_write_does_not_break_restart(tmp_path, monkeypatch):
+    import packages.library.removals as removals
+
+    user_version(tmp_path / "user-library", 4)
+    with TestClient(create_app()) as client:
+        request = body(client)
+        with monkeypatch.context() as patch:
+            patch.setattr(removals, "durable_json", lambda *args: (_ for _ in ()).throw(OSError("disk full")))
+            assert client.post(ROOT, json=request).status_code == 503
+        assert client.get(TARGET).status_code == 200
+    with TestClient(create_app()) as client:
+        assert client.get(TARGET).status_code == 200
+        assert settled(client, client.post(ROOT, json=request).json())["status"] == "committed"
+
+
+def test_old_approval_is_inapplicable_even_if_its_audit_append_failed(tmp_path, monkeypatch):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        legacy = client.delete(TARGET).json()
+        save = app.state.manager.approvals._save
+
+        def fail_retirement(record):
+            if record.status == "unavailable":
+                raise OSError("injected audit failure")
+            return save(record)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(app.state.manager.approvals, "_save", fail_retirement)
+            removed = settled(client, client.post(ROOT, json=body(client)).json())
+            assert removed["status"] == "committed"
+            assert client.get("/api/v1/approvals/" + legacy["approvalId"]).json()["status"] == "unavailable"
+        assert (
+            client.post(
+                "/api/v1/approvals/" + legacy["approvalId"] + "/decision", json={"decision": "approve"}
+            ).status_code
+            == 409
+        )
+        assert (
+            settled(client, client.post(ROOT + "/" + removed["id"] + "/restore").json())["status"]
+            == "restored"
+        )
+        fresh = client.delete(TARGET).json()
+        assert fresh["approvalId"] != legacy["approvalId"]
+        assert client.get("/api/v1/approvals/" + fresh["approvalId"]).json()["status"] == "pending"

@@ -20,6 +20,8 @@ export interface ScenePreview {
 }
 export interface SceneVersion {
   thumbnailUrl?: string | null;
+  validatedAt?: string | null;
+  summaryTruncated?: boolean;
   id: string;
   sceneId: string;
   sceneVersion: string;

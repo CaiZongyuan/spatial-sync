@@ -16,9 +16,19 @@ def stamps(paths):
     return tuple(result)
 
 
-def tree_paths(root):
+def tree_paths(root, boundary=None):
     """Directory stamps invalidate additions, removals and changed link ancestors."""
-    return {root, *root.parents, *root.rglob("*")} if root.is_dir() else {root, *root.parents}
+    boundary = boundary or root.parent
+    if not root.is_relative_to(boundary):
+        raise ValueError("Cache input is outside its configured root")
+    paths = {root}
+    parent = root
+    while parent != boundary:
+        parent = parent.parent
+        paths.add(parent)
+    if root.is_dir():
+        paths.update(root.rglob("*"))
+    return paths
 
 
 class ReadCache:

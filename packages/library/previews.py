@@ -135,17 +135,18 @@ class PreviewRepository:
         cached = self.cache.get(key)
         if cached is not None:
             return cached
-        paths = tree_paths(version.path)
+        paths = tree_paths(version.path, version.path.parents[2])
         for root in self.roots:
             directory = root / version.name / str(version.rev) / version.content_hash / source
-            paths.update(tree_paths(directory))
+            paths.update(tree_paths(directory, root))
             try:
                 capture = json.loads((directory / "capture.json").read_bytes())
                 paths.update(dependency_path(item) for item in capture["dependencies"])
             except (OSError, ValueError, KeyError, TypeError):
                 pass  # _inspect retains the precise validation error and source fallback.
         for snapshot in (*version.template_assets.values(), *version.runtime_assets.values()):
-            paths.update(tree_paths(Path(snapshot["path"])))
+            path = Path(snapshot["path"])
+            paths.update(tree_paths(path, path.parents[3]))
         paths = tuple(sorted(paths))
         recorded = stamps(paths)
         result = self._inspect(version, source)

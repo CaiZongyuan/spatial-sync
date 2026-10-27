@@ -284,35 +284,37 @@ def create_app(
                 await manager.live.start()
             yield
         finally:
-            await manager.library_removals.close()
             try:
-                try:
-                    try:
-                        await metadata_maintenance.close()
-                    finally:
-                        metadata_store.close()
-                        catalog.resources.close()
-                        await catalog_sync.close()
-                finally:
-                    await acquisitions.close()
+                await manager.library_removals.close()
             finally:
                 try:
                     try:
-                        await views.close()
-                    finally:
                         try:
-                            await tensorboard.close()
+                            await metadata_maintenance.close()
                         finally:
-                            await monitor.close()
+                            metadata_store.close()
+                            catalog.resources.close()
+                            await catalog_sync.close()
+                    finally:
+                        await acquisitions.close()
                 finally:
                     try:
-                        if manager.live:
-                            await manager.live.close()
+                        try:
+                            await views.close()
+                        finally:
+                            try:
+                                await tensorboard.close()
+                            finally:
+                                await monitor.close()
                     finally:
                         try:
-                            await evaluations.close()
+                            if manager.live:
+                                await manager.live.close()
                         finally:
-                            await manager.close()
+                            try:
+                                await evaluations.close()
+                            finally:
+                                await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
     app.state.tensorboard = tensorboard

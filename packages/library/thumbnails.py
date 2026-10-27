@@ -5,15 +5,59 @@ import json
 import struct
 import tempfile
 import threading
+import zlib
 from pathlib import Path
 
-from packages.library.common import LibraryError
+from packages.library.common import REPO_ROOT, LibraryError
 from packages.library.read_cache import ReadCache, stamps
 from packages.library.transactions import durable_json
 
 MAX_PNG_BYTES = 1024 * 1024
 MAX_CACHE_BYTES = 64 * 1024 * 1024
 MAX_ENTRIES = 128
+
+
+def validate_png(payload):
+    try:
+        if (len(payload) < 33 or len(payload) > MAX_PNG_BYTES
+                or payload[:8] != b"\x89PNG\r\n\x1a\n" or payload[8:16] != b"\x00\x00\x00\rIHDR"):
+            raise ValueError()
+        width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", payload[16:29])
+        if (not (1 <= width <= 2048 and 1 <= height <= 2048) or depth != 8 or color not in (2, 6)
+                or compression != 0 or filtering != 0 or interlace != 0):
+            raise ValueError()
+        compressed = bytearray()
+        offset, ended = 8, False
+        while offset + 12 <= len(payload):
+            length = struct.unpack(">I", payload[offset:offset + 4])[0]
+            kind = payload[offset + 4:offset + 8]
+            end = offset + 12 + length
+            if end > len(payload):
+                raise ValueError()
+            data = payload[offset + 8:offset + 8 + length]
+            if zlib.crc32(kind + data) != struct.unpack(">I", payload[end - 4:end])[0]:
+                raise ValueError()
+            if kind == b"IDAT":
+                compressed.extend(data)
+            elif kind in (b"acTL", b"fcTL", b"fdAT") or kind == b"IHDR" and offset != 8:
+                raise ValueError()
+            elif kind == b"IEND":
+                if length != 0 or end != len(payload):
+                    raise ValueError()
+                ended = True
+                break
+            offset = end
+        channels = 4 if color == 6 else 3
+        stride = 1 + (width * channels * depth + 7) // 8
+        expected = height * stride
+        decoder = zlib.decompressobj()
+        pixels = decoder.decompress(compressed, expected + 1)
+        if (not ended or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail
+                or len(pixels) != expected or any(pixels[index] > 4 for index in range(0, expected, stride))):
+            raise ValueError()
+    except (ValueError, struct.error, zlib.error):
+        raise LibraryError("invalid_thumbnail", "Provide a static non-interlaced 8-bit RGB/RGBA PNG, "
+                           "up to 2048px and 1 MiB", 422) from None
 
 
 class ThumbnailStore:
@@ -23,7 +67,9 @@ class ThumbnailStore:
         self.lock = threading.RLock()
 
     def key(self, resource, version, theme):
-        return hashlib.sha256(f"{resource}:{version.id}:{version.content_hash}:{theme}".encode()).hexdigest()
+        return hashlib.sha256(
+            f"thumbnail/1:{REPO_ROOT}:{resource}:{version.id}:{version.content_hash}:{theme}".encode()
+        ).hexdigest()
 
     def url(self, resource, version, theme="light"):
         key = self.key(resource, version, theme)
@@ -55,12 +101,7 @@ class ThumbnailStore:
             return self._put(resource, version, theme, payload, paths, recorded)
 
     def _put(self, resource, version, theme, payload, paths, recorded):
-        if (len(payload) < 33 or len(payload) > MAX_PNG_BYTES
-                or payload[:8] != b"\x89PNG\r\n\x1a\n" or payload[12:16] != b"IHDR"):
-            raise LibraryError("invalid_thumbnail", "Provide a PNG no larger than 1 MiB", 422)
-        width, height = struct.unpack(">II", payload[16:24])
-        if not (1 <= width <= 2048 and 1 <= height <= 2048):
-            raise LibraryError("invalid_thumbnail", "PNG dimensions must be between 1 and 2048", 422)
+        validate_png(payload)
         if self.root.is_symlink() or self.root.is_junction():
             raise LibraryError("thumbnail_unavailable", "Thumbnail storage is unavailable", 503)
         self.root.mkdir(parents=True, exist_ok=True)
