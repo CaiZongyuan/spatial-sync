@@ -23,6 +23,8 @@ from packages.catalog.source import (
     image_extension,
     object_preview_path,
 )
+from packages.catalog_metadata.models import MetadataError
+from packages.catalog_metadata.thumbnails import TRANSFORM, create_thumbnail
 from packages.library.common import LibraryError
 
 MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024
@@ -167,7 +169,7 @@ class CatalogResources:
                         raise SyncCancelled()
                     source = self.sources.open(entry.provider, cancel=self._shutdown)
                     return operation(source, key)
-            except (SourceError, SyncCancelled, OSError) as exc:
+            except (SourceError, SyncCancelled, OSError, MetadataError) as exc:
                 message = str(exc)[:1000] or "Catalog content request was interrupted"
                 # Striped locking and bounded failure memory prevent an unbounded key registry.
                 if len(self._failures) >= 1024:
@@ -223,6 +225,7 @@ class CatalogResources:
             raw = self._read(pointer)
             metadata = None
             filename = None
+            saved = {}
             if raw:
                 try:
                     saved = json.loads(raw)
@@ -248,7 +251,21 @@ class CatalogResources:
             if isinstance(filename, str) and re.fullmatch(r"[0-9a-f]{64}\.(png|jpg|webp)", filename):
                 data = self._read(self.root / "previews" / filename)
                 if data and hashlib.sha256(data).hexdigest() == filename.split(".")[0]:
-                    return data, image_extension(data)
+                    if saved.get("transform") == TRANSFORM and image_extension(data) == "webp":
+                        return data, "webp"
+                    original = saved.get("sourceFile")
+                    if original and re.fullmatch(r"[0-9a-f]{64}\.(png|jpg|webp)", original):
+                        data = self._read(self.root / "previews" / original)
+                        if data is not None and hashlib.sha256(data).hexdigest() != original.split(".")[0]:
+                            data = None
+                    if data is not None:
+                        encoded, document = create_thumbnail(data)
+                        result = document["sha256"][7:] + ".webp"
+                        self._store(self.root / "previews" / result, encoded)
+                        self._store(pointer, json.dumps({"file": result, "sourceFile": original or filename,
+                                                       "path": saved.get("path"), "role": "object",
+                                                       "transform": TRANSFORM}).encode())
+                        return encoded, "webp"
             metadata = metadata or self._metadata(entry, source, key, full=False)
             thumbnail = metadata.get("thumbnailPath")
             if not thumbnail:
@@ -257,7 +274,11 @@ class CatalogResources:
             extension = image_extension(data)
             filename = hashlib.sha256(data).hexdigest() + "." + extension
             self._store(self.root / "previews" / filename, data)
-            self._store(pointer, json.dumps({"file": filename, "path": thumbnail, "role": "object"}).encode())
-            return data, extension
+            encoded, document = create_thumbnail(data)
+            result = document["sha256"][7:] + ".webp"
+            self._store(self.root / "previews" / result, encoded)
+            self._store(pointer, json.dumps({"file": result, "sourceFile": filename, "path": thumbnail,
+                                           "role": "object", "transform": TRANSFORM}).encode())
+            return encoded, "webp"
 
         return self._request(entry, load, kind="preview", retry=retry)

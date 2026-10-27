@@ -7,12 +7,14 @@ receipt on stdout. A capture import is never used as an execution substitute.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
 import signal
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import threading
 import time
@@ -32,6 +34,10 @@ class WorkerHTTPError(RuntimeError):
 
 def maintenance_skill():
     path = Path(__file__).resolve().parents[2] / "skills" / "lab-catalog-maintain" / "SKILL.md"
+    if os.getenv("LW_CATALOG_SKILL"):
+        path = Path(os.environ["LW_CATALOG_SKILL"])
+    elif not path.is_file():
+        path = Path(sysconfig.get_path("data")) / "share/spatial-sync/skills/lab-catalog-maintain/SKILL.md"
     return path.read_text(encoding="utf-8")
 
 
@@ -94,6 +100,8 @@ def execute_agent(profile, request, *, root, cancel=_CANCEL):
         # authorization credential or a database path.
         env.pop("LW_CATALOG_RUN_TOKEN", None)
         env.pop("LW_CATALOG_AGENT_PROFILE", None)
+        for credential in ("LW_TOKEN", "LW_CATALOG_OPERATOR_TOKEN", "LW_CATALOG_STATE_ROOT"):
+            env.pop(credential, None)
         process = subprocess.Popen(
             profile["command"],
             stdin=inputs,
@@ -187,7 +195,8 @@ class Worker:
 
         previous_usage = record.get("sourceUsage", {})
         budgets = dict(record["budgets"])
-        budgets["seconds"] = max(0, budgets["seconds"] - record["usage"].get("seconds", 0))
+        budgets["seconds"] = max(0, budgets["seconds"] - max(
+            record["usage"].get("seconds", 0), time.time() - record["createdAt"]))
         for key in ("requests", "networkBytes"):
             budgets[key] = max(0, budgets[key] - previous_usage.get(key, 0))
         budgets["previewBytes"] = max(
@@ -322,6 +331,14 @@ class Worker:
             if stopped:
                 self.request("POST", self.base + "/finish", json={})
                 return
+        if record.get("previews"):
+            record, stopped = self.read_previews(record)
+            if stopped:
+                self.request("POST", self.base + "/finish", json={})
+                return
+        if record.get("organizer") == "external":
+            self.request("POST", self.base + "/await-agent", json={})
+            return
         self.request("POST", self.base + "/phase", json={"phase": "organizing"})
         if profile is not None:
             while not _CANCEL.is_set():
@@ -348,6 +365,8 @@ class Worker:
                             "versions": batch["versions"],
                             "entries": batch["entries"],
                             "remaining": batch["remaining"],
+                            "vocabulary": batch.get("vocabulary"),
+                            "evidence": batch.get("evidence", []),
                             "skill": skill,
                             "instructions": (
                                 "Organize bilingual names, aliases, summaries, categories and tags "
@@ -382,6 +401,60 @@ class Worker:
                     )
         if not _CANCEL.is_set():
             self.request("POST", self.base + "/finish", json={})
+
+    def read_previews(self, record):
+        from packages.catalog_metadata.hub import HFHubReader
+        from packages.catalog_metadata.models import MetadataError
+
+        self.request("POST", self.base + "/phase", json={"phase": "previews"})
+        previous = record.get("sourceUsage", {})
+        budgets = dict(record["budgets"])
+        for key in ("requests", "networkBytes"):
+            budgets[key] = max(0, budgets[key] - previous.get(key, 0))
+        budgets["previewBytes"] = max(0, budgets["previewBytes"] - previous.get("previewBytes", 0)
+                                      + previous.get("embeddedPreviewBytes", 0))
+        budgets["seconds"] = max(0, budgets["seconds"] - max(
+            record["usage"].get("seconds", 0), time.time() - record["createdAt"]))
+
+        def cumulative(usage):
+            return {**usage, **{key: previous.get(key, 0) + usage.get(key, 0) for key in (
+                "requests", "networkBytes", "previewBytes", "embeddedPreviewBytes", "cacheBytes",
+                "embeddedPreviewDecodedBytes",
+            )}}
+
+        reader = HFHubReader(cache_root=self.cache_root, cancel=_CANCEL, budgets=budgets)
+        try:
+            while not _CANCEL.is_set():
+                batch = self.request("POST", self.base + "/previews/claim", json={"limit": 24})
+                if batch.get("budgetExhausted"):
+                    return record, True
+                if not batch["entries"]:
+                    if batch.get("remaining", 0):
+                        continue
+                    break
+                for entry in batch["entries"]:
+                    result = {"upstreamId": entry["upstreamId"], "inputDigest": entry["inputDigest"]}
+                    preview = entry.get("preview", {})
+                    if preview.get("role") != "object":
+                        result.update(state="missing", reason="The source record supplies no object preview")
+                    elif preview.get("state") == "suspect":
+                        result.update(state="suspect", reason="Source preview needs object-role review")
+                    else:
+                        try:
+                            data, _ = reader.read_preview(
+                                record["collection"], entry, retry=entry.get("retry", False)
+                            )
+                            result.update(state="available", data=base64.b64encode(data).decode("ascii"))
+                        except MetadataError as exc:
+                            result.update(state="deferred" if exc.code == "budget_exhausted" else "failed",
+                                          reason=exc.code)
+                    result["usage"] = cumulative(reader.usage)
+                    record = self.request("POST", self.base + "/previews/submit", json=result)
+                    if record.get("budgetExhausted"):
+                        return record, True
+            return record, False
+        finally:
+            reader.close()
 
     def close(self):
         self.client.close()

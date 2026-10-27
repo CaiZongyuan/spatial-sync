@@ -11,10 +11,13 @@ export interface MetadataRun {
   coverage?: { discovered: number; indexed: number; organized: number; failed: number; reused: number;
     extracted?: number; extractionPending?: number; extractionFailed?: number };
   errors?: { message: string; entry?: string }[];
+  organizer?: 'runtime' | 'external' | 'none';
+  previewCoverage?: { available: number; missing: number; failed: number; pending: number; reused: number };
 }
 export interface MetadataState {
   collections: MetadataCollection[]; runs: MetadataRun[];
   runtime: { configured: boolean; profile?: string | null }; skillsVersion?: string;
+  capabilities?: { externalOrganization: boolean; localThumbnails: boolean; nativeQueries: boolean };
   release?: { id: string; collections: { id: string; coverage: Record<string, number | boolean | null> }[] } | null;
 }
 export interface CatalogVocabulary {
@@ -26,8 +29,8 @@ const base = '/library/catalog/maintenance';
 export const getMetadataState = (signal?: AbortSignal) => request<MetadataState>(base, { signal });
 export const getCatalogVocabulary = (version?: string, signal?: AbortSignal) =>
   request<CatalogVocabulary>(`${base}/vocabulary${version ? `?version=${encodeURIComponent(version)}` : ''}`, { signal });
-export const startMetadataRun = (collectionId: string) => request<MetadataRun>(`${base}/runs`, {
-  method: 'POST', body: JSON.stringify({ collectionId }),
+export const startMetadataRun = (collectionId: string, organizer = 'runtime', previews = false) => request<MetadataRun>(`${base}/runs`, {
+  method: 'POST', body: JSON.stringify({ collectionId, organizer, previews }),
 });
 export const controlMetadataRun = (id: string, action: 'cancel' | 'retry' | 'resume') =>
   request<MetadataRun>(`${base}/runs/${encodeURIComponent(id)}/${action}`, { method: 'POST' });

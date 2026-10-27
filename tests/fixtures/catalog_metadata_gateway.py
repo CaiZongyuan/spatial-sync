@@ -75,7 +75,7 @@ class Upstream(BaseHTTPRequestHandler):
                 {"type": "file", "path": name + "/" + filename, "size": size, "oid": "d" * 40}
                 for filename, size in (
                     ("com.nvidia.simready.packaging.json", 200),
-                    (".thumbs/preview.png", 100),
+                    ("simready_usd/.thumbs/preview.png", 100),
                     (".thumbs/normal.png", 1),
                     ("simready_usd/model.usd", 1000),
                 )

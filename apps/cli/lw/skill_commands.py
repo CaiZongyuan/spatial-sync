@@ -2,6 +2,7 @@
 
 import argparse
 import contextlib
+import copy
 import io
 import re
 import shlex
@@ -33,7 +34,7 @@ def examples(text):
                 yield number, re.sub(r"^\s*(?:[-*]\s+)?", "", line)
 
 
-def check_command(command):
+def check_command(command, *, command_parser=None):
     tokens = shlex.split(command, comments=True)
     if not tokens or tokens[0] != "lw":
         raise ValueError("Expected an lw command")
@@ -45,7 +46,9 @@ def check_command(command):
     help_requested = bool(help_positions)
     arguments = [token for index, token in enumerate(arguments) if index not in help_positions]
     path_tokens = arguments.copy()
-    root = parser()
+    root = command_parser or parser()
+    if help_requested and command_parser is not None:
+        root = copy.deepcopy(root)
     current = root
     selected = [root]
     # Check subcommands before argparse's help action can short-circuit validation.
@@ -83,6 +86,7 @@ def check_skills(root):
     if not documents:
         raise ValueError("No product SKILL.md files found")
     count = 0
+    command_parser = parser()
     for document in documents:
         try:
             commands = list(examples(document.read_text(encoding="utf-8")))
@@ -90,7 +94,7 @@ def check_skills(root):
             raise ValueError(f"{document.parent.name}/SKILL.md: {error}") from None
         for line, command in commands:
             try:
-                check_command(command)
+                check_command(command, command_parser=command_parser)
             except ValueError as error:
                 raise ValueError(f"{document.parent.name}/SKILL.md:{line}: {error}") from None
             count += 1

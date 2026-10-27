@@ -129,6 +129,10 @@ def normalized_entry(collection_id, source_revision, value):
     if not isinstance(result["facts"], dict):
         raise MetadataError("invalid_metadata", "facts must be an object")
     result.setdefault("preview", {"state": "not_collected", "role": None, "path": None, "sha256": None})
+    if not isinstance(result["preview"], dict):
+        raise MetadataError("invalid_metadata", "Preview must be an object with an explicit state")
+    if "thumbnail" in result["preview"]:
+        raise MetadataError("ungrounded_fields", "Thumbnail derivatives are owned by the catalog host")
     result.setdefault("evidence", [])
     result.setdefault("fieldProvenance", {})
     result.setdefault("source", {})

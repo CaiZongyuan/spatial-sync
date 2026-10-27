@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from packages.catalog_metadata import MetadataStore
-from tests.fixtures.catalog_source import PNG
+from tests.fixtures.catalog_source import PNG, PNG_PIXELS, thumbnail_pixels
 from tests.gateway.test_catalog_search import correlated_asset, upload
 
 REVISION = "b" * 40
@@ -249,20 +249,20 @@ def test_embedded_preview_and_old_exact_preview_stay_readable_from_retained_cach
         assert result.status_code == 200, result.text
         preview = result.json()["results"][0]["preview"]
         assert preview["state"] == "available" and preview["kind"] == "on-demand"
-        assert client.get(preview["url"]).content == PNG
+        assert thumbnail_pixels(client.get(preview["url"]).content) == PNG_PIXELS
         newer = store.stage_inventory("scenario", "b" * 40, [entry], complete=True)
         store.publish([newer["id"]], release_preparer=app.state.catalog.prepare_metadata_release)
         old = client.get("/api/v1/library/catalog/entries/scenario/embedded-object/" + "a" * 40)
         assert old.status_code == 200, old.text
         old_url = old.json()["preview"]["url"]
         assert "release=None" not in old_url
-        assert client.get(old_url).content == PNG
+        assert thumbnail_pixels(client.get(old_url).content) == PNG_PIXELS
     with TestClient(create_app(metadata_store=store, metadata_launch_workers=False)) as client:
-        assert client.get(old_url).content == PNG
+        assert thumbnail_pixels(client.get(old_url).content) == PNG_PIXELS
         store.blob_path(digest).unlink()
-        unavailable = client.get(old_url)
-        assert unavailable.status_code == 404
-        assert unavailable.json()["detail"]["code"] == "preview_unavailable"
+        retained = client.get(old_url)
+        assert retained.status_code == 200
+        assert thumbnail_pixels(retained.content) == PNG_PIXELS
 
 
 def test_shared_local_metadata_filters_exclude_unknown_and_nonmatching_assets(tmp_path):

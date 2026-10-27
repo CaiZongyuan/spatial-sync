@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import hashlib
 import json
@@ -17,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from packages.catalog_metadata import MetadataError
-from packages.catalog_metadata.ownership import WorkerTree
+from packages.catalog_metadata.ownership import CatalogHostLease, WorkerTree
 from packages.catalog_metadata.worker import (
     SKILLS_VERSION,
     maintenance_skill,
@@ -34,12 +35,14 @@ DEFAULT_BUDGETS = {
     "metadataBytes": 2097152,
     "tableBytes": 33554432,
     "previewBytes": 0,
+    "thumbnailBytes": 536870912,
     "modelTokens": 100000,
     "seconds": 1800,
     "timeout": 20,
     "attempts": 3,
 }
-BUDGET_MAXIMUMS = {**DEFAULT_BUDGETS, "previewBytes": 16777216}
+BUDGET_MAXIMUMS = {**DEFAULT_BUDGETS, "previewBytes": 536870912, "networkBytes": 1073741824,
+                   "seconds": 86400}
 
 
 def _json(value):
@@ -112,8 +115,21 @@ class MetadataMaintenance:
         self._scheduler = None
         self._closed = False
         self._callback_url = os.environ.get("LW_CATALOG_WORKER_URL")
+        self._lease = CatalogHostLease(self.root / "host.lock")
+        self._started = False
 
     async def startup(self):
+        self._lease.acquire()
+        self._started, self._closed = True, False
+        try:
+            await self._startup_owned()
+        except BaseException:
+            await self.close()
+            raise
+
+    async def _startup_owned(self):
+        with self.store.preview_transaction() as connection:
+            self.store.recover_thumbnail_files(connection)
         with self.store.transaction() as connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS maintenance_runs (
@@ -138,6 +154,10 @@ class MetadataMaintenance:
                 CREATE TABLE IF NOT EXISTS maintenance_batches (
                     id TEXT PRIMARY KEY, run_id TEXT NOT NULL, state TEXT NOT NULL,
                     document TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS maintenance_previews (
+                    run_id TEXT NOT NULL, upstream_id TEXT NOT NULL, state TEXT NOT NULL,
+                    document TEXT NOT NULL, PRIMARY KEY(run_id,upstream_id)
                 );
             """)
             recovering = connection.execute(
@@ -189,11 +209,11 @@ class MetadataMaintenance:
             )
 
     def show(self, identifier):
-        with self.store.transaction() as connection:
+        with self.store.transaction(write=False) as connection:
             return self._load(connection, identifier)
 
     def status(self):
-        with self.store.transaction() as connection:
+        with self.store.transaction(write=False) as connection:
             rows = connection.execute(
                 "SELECT document FROM maintenance_runs ORDER BY rowid DESC LIMIT 20"
             ).fetchall()
@@ -205,6 +225,7 @@ class MetadataMaintenance:
             "runs": [json.loads(row[0]) for row in rows],
             "release": release,
             "skillsVersion": SKILLS_VERSION,
+            "capabilities": {"externalOrganization": True, "localThumbnails": True, "nativeQueries": True},
         }
 
     def authorize_worker(self, path, token):
@@ -225,6 +246,9 @@ class MetadataMaintenance:
                 "error",
                 "extracted",
                 "publish",
+                "await-agent",
+                "previews/claim",
+                "previews/submit",
             )
             or suffix.startswith("evidence/")
             or (
@@ -250,9 +274,13 @@ class MetadataMaintenance:
         address = request.scope.get("server")
         if not address or address[0] == "testserver" or not isinstance(address[1], int):
             return None
-        return "http://127.0.0.1:" + str(address[1])
+        host = "[::1]" if ":" in address[0] else "127.0.0.1"
+        return "http://" + host + ":" + str(address[1])
 
-    async def start(self, collection_id, *, revision=None, budgets=None, callback_url=None, request_id=None):
+    async def start(self, collection_id, *, revision=None, budgets=None, callback_url=None, request_id=None,
+                    organizer="runtime", previews=False):
+        if organizer not in ("runtime", "external", "none") or type(previews) is not bool:
+            raise _error("invalid_maintenance_mode", "Select runtime/external/none and boolean previews")
         if revision is not None and (
             not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)
         ):
@@ -263,6 +291,14 @@ class MetadataMaintenance:
         if not collection.get("enabled", False):
             raise _error("collection_disabled", "Enable the collection before maintenance", 409)
         selected = validate_budgets(budgets)
+        if organizer != "runtime":
+            if budgets and budgets.get("modelTokens", 0):
+                raise _error(
+                    "external_model_budget", "Use Runtime mode for a service-enforced model token budget"
+                )
+            selected["modelTokens"] = 0
+        if previews and (budgets is None or "previewBytes" not in budgets):
+            selected["previewBytes"] = 16 * 1024 * 1024
         vocabulary_version = self.store.vocabulary()["version"]
         token = "lw-meta-" + secrets.token_urlsafe(32)
         with self._lock, self.store.transaction() as connection:
@@ -273,7 +309,9 @@ class MetadataMaintenance:
                 for row in rows:
                     previous = json.loads(row[0])
                     if previous.get("requestId") == request_id:
-                        if previous["requestedRevision"] != revision or previous["budgets"] != selected:
+                        if (previous["requestedRevision"] != revision or previous["budgets"] != selected
+                                or previous.get("organizer", "runtime") != organizer
+                                or previous.get("previews", False) != previews):
                             raise _error(
                                 "maintenance_request_conflict",
                                 "Request ID was used with different inputs",
@@ -293,6 +331,14 @@ class MetadataMaintenance:
                 "collection": collection,
                 "requestedRevision": revision,
                 "requestId": request_id,
+                "organizer": organizer,
+                "modelPolicy": "runtime"
+                if organizer == "runtime"
+                else "external"
+                if organizer == "external"
+                else "none",
+                "previews": previews,
+                "sourceWorkerComplete": False,
                 "status": "queued",
                 "phase": "queued",
                 "createdAt": now,
@@ -310,7 +356,7 @@ class MetadataMaintenance:
                 "coverage": {"discovered": 0, "indexed": 0, "organized": 0, "failed": 0, "reused": 0},
                 "inventoryId": None,
                 "releaseId": None,
-                "runtime": self.runtime,
+                "runtime": self.runtime if organizer == "runtime" else public_profile(None),
                 "versions": {
                     "skills": SKILLS_VERSION,
                     "skillsDigest": self.skills_digest,
@@ -356,8 +402,10 @@ class MetadataMaintenance:
 
     async def _supervise(self, identifier, token, url):
         env = os.environ.copy()
+        for credential in ("LW_TOKEN", "LW_CATALOG_OPERATOR_TOKEN"):
+            env.pop(credential, None)
         env["LW_CATALOG_RUN_TOKEN"] = token
-        if self.profile is not None:
+        if self.profile is not None and self.show(identifier).get("organizer", "runtime") == "runtime":
             env["LW_CATALOG_AGENT_PROFILE"] = _json(self.profile)
         else:
             env.pop("LW_CATALOG_AGENT_PROFILE", None)
@@ -399,13 +447,18 @@ class MetadataMaintenance:
                 ready_file.write_text("ready", encoding="utf-8")
                 try:
                     current = self.show(identifier)
-                    remaining = max(0, current["budgets"]["seconds"] - current["usage"].get("seconds", 0))
+                    remaining = max(0, current["budgets"]["seconds"] - max(
+                        current["usage"].get("seconds", 0), time.time() - current["createdAt"]))
                     await asyncio.wait_for(process.wait(), timeout=remaining + 10)
                 except TimeoutError:
                     await self._stop_process(identifier)
                     self.fail(identifier, "runtime_limit", "Worker exceeded its runtime budget", budget=True)
                 else:
-                    if self.show(identifier)["status"] in ACTIVE:
+                    current = self.show(identifier)
+                    if current["status"] in ACTIVE and not (
+                        current.get("organizer") == "external" and current.get("sourceWorkerComplete")
+                        and current["phase"] == "awaiting_agent"
+                    ):
                         self.fail(identifier, "worker_exited", "Worker exited before publishing its result")
         except asyncio.CancelledError:
             await self._stop_process(identifier)
@@ -434,7 +487,7 @@ class MetadataMaintenance:
                     await process.wait()
 
     def phase(self, identifier, phase):
-        if phase not in ("enumerating", "extracting", "organizing", "checking", "publishing"):
+        if phase not in ("enumerating", "extracting", "organizing", "previews", "checking", "publishing"):
             raise _error("invalid_maintenance_phase", "Unknown maintenance phase")
         with self._lock, self.store.transaction() as connection:
             record = self._load(connection, identifier)
@@ -667,6 +720,30 @@ class MetadataMaintenance:
                         "INSERT INTO maintenance_tasks VALUES(?,?,?,?)",
                         (identifier, item["upstreamId"], "pending", _json(item)),
                     )
+                if record.get("previews") and extraction_complete:
+                    for row in self.store.inventory_source_entries(inventory_id):
+                        connection.execute(
+                            "INSERT OR IGNORE INTO maintenance_previews VALUES(?,?,?,?)",
+                            (
+                                identifier,
+                                row["upstreamId"],
+                                "pending",
+                                _json(
+                                    {
+                                        key: row[key]
+                                        for key in (
+                                            "id",
+                                            "collectionId",
+                                            "upstreamId",
+                                            "revision",
+                                            "inputDigest",
+                                            "preview",
+                                            "evidence",
+                                        )
+                                    }
+                                ),
+                            ),
+                        )
                 self._save(connection, record)
                 return record
 
@@ -742,12 +819,174 @@ class MetadataMaintenance:
                 self._save(connection, record)
                 return record
 
+    @staticmethod
+    def _preview_coverage(connection, identifier):
+        rows = connection.execute(
+            "SELECT state,json_extract(document,'$.result.state'),"
+            "COALESCE(json_extract(document,'$.reused'),0),COUNT(*) "
+            "FROM maintenance_previews WHERE run_id=? GROUP BY 1,2,3", (identifier,)
+        ).fetchall()
+        return {
+            "available": sum(row[3] for row in rows if row[1] == "available"),
+            "missing": sum(row[3] for row in rows if row[1] == "missing"),
+            "failed": sum(row[3] for row in rows if row[0] == "failed"),
+            "pending": sum(row[3] for row in rows if row[0] in ("pending", "claimed")),
+            "reused": sum(row[3] for row in rows if row[2]),
+        }
+
+    def preview_claim(self, identifier, *, limit=24):
+        if type(limit) is not int or not 1 <= limit <= 24:
+            raise _error("invalid_batch_limit", "Preview batch limit must be 1..24")
+        with self._lock, self.store.transaction() as connection:
+            record = self._load(connection, identifier)
+            self._active(record)
+            if not record.get("previews") or not record.get("extractionComplete"):
+                raise _error(
+                    "previews_not_ready", "Request previews and complete source extraction first", 409
+                )
+            if record["budgetExhausted"]:
+                return {"entries": [], "budgetExhausted": True}
+            if time.time() - record["createdAt"] >= record["budgets"]["seconds"]:
+                record["budgetExhausted"] = True
+                self._save(connection, record)
+                return {"entries": [], "budgetExhausted": True}
+            rows = connection.execute(
+                "SELECT upstream_id,document FROM maintenance_previews WHERE run_id=? AND state='pending' "
+                "ORDER BY upstream_id LIMIT ?", (identifier, limit),
+            ).fetchall()
+            entries = []
+            for upstream, document in rows:
+                entry = json.loads(document)
+                saved = self.store.entry_preview(entry)
+                if saved and saved["state"] in ("available", "missing", "suspect"):
+                    entry.update(result=saved, reused=True)
+                    state = "succeeded"
+                else:
+                    entry["retry"] = bool(saved and saved["state"] == "failed"
+                                          and saved.get("reason") != "local_thumbnail_unavailable")
+                    entries.append(entry)
+                    state = "claimed"
+                connection.execute(
+                    "UPDATE maintenance_previews SET state=?,document=? WHERE run_id=? AND upstream_id=?",
+                    (state, _json(entry), identifier, upstream),
+                )
+            record["previewCoverage"] = self._preview_coverage(connection, identifier)
+            self._save(connection, record)
+            return {"entries": entries, "remaining": record["previewCoverage"]["pending"],
+                    "coverage": record["previewCoverage"], "budgetExhausted": False}
+
+    def preview_submit(self, identifier, upstream_id, document):
+        with self._lock:
+            record = self.show(identifier)
+            self._active(record)
+            with self.store.transaction(write=False) as connection:
+                row = connection.execute(
+                    "SELECT state,document FROM maintenance_previews WHERE run_id=? AND upstream_id=?",
+                    (identifier, upstream_id),
+                ).fetchone()
+            if row is None:
+                raise _error("unknown_preview_task", "No claimed preview task has this identity", 404)
+            entry = json.loads(row[1])
+            submission = _digest(document)
+            if entry.get("submissionDigest") == submission:
+                return record
+            if row[0] != "claimed" or document.get("inputDigest") != entry["inputDigest"]:
+                raise _error(
+                    "preview_input_conflict", "Preview submission differs from its active input", 409
+                )
+            usage = document.get("usage")
+            if usage is not None:
+                previous = record.get("sourceUsage", {})
+                if any(
+                    usage.get(key, -1) < previous.get(key, 0)
+                    for key in ("requests", "networkBytes", "previewBytes")
+                ):
+                    raise _error("invalid_maintenance_usage", "Preview source usage must be cumulative")
+                record = self.checkpoint(identifier, usage)
+            state = document.get("state")
+            if state not in ("available", "missing", "failed", "suspect", "deferred"):
+                raise _error("invalid_preview_state", "Return an image or a specific preview gap")
+            exceeded = any(
+                (record["usage"].get(key) or 0) - (record["usage"].get("embeddedPreviewBytes", 0)
+                  if key == "previewBytes" else 0) > record["budgets"][key]
+                for key in ("requests", "networkBytes", "previewBytes")
+            )
+            added, result = 0, None
+            with self.store.preview_transaction() as connection:
+                if state == "deferred" or exceeded:
+                    task_state, record["budgetExhausted"] = "pending", True
+                else:
+                    raw = None
+                    if state == "available":
+                        try:
+                            raw = base64.b64decode(document.get("data", ""), validate=True)
+                        except (ValueError, TypeError) as exc:
+                            raise _error(
+                                "invalid_preview", "Preview payload must be base64 image bytes"
+                            ) from exc
+                    try:
+                        result, added = self.store.save_preview(
+                            entry, raw, state=state, reason=document.get("reason"), connection=connection,
+                            max_added_bytes=record["budgets"].get("thumbnailBytes", 536870912)
+                            - record.get("thumbnailBytes", 0),
+                        )
+                        task_state = "failed" if state == "failed" else "succeeded"
+                    except MetadataError as exc:
+                        if exc.code in ("thumbnail_budget", "thumbnail_storage_limit"):
+                            task_state, record["budgetExhausted"] = "pending", True
+                            record["message"] = str(exc)
+                        else:
+                            result, _ = self.store.save_preview(
+                                entry, state="failed", reason=exc.code, connection=connection,
+                            )
+                            task_state = "failed"
+                if result is not None:
+                    entry["result"] = result
+                entry["submissionDigest"] = submission
+                connection.execute(
+                    "UPDATE maintenance_previews SET state=?,document=? WHERE run_id=? AND upstream_id=?",
+                    (task_state, _json(entry), identifier, upstream_id),
+                )
+                record["thumbnailBytes"] = record.get("thumbnailBytes", 0) + added
+                record["previewCoverage"] = self._preview_coverage(connection, identifier)
+                self._save(connection, record)
+            return record
+
+    def await_agent(self, identifier):
+        with self._lock:
+            record = self.show(identifier)
+            self._active(record)
+            if record.get("organizer") != "external" or not record.get("extractionComplete"):
+                raise _error(
+                    "external_organization_unavailable", "Select external organization after extraction", 409
+                )
+            with self.store.transaction(write=False) as connection:
+                if record.get("previews") and self._preview_coverage(connection, identifier)["pending"]:
+                    raise _error(
+                        "previews_in_progress", "Complete source previews before external organization", 409
+                    )
+            release = self.publish([record["inventoryId"]], versions=record["versions"])
+            with self.store.transaction() as connection:
+                record = self._load(connection, identifier)
+                record.update(
+                    phase="awaiting_agent",
+                    sourceWorkerComplete=True,
+                    releaseId=release["id"],
+                    message="Source work is complete; an external Agent can claim organization batches",
+                )
+                self._save(connection, record)
+                return record
+
     def claim(self, identifier, *, limit=24):
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 24:
             raise _error("invalid_batch_limit", "Batch limit must be 1 through 24")
         with self._lock, self.store.transaction() as connection:
             record = self._load(connection, identifier)
             self._active(record)
+            if record.get("organizer") == "external" and record["phase"] != "awaiting_agent":
+                raise _error(
+                    "source_worker_in_progress", "Wait for source and preview maintenance to finish", 409
+                )
             if not record["inventoryId"]:
                 raise _error(
                     "inventory_not_ready",
@@ -796,9 +1035,11 @@ class MetadataMaintenance:
                 "entries": entries,
                 "versions": record["versions"],
                 "inventoryId": record["inventoryId"],
+                "organizer": record.get("organizer", "runtime"),
+                "modelPolicy": record.get("modelPolicy", "runtime"),
                 "remaining": {
                     "seconds": max(0, record["budgets"]["seconds"] - (time.time() - record["createdAt"])),
-                    "modelTokens": max(
+                    "modelTokens": None if record.get("organizer") == "external" else max(
                         0, record["budgets"]["modelTokens"] - (record["usage"]["modelTokens"] or 0)
                     ),
                 },
@@ -806,6 +1047,34 @@ class MetadataMaintenance:
             batch["inputKey"] = _digest(
                 {key: batch[key] for key in ("runId", "entries", "versions", "inventoryId")}
             )
+            vocabulary = self.store.vocabulary(record["versions"]["vocabulary"])
+            categories = []
+            preferred = {entry.get("category") for entry in entries}
+            for term in sorted(vocabulary["categories"], key=lambda item: item["id"] not in preferred):
+                value = {"id": term["id"], "name": term["name"]}
+                if len(_json(categories + [value]).encode()) > 32768:
+                    break
+                categories.append(value)
+            batch["vocabulary"] = {"version": vocabulary["version"], "categories": categories,
+                                   "truncated": len(categories) < len(vocabulary["categories"])}
+            batch["evidence"] = []
+            seen, remaining = set(), 32768
+            for entry in entries:
+                for reference in entry.get("evidence", []):
+                    key = reference.get("sha256")
+                    if key in seen or not key:
+                        continue
+                    seen.add(key)
+                    evidence = {name: reference.get(name) for name in ("sha256", "path", "bytes")}
+                    if type(reference.get("bytes")) is int and reference["bytes"] <= min(8192, remaining):
+                        raw = self.store.blob(key)
+                        try:
+                            evidence["text"] = raw.decode("utf-8")
+                            remaining -= len(raw)
+                        except UnicodeDecodeError:
+                            pass
+                    if len(batch["evidence"]) < 24:
+                        batch["evidence"].append(evidence)
             connection.execute(
                 "INSERT INTO maintenance_batches VALUES(?,?,?,?)",
                 (batch["id"], identifier, "claimed", _json(batch)),
@@ -834,6 +1103,12 @@ class MetadataMaintenance:
                     tokens += amount
             elif batch.get("executionReserved") or (row[0] == "failed" and not batch.get("didNotExecute")):
                 unknown = True
+        if record.get("organizer") == "external":
+            record["usage"].update(
+                modelCalls=None, modelTokens=None, externalBatches=calls,
+                externalReportedTokens=None if unknown or unknown_tokens or not calls else tokens,
+            )
+            return
         record["usage"]["modelCalls"] = None if unknown else calls
         record["usage"]["modelTokens"] = None if unknown or unknown_tokens or not calls else tokens
         if settle:
@@ -982,6 +1257,10 @@ class MetadataMaintenance:
     def execution_start(self, identifier, batch_id):
         with self._lock, self.store.transaction() as connection:
             record = self._load(connection, identifier)
+            if record.get("organizer") != "runtime" and record.get("organizer") is not None:
+                raise _error(
+                    "external_model_execution", "This run does not dispatch service-owned model calls", 409
+                )
             self._active(record)
             row = connection.execute(
                 "SELECT state,document FROM maintenance_batches WHERE id=? AND run_id=?",
@@ -1044,10 +1323,13 @@ class MetadataMaintenance:
             record["coverage"]["failed"] += len(batch["entries"])
             # A failed execution may still have incurred tokens; retain unknown.
             self._refresh_model_usage(connection, record, settle=True)
-            record["budgetExhausted"] = True
-            record["message"] = (
-                "Agent execution failed; actual model use is unknown, so further calls stopped"
-            )
+            if record.get("organizer") == "external":
+                record["message"] = "External batch failed; unrelated batches remain available to the caller"
+            else:
+                record["budgetExhausted"] = True
+                record["message"] = (
+                    "Agent execution failed; actual model use is unknown, so further calls stopped"
+                )
             self._save(connection, record)
             return record
 
@@ -1055,6 +1337,9 @@ class MetadataMaintenance:
         with self._lock:
             record = self.show(identifier)
             self._active(record)
+            if (record.get("organizer") == "external" and not record.get("sourceWorkerComplete")
+                    and not record["budgetExhausted"] and not record.get("sourceError")):
+                raise _error("source_worker_in_progress", "Wait for the source worker before finishing", 409)
             if not record["inventoryId"]:
                 raise _error("inventory_not_ready", "A run cannot publish before enumeration closes", 409)
             with self.store.transaction() as connection:
@@ -1076,6 +1361,10 @@ class MetadataMaintenance:
                 pending += record["coverage"].get("extractionPending", 0) + record["coverage"].get(
                     "extractionFailed", 0
                 )
+                preview_coverage = self._preview_coverage(connection, identifier)
+                if record.get("previews"):
+                    pending += preview_coverage["pending"] + preview_coverage["failed"]
+                    record["previewCoverage"] = preview_coverage
                 status = (
                     "budget_exhausted"
                     if record["budgetExhausted"]
@@ -1085,7 +1374,15 @@ class MetadataMaintenance:
                     status=status, phase="finished", releaseId=release["id"], finishedAt=time.time()
                 )
                 record["usage"]["seconds"] = record["finishedAt"] - record["createdAt"]
-                if pending and not record["runtime"]["configured"]:
+                if pending and record.get("organizer") == "external":
+                    record["message"] = (
+                        "Published recorded coverage; external organization has unresolved entries"
+                    )
+                elif pending and record.get("organizer") == "none":
+                    record["message"] = (
+                        "Published source metadata and preview coverage; organization was not requested"
+                    )
+                elif pending and not record["runtime"]["configured"]:
                     record["message"] = (
                         "Complete identity inventory published; organization awaits an Agent Runtime profile"
                     )
@@ -1159,9 +1456,11 @@ class MetadataMaintenance:
         for row in receipts:
             self.submit(identifier, row[0], json.loads(row[1])["receipt"], recovery=True)
         previous = self.show(identifier)
-        if previous["usage"]["modelCalls"] is None or (
+        if time.time() - previous["createdAt"] >= previous["budgets"]["seconds"]:
+            raise _error("maintenance_deadline", "Original deadline elapsed; start a bounded retry", 409)
+        if previous.get("organizer", "runtime") == "runtime" and (previous["usage"]["modelCalls"] is None or (
             previous["usage"]["modelCalls"] > 0 and previous["usage"]["modelTokens"] is None
-        ):
+        )):
             raise _error(
                 "execution_usage_unknown", "An execution has no final receipt; use a new bounded retry", 409
             )
@@ -1176,7 +1475,10 @@ class MetadataMaintenance:
                 return record
             if record["status"] == "succeeded":
                 raise _error("maintenance_completed", "Start a new source check after a successful run", 409)
-            if record["runtime"] != self.runtime:
+            expected_runtime = (
+                self.runtime if record.get("organizer", "runtime") == "runtime" else public_profile(None)
+            )
+            if record["runtime"] != expected_runtime:
                 raise _error(
                     "runtime_profile_changed", "Retry as a new run after changing the configured runtime", 409
                 )
@@ -1192,9 +1494,14 @@ class MetadataMaintenance:
                 finishedAt=None,
                 budgetExhausted=False,
                 message="Resumed from its durable checkpoint",
+                sourceWorkerComplete=False,
             )
             connection.execute(
                 "UPDATE maintenance_tasks SET state='pending' WHERE run_id=? AND state!='succeeded'",
+                (identifier,),
+            )
+            connection.execute(
+                "UPDATE maintenance_previews SET state='pending' WHERE run_id=? AND state!='succeeded'",
                 (identifier,),
             )
             connection.execute(
@@ -1221,14 +1528,23 @@ class MetadataMaintenance:
         while not self._closed:
             try:
                 await asyncio.sleep(30)
-                if not self._callback_url:
-                    continue
                 with self.store.transaction(write=False) as connection:
                     rows = connection.execute(
                         "SELECT document FROM maintenance_runs WHERE rowid IN "
                         "(SELECT MAX(rowid) FROM maintenance_runs GROUP BY collection_id)"
                     ).fetchall()
                 latest = {run["collectionId"]: run for run in (json.loads(row[0]) for row in rows)}
+                for recent in latest.values():
+                    if (recent["status"] in ACTIVE and recent["phase"] == "awaiting_agent"
+                            and time.time() - recent["createdAt"] >= recent["budgets"]["seconds"]):
+                        self.fail(
+                            recent["id"],
+                            "runtime_limit",
+                            "External organization deadline elapsed",
+                            budget=True,
+                        )
+                if not self._callback_url:
+                    continue
                 for profile in self.store.collections():
                     interval = profile.get("scheduleSeconds", 0)
                     if not profile.get("enabled") or not isinstance(interval, (int, float)) or interval < 60:
@@ -1246,6 +1562,15 @@ class MetadataMaintenance:
                 break
 
     async def close(self):
+        if not self._started:
+            return
+        try:
+            await self._close_owned()
+        finally:
+            self._lease.close()
+            self._started = False
+
+    async def _close_owned(self):
         self._closed = True
         if self._scheduler:
             self._scheduler.cancel()
