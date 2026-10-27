@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 from packages.library.common import LibraryError
@@ -11,11 +12,23 @@ from packages.library.common import LibraryError
 
 @dataclass(frozen=True)
 class LocalAsset:
-    """A local immutable version and the catalog entry established by provenance."""
+    """One read's local facts and the catalog entry established by provenance."""
 
     version: object
     provenance: dict | None
     entry: object | None
+
+    @cached_property
+    def summary(self):
+        return self.version.summary()
+
+    @cached_property
+    def report(self):
+        return _read_report(self)
+
+    @cached_property
+    def license(self):
+        return _read_license(self)
 
 
 def read_provenance(version):
@@ -30,6 +43,9 @@ def read_provenance(version):
 
 
 def package_bytes(version):
+    indexed = getattr(version, "byte_size", None)
+    if indexed is not None:
+        return indexed
     try:
         return sum(
             path.stat().st_size for path in Path(version.path).rglob("*") if path.is_file()
@@ -39,6 +55,10 @@ def package_bytes(version):
 
 
 def local_report(local):
+    return local.report
+
+
+def _read_report(local):
     report = getattr(local.version, "report", None)
     if not callable(report):
         return {}
@@ -92,6 +112,10 @@ def local_usage(local):
 
 
 def local_license(local):
+    return local.license
+
+
+def _read_license(local):
     value = (local.provenance or {}).get("license")
     name = value.get("name") if isinstance(value, dict) else value if isinstance(value, str) else None
     if not name:

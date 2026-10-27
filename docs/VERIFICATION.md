@@ -119,6 +119,10 @@ Run profiling separately from heavy checks. Fixed input identity, warm/cold
 scope, samples and decoded results accompany timings. GPU-free CI asserts that
 slow file work cannot block concurrent health and that indexed pages do not
 resolve/open models. It does not gate on a machine-specific millisecond value.
+Asset search uses byte sizes captured by the library index and reuses local
+facts within each read. Numbered pages retain only overlapping candidate
+projections; tool-version metadata is shared within a browse read and checked
+again on the next read. File serving and launch still verify immutable bytes.
 
 ### Full external catalog sync
 

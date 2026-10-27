@@ -1,12 +1,113 @@
 """Public browsing remains responsive while filesystem work is pending."""
 
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from threading import Event
 
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
+
+
+def test_asset_search_uses_indexed_sizes_without_traversing_package_geometry(monkeypatch):
+    app = create_app()
+    with TestClient(app) as client:
+        library = app.state.library_assets
+        expected = {version.id: sum((version.path / name).stat().st_size for name in version.files)
+                    for version in library.versions.values()}
+        original = Path.rglob
+
+        def guarded(path, *args, **kwargs):
+            assert not any(path.is_relative_to(root) for root in library.roots.values()), (
+                "An indexed search must not traverse asset packages", path,
+            )
+            return original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "rglob", guarded)
+        response = client.get("/api/v1/library/search?scope=local&limit=24&page=1")
+        assert response.status_code == 200, response.text
+        assert response.json()["results"]
+        for item in response.json()["results"]:
+            assert item["local"]["bytes"] == expected[item["id"]]
+
+
+def test_numbered_asset_pages_build_each_candidate_once_and_read_tool_versions_once(monkeypatch):
+    import packages.catalog.search as search
+    from packages.library import reports
+
+    app = create_app()
+    with TestClient(app) as client:
+        library = app.state.library_assets
+        prototype = library.versions["robot/fr3@1"]
+        library.versions = {
+            f"robot/browse-{index}@1": replace(
+                prototype, id=f"robot/browse-{index}@1", reports=None,
+                metadata=prototype.metadata | {"id": f"robot/browse-{index}",
+                                                "title": f"Browse {index:03}"},
+                validation={"toolVersions": {"browse-tool": "1"}, "checks": [], "launchable": False},
+            ) for index in range(48)
+        }
+        built, lookups = Counter(), Counter()
+        original = search._candidate
+
+        def candidate(match, *args):
+            built[match.local.version.id] += 1
+            return original(match, *args)
+
+        actual_version = "1"
+
+        def installed(name):
+            lookups[name] += 1
+            return actual_version
+
+        monkeypatch.setattr(search, "_candidate", candidate)
+        monkeypatch.setattr(reports, "installed_version", installed)
+        first = client.get("/api/v1/library/search?scope=local&limit=24&page=1")
+        assert first.status_code == 200, first.text
+        body = first.json()
+        assert body["counts"]["matching"] == 48 and body["pagination"]["totalPages"] > 1
+        assert len(first.content) <= search.MAX_BYTES
+        assert set(built) == set(library.versions)
+        assert max(built.values()) == 1
+        assert lookups == {"browse-tool": 1}
+        assert all(item["local"]["asset"]["validationStatus"] == "available" for item in body["results"])
+
+        # Reuse belongs to one read: environment changes must be visible on the next request.
+        actual_version = "2"
+        next_read = client.get("/api/v1/library/search?scope=local&limit=24&page=1")
+        assert next_read.status_code == 200
+        assert lookups == {"browse-tool": 2}
+        assert all(item["local"]["asset"]["validationStatus"] == "stale"
+                   for item in next_read.json()["results"])
+
+
+def test_scene_summary_page_reads_shared_tool_metadata_once(monkeypatch):
+    from packages.library import reports
+
+    app = create_app()
+    with TestClient(app) as client:
+        library = app.state.manager.library
+        prototype = library.versions["lab-demo@1"]
+        library.versions = {
+            f"browse-{index}@1": replace(
+                prototype, name=f"browse-{index}", reports=None,
+                validation={"toolVersions": {"browse-tool": "1"}, "checks": [], "launchable": True},
+            ) for index in range(20)
+        }
+        lookups = Counter()
+
+        def installed(name):
+            lookups[name] += 1
+            return "1"
+
+        monkeypatch.setattr(reports, "installed_version", installed)
+        response = client.get("/api/v1/library/scenes?view=summary&limit=20")
+        assert response.status_code == 200, response.text
+        assert len(response.json()["scenes"]) == 20
+        assert all(item["validationStatus"] == "available" for item in response.json()["scenes"])
+        assert lookups == {"browse-tool": 1}
 
 
 def test_slow_legacy_directory_does_not_block_health(monkeypatch):

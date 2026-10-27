@@ -39,6 +39,7 @@ from packages.catalog.views import (
     serialized_size,
 )
 from packages.library.common import LibraryError
+from packages.library.reports import validation_read
 
 LOGGER = logging.getLogger(__name__)
 
@@ -353,7 +354,7 @@ def _local_status(local, filters):
     usage = _local_usage(local)
     status = {}
     if filters.gaps is not None:
-        summary = local.version.summary()
+        summary = local.summary
         status["gaps"] = bool(summary.get("gapCount")) == filters.gaps
     metadata_entry = local.entry.metadata if local.entry is not None else None
     if filters.category is not None:
@@ -479,7 +480,7 @@ def _local_asset(local):
     metadata = version.metadata
     summary = {}
     try:
-        summary = version.summary()
+        summary = local.summary
     except (OSError, ValueError, LibraryError):
         summary = {}
     gaps = summary.get("gaps") or []
@@ -770,6 +771,7 @@ def _other_scope_matches(scope, online_matches, local_matches):
     return False
 
 
+@validation_read()
 def search_catalog(
     catalog,
     library,
@@ -1195,15 +1197,26 @@ def search_catalog(
                                       "totalPages": 100000, "offset": start}
         return response
 
+    prepared = {}
+
     def bounded_page(start, page_number=None):
-        values = [compact_candidate(_candidate(item, filters, language, correlated, by_bare_id))
-                  for item in ordered[start:start + limit]]
+        # Byte-bounded pages overlap their lookahead. Retain only that overlap so
+        # numbered pagination builds each candidate once and uses O(limit) space.
+        end = min(start + limit, len(ordered))
+        for index in range(start, end):
+            if index not in prepared:
+                prepared[index] = compact_candidate(
+                    _candidate(ordered[index], filters, language, correlated, by_bare_id)
+                )
+        values = [prepared[index] for index in range(start, end)]
         budget = False
         response = build(values, start, budget, page_number)
         while not _fits(response) and values:
             budget = True
             values.pop()
             response = build(values, start, budget, page_number)
+        for index in range(start, start + len(values)):
+            del prepared[index]
         return response
 
     if page is not None:
