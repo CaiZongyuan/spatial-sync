@@ -5,6 +5,49 @@ validation and exact-version launch. Requirements and layout confirmation stay
 in the person's original Agent conversation. Blender and the checkout's
 `factory/` directory produce the packages outside the gateway.
 
+## Baked-material workbench experiment
+
+Issue #214 supplies a reproducible, local appearance sample. From an installed
+checkout with the frozen Python simulation/USD extras and Web dependencies:
+
+```powershell
+uv run --no-sync python tools/realism_sample.py demo --blender <path-to-blender-4.5.9>
+```
+
+The command builds into `.scratch/realism-sample`, starts its own API8074 and
+Web5274, imports the generated packages, uses the returned versions to compose
+`realism-workbench-display`, validates it, then prints the owned Session URL.
+Use `--workspace`, `--api-port` and `--web-port` for a separate run. Occupied ports
+are an error; existing services and sessions are left to their owners. Ctrl+C
+closes the command's Session and its API/Web child processes.
+
+`build` runs only the offline construction; `install --url <owned-gateway>` uses
+the same public import API without starting services. Import receipts and the
+actual returned versions are written to `imports.json`; failed validation is
+retained and prevents the command from starting a Session.
+
+The Blender script models five authored visuals and CPU-bakes a housing's
+color-only diffuse, tangent normal, roughness and self AO at 512². Metallic is
+an explicit constant; AO/roughness/metallic are packed as ORM. The GLBs embed
+their image dependencies. Input hashes, Blender version, CPU settings, outputs
+and output hashes live with the saved work file in the build directory; modified
+cached appearance files are rejected. Published package provenance records the
+actual producer hash and package file hashes. New bytes use new imported versions.
+
+The scene keeps the built-in `robot/fr3@1` physics reference and uses the shared
+action pipeline for joint motion. Its instrument is visual-only Dressing. Tubes
+are fixed display instances in the first appearance sample; free-body trial
+versions failed extended settling and remain negative evidence under #214. The
+sample does not claim tube handling, training success or a working centrifuge.
+The native robot visuals currently retain their geometry fallback; per-link PBR
+authoring remains a separate gap. Whole-scene lightmaps and compressed-texture
+decoders are outside this example.
+
+Final appearance is inspected in the platform's real viewport, including theme
+and selection changes, motion and self-contained recording replay. The performance
+target remains Iris Xe-class hardware at 1080p display conditions; a result on
+the development machine's NVIDIA GPU does not establish that target.
+
 ## Start an owned workspace
 
 Use Python 3.13, the frozen locks and the optional simulation/USD dependencies.

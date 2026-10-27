@@ -8,6 +8,11 @@ pinned source revision, per-package license and BOM evidence, measured sizes,
 adaptation and import results, usage decisions and the fixed Blender/MCP
 combination. Unknown or unsupported cases are recorded as gaps, never as passes.
 
+The local [baked-material workbench experiment](../docs/SCENE_FACTORY.md#baked-material-workbench-experiment)
+uses Blender CPU baking and the existing import/runtime paths. Its instrument is
+Dressing, tubes are fixed display instances, and the trusted FR3 remains interactive.
+It is a bounded appearance example, not a general material exporter or a tube-handling qualification.
+
 ## Commands
 
 ```bash

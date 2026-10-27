@@ -15,6 +15,7 @@ import {
   type Object3D,
 } from 'three';
 import { NodeVisuals, type PhysicalNode } from './NodeVisuals';
+import { hasAuthoredVisuals, ViewerLighting } from './ViewerLighting';
 import { MotionPreviewLayer, useReducedMotion, type InspectPreview } from './MotionPreviewLayer';
 import type { AvailablePreview } from '../../lib/plans/model';
 export type { InspectPreview, PreviewInspection } from './MotionPreviewLayer';
@@ -460,11 +461,7 @@ export function SceneContents({
       <CameraRig preset={cameraPreset} bounds={frameBounds} revision={boundsRevision} ready={framingReady}
         fitRequest={fitRequest} onFit={() => { fitted.current = true; onFramed(); }}
         maxRadius={SCENE_FRAMING_RADIUS} maxDistance={SCENE_CAMERA_DISTANCE} />
-      {/* The reference uses Three r128 legacy light units; current Three uses physical units. */}
-      <hemisphereLight args={[theme.sky, theme.floor, theme.hemi * Math.PI]} />
-      <directionalLight position={[3, 6, 3]} intensity={theme.key * Math.PI} color={theme.sun} castShadow
-        shadow-mapSize={[1024, 1024]} shadow-camera-left={-5} shadow-camera-right={5}
-        shadow-camera-top={5} shadow-camera-bottom={-5} shadow-bias={-.0005} shadow-radius={4} />
+      <ViewerLighting theme={theme} environment={hasAuthoredVisuals(manifest)} />
       {layers.grid && <Grid position={[0, -.004, 0]} args={[20, 20]} cellSize={.25}
         cellThickness={.5} cellColor={theme.grid} sectionSize={1} sectionThickness={.5}
         sectionColor={theme.grid} fadeDistance={6} fadeStrength={1.5} infiniteGrid raycast={skipPicking} />}
@@ -596,7 +593,7 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   return (
     <div ref={element} className="viewport" data-testid="scene-viewport" data-camera-fitted={fittedKey === framingKey}>
       {displayScene ? <Canvas
-        flat
+        flat={!hasAuthoredVisuals(props.manifest)}
         shadows
         frameloop={!visible && !props.capture ? 'never' : continuous ? 'always' : 'demand'}
         events={visibleEvents}
