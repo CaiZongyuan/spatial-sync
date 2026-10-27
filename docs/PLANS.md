@@ -27,6 +27,27 @@ lw plan show <id> --json
 lw plan ls --status completed --json
 ```
 
+For an approved operation/session plan, `lw plan run <id> --revision <n> --json`
+executes its pending steps locally with one HTTP client. It checks the selected
+Session, scene revision and epoch, pins the Plan revision, skips completed steps
+and stops at the first failed or uncertain result. It reads back every step,
+including `expect`; the response contains the Plan and actual per-step results.
+`--timeout` bounds each action wait (default120seconds); wait steps use their
+declared timeout. It never retries failed/running steps or makes approval decisions.
+A transport failure leaves effects uncertain; inspect the existing invocation
+and Plan before further work. The gateway still executes only individual actions.
+Use one controller per Plan while running: the existing per-step API does not
+atomically reserve ordinary actions across concurrent clients. The runner uses
+each refreshed Plan to skip newly completed steps and stop on active/failed steps.
+The run's `failed` status describes this local attempt. It preserves the server's
+Plan lifecycle, which can remain `running` with a failed step for later review.
+
+The three-step example above demonstrates the available mechanisms. For a single
+immediate outcome, use `do` with `expect`; an additional identical wait/check is
+unnecessary. Use `wait` for independently changing conditions and `check` for
+additional assertions. A connected MCP client can drive the individual steps
+with a persistent connection and batch final properties with `get_state(keys)`.
+
 Entity/action/parameter/condition validation happens when submitting. It does
 not predict whether future device preconditions will hold. A successful action
 only completes its step when its optional `expect` also holds; inspect

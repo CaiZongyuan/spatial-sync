@@ -22,6 +22,11 @@ logs and model context.
 
 ## Choose the workflow
 
+For an opened scene or a request to operate a device, start directly with
+[lab-operate](../lab-operate/SKILL.md). It owns observation, Plans, execution and
+final verification. Use discovery commands when the workflow or a capability
+is unknown.
+
 1. Discover the skills and commands shipped with this platform version:
 
    ```text

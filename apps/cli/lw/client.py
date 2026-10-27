@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import os
 import re
 import tarfile
@@ -1194,6 +1195,67 @@ class GatewayClient:
             params["sessionId"] = self._session_id
         return (await self.request("GET", "/api/v1/plans",
                                    params=params))["plans"]
+
+    async def plan_run(self, id, revision=None, timeout=120, *, actor="cli:lw"):
+        """Drive existing per-step HTTP calls locally, retaining the gateway's checks."""
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be finite and positive")
+        started = time.monotonic()
+        plan = await self.plan_show(id)
+        if (plan.get("kind") != "operation" or plan.get("target") != "session"
+                or plan["status"] not in ("approved", "running", "completed")
+                or any(step["status"] not in ("pending", "done", "skipped") for step in plan["steps"])
+                or revision is not None and revision != plan["revision"]):
+            raise GatewayError("Plan is not runnable; inspect its revision, approval and step results",
+                               detail={"code": "plan_not_runnable", "planId": id,
+                                       "revision": plan["revision"], "status": plan["status"],
+                                       "approvalId": plan.get("approvalId")})
+        session = await self.status()
+        if any(plan[field] != session[field] for field in ("sessionId", "sceneRevision", "epoch")):
+            raise GatewayError("Plan target differs from the selected session",
+                               detail={"code": "plan_target_mismatch", "planId": id})
+        # Resolve the active target once; later steps remain pinned to this same session.
+        self._session_explicit = True
+        revision = plan["revision"]
+        results = []
+        for step_id in [item["id"] for item in plan["steps"]]:
+            step = next(item for item in plan["steps"] if item["id"] == step_id)
+            if step["status"] in ("done", "skipped"):
+                continue
+            if step["status"] != "pending":
+                return {"status": "failed", "stoppedStep": step_id, "plan": plan, "results": results,
+                        "elapsedSeconds": time.monotonic() - started}
+            context = {"planId": id, "stepId": step["id"], "planRevision": revision, "actor": actor}
+            if "do" in step:
+                action = step["do"]
+                result = await self.invoke_action(action["entity"], action["action"], action.get("params"),
+                                                  wait=True, timeout=timeout, **context)
+            else:
+                kind = "wait" if "wait" in step else "check"
+                condition = step[kind]
+                op = next(key for key in condition if key not in ("entity", "property", "message", "by"))
+                method = self.wait_until if kind == "wait" else self.check_condition
+                result = await method(condition["entity"], condition["property"], op, condition[op],
+                                      by=condition.get("by"), **context,
+                                      **({"timeout": step.get("timeoutSeconds", timeout)} if kind == "wait"
+                                         else {}))
+            results.append({"stepId": step["id"], "result": result})
+            try:
+                plan = await self.plan_show(id)
+            except GatewayError as error:
+                raise GatewayError("Step result is known but plan verification is unavailable; do not retry",
+                                   detail={"stepId": step["id"], "result": result,
+                                           "cause": error.document()}) from error
+            observed = next((item for item in plan["steps"] if item["id"] == step["id"]), None)
+            success = (result.get("status") == "succeeded" if "do" in step else result.get("satisfied"))
+            if (not success or result.get("timedOut") or plan["revision"] != revision
+                    or observed is None or observed["status"] != "done"
+                    or plan.get("persistence", {}).get("status") == "failed"):
+                return {"status": "failed", "stoppedStep": step["id"], "plan": plan, "results": results,
+                        "timedOut": bool(result.get("timedOut")),
+                        "elapsedSeconds": time.monotonic() - started}
+        return {"status": "completed" if plan["status"] == "completed" else "failed",
+                "plan": plan, "results": results, "elapsedSeconds": time.monotonic() - started}
 
     async def session_control(self, action, *, count=1, actor="cli:lw"):
         return await self.request(

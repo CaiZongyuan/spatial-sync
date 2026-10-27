@@ -784,6 +784,14 @@ COMMANDS = (
         output_type=list[dict[str, Any]], mcp_name="plan_list",
     ),
     Command(
+        path=("plan", "run"),
+        help="Locally execute an approved operation plan; stop at the first incomplete step.",
+        method="plan_run", actor=True,
+        arguments=(Argument("id", ("id",), str, "Operation Plan ID"),
+                   Argument("revision", ("--revision",), int | None, "Expected current revision", None),
+                   Argument("timeout", ("--timeout",), float, "Maximum wait per action in seconds", 120)),
+    ),
+    Command(
         path=("skills", "ls"),
         help="List product skills bundled with this platform version; does not contact the gateway.",
         method="skills_list",
