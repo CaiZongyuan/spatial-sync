@@ -50,6 +50,8 @@ export async function stopSession(request: APIRequestContext, sessionId: string,
   await info.attach('session-cleanup.json', { body: JSON.stringify({ sessionId, deleteStatus: response.status(), after }), contentType: 'application/json' });
 }
 export async function geometry(page: Page, preview: AvailablePreview, detail = false) {
+  // Retained plan history can put this viewport below the fold; rendering pauses offscreen.
+  await page.getByTestId('scene-viewport').scrollIntoViewIfNeeded();
   const inspect = () => page.evaluate(detail => detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry(), detail);
   await page.waitForFunction(({ detail, points }) => {
     const value = detail ? window.__planViewDebug?.() : window.__spatialDebug?.getPreviewGeometry();
