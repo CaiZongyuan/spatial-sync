@@ -20,7 +20,14 @@ from packages.library.archive import invalid as invalid
 from packages.library.common import BUILTIN_ROOT, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.metadata import AssetMetadata as AssetMetadata
 from packages.library.metadata import asset_metadata as metadata
-from packages.library.reports import HASH, SUBJECT, ReportStore, parse_report, validation_status
+from packages.library.reports import (
+    HASH,
+    SUBJECT,
+    ReportStore,
+    parse_report,
+    validation_read,
+    validation_status,
+)
 
 
 def gaps(data, path, report=None):
@@ -67,6 +74,7 @@ class AssetVersion:
     validation: dict | None
     files: tuple[str, ...]
     reports: ReportStore | None = None
+    byte_size: int | None = None
 
     @property
     def bare_id(self):
@@ -200,6 +208,7 @@ class AssetLibrary:
                     report,
                     indexed,
                     self.reports,
+                    sum((path / name).stat().st_size for name in indexed),
                 )
                 previous = self.versions.get(version_id)
                 if previous is not None and previous.content_hash != version.content_hash:
@@ -211,6 +220,7 @@ class AssetLibrary:
                     files[(root_name, f"assets/{data['id']}/{rev}/{relative}")] = (version, relative)
         self.versions, self.files = versions, files
 
+    @validation_read()
     def list(self, kind=None, query=None, only_gaps=False):
         result = []
         for version in sorted(self.versions.values(), key=lambda item: (item.bare_id, item.rev)):

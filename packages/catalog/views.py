@@ -61,7 +61,7 @@ def installed_document(local_assets, limit=3):
 def _local_preview(local_assets):
     for item in sorted(local_assets, key=lambda local: local.version.rev, reverse=True):
         try:
-            summary = item.version.summary()
+            summary = item.summary
         except (OSError, ValueError, LibraryError):
             continue
         url = summary.get("thumbnailUrl") or summary.get("visualUrl")

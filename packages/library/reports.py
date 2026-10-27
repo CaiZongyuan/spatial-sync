@@ -7,6 +7,8 @@ import platform
 import re
 import tempfile
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as installed_version
@@ -151,6 +153,35 @@ def pinned_assets(version, kind):
     return [{"id": name, "contentHash": pinned[name]} for name in sorted(pinned)]
 
 
+_version_reads = ContextVar("validation_version_reads", default=None)
+
+
+@contextmanager
+def validation_read():
+    """Read each tool's installed metadata once per browse, never across requests."""
+    if _version_reads.get() is not None:
+        yield
+        return
+    token = _version_reads.set({})
+    try:
+        yield
+    finally:
+        _version_reads.reset(token)
+
+
+def _tool_version(tool):
+    versions = _version_reads.get()
+    if versions is not None and tool in versions:
+        return versions[tool]
+    try:
+        actual = installed_version(tool)
+    except PackageNotFoundError:
+        actual = None
+    if versions is not None:
+        versions[tool] = actual
+    return actual
+
+
 def validation_status(report):
     if report is None:
         return "missing"
@@ -158,18 +189,12 @@ def validation_status(report):
     versions = [report.get("toolVersions", {}), physics.get("toolVersions", {}),
                 (physics.get("retainedFrom") or {}).get("toolVersions", {})]
     for tool, expected in (item for group in versions for item in group.items()):
-        try:
-            actual = platform.python_version() if tool == "python" else installed_version(tool)
-        except PackageNotFoundError:
-            return "stale"
+        actual = platform.python_version() if tool == "python" else _tool_version(tool)
         if actual != expected:
             return "stale"
     for tool in physics.get("missingTools", []):
-        try:
-            installed_version(tool)
-        except PackageNotFoundError:
-            continue
-        return "stale"  # The formerly unavailable worker can now be run explicitly.
+        if _tool_version(tool) is not None:
+            return "stale"  # The formerly unavailable worker can now be run explicitly.
     return "available"
 
 

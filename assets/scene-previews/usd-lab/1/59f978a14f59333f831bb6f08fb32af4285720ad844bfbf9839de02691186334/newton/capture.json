@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T06:14:17.176018+00:00",
+  "capturedAt": "2026-10-27T11:17:12.421343+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -97,11 +97,11 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "efedc02883678fceeb1ccf18ca05c7f1b8b000e50bc701922555a2a8c62178b0"
+      "sha256": "0270bcbc18f81f16cad23382143ae56cbd809cf521a322e377c9372c23121b58"
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "05e8c03a75b9484100296d9e8bc66b22f4aea0329c60c868ff7f75ec57e93ab3"
+      "sha256": "bb362f76e4ab9367d0e4d94b400120d39c8e66265c79806da17b29fba5ccc471"
     },
     {
       "path": "packages/library/templates.py",
@@ -291,10 +291,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "454be45b44fc704328d9ceb9a5fd0b24f86c42a3a37e34f49b74ffc3b71e75c5",
-    "catalog.json": "5ccc8430db84e62819ee1e01af264f167c235d6f3d5e67ed0389000aa3ad5530",
-    "state.json": "2920e085d86a976b40d7246cb3f1b1f98a803646da193cd2aacd4437200edae1",
-    "snapshot.bin": "360445537356253952d4f0a89f06a4ca753cc589a3a0b3ebb0e4bd8d91226dab",
+    "manifest.json": "48556524d2f88d322615a0b4c96b0be74734a23410df5140c5c43df0f4202210",
+    "catalog.json": "690cf92bd1e9e78eae92a774cad96e01f2cae334facc6bcdabf97b46c43f76fd",
+    "state.json": "bb91ee4cb5fcdc66be19d750a190b12eb7e69164677b9422773301ecdeaf7054",
+    "snapshot.bin": "b0aa6469a52f23aac3898941aa959019ce62d5f2228180ff85ca01896cba41bc",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"

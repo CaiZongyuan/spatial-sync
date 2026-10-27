@@ -17,7 +17,7 @@ from packages.library.common import BUILTIN_ROOT, NAME, TYPE_ROOT, LibraryError,
 from packages.library.common import REPO_ROOT as REPO_ROOT
 from packages.library.metadata import scene_metadata
 from packages.library.read_cache import ReadCache, stamps, tree_paths
-from packages.library.reports import ReportStore, launchable, parse_report, pinned_assets
+from packages.library.reports import ReportStore, launchable, parse_report, pinned_assets, validation_read
 from packages.library.reports import validation_status as validation_status
 from packages.library.templates import TemplateError, load_snapshots, references, resolve, verify_snapshot
 
@@ -346,6 +346,7 @@ class SceneLibrary:
         self._resolved.put(key, value, paths, recorded)
         return deepcopy(value)
 
+    @validation_read()
     def list(self, query=None, launchable=None):
         versions = sorted(
             (self.resolved(version) for version in self.versions.values()
@@ -361,6 +362,7 @@ class SceneLibrary:
             )
         ]
 
+    @validation_read()
     def page(self, query=None, launchable=None, source=None, limit=None, cursor=None):
         """Browse the indexed declarations without opening models or resolving dependencies."""
         if limit is not None and not 1 <= limit <= 100:
