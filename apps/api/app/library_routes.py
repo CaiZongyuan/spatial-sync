@@ -99,7 +99,7 @@ def install_library_routes(
     @app.get("/api/v1/library/deletions")
     async def removed_versions(requestId: str | None = None, limit: int = Query(20, ge=1, le=100),
                                cursor: str | None = None):
-        records = [record for record in manager.library_removals.list()
+        records = [record for record in await anyio.to_thread.run_sync(manager.library_removals.list)
                    if requestId is None or record["requestId"] == requestId]
         total = len(records)
         if cursor:
@@ -121,7 +121,7 @@ def install_library_routes(
 
     @app.get("/api/v1/library/deletions/{identifier}")
     async def removal_record(identifier: str):
-        return manager.library_removals.show(identifier)
+        return await anyio.to_thread.run_sync(manager.library_removals.show, identifier)
 
     @app.post("/api/v1/library/deletions/{identifier}/restore", status_code=202)
     async def restore_version(identifier: str, request: Request):
@@ -143,7 +143,7 @@ def install_library_routes(
 
     @app.get("/api/v1/library/assets")
     async def list_assets(kind: str | None = None, q: str | None = None, gaps: bool = False):
-        return {"assets": assets.list(kind, q, gaps)}
+        return {"assets": await anyio.to_thread.run_sync(assets.list, kind, q, gaps)}
 
     def thumbnail_version(resource, identifier, digest):
         collection = assets if resource == "asset" else scenes()

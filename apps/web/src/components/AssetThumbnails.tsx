@@ -9,5 +9,7 @@ export function AssetThumbnails({ children }: {
   const theme = useThumbnailTheme();
   return children(asset => <StaticThumbnail key={`${asset.id}:${asset.contentHash}:${theme}`}
     url={asset.thumbnailUrl ?? '/api/v1' + thumbnailQuery('asset', asset.id, asset.contentHash, theme)}
+    href={`/assets/${asset.assetId.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(asset.id.split('@')[1])}`}
+    linkLabel={`打开 ${asset.id}`}
     label={`${asset.id} 的静态预览`} declared={Boolean(asset.thumbnailUrl)} />);
 }

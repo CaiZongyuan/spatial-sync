@@ -1,6 +1,26 @@
 import { expect, test } from '@playwright/test';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
+
+test('pending pagination reaches and handles a request older than the default hundred', async ({ page, request }) => {
+  const fixture = await request.post(`${api}/e2e/approval-pages`, { data: { count: 101 } });
+  expect(fixture.ok()).toBe(true);
+  const { ids } = await fixture.json();
+  try {
+    await page.goto('/approvals');
+    const pages = page.getByRole('navigation', { name: '审批分页' });
+    await expect(page.getByTestId(`approval-${ids[100]}`)).toBeVisible();
+    for (let index = 0; index < 5; index++) {
+      await pages.getByRole('button', { name: '下一页', exact: true }).click();
+      await expect(pages).toContainText(`第 ${index + 2} 页`);
+      await expect(page.getByTestId(`approval-${ids[Math.max(0, 100 - (index + 1) * 20)]}`)).toBeVisible();
+    }
+    const oldest = page.getByTestId(`approval-${ids[0]}`);
+    await oldest.getByRole('button', { name: '驳回', exact: true }).click();
+    await expect(oldest).toContainText('已驳回');
+    expect((await (await request.get(`${api}/api/v1/approvals/${ids[0]}`)).json()).status).toBe('denied');
+  } finally { await request.post(`${api}/e2e/approval-pages`, { data: { clear: true } }); }
+});
 const centrifuge = '/World/Lab/Centrifuge';
 
 test('approval inbox renders real empty state and shares its navigation badge', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { listLibraryRemovals, type LibraryRemoval } from '../lib/library-deletions';
 import { RemovalResult } from '../components/LibraryDeletion';
 
@@ -11,6 +11,8 @@ function LibraryTrash() {
   const [cursors, setCursors] = useState<string[]>([]);
   const [pagination, setPagination] = useState<{ total: number; nextCursor: string | null }>();
   const cursor = cursors.at(-1);
+  const update = useCallback((value: LibraryRemoval) => setRecords(previous =>
+    previous?.map(item => item.id === value.id ? value : item)), []);
   useEffect(() => {
     const controller = new AbortController();
     setRecords(undefined);
@@ -30,7 +32,7 @@ function LibraryTrash() {
     </nav>
     {!records ? <p role="status">正在读取回收站…</p> : records.length === 0 ? <p>回收站为空。</p> : records.map(record =>
       <article className="approval-card" key={record.id}><h2>{record.versionId}</h2><code>{record.id}</code>
-        <RemovalResult record={record} update={value => setRecords(previous => previous?.map(item => item.id === value.id ? value : item))} />
+        <RemovalResult record={record} update={update} />
       </article>)}
   </main>;
 }

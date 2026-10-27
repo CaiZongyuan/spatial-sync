@@ -47,6 +47,7 @@ class ReferenceInspection:
         self.jobs = jobs
         self._inspected = {}
         self.live = live or (lambda: None)
+        self.retained = lambda: []
 
     @property
     def scenes(self):
@@ -62,6 +63,12 @@ class ReferenceInspection:
 
         def problem(owner_kind, identifier, error):
             unknown.append({"kind": owner_kind, "id": identifier, "reason": str(error)})
+
+        if kind == "asset":
+            for retained in self.retained():
+                if target.id in retained["dependencies"]:
+                    reference("recovery", retained["id"],
+                              "Retained " + retained["versionId"] + " needs this exact version for recovery")
 
         # Future product stores have no A2 reader. Existing contents cannot be declared empty.
         reserved = (("tasks",) if self.tasks is None else ()) + (("jobs",) if self.jobs is None else ())

@@ -6,6 +6,46 @@ const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 type SceneListGate = { ready: boolean; delivered: boolean; release: () => void };
 type SceneListGateWindow = Window & { __sceneListSuccessGate: SceneListGate };
 
+test('a hung static image times out and can retry while another image succeeds', async ({ page, request }) => {
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
+  const selected = scenes.slice(0, 2).map((value: object, index: number) => ({ ...value, thumbnailUrl: `/fixture-hung/${index}.png` }));
+  await page.route('**/api/v1/library/scenes?*', route => route.fulfill({ json: { scenes: selected } }));
+  let release!: () => void, first = true;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/fixture-hung/*', async route => {
+    if (route.request().url().endsWith('0.png') && first) { first = false; await held; }
+    await route.fulfill({ body: pixel, contentType: 'image/png' }).catch(() => {});
+  });
+  try {
+    await page.goto('/scenes');
+    const firstCard = page.locator('.scene-card').first(), healthy = page.locator('.scene-card').nth(1);
+    await expect(healthy.getByRole('img')).toBeVisible();
+    await expect(firstCard).toContainText('静态图加载超时');
+    await firstCard.getByRole('button', { name: '重试预览' }).click();
+    await expect(firstCard.getByRole('img')).toBeVisible();
+    await expect(page.locator('canvas')).toHaveCount(0);
+  } finally { release(); }
+});
+
+test('one fast recovery row does not cancel a slower row status update', async ({ page }) => {
+  const base = { schema: 'lw.library-deletion/1', resource: 'scene', contentHash: 'a'.repeat(64),
+    requestId: 'controlled', createdAtMs: 1, retainedBytes: 0, status: 'checking', error: null };
+  const rows = [0, 1].map(index => ({ ...base, id: `deletion-${String(index).repeat(32)}`, versionId: `controlled-${index}@1` }));
+  let slow = 0;
+  await page.route('**/api/v1/library/deletions?*', route => route.fulfill({ json: {
+    deletions: rows, pagination: { total: 2, nextCursor: null },
+  } }));
+  await page.route('**/api/v1/library/deletions/deletion-*', async route => {
+    const second = route.request().url().endsWith(rows[1].id);
+    if (second) { slow++; await new Promise(resolve => setTimeout(resolve, 700)); }
+    await route.fulfill({ json: second ? { ...rows[1], status: 'committed' } : rows[0] }).catch(() => {});
+  });
+  await page.goto('/trash');
+  await expect(page.getByRole('article').filter({ hasText: 'controlled-1@1' })).toContainText('版本已移到回收站');
+  await expect(page.getByRole('article').filter({ hasText: 'controlled-0@1' })).toContainText('正在检查引用');
+  expect(slow).toBe(1);
+});
+
 test('one failed static image leaves the next card readable without loading 3D', async ({ page, request }) => {
   const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
   const selected = scenes.slice(0, 2).map((scene: object, index: number) => ({ ...scene, thumbnailUrl: `/fixture-static/${index}.png` }));
@@ -37,9 +77,9 @@ test('a late old-theme image cannot replace the current static image', async ({ 
     await page.getByLabel('Color theme').selectOption('dark');
     const image = page.locator('.scene-card img');
     await expect(image).toBeVisible();
-    await expect(image).toHaveAttribute('src', /theme=dark/);
+    await expect(image).toHaveAttribute('data-thumbnail-source', /theme=dark/);
     release();
-    await expect(image).toHaveAttribute('src', /theme=dark/);
+    await expect(image).toHaveAttribute('data-thumbnail-source', /theme=dark/);
     await expect.poll(() => image.evaluate((value: HTMLImageElement) => value.naturalWidth)).toBeGreaterThan(0);
     await expect(page.locator('canvas')).toHaveCount(0);
   } finally { release(); }

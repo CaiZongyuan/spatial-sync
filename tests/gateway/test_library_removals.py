@@ -1,6 +1,10 @@
 """Ordinary HTTP removal/restore uses the real immutable bytes and legacy reference guards."""
 
+import os
+import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +12,8 @@ from scene_support import user_version
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from packages.library.common import LibraryError, content_hash
+from packages.library.removals import RemovalRequest
 from packages.protocol.schema import Actor
 
 TARGET = "/api/v1/library/scenes/lab-demo/4"
@@ -212,3 +218,122 @@ def test_old_approval_is_inapplicable_even_if_its_audit_append_failed(tmp_path, 
         fresh = client.delete(TARGET).json()
         assert fresh["approvalId"] != legacy["approvalId"]
         assert client.get("/api/v1/approvals/" + fresh["approvalId"]).json()["status"] == "pending"
+
+
+def test_waiting_for_journal_read_lock_does_not_block_health(tmp_path, monkeypatch):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client, ThreadPoolExecutor(3) as pool:
+        service = app.state.manager.library_removals
+        record = service.submit(RemovalRequest.model_validate(body(client)), Actor(kind="user", name="test"))
+        entered = Event()
+        original = service.show
+
+        def waiting(identifier):
+            entered.set()
+            return original(identifier)
+
+        monkeypatch.setattr(service, "show", waiting)
+        with service.lock:
+            reading = pool.submit(client.get, ROOT + "/" + record["id"])
+            assert entered.wait(5)
+            health = pool.submit(client.get, "/api/v1/health")
+            assert health.result(timeout=2).status_code == 200
+            assert not reading.done()
+        assert reading.result(timeout=5).status_code == 200
+
+
+def test_retained_dependencies_remain_protected_from_legacy_and_ordinary_deletion():
+    from test_asset_imports import package_files, upload
+
+    with TestClient(create_app()) as client:
+        dependency = upload(client).json()
+        files = package_files()
+        files["asset.yaml"] = files["asset.yaml"].replace(b"test-tube", b"indirect")
+        files["asset.usda"] = (
+            b'#usda 1.0\n(defaultPrim = "Asset"\nupAxis = "Z"\n'
+            b'metersPerUnit = 1)\ndef Xform "Asset" (references = '
+            b"@library:assets/labware/test-tube/1/asset.usda@) {}\n"
+        )
+        owner = upload(client, files).json()
+        request = {
+            "resource": "asset",
+            "id": owner["assetVersion"],
+            "contentHash": owner["contentHash"],
+            "requestId": "retain-owner",
+        }
+        removed = settled(client, client.post(ROOT, json=request).json())
+        assert removed["status"] == "committed", removed
+        target = "/api/v1/library/assets/labware/test-tube/1"
+        legacy = client.delete(target)
+        assert legacy.status_code == 409 and legacy.json()["detail"]["references"][0]["kind"] == "recovery"
+        attempted = settled(
+            client,
+            client.post(
+                ROOT,
+                json={
+                    "resource": "asset",
+                    "id": dependency["assetVersion"],
+                    "contentHash": dependency["contentHash"],
+                    "requestId": "keep-dependency",
+                },
+            ).json(),
+        )
+        assert attempted["status"] == "blocked" and attempted["error"]["code"] == "version_in_use"
+        assert (
+            settled(client, client.post(ROOT + "/" + removed["id"] + "/restore").json())["status"]
+            == "restored"
+        )
+
+
+def test_linked_recovery_package_is_rejected_before_restore_and_restart(tmp_path):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        removed = settled(client, client.post(ROOT, json=body(client)).json())
+        service = app.state.manager.library_removals
+        package = service.directory(removed["id"]) / "package"
+        target = tmp_path / "user-library/retained-copy"
+        shutil.copytree(package, target)
+        original = content_hash(target)
+        assert package.resolve().is_relative_to(service.directory(removed["id"]).resolve())
+        shutil.rmtree(package)
+        try:
+            if os.name == "nt":
+                import _winapi
+
+                _winapi.CreateJunction(str(target), str(package))
+            else:
+                package.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("Directory link creation unavailable")
+        result = settled(client, client.post(ROOT + "/" + removed["id"] + "/restore").json())
+        assert result["status"] == "committed" and result["error"] is not None
+        assert client.get(TARGET).status_code == 404 and content_hash(target) == original
+    with pytest.raises((LibraryError, ValueError)):
+        with TestClient(create_app()):
+            pass
+
+
+def test_old_remove_audit_failure_cannot_poison_accepted_restore(tmp_path, monkeypatch):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        entered, release = Event(), Event()
+        service = app.state.manager.library_removals
+
+        def delayed_failure(record):
+            entered.set()
+            assert release.wait(10)
+            raise OSError("injected secondary audit failure")
+
+        monkeypatch.setattr(service, "_retire_approvals", delayed_failure)
+        record = client.post(ROOT, json=body(client)).json()
+        try:
+            assert entered.wait(5)
+            restoring = client.post(ROOT + "/" + record["id"] + "/restore").json()
+            assert restoring["status"] == "restoring"
+        finally:
+            release.set()
+        restored = settled(client, restoring)
+        assert restored["status"] == "restored" and client.get(TARGET).status_code == 200

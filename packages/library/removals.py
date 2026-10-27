@@ -44,6 +44,7 @@ class RemovalRecord(BaseModel):
     error: dict | None = None
     restoredBy: Actor | None = None
     supersededApprovals: list[str] = Field(default_factory=list)
+    restoreAttempt: int = Field(default=0, ge=0)
 
 
 class LibraryRemovals:
@@ -55,6 +56,8 @@ class LibraryRemovals:
         self.tasks = {}
         self.errors = set()
         self.legacy.normal_removal = self.superseding
+        self.legacy.inspection.retained = self.retained_references
+        self.closing = False
 
     def directory(self, identifier):
         if not IDENTITY.fullmatch(identifier):
@@ -149,10 +152,22 @@ class LibraryRemovals:
             )
 
     def start(self, identifier, *, restore=False):
-        key = (identifier, restore)
+        if self.closing:
+            return
+        with self.lock:
+            record = self.records[identifier]
+            if record["status"] != ("restoring" if restore else "queued"):
+                return
+            attempt = record["restoreAttempt"] if restore else 0
+        key = (identifier, restore, attempt)
         if key in self.tasks:
             return
-        task = asyncio.create_task(asyncio.to_thread(self.restore if restore else self.execute, identifier))
+        work = (
+            asyncio.to_thread(self.restore, identifier, attempt)
+            if restore
+            else asyncio.to_thread(self.execute, identifier)
+        )
+        task = asyncio.create_task(work)
         self.tasks[key] = task
 
         def finished(result):
@@ -162,12 +177,19 @@ class LibraryRemovals:
                 if result.exception() is not None:
                     with self.lock:
                         # A committed journal remains authoritative even if secondary audit cleanup failed.
-                        if self.records[identifier]["status"] not in ("committed", "restored"):
+                        current = self.records[identifier]
+                        unfinished = (
+                            current["status"] == "restoring" and current["restoreAttempt"] == attempt
+                            if restore
+                            else current["status"] in ("queued", "checking")
+                        )
+                        if unfinished:
                             self.errors.add(identifier)
 
         task.add_done_callback(finished)
 
     async def close(self):
+        self.closing = True
         if self.tasks:
             pending = asyncio.gather(*list(self.tasks.values()), return_exceptions=True)
             try:
@@ -188,6 +210,21 @@ class LibraryRemovals:
                 ),
                 None,
             )
+
+    def retained_references(self):
+        with self.lock:
+            return [
+                {
+                    "id": record["id"],
+                    "versionId": record["versionId"],
+                    "dependencies": dict(record["dependencies"]),
+                }
+                for record in self.records.values()
+                if record["status"] in ("committed", "restoring")
+            ]
+
+    def _package(self, identifier):
+        return destination_parent(self.root, (".trash", identifier, "package"))
 
     def _destination(self, record):
         prefix = "assets" if record["resource"] == "asset" else "scenes"
@@ -247,6 +284,7 @@ class LibraryRemovals:
                 if package.exists() or package.is_symlink() or package.is_junction():
                     raise ValueError("Recovery package already exists")
                 destination.rename(package)
+                self._package(identifier)
                 package_files(package)
                 if content_hash(package) != record["contentHash"]:
                     raise ValueError("Package changed during removal")
@@ -278,10 +316,12 @@ class LibraryRemovals:
                     self._retire_approvals(actual)
                     return actual
                 if package.exists():
+                    self._package(identifier)
                     if destination.exists() or content_hash(package) != record["contentHash"]:
                         raise LibraryError(
                             "deletion_recovery_required", "Removal requires recovery", 503
                         ) from exc
+                    self._destination(record)
                     package.rename(destination)
                     self.legacy._refresh()
                 error = (
@@ -307,17 +347,24 @@ class LibraryRemovals:
             if record["status"] != "committed":
                 raise LibraryError("deletion_conflict", "Only a committed removal can be restored", 409)
             return self._save(
-                record | {"status": "restoring", "restoredBy": actor.model_dump(), "error": None}
+                record
+                | {
+                    "status": "restoring",
+                    "restoredBy": actor.model_dump(),
+                    "error": None,
+                    "restoreAttempt": record["restoreAttempt"] + 1,
+                }
             )
 
-    def restore(self, identifier):
+    def restore(self, identifier, attempt=None):
         with self.legacy.assets._lock, import_lock(self.root):
             record = self.show(identifier)
-            if record["status"] != "restoring":
+            if record["status"] != "restoring" or attempt is not None and record["restoreAttempt"] != attempt:
                 return record
             destination = self._destination(record)
             package = self.directory(identifier) / "package"
             try:
+                self._package(identifier)
                 if destination.exists() or destination.is_symlink() or destination.is_junction():
                     raise LibraryError("restore_conflict", "The original identity is already occupied", 409)
                 package_files(package)
@@ -333,6 +380,8 @@ class LibraryRemovals:
                             "restore_dependency_changed", "Restore original dependencies first", 409
                         )
                 destination.parent.mkdir(parents=True, exist_ok=True)
+                self._destination(record)
+                self._package(identifier)
                 package.rename(destination)
                 self.legacy._refresh()
                 return self._save(record | {"status": "restored", "retainedBytes": 0})
@@ -343,6 +392,7 @@ class LibraryRemovals:
                         self.records[identifier] = actual
                     return actual
                 if destination.exists() and not package.exists():
+                    self._destination(record)
                     if content_hash(destination) != record["contentHash"]:
                         raise LibraryError(
                             "deletion_recovery_required", "Restore requires inspection", 503
@@ -371,7 +421,7 @@ class LibraryRemovals:
                 record = self._read(directory.name)
                 original = deepcopy(record)
                 destination = self._destination(record)
-                package = directory / "package"
+                package = self._package(record["id"])
                 if record["status"] in ("queued", "checking"):
                     if package.exists():
                         package_files(package)

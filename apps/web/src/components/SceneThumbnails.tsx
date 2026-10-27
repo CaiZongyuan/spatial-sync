@@ -9,5 +9,7 @@ export function SceneThumbnails({ children }: {
   const theme = useThumbnailTheme();
   return children(scene => <StaticThumbnail key={`${scene.id}:${scene.contentHash}:${theme}`}
     url={scene.thumbnailUrl ?? '/api/v1' + thumbnailQuery('scene', scene.id, scene.contentHash, theme, scene.preview.source)}
+    href={`/scenes/${encodeURIComponent(scene.sceneId)}/${encodeURIComponent(scene.id.split('@')[1])}?source=${scene.preview.source}`}
+    linkLabel={`打开 ${scene.id}`}
     label={`${scene.id} 的静态预览`} declared={Boolean(scene.thumbnailUrl)} />);
 }

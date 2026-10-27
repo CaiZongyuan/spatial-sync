@@ -145,7 +145,7 @@ def install_approval_routes(app, manager, role_for):
 
     @app.get("/api/v1/approvals/{approval_id}")
     async def approval(approval_id: str):
-        return document(get_record(approval_id))
+        return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
 
     @app.post("/api/v1/approvals/{approval_id}/decision")
     async def decide(approval_id: str, body: ApprovalDecisionRequest, request: Request):
@@ -176,7 +176,7 @@ def install_approval_routes(app, manager, role_for):
                 manager.jobs.decide(record, body.decision, actor, body.note)
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-            return document(get_record(approval_id))
+            return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
         if record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training":
             try:
                 training_store(manager, identifier=record.subjectId).decide(
@@ -184,7 +184,7 @@ def install_approval_routes(app, manager, role_for):
                 )
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-            return document(get_record(approval_id))
+            return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
         if record.subject == "deletion":
             try:
                 await anyio.to_thread.run_sync(
@@ -192,7 +192,7 @@ def install_approval_routes(app, manager, role_for):
                 )
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-            return document(get_record(approval_id))
+            return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
         session = target(record)
         simulation = manager.sessions.get(record.sessionId)
         if simulation is not None:
@@ -204,7 +204,7 @@ def install_approval_routes(app, manager, role_for):
         try:
             if record.subject == "plan":
                 await manager.plans.decide(record, body.decision, session, actor, body.note)
-                return document(get_record(approval_id))
+                return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
             if body.decision == "revoke":
                 await pipeline.revoke_approval(record.subjectId, role, actor, body.note)
             else:
@@ -216,4 +216,4 @@ def install_approval_routes(app, manager, role_for):
                     raise ApprovalConflict("Another decision or session change was processed first")
         except ApprovalConflict as exc:
             raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-        return document(get_record(approval_id))
+        return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))

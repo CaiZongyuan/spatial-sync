@@ -58,16 +58,16 @@ function SceneLibrary() {
     </section>
     {error ? <div role="alert" className="platform-error">{error} <button onClick={() => { page(); setAttempt(attempt + 1); }}>从第一页重试</button></div> : !scenes ? <div role="status" className="scene-empty">正在读取场景库…</div> : scenes.length === 0 ? <div className="scene-empty"><h2>没有匹配的场景</h2><p>调整搜索或筛选条件。</p><button onClick={() => void navigate({ search: { view }, replace: true })}>清除筛选</button></div> :
       <SceneThumbnails scenes={scenes}>{thumbnails => view === 'card' ? <div className="scene-card-grid">{scenes.map((scene, index) =>
-        <Link key={scene.id} to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: String(scene.rev) }} search={{ source: search.source }} className="scene-card">
+        <article key={scene.id} className="scene-card">
           <div className="scene-thumbnail">{thumbnails(scene)}</div><div className="scene-card-caption"><b>图 {index + 1}</b><code>{scene.id}</code></div>
-          <h2>{scene.title}</h2><div className="scene-card-origin">{scene.sources.map(sourceLabel).join(' / ')} · {rootLabel(scene.root)}</div>
+          <h2><Link style={{ color: 'inherit', textDecoration: 'none' }} to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: scene.id.split('@')[1] }} search={{ source: search.source }} aria-label={`${scene.id} ${scene.title}`}>{scene.title}</Link></h2><div className="scene-card-origin">{scene.sources.map(sourceLabel).join(' / ')} · {rootLabel(scene.root)}</div>
           <div className="scene-card-meta"><LaunchStatus scene={scene} /><span title={scene.countsReason ?? '初始快照统计'}>{scene.entityCount ?? '—'} 实体 · {scene.deviceCount ?? '—'} 绑定</span></div>
           {scene.validatedAt && <small className="scene-note">最近验证 {new Date(scene.validatedAt).toLocaleString()}</small>}
           {scene.entityCount === null && <p className="scene-counts-reason">{scene.countsReason}</p>}
           <p className={scene.launchable ? 'scene-note' : 'scene-failure'}>{scene.launchReason ?? scene.description}</p>
-        </Link>)}</div> : <div className="scene-table-wrap"><table className="scene-library-table"><thead><tr><th>预览</th><th>场景</th><th>物理源</th><th>构建 · 来源</th><th>实体 / 绑定</th><th>验证</th><th>备注</th></tr></thead><tbody>{scenes.map(scene => <tr key={scene.id}>
-          <td><Link className="scene-mini-thumbnail" to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: String(scene.rev) }} search={{ source: search.source }} aria-label={`打开 ${scene.id}`}>{thumbnails(scene)}</Link></td>
-          <td><Link to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: String(scene.rev) }} search={{ source: search.source }}><code>{scene.id}</code><small>{scene.title}</small></Link></td>
+        </article>)}</div> : <div className="scene-table-wrap"><table className="scene-library-table"><thead><tr><th>预览</th><th>场景</th><th>物理源</th><th>构建 · 来源</th><th>实体 / 绑定</th><th>验证</th><th>备注</th></tr></thead><tbody>{scenes.map(scene => <tr key={scene.id}>
+          <td><span className="scene-mini-thumbnail">{thumbnails(scene)}</span></td>
+          <td><Link to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: scene.id.split('@')[1] }} search={{ source: search.source }}><code>{scene.id}</code><small>{scene.title}</small></Link></td>
           <td>{scene.sources.join(' / ')}</td><td>{scene.stage.startsWith('python:') ? 'Python 构建' : scene.stage} · {rootLabel(scene.root)}</td>
           <td title={scene.countsReason ?? '初始快照统计'}>{scene.entityCount ?? '—'} / {scene.deviceCount ?? '—'}{scene.entityCount === null && <small>{scene.countsReason}</small>}</td><td><LaunchStatus scene={scene} /></td>
           <td className={scene.launchable ? 'scene-note' : 'scene-failure'}>{scene.launchReason ?? scene.description}</td></tr>)}</tbody></table></div>}</SceneThumbnails>}
