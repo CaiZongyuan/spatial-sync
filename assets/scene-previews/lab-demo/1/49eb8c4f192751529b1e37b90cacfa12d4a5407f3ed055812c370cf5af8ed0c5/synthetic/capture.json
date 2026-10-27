@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-27T13:34:32.496533+00:00",
+  "capturedAt": "2026-10-27T14:48:26.520190+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -33,7 +33,7 @@
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
-      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+      "sha256": "06428acb28038cb5a09d1338ac2ce915994f7a6bf26238041f991067948e201a"
     },
     {
       "path": "devices/types/env-sensor.v1.yaml",
@@ -125,7 +125,7 @@
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
+      "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
       "path": "packages/programs/env_sensor/virtual.py",
@@ -153,7 +153,7 @@
     },
     {
       "path": "packages/programs/robot_arm/virtual.py",
-      "sha256": "63655cf001d053032d80cd99bc2af4c56cdd15037a2290c8bf435637066c4d51"
+      "sha256": "29b5cece3166c9a184d84e58bb68a1d9b9508d6bf73b7eec1ad8c750e383d2a5"
     },
     {
       "path": "packages/programs/signals.py",
@@ -203,10 +203,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "4ec2bc7d8ac1031db28dfc4ad3d44ffe058e6283242a703685fc2cc0a44740bd",
-    "catalog.json": "d2f17f8cc8e3d88bf9e566bb84677bed689121786087d2e3203bcd6a8a22b5c9",
-    "state.json": "b8a6a6e7adacc3f9492206c39325501d6f15e06d88c9b0f99dc5bfdafd3ee9ce",
-    "snapshot.bin": "3446d6dcf2e9220e73b9954779f9d3e0b01a64810c55840fa5f22c8de09ab040"
+    "manifest.json": "0f416c25c8049dd0f693e51682d15ea61f29d4e02a05c2ef9309be2056f267d9",
+    "catalog.json": "d04b5992490bd7dd044498ee6a8d7b076b9d3993be1ebeda1f0cd9e66bc00c62",
+    "state.json": "6eb6364521b7013ce2212a6b91d7f9ebd8b9263cdb50a4039d2c7ab787ff636b",
+    "snapshot.bin": "b58acee3d5e9384e1ab76fa68b8813df05a1de450ed4a0b0215f080e111cdc54"
   },
   "counts": {
     "physicalEntities": 30,

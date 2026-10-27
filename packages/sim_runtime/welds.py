@@ -17,7 +17,12 @@ def declare_weld_pairs(builder, endpoints):
     pairs = {}
     for parent, tube in endpoints:
         pairs[parent, tube] = _add_equality_constraint(
-            builder, EqType.WELD, body1=parent, body2=tube, enabled=False, label=f"weld:{parent}:{tube}"
+            builder, EqType.WELD, body1=parent, body2=tube, enabled=False, label=f"weld:{parent}:{tube}",
+            # Default soft equalities let a small offset load rotate tens of
+            # degrees during a 60 rpm teaching run. Keep weld holds rigid at
+            # the 240 Hz physics step; this is still a solver constraint.
+            custom_attributes={"mujoco:eq_solref": [.0085, 1.0],
+                               "mujoco:eq_solimp": [.99, .999, .001, .5, 2.0]},
         )
     builder.spatial_weld_pairs = pairs
 

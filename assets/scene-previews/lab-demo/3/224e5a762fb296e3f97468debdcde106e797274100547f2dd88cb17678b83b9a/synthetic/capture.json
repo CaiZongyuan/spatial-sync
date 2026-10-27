@@ -30,7 +30,7 @@
   ],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-10-27T13:34:35.620412+00:00",
+  "capturedAt": "2026-10-27T14:48:28.239818+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -58,7 +58,7 @@
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
-      "sha256": "7101db55ef9518356dac3244ddc2a1ab9048b38d341ba7476b85999aa88383cc"
+      "sha256": "06428acb28038cb5a09d1338ac2ce915994f7a6bf26238041f991067948e201a"
     },
     {
       "path": "devices/types/env-sensor.v1.yaml",
@@ -270,7 +270,7 @@
     },
     {
       "path": "packages/programs/centrifuge/virtual.py",
-      "sha256": "2b755928ea3025606136a609c660652a7b9b0cf79e6c3096e614a2196896932e"
+      "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
       "path": "packages/programs/env_sensor/virtual.py",
@@ -298,7 +298,7 @@
     },
     {
       "path": "packages/programs/robot_arm/virtual.py",
-      "sha256": "63655cf001d053032d80cd99bc2af4c56cdd15037a2290c8bf435637066c4d51"
+      "sha256": "29b5cece3166c9a184d84e58bb68a1d9b9508d6bf73b7eec1ad8c750e383d2a5"
     },
     {
       "path": "packages/programs/signals.py",
@@ -348,10 +348,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "15b048673b357c3fd6ea97413de21b980861caa65cacac0d23775fb83f74b357",
-    "catalog.json": "40c017d0ca025617da3d6a948d9b065b71dafc0142aab55f4b72040c29511205",
-    "state.json": "f08ad5020b453a20ddeee87a10172d3075a8425fed07bc5b1164312e5d1973d7",
-    "snapshot.bin": "1e9217485fcd210bcfe34da58c445b973b7d6cac130657609f6f008a285c7155"
+    "manifest.json": "0f2f49d50a5e6041cdb9e79669aea528c8045aeaa275d6d12a6b681456e7c422",
+    "catalog.json": "8c7396268166779782bf6a896e14dc63f5d6a51a28c74bb9d1bb4dae14d7cfd1",
+    "state.json": "dcf09764e99ad0889c8adeb8ba0f07af17f9a407dfe043936a4f310636f9613b",
+    "snapshot.bin": "4df23077f7548ea0e1757a3582fe3e0ab44df2a6c907ffd1a0d9c5b9e5d195bf"
   },
   "counts": {
     "physicalEntities": 33,

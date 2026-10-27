@@ -70,6 +70,10 @@ class _Runner:
             physics_dt=options.physicsDt,
             realtime_factor=options.realtimeFactor,
             max_lag=options.maxLagMs / 1000,
+            # Yield to the control pipe after one 60 Hz control interval at
+            # the default 240 Hz step. A 64-step catch-up can otherwise exceed
+            # the 0.5 s action-intake deadline on a complex CPU scene.
+            max_batch=4,
         )
         self.seq = 0
         self.actual_rtf = 0.0

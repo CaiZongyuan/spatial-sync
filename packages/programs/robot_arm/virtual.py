@@ -99,8 +99,8 @@ class RobotArmProgram:
 
     def accept(self, inv, ctx):
         locations = self._locations(ctx)
-        names = [inv.params[k] for k in ("location", "from", "to") if k in inv.params]
-        for name in names:
+        names = [(k, inv.params[k]) for k in ("location", "from", "to") if k in inv.params]
+        for parameter, name in names:
             if name not in locations:
                 return Reject(code="invalid_params", message=f"Unknown taught location {name}")
             failed = ctx.check(locations[name].get("requires", []))
@@ -108,7 +108,7 @@ class RobotArmProgram:
                 return Reject(
                     code="precondition_failed",
                     message="Location requires an available device",
-                    details={"failed": failed},
+                    details={"failed": failed, "parameter": parameter, "location": name},
                 )
         if inv.action in ("pick", "pickPlace"):
             name = inv.params.get("from", inv.params.get("location"))

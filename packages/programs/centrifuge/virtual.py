@@ -24,20 +24,44 @@ class CentrifugeProgram:
         self.handle = None
         self.stopping = False
         self.elapsed = self.running = 0.0
-        ctx.set(phase="idle", lidOpen=True, rpm=0, remainingSeconds=0, slots=[None] * 4)
+        ctx.set(phase="idle", lidOpen=True, rpm=0, remainingSeconds=0, slots=[None] * 4,
+                loadSafe=self._loading(ctx)[1])
+
+    def _loading(self, ctx):
+        slots = [None]*len(ctx.config.slotSites)
+        safe = True
+        for key in ctx.config.tubes:
+            location = ctx.read(key, "location")
+            if not isinstance(location, str) or location == "held":
+                safe = False
+            elif location in ctx.config.slotSites:
+                index = ctx.config.slotSites.index(location)
+                safe = safe and slots[index] is None and ctx.read(key, "upright") is True
+                slots[index] = key
+        return slots, safe
 
     def accept(self, inv, ctx):
-        if inv.action == "start" and not balanced(ctx.get("slots")):
+        if inv.action != "start":
+            return
+        slots, safe = self._loading(ctx)
+        if not safe:
+            return Reject(code="unsafe_load", message="Rotor loading is unsafe or unconfirmed",
+                          details={"slots": slots})
+        if not balanced(slots):
             return Reject(
                 code="imbalanced",
                 message="Load zero, two opposite, or four tubes",
-                details={"slots": ctx.get("slots")},
+                details={"slots": slots},
             )
 
     def start(self, inv, ctx):
         if inv.action == "stop":
             self.stopping = True
             inv.succeed()
+            return
+        rejection = self.accept(inv, ctx)
+        if rejection:
+            inv.fail(rejection.code, rejection.message, **rejection.details)
             return
         self.handle, self.elapsed, self.running, self.stopping = inv, 0.0, 0.0, False
         if inv.action == "start":
@@ -49,11 +73,8 @@ class CentrifugeProgram:
         self.stopping = True
 
     def tick(self, ctx, dt):
-        slots = [
-            next((key for key in ctx.config.tubes if ctx.read(key, "location") == site), None)
-            for site in ctx.config.slotSites
-        ]
-        ctx.set(slots=slots)
+        slots, safe = self._loading(ctx)
+        ctx.set(slots=slots, loadSafe=safe)
         inv = self.handle
         if inv is None:
             return

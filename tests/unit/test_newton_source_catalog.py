@@ -63,6 +63,7 @@ async def test_ready_rebuilds_selected_package_catalog_and_still_rejects_disagre
     try:
         source._on_control({
             "kind": "ready", "manifest": manifest.model_dump(mode="json"), "catalog": packet_catalog,
+            "alertRules": catalog.alert_rules(),
             "entitySnapshot": EntitySnapshot(sceneRevision=manifest.sceneRevision, epoch=0,
                                               sampleTimeMs=1000).model_dump(mode="json"),
             "snapshot": TransformFrame(type="stream.snapshot", sessionId=manifest.sessionId,

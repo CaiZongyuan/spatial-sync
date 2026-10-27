@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 
 from packages.info.preview import PathPreview
 from packages.info.program import ProgramConfig, Reject
+from packages.programs.tube.facts import tube_location
 
 from .grasp import grasp_point_in_tcp
 from .preview import joint_targets, path_preview, taught_waypoints
@@ -48,6 +49,7 @@ class RobotArmProgram:
         self.pick_tube = None
         self.pick_failure = None
         self.pending_release = set()
+        self.place_since = None
         self.gripper_target = self.gripper_goal = self._width(port)
         ctx.set(phase="idle", holding=None, atLocation=None, zone=None)
         self._facts(ctx)
@@ -87,8 +89,8 @@ class RobotArmProgram:
         )
 
     def accept(self, inv, ctx):
-        names = [inv.params[k] for k in ("location", "from", "to") if k in inv.params]
-        for name in names:
+        names = [(k, inv.params[k]) for k in ("location", "from", "to") if k in inv.params]
+        for parameter, name in names:
             if name not in self.locations:
                 return Reject(code="invalid_params", message=f"Unknown taught location {name}")
             failed = ctx.check(self.locations[name].get("requires", []))
@@ -96,7 +98,7 @@ class RobotArmProgram:
                 return Reject(
                     code="precondition_failed",
                     message="Taught location is unavailable",
-                    details={"failed": failed},
+                    details={"failed": failed, "parameter": parameter, "location": name},
                 )
         if inv.action in ("pick", "pickPlace"):
             name = inv.params.get("from", inv.params.get("location"))
@@ -245,6 +247,7 @@ class RobotArmProgram:
             self.segment = self.plan.pop(0)
             kind, target, name = self.segment
             self.elapsed, self.stable, self.last_width = 0.0, 0.0, self._width(port)
+            self.place_since = None
             if name:
                 ctx.set(zone=self.locations[name]["zone"])
             ctx.set(phase="moving" if kind == "move" else "releasing" if kind == "place" else "grasping")
@@ -315,7 +318,7 @@ class RobotArmProgram:
                 self._end(
                     ctx,
                     ("precondition_failed", "Taught location became unavailable before descent"),
-                    failed=failed,
+                    failed=failed, location=name,
                 )
                 return
             done = True
@@ -341,8 +344,22 @@ class RobotArmProgram:
                 )
                 return
         elif kind == "verifyplace":
-            done = ctx.read(self.pick_tube, "location") == self.locations[name]["site"]
-            if not done and self.elapsed > 1:
+            site = self.locations[name]["site"]
+            sites = port.bind_sites([site])
+            try:
+                actual = tube_location(port.body[self.tubes[self.pick_tube]],
+                                       port.relative_site_velocity(self.tubes[self.pick_tube], sites),
+                                       port.site_poses(sites), [site])
+                sampled_at = float(port.last_time)
+                valid = actual == site and np.isfinite(sampled_at)
+            except (ValueError, TypeError):
+                valid, sampled_at = False, 0
+            if not valid:
+                self.place_since = None
+            elif self.place_since is None or sampled_at < self.place_since:
+                self.place_since = sampled_at
+            done = self.place_since is not None and sampled_at-self.place_since+1e-9 >= 1
+            if not done and self.elapsed > 3:
                 self._end(ctx, ("place_failed", "Tube did not settle at the destination Site"))
                 return
         inv.progress(min(0.999, self.completed / self.total))

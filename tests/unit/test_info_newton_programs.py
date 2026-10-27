@@ -182,5 +182,79 @@ def test_location_requires_failure_preserves_each_failed_condition_before_descen
     expected = [{"condition": {"property": "lidOpen", "equals": True}, "actual": False}]
     ctx.check = lambda _: expected
     program.tick(ctx, 1 / 60)
-    assert failures == [("precondition_failed", {"failed": expected})]
+    assert failures == [("precondition_failed", {"failed": expected, "location": "rack.A1"})]
     assert "joint0" not in ctx.physics.targets
+
+
+@pytest.mark.parametrize("parameter", ["from", "to"])
+def test_location_intake_refusal_identifies_the_parameter_and_taught_location(parameter):
+    program, ctx = RobotArmProgram(), ArmContext()
+    program.init(ctx)
+    program.locations = {name: {"site": name, "requires": [name]}
+                         for name in ("rack.A2", "centrifuge.slot2")}
+    params = {"from": "rack.A2", "to": "centrifuge.slot2"}
+    expected = [{"actual": "blocked"}]
+    ctx.check = lambda conditions: expected if conditions == [params[parameter]] else []
+    result = program.accept(SimpleNamespace(action="pickPlace", params=params), ctx)
+    assert result.code == "precondition_failed"
+    assert result.details == {"parameter": parameter, "location": params[parameter], "failed": expected}
+
+
+@pytest.mark.parametrize("drifts", [True, False])
+def test_place_needs_one_continuous_second_of_physical_seating_not_stale_location(drifts):
+    program, ctx = RobotArmProgram(), ArmContext()
+    program.init(ctx)
+    ctx.fact_due = False
+    ctx.read = lambda key, prop: "site"  # Deliberately stale successful location.
+    program.locations = {"rack.A1": {"site": "site"}}
+    ctx.physics.bind_sites = lambda keys: tuple(keys)
+    ctx.physics.site_poses = lambda sites: np.array([[0, 0, 0, 0, 0, 0, 1]])
+    ctx.physics.relative_site_velocity = lambda body, sites: np.zeros((1, 3))
+    program.segment = "verifyplace", None, "rack.A1"
+    program.pick_tube = "tube"
+    program.elapsed = program.stable = 0
+    program.completed, program.total = 0, 1
+    failures = []
+    program.handle = SimpleNamespace(action="place", progress=lambda _: None,
+                                     succeed=lambda: failures.append("unexpected_success"),
+                                     fail=lambda code, message, **details: failures.append(code))
+    for _ in range(5):
+        ctx.physics.last_time = getattr(ctx.physics, "last_time", 0)+.1
+        program.tick(ctx, .1)
+    assert program.segment is not None  # One good frame cannot complete a place.
+    if drifts:
+        angle = math.radians(24)/2
+        ctx.physics.body[1, 3:] = [0, math.sin(angle), 0, math.cos(angle)]
+        for _ in range(26):
+            ctx.physics.last_time += .1
+            program.tick(ctx, .1)
+        assert failures == ["place_failed"]
+    else:
+        for _ in range(6):
+            ctx.physics.last_time += .1
+            program.tick(ctx, .1)
+        assert program.segment is None
+        assert not failures
+
+
+def test_place_one_hz_needs_two_distinct_physical_samples_spanning_one_second():
+    program, ctx = RobotArmProgram(), ArmContext()
+    program.init(ctx)
+    ctx.fact_due = False
+    program.locations = {"rack.A1": {"site": "site"}}
+    ctx.physics.bind_sites = lambda keys: tuple(keys)
+    ctx.physics.site_poses = lambda sites: np.array([[0, 0, 0, 0, 0, 0, 1]])
+    ctx.physics.relative_site_velocity = lambda body, sites: np.zeros((1, 3))
+    ctx.read = lambda key, prop: "site"
+    program.pick_tube, program.segment = "tube", ("verifyplace", None, "rack.A1")
+    program.elapsed = program.stable = 0
+    program.completed, program.total = 0, 1
+    program.handle = SimpleNamespace(action="place", progress=lambda _: None)
+    ctx.physics.last_time = 1
+    program.tick(ctx, 1)
+    assert program.segment is not None
+    program.tick(ctx, 1)  # Reusing the sample cannot accumulate stability.
+    assert program.segment is not None
+    ctx.physics.last_time = 2
+    program.tick(ctx, 1)
+    assert program.segment is None
