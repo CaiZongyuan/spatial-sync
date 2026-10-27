@@ -1,7 +1,7 @@
 {
   "schema": "lw.scene-preview/1",
   "sceneVersion": "fr3-culture-reference@1",
-  "sceneContentHash": "f6c20a2557bea9deb9208adde3e1a54d2ba2ef1187f4dd5c3342ada36ffe2357",
+  "sceneContentHash": "e4427447ee2863cc9183e34aa77622ee5318940cd489b45af9c47ecf7edff31d",
   "templateAssets": [],
   "libraryAssets": [
     {
@@ -18,7 +18,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-10-27T14:12:35.556339+00:00",
+  "capturedAt": "2026-10-27T14:27:52.444821+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -420,10 +420,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "e4f029d7aea85750842425ef8f2071810be02523d9bf6c683de44ca39b7ee6bf",
-    "catalog.json": "60186602a595da087b9e5e60b4abff893e74592cefa0964e29310208b3fe8977",
-    "state.json": "0c8f3f7867142d74d001afce58caf5d5660c0c5fe756aa624b28ecf91d61bf42",
-    "snapshot.bin": "00b37a929d593b038e5d01f909456360a51d6e2b3b9419f116ef6d5fe9c4ec6c",
+    "manifest.json": "bc05c33da8db9a7c42ae8444652d98b9242e36639a6f74932a302146c5476236",
+    "catalog.json": "f8758a8f5ba478efea155124588545b61667450d49f12bda97516b8789be69e0",
+    "state.json": "c42ef7f3bc81141ba93163f73e11501e1caf2c28a24b563aa6884efaab234fbc",
+    "snapshot.bin": "70fed879a1e8adb979e07c407dc515ad789f7dc8d00c6d301f8295166a0814e1",
     "assets/sha256-5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71.glb": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71",
     "assets/sha256-5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12.glb": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12",
     "assets/sha256-a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89.glb": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89"

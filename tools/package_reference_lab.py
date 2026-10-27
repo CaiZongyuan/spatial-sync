@@ -87,7 +87,7 @@ def build(derived, source, output):
     }
     for filename, value in documents.items():
         encoded = yaml.safe_dump(value, allow_unicode=True, sort_keys=False)
-        (scene / filename).write_text(encoded, encoding="utf-8")
+        (scene / filename).write_text(encoded, encoding="utf-8", newline="\n")
     dressing = "\n".join(
         f'  def Xform "Part{index:02}" (references = '
         f'@library:assets/{kind}/{name}/1/asset.usdc@</Asset>) {{}}'
@@ -95,7 +95,7 @@ def build(derived, source, output):
     (scene / "stage.usda").write_text(
         '#usda 1.0\n(defaultPrim = "World"\n metersPerUnit = 1\n upAxis = "Z")\n'
         'def Xform "World" {\n def Xform "Lab" {}\n def Xform "Dressing" {\n'
-        + dressing + '\n }\n}\n', encoding="utf-8")
+        + dressing + '\n }\n}\n', encoding="utf-8", newline="\n")
     print(json.dumps({"scene": "fr3-culture-reference@1", "assets": len(references),
                       "triangles": sum(c["triangles"] for c in recipe["chunks"])}))
 
