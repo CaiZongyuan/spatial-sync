@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T06:13:22.904935+00:00",
+  "capturedAt": "2026-10-27T11:22:02.834142+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -197,11 +197,11 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "efedc02883678fceeb1ccf18ca05c7f1b8b000e50bc701922555a2a8c62178b0"
+      "sha256": "0270bcbc18f81f16cad23382143ae56cbd809cf521a322e377c9372c23121b58"
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "05e8c03a75b9484100296d9e8bc66b22f4aea0329c60c868ff7f75ec57e93ab3"
+      "sha256": "bb362f76e4ab9367d0e4d94b400120d39c8e66265c79806da17b29fba5ccc471"
     },
     {
       "path": "packages/library/templates.py",
@@ -395,10 +395,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "0ebd820b980fab613acfa38a9378ac2ec4062236c7e0befb9c0448c391c14ff2",
-    "catalog.json": "925fb006a62d3f118cf1d09175c7a22a889364dfdf31666171ee821ac7dbf593",
-    "state.json": "cf1e7a9a983c162e80ee09571c6e1c52046930eb16c53423c405fc2931d0f4aa",
-    "snapshot.bin": "446848d097d3d706061e5892d3cae1f2854e7ad9c7f9eb2f6ca1b45e343b1115",
+    "manifest.json": "183cc9720460848bac87f217ff5a56e4b36a40936b31ad2f35c61200395d9698",
+    "catalog.json": "4228f8e0887f6e572654c4139b7f868e3aa799e06f1ea4d3a96c810c4ecc5751",
+    "state.json": "d95243bec0772ca193c604b0667cf9d11595a38c1ee8aaab571e45c1e1b33143",
+    "snapshot.bin": "9bd508bfc2c81ea1276e2a554fa849fc57e9dd23205386c8e3b70a4e4c5788e3",
     "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
