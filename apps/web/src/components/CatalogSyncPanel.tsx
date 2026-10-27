@@ -56,7 +56,7 @@ export function CatalogSyncPanel({ onPublished, provider, onSources }: {
   };
   return <section className="catalog-sync-panel" aria-label="在线目录同步">
     <div className="catalog-sync-heading"><div>
-      <span>{state?.snapshot ? `${state.snapshot.entryCount} 项在线素材` : '在线素材'}</span>
+      <span>{state?.snapshot ? `来源同步快照 · ${state.snapshot.entryCount} 条` : '来源目录更新'}</span>
       <small>预览与详情按需加载</small></div>
       <div className="catalog-sync-actions">
         {active ? <button disabled={busy || record?.status === 'cancelling'}

@@ -47,6 +47,11 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   page.on('request', value => { if (/huggingface\.co|cdn-lfs/.test(value.url())) remote.push(value.url()); });
   let releasePage!: () => void;
   let failSearch = false;
+  let releaseImages!: () => void;
+  const imageGate = new Promise<void>(resolve => { releaseImages = resolve; });
+  await page.route('**/api/v1/library/catalog/maintenance/preview?**', async route => {
+    await imageGate; await route.continue();
+  });
   let pageGate: Promise<void> | undefined = new Promise(resolve => { releasePage = resolve; });
   await page.route('**/api/v1/library/search?**', async route => {
     const gate = pageGate;
@@ -67,6 +72,13 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   pageGate = undefined; releasePage();
   await expect(cards.first()).toContainText('Fixture beaker');
   await expect(cards).toHaveCount(24);
+  const figure = await cards.first().locator('.catalog-card-figure').boundingBox();
+  const imageSkeleton = await cards.first().locator('.catalog-image-skeleton').boundingBox();
+  expect(figure).not.toBeNull(); expect(imageSkeleton).not.toBeNull();
+  expect(imageSkeleton!.y).toBeGreaterThanOrEqual(figure!.y);
+  expect(imageSkeleton!.y + imageSkeleton!.height).toBeLessThanOrEqual(figure!.y + figure!.height + 1);
+  await cards.first().getByRole('button', { name: /详情/ }).click({ trial: true });
+  releaseImages();
   await expect(page.getByLabel('每页条目')).toHaveValue('24');
   const originalUrl = page.url();
   const released = new URL(originalUrl).searchParams.get('release');

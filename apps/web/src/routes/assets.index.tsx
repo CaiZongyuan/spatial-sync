@@ -139,7 +139,7 @@ function AssetLibrary() {
     ? `${catalog.results.length} / ${catalog.counts.matching} 个候选 · 在线 ${catalog.counts.onlineMatching} · 本地 ${catalog.counts.localMatching}${catalog.counts.approximate ? ` · 近似 ${catalog.counts.approximate}` : ''}`
     : '正在检索目录…';
   return <main className="asset-page asset-library-page">
-    <header className="asset-page-heading"><h1>素材库</h1><p>不可变的版本化素材包：物理、碰撞、PBR 视觉、来源与许可证</p></header>
+    <header className="asset-page-heading"><h1>素材库</h1><p>{scope === 'local' ? '不可变的版本化素材包：物理、碰撞、PBR 视觉、来源与许可证' : '浏览在线素材目录，筛选素材并按需查看详情或获取本地版本。'}</p></header>
     <div className="asset-library-toolbar"><span>{scope === 'local' ? catalog ? `${catalog.counts.matching} 件素材 · 圆点依次为六项完整度` : '正在读取素材…' : catalogToolbar}</span>
       <div className="asset-view-toggle" role="group" aria-label="视图">{(['card', 'list'] as const).map(view => <button key={view} aria-pressed={(search.view ?? 'card') === view} onClick={() => change({ view })}>{view === 'card' ? '▦ 卡片' : '☷ 列表'}</button>)}</div>
     </div>
