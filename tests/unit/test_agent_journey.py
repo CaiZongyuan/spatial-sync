@@ -1,14 +1,53 @@
 """The I5 runner accepts only a causally complete I3 journey."""
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from tools.agent_journey import TUBES, Owned, Run, journey_order, viewer_confirmed
+from tools import agent_journey
+from tools.agent_journey import TUBES, Observer, Owned, Run, journey_order, viewer_confirmed
 
 ROBOT, CENTRIFUGE = "/World/Lab/RobotA", "/World/Lab/Centrifuge"
+
+
+@pytest.mark.parametrize("phase,rpm", [("decelerating", 0), ("accelerating", 0), ("idle", 1000)])
+async def test_pending_rotor_checks_wait_for_idle_and_zero_speed(monkeypatch, phase, rpm):
+    clock = SimpleNamespace(now=0.0)
+    stop = asyncio.Event()
+
+    async def sleep(seconds):
+        clock.now += seconds
+        if clock.now >= 2:
+            stop.set()
+
+    monkeypatch.setattr(agent_journey, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    monkeypatch.setattr(agent_journey, "asyncio", SimpleNamespace(sleep=sleep))
+    observer = Observer(None, "/owned", None)
+    slots = {key: f"{CENTRIFUGE}/Rotor/Slot{index * 2 - 1}" for key, index in TUBES.items() if index < 3}
+
+    async def values():
+        entities = {key: {"location": slots.get(key, f"/World/Lab/Rack/A{index}")}
+                    for key, index in TUBES.items()}
+        entities[CENTRIFUGE] = {"phase": phase if clock.now < 1 else "idle",
+                               "rpm": rpm if clock.now < 1 else 0, "lidOpen": False}
+        return entities
+
+    checked = []
+
+    async def check(key, expected):
+        if key in slots:
+            checked.append((key, (await values())[CENTRIFUGE]))
+        return True
+
+    monkeypatch.setattr(observer, "values", values)
+    monkeypatch.setattr(observer, "check", check)
+    await observer.watch(stop)
+
+    assert [key for key, state in checked] == list(slots)
+    assert all(state["phase"] == "idle" and state["rpm"] == 0 for key, state in checked)
 
 
 def invocation(key, action, params=None, status="succeeded"):

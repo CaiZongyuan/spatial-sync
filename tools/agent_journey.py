@@ -122,8 +122,8 @@ class Observer:
                     self.events.append({"t": round(now - self.started, 3), "key": key, "location": location})
                     # A Site location is checked once it has settled; held/loose have no Site to compare.
                     due[key] = now + 0.4 if location.startswith("/World/") else None
-            # The I3 oracle compares world velocity, valid only while the rotor is at rest.
-            resting = values[CENTRIFUGE]["rpm"] == 0
+            # Zero displayed RPM can precede idle while the rotor finishes aligning.
+            resting = centrifuge["phase"] == "idle" and centrifuge["rpm"] == 0
             for key, deadline in list(due.items()):
                 if deadline is not None and now >= deadline and resting:
                     due[key] = None
