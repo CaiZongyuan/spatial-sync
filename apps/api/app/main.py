@@ -505,23 +505,29 @@ def create_app(
 
     @app.get("/api/v1/scenes")
     async def scenes():
-        return {"scenes": manager.library.list()}
+        return {"scenes": await asyncio.to_thread(manager.library.list)}
 
     @app.get("/api/v1/library/scenes")
     async def library_scenes(
         q: str | None = None, launchable: bool | None = None,
         source: Literal["synthetic", "newton"] | None = None,
+        view: Literal["full", "summary"] = "full", limit: int | None = None,
+        cursor: str | None = None,
     ):
-        values = manager.library.list(q, launchable)
-        result = []
-        for value in values:
-            if source is not None and source not in value["sources"]:
-                continue
-            version = manager.library.resolve(value["id"])
-            preview = await asyncio.to_thread(previews.describe, version, source or value["sources"][0])
-            result.append(value | {"preview": preview, "entityCount": preview["entityCount"],
-                                   "deviceCount": preview["bindingCount"], "countsReason": preview["reason"]})
-        return {"scenes": result}
+        if view == "summary" or limit is not None or cursor is not None:
+            return await asyncio.to_thread(manager.library.page, q, launchable, source, limit, cursor)
+        def full_list():
+            result = []
+            for value in manager.library.list(q, launchable):
+                if source is not None and source not in value["sources"]:
+                    continue
+                version = manager.library.resolve(value["id"])
+                preview = previews.describe(version, source or value["sources"][0])
+                result.append(value | {"preview": preview, "entityCount": preview["entityCount"],
+                                       "deviceCount": preview["bindingCount"],
+                                       "countsReason": preview["reason"]})
+            return {"scenes": result}
+        return await asyncio.to_thread(full_list)
 
     @app.get("/api/v1/library/scenes/{name}")
     @app.get("/api/v1/library/scenes/{name}/{rev}")
@@ -531,8 +537,8 @@ def create_app(
         documentDigest: str | None = None,
     ):
         selector = f"{name}@{rev}" if rev is not None else name
-        detail = manager.library.describe(selector)
-        version = manager.library.resolve(detail["id"])
+        detail = await asyncio.to_thread(manager.library.describe, selector)
+        version = await asyncio.to_thread(manager.library.resolve, detail["id"])
         preview = await asyncio.to_thread(previews.describe, version, source or detail["sources"][0])
         detail.update(
             preview=preview, entityCount=preview["entityCount"], deviceCount=preview["bindingCount"],
@@ -545,7 +551,7 @@ def create_app(
             for candidate in manager.library.versions.values():
                 if candidate.name != name:
                     continue
-                value = candidate.with_templates(manager.library.roots).summary()
+                value = manager.library.resolved(candidate).summary()
                 values.append({
                     key: value[key]
                     for key in ("id", "rev", "contentHash", "launchable", "launchReason",
@@ -559,7 +565,7 @@ def create_app(
 
     @app.get("/api/v1/library/scenes/{name}/{rev}/preview/{source}/{relative:path}")
     async def library_preview_file(name: str, rev: str, source: str, relative: str):
-        version = manager.library.resolve(f"{name}@{rev}")
+        version = await asyncio.to_thread(manager.library.resolve, f"{name}@{rev}")
         try:
             payload = await asyncio.to_thread(previews.read, version, source, relative)
         except (OSError, ValueError) as exc:

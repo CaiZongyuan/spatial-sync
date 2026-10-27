@@ -1,6 +1,7 @@
 """Read-only, exact-version scene captures. Importing this module starts no source."""
 
 import hashlib
+import json
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated
@@ -16,6 +17,7 @@ from pydantic import (
     model_validator,
 )
 
+from packages.library.read_cache import ReadCache, stamps, tree_paths
 from packages.library.scenes import REPO_ROOT, content_hash
 from packages.library.templates import template_id
 from packages.protocol.schema import Catalog, EntitySnapshot, SceneManifest
@@ -124,14 +126,34 @@ class PreviewRepository:
 
     def __init__(self, root, *, bundled_root=REPO_ROOT / "assets/scene-previews"):
         self.roots = (Path(root), Path(bundled_root))
+        self.cache = ReadCache()
 
     def _capture(self, version, source):
-        expected_templates = version.template_dependencies()
-        expected_assets = version.asset_dependencies()
+        key = (version.id, version.content_hash, source, version.template_error, version.asset_error,
+               tuple(sorted((item["id"], item["contentHash"]) for item in
+                            (*version.template_assets.values(), *version.runtime_assets.values()))))
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
+        paths = tree_paths(version.path)
+        for root in self.roots:
+            directory = root / version.name / str(version.rev) / version.content_hash / source
+            paths.update(tree_paths(directory))
+            try:
+                capture = json.loads((directory / "capture.json").read_bytes())
+                paths.update(dependency_path(item) for item in capture["dependencies"])
+            except (OSError, ValueError, KeyError, TypeError):
+                pass  # _inspect retains the precise validation error and source fallback.
+        for snapshot in (*version.template_assets.values(), *version.runtime_assets.values()):
+            paths.update(tree_paths(Path(snapshot["path"])))
+        paths = tuple(sorted(paths))
+        recorded = stamps(paths)
+        result = self._inspect(version, source)
+        return self.cache.put(key, result, paths, recorded)
+
+    def _inspect(self, version, source):
         if source not in version.metadata["sources"]:
             raise ValueError("所选物理源不支持此场景版本")
-        if content_hash(version.path) != version.content_hash:
-            raise ValueError("场景包内容已变化，请发布新版本")
         reason = "此版本尚无匹配的静态预览；可启动后查看实时场景"
         for root in self.roots:
             directory = root / version.name / str(version.rev) / version.content_hash / source
@@ -141,6 +163,10 @@ class PreviewRepository:
             if not index.is_file():
                 continue
             try:
+                expected_templates = version.template_dependencies()
+                expected_assets = version.asset_dependencies()
+                if content_hash(version.path) != version.content_hash:
+                    raise ValueError("场景包内容已变化，请发布新版本")
                 try:
                     value = _CaptureMetadata.model_validate_json(index.read_bytes()).model_dump(mode="json")
                 except ValidationError as exc:
@@ -235,6 +261,13 @@ class PreviewRepository:
 
     def read(self, version, source, relative):
         directory, capture = self._capture(version, source)
+        # Cache metadata and decoding, never authorization to serve altered source/package bytes.
+        version.template_dependencies()
+        version.asset_dependencies()
+        if content_hash(version.path) != version.content_hash or any(
+            input_hash(dependency_path(item)) != item["sha256"] for item in capture["dependencies"]
+        ):
+            raise ValueError("预览的构建输入已变化，需要重新捕获")
         if relative not in capture["files"]:
             raise ValueError("预览文件不在索引中")
         path = relative_file(directory, relative)

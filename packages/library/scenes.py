@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 from copy import deepcopy
@@ -13,6 +15,7 @@ from packages.library.archive import indexed_file, package_files
 from packages.library.common import BUILTIN_ROOT, NAME, TYPE_ROOT, LibraryError, content_hash, document
 from packages.library.common import REPO_ROOT as REPO_ROOT
 from packages.library.metadata import scene_metadata
+from packages.library.read_cache import ReadCache, stamps, tree_paths
 from packages.library.reports import ReportStore, launchable, parse_report, pinned_assets
 from packages.library.reports import validation_status as validation_status
 from packages.library.templates import TemplateError, load_snapshots, references, resolve, verify_snapshot
@@ -253,6 +256,7 @@ class SceneLibrary:
             else Path(os.getenv("SPATIAL_STATE_ROOT", "~/.spatial-sync/state")).expanduser()
         )
         self.versions, self.files = {}, {}
+        self._resolved = ReadCache()
         self.refresh()
 
     def refresh(self):
@@ -310,13 +314,37 @@ class SceneLibrary:
                 for relative in version.files:
                     files[(root_name, f"scenes/{name}/{rev}/{relative}")] = (version, relative)
         self.versions, self.files = versions, files
+        self._resolved.clear()
 
     def indexed_file(self, root, relative):
         return indexed_file(self.roots, self.files, root, relative, changed="scene_not_launchable")
 
+    def resolved(self, version, *, fresh=False):
+        key = (version.id, version.content_hash)
+        cached = None if fresh else self._resolved.get(key)
+        if cached is not None:
+            return deepcopy(cached)
+        paths = tree_paths(version.path)
+        paths.update(tree_paths(self.reports.directory("scene:" + version.id, version.content_hash)))
+        # Watch the candidate locations even when an expected template is currently missing.
+        identifiers = set(references(version.bindings))
+        try:
+            identifiers.update(item["id"] for item in pinned_assets(version, "scene"))
+        except (ValueError, OSError, LibraryError):
+            pass  # with_templates supplies the established error document below.
+        for identifier in identifiers:
+            for root in self.roots.values():
+                paths.update(tree_paths(root / "assets" / identifier.replace("@", "/")))
+        paths = tuple(sorted(paths))
+        recorded = stamps(paths)
+        value = version.with_templates(self.roots)
+        self._resolved.put(key, value, paths, recorded)
+        return deepcopy(value)
+
     def list(self, query=None, launchable=None):
         versions = sorted(
-            (version.with_templates(self.roots) for version in self.versions.values()),
+            (self.resolved(version) for version in self.versions.values()
+             if not query or query.casefold() in f"{version.id} {version.metadata['title']}".casefold()),
             key=lambda version: (version.name, version.rev),
         )
         return [
@@ -328,12 +356,56 @@ class SceneLibrary:
             )
         ]
 
+    def page(self, query=None, launchable=None, source=None, limit=None, cursor=None):
+        """Browse the indexed declarations without opening models or resolving dependencies."""
+        if limit is not None and not 1 <= limit <= 100:
+            raise LibraryError("invalid_page", "limit must be between 1 and 100", 422)
+        candidates = sorted((version for version in self.versions.values()
+                             if (not query or query.casefold() in
+                                 f"{version.id} {version.metadata['title']}".casefold())
+                             and (source is None or source in version.metadata["sources"])),
+                            key=lambda version: (version.name, version.rev))
+        if launchable is not None:
+            candidates = [version for version in candidates if version.launchable is launchable]
+        identity = hashlib.sha256(json.dumps([
+            query, launchable, source, limit,
+            [(version.id, version.content_hash) for version in candidates],
+        ], ensure_ascii=False).encode()).hexdigest()
+        offset = 0
+        if cursor:
+            try:
+                if len(cursor) > 2048:
+                    raise ValueError()
+                state = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+                if (not isinstance(state, dict) or type(state.get("offset")) is not int
+                        or not 0 <= state["offset"] <= len(candidates)):
+                    raise ValueError()
+            except (ValueError, UnicodeError, TypeError):
+                raise LibraryError("invalid_cursor", "Invalid library page cursor", 422) from None
+            if state.get("index") != identity:
+                raise LibraryError("library_changed", "Refresh the library page after an index change", 409)
+            offset = state["offset"]
+        selected = candidates[offset:offset + limit] if limit else candidates[offset:]
+        values = []
+        for version in selected:
+            value = version.summary()
+            value["preview"] = {"status": "unavailable", "source": source or value["sources"][0],
+                                "reason": "打开详情读取静态预览", "entityCount": value["entityCount"],
+                                "bindingCount": value["deviceCount"]}
+            values.append(value)
+        next_offset = offset + len(selected)
+        next_cursor = base64.urlsafe_b64encode(json.dumps(
+            {"index": identity, "offset": next_offset}, separators=(",", ":")
+        ).encode()).decode() if next_offset < len(candidates) else None
+        return {"scenes": values, "pagination": {"total": len(candidates), "limit": limit,
+                "nextCursor": next_cursor, "cursor": cursor}}
+
     def resolve(self, selector, *, launch=False, source=None):
         name, separator, rev = selector.partition("@")
         if not NAME.fullmatch(name) or (separator and (not rev.isdecimal() or int(rev) < 1)):
             raise LibraryError("unknown_version", "Unknown scene version")
         matches = [
-            version.with_templates(self.roots)
+            self.resolved(version, fresh=launch)
             for version in self.versions.values()
             if version.name == name and (not separator or version.rev == int(rev))
         ]
