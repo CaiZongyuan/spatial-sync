@@ -19,6 +19,9 @@ export interface ScenePreview {
   thumbnail?: Record<string, string>;
 }
 export interface SceneVersion {
+  thumbnailUrl?: string | null;
+  validatedAt?: string | null;
+  summaryTruncated?: boolean;
   id: string;
   sceneId: string;
   sceneVersion: string;
@@ -69,12 +72,15 @@ export interface SceneDetail extends SceneVersion {
   versions: SceneVersionLink[];
 }
 
-export const getSceneLibrary = (filters: { q?: string; launchable?: boolean; source?: SceneSource }, signal?: AbortSignal) => {
+export interface ScenePagination { total: number; nextCursor: string | null; previousCursor: string | null }
+export const getSceneLibrary = (filters: { q?: string; launchable?: boolean; source?: SceneSource; cursor?: string }, signal?: AbortSignal) => {
   const params = new URLSearchParams();
   if (filters.q) params.set('q', filters.q);
   if (filters.launchable !== undefined) params.set('launchable', String(filters.launchable));
   if (filters.source) params.set('source', filters.source);
-  return request<{ scenes: SceneVersion[] }>(`/library/scenes?${params}`, { signal });
+  params.set('view', 'summary'); params.set('limit', '20');
+  if (filters.cursor) params.set('cursor', filters.cursor);
+  return request<{ scenes: SceneVersion[]; pagination: ScenePagination }>(`/library/scenes?${params}`, { signal });
 };
 export const getSceneDetail = async (name: string, rev: string, source?: SceneSource, signal?: AbortSignal) => {
   const value = await request<SceneDetail>(`/library/scenes/${encodeURIComponent(name)}/${encodeURIComponent(rev)}${source ? `?source=${source}` : ''}`, { signal });

@@ -20,7 +20,7 @@ their decision. Preserve sessions and files owned by other work.
    lw asset ls --json
    lw asset ls --kind robot --gaps --json
    lw asset show <kind/name@rev> --json
-   lw scene ls --json
+   lw scene ls --limit 20 --json
    lw scene show <name@rev> --json
    ```
 
@@ -60,12 +60,30 @@ their decision. Preserve sessions and files owned by other work.
    check marked not run is not evidence of a physics pass. Correct failed
    checks rather than changing report files or launch flags.
 
+## Remove or restore a version
+
+For a cleanup task explicitly authorized by the person, move an exact unused
+user-library version to recovery storage with `lw scene rm <name@rev> --json`
+or `lw asset rm <kind/name@rev> --json`. This ordinary operation creates no
+Approval. Use `--request-id <stable-id>` for retries of the same request.
+Read the returned status: only `committed` means the version left the active
+library. `deletion_pending` includes the record to resume with
+`lw deletion show <deletion-id> --json`; do not resubmit a different request
+just because execution is still running.
+
+Use `lw deletion ls --json` to find retained versions and their disk usage,
+and `lw deletion restore <deletion-id> --json` to restore the original bytes.
+Report `restored` only after that terminal status. References, incomplete
+inspection, read-only built-ins, changed bytes and restore conflicts keep the
+version or recovery package intact; return the concrete blockers. Human
+approval decisions remain a separate boundary above.
+
 ## Choose a session
 
 4. Select an exact launchable scene and one of its declared sources:
 
    ```text
-   lw scene ls --launchable --json
+   lw scene ls --launchable --limit 20 --json
    lw scene launch <name@rev> --source <supported-source> --json
    ```
 

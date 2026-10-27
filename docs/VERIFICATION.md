@@ -81,6 +81,45 @@ only a generated fake credential locally, never through HTTP or in the user's Va
 
 ## Information and recording checks
 
+### Ordinary library operations and indexed browsing
+
+Scene summaries use `GET /api/v1/library/scenes?view=summary&limit=20`; follow
+`pagination.nextCursor` with the same query. Legacy unpaged/full reads retain
+their original shape. Summary text and gaps are previews of the last validation;
+full/bounded details retain complete information and launches verify real bytes.
+
+`lw scene rm <name@rev> --json` and `lw asset rm <kind/name@rev> --json` move an
+unused exact user version into recoverable storage without an Approval.
+`lw deletion ls --json` returns a page; follow its cursor with `--cursor`.
+`lw deletion show <deletion-id> --json` reads actual completion and
+`lw deletion restore <deletion-id> --json` restores the same immutable bytes.
+Use a stable `--request-id` to repeat an uncertain remove. Only `committed` or
+`restored` establish the respective completed operation. Retained disk bytes
+remain visible; there is no automatic permanent purge policy.
+
+MCP shares these HTTP operations and still has no approval tool. Legacy HTTP
+DELETE approvals and old receipts remain supported. Removed-version recovery
+does not reuse revision numbers for new imports or bypass reference protection.
+
+Library cards load static PNGs near the viewport. Detail pages can generate a
+thumbnail from the real read-only preview/model; these images are derived viewer
+state, not validation evidence. The cache accepts bounded static RGB/RGBA PNGs
+and retains at most 128 entries / 64 MiB. Missing/invalidated images are truthful
+placeholders; lists create no WebGL/GLB work. `/trash` exposes recovery.
+Approval navigation reads counts only; the approval page has pending/processed
+filters and cursor pages, with server-projected recent decisions.
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_library_browsing.py tests/gateway/test_library_removals.py tests/gateway/test_library_thumbnails.py tests/gateway/test_approval_pages.py tests/cli/test_library_browsing_commands.py tests/cli/test_library_deletion.py -q
+uv run --no-sync python tools/check_platform_skills.py
+pnpm --filter @spatial-sync/web exec playwright test capture-scene-library.spec.ts asset-library.spec.ts library-deletions.spec.ts approvals.spec.ts
+```
+
+Run profiling separately from heavy checks. Fixed input identity, warm/cold
+scope, samples and decoded results accompany timings. GPU-free CI asserts that
+slow file work cannot block concurrent health and that indexed pages do not
+resolve/open models. It does not gate on a machine-specific millisecond value.
+
 ### Full external catalog sync
 
 The deterministic public journey uses a paginated upstream HTTP fixture, the

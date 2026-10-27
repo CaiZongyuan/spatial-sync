@@ -87,7 +87,7 @@ test.afterEach(async ({ playwright }, info) => {
   } finally { ownedVersion = undefined; await cleanup.dispose(); }
 });
 
-test('exact user asset requests a human decision, then disappears from the library', async ({ page, request, isolatedAPI: { api, web } }, info) => {
+test('exact user asset moves directly to recovery storage and restores the same bytes', async ({ page, request, isolatedAPI: { api, web } }, info) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   const directory = info.outputPath('deletion-asset');
   await cp(resolve('../../tests/fixtures/asset-library/gap-cylinder'), directory, { recursive: true });
@@ -115,37 +115,28 @@ test('exact user asset requests a human decision, then disappears from the libra
   await page.goto(`${web}/assets/labware/deletion-browser/${revision}`);
   await expect(page.getByRole('heading', { name: 'UI Cylinder', exact: true })).toBeVisible();
   const panel = page.getByRole('region', { name: '删除库版本' });
-  const pendingResponse = page.waitForResponse(response => new URL(response.url()).pathname === target && response.request().method() === 'DELETE');
-  await panel.getByRole('button', { name: '申请删除此版本' }).click();
+  const pendingResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/library/deletions' && response.request().method() === 'POST');
+  await panel.getByRole('button', { name: '移到回收站', exact: true }).click();
   const pending = await (await pendingResponse).json();
-  expect(pending.code).toBe('pending_approval');
-  await expect(panel.getByRole('status')).toContainText('版本尚未删除');
-  expect((await request.get(api + target)).ok()).toBe(true);
-  await panel.getByRole('link', { name: '查看待审批' }).click();
-  const card = page.getByRole('article', { name: /删除版本：删除库版本 labware\/deletion-browser@/ });
-  await expect(card).toBeVisible();
-  await expect(card).toContainText('已检查，无引用');
-  await expect(card).toContainText(imported.assetVersion);
-  const pendingRecord = await (await request.get(`${api}/api/v1/approvals/${pending.approvalId}`)).json();
-  expect(pendingRecord.details.contentHash).toBe(before.contentHash);
-  expect(pendingRecord.details.inspection.complete).toBe(true);
-  await card.getByLabel('备注').fill('仅删除已核对的不可变版本');
-  await page.screenshot({ path: info.outputPath('deletion-pending-1600.png'), fullPage: true });
-  await card.getByRole('button', { name: '批准', exact: true }).click();
-  await expect(card).toContainText('版本已删除，索引已更新');
-  await card.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath('deletion-committed-1600.png'), fullPage: true });
-  await expect(card.getByRole('button', { name: '撤销', exact: true })).toHaveCount(0);
+  expect(pending.schema).toBe('lw.library-deletion/1');
+  await expect(panel.getByRole('status')).toContainText('版本已移到回收站');
   expect((await request.get(api + target)).status()).toBe(404);
-  const filesAfter = await Promise.all(files.map(async file => ({ ...file, status: (await request.get(api + file.url)).status() })));
-  expect(filesAfter.every(file => file.status === 404)).toBe(true);
-  const approved = await (await request.get(`${api}/api/v1/approvals/${pending.approvalId}`)).json();
-  expect(approved.decisions).toHaveLength(1);
-  expect(approved.details.execution.status).toBe('committed');
-  await info.attach('deletion-independent-http.json', { body: JSON.stringify({ health, imported, before, files, pendingRecord, approved, filesAfter }, null, 2), contentType: 'application/json' });
-  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Assets', exact: true }).click();
-  await page.getByRole('searchbox', { name: '搜索素材' }).fill('deletion-browser');
-  await expect(page.getByRole('heading', { name: '没有匹配的素材' })).toBeVisible();
+  const removed = await (await request.get(`${api}/api/v1/library/deletions/${pending.id}`)).json();
+  expect(removed.status).toBe('committed'); expect(removed.retainedBytes).toBeGreaterThan(0);
+  expect((await (await request.get(`${api}/api/v1/approvals`)).json()).pendingCount).toBe(0);
+  for (const file of files) expect((await request.get(api + file.url)).status()).toBe(404);
+  await page.screenshot({ path: info.outputPath('direct-deletion-committed.png'), fullPage: true });
+  await panel.getByRole('button', { name: '恢复此版本', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('原始版本已恢复');
+  expect((await (await request.get(api + target)).json()).contentHash).toBe(imported.contentHash);
+  for (const file of files) {
+    const restored = await request.get(api + file.url);
+    expect(restored.ok()).toBe(true);
+    expect(createHash('sha256').update(await restored.body()).digest('hex')).toBe(file.sha256);
+  }
+  const record = await (await request.get(`${api}/api/v1/library/deletions/${pending.id}`)).json();
+  expect(record.status).toBe('restored'); expect(record.retainedBytes).toBe(0);
+  await info.attach('direct-removal-and-restore.json', { body: JSON.stringify({ health, imported, files, removed, record }), contentType: 'application/json' });
   expect(errors).toEqual([]);
   expect((await (await request.get(`${api}/api/v1/health`)).json()).sessions).toEqual([]);
 });

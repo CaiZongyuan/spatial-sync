@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { ApprovalInboxContext } from '../lib/approvals';
 import { ApiError } from '../lib/api';
 import { requestLibraryDeletion, type DeletionDetails, type DeletionExecution, type ReferenceInspection } from '../lib/library-deletions';
+import { getLibraryRemoval, removalPending, restoreLibraryVersion, type LibraryRemoval } from '../lib/library-deletions';
 import '../library-deletions.css';
 
 const executionText: Record<DeletionExecution['status'], string> = {
@@ -19,27 +21,73 @@ export function LibraryReferences({ inspection }: { inspection: Partial<Referenc
   </div>;
 }
 
-export function LibraryDeletionRequest({ resource, id, root }: { resource: 'asset' | 'scene'; id: string; root: 'builtin' | 'user' }) {
+export function useRemovalProgress(record: LibraryRemoval | undefined, update: (value: LibraryRemoval) => void) {
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    if (!record || !removalPending(record)) return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5500);
+    const timer = setTimeout(() => {
+      void getLibraryRemoval(record.id, controller.signal).then(value => {
+        if (active) { setError(undefined); update(value); }
+      }).catch(error => { if (active) setError(controller.signal.aborted ? '读取执行状态超时，请刷新。' : (error as Error).message); });
+    }, 500);
+    return () => { active = false; clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
+  }, [record, update]);
+  return error;
+}
+
+export function RemovalResult({ record, update }: { record: LibraryRemoval; update: (value: LibraryRemoval) => void }) {
+  const permissions = useContext(ApprovalInboxContext);
+  const canOperate = permissions.inbox?.role === 'operator' && !permissions.error;
+  const [error, setError] = useState<string>(), [busy, setBusy] = useState(false);
+  const progressError = useRemovalProgress(record, update);
+  const labels: Record<LibraryRemoval['status'], string> = {
+    queued: '请求已接收，正在等待检查。', checking: '正在检查引用，尚未删除。',
+    committed: '版本已移到回收站，可恢复。', blocked: '检查未通过，版本已保留。',
+    failed: '执行未完成，版本已保留。', restoring: '正在恢复原始版本。', restored: '原始版本已恢复。',
+  };
+  return <div><p role="status">{labels[record.status]}</p>
+    {record.status === 'committed' && <><p>回收站保留 {record.retainedBytes.toLocaleString()} 字节，尚未释放这部分磁盘。</p>
+      <button disabled={busy || !canOperate} onClick={async () => {
+        setBusy(true); setError(undefined);
+        try { update(await restoreLibraryVersion(record.id)); } catch (error) { setError((error as Error).message); }
+        finally { setBusy(false); }
+      }}>恢复此版本</button></>}
+    {record.error && <><p role="alert">{record.error.message}</p><LibraryReferences inspection={record.error} /></>}
+    {(error || progressError) && <p role="alert">{error || progressError} <button onClick={() => {
+      void getLibraryRemoval(record.id).then(update).catch(error => setError((error as Error).message));
+    }}>刷新执行状态</button></p>}
+  </div>;
+}
+
+export function LibraryDeletionRequest({ resource, id, root, contentHash }: {
+  resource: 'asset' | 'scene'; id: string; root: 'builtin' | 'user'; contentHash: string;
+}) {
   const [busy, setBusy] = useState(false);
-  const [approval, setApproval] = useState<string>();
+  const permissions = useContext(ApprovalInboxContext);
+  const canOperate = permissions.inbox?.role === 'operator' && !permissions.error;
+  const [record, setRecord] = useState<LibraryRemoval>();
+  const [requestId] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string>();
   const [inspection, setInspection] = useState<Partial<ReferenceInspection>>();
   return <section className="library-deletion-panel" aria-label="删除库版本"><header><h2>删除版本</h2></header><div>
-    <p>仅申请删除 <code>{id}</code>，由人在待审批页决定。</p>
-    {root === 'builtin' ? <p>内置库只读，随平台版本发布。</p> : approval ? <p role="status">请求已提交，版本尚未删除。<Link to="/approvals">查看待审批 ↗</Link><small><code>{approval}</code></small></p> : <button disabled={busy} onClick={async () => {
+    <p>移出库列表并保留原始包，可从<Link to="/trash">回收站</Link>恢复。</p>
+    {root === 'builtin' ? <p>内置库只读，随平台版本发布。</p> : record ? <RemovalResult record={record} update={setRecord} /> : <button disabled={busy || !canOperate} onClick={async () => {
       setBusy(true); setError(undefined); setInspection(undefined);
-      try { const value = await requestLibraryDeletion(resource, id); setApproval(value.approvalId); }
+      try { setRecord(await requestLibraryDeletion(resource, id, contentHash, requestId)); }
       catch (failure) {
         setError((failure as Error).message);
         if (failure instanceof ApiError && failure.detail && typeof failure.detail === 'object') {
           const detail = failure.detail as Partial<ReferenceInspection> & { code?: string };
           setInspection(detail);
-          if (detail.code === 'version_in_use') setError('此版本仍被引用，无法申请删除。');
+          if (detail.code === 'version_in_use') setError('此版本仍被引用，无法移到回收站。');
           if (detail.code === 'reference_inspection_incomplete') setError('引用检查未完成，版本会保留。');
         }
       }
       finally { setBusy(false); }
-    }}>{busy ? '正在检查引用…' : '申请删除此版本'}</button>}
+    }}>{busy ? '正在提交…' : '移到回收站'}</button>}
     {error && <p role="alert">{error}</p>}{inspection && <LibraryReferences inspection={inspection} />}
   </div></section>;
 }

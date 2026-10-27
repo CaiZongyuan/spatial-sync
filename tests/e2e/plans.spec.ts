@@ -151,6 +151,7 @@ test('disclosed policy preview contract fixture draws only the actual target', a
     await expect(page.getByRole('button', { name: '策略', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('plan-preview-status')).toContainText('当前程序仅提供目标位姿');
     await expect(page.getByTestId('plan-preview-figure')).toContainText('由策略执行 · 仅显示目标');
+    await page.getByTestId('scene-viewport').scrollIntoViewIfNeeded();
     await expect.poll(() => page.evaluate(() => window.__planViewDebug?.())).toMatchObject({
       policyDriven: true, target: actual.targetPose.p, points: [], ghosts: {}, targetInView: true,
     });

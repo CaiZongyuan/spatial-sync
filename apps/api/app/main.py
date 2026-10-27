@@ -72,7 +72,9 @@ from packages.library.common import REPO_ROOT
 from packages.library.deletions import LibraryDeletions
 from packages.library.description_views import description_view
 from packages.library.previews import PreviewRepository
+from packages.library.removals import LibraryRemovals
 from packages.library.scenes import LibraryError
+from packages.library.thumbnails import ThumbnailStore
 from packages.library.validation import StructuralValidator
 from packages.live.bindings import load_bindings
 from packages.protocol.internal import SessionOptions
@@ -211,6 +213,9 @@ def create_app(
         tasks=manager.tasks,
         jobs=manager.jobs.reference_snapshot,
     )
+    manager.library_removals = LibraryRemovals(manager.library_deletions)
+    manager.library_thumbnails = ThumbnailStore(settings.state_root)
+    manager.library_previews = previews
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
     acquisitions = AcquisitionService(
         settings.state_root,
@@ -254,6 +259,7 @@ def create_app(
             await asyncio.to_thread(runtime_records.startup)
             # Resolve the operator's roots at startup, before any owned workers or recordings.
             await asyncio.to_thread(manager.library_deletions.recover)
+            await asyncio.to_thread(manager.library_removals.recover)
             manager.library.refresh()
             library_assets.startup()
             await asyncio.to_thread(catalog.startup)
@@ -279,33 +285,36 @@ def create_app(
             yield
         finally:
             try:
-                try:
-                    try:
-                        await metadata_maintenance.close()
-                    finally:
-                        metadata_store.close()
-                        catalog.resources.close()
-                        await catalog_sync.close()
-                finally:
-                    await acquisitions.close()
+                await manager.library_removals.close()
             finally:
                 try:
                     try:
-                        await views.close()
-                    finally:
                         try:
-                            await tensorboard.close()
+                            await metadata_maintenance.close()
                         finally:
-                            await monitor.close()
+                            metadata_store.close()
+                            catalog.resources.close()
+                            await catalog_sync.close()
+                    finally:
+                        await acquisitions.close()
                 finally:
                     try:
-                        if manager.live:
-                            await manager.live.close()
+                        try:
+                            await views.close()
+                        finally:
+                            try:
+                                await tensorboard.close()
+                            finally:
+                                await monitor.close()
                     finally:
                         try:
-                            await evaluations.close()
+                            if manager.live:
+                                await manager.live.close()
                         finally:
-                            await manager.close()
+                            try:
+                                await evaluations.close()
+                            finally:
+                                await manager.close()
 
     app = FastAPI(title="Newton Spatial Gateway", version="2", lifespan=lifespan)
     app.state.tensorboard = tensorboard
@@ -505,23 +514,29 @@ def create_app(
 
     @app.get("/api/v1/scenes")
     async def scenes():
-        return {"scenes": manager.library.list()}
+        return {"scenes": await asyncio.to_thread(manager.library.list)}
 
     @app.get("/api/v1/library/scenes")
     async def library_scenes(
         q: str | None = None, launchable: bool | None = None,
         source: Literal["synthetic", "newton"] | None = None,
+        view: Literal["full", "summary"] = "full", limit: int | None = None,
+        cursor: str | None = None,
     ):
-        values = manager.library.list(q, launchable)
-        result = []
-        for value in values:
-            if source is not None and source not in value["sources"]:
-                continue
-            version = manager.library.resolve(value["id"])
-            preview = await asyncio.to_thread(previews.describe, version, source or value["sources"][0])
-            result.append(value | {"preview": preview, "entityCount": preview["entityCount"],
-                                   "deviceCount": preview["bindingCount"], "countsReason": preview["reason"]})
-        return {"scenes": result}
+        if view == "summary" or limit is not None or cursor is not None:
+            return await asyncio.to_thread(manager.library.page, q, launchable, source, limit, cursor)
+        def full_list():
+            result = []
+            for value in manager.library.list(q, launchable):
+                if source is not None and source not in value["sources"]:
+                    continue
+                version = manager.library.resolve(value["id"])
+                preview = previews.describe(version, source or value["sources"][0])
+                result.append(value | {"preview": preview, "entityCount": preview["entityCount"],
+                                       "deviceCount": preview["bindingCount"],
+                                       "countsReason": preview["reason"]})
+            return {"scenes": result}
+        return await asyncio.to_thread(full_list)
 
     @app.get("/api/v1/library/scenes/{name}")
     @app.get("/api/v1/library/scenes/{name}/{rev}")
@@ -531,8 +546,8 @@ def create_app(
         documentDigest: str | None = None,
     ):
         selector = f"{name}@{rev}" if rev is not None else name
-        detail = manager.library.describe(selector)
-        version = manager.library.resolve(detail["id"])
+        detail = await asyncio.to_thread(manager.library.describe, selector)
+        version = await asyncio.to_thread(manager.library.resolve, detail["id"])
         preview = await asyncio.to_thread(previews.describe, version, source or detail["sources"][0])
         detail.update(
             preview=preview, entityCount=preview["entityCount"], deviceCount=preview["bindingCount"],
@@ -545,7 +560,7 @@ def create_app(
             for candidate in manager.library.versions.values():
                 if candidate.name != name:
                     continue
-                value = candidate.with_templates(manager.library.roots).summary()
+                value = manager.library.resolved(candidate).summary()
                 values.append({
                     key: value[key]
                     for key in ("id", "rev", "contentHash", "launchable", "launchReason",
@@ -559,7 +574,7 @@ def create_app(
 
     @app.get("/api/v1/library/scenes/{name}/{rev}/preview/{source}/{relative:path}")
     async def library_preview_file(name: str, rev: str, source: str, relative: str):
-        version = manager.library.resolve(f"{name}@{rev}")
+        version = await asyncio.to_thread(manager.library.resolve, f"{name}@{rev}")
         try:
             payload = await asyncio.to_thread(previews.read, version, source, relative)
         except (OSError, ValueError) as exc:

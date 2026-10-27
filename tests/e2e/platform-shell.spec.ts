@@ -10,15 +10,19 @@ test('platform navigation, persistent preferences, system theme and local assets
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(navigation.getByRole('link')).toHaveCount(13);
+  await expect(navigation.getByRole('link')).toHaveCount(14);
   expect(await navigation.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label'))))
-    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Plans', 'Training', 'Evaluation', 'Runtime records', 'Cost', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
+    .toEqual(['Overview', 'Live', 'Assets', 'Scenes', 'Recovery', 'Plans', 'Training', 'Evaluation', 'Runtime records', 'Cost', 'Resources', 'Approvals', 'Sessions', 'Recordings']);
   await expect(navigation.getByRole('link', { name: 'Runtime records', exact: true })).toHaveAttribute('href', '/runtime-sessions');
   await expect(navigation.getByRole('link', { name: 'Cost', exact: true })).toHaveAttribute('href', '/cost');
   await expect(navigation.getByRole('link', { name: 'Training', exact: true })).toHaveAttribute('href', '/train');
   await expect(navigation.getByRole('link', { name: 'Approvals', exact: true })).toHaveAttribute('href', '/approvals');
   await expect(navigation.getByRole('link', { name: 'Evaluation', exact: true })).toHaveAttribute('href', '/eval');
   await expect(navigation.getByRole('link', { name: 'Overview', exact: true })).toHaveAttribute('aria-current', 'page');
+  await navigation.getByRole('link', { name: 'Recovery', exact: true }).click();
+  await expect(page).toHaveURL(/\/trash$/);
+  await expect(page.getByRole('heading', { name: '回收站', exact: true })).toBeVisible();
+  await expect(navigation.getByRole('link', { name: 'Recovery', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(243, 242, 238)');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(18, 18, 17)');
@@ -108,7 +112,7 @@ test('scene details select only a source supported by the exact version', async 
 
 test('scene library launches the selected exact version and connects to its real session', async ({ page, request }) => {
   await page.goto('/scenes');
-  await page.locator('.scene-card').filter({ hasText: 'lab-demo@1' }).click();
+  await page.getByRole('link', { name: 'lab-demo@1 Synthetic Laboratory', exact: true }).click();
   const source = page.getByLabel('启动物理源', { exact: true });
   await expect(source).toHaveValue('synthetic');
   const created = page.waitForResponse(response => response.url().endsWith('/api/v1/sessions') &&

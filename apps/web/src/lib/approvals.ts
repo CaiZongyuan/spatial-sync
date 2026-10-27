@@ -20,15 +20,20 @@ export interface ApprovalRecord {
   canRevoke: boolean;
   invocation: { status: string; startedSimTime: number | null } | null;
 }
-export interface ApprovalInbox { approvals: ApprovalRecord[]; pendingCount: number; role: 'operator' | 'viewer' }
+export interface ApprovalInbox {
+  approvals: ApprovalRecord[]; pendingCount: number; role: 'operator' | 'viewer';
+  pagination?: { total: number; nextCursor: string | null }; recentApprovals?: ApprovalRecord[];
+}
 export interface ApprovalInboxState { inbox?: ApprovalInbox; error?: string }
 export const ApprovalInboxContext = createContext<ApprovalInboxState>({});
 
 const changed = 'lab:approvals-changed';
 
-export function useApprovalInbox(enabled = true) {
-  const [inbox, setInbox] = useState<ApprovalInbox>();
-  const [error, setError] = useState<string>();
+export interface ApprovalFilters { status?: string; subject?: string; layer?: string; agentId?: string; limit?: number; cursor?: string; include?: string }
+export function useApprovalInbox(enabled = true, filters?: ApprovalFilters) {
+  const key = JSON.stringify(filters ?? null);
+  const selectionKey = JSON.stringify(filters ? { ...filters, include: undefined } : null);
+  const [response, setResponse] = useState<{ key: string; inbox?: ApprovalInbox; error?: string }>();
   useEffect(() => {
     if (!enabled) return;
     let disposed = false;
@@ -38,10 +43,12 @@ export function useApprovalInbox(enabled = true) {
       controller = new AbortController();
       const timeout = setTimeout(() => controller?.abort(), 5000);
       try {
-        const value = await request<ApprovalInbox>('/approvals', { signal: controller.signal });
-        if (!disposed) { setInbox(value); setError(undefined); }
+        const query = new URLSearchParams({ view: filters ? 'page' : 'summary' });
+        for (const [name, value] of Object.entries(filters ?? {})) if (value !== undefined) query.set(name, String(value));
+        const value = await request<ApprovalInbox>(`/approvals?${query}`, { signal: controller.signal });
+        if (!disposed) setResponse({ key: selectionKey, inbox: value });
       } catch (failure) {
-        if (!disposed) setError((failure as Error).message);
+        if (!disposed) setResponse(prior => ({ key: selectionKey, inbox: prior?.key === selectionKey ? prior.inbox : undefined, error: (failure as Error).message }));
       } finally { clearTimeout(timeout); controller = undefined; }
     };
     void refresh();
@@ -51,8 +58,8 @@ export function useApprovalInbox(enabled = true) {
       disposed = true; clearInterval(interval); controller?.abort();
       window.removeEventListener(changed, refresh);
     };
-  }, [enabled]);
-  return { inbox, error };
+  }, [enabled, key, selectionKey]);
+  return response?.key === selectionKey ? { inbox: response.inbox, error: response.error } : {};
 }
 
 export async function decideApproval(id: string, decision: ApprovalDecision, note: string) {

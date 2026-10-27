@@ -58,6 +58,11 @@ lw = "apps/cli/lw"
 "share/spatial-sync/skills/archive/lab-operate/4416eb336558802d2b000778aa69b29705f5cd94dc5ef9f9d796bb800bb676be" = ["skills/archive/lab-operate/4416eb336558802d2b000778aa69b29705f5cd94dc5ef9f9d796bb800bb676be/SKILL.md"]
 "share/spatial-sync/skills/archive/lab/59d785c6267867ea08e12a23a9dd69154c88cd42270d166d36fe38647a260319" = ["skills/archive/lab/59d785c6267867ea08e12a23a9dd69154c88cd42270d166d36fe38647a260319/SKILL.md"]
 
+"share/spatial-sync/skills/archive/lab/de964e3ddd1e4d918b2f509d4fdf6ee16649102518af7ea6caf88ff43e8d6660" = ["skills/archive/lab/de964e3ddd1e4d918b2f509d4fdf6ee16649102518af7ea6caf88ff43e8d6660/SKILL.md"]
+"share/spatial-sync/skills/archive/lab-library/3c3b4b43b13327e11abf591413e96f7298b98ce1786c740de22cc82dbd9014e3" = ["skills/archive/lab-library/3c3b4b43b13327e11abf591413e96f7298b98ce1786c740de22cc82dbd9014e3/SKILL.md"]
+"share/spatial-sync/skills/archive/lab-operate/4e59d53c16717a0112eb465309e4e8b1babb7d7526731dafc6ccb738023832ae" = ["skills/archive/lab-operate/4e59d53c16717a0112eb465309e4e8b1babb7d7526731dafc6ccb738023832ae/SKILL.md"]
+"share/spatial-sync/skills/archive/lab-scene-director/abf3f690217b1c9ae0ac6d1d8857f613417c5a0d0689a5ad911150b6c8d7b905" = ["skills/archive/lab-scene-director/abf3f690217b1c9ae0ac6d1d8857f613417c5a0d0689a5ad911150b6c8d7b905/SKILL.md"]
+
 [project.optional-dependencies]
 simulation = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "viser==1.1.1", "pycollada==0.9.3", "scipy>=1.15,<2"]
 usd = ["newton-usd-schemas>=0.5,<1"]

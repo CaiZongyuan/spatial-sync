@@ -34,7 +34,7 @@ Preserve existing sessions. Only when a new session is required, discover a
 launchable version and a declared source before launching:
 
 ```text
-lw scene ls --launchable --json
+lw scene ls --launchable --limit 20 --json
 lw scene show <scene-version> --json
 lw scene launch <scene-version> --source <supported-source> --json
 ```

@@ -25,6 +25,7 @@ const pages = [
   { to: '/live', label: 'Live', text: '实况', icon: 'live' },
   { to: '/assets', label: 'Assets', text: '素材库', icon: 'assets' },
   { to: '/scenes', label: 'Scenes', text: '场景库', icon: 'scenes' },
+  { to: '/trash', label: 'Recovery', text: '回收站', icon: 'recordings' },
   { to: '/plans', label: 'Plans', text: '计划', icon: 'plans' },
   { to: '/train', label: 'Training', text: '训练', icon: 'training' },
   { to: '/eval', label: 'Evaluation', text: '评估', icon: 'evaluation' },

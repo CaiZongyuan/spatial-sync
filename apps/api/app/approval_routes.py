@@ -1,5 +1,8 @@
 """Human decisions over generic approval subjects; invocation is the first consumer."""
 
+import base64
+import json
+import math
 from typing import Literal
 
 import anyio
@@ -83,32 +86,66 @@ def install_approval_routes(app, manager, role_for):
         subject: Subject | None = None,
         sessionId: str | None = None,
         limit: int = Query(100, ge=1, le=1000),
+        view: Literal["full", "summary", "page"] = "full", cursor: str | None = None,
+        include: str = "",
+        layer: Literal["agent", "embodied"] | None = None, agentId: str | None = None,
     ):
         from packages.info.evaluation_privacy import private_recording
 
-        records = sorted(
-            (record for record in store.records.values()
-             if not record.sessionId or not private_recording(manager, record.sessionId)),
-            key=lambda record: (record.status == "pending", record.createdAtMs),
-            reverse=True,
-        )
-        return {
-            "approvals": [
-                document(record)
-                for record in records
-                if (
-                    (status is None or record.status == status)
-                    and (subject is None or record.subject == subject)
-                    and (sessionId is None or record.sessionId == sessionId)
-                )
-            ][:limit],
-            "pendingCount": sum(record.status == "pending" for record in records),
-            "role": role_for(request.headers),
-        }
+        def page():
+            records = [record for record in list(store.records.values())
+                       if not record.sessionId or not private_recording(manager, record.sessionId)]
+            result = {"approvals": [], "pendingCount": sum(record.status == "pending" for record in records),
+                      "role": role_for(request.headers)}
+            if view == "summary":
+                return result
+            included = include.split(",") if include else []
+            if len(included) > 20 or any(len(value) > 100 for value in included):
+                raise HTTPException(422, {"code": "invalid_approval_page"})
+            def key(record):
+                return (record.status == "pending", record.createdAtMs, record.approvalId)
+            def relevant(record):
+                plan = record.details.get("plan", {})
+                agent = plan.get("layer") == "agent" or bool(record.details.get("agentPromotionId"))
+                if layer == "agent" and not agent or layer == "embodied" and agent:
+                    return False
+                return agentId is None or (plan.get("agentId") or record.details.get("agentId")) == agentId
+            selected = sorted((record for record in records if (
+                (status is None or record.status == status
+                 or status == "processed" and record.status != "pending")
+                and (subject is None or record.subject == subject)
+                and (sessionId is None or record.sessionId == sessionId)
+                and relevant(record))), key=key, reverse=True)
+            total = len(selected)
+            query = [status, subject, sessionId, layer, agentId]
+            if cursor:
+                try:
+                    if len(cursor) > 2048:
+                        raise ValueError()
+                    value = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+                    after = value["after"]
+                    if (value["query"] != query or len(after) != 3 or type(after[0]) is not bool
+                            or not isinstance(after[1], (int, float)) or not math.isfinite(after[1])
+                            or not isinstance(after[2], str)):
+                        raise ValueError()
+                except (ValueError, KeyError, TypeError, UnicodeError):
+                    raise HTTPException(422, {"code": "invalid_approval_cursor"}) from None
+                selected = [record for record in selected if key(record) < tuple(after)]
+            current = selected[:limit]
+            result["approvals"] = [document(record) for record in current]
+            if view == "page":
+                next_cursor = base64.urlsafe_b64encode(json.dumps({
+                    "query": query, "after": key(current[-1]),
+                }).encode()).decode() if len(selected) > limit else None
+                result["pagination"] = {"total": total, "nextCursor": next_cursor}
+                result["recentApprovals"] = [document(record) for record in records
+                                             if record.approvalId in included]
+            return result
+        return await anyio.to_thread.run_sync(page)
 
     @app.get("/api/v1/approvals/{approval_id}")
     async def approval(approval_id: str):
-        return document(get_record(approval_id))
+        return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
 
     @app.post("/api/v1/approvals/{approval_id}/decision")
     async def decide(approval_id: str, body: ApprovalDecisionRequest, request: Request):
@@ -139,7 +176,7 @@ def install_approval_routes(app, manager, role_for):
                 manager.jobs.decide(record, body.decision, actor, body.note)
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-            return document(get_record(approval_id))
+            return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
         if record.subject == "plan" and record.details.get("plan", {}).get("kind") == "training":
             try:
                 training_store(manager, identifier=record.subjectId).decide(
@@ -147,7 +184,7 @@ def install_approval_routes(app, manager, role_for):
                 )
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-            return document(get_record(approval_id))
+            return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
         if record.subject == "deletion":
             try:
                 await anyio.to_thread.run_sync(
@@ -155,7 +192,7 @@ def install_approval_routes(app, manager, role_for):
                 )
             except ApprovalConflict as exc:
                 raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-            return document(get_record(approval_id))
+            return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
         session = target(record)
         simulation = manager.sessions.get(record.sessionId)
         if simulation is not None:
@@ -167,7 +204,7 @@ def install_approval_routes(app, manager, role_for):
         try:
             if record.subject == "plan":
                 await manager.plans.decide(record, body.decision, session, actor, body.note)
-                return document(get_record(approval_id))
+                return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))
             if body.decision == "revoke":
                 await pipeline.revoke_approval(record.subjectId, role, actor, body.note)
             else:
@@ -179,4 +216,4 @@ def install_approval_routes(app, manager, role_for):
                     raise ApprovalConflict("Another decision or session change was processed first")
         except ApprovalConflict as exc:
             raise HTTPException(409, {"code": "approval_conflict", "message": str(exc)}) from exc
-        return document(get_record(approval_id))
+        return await anyio.to_thread.run_sync(lambda: document(get_record(approval_id)))

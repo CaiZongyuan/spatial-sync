@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T05:13:47.120196+00:00",
+  "capturedAt": "2026-10-27T06:13:22.904935+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -193,7 +193,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "a9917e52a0b90e62292d45b43baae163a12bcddf70128b24015072dbb04c278a"
+      "sha256": "c8156cc7fc85a0f7ac46f9496e187e9e7f485d13b4e17904defca8e2cef1292d"
     },
     {
       "path": "packages/library/reports.py",
@@ -201,7 +201,7 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "7aa8d18d2d81ad6d2b0470d3bd10cec45d803cd6be07c6ed10751300bbcbe320"
+      "sha256": "05e8c03a75b9484100296d9e8bc66b22f4aea0329c60c868ff7f75ec57e93ab3"
     },
     {
       "path": "packages/library/templates.py",
@@ -395,11 +395,11 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "830ccfd82d8334c5950872eb841c4429cd947157182d11ba5e97b36276bcf8e2",
-    "catalog.json": "a5e7f67aeb95d16ec33e440ab47cdc0ce4f7973a9da9c28b70a0f9554024ae50",
-    "state.json": "bfc6708c3587227ac42e8498f2e3219431f57518ba6baf1415d573910061cb2e",
-    "snapshot.bin": "cac46d4bfd6acd832b20a3e7b470b53da79cec974845ef2a7ff702906f341151",
-    "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
+    "manifest.json": "0ebd820b980fab613acfa38a9378ac2ec4062236c7e0befb9c0448c391c14ff2",
+    "catalog.json": "925fb006a62d3f118cf1d09175c7a22a889364dfdf31666171ee821ac7dbf593",
+    "state.json": "cf1e7a9a983c162e80ee09571c6e1c52046930eb16c53423c405fc2931d0f4aa",
+    "snapshot.bin": "446848d097d3d706061e5892d3cae1f2854e7ad9c7f9eb2f6ca1b45e343b1115",
+    "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
     "assets/sha256-363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c.glb": "363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c",

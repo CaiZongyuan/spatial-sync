@@ -154,13 +154,14 @@ class GatewayClient:
             return await self.request("GET", "/api/v1/live/catalog")
         return None
 
-    async def scene_search(self, query=None, launchable=False):
-        return await self.library_search(query=query, launchable=launchable)
+    async def scene_search(self, query=None, launchable=False, limit=None, cursor=None):
+        return await self.library_search(query=query, launchable=launchable, limit=limit, cursor=cursor)
 
     async def asset_search(self, query=None, kind=None, gaps=False):
         return await self.library_search(query=query, kind=kind, gaps=gaps, resource="assets")
 
-    async def library_search(self, query=None, launchable=False, resource="scenes", kind=None, gaps=False):
+    async def library_search(self, query=None, launchable=False, resource="scenes", kind=None, gaps=False,
+                             limit=None, cursor=None):
         if kind is not None or gaps:
             resource = "assets"
         if resource not in ("scenes", "assets"):
@@ -174,7 +175,15 @@ class GatewayClient:
             params["kind"] = kind
         if gaps:
             params["gaps"] = True
-        return (await self.request("GET", "/api/v1/library/" + resource, params=params))[resource]
+        paged = limit is not None or cursor is not None
+        if paged:
+            if resource != "scenes":
+                raise ValueError("Use catalog search to paginate assets; these page options are for scenes")
+            params |= {"view": "summary", "limit": 20 if limit is None else limit}
+            if cursor is not None:
+                params["cursor"] = cursor
+        value = await self.request("GET", "/api/v1/library/" + resource, params=params)
+        return value if paged else value[resource]
 
     async def catalog_search(self, query=None, scope="all", kind=None, provider=None, usage=None,
                              license=None, installed=False, notInstalled=False,
@@ -521,12 +530,73 @@ class GatewayClient:
             raise ValueError("Validation requires an exact asset or scene version with @rev")
         return await self.request("POST", self._library_path(id) + "/validate", actor=actor, timeout=240)
 
-    async def library_remove(self, id, *, actor="cli:lw"):
+    async def library_remove(self, id, requestId=None, *, actor="cli:lw"):
         if not re.fullmatch(
             r"(?:(?:robot|device|labware|environment)/)?[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*", id,
         ):
             raise ValueError("Deletion requires an exact asset kind/name@rev or scene name@rev")
-        return await self.request("DELETE", self._library_path(id), actor=actor)
+        previous = None
+        if requestId is not None:
+            kind, _, name = actor.partition(":")
+            cursor = None
+            while True:
+                page = await self.library_deletion_list(requestId, limit=100, cursor=cursor)
+                previous = next((record for record in page["deletions"]
+                                 if record["requestedBy"] == {"kind": kind, "name": name}), None)
+                cursor = page["pagination"]["nextCursor"]
+                if previous is not None or cursor is None:
+                    break
+        detail = previous if previous else await self.library_describe(id, view="summary")
+        try:
+            record = await self.request("POST", "/api/v1/library/deletions", actor=actor, json={
+                "resource": "asset" if "/" in id else "scene", "id": id,
+                "contentHash": detail["contentHash"],
+                "requestId": requestId if requestId is not None else uuid.uuid4().hex,
+            })
+        except GatewayError as exc:
+            if exc.status_code == 404 and not (isinstance(exc.detail, dict)
+                                              and exc.detail.get("code") == "unknown_version"):
+                raise GatewayError("This gateway does not support recoverable removals; upgrade the gateway",
+                                   status_code=409, detail={"code": "library_deletion_unsupported"}) from None
+            raise
+        return await self._wait_deletion(record)
+
+    async def library_deletion_list(self, requestId=None, limit=20, cursor=None):
+        params = {"limit": limit}
+        if requestId is not None:
+            params["requestId"] = requestId
+        if cursor is not None:
+            params["cursor"] = cursor
+        try:
+            return await self.request("GET", "/api/v1/library/deletions", params=params)
+        except GatewayError as exc:
+            if exc.status_code == 404:
+                raise GatewayError(
+                    "This gateway has no recoverable-removal endpoint; check its URL and version",
+                    status_code=409, detail={"code": "library_deletion_unsupported"},
+                ) from None
+            raise
+
+    async def library_deletion_show(self, id):
+        return await self.request("GET", "/api/v1/library/deletions/" + quote(id, safe=""))
+
+    async def library_deletion_restore(self, id, *, actor="cli:lw"):
+        record = await self.request("POST", "/api/v1/library/deletions/" + quote(id, safe="") + "/restore",
+                                    actor=actor)
+        return await self._wait_deletion(record)
+
+    async def _wait_deletion(self, record):
+        deadline = time.monotonic() + 30
+        while record["status"] in ("queued", "checking", "restoring") and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+            record = await self.library_deletion_show(record["id"])
+        if record["status"] in ("queued", "checking", "restoring"):
+            raise GatewayError("Deletion still running; use lw deletion show " + record["id"],
+                               status_code=408, detail={"code": "deletion_pending", "record": record})
+        if record.get("error"):
+            raise GatewayError(record["error"]["message"], status_code=409,
+                               detail=record["error"] | {"deletionId": record["id"]})
+        return record
 
     async def library_import(self, directory, *, actor="cli:lw"):
         return await self._upload_directory(directory, "/api/v1/library/imports", actor)

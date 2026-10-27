@@ -43,6 +43,36 @@ async def storage_roots():
     }
 
 
+@app.post("/e2e/approval-pages")
+async def approval_pages(payload: dict):
+    from packages.protocol.schema import Actor
+
+    store = app.state.manager.approvals
+    if payload.get("clear"):
+        for record in list(store.records.values()):
+            if record.requestedBy.name == "approval-page-fixture" and record.status == "pending":
+                store.set_status(record.approvalId, "unavailable")
+        return {"cleared": True}
+    count = payload.get("count", 0)
+    if type(count) is not int or not 1 <= count <= 120:
+        from fastapi import HTTPException
+        raise HTTPException(422, "count must be 1..120")
+    records = []
+    for index in range(count):
+        record = store.submit(
+            subject="deletion", subject_id=f"scene:pagination-fixture@{index + 1}",
+            title=f"[controlled pagination] {index:03}",
+            requester=Actor(kind="cli", name="approval-page-fixture"),
+            details={"resource": "scene", "id": f"pagination-fixture@{index + 1}", "root": "user",
+                     "contentHash": "a" * 64,
+                     "inspection": {"complete": True, "references": [], "uninspected": [],
+                                    "coverage": [], "training": "Controlled paging fixture"},
+                     "execution": {"status": "not_started"}},
+        )
+        records.append(record.approvalId)
+    return {"ids": records}
+
+
 @app.post("/e2e/evaluation-alert-suite")
 async def evaluation_alert_suite(payload: dict | None = None):
     from tests.fixtures.evaluation_alerts import prepare_suite

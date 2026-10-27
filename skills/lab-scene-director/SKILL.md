@@ -267,6 +267,11 @@ The official `lw mcp` server exposes the same HTTP behavior: `catalog_search`,
 `library_search`, `library_describe`, `library_import`, `library_validate`,
 `scene_launch`, `authoring_submit`, `authoring_list` and `authoring_show`.
 Generic library tools deliberately have no approval or promotion bypass.
+For explicitly authorized cleanup, ordinary `lw scene rm <name@rev> --json`
+and `lw asset rm <kind/name@rev> --json` move unused user versions to recovery
+storage without an Approval. Follow [lab-library](../lab-library/SKILL.md)
+for execution status, idempotent retries and restoration; deployment and other
+human decisions remain separate.
 
 ## Authorization for a paid Agent run
 

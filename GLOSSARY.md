@@ -220,7 +220,7 @@ _Avoid_: Session (the running or historical laboratory context)
 ## Agents and people
 
 **Approval Gate** (人工关口):
-A step in the RSI loop that only a person can pass: approving a Training Plan, promoting a Policy to a scene's default program, running a Job over budget, or deleting a library version.
+A step in the RSI loop that only a person can pass: approving a Training Plan, promoting a Policy to a scene's default program, or running a Job over budget. Ordinary removal of an unused user-library version is a recoverable operation.
 _Avoid_: Permission, confirmation (when meaning a conversational check)
 
 **Platform Skill** (平台 skill):

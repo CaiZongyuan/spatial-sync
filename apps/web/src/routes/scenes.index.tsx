@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
-import { getSceneLibrary, sourceLabel, rootLabel, type SceneSource, type SceneVersion } from '../lib/library';
+import { getSceneLibrary, sourceLabel, rootLabel, type ScenePagination, type SceneSource, type SceneVersion } from '../lib/library';
 import { SceneThumbnails } from '../components/SceneThumbnails';
 import { LaunchStatus } from '../components/SceneStatus';
 import { Icon } from '../components/Icon';
 
-type Search = { q?: string; source?: SceneSource; launchable?: boolean; view?: 'card' | 'list' };
+type Search = { q?: string; source?: SceneSource; launchable?: boolean; view?: 'card' | 'list'; cursor?: string };
 const viewKey = 'lab.scenes.view';
 export const Route = createFileRoute('/scenes/')({
   validateSearch: (value: Record<string, unknown>): Search => ({
@@ -14,6 +14,7 @@ export const Route = createFileRoute('/scenes/')({
     launchable: value.launchable === true || value.launchable === 'true' ? true
       : value.launchable === false || value.launchable === 'false' ? false : undefined,
     view: value.view === 'card' || value.view === 'list' ? value.view : undefined,
+    cursor: typeof value.cursor === 'string' ? value.cursor : undefined,
   }), component: SceneLibrary,
 });
 
@@ -26,22 +27,25 @@ function SceneLibrary() {
   const view = search.view ?? preferred;
   const [attempt, setAttempt] = useState(0);
   // Retire old results during render, before effects cancel their requests.
-  const query = useMemo(() => ({ q: search.q, source: search.source, launchable: search.launchable, attempt }),
-    [search.q, search.source, search.launchable, attempt]);
-  const [result, setResult] = useState<{ query: typeof query; scenes?: SceneVersion[]; error?: string }>();
+  const query = useMemo(() => ({ q: search.q, source: search.source, launchable: search.launchable, cursor: search.cursor, attempt }),
+    [search.q, search.source, search.launchable, search.cursor, attempt]);
+  const [result, setResult] = useState<{ query: typeof query; scenes?: SceneVersion[]; pagination?: ScenePagination; error?: string }>();
   const current = result?.query === query ? result : undefined;
   const scenes = current?.scenes, error = current?.error;
   useEffect(() => {
     const controller = new AbortController();
-    void getSceneLibrary(query, controller.signal)
-      .then(value => { if (!controller.signal.aborted) setResult({ query, scenes: value.scenes }); })
-      .catch((error: Error) => { if (!controller.signal.aborted) setResult({ query, error: error.message }); });
-    return () => controller.abort();
+    const timer = setTimeout(() => {
+      void getSceneLibrary(query, controller.signal)
+        .then(value => { if (!controller.signal.aborted) setResult({ query, scenes: value.scenes, pagination: value.pagination }); })
+        .catch((error: Error) => { if (!controller.signal.aborted) setResult({ query, error: error.message }); });
+    }, query.q ? 250 : 0);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [query]);
-  const change = (next: Partial<Search>) => void navigate({ search: previous => ({ ...previous, ...next }), replace: true });
+  const change = (next: Partial<Search>) => void navigate({ search: previous => ({ ...previous, ...next, cursor: undefined }), replace: true });
+  const page = (cursor?: string | null) => void navigate({ search: previous => ({ ...previous, cursor: cursor ?? undefined }) });
   return <main className="scene-library-page">
-    <header className="scene-page-heading"><div><h1>场景库</h1><p>选择一个不可变版本，检查场景后启动会话。</p></div>
-      <span className="scene-result-count">{scenes ? `${scenes.length} 个版本` : '读取中…'}</span></header>
+    <header className="scene-page-heading"><div><h1>场景库</h1><p>列表显示最近验证结果；打开版本查看详情，启动前会再次检查。</p></div>
+      <span className="scene-result-count">{scenes ? `${current?.pagination?.total ?? scenes.length} 个版本` : '读取中…'}</span></header>
     <section className="scene-toolbar" aria-label="场景筛选">
       <label className="scene-search"><Icon name="search" /><input aria-label="搜索场景" type="search" placeholder="搜索场景…" value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
       <label>物理源<select aria-label="物理源筛选" value={search.source ?? ''} onChange={event => change({ source: event.target.value as SceneSource || undefined })}>
@@ -52,19 +56,23 @@ function SceneLibrary() {
         setPreferred(kind); try { localStorage.setItem(viewKey, kind); } catch { /* optional preference */ } change({ view: kind });
       }}><Icon name={kind === 'card' ? 'overview' : 'list'} />{kind === 'card' ? '卡片' : '列表'}</button>)}</div>
     </section>
-    {error ? <div role="alert" className="platform-error">{error} <button onClick={() => setAttempt(attempt + 1)}>重试</button></div> : !scenes ? <div role="status" className="scene-empty">正在读取场景库…</div> : scenes.length === 0 ? <div className="scene-empty"><h2>没有匹配的场景</h2><p>调整搜索或筛选条件。</p><button onClick={() => void navigate({ search: { view }, replace: true })}>清除筛选</button></div> :
+    {error ? <div role="alert" className="platform-error">{error} <button onClick={() => { page(); setAttempt(attempt + 1); }}>从第一页重试</button></div> : !scenes ? <div role="status" className="scene-empty">正在读取场景库…</div> : scenes.length === 0 ? <div className="scene-empty"><h2>没有匹配的场景</h2><p>调整搜索或筛选条件。</p><button onClick={() => void navigate({ search: { view }, replace: true })}>清除筛选</button></div> :
       <SceneThumbnails scenes={scenes}>{thumbnails => view === 'card' ? <div className="scene-card-grid">{scenes.map((scene, index) =>
-        <Link key={scene.id} to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: String(scene.rev) }} search={{ source: search.source }} className="scene-card">
+        <article key={scene.id} className="scene-card">
           <div className="scene-thumbnail">{thumbnails(scene)}</div><div className="scene-card-caption"><b>图 {index + 1}</b><code>{scene.id}</code></div>
-          <h2>{scene.title}</h2><div className="scene-card-origin">{scene.sources.map(sourceLabel).join(' / ')} · {rootLabel(scene.root)}</div>
+          <h2><Link style={{ color: 'inherit', textDecoration: 'none' }} to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: scene.id.split('@')[1] }} search={{ source: search.source }} aria-label={`${scene.id} ${scene.title}`}>{scene.title}</Link></h2><div className="scene-card-origin">{scene.sources.map(sourceLabel).join(' / ')} · {rootLabel(scene.root)}</div>
           <div className="scene-card-meta"><LaunchStatus scene={scene} /><span title={scene.countsReason ?? '初始快照统计'}>{scene.entityCount ?? '—'} 实体 · {scene.deviceCount ?? '—'} 绑定</span></div>
+          {scene.validatedAt && <small className="scene-note">最近验证 {new Date(scene.validatedAt).toLocaleString()}</small>}
           {scene.entityCount === null && <p className="scene-counts-reason">{scene.countsReason}</p>}
           <p className={scene.launchable ? 'scene-note' : 'scene-failure'}>{scene.launchReason ?? scene.description}</p>
-        </Link>)}</div> : <div className="scene-table-wrap"><table className="scene-library-table"><thead><tr><th>预览</th><th>场景</th><th>物理源</th><th>构建 · 来源</th><th>实体 / 绑定</th><th>验证</th><th>备注</th></tr></thead><tbody>{scenes.map(scene => <tr key={scene.id}>
-          <td><Link className="scene-mini-thumbnail" to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: String(scene.rev) }} search={{ source: search.source }} aria-label={`打开 ${scene.id}`}>{thumbnails(scene)}</Link></td>
-          <td><Link to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: String(scene.rev) }} search={{ source: search.source }}><code>{scene.id}</code><small>{scene.title}</small></Link></td>
+        </article>)}</div> : <div className="scene-table-wrap"><table className="scene-library-table"><thead><tr><th>预览</th><th>场景</th><th>物理源</th><th>构建 · 来源</th><th>实体 / 绑定</th><th>验证</th><th>备注</th></tr></thead><tbody>{scenes.map(scene => <tr key={scene.id}>
+          <td><span className="scene-mini-thumbnail">{thumbnails(scene)}</span></td>
+          <td><Link to="/scenes/$name/$rev" params={{ name: scene.sceneId, rev: scene.id.split('@')[1] }} search={{ source: search.source }}><code>{scene.id}</code><small>{scene.title}</small></Link></td>
           <td>{scene.sources.join(' / ')}</td><td>{scene.stage.startsWith('python:') ? 'Python 构建' : scene.stage} · {rootLabel(scene.root)}</td>
           <td title={scene.countsReason ?? '初始快照统计'}>{scene.entityCount ?? '—'} / {scene.deviceCount ?? '—'}{scene.entityCount === null && <small>{scene.countsReason}</small>}</td><td><LaunchStatus scene={scene} /></td>
           <td className={scene.launchable ? 'scene-note' : 'scene-failure'}>{scene.launchReason ?? scene.description}</td></tr>)}</tbody></table></div>}</SceneThumbnails>}
+    {current?.pagination && <nav aria-label="场景分页"><button disabled={!current.pagination.previousCursor} onClick={() => page(current.pagination?.previousCursor)}>上一页</button>
+      <span> 本页 {scenes?.length ?? 0} 项 · 共 {current.pagination.total} 项 </span>
+      <button disabled={!current.pagination.nextCursor} onClick={() => page(current.pagination?.nextCursor)}>下一页</button></nav>}
   </main>;
 }

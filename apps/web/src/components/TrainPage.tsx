@@ -1,6 +1,5 @@
 import { Link, useNavigate, useRouter, useSearch } from '@tanstack/react-router';
-import { useContext } from 'react';
-import { ApprovalInboxContext } from '../lib/approvals';
+import { useApprovalInbox } from '../lib/approvals';
 import type { JobStatus } from '../lib/jobs';
 import { usePlansList } from '../lib/plans/hooks';
 import type { TrainingPlanDocument } from '../lib/training';
@@ -33,7 +32,7 @@ export function TrainPage() {
 function EmbodiedTrainPage() {
   const resources = useTrainingResources();
   const plans = usePlansList();
-  const approvals = useContext(ApprovalInboxContext);
+  const approvals = useApprovalInbox(true, { subject: 'plan', status: 'pending', layer: 'embodied', limit: 100 });
   const search = useSearch({ from: '/train' }), navigate = useNavigate({ from: '/train' });
   const router = useRouter();
   const changeGoal = (goal: string) => {

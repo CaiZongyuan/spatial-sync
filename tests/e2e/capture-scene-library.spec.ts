@@ -1,204 +1,154 @@
-import { expect, test, type APIRequestContext, type Page, type Request } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { SceneManifest } from '../../packages/protocol/types';
 
 const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
+const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNoaGj4DwAFhAKAjM1mJgAAAABJRU5ErkJggg==', 'base64');
 type SceneListGate = { ready: boolean; delivered: boolean; release: () => void };
 type SceneListGateWindow = Window & { __sceneListSuccessGate: SceneListGate };
 
-test('a failed preview does not transfer its error to the next healthy capture', async ({ page, request }) => {
-  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes`)).json();
-  const failed = scenes.find((scene: { id: string }) => scene.id === 'falling-boxes@1');
-  const healthy = scenes.find((scene: { id: string }) => scene.id === 'usd-lab@1');
-  for (const document of Object.values(healthy.preview.documents))
-    expect((await request.get(`${api}${document}`)).status()).toBe(200);
-  await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: { scenes: [failed, healthy] } }));
-  await page.route(`**${failed.preview.documents.manifest}`, route => route.fulfill({ status: 503, body: 'Unavailable capture fixture' }));
-  await page.goto('/scenes');
-  const first = page.locator('.scene-card').filter({ hasText: 'falling-boxes@1' });
-  const second = page.locator('.scene-card').filter({ hasText: 'usd-lab@1' });
-  await expect(first).toContainText('预览加载失败');
-  await expect(second.getByRole('img', { name: 'usd-lab@1 的真实初始场景' })).toBeVisible();
-  await expect(second).not.toContainText('预览加载失败');
-  await expect(page.locator('canvas')).toHaveCount(0);
-});
-
-test('changing theme while the next preview loads recaptures the same scene and finishes its queue', async ({ page, request }) => {
-  await page.emulateMedia({ colorScheme: 'light' });
-  await page.addInitScript(() => {
-    const seen = new WeakSet<HTMLCanvasElement>();
-    let created = 0;
-    Object.defineProperty(window, '__previewCanvasCount', { get: () => created });
-    new MutationObserver(() => document.querySelectorAll('canvas').forEach(canvas => {
-      if (!seen.has(canvas)) { seen.add(canvas); created++; }
-    })).observe(document, { childList: true, subtree: true });
+test('a hung static image times out and can retry while another image succeeds', async ({ page, request }) => {
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
+  const selected = scenes.slice(0, 2).map((value: object, index: number) => ({ ...value, thumbnailUrl: `/fixture-hung/${index}.png` }));
+  await page.route('**/api/v1/library/scenes?*', route => route.fulfill({ json: { scenes: selected } }));
+  let release!: () => void, first = true;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/fixture-hung/*', async route => {
+    if (route.request().url().endsWith('0.png') && first) { first = false; await held; }
+    await route.fulfill({ body: pixel, contentType: 'image/png' }).catch(() => {});
   });
-  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes`)).json();
-  const first = scenes.find((scene: { id: string }) => scene.id === 'falling-boxes@1');
-  const second = scenes.find((scene: { id: string }) => scene.id === 'usd-lab@1');
-  await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: {
-    scenes: new URL(route.request().url()).searchParams.get('q') ? [first] : [first, second],
-  } }));
-  let releaseSecond!: () => void;
-  const delayed = new Promise<void>(resolve => { releaseSecond = resolve; });
-  await page.route(`**${second.preview.documents.manifest}`, async route => {
-    const response = await route.fetch();
-    await delayed;
-    // Changing theme intentionally cancels this old job's held request.
-    await route.fulfill({ response }).catch(() => {});
-  });
-  const secondStarted = page.waitForRequest(request => new URL(request.url()).pathname === second.preview.documents.manifest);
   try {
     await page.goto('/scenes');
-    const firstImage = page.getByRole('img', { name: 'falling-boxes@1 的真实初始场景' });
-    await expect(firstImage).toBeVisible();
-    const light = await firstImage.getAttribute('src');
-    await secondStarted;
-    await page.getByLabel('Color theme').selectOption('dark');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    releaseSecond();
-    await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(2);
-    const dark = await firstImage.getAttribute('src');
-    expect(dark).not.toBe(light);
+    const firstCard = page.locator('.scene-card').first(), healthy = page.locator('.scene-card').nth(1);
+    await expect(healthy.getByRole('img')).toBeVisible();
+    await expect(firstCard).toContainText('静态图加载超时');
+    await firstCard.getByRole('button', { name: '重试预览' }).click();
+    await expect(firstCard.getByRole('img')).toBeVisible();
     await expect(page.locator('canvas')).toHaveCount(0);
-    expect(await page.evaluate(() => Reflect.get(window, '__previewCanvasCount'))).toBe(1);
-    // A fresh single-scene rendering must agree with the rethemed queue result.
-    await page.goto('/scenes?q=falling-boxes');
-    await expect(firstImage).toBeVisible();
-    expect(await firstImage.getAttribute('src')).toBe(dark);
-  } finally { releaseSecond(); }
+  } finally { release(); }
 });
 
-test('a library larger than the shared thumbnail cache keeps every completed image', async ({ page, request }) => {
-  // Reuse a real small frozen frame; only library identities/revisions are fixtures.
-  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?source=newton`)).json();
-  const scene = scenes.find((value: { id: string }) => value.id === 'falling-boxes@1');
-  const documents = Object.fromEntries(await Promise.all(Object.entries(scene.preview.documents).map(async ([kind, url]) => {
-    const response = await request.get(`${api}${url}`);
-    return [kind, kind === 'spatial' ? await response.body() : await response.json()];
-  })));
-  await page.route('**/api/v1/library/scenes*', route => route.fulfill({ json: { scenes: Array.from({ length: 35 }, (_, index) => ({
-    ...scene, id: `thumbnail-fixture@${index + 1}`, sceneId: 'thumbnail-fixture', rev: index + 1,
-    preview: { ...scene.preview, documents: Object.fromEntries(Object.keys(documents).map(kind => [kind, `/api/v1/thumbnail-fixture/${index}/${kind}`])) },
-  })) } }));
-  await page.route('**/api/v1/thumbnail-fixture/**', route => {
-    const [index, kind] = new URL(route.request().url()).pathname.split('/').slice(-2);
-    return kind === 'spatial' ? route.fulfill({ body: documents.spatial, contentType: 'application/octet-stream' })
-      : route.fulfill({ json: { ...documents[kind], sceneRevision: `thumbnail-fixture-${index}` } });
+test('one fast recovery row does not cancel a slower row status update', async ({ page }) => {
+  const base = { schema: 'lw.library-deletion/1', resource: 'scene', contentHash: 'a'.repeat(64),
+    requestId: 'controlled', createdAtMs: 1, retainedBytes: 0, status: 'checking', error: null };
+  const rows = [0, 1].map(index => ({ ...base, id: `deletion-${String(index).repeat(32)}`, versionId: `controlled-${index}@1` }));
+  let slow = 0;
+  await page.route('**/api/v1/library/deletions?*', route => route.fulfill({ json: {
+    deletions: rows, pagination: { total: 2, nextCursor: null },
+  } }));
+  await page.route('**/api/v1/library/deletions/deletion-*', async route => {
+    const second = route.request().url().endsWith(rows[1].id);
+    if (second) { slow++; await new Promise(resolve => setTimeout(resolve, 700)); }
+    await route.fulfill({ json: second ? { ...rows[1], status: 'committed' } : rows[0] }).catch(() => {});
   });
+  await page.goto('/trash');
+  await expect(page.getByRole('article').filter({ hasText: 'controlled-1@1' })).toContainText('版本已移到回收站');
+  await expect(page.getByRole('article').filter({ hasText: 'controlled-0@1' })).toContainText('正在检查引用');
+  expect(slow).toBe(1);
+});
+
+test('one failed static image leaves the next card readable without loading 3D', async ({ page, request }) => {
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
+  const selected = scenes.slice(0, 2).map((scene: object, index: number) => ({ ...scene, thumbnailUrl: `/fixture-static/${index}.png` }));
+  await page.route('**/api/v1/library/scenes?*', route => route.fulfill({ json: { scenes: selected } }));
+  await page.route('**/fixture-static/*', route => route.request().url().endsWith('0.png')
+    ? route.fulfill({ status: 503, body: 'Controlled failed image' }) : route.fulfill({ body: pixel, contentType: 'image/png' }));
+  const heavy: string[] = [];
+  page.on('request', value => { if (/\.glb|\/preview\//.test(value.url())) heavy.push(value.url()); });
   await page.goto('/scenes');
-  await page.waitForFunction(() => document.querySelectorAll('.scene-card .scene-thumbnail img').length === 35);
-  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(35);
-  await expect(page.getByRole('img', { name: 'thumbnail-fixture@1 的真实初始场景' })).toBeVisible();
-  await expect(page.getByText('预览加载失败', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.scene-card').first()).toContainText('预览加载失败');
+  await expect(page.locator('.scene-card').nth(1).getByRole('img')).toBeVisible();
+  await expect(page.locator('canvas')).toHaveCount(0);
+  expect(heavy).toEqual([]);
+});
+
+test('a late old-theme image cannot replace the current static image', async ({ page, request }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
+  await page.route('**/api/v1/library/scenes?*', route => route.fulfill({ json: { scenes: [scenes[0]] } }));
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  await page.route('**/api/v1/library/thumbnails?*', async route => {
+    if (new URL(route.request().url()).searchParams.get('theme') === 'light') { started(); await held; }
+    await route.fulfill({ body: pixel, contentType: 'image/png' }).catch(() => {});
+  });
+  try {
+    await page.goto('/scenes'); await ready;
+    await page.getByLabel('Color theme').selectOption('dark');
+    const image = page.locator('.scene-card img');
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute('data-thumbnail-source', /theme=dark/);
+    release();
+    await expect(image).toHaveAttribute('data-thumbnail-source', /theme=dark/);
+    await expect.poll(() => image.evaluate((value: HTMLImageElement) => value.naturalWidth)).toBeGreaterThan(0);
+    await expect(page.locator('canvas')).toHaveCount(0);
+  } finally { release(); }
+});
+
+test('static images load near the viewport and remain available when scrolling back', async ({ page, request }) => {
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
+  const fixture = Array.from({ length: 35 }, (_, index) => ({ ...scenes[0],
+    id: `static-fixture@${index + 1}`, sceneId: 'static-fixture', rev: index + 1,
+    thumbnailUrl: `/fixture-static/${index}.png`,
+  }));
+  const requested = new Set<string>();
+  await page.route('**/api/v1/library/scenes?*', route => route.fulfill({ json: { scenes: fixture } }));
+  await page.route('**/fixture-static/*', route => { requested.add(route.request().url()); return route.fulfill({ body: pixel, contentType: 'image/png' }); });
+  await page.goto('/scenes');
+  const cards = page.locator('.scene-card');
+  await expect(cards).toHaveCount(35);
+  await expect(cards.first().getByRole('img')).toBeVisible();
+  expect(requested.size).toBeLessThan(35);
+  for (let index = 0; index < 35; index++) {
+    await cards.nth(index).scrollIntoViewIfNeeded();
+    await expect(cards.nth(index).getByRole('img')).toBeVisible();
+  }
+  await cards.first().scrollIntoViewIfNeeded();
+  await expect.poll(() => cards.first().getByRole('img').evaluate((value: HTMLImageElement) => value.naturalWidth)).toBeGreaterThan(0);
   await expect(page.locator('canvas')).toHaveCount(0);
 });
 
-test('changing scene filters retires old results and queued previews before the next response', async ({ page, request }) => {
-  const live: string[] = [], aborted = new Set<Request>(), held: Request[] = [];
-  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/v1/sessions')) live.push(request.url()); });
-  page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) live.push(socket.url()); });
-  page.on('requestfailed', request => aborted.add(request));
-  const before = await (await request.get(`${api}/api/v1/health`)).json();
-  // Other cases can import versions into the same API; expect its library at test start.
-  const versions = async (query: string) => (await (await request.get(`${api}/api/v1/library/scenes?${query}`)).json()).scenes.length;
-  const [all, synthetic, searched] = [await versions(''), await versions('source=synthetic'), await versions('source=synthetic&q=lab-demo')];
-  expect(all).toBeGreaterThan(synthetic);
+test('changing filters retires an already successful old response and preserves retry', async ({ page, request }) => {
+  const count = async (query: string) => (await (await request.get(`${api}/api/v1/library/scenes?view=summary&${query}`)).json()).scenes.length;
+  const [all, synthetic, searched] = [await count(''), await count('source=synthetic'), await count('source=synthetic&q=lab-demo')];
   await page.addInitScript(() => {
-    const fetch = window.fetch.bind(window);
+    const original = window.fetch.bind(window);
     const gate: SceneListGate = { ready: false, delivered: false, release: () => {} };
-    const released = new Promise<void>(resolve => { gate.release = resolve; });
+    const held = new Promise<void>(resolve => { gate.release = resolve; });
     (window as SceneListGateWindow).__sceneListSuccessGate = gate;
     window.fetch = async (input, init) => {
-      const response = await fetch(input, init);
+      const response = await original(input, init);
       const url = new URL(typeof input === 'object' && 'url' in input ? input.url : String(input), location.href);
       if (url.pathname === '/api/v1/library/scenes' && url.searchParams.get('source') === 'newton') {
-        const json = response.json.bind(response);
-        response.json = async () => {
-          const value = await json(); // Keep the actual API payload; delay an already successful continuation.
-          gate.ready = true;
-          await released;
-          gate.delivered = true;
-          return value;
-        };
+        const read = response.json.bind(response);
+        response.json = async () => { const value = await read(); gate.ready = true; await held; gate.delivered = true; return value; };
       }
       return response;
     };
   });
-  let releaseOld!: () => void, releaseNext!: () => void, oldStarted!: () => void, nextStarted!: () => void;
-  const oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
-  const nextGate = new Promise<void>(resolve => { releaseNext = resolve; });
-  const oldReady = new Promise<void>(resolve => { oldStarted = resolve; });
-  const nextReady = new Promise<void>(resolve => { nextStarted = resolve; });
-  let retryStarted!: () => void, releaseRetry!: () => void, failOnce = true;
-  const retryReady = new Promise<void>(resolve => { retryStarted = resolve; });
-  const retryGate = new Promise<void>(resolve => { releaseRetry = resolve; });
-  let blockOld = true;
-  await page.route('**/api/v1/library/scenes/**/preview/**/manifest.json', async route => {
-    if (!blockOld) return route.continue();
-    held.push(route.request()); oldStarted();
-    await oldGate;
-    await route.abort().catch(() => {}); // Cleanup is also valid after the browser already cancelled it.
-  });
-  await page.route('**/api/v1/library/scenes*', async route => {
-    const url = new URL(route.request().url());
-    if (url.pathname !== '/api/v1/library/scenes') return route.fallback();
-    if (url.searchParams.get('q') === 'lab-demo') {
-      if (failOnce) {
-        failOnce = false;
-        return route.fulfill({ status: 503, json: { detail: 'Controlled scene library retry' } });
-      }
-      retryStarted(); await retryGate;
+  let fail = true;
+  await page.route('**/api/v1/library/scenes?*', route => {
+    if (new URL(route.request().url()).searchParams.get('q') === 'lab-demo' && fail) {
+      fail = false; return route.fulfill({ status: 503, json: { detail: 'Controlled scene retry' } });
     }
-    if (url.searchParams.get('source') === 'synthetic') {
-      nextStarted(); await nextGate;
-    }
-    await route.continue();
+    return route.continue();
   });
   try {
-    await page.goto('/scenes');
-    await expect(page.locator('.scene-card')).toHaveCount(all);
-    await oldReady;
-    await expect.poll(() => held.some(request => !request.failure())).toBe(true);
-    const activeOld = held.filter(request => !request.failure());
-    await page.getByLabel('物理源筛选').selectOption('synthetic');
-    await nextReady;
-    await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible({ timeout: 1000 });
-    await expect(page.locator('.scene-card')).toHaveCount(0);
-    await expect(page.locator('.scene-thumbnail-renderer')).toHaveCount(0);
-    await expect.poll(() => activeOld.every(request => aborted.has(request)), { timeout: 1000 }).toBe(true);
-    blockOld = false;
-    releaseNext();
-    await expect(page.locator('.scene-card')).toHaveCount(synthetic);
+    await page.goto('/scenes'); await expect(page.locator('.scene-card')).toHaveCount(all);
     await page.getByLabel('物理源筛选').selectOption('newton');
     await page.waitForFunction(() => (window as SceneListGateWindow).__sceneListSuccessGate.ready);
-    await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible();
     await expect(page.locator('.scene-card')).toHaveCount(0);
     await page.getByLabel('物理源筛选').selectOption('synthetic');
     await expect(page.locator('.scene-card')).toHaveCount(synthetic);
     await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate.release());
     await page.waitForFunction(() => (window as SceneListGateWindow).__sceneListSuccessGate.delivered);
-    // Let the late continuation and React commit before checking the visible result.
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     await expect(page.locator('.scene-card')).toHaveCount(synthetic);
-    await expect(page.locator('.scene-card-grid')).not.toContainText('robot-and-tubes');
     await page.getByLabel('搜索场景').fill('lab-demo');
-    await expect(page.getByRole('alert')).toContainText('Controlled scene library retry');
-    await expect(page.locator('.scene-card')).toHaveCount(0);
-    await page.getByRole('button', { name: '重试', exact: true }).click();
-    await retryReady;
-    await expect(page.getByText('正在读取场景库…', { exact: true })).toBeVisible();
-    await expect(page.getByRole('alert')).toHaveCount(0);
-    await expect(page.locator('.scene-card')).toHaveCount(0);
-    releaseRetry();
+    await expect(page.getByRole('alert')).toContainText('Controlled scene retry');
+    await page.getByRole('button', { name: '从第一页重试' }).click();
     await expect(page.locator('.scene-card')).toHaveCount(searched);
-    expect(live).toEqual([]);
-    const after = await (await request.get(`${api}/api/v1/health`)).json();
-    expect(after.sessionCount).toBe(before.sessionCount);
-  } finally {
-    await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate?.release()).catch(() => {});
-    releaseOld(); releaseNext(); releaseRetry();
-    await page.unrouteAll({ behavior: 'wait' });
-  }
+    await expect(page.locator('canvas')).toHaveCount(0);
+  } finally { await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate?.release()).catch(() => {}); }
 });
 
 async function watchStaticScene(page: Page, request: APIRequestContext) {
@@ -217,22 +167,23 @@ async function watchStaticScene(page: Page, request: APIRequestContext) {
   };
 }
 
-test('real scene captures render every shared thumbnail without a live session', async ({ page, request }) => {
+test('real capture can be saved once and browsed as a static image without a live session', async ({ page, request }) => {
   const { errors, assertStatic } = await watchStaticScene(page, request);
+  await page.goto('/scenes/lab-demo/1');
+  await expect(page.locator('canvas')).toHaveCount(1);
+  await page.getByRole('button', { name: '生成列表缩略图' }).click();
+  await expect(page.getByText('已保存列表缩略图。', { exact: true })).toBeVisible();
+  const heavy: string[] = [];
+  page.on('request', value => { if (/\.glb|\/preview\//.test(value.url())) heavy.push(value.url()); });
   await page.goto('/scenes');
   const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
-  await expect(laboratory).toContainText('30 实体 · 22 绑定');
-  await page.waitForFunction(expected => {
-    const images = [...document.querySelectorAll<HTMLImageElement>('.scene-card .scene-thumbnail img')];
-    return images.length === expected && images.every(image => image.complete && image.naturalWidth > 0);
-  }, 7);
-  // The shared renderer captures scenes serially; check readiness for each image.
-  for (const id of ['falling-boxes@1', 'lab-demo@1', 'lab-demo@2', 'lab-demo@3', 'robot-and-tubes@1', 'robot-and-tubes@2', 'usd-lab@1'])
-    await expect(page.getByRole('img', { name: `${id} 的真实初始场景`, exact: true })).toBeVisible();
-  await expect(page.locator('.scene-card .scene-thumbnail img')).toHaveCount(7);
+  await expect(laboratory).toBeVisible();
+  const image = laboratory.getByRole('img', { name: 'lab-demo@1 的静态预览', exact: true });
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((value: HTMLImageElement) => value.naturalWidth)).toBeGreaterThan(20);
   await expect(page.locator('canvas')).toHaveCount(0);
-  await assertStatic();
-  expect(errors).toEqual([]);
+  expect(heavy).toEqual([]);
+  await assertStatic(); expect(errors).toEqual([]);
 });
 
 test('scene library filters and URL preferences navigate to the exact version', async ({ page, request }) => {
