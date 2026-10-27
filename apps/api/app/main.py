@@ -74,6 +74,7 @@ from packages.library.description_views import description_view
 from packages.library.previews import PreviewRepository
 from packages.library.removals import LibraryRemovals
 from packages.library.scenes import LibraryError
+from packages.library.thumbnails import ThumbnailStore
 from packages.library.validation import StructuralValidator
 from packages.live.bindings import load_bindings
 from packages.protocol.internal import SessionOptions
@@ -213,6 +214,8 @@ def create_app(
         jobs=manager.jobs.reference_snapshot,
     )
     manager.library_removals = LibraryRemovals(manager.library_deletions)
+    manager.library_thumbnails = ThumbnailStore(settings.state_root)
+    manager.library_previews = previews
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
     acquisitions = AcquisitionService(
         settings.state_root,

@@ -20,7 +20,7 @@ their decision. Preserve sessions and files owned by other work.
    lw asset ls --json
    lw asset ls --kind robot --gaps --json
    lw asset show <kind/name@rev> --json
-   lw scene ls --json
+   lw scene ls --limit 20 --json
    lw scene show <name@rev> --json
    ```
 
@@ -83,7 +83,7 @@ approval decisions remain a separate boundary above.
 4. Select an exact launchable scene and one of its declared sources:
 
    ```text
-   lw scene ls --launchable --json
+   lw scene ls --launchable --limit 20 --json
    lw scene launch <name@rev> --source <supported-source> --json
    ```
 

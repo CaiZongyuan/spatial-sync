@@ -397,8 +397,11 @@ class SceneLibrary:
         next_cursor = base64.urlsafe_b64encode(json.dumps(
             {"index": identity, "offset": next_offset}, separators=(",", ":")
         ).encode()).decode() if next_offset < len(candidates) else None
+        previous_cursor = base64.urlsafe_b64encode(json.dumps(
+            {"index": identity, "offset": max(0, offset - (limit or offset))}, separators=(",", ":")
+        ).encode()).decode() if offset else None
         return {"scenes": values, "pagination": {"total": len(candidates), "limit": limit,
-                "nextCursor": next_cursor, "cursor": cursor}}
+                "nextCursor": next_cursor, "previousCursor": previous_cursor, "cursor": cursor}}
 
     def resolve(self, selector, *, launch=False, source=None):
         name, separator, rev = selector.partition("@")

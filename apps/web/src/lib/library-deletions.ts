@@ -34,5 +34,6 @@ export const getLibraryRemoval = (id: string, signal?: AbortSignal) =>
 export const restoreLibraryVersion = (id: string) => request<LibraryRemoval>(`${removedPath(id)}/restore`, {
   method: 'POST', headers: { 'X-Actor': 'user:web' },
 });
-export const listLibraryRemovals = (signal?: AbortSignal) =>
-  request<{ deletions: LibraryRemoval[] }>('/library/deletions', { signal });
+export const listLibraryRemovals = (signal?: AbortSignal, cursor?: string) =>
+  request<{ deletions: LibraryRemoval[]; pagination: { total: number; nextCursor: string | null } }>(
+    `/library/deletions?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal });

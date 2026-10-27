@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { ApprovalInboxContext } from '../lib/approvals';
 import { ApiError } from '../lib/api';
 import { requestLibraryDeletion, type DeletionDetails, type DeletionExecution, type ReferenceInspection } from '../lib/library-deletions';
 import { getLibraryRemoval, removalPending, restoreLibraryVersion, type LibraryRemoval } from '../lib/library-deletions';
@@ -38,6 +39,8 @@ export function useRemovalProgress(record: LibraryRemoval | undefined, update: (
 }
 
 export function RemovalResult({ record, update }: { record: LibraryRemoval; update: (value: LibraryRemoval) => void }) {
+  const permissions = useContext(ApprovalInboxContext);
+  const canOperate = permissions.inbox?.role === 'operator' && !permissions.error;
   const [error, setError] = useState<string>(), [busy, setBusy] = useState(false);
   const progressError = useRemovalProgress(record, update);
   const labels: Record<LibraryRemoval['status'], string> = {
@@ -47,7 +50,7 @@ export function RemovalResult({ record, update }: { record: LibraryRemoval; upda
   };
   return <div><p role="status">{labels[record.status]}</p>
     {record.status === 'committed' && <><p>回收站保留 {record.retainedBytes.toLocaleString()} 字节，尚未释放这部分磁盘。</p>
-      <button disabled={busy} onClick={async () => {
+      <button disabled={busy || !canOperate} onClick={async () => {
         setBusy(true); setError(undefined);
         try { update(await restoreLibraryVersion(record.id)); } catch (error) { setError((error as Error).message); }
         finally { setBusy(false); }
@@ -63,13 +66,15 @@ export function LibraryDeletionRequest({ resource, id, root, contentHash }: {
   resource: 'asset' | 'scene'; id: string; root: 'builtin' | 'user'; contentHash: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const permissions = useContext(ApprovalInboxContext);
+  const canOperate = permissions.inbox?.role === 'operator' && !permissions.error;
   const [record, setRecord] = useState<LibraryRemoval>();
   const [requestId] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string>();
   const [inspection, setInspection] = useState<Partial<ReferenceInspection>>();
   return <section className="library-deletion-panel" aria-label="删除库版本"><header><h2>删除版本</h2></header><div>
     <p>移出库列表并保留原始包，可从<Link to="/trash">回收站</Link>恢复。</p>
-    {root === 'builtin' ? <p>内置库只读，随平台版本发布。</p> : record ? <RemovalResult record={record} update={setRecord} /> : <button disabled={busy} onClick={async () => {
+    {root === 'builtin' ? <p>内置库只读，随平台版本发布。</p> : record ? <RemovalResult record={record} update={setRecord} /> : <button disabled={busy || !canOperate} onClick={async () => {
       setBusy(true); setError(undefined); setInspection(undefined);
       try { setRecord(await requestLibraryDeletion(resource, id, contentHash, requestId)); }
       catch (failure) {

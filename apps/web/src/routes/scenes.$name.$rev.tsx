@@ -1,13 +1,16 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { getSceneDetail, rootLabel, sourceLabel, type SceneDetail, type SceneSource } from '../lib/library';
-import { FrozenViewport, useScenePreview } from '../components/ScenePreview';
+import { useScenePreview } from '../lib/scene/use-preview';
 import { LaunchStatus } from '../components/SceneStatus';
 import { ValidationReport, ValidationStatus } from '../components/ValidationReport';
 import { deviceKey } from '../lib/info/binding';
 import { LibraryDeletionRequest } from '../components/LibraryDeletion';
+import { GenerateThumbnail } from '../components/GenerateThumbnail';
 import { SessionLaunchButton } from '../components/SessionLaunchButton';
 import { AssetDependencies, CopyFailureSummary, SceneAuthoringReports, SceneVersions } from '../components/SceneAuthoringResults';
+
+const FrozenViewport = lazy(() => import('../components/ScenePreview').then(value => ({ default: value.FrozenViewport })));
 
 export const Route = createFileRoute('/scenes/$name/$rev')({
   validateSearch: (value: Record<string, unknown>): { source?: SceneSource } => ({ source: value.source === 'synthetic' || value.source === 'newton' ? value.source : undefined }),
@@ -48,7 +51,7 @@ function Detail({ scene }: { scene: SceneDetail }) {
     <header className="scene-page-heading"><div><Link className="reference-link" to="/scenes">← 场景库</Link><h1><code>{scene.id}</code></h1><p><LaunchStatus scene={scene} />{scene.title} · {scene.description}</p></div></header>
     <div className="scene-detail-grid"><div className="scene-detail-stack">
       <section className="reference-panel scene-preview-panel"><header><h2>视口 · {scene.id}</h2><button className="readout-switch" aria-label="初始读数" aria-pressed={readouts} onClick={() => setReadouts(!readouts)}><i />读数</button></header>
-        <figure><div className="scene-detail-stage">{manifest ? <FrozenViewport {...{ client, manifest, readouts }} /> : <div className="scene-empty" role="status"><span aria-hidden="true">◇</span><p>{error ?? scene.preview.reason ?? '正在读取真实初始快照…'}</p></div>}</div>
+        <figure><div className="scene-detail-stage">{manifest ? <Suspense fallback={null}><FrozenViewport {...{ client, manifest, readouts }} /></Suspense> : <div className="scene-empty" role="status"><span aria-hidden="true">◇</span><p>{error ?? scene.preview.reason ?? '正在读取真实初始快照…'}</p></div>}</div>
           <figcaption><strong>图 1</strong><span>等距预览 · {sourceLabel(source)}</span><span className="reference-tag">静态初始状态 · 只读</span></figcaption></figure>
         {scene.preview.status === 'available' && <p className="scene-capture-note">采集时间 {new Date(scene.preview.capturedAt!).toLocaleString()} · 仿真时间 {(scene.preview.simTime ?? 0).toFixed(3)} s。读数来自此快照，动作需启动会话。</p>}
         {error && <p role="alert" className="scene-failure">{error}</p>}
@@ -83,6 +86,7 @@ function Detail({ scene }: { scene: SceneDetail }) {
       </section>
       <section className="reference-panel" aria-label="相关录制"><header><h2>相关录制</h2><span className="scene-note">{scene.recordings.length}</span></header><div className="scene-panel-body scene-related-recordings">{scene.recordings.length ? scene.recordings.map(recording => <Link key={recording.sessionId} to="/replay/$recordingId" params={{ recordingId: recording.sessionId }} search={{ src: undefined }}>
         <code>{recording.sessionId}</code><span>{new Date(recording.createdAt).toLocaleString()} · {recording.status === 'recording' ? '录制中' : `${((recording.durationMs ?? 0) / 1000).toFixed(1)} s`}</span><small className={recording.sceneContentHash && recording.sceneContentHash !== scene.contentHash ? 'scene-failure' : 'scene-note'}>{recording.sceneContentHash === scene.contentHash ? '内容摘要一致' : recording.sceneContentHash ? '同版本名，内容摘要不同' : '旧版录制 · 内容摘要未知'}</small></Link>) : <p className="scene-note">此版本还没有录制。会话会自动记录。</p>}</div></section>
+      <GenerateThumbnail key={`${scene.id}:${source}`} scene={scene} />
       <LibraryDeletionRequest key={scene.id} resource="scene" id={scene.id} root={scene.root} contentHash={scene.contentHash} />
     </aside></div>
   </>;

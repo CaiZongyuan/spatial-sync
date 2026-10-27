@@ -40,7 +40,7 @@ is unknown.
 3. For scene discovery, read the actual versions and validation before choosing:
 
    ```text
-   lw scene ls --launchable --json
+   lw scene ls --launchable --limit 20 --json
    lw scene show <scene-version> --json
    ```
 

@@ -1,15 +1,13 @@
-import { useCallback, useMemo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { AssetVersion } from '../lib/asset-library';
-import { useViewerTheme } from '../lib/scene/viewer-theme';
-import { AssetModelViewport } from './AssetModelViewport';
-import { ThumbnailQueue } from './ThumbnailQueue';
+import { thumbnailQuery, useThumbnailTheme } from '../lib/thumbnails';
+import { StaticThumbnail } from './StaticThumbnail';
 
-export function AssetThumbnails({ assets, children }: { assets: AssetVersion[]; children: (thumbnail: (asset: AssetVersion) => ReactNode) => ReactNode }) {
-  const themeKey = JSON.stringify(useViewerTheme());
-  const keyFor = useCallback((asset: AssetVersion) => ['asset', asset.id, asset.contentHash, themeKey].join(':'), [themeKey]);
-  const entries = useMemo(() => assets.map(asset => ({ key: keyFor(asset), label: `${asset.id} 的素材模型`, image: asset.thumbnailUrl,
-    reason: asset.visualUrl ? undefined : '素材包没有可用的视觉文件',
-    render: asset.visualUrl ? (capture: (png?: string) => void) => <AssetModelViewport url={asset.visualUrl!} capture={capture} captureKey={keyFor(asset)} /> : undefined,
-  })), [assets, keyFor]);
-  return <ThumbnailQueue entries={entries}>{thumbnail => children(asset => thumbnail(keyFor(asset)))}</ThumbnailQueue>;
+export function AssetThumbnails({ children }: {
+  assets: AssetVersion[]; children: (thumbnail: (asset: AssetVersion) => ReactNode) => ReactNode;
+}) {
+  const theme = useThumbnailTheme();
+  return children(asset => <StaticThumbnail key={`${asset.id}:${asset.contentHash}:${theme}`}
+    url={asset.thumbnailUrl ?? '/api/v1' + thumbnailQuery('asset', asset.id, asset.contentHash, theme)}
+    label={`${asset.id} 的静态预览`} declared={Boolean(asset.thumbnailUrl)} />);
 }

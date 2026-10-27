@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { request } from '../lib/api';
-import { ApprovalInboxContext } from '../lib/approvals';
+import { useApprovalInbox } from '../lib/approvals';
 import type { AgentRun, HarnessVersion } from '../lib/agent-runs';
 import { agentMean, agentName, type AgentLoop, type AgentNotebookEntry, type AgentReference, type AgentWorkflow } from '../lib/agent-rsi';
 import type { HypothesisVerdict } from '../lib/notebooks';
@@ -63,12 +63,12 @@ function HarnessComposition({ agent, initialVersion, versions }: { agent: string
 
 export function AgentTrainPage() {
   const search = useSearch({ from: '/train' }), navigate = useNavigate({ from: '/train' });
-  const approvals = useContext(ApprovalInboxContext);
   const [agents, setAgents] = useState<{ id: string; title: string }[]>([]), [data, setData] = useState<Data>();
   const [error, setError] = useState<string>(), [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<{ entry: string; hypothesis: string; verdict: HypothesisVerdict; note: string; requestId: string }>();
   const [saving, setSaving] = useState(false), [saveError, setSaveError] = useState<string>();
   const agent = search.agent ?? agents[0]?.id;
+  const approvals = useApprovalInbox(Boolean(agent), { layer: 'agent', agentId: agent, limit: 100 });
   useEffect(() => {
     const controller = new AbortController();
     void request<{ agents: { id: string; title: string }[] }>('/agents', { signal: controller.signal })
