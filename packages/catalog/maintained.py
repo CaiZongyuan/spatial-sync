@@ -218,7 +218,10 @@ class ReleasedViews:
             value = self._views.get(identifier)
         if value is None:
             try:
-                value = self._build(release, identifier)
+                try:
+                    value = self._read(identifier)
+                except LibraryError:
+                    value = self._build(release, identifier)
             except Exception as exc:
                 LOGGER.warning("New catalog view is not ready; retaining active view: %s", exc)
                 previous = self._active

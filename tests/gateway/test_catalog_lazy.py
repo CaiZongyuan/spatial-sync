@@ -87,6 +87,14 @@ def test_directory_and_search_never_read_package_details_or_images():
             SEARCH, params={"scope": "online", "limit": 10, "cursor": result["nextCursor"]}
         )
         assert next_page.status_code == 200
+        cards = client.get(SEARCH, params={"scope": "online", "limit": 24, "page": 1, "view": "cards"})
+        assert cards.status_code == 200
+        assert len(cards.json()["results"]) == 24
+        assert cards.json()["counts"]["matching"] == 75
+        assert client.get(SEARCH, params={"scope": "online", "limit": 24, "page": 2,
+                                          "view": "cards"}).status_code == 200
+        assert client.get(SEARCH, params={"scope": "online", "limit": 24, "view": "cards",
+                                          "cursor": result["nextCursor"]}).status_code == 400
         assert not upstream.requests
         first = result["results"][0]
         assert thumbnail_pixels(client.get(first["preview"]["url"]).content) == PNG_PIXELS

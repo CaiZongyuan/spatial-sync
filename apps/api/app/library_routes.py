@@ -255,6 +255,7 @@ def install_library_routes(
         sort: Literal["relevance", "name", "sourceBytes"] = "relevance",
         limit: int = 10,
         cursor: str | None = None,
+        view: Literal["summary", "cards"] = "summary",
     ):
         search = functools.partial(
             catalog.search,
@@ -279,6 +280,7 @@ def install_library_routes(
             sort=sort,
             limit=limit,
             cursor=cursor,
+            view=view,
         )
         return await anyio.to_thread.run_sync(search)
 

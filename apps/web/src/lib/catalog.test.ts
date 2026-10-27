@@ -1,8 +1,17 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   catalogEntryPath, catalogEstimatePath, catalogSearchPath, formatAge, formatBytes,
-  semanticLabel, shortRevision, usageLabel, type CatalogSemantic,
+  semanticLabel, shortRevision, usageLabel, searchCatalogCards, type CatalogSemantic,
 } from './catalog';
+
+it('rejects a legacy backend instead of silently rendering a shortened card page', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    schema: 'lw.catalog-search/1', results: Array.from({ length: 11 }),
+  }), { headers: { 'Content-Type': 'application/json' } })));
+  try {
+    await expect(searchCatalogCards({ scope: 'online', page: 1, limit: 24 })).rejects.toThrow('重启后端服务');
+  } finally { vi.unstubAllGlobals(); }
+});
 
 it('builds unified search URLs with explicit scope and no empty filters', () => {
   expect(catalogSearchPath({ q: '纸箱', scope: 'online' }))

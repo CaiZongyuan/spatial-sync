@@ -124,6 +124,16 @@ facts within each read. Numbered pages retain only overlapping candidate
 projections; tool-version metadata is shared only for the duration of a browse
 read. File serving and launch still verify immutable bytes.
 
+Web browsing requests `GET /api/v1/library/search?view=cards&scope=online&limit=24&page=1`.
+The `lw.catalog-cards/1` projection selects the fixed-size page before constructing
+cards, with a 256 KiB maximum and details read separately. Web page sizes are
+12/24/48, with only the last page partial. The default Agent search keeps its
+existing schema, 32 KiB bound and byte-based pages. Retained query views load
+from disk, and a published metadata view is warmed before gateway readiness;
+startup/index loading must be reported separately from page-request timing.
+Browser checks hold actual HTTP responses to verify card/list skeletons,
+pagination feedback, reduced motion, error recovery and page cardinality.
+
 ### Full external catalog sync
 
 The deterministic public journey uses a paginated upstream HTTP fixture, the

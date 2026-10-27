@@ -59,6 +59,53 @@ class PublishedStore:
                 "tags": []}
 
 
+def test_web_card_pages_honor_size_and_keep_release_filters_and_details(tmp_path):
+    app = create_app()
+    store = PublishedStore(tmp_path, count=73)
+    with TestClient(app) as client:
+        app.state.catalog.attach_metadata(store)
+        query = {"scope": "online", "provider": "scenario", "limit": 24, "page": 1, "view": "cards"}
+        response = client.get("/api/v1/library/search", params=query)
+        assert response.status_code == 200, response.text
+        first = response.json()
+        assert first["schema"] == "lw.catalog-cards/1"
+        assert len(first["results"]) == 24
+        assert first["pagination"] == {"page": 1, "pageSize": 24, "totalPages": 4, "offset": 0}
+        assert len(response.content) <= 256 * 1024
+        release = first["snapshot"]["id"]
+        ids = [item["id"] for item in first["results"]]
+        store.version = 2
+        store.documents[0]["name"]["en"] = "A newly published name"
+        latest = client.get("/api/v1/library/search", params={**query, "page": 1}).json()
+        assert latest["snapshot"]["id"] != release
+        for page, count in ((2, 24), (3, 24), (4, 1)):
+            result = client.get("/api/v1/library/search", params={**query, "page": page, "release": release})
+            assert result.status_code == 200, result.text
+            body = result.json()
+            assert len(body["results"]) == count
+            assert body["pagination"]["offset"] == (page - 1) * 24
+            assert body["snapshot"]["id"] == release
+            ids.extend(item["id"] for item in body["results"])
+        assert len(ids) == len(set(ids)) == 73
+        assert set(ids) == {item["id"] for item in store.documents}
+        for size in (12, 48):
+            result = client.get("/api/v1/library/search", params={**query, "limit": size, "release": release})
+            assert len(result.json()["results"]) == size
+        filtered = client.get("/api/v1/library/search", params={**query, "tag": "missing"})
+        assert filtered.json()["schema"] == "lw.catalog-cards/1"
+        assert filtered.json()["results"] == []
+        assert filtered.json()["zeroResult"]["reason"] == "hard_filters"
+        unknown = client.get("/api/v1/library/search", params={**query, "maxDimensionM": 1})
+        assert unknown.json()["results"] == []
+        detail = client.get(f"/api/v1/library/catalog/entries/scenario/tool-000/{REVISION}",
+                            params={"release": release, "view": "full"})
+        assert detail.status_code == 200
+        assert detail.json()["metadata"]["evidence"][0]["kind"] == "publisher"
+        legacy = client.get("/api/v1/library/search", params={**query, "view": "summary"})
+        assert legacy.json()["schema"] == "lw.catalog-search/1"
+        assert len(legacy.content) <= 32768
+
+
 def test_released_metadata_search_preserves_hard_conditions_and_detail_provenance(tmp_path):
     app = create_app()
     store = PublishedStore(tmp_path)

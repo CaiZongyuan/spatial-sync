@@ -190,7 +190,10 @@ class AssetCatalog:
             elif release and (self.snapshot is None or release != self.snapshot.id):
                 raise LibraryError("release_expired", "Released view is unavailable; "
                                    "repeat the search without release", 409)
-            return search_catalog(selected, library, **kwargs)
+            result = search_catalog(selected, library, **kwargs)
+            if kwargs.get("view") == "cards":
+                result["schema"] = "lw.catalog-cards/1"
+            return result
 
     def release_document(self, identifier, *, offset=0, limit=4096):
         """Read an exact retained release in bounded Unicode-safe JSON chunks."""

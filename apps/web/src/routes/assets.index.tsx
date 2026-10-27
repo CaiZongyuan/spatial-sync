@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { assetKinds, assetParams, dimensionsLabel, type AssetKind } from '../lib/asset-library';
-import { filterLabels, localAssetVersion, searchCatalog, type CatalogCandidate, type CatalogScope, type CatalogSearchFilters, type CatalogSearchResponse, type CatalogUsage } from '../lib/catalog';
+import { filterLabels, localAssetVersion, searchCatalogCards, type CatalogSelection, type CatalogScope, type CatalogSearchFilters, type CatalogCardResponse, type CatalogUsage } from '../lib/catalog';
 import { AssetThumbnails } from '../components/AssetThumbnails';
 import { AssetGapChips, CompletenessDots } from '../components/AssetCompleteness';
 import { CatalogCandidateList, CatalogDetailPanel, CatalogSnapshotBar, CatalogZeroResult } from '../components/CatalogCandidates';
@@ -9,6 +9,7 @@ import { AcquisitionRecords } from '../components/AcquisitionPanel';
 import { CatalogSyncPanel } from '../components/CatalogSyncPanel';
 import { CatalogMaintenancePanel } from '../components/CatalogMaintenancePanel';
 import { getCatalogVocabulary, type CatalogVocabulary, type MetadataCollection } from '../lib/catalog-maintenance';
+import { CatalogLoadError, CatalogLoading } from '../components/CatalogLoading';
 
 type Search = {
   scope?: CatalogScope; view?: 'card' | 'list'; kind?: AssetKind; usage?: CatalogUsage;
@@ -39,9 +40,11 @@ function AssetLibrary() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const scope = search.scope ?? 'local';
-  const [catalog, setCatalog] = useState<CatalogSearchResponse>();
+  const [catalog, setCatalog] = useState<CatalogCardResponse>();
+  const [pending, setPending] = useState(true);
+  const results = useRef<HTMLDivElement>(null);
   const [catalogError, setCatalogError] = useState<string>();
-  const [detail, setDetail] = useState<CatalogCandidate>();
+  const [detail, setDetail] = useState<CatalogSelection>();
   const [attempt, setAttempt] = useState(0);
   const [sources, setSources] = useState<{ provider: string; dataset: string; entryCount: number }[]>([]);
   const [collections, setCollections] = useState<MetadataCollection[]>([]);
@@ -63,20 +66,22 @@ function AssetLibrary() {
     if (completedQuery.current === queryKey) return;
     completedQuery.current = undefined;
     const controller = new AbortController();
-    setCatalog(undefined); setCatalogError(undefined);
-    void searchCatalog(filters, controller.signal)
+    setPending(true); setCatalogError(undefined);
+    const timer = setTimeout(() => { void searchCatalogCards(filters, controller.signal)
       .then(value => {
         if (controller.signal.aborted) return;
         completedQuery.current = JSON.stringify({
           filters: { ...filters, release: filters.release ?? value.snapshot.id ?? undefined }, attempt,
         });
         setCatalog(value);
+        setPending(false);
         if (!search.release && value.snapshot.id) void navigate({
           search: previous => ({ ...previous, release: value.snapshot.id!, page: currentPage, pageSize }), replace: true,
         });
       })
-      .catch((error: Error) => { if (!controller.signal.aborted) setCatalogError(error.message); });
-    return () => controller.abort();
+      .catch((error: Error) => { if (!controller.signal.aborted) { setCatalogError(error.message); setPending(false); } });
+    }, search.q || search.tag ? 250 : 0);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [scope, search.provider, search.kind, search.usage, search.approximate, search.q, search.category, search.tag, search.sort, search.release, search.gaps, currentPage, pageSize, attempt, navigate]);
   useEffect(() => { setDetail(undefined); }, [scope, search.provider, search.kind, search.usage, search.approximate, search.q, search.category, search.tag, search.release, currentPage]);
   useEffect(() => {
@@ -85,10 +90,13 @@ function AssetLibrary() {
       .then(value => { if (!controller.signal.aborted) setVocabulary(value); }).catch(() => undefined);
     return () => controller.abort();
   }, [scope, catalog?.snapshot.metadataRelease?.vocabularyVersion]);
-  const change = (next: Partial<Search>) => void navigate({ search: previous => ({
+  const change = (next: Partial<Search>) => {
+    if (next.page !== undefined || next.pageSize !== undefined) results.current?.scrollIntoView({ block: 'start' });
+    void navigate({ search: previous => ({
     ...previous, ...next, ...(next.scope && next.scope !== 'local' ? { gaps: undefined } : {}),
     page: next.page ?? (Object.keys(next).every(key => key === 'view') ? previous.page : 1),
-  }), replace: Object.keys(next).every(key => key === 'q' || key === 'tag') });
+    }), replace: Object.keys(next).every(key => key === 'q' || key === 'tag') });
+  };
   const refresh = () => { setNewPublication(false); change({ release: undefined, page: 1 }); setAttempt(value => value + 1); };
   const actOnZero = (action: 'remove_filter' | 'broaden_scope' | 'enable_approximation', filter?: string) => {
     if (action === 'broaden_scope') return change({ scope: 'all' });
@@ -127,7 +135,7 @@ function AssetLibrary() {
   const provider = catalog?.snapshot.provider;
   if (provider && provider !== 'multiple') sourceValues.push({ provider, dataset: '', entryCount: 0 });
   const sourceOptions = [...new Map(sourceValues.map(source => [source.provider, source])).values()];
-  const catalogToolbar = catalog
+  const catalogToolbar = pending ? `正在加载第 ${currentPage} 页…` : catalog
     ? `${catalog.results.length} / ${catalog.counts.matching} 个候选 · 在线 ${catalog.counts.onlineMatching} · 本地 ${catalog.counts.localMatching}${catalog.counts.approximate ? ` · 近似 ${catalog.counts.approximate}` : ''}`
     : '正在检索目录…';
   return <main className="asset-page asset-library-page">
@@ -164,30 +172,32 @@ function AssetLibrary() {
       <label className="asset-gaps"><input type="checkbox" checked={!!search.approximate} onChange={event => change({ approximate: event.target.checked || undefined })} />允许近似结果</label>
       <label className="asset-search">搜索<input aria-label="搜索素材" type="search" placeholder={scope === 'local' ? '名称或 ID…' : '中英文名称、别名或精确 ID…'} value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
     </section>
-    {scope === 'local' ? (catalogError ? <div className="asset-empty" role="alert">{catalogError}<button onClick={() => setAttempt(attempt + 1)}>重试</button><button onClick={refresh}>重新查询最新目录</button></div> : !localAssets ? <div className="asset-empty" role="status">正在读取素材库…</div> : !localAssets.length ? <div className="asset-empty"><h2>没有匹配的素材</h2><p>{catalog?.zeroResult?.messages.join(' ') ?? '调整种类、缺口或搜索条件。'}</p><button onClick={() => void navigate({ search: { view: search.view }, replace: true })}>清除筛选</button></div> :
+    <div ref={results} className="catalog-results-anchor" />
+    {pending ? <CatalogLoading page={currentPage} count={pageSize} view={search.view} /> : catalogError ?
+      <CatalogLoadError page={currentPage} error={catalogError} onRetry={() => setAttempt(attempt + 1)} onRefresh={refresh} /> :
+      scope === 'local' ? (!localAssets ? <div className="asset-empty" role="status">正在读取素材库…</div> : !localAssets.length ? <div className="asset-empty"><h2>没有匹配的素材</h2><p>{catalog?.zeroResult?.messages.join(' ') ?? '调整种类、缺口或搜索条件。'}</p><button onClick={() => void navigate({ search: { view: search.view }, replace: true })}>清除筛选</button></div> :
       <AssetThumbnails assets={localAssets!}>{thumbnail => search.view !== 'list' ? <div className="asset-card-grid">{localAssets!.map((asset, index) => <article className="asset-card" key={asset.id}>
         <div className="asset-card-figure">{thumbnail(asset)}</div><div className="asset-figure-caption"><b>图 {index + 1}</b><code>{asset.id}</code></div><h2><Link to="/assets/$kind/$name/$rev" params={assetParams(asset)} style={{ color: 'inherit', textDecoration: 'none' }} aria-label={`${asset.id} ${asset.title}`}>{asset.title}</Link></h2>
         <div className="asset-card-meta"><CompletenessDots asset={asset} /><AssetGapChips asset={asset} first />{localWarning(asset.id)}</div>
       </article>)}</div> : <section className="asset-panel"><header><h2>素材 · {catalog?.counts.matching}</h2></header><div className="asset-table-wrap"><table className="asset-list-table"><thead><tr><th>预览</th><th>素材</th><th>种类</th><th>尺寸</th><th>实现类型</th><th>完整度</th><th>缺口</th></tr></thead><tbody>{localAssets!.map(asset => <tr key={asset.id}>
         <td><span className="asset-miniature">{thumbnail(asset)}</span></td>
         <td><Link to="/assets/$kind/$name/$rev" params={assetParams(asset)}><code>{asset.id}</code><small>{asset.title}</small></Link></td><td>{assetKinds[asset.kind]}</td><td>{dimensionsLabel(asset.dimensionsM)}</td><td>{asset.implementedTypes.join(' · ') || '无'}</td><td><CompletenessDots asset={asset} /></td><td><AssetGapChips asset={asset} />{localWarning(asset.id)}</td>
-    </tr>)}</tbody></table></div></section>}</AssetThumbnails>) : catalogError ? <div className="asset-empty" role="alert">{catalogError}<button onClick={() => setAttempt(attempt + 1)}>重试</button><button onClick={refresh}>重新查询最新目录</button></div>
-      : !catalog ? <div className="asset-empty" role="status">正在检索目录…</div>
+    </tr>)}</tbody></table></div></section>}</AssetThumbnails>) : !catalog ? <CatalogLoading page={currentPage} count={pageSize} view={search.view} />
         : <>
           <CatalogSnapshotBar snapshot={catalog.snapshot} semantic={catalog.semantic} />
           {catalog.interpretedQuery.notes.length > 0 && <ul className="catalog-notes" aria-label="查询说明">{catalog.interpretedQuery.notes.map(note => <li key={note}>{note}</li>)}</ul>}
           {catalog.zeroResult ? <CatalogZeroResult response={catalog} onAction={actOnZero} />
             : <CatalogCandidateList response={catalog} view={search.view} onDetail={setDetail} />}
         </>}
-    {catalog && !catalog.zeroResult ? <nav className="catalog-pagination" aria-label="素材分页">
-      <button disabled={currentPage <= 1} onClick={() => change({ page: currentPage - 1 })}>上一页</button>
-      <span>第 {currentPage} / {totalPages} 页</span>
-      <button disabled={currentPage >= totalPages} onClick={() => change({ page: currentPage + 1 })}>下一页</button>
+    {(catalog && !catalog.zeroResult) || pending ? <nav className="catalog-pagination" aria-label="素材分页" aria-busy={pending}>
+      <button disabled={pending || currentPage <= 1} onClick={() => change({ page: currentPage - 1 })}>上一页</button>
+      <span>{catalog ? `第 ${currentPage} / ${totalPages} 页` : `第 ${currentPage} 页`}</span>
+      <button disabled={pending || currentPage >= totalPages} onClick={() => change({ page: currentPage + 1 })}>下一页</button>
       <form onSubmit={event => { event.preventDefault(); const input = event.currentTarget.elements.namedItem('page') as HTMLInputElement; const page = Number(input.value); if (Number.isInteger(page) && page >= 1 && page <= totalPages) change({ page }); }}>
-        <label>跳至<input key={currentPage} aria-label="页位置" name="page" type="number" min="1" max={totalPages} defaultValue={currentPage} /></label><button type="submit">前往</button>
+        <label>跳至<input key={currentPage} aria-label="页位置" name="page" type="number" min="1" max={totalPages} defaultValue={currentPage} /></label><button type="submit" disabled={pending}>前往</button>
       </form>
       <label>每页<select aria-label="每页条目" value={pageSize} onChange={event => change({ pageSize: Number(event.target.value) })}>{[12, 24, 48].map(size => <option value={size} key={size}>{size} 项</option>)}</select></label>
-      {catalog.counts.budgetTruncated && <small>长内容按响应限额分页</small>}
+      {catalog?.counts.budgetTruncated && <small>长内容按响应限额分页</small>}
     </nav> : null}
     {scope !== 'local' && <AcquisitionRecords />}
     {detail && <CatalogDetailPanel candidate={detail} release={catalog?.snapshot.id ?? undefined} onClose={() => setDetail(undefined)} />}

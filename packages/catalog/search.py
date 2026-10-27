@@ -44,6 +44,7 @@ from packages.library.reports import validation_read
 LOGGER = logging.getLogger(__name__)
 
 MAX_BYTES = 32768
+MAX_CARD_BYTES = 256 * 1024
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
 SCOPES = ("all", "local", "online")
@@ -610,6 +611,30 @@ def _candidate(match, filters, language, correlated, by_bare_id):
     }
 
 
+def _card_candidate(match, filters, language, correlated, by_bare_id):
+    """Project one visible card; full evidence is read through its fixed detail identity."""
+    value = _candidate(match, filters, language, correlated, by_bare_id)
+    result = {name: value[name] for name in ("type", "ref", "id", "kind", "match", "preview")}
+    result.update(
+        title=clip(value["title"], 160),
+        names={language: clip(text, 160) for language, text in value["names"].items()},
+        descriptions={language: clip(text, 200) for language, text in value["descriptions"].items()},
+        source={name: value["source"][name] for name in ("provider", "packageId", "revision")},
+        license={name: value["license"][name] for name in ("name", "admitted", "unknown")},
+        usage={name: value["usage"].get(name) for name in ("dressing", "staticCollision")},
+        installed={"latest": value["installed"]["latest"],
+                   "versions": [{"id": item["id"]} for item in value["installed"]["versions"]]},
+        acquisition={"eligible": value["acquisition"]["eligible"]},
+    )
+    if "category" in value:
+        result["category"] = value["category"]
+        result["tags"] = [clip(tag, 80) for tag in value["tags"][:3]]
+        result["metadata"] = {"release": value["metadata"]["release"]}
+    if "local" in value:
+        result["local"] = value["local"]
+    return result
+
+
 def _snapshot_document(catalog, now):
     if catalog.available and catalog.snapshot is not None:
         return catalog.snapshot.document(now)
@@ -796,7 +821,10 @@ def search_catalog(
     page=None,
     gaps=None,
     now=None,
+    view="summary",
 ):
+    if view not in ("summary", "cards"):
+        raise LibraryError("invalid_view", "Use summary or cards", 400)
     if scope not in SCOPES:
         raise ValueError("scope must be all, local or online")
     if gaps is not None and (scope != "local" or type(gaps) is not bool):
@@ -871,6 +899,8 @@ def search_catalog(
         text, scope, filters, sort, approximate,
         semantic_index.version if semantic_index is not None else None,
     )
+    if view == "cards":
+        key = hashlib.sha256(canonical_json({"query": key, "view": view}).encode()).hexdigest()
     offset = ((page or 1) - 1) * limit
     if cursor is not None:
         payload = _decode_cursor(cursor)
@@ -975,7 +1005,11 @@ def search_catalog(
                 [{"action": "remove_filter", "filter": name} for name in failing],
                 semantic=semantic_document,
             )
-        results = [compact_candidate(_candidate(match, filters, language, correlated, by_bare_id))]
+        if view == "cards":
+            candidate = _card_candidate(match, filters, language, correlated, by_bare_id)
+        else:
+            candidate = compact_candidate(_candidate(match, filters, language, correlated, by_bare_id))
+        results = [candidate]
         response = _summary_response(
             scope, interpreted, filters, snapshot,
             {"returned": 1, "matching": 1,
@@ -984,7 +1018,10 @@ def search_catalog(
              "approximate": 0, "budgetTruncated": False},
             results, None, False, None, semantic=semantic_document,
         )
-        if not _fits(response):
+        if serialized_size(response) > (MAX_CARD_BYTES if view == "cards" else MAX_BYTES):
+            if view == "cards":
+                raise LibraryError("response_budget", "Card exceeds its bounded response; "
+                                   "read the exact entry details", 422)
             identity = clip(
                 match.entry.id if match.type == "online" else match.local.version.id, 200
             )
@@ -1003,7 +1040,7 @@ def search_catalog(
     online_matches = []
     if scope in ("all", "online"):
         for entry in catalog.entries:
-            reasons, score = _match_fields(_entry_fields(entry), keywords)
+            reasons, score = _match_fields(_entry_fields(entry) if keywords else (), keywords)
             if reasons is not None:
                 local_versions = correlated.get(entry.id, [])
                 online_matches.append(_Match(
@@ -1015,7 +1052,7 @@ def search_catalog(
         for local in locals_all:
             if scope == "all" and local.entry is not None and local.entry.id in catalog.by_id:
                 continue
-            reasons, score = _match_fields(_local_fields(local), keywords)
+            reasons, score = _match_fields(_local_fields(local) if keywords else (), keywords)
             if reasons is not None:
                 local_matches.append(_Match(
                     "local", None, local, reasons, score, _local_status(local, filters),
@@ -1175,6 +1212,28 @@ def search_catalog(
             "Cursor offset is past the matching candidates; repeat the search",
             400,
         )
+    if view == "cards":
+        if offset >= len(ordered):
+            raise LibraryError("invalid_page", "Page is past the matching candidates; "
+                               "choose an earlier page", 400)
+        selected = ordered[offset:offset + limit]
+        values = [_card_candidate(item, filters, language, correlated, by_bare_id) for item in selected]
+        next_offset = offset + len(values)
+        response = _summary_response(
+            scope, interpreted, filters, snapshot,
+            {"returned": len(values), "matching": len(ordered), "localMatching": local_count,
+             "onlineMatching": online_count, "approximate": len(approximate_matches),
+             "budgetTruncated": False},
+            values, _encode_cursor(snapshot_id, key, next_offset) if next_offset < len(ordered) else None,
+            next_offset < len(ordered), None, semantic=semantic_document,
+        )
+        response["pagination"] = {"page": page or offset // limit + 1, "pageSize": limit,
+                                  "totalPages": math.ceil(len(ordered) / limit), "offset": offset}
+        if serialized_size(response) > MAX_CARD_BYTES:
+            raise LibraryError("response_budget", "Card page exceeds its bounded response; "
+                               "reduce page size", 422)
+        return response
+
     def build(values, start, budget, page_number=None):
         next_offset = start + len(values)
         has_more = next_offset < len(ordered)
