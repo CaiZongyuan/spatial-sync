@@ -125,6 +125,25 @@ additional isolated API/Web fixture. It covers pinned pages and URL restoration,
 local hard conditions and gaps, cached object previews, evidence, extraction
 coverage and estimates only after acquisition intent.
 
+The catalog maintenance module also has an independent HTTP host. Its verification
+forbids Lab/application/device/3D/model-SDK imports in the host and actual worker,
+drives external batches through the installed CLI and compares official MCP/native
+reads. Images are real encoded fixtures; their output bytes, publication bindings,
+source-cache eviction, bounded section continuation, backup v2/legacy v1 restore and
+exclusive host ownership are exercised through public behavior.
+
+```powershell
+uv run --no-sync python -m pytest tests/gateway/test_catalog_service.py tests/cli/test_catalog_service_commands.py tests/cli/test_catalog_metadata_commands.py -q
+```
+
+`LW_CATALOG_TEST_PYTHON` can select a separately prepared interpreter containing only
+`packages/catalog_metadata/requirements.txt` for the standalone child. The test
+controller still uses the frozen project interpreter. External mode makes no
+service-owned model call; unknown caller usage remains unknown and data submissions
+continue within the source/time/storage limits. Configured Runtime mode retains its
+existing receipt-based token budget and unknown-usage stop. These deterministic
+checks establish engineering behavior, not real Agent organization/retrieval quality.
+
 The fixed real-source identity selection and independent bilingual labels are in
 `tests/fixtures/catalog/metadata/`; publisher metadata and model/image bytes are
 not bundled. Use `tools/eval_catalog_metadata.py` with frozen product records and

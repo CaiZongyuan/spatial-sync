@@ -40,6 +40,7 @@ TOOLS = {
     "catalog_maintain", "catalog_maintenance_status", "catalog_maintenance_cancel",
     "catalog_maintenance_resume", "catalog_maintenance_retry", "catalog_batch_claim", "catalog_batch_submit",
     "catalog_batch_error", "catalog_evidence", "catalog_correction_put", "catalog_correction_retract",
+    "catalog_maintenance_finish", "catalog_metadata_search", "catalog_metadata_show", "catalog_thumbnail",
     "catalog_organization_select", "catalog_metadata_publish", "catalog_metadata_export",
     "catalog_metadata_restore",
     "acquisition_start",

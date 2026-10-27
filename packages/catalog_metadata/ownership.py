@@ -3,6 +3,43 @@
 import os
 import signal
 
+from .models import MetadataError
+
+
+class CatalogHostLease:
+    """One supervisor owns a state root; independent store readers remain possible."""
+
+    def __init__(self, path):
+        self.path = path
+        self.file = None
+
+    def acquire(self):
+        file = self.path.open("a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                if not self.path.stat().st_size:
+                    file.write(b"0")
+                    file.flush()
+                file.seek(0)
+                msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            file.close()
+            raise MetadataError(
+                "catalog_already_hosted", "Another catalog host owns this state root", 409
+            ) from exc
+        self.file = file
+
+    def close(self):
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+
 
 class WorkerTree:
     def __init__(self, process):

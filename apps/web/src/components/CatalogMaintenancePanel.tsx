@@ -14,6 +14,7 @@ const statusLabels: Record<string, string> = {
 const stageLabels: Record<string, string> = {
   enumerating: '枚举清单', extracting: '提取字段', organizing: '整理元数据',
   checking: '检查', publishing: '发布', finished: '完成',
+  previews: '缓存本地缩略图', awaiting_agent: '待外部 Agent 整理',
 };
 
 export function CatalogMaintenancePanel({ onPublication, onCollections }: {
@@ -23,6 +24,8 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
   const [state, setState] = useState<MetadataState>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [organizer, setOrganizer] = useState('runtime');
+  const [previews, setPreviews] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const callbacks = useRef({ onPublication, onCollections });
   callbacks.current = { onPublication, onCollections };
@@ -57,9 +60,20 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
   return <details className="catalog-maintenance" aria-label="元数据维护">
     <summary>元数据维护 <span>{state?.collections.length ?? '…'} 个集合</span></summary>
     <p className="asset-small-note">清单、字段提取与整理覆盖分别统计。维护期间仍可浏览当前发布。</p>
-    {state && <p className="asset-small-note">{state.runtime.configured
+    {state && <p className="asset-small-note">{organizer === 'external'
+      ? '外部 Agent 管理自己的模型与费用；平台只接收批次资料，不启动模型。'
+      : state.runtime.configured
       ? `Agent Runtime：${state.runtime.profile ?? '已配置'}`
       : 'Agent Runtime 待配置；可提取来源已有字段，自动摘要与分类尚待配置。'}</p>}
+    {state?.capabilities && <div className="catalog-maintenance-actions">
+      <label>整理方式 <select aria-label="元数据整理方式" value={organizer} disabled={busy}
+        onChange={event => setOrganizer(event.target.value)}>
+        <option value="runtime">{state.runtime.configured ? '已配置 Runtime' : 'Runtime 待配置'}</option>
+        <option value="external">外部 Agent 按 skill 整理</option><option value="none">仅提取来源字段</option>
+      </select></label>
+      <label><input type="checkbox" checked={previews} disabled={busy}
+        onChange={event => setPreviews(event.target.checked)} />缓存本地 WebP（默认最多 16 MiB 来源图/次）</label>
+    </div>}
     {state?.collections.map(collection => {
       const run = state.runs.find(value => value.collectionId === collection.id);
       const coverage = state.release?.collections.find(value => value.id === collection.id)?.coverage ?? {};
@@ -73,7 +87,7 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
         <div className="catalog-maintenance-actions">
           <label><input type="checkbox" checked={collection.enabled} disabled={busy}
             onChange={event => void act(() => setMetadataCollectionEnabled(collection.id, event.target.checked))} />启用此集合</label>
-          <button disabled={busy || !!active} onClick={() => void act(() => startMetadataRun(collection.id))}>维护 {collection.id}</button>
+          <button disabled={busy || !!active} onClick={() => void act(() => startMetadataRun(collection.id, organizer, previews))}>维护 {collection.id}</button>
           {active && <button disabled={busy || run.status === 'cancelling'}
             onClick={() => void act(() => controlMetadataRun(run.id, 'cancel'))}>取消维护</button>}
           {run && ['failed', 'cancelled', 'interrupted', 'partial', 'budget_exhausted'].includes(run.status) && <>
@@ -87,6 +101,7 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
           {run.coverage?.extractionPending !== undefined && ` · 待提取 ${run.coverage.extractionPending}`}
           {run.coverage?.extractionFailed !== undefined && ` · 提取失败 ${run.coverage.extractionFailed}`}
           {run.usage && ` · 网络 ${formatBytes(run.usage.networkBytes)}`}
+          {run.previewCoverage && ` · 本地缩略图 ${run.previewCoverage.available} · 缺图 ${run.previewCoverage.missing} · 图片失败 ${run.previewCoverage.failed} · 图片待处理 ${run.previewCoverage.pending}`}
           {run.message && ` · ${run.message}`}</p>}
         {run?.errors && run.errors.length > 0 && <details><summary>维护问题</summary><ul>{run.errors.map((value, index) =>
           <li key={index}>{value.entry && `${value.entry}：`}{value.message}</li>)}</ul></details>}

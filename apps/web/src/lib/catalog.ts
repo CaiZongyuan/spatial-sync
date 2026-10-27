@@ -341,7 +341,8 @@ const entryBase = (provider: string, packageId: string, revision: string) =>
 export const catalogEntryPath = (
   provider: string, packageId: string, revision: string, view: CatalogEntryView = 'summary',
   release?: string,
-) => `${entryBase(provider, packageId, revision)}?view=${view}${release ? `&release=${encodeURIComponent(release)}` : ''}`;
+  documentDigest?: string,
+) => `${entryBase(provider, packageId, revision)}?view=${view}${release ? `&release=${encodeURIComponent(release)}` : ''}${documentDigest ? `&documentDigest=${encodeURIComponent(documentDigest)}` : ''}`;
 
 export const catalogEstimatePath = (provider: string, packageId: string, revision: string, release?: string) =>
   `${entryBase(provider, packageId, revision)}/estimate${release ? `?release=${encodeURIComponent(release)}` : ''}`;
@@ -350,7 +351,8 @@ export const getCatalogEntry = (
   provider: string, packageId: string, revision: string, view: CatalogEntryView = 'full',
   signal?: AbortSignal,
   release?: string,
-) => request<CatalogEntryDocument>(catalogEntryPath(provider, packageId, revision, view, release), { signal });
+  documentDigest?: string,
+) => request<CatalogEntryDocument>(catalogEntryPath(provider, packageId, revision, view, release, documentDigest), { signal });
 
 export const getCatalogEstimate = (
   provider: string, packageId: string, revision: string, signal?: AbortSignal, release?: string,

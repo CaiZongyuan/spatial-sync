@@ -71,8 +71,11 @@ function CandidatePreview({ candidate }: { candidate: CatalogCandidate }) {
     observer.observe(frame.current);
     return () => observer.disconnect();
   }, [candidate.id, candidate.preview.url]);
-  const localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? (candidate.preview.kind === 'on-demand'
+  let localUrl = imageUrl(candidate.local?.asset.thumbnailUrl) ?? (candidate.preview.kind === 'on-demand'
     ? candidate.preview.url : imageUrl(candidate.preview.url));
+  if (attempt && candidate.preview.url?.includes('/maintenance/thumbnails/')) {
+    localUrl = `/api/v1/library/catalog/maintenance/preview?entry=${encodeURIComponent(candidate.id)}${candidate.metadata?.release ? `&release=${encodeURIComponent(candidate.metadata.release)}` : ''}`;
+  }
   const state = failed ? 'failed' : candidate.preview.state;
   const reason = state ? previewLabels[state] : '预览未缓存';
   if (['local', 'cached', 'on-demand'].includes(candidate.preview.kind) && localUrl)
@@ -151,16 +154,29 @@ export function CatalogDetailPanel({ candidate, release, onClose }: {
   const [error, setError] = useState<string>();
   const [estimateError, setEstimateError] = useState<string>();
   const [preparing, setPreparing] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [proof, setProof] = useState<CatalogEntryDocument>();
+  const [proofError, setProofError] = useState<string>();
+  const [detailAttempt, setDetailAttempt] = useState(0);
   const { provider, packageId, revision } = candidate.source;
   useEffect(() => {
     const controller = new AbortController();
     setEntry(undefined); setEstimate(undefined); setError(undefined); setPreparing(false); setEstimateError(undefined);
+    setEvidenceOpen(false); setProof(undefined); setProofError(undefined);
     if (!provider || !packageId || !revision) { setError('候选缺少固定来源版本，无法读取详情。'); return () => controller.abort(); }
-    void getCatalogEntry(provider, packageId, revision, 'full', controller.signal, release)
+    void getCatalogEntry(provider, packageId, revision, 'summary', controller.signal, release)
       .then(value => { if (!controller.signal.aborted) setEntry(value); })
       .catch((failure: Error) => { if (!controller.signal.aborted) setError(failure.message); });
     return () => controller.abort();
-  }, [candidate.id, provider, packageId, revision, release]);
+  }, [candidate.id, provider, packageId, revision, release, detailAttempt]);
+  useEffect(() => {
+    if (!evidenceOpen || !entry || proof) return;
+    const controller = new AbortController();
+    void getCatalogEntry(provider!, packageId!, revision!, 'full', controller.signal, release, entry.documentDigest)
+      .then(value => { if (!controller.signal.aborted) setProof(value); })
+      .catch((failure: Error) => { if (!controller.signal.aborted) setProofError(failure.message); });
+    return () => controller.abort();
+  }, [evidenceOpen, entry, proof, provider, packageId, revision, release]);
   useEffect(() => {
     if (!preparing || !provider || !packageId || !revision) return;
     const controller = new AbortController();
@@ -190,14 +206,17 @@ export function CatalogDetailPanel({ candidate, release, onClose }: {
           {(Object.keys(usageLabels) as (keyof typeof usageLabels)[]).map(name => <div key={name}><dt>{usageLabels[name]}</dt><dd>{usageLabel(entry.usage[name].eligible)}<small className="catalog-reason">{entry.usage[name].evidence}</small></dd></div>)}
           {entry.metadata?.facts && Object.entries(entry.metadata.facts).filter(([name]) => !['sourceBytes', 'fileCount', 'dimensionsM', 'license'].includes(name)).map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value === null ? '未知' : typeof value === 'string' ? value : JSON.stringify(value)}</dd></div>)}
         </dl></div></section>
-        <details className="asset-panel catalog-evidence"><summary>完整身份、未知项与来源依据</summary><div className="asset-panel-body">
+        <details className="asset-panel catalog-evidence" open={evidenceOpen}
+          onToggle={event => setEvidenceOpen(event.currentTarget.open)}><summary>完整身份、未知项与来源依据</summary><div className="asset-panel-body">
+          {evidenceOpen && !proof && !proofError && <p role="status">正在读取完整依据…</p>}
+          {proofError && <p role="alert">{proofError} <button onClick={() => setDetailAttempt(value => value + 1)}>重新读取详情</button></p>}
           <dl className="asset-kv"><div><dt>精确引用</dt><dd><code>{entry.ref}</code></dd></div><div><dt>固定来源版本</dt><dd><code>{entry.revision}</code></dd></div>
             <div><dt>元数据发布</dt><dd><code>{entry.metadata?.release ?? release ?? '精选目录'}</code></dd></div>
             <div><dt>许可证据</dt><dd>{entry.license.evidence.file ?? '尚未审查；声明不等于获取准入'}<small className="catalog-hash">{entry.license.evidence.sha256}</small></dd></div>
           </dl>
-          {entry.license.attachments.map(value => <p key={value.file}><code>{value.file}</code> · {value.license}</p>)}
-          <ul className="catalog-reasons">{[...entry.adaptation.gaps, ...entry.adaptation.approximations].map(value => <li key={value}>{value}</li>)}{entry.unknown.map(value => <li key={value}>未知属性：{labelFor(value)}</li>)}</ul>
-          {entry.metadata?.evidence?.map((value, index) => <div key={value.id ?? index}><p>{value.kind} · {value.origin ?? value.path} · {value.fields?.join('、')}</p>{(value.sha256 ?? value.id)?.startsWith('sha256:') && <EvidenceRecord digest={(value.sha256 ?? value.id)!} />}</div>)}
+          {(proof ?? entry).license.attachments.map(value => <p key={value.file}><code>{value.file}</code> · {value.license}</p>)}
+          <ul className="catalog-reasons">{[...(proof ?? entry).adaptation.gaps, ...(proof ?? entry).adaptation.approximations].map(value => <li key={value}>{value}</li>)}{(proof ?? entry).unknown.map(value => <li key={value}>未知属性：{labelFor(value)}</li>)}</ul>
+          {(proof ?? entry).metadata?.evidence?.map((value, index) => <div key={value.id ?? index}><p>{value.kind} · {value.origin ?? value.path} · {value.fields?.join('、')}</p>{(value.sha256 ?? value.id)?.startsWith('sha256:') && <EvidenceRecord digest={(value.sha256 ?? value.id)!} />}</div>)}
           {candidate.match.reasons.length > 0 && <p className="catalog-match">匹配：{candidate.match.reasons.map(value => `${value.field}「${value.value}」`).join('，')}</p>}
           {entry.previewTruncated && <p>长依据按响应预算裁剪；不表示来源没有更多条目。</p>}
         </div></details>

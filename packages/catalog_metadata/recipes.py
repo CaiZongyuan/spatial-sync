@@ -94,6 +94,13 @@ def _preview(hub, profile, revision, choice):
         "role": "object",
         "path": path,
         "sha256": sha,
+        "inputIdentity": (
+            {"kind": "repository-object", "value": choice["oid"]}
+            if choice.get("oid")
+            else {"kind": "sha256", "value": sha}
+            if sha
+            else {"kind": "versioned-path", "value": profile["dataset"] + "@" + revision + ":" + path}
+        ),
         "dataset": profile["dataset"],
         "revision": revision,
         "url": _file_url(hub, profile, revision, path),

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from apps.api.app.main import create_app
 from packages.catalog.source import SourceError
 from packages.catalog.sources import CatalogSource
-from tests.fixtures.catalog_source import PNG, REVISION, CatalogSourceFixture
+from tests.fixtures.catalog_source import PNG, PNG_PIXELS, REVISION, CatalogSourceFixture, thumbnail_pixels
 from tests.gateway.test_catalog_search import correlated_asset, upload
 from tests.gateway.test_catalog_sync import BASE, SEARCH, start
 
@@ -36,7 +36,7 @@ def test_legacy_lazy_preview_excludes_smaller_normal_and_material_thumbnails():
         upstream.requests.clear()
         candidate = client.get(SEARCH, params={"scope": "online"}).json()["results"][0]
         image = client.get(candidate["preview"]["url"])
-        assert image.status_code == 200 and image.content == PNG
+        assert image.status_code == 200 and thumbnail_pixels(image.content) == PNG_PIXELS
         assert any(path.endswith("/simready_usd/.thumbs/small.png") for path in upstream.requests)
         assert not any("/source_assets/" in path or "/Textures/" in path for path in upstream.requests)
 
@@ -62,11 +62,11 @@ def test_known_texture_selection_in_old_lazy_cache_is_refreshed_without_full_mai
         upstream.requests.clear()
         candidate = client.get(SEARCH, params={"scope": "online"}).json()["results"][0]
         image = client.get(candidate["preview"]["url"])
-        assert image.status_code == 200 and image.content == PNG
+        assert image.status_code == 200 and thumbnail_pixels(image.content) == PNG_PIXELS
         assert any(path.endswith("/simready_usd/.thumbs/small.png") for path in upstream.requests)
         upstream.requests.clear()
         upstream.fail_listing = True
-        assert client.get(candidate["preview"]["url"]).content == PNG
+        assert thumbnail_pixels(client.get(candidate["preview"]["url"]).content) == PNG_PIXELS
         assert not upstream.requests
 
 
@@ -89,7 +89,7 @@ def test_directory_and_search_never_read_package_details_or_images():
         assert next_page.status_code == 200
         assert not upstream.requests
         first = result["results"][0]
-        assert client.get(first["preview"]["url"]).content == PNG
+        assert thumbnail_pixels(client.get(first["preview"]["url"]).content) == PNG_PIXELS
         assert len(upstream.requests) == 2  # inventory and one smallest image; no detail document
         assert sum(path.endswith(".png") for path in upstream.requests) == 1
         detail_url = "/api/v1/library/catalog/entries/" + first["id"].replace("@", "/")
@@ -102,7 +102,7 @@ def test_directory_and_search_never_read_package_details_or_images():
             client.get(SEARCH, params={"scope": "online", "limit": 10}).json()["snapshot"]["id"]
             == result["snapshot"]["id"]
         )
-        assert client.get(first["preview"]["url"]).content == PNG
+        assert thumbnail_pixels(client.get(first["preview"]["url"]).content) == PNG_PIXELS
         assert len(upstream.requests) == 3
 
 
@@ -116,7 +116,7 @@ def test_concurrent_same_preview_collapses_and_offline_restart_reuses_cache():
         upstream.requests.clear()
         with ThreadPoolExecutor(max_workers=6) as pool:
             responses = list(pool.map(lambda _: client.get(url), range(6)))
-        assert all(response.content == PNG for response in responses)
+        assert all(thumbnail_pixels(response.content) == PNG_PIXELS for response in responses)
         assert len(upstream.requests) == 2
         assert client.get(url.removesuffix("/preview"), params={"view": "full"}).status_code == 200
         assert len(upstream.requests) == 3
@@ -124,7 +124,7 @@ def test_concurrent_same_preview_collapses_and_offline_restart_reuses_cache():
     upstream.broken_metadata.add("CT_fixture_a01")
     upstream.fail_listing = True
     with TestClient(create_app(catalog_sync_source=upstream.source)) as client:
-        assert client.get(url).content == PNG
+        assert thumbnail_pixels(client.get(url).content) == PNG_PIXELS
         detail = client.get(url.removesuffix("/preview"), params={"view": "full"}).json()
         assert detail["source"]["bytes"] > 0
         assert not upstream.requests
@@ -147,10 +147,10 @@ def test_multiple_sources_same_name_are_isolated_and_one_failure_keeps_other_sou
         )
         first.requests.clear()
         second.requests.clear()
-        assert client.get(a["preview"]["url"]).content == PNG
+        assert thumbnail_pixels(client.get(a["preview"]["url"]).content) == PNG_PIXELS
         assert first.requests and not second.requests
         first.requests.clear()
-        assert client.get(b["preview"]["url"]).content == PNG
+        assert thumbnail_pixels(client.get(b["preview"]["url"]).content) == PNG_PIXELS
         assert second.requests and not first.requests
         first.fail_listing = True
         second.revision = "b" * 40
@@ -220,7 +220,7 @@ def test_previous_v2_snapshot_and_cache_upgrade_without_content_downloads(tmp_pa
         assert start(client)["status"] == "succeeded"
         upstream.requests.clear()
         result = client.get(SEARCH, params={"scope": "online", "q": package}).json()["results"][0]
-        assert client.get(result["preview"]["url"]).content == PNG
+        assert thumbnail_pixels(client.get(result["preview"]["url"]).content) == PNG_PIXELS
         detail = client.get("/api/v1/library/catalog/entries/" + result["id"].replace("@", "/")).json()
         assert detail["source"]["bytes"] > 0
         assert not upstream.requests
@@ -236,12 +236,12 @@ def test_content_cache_evicts_and_refetches_without_removing_snapshots():
         assert start(client)["status"] == "succeeded"
         result = client.get(SEARCH, params={"scope": "online"}).json()
         for item in result["results"]:
-            assert client.get(item["preview"]["url"]).content == upstream.images[item["source"]["packageId"]]
+            assert thumbnail_pixels(client.get(item["preview"]["url"]).content) == PNG_PIXELS
         cache = app.state.catalog.resources.root
         assert sum(p.stat().st_size for p in cache.rglob("*") if p.is_file()) <= 700
         upstream.requests.clear()
         item = result["results"][0]
-        assert client.get(item["preview"]["url"]).content == upstream.images[item["source"]["packageId"]]
+        assert thumbnail_pixels(client.get(item["preview"]["url"]).content) == PNG_PIXELS
         assert upstream.requests
         assert (
             client.get(SEARCH, params={"scope": "online"}).json()["snapshot"]["id"]
@@ -272,7 +272,7 @@ def test_failed_image_does_not_block_details_and_explicit_retry_works():
         assert client.get(item["preview"]["url"]).status_code == 503  # bounded automatic backoff
         detail = client.get(item["preview"]["url"].removesuffix("/preview")).json()
         assert detail["license"]["name"] == "CC-BY-4.0"
-        assert client.get(item["preview"]["url"], params={"retry": 1}).content == PNG
+        assert thumbnail_pixels(client.get(item["preview"]["url"], params={"retry": 1}).content) == PNG_PIXELS
 
 
 def test_waiting_image_requests_do_not_occupy_search_capacity():

@@ -12,9 +12,10 @@ import hashlib
 import json
 import re
 import sqlite3
+import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from pathlib import Path
 
@@ -35,7 +36,7 @@ from .models import (
     vocabulary_document,
 )
 
-TABLES = (
+LEGACY_TABLES = (
     "collections",
     "inventories",
     "inventory_entries",
@@ -48,6 +49,8 @@ TABLES = (
     "release_entries",
     "metadata_state",
 )
+TABLES = (*LEGACY_TABLES, "entry_previews", "thumbnail_files")
+BACKUP_SCHEMA = "lw.catalog-metadata/2"
 SQLITE_TIMEOUT_SECONDS = 30
 
 
@@ -60,6 +63,9 @@ class MetadataStore:
         self.blob_root.mkdir(exist_ok=True)
         (self.blob_root / "previews").mkdir(exist_ok=True)
         (self.blob_root / "locators").mkdir(exist_ok=True)
+        self.thumbnail_root = self.root / "thumbnails"
+        self.thumbnail_root.mkdir(exist_ok=True)
+        self._preview_lock = threading.RLock()
         self._enable_wal()
         with self.transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -93,6 +99,10 @@ class MetadataStore:
                     document TEXT NOT NULL,search_text TEXT NOT NULL,PRIMARY KEY(release_id,id));
                 CREATE INDEX IF NOT EXISTS inventory_by_collection ON inventories(collection_id);
                 CREATE TABLE IF NOT EXISTS metadata_state(key TEXT PRIMARY KEY,document TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS entry_previews (
+                    collection_id TEXT NOT NULL, upstream_id TEXT NOT NULL, input_digest TEXT NOT NULL,
+                    document TEXT NOT NULL, PRIMARY KEY(collection_id,upstream_id,input_digest));
+                CREATE TABLE IF NOT EXISTS thumbnail_files (digest TEXT PRIMARY KEY, bytes INTEGER NOT NULL);
                 PRAGMA user_version=1;
             """
             # executescript would commit BEGIN IMMEDIATE before running the DDL,
@@ -154,6 +164,26 @@ class MetadataStore:
             raise
         finally:
             db.close()
+
+    @contextmanager
+    def preview_transaction(self):
+        """Coordinate retained image files and host queue writes in one writer transaction."""
+        with self._preview_lock, self.transaction() as db:
+            yield db
+
+    def recover_thumbnail_files(self, db):
+        known = {row[0] for row in db.execute("SELECT digest FROM thumbnail_files")}
+        for path in self.thumbnail_root.iterdir():
+            key = "sha256:" + path.name
+            if (key not in known and re.fullmatch(r"[0-9a-f]{64}", path.name)
+                    and path.is_file() and path.stat().st_size <= 524288):
+                data = path.read_bytes()
+                if (
+                    hashlib.sha256(data).hexdigest() == path.name
+                    and data.startswith(b"RIFF")
+                    and data[8:12] == b"WEBP"
+                ):
+                    db.execute("INSERT INTO thumbnail_files VALUES(?,?)", (key, len(data)))
 
     def close(self):
         """Connections are operation-scoped; retained stores own no process handles."""
@@ -391,6 +421,12 @@ class MetadataStore:
                     "reason": correction["reason"],
                 }
             result["corrections"].append(correction)
+        preview = db.execute(
+            "SELECT document FROM entry_previews WHERE collection_id=? AND upstream_id=? AND input_digest=?",
+            keys,
+        ).fetchone()
+        if preview is not None:
+            result["preview"] = {**result.get("preview", {}), "thumbnail": json.loads(preview[0])}
         return result
 
     def inventory_source_entries(self, identifier):
@@ -762,6 +798,13 @@ class MetadataStore:
                             **inv["counts"],
                             "inventoryComplete": True,
                             "organized": sum(v["organization"]["status"] == "organized" for v in values),
+                            **{
+                                "preview" + state.title(): sum(
+                                    v.get("preview", {}).get("thumbnail", {}).get("state") == state
+                                    for v in values
+                                ) for state in ("available", "missing", "failed", "suspect")
+                            },
+                            "previewPending": sum(not v.get("preview", {}).get("thumbnail") for v in values),
                         },
                     }
                 )
@@ -879,12 +922,122 @@ class MetadataStore:
             raise MetadataError("blob_limit", "A metadata blob must be at most 32 MiB")
         key = "sha256:" + hashlib.sha256(data).hexdigest()
         self.blob_path(key)
-        path = (self.blob_root / "previews" if kind == "preview" else self.blob_root) / key[7:]
-        if not path.exists():
+        directory = (self.thumbnail_root if kind == "thumbnail" else
+                     self.blob_root / "previews" if kind == "preview" else self.blob_root)
+        path = directory / key[7:]
+        if not path.exists() or (kind == "thumbnail" and path.read_bytes() != data):
             temporary = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
             temporary.write_bytes(data)
             temporary.replace(path)
         return {"sha256": key, "kind": kind, "bytes": len(data), **metadata}
+
+    def entry_preview(self, entry):
+        from .thumbnails import TRANSFORM
+
+        with self.transaction(write=False) as db:
+            row = db.execute(
+                "SELECT document FROM entry_previews "
+                "WHERE collection_id=? AND upstream_id=? AND input_digest=?",
+                (entry["collectionId"], entry["upstreamId"], entry["inputDigest"]),
+            ).fetchone()
+        value = json.loads(row[0]) if row else None
+        if not value or value.get("transform") != TRANSFORM:
+            return None
+        if value.get("state") == "available":
+            try:
+                self.thumbnail(value["sha256"])
+            except MetadataError:
+                return {**value, "state": "failed", "reason": "local_thumbnail_unavailable"}
+        return value
+
+    def save_preview(
+        self,
+        entry,
+        data=None,
+        *,
+        state=None,
+        reason=None,
+        max_added_bytes=None,
+        connection=None,
+        expected_output=None,
+    ):
+        """Persist a source-bound derivative; source image cache eviction cannot remove it."""
+        from .thumbnails import TRANSFORM, create_thumbnail
+
+        added = 0
+        if data is not None:
+            if entry.get("preview", {}).get("role") != "object":
+                raise MetadataError(
+                    "invalid_preview_role", "Only a source object preview can create a thumbnail"
+                )
+            preview = entry.get("preview", {})
+            expected = {value for value in (preview.get("cachedSha256"), preview.get("sha256")) if value}
+            if expected and "sha256:" + hashlib.sha256(data).hexdigest() not in expected:
+                raise MetadataError(
+                    "preview_digest_mismatch", "Preview differs from its pinned source digest", 409
+                )
+            encoded, document = create_thumbnail(data)
+            if expected_output is not None and document["sha256"] != expected_output:
+                raise MetadataError(
+                    "thumbnail_changed", "Converter cannot reproduce the published thumbnail", 409
+                )
+        else:
+            if state not in ("missing", "failed", "suspect"):
+                raise MetadataError("invalid_preview_state", "Select a recorded preview gap")
+            encoded = None
+            document = {"state": state, "reason": str(reason or state)[:500], "transform": dict(TRANSFORM)}
+        preview = entry.get("preview", {})
+        embedded = preview.get("embedded") and document.get("sourceSha256") == preview.get("cachedSha256")
+        table = next((item for item in entry.get("evidence", [])
+                      if str(item.get("path", "")).endswith(".parquet")), {}) if embedded else {}
+        document.update(
+            inputDigest=entry["inputDigest"], sourceRevision=entry["revision"],
+            sourcePath=table.get("path") if embedded else preview.get("path"),
+            sourceKind="embedded" if embedded else "object-preview",
+        )
+        if embedded:
+            document.update(sourceField="preview", sourceRow=entry["upstreamId"],
+                            sourceEvidence=table.get("sha256"), declaredPreviewPath=preview.get("path"),
+                            declaredPreviewSha256=preview.get("sha256"))
+        with (self.preview_transaction() if connection is None else nullcontext(connection)) as db:
+            if encoded is not None:
+                row = db.execute(
+                    "SELECT bytes FROM thumbnail_files WHERE digest=?", (document["sha256"],)
+                ).fetchone()
+                if row is None:
+                    if max_added_bytes is not None and len(encoded) > max_added_bytes:
+                        raise MetadataError("thumbnail_budget", "Thumbnail allowance is exhausted", 409)
+                    used = db.execute("SELECT COALESCE(SUM(bytes),0) FROM thumbnail_files").fetchone()[0]
+                    if used + len(encoded) > 512 * 1024 * 1024:
+                        raise MetadataError(
+                            "thumbnail_storage_limit", "Retained thumbnails exceed 512 MiB", 409
+                        )
+                    db.execute("INSERT INTO thumbnail_files VALUES(?,?)", (document["sha256"], len(encoded)))
+                    added = len(encoded)
+                self.put_blob(encoded, kind="thumbnail")
+            db.execute(
+                "INSERT INTO entry_previews VALUES(?,?,?,?) "
+                "ON CONFLICT(collection_id,upstream_id,input_digest) "
+                "DO UPDATE SET document=excluded.document",
+                (entry["collectionId"], entry["upstreamId"], entry["inputDigest"], canonical(document)),
+            )
+        return document, added
+
+    def thumbnail(self, key):
+        with self.transaction(write=False) as db:
+            row = db.execute("SELECT bytes FROM thumbnail_files WHERE digest=?", (key,)).fetchone()
+        if row is None:
+            raise MetadataError("thumbnail_unavailable", "This local thumbnail is unavailable", 404)
+        try:
+            data = (self.thumbnail_root / key[7:]).read_bytes()
+        except FileNotFoundError as exc:
+            raise MetadataError(
+                "thumbnail_unavailable", "The retained thumbnail file is missing", 404
+            ) from exc
+        if (len(data) != row[0] or "sha256:" + hashlib.sha256(data).hexdigest() != key
+                or not data.startswith(b"RIFF") or data[8:12] != b"WEBP"):
+            raise MetadataError("thumbnail_corrupt", "Local thumbnail failed its format/byte check", 409)
+        return data
 
     def blob_path(self, key):
         if not isinstance(key, str) or len(key) != 71 or not key.startswith("sha256:"):
@@ -894,7 +1047,9 @@ class MetadataStore:
             raise MetadataError("invalid_digest", "Invalid evidence digest")
         path = self.blob_root / name
         preview_path = self.blob_root / "previews" / name
-        return preview_path if not path.exists() and preview_path.exists() else path
+        if path.exists():
+            return path
+        return preview_path if preview_path.exists() else self.thumbnail_root / name
 
     def blob(self, key):
         try:
@@ -909,10 +1064,13 @@ class MetadataStore:
         with self.transaction(write=False) as db:
             tables = {table: [dict(row) for row in db.execute("SELECT * FROM " + table)] for table in TABLES}
         blobs, kinds, total = {}, {}, 0
-        paths = [*self.blob_root.iterdir(), *(self.blob_root / "previews").iterdir()]
+        paths = [*self.blob_root.iterdir(), *(self.blob_root / "previews").iterdir(),
+                 *self.thumbnail_root.iterdir()]
         for path in sorted(paths):
             if path.is_file() and len(path.name) == 64:
                 if "sha256:" + path.name in blobs:
+                    if path.parent == self.thumbnail_root:
+                        kinds["sha256:" + path.name] = "thumbnail"
                     continue
                 data = self.blob("sha256:" + path.name)
                 total += len(data)
@@ -921,6 +1079,8 @@ class MetadataStore:
                 blobs["sha256:" + path.name] = base64.b64encode(data).decode("ascii")
                 if path.parent.name == "previews":
                     kinds["sha256:" + path.name] = "preview"
+                elif path.parent == self.thumbnail_root:
+                    kinds["sha256:" + path.name] = "thumbnail"
         locators = {}
         for path in (self.blob_root / "locators").glob("*.json"):
             if not re.fullmatch(r"[0-9a-f]{64}", path.stem) or path.stat().st_size > 4096:
@@ -939,7 +1099,7 @@ class MetadataStore:
                 kinds[value["sha256"]] = "preview"
         self._validate_preview_locators(locators, blobs)
         return {
-            "schema": SCHEMA,
+            "schema": BACKUP_SCHEMA,
             "tables": tables,
             "blobs": blobs,
             "blobKinds": kinds,
@@ -972,10 +1132,13 @@ class MetadataStore:
     def restore(self, document, *, release_preparer=None):
         if (
             not isinstance(document, dict)
-            or document.get("schema") != SCHEMA
-            or set(document.get("tables", {})) != set(TABLES)
+            or document.get("schema") not in (SCHEMA, BACKUP_SCHEMA)
+            or set(document.get("tables", {})) not in (set(TABLES), set(LEGACY_TABLES))
         ):
             raise MetadataError("invalid_backup", "Unsupported metadata backup")
+        document = deepcopy(document)
+        for table in set(TABLES) - set(LEGACY_TABLES):
+            document["tables"].setdefault(table, [])
         decoded = {}
         for key, value in document.get("blobs", {}).items():
             self.blob_path(key)
@@ -998,23 +1161,36 @@ class MetadataStore:
                     "An existing immutable preview resource has a different cache binding",
                     409,
                 )
-        # Unreferenced blobs are harmless if a later transaction fails. Writing
-        # first prevents an active release from ever referring to unwritten data.
-        for key, data in decoded.items():
-            kind = document.get("blobKinds", {}).get(key, "metadata")
-            if kind not in ("metadata", "preview"):
-                raise MetadataError("invalid_backup", "Backup has an unsupported blob role")
-            self.put_blob(data, kind=kind)
-            self.blob(key)
-        for key, value in locators.items():
-            if document.get("blobKinds", {}).get(value["sha256"], "metadata") != "preview":
-                raise MetadataError("invalid_backup", "Preview locator blob role is inconsistent")
-            path = self.blob_root / "locators" / (key + ".json")
-            if not path.exists():
-                temporary = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
-                temporary.write_text(canonical(value), "utf-8")
-                temporary.replace(path)
-        with self.transaction() as db:
+        with self.preview_transaction() as db:
+            self.recover_thumbnail_files(db)
+            retained = dict(db.execute("SELECT digest,bytes FROM thumbnail_files"))
+            incoming = {key: data for key, data in decoded.items()
+                        if document.get("blobKinds", {}).get(key) == "thumbnail"}
+            if (any(len(data) > 524288 for data in incoming.values())
+                    or sum(retained.values()) + sum(len(data) for key, data in incoming.items()
+                                                   if key not in retained) > 536870912):
+                raise MetadataError(
+                    "thumbnail_storage_limit", "Restored thumbnails exceed retained storage limits", 409
+                )
+            # Unreferenced blobs are harmless if a later transaction fails. Writing
+            # first prevents an active release from ever referring to unwritten data.
+            for key, data in decoded.items():
+                kind = document.get("blobKinds", {}).get(key, "metadata")
+                if kind not in ("metadata", "preview", "thumbnail"):
+                    raise MetadataError("invalid_backup", "Backup has an unsupported blob role")
+                self.put_blob(data, kind=kind)
+                self.blob(key)
+            for key, value in locators.items():
+                role = document.get("blobKinds", {}).get(value["sha256"], "metadata")
+                if role not in ("preview", "thumbnail"):
+                    raise MetadataError("invalid_backup", "Preview locator blob role is inconsistent")
+                if role == "thumbnail":
+                    self.put_blob(decoded[value["sha256"]], kind="preview")
+                path = self.blob_root / "locators" / (key + ".json")
+                if not path.exists():
+                    temporary = path.with_suffix("." + uuid.uuid4().hex + ".tmp")
+                    temporary.write_text(canonical(value), "utf-8")
+                    temporary.replace(path)
             # Restoring replaces only this module's metadata, never local assets,
             # recordings, maintenance jobs or any other host-owned table.
             for table in reversed(TABLES):
@@ -1031,6 +1207,7 @@ class MetadataStore:
                         "INSERT INTO " + table + " VALUES(" + ",".join("?" for _ in columns) + ")",
                         tuple(row[column] for column in columns),
                     )
+            db.executemany("INSERT OR IGNORE INTO thumbnail_files VALUES(?,?)", retained.items())
             latest = db.execute("SELECT document FROM metadata_state WHERE key='latestRelease'").fetchone()
             if (
                 latest
@@ -1123,6 +1300,23 @@ class MetadataStore:
                 or row["input_digest"] != value["inputDigest"]
             ):
                 raise MetadataError("invalid_backup", "Backup inventory lookup keys are inconsistent")
+        for row in db.execute("SELECT digest,bytes FROM thumbnail_files"):
+            self.blob_path(row[0])
+            try:
+                data = (self.thumbnail_root / row[0][7:]).read_bytes()
+            except FileNotFoundError as exc:
+                raise MetadataError("invalid_backup", "Backup thumbnail has no retained image file") from exc
+            if len(data) != row[1] or not data.startswith(b"RIFF") or data[8:12] != b"WEBP":
+                raise MetadataError("invalid_backup", "Backup thumbnail differs from its content/format")
+        for row in db.execute("SELECT * FROM entry_previews"):
+            value = json.loads(row["document"])
+            if (row["collection_id"], row["upstream_id"], row["input_digest"]) not in inputs or (
+                value.get("inputDigest") != row["input_digest"]
+                or value.get("state") not in ("available", "missing", "failed", "suspect")
+            ):
+                raise MetadataError("invalid_backup", "Backup preview has an invalid source binding")
+            if value["state"] == "available":
+                self._validate_thumbnail_reference(db, value, row["input_digest"])
         for row in db.execute("SELECT * FROM organizations"):
             value = json.loads(row["document"])
             organization_fields(value["fields"])
@@ -1180,6 +1374,9 @@ class MetadataStore:
                 )
             for entry in entries:
                 self._validate_category(entry, vocabulary=vocabulary)
+                thumbnail = entry.get("preview", {}).get("thumbnail")
+                if thumbnail and thumbnail.get("state") == "available":
+                    self._validate_thumbnail_reference(db, thumbnail, entry["inputDigest"])
                 if entry.get("vocabularyVersion") != vocabulary["version"]:
                     raise MetadataError("invalid_backup", "Backup entry has a different vocabulary version")
             expected_entries = {}
@@ -1232,3 +1429,23 @@ class MetadataStore:
             }
             if actual_index != {item["id"]: item["text"] for item in index}:
                 raise MetadataError("invalid_backup", "Backup index differs from its release")
+
+    def _validate_thumbnail_reference(self, db, value, input_digest):
+        from PIL import Image
+
+        from .thumbnails import TRANSFORM
+
+        blob = db.execute(
+            "SELECT bytes FROM thumbnail_files WHERE digest=?", (value.get("sha256"),)
+        ).fetchone()
+        if (blob is None or blob[0] != value.get("bytes") or value.get("inputDigest") != input_digest
+                or value.get("transform") != TRANSFORM):
+            raise MetadataError("invalid_backup", "Backup preview has an invalid image/input binding")
+        key = value["sha256"]
+        self.blob_path(key)
+        with Image.open(self.thumbnail_root / key[7:]) as image:
+            if (
+                image.size != (value.get("width"), value.get("height"))
+                or max(image.size) > TRANSFORM["maxEdge"]
+            ):
+                raise MetadataError("invalid_backup", "Backup preview dimensions differ from its image")

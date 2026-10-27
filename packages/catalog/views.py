@@ -233,6 +233,14 @@ def _bound(document, maximum):
 
 def _summary(base, digest):
     summary = copy.deepcopy(base)
+    if summary.get("metadata") is not None:
+        summary["metadata"] = {key: value for key, value in summary["metadata"].items() if key in (
+            "id", "collectionId", "category", "tags", "domains", "uses", "facts", "organization", "release",
+            "vocabularyVersion", "evidence",
+        )}
+        if isinstance(summary["metadata"].get("facts"), dict):
+            summary["metadata"]["facts"] = {key: value for key, value in summary["metadata"]["facts"].items()
+                                           if key != "variants"}
     summary.update(
         view="summary",
         documentDigest=digest,

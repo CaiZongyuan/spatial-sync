@@ -257,8 +257,16 @@ class GatewayClient:
         )
 
     async def catalog_maintain(
-        self, collection, revision=None, budgets=None, wait=False, requestId=None, *, actor="cli:lw"
+        self, collection, revision=None, budgets=None, wait=False, requestId=None,
+        organizer="runtime", previews=False, *, actor="cli:lw"
     ):
+        if organizer != "runtime" or previews:
+            state = await self.catalog_maintenance_status()
+            capabilities = state.get("capabilities", {})
+            if not capabilities.get("externalOrganization") or (
+                previews and not capabilities.get("localThumbnails")
+            ):
+                raise ValueError("The catalog server does not support this maintenance mode; update it first")
         result = await self.request(
             "POST",
             self._maintenance_path() + "/runs",
@@ -268,16 +276,64 @@ class GatewayClient:
                 "revision": revision,
                 "budgets": budgets,
                 "requestId": requestId,
+                "organizer": organizer,
+                "previews": previews,
             },
         )
         deadline = time.monotonic() + 120
-        while wait and result["status"] in ("queued", "running") and time.monotonic() < deadline:
+        while (wait and result["status"] in ("queued", "running")
+               and result.get("phase") != "awaiting_agent" and time.monotonic() < deadline):
             await asyncio.sleep(0.2)
             result = await self.catalog_maintenance_status(result["id"])
         return result
 
     async def catalog_maintenance_status(self, id=None):
         return await self.request("GET", self._maintenance_path(id))
+
+    async def catalog_maintenance_finish(self, id, *, actor="cli:lw"):
+        return await self.request("POST", self._maintenance_path(id) + "/finish", actor=actor)
+
+    async def catalog_metadata_search(self, query="", collection=None, category=None, tag=None,
+                                      release=None, limit=10, cursor=None):
+        params = {
+            "q": query, "collection": collection, "category": category, "tag": tag,
+            "release": release, "limit": limit, "cursor": cursor,
+        }
+        return await self.request("GET", self._maintenance_path() + "/entries",
+                                  params={key: value for key, value in params.items() if value is not None})
+
+    async def catalog_metadata_show(self, id, release=None, section=None, offset=0, documentDigest=None):
+        params = {
+            "id": id, "release": release, "section": section, "offset": offset,
+            "documentDigest": documentDigest,
+        }
+        return await self.request("GET", self._maintenance_path() + "/entry",
+                                  params={key: value for key, value in params.items() if value is not None})
+
+    async def catalog_thumbnail(self, id, output, release=None, retry=False):
+        import hashlib
+
+        params = {
+            "entry": id.removeprefix("catalog:"), "release": release, "retry": 1 if retry else None,
+        }
+        content = await self.request(
+            "GET",
+            self._maintenance_path() + "/preview",
+            params={key: value for key, value in params.items() if value is not None},
+            response_bytes=True,
+        )
+        if not content.startswith(b"RIFF") or content[8:12] != b"WEBP":
+            raise ValueError("Catalog preview is not WebP; update the catalog server")
+        target = Path(output).expanduser().absolute()
+        if target.exists():
+            if not target.is_file() or target.read_bytes() != content:
+                raise ValueError("Thumbnail output already exists with different content")
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("xb") as file:
+                file.write(content)
+        return {"path": str(target), "bytes": len(content), "mediaType": "image/webp",
+                "sha256": "sha256:" + hashlib.sha256(content).hexdigest()}
 
     async def catalog_maintenance_cancel(self, id, *, actor="cli:lw"):
         return await self.request("POST", self._maintenance_path(id) + "/cancel", actor=actor)

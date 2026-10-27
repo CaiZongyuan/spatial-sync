@@ -196,6 +196,33 @@ def test_chemlab_release_union_includes_non_instrument_subsets_and_publisher_fac
     assert all(not url.endswith((".png", ".glb")) for url in requests)
 
 
+@pytest.mark.parametrize("with_oid", [True, False])
+def test_changed_object_preview_invalidates_inputs_without_downloading_images(tmp_path, with_oid):
+    inputs, requests = [], []
+    for revision, image_oid in ((REVISION, "e" * 40), (OTHER_REVISION, "f" * 40)):
+        tree = "/api/datasets/MBZUAI/ChemLab-Assets/tree/" + revision
+        resolve = "/datasets/MBZUAI/ChemLab-Assets/resolve/" + revision
+        preview = file("media/thumb/balance.webp", 100, oid=image_oid)
+        if not with_oid:
+            preview.pop("oid")
+        routes = {
+            tree: [file("assets/balance/model.glb"), preview],
+            resolve + "/release_manifest.json": {"assets": {"instrument.balance": {"shipped": 1}}},
+            resolve + "/catalog/catalog.json": {"assets": [{
+                "id": "instrument.balance", "name": "Balance", "path": "assets/balance",
+                "files": {"glb": "assets/balance/model.glb"}, "thumb": "media/thumb/balance.webp",
+            }]},
+        }
+        reader = HFHubReader(client=upstream(routes, requests), cache_root=tmp_path / "cache")
+        try:
+            result = reader.enumerate(profile("chemlab"), revision)
+            inputs.append(result["entries"][0]["inputDigest"])
+        finally:
+            reader.close()
+    assert inputs[0] != inputs[1]
+    assert not any(url.endswith((".webp", ".glb")) for url in requests)
+
+
 def test_wrong_revision_pagination_cannot_publish_partial_inventory(tmp_path):
     tree = f"/api/datasets/nvidia/simready-assets/tree/{REVISION}"
     response = httpx.Response(

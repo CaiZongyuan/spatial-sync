@@ -3,9 +3,11 @@
 import base64
 import threading
 import time
+from io import BytesIO
 from urllib.parse import unquote
 
 import httpx
+from PIL import Image
 
 from packages.catalog.source import SimReadySource
 
@@ -13,6 +15,13 @@ REVISION = "524747d9b5e1f21b5b18b56041788c01d745f1a1"
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 )
+PNG_PIXELS = ((1, 1), (255, 255, 255, 255))
+
+
+def thumbnail_pixels(data):
+    with Image.open(BytesIO(data)) as image:
+        assert image.format == "WEBP"
+        return image.size, image.convert("RGBA").getpixel((0, 0))
 
 
 class CatalogSourceFixture:

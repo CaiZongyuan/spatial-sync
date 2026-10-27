@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
-from tests.fixtures.catalog_source import PNG, REVISION, CatalogSourceFixture
+from tests.fixtures.catalog_source import PNG, PNG_PIXELS, REVISION, CatalogSourceFixture, thumbnail_pixels
 from tests.gateway.test_catalog_search import correlated_asset, upload
 
 BASE = "/api/v1/library/catalog/sync"
@@ -51,8 +51,8 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
         assert all(item["preview"]["kind"] == "on-demand" for item in published["results"])
         image_url = published["results"][0]["preview"]["url"]
         image = client.get(image_url)
-        assert image.content == PNG
-        assert image.headers["content-type"] == "image/png"
+        assert thumbnail_pixels(image.content) == PNG_PIXELS
+        assert image.headers["content-type"] == "image/webp"
         assert "max-age=" in image.headers["cache-control"]
         continued = client.get(SEARCH, params={"scope": "online", "cursor": before["nextCursor"]})
         assert continued.status_code == 200, continued.text
@@ -110,7 +110,7 @@ def test_full_pagination_incremental_reuse_revision_admission_and_offline_restar
     upstream.requests.clear()
     with TestClient(create_app(catalog_sync_source=upstream.source)) as restarted:
         assert restarted.get(SEARCH, params={"scope": "online"}).json()["snapshot"]["id"] == stable
-        assert restarted.get(image_url).content == PNG
+        assert thumbnail_pixels(restarted.get(image_url).content) == PNG_PIXELS
         assert not upstream.requests  # Startup and search remain offline.
         old = restarted.get("/api/v1/library/catalog/entries/" + old_box.replace("@", "/"))
         assert old.status_code == 200 and old.json()["license"]["admitted"]

@@ -78,6 +78,7 @@ def adapt_entry(document, legacy=None, *, release_id=None, vocabulary=None):
                     aliases[language].append(label)
     document["release"] = release_id
     preview = document.get("preview", {})
+    thumbnail = preview.get("thumbnail")
     state = preview.get("state", "not_collected")
     path = preview.get("path")
     cached_digest = preview.get("cachedSha256") or preview.get("sha256")
@@ -98,6 +99,14 @@ def adapt_entry(document, legacy=None, *, release_id=None, vocabulary=None):
             "suspect": "The selected image needs review before it can represent this object.",
         }.get(state),
     }
+    if thumbnail and thumbnail.get("state") == "available":
+        preview_document.update(
+            kind="local", state="available",
+            url="/api/v1/library/catalog/maintenance/thumbnails/" + thumbnail["sha256"] + ".webp",
+            reason="Local WebP thumbnail bound to this published source input.",
+        )
+    elif thumbnail and thumbnail.get("state") in ("missing", "failed", "suspect"):
+        preview_document.update(state=thumbnail["state"], reason=thumbnail.get("reason"))
     if legacy is not None:
         return replace(
             legacy, names=names, aliases={key: tuple(value) for key, value in aliases.items()},

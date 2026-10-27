@@ -34,6 +34,14 @@ def test_every_shipped_command_matches_the_real_parser_without_a_gateway():
     assert checked["commands"] > 0
 
 
+def test_help_validation_does_not_remove_later_command_requirements(tmp_path):
+    skill = tmp_path / "help-then-invoke"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("`lw scene launch --help`\n`lw scene launch`\n", encoding="utf-8")
+    checked = check(tmp_path)
+    assert checked.returncode == 1 and "SKILL.md:2:" in checked.stderr
+
+
 def test_historical_skill_directories_use_the_installer_canonical_text_hash():
     archives = list((ROOT / "skills/archive/lab").glob("*/SKILL.md"))
     assert archives

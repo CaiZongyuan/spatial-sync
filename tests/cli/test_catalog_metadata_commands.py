@@ -1,6 +1,7 @@
 """Actual worker/runtime processes, installed CLI and official MCP share HTTP."""
 
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -159,6 +160,47 @@ async def test_actual_subprocess_worker_and_runtime_receipts_share_cli_mcp_http(
     requests = http.get("/e2e/catalog-metadata-source").json()["requests"]
     assert not any(path.endswith((".usd", "normal.png", "preview.png")) for path in requests)
     assert not (directory / "state/catalog-metadata/metadata.sqlite3").parent.joinpath("runtime").exists()
+
+
+async def test_external_agent_handoff_and_local_thumbnails_use_real_worker_cli_and_mcp(metadata_gateway):
+    http, environment, calls, directory = metadata_gateway
+    assert http.patch(BASE + "/collections/simready", json={"enabled": True}).status_code == 200
+    run = await cli(environment, "catalog", "maintain", "simready", "--revision", REVISION,
+                    "--organizer", "external", "--previews", "--wait")
+    assert run["phase"] == "awaiting_agent" and run["sourceWorkerComplete"], run
+    assert not calls.exists()  # A configured runtime is not invoked in external mode.
+    assert run["previewCoverage"]["available"] == 2, run
+    batch = await cli(environment, "catalog", "batch-claim", run["id"])
+    assert batch["vocabulary"]["categories"] and any(item.get("text") for item in batch["evidence"])
+    payload = {
+        "inputKey": batch["inputKey"], "nativeSessionId": "deterministic-external-fixture",
+        "usage": {"totalTokens": 10}, "execution": {"kind": "deterministic-process-fixture"},
+        "results": [{"upstreamId": item["upstreamId"], "inputDigest": item["inputDigest"],
+                     "fields": {"summary": {"zh": "用于试剂暂存的容器候选"}, "uses": ["试剂暂存"]}}
+                    for item in batch["entries"]],
+    }
+    document = directory / "external-receipt.json"
+    document.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    await cli(environment, "catalog", "batch-submit", run["id"], batch["id"], str(document))
+    finished = await cli(environment, "catalog", "maintenance-finish", run["id"])
+    assert finished["status"] == "succeeded", finished
+    found = await cli(environment, "catalog", "metadata-search", "--q", "试剂暂存")
+    entry = found["results"][0]
+    before = http.get("/e2e/catalog-metadata-source").json()["requests"]
+    cli_image = directory / "cli-thumbnail.webp"
+    captured = await cli(environment, "catalog", "thumbnail", entry["id"], "--release", found["release"],
+                         "--output", str(cli_image))
+    assert captured["mediaType"] == "image/webp" and cli_image.read_bytes()[8:12] == b"WEBP"
+    transport = StdioServerParameters(command=str(LW), args=["mcp"], env=environment)
+    async with Client(transport, mode="legacy") as mcp:
+        assert await result(mcp, "catalog_metadata_search", query="试剂暂存") == found
+        shown = await result(mcp, "catalog_metadata_show", id=entry["id"], release=found["release"])
+        assert shown == await cli(environment, "catalog", "metadata-show", entry["id"],
+                                  "--release", found["release"])
+        captured = await result(mcp, "catalog_thumbnail", id=entry["id"], release=found["release"],
+                                output=str(directory / "mcp-thumbnail.webp"))
+        assert captured["sha256"] == "sha256:" + hashlib.sha256(cli_image.read_bytes()).hexdigest()
+    assert before == http.get("/e2e/catalog-metadata-source").json()["requests"]
 
 
 @pytest.mark.parametrize("metadata_gateway", [{"runtimeDelay": 5}], indirect=True)
