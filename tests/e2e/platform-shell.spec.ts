@@ -112,14 +112,14 @@ test('scene details select only a source supported by the exact version', async 
 
 test('scene library launches the selected exact version and connects to its real session', async ({ page, request }) => {
   await page.goto('/scenes');
-  await page.getByRole('link', { name: 'lab-demo@1 Synthetic Laboratory', exact: true }).click();
+  await page.getByRole('link', { name: 'lab-demo@3 Synthetic Laboratory', exact: true }).click();
   const source = page.getByLabel('启动物理源', { exact: true });
   await expect(source).toHaveValue('synthetic');
   const created = page.waitForResponse(response => response.url().endsWith('/api/v1/sessions') &&
     response.request().method() === 'POST');
   await page.getByRole('button', { name: '启动会话' }).click();
   const response = await created;
-  expect(response.request().postDataJSON()).toMatchObject({ sceneVersion: 'lab-demo@1', source: 'synthetic' });
+  expect(response.request().postDataJSON()).toMatchObject({ sceneVersion: 'lab-demo@3', source: 'synthetic' });
   expect(response.ok()).toBe(true);
   const { sessionId } = await response.json();
   try {

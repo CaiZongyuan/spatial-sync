@@ -85,7 +85,9 @@ only a generated fake credential locally, never through HTTP or in the user's Va
 
 Scene summaries use `GET /api/v1/library/scenes?view=summary&limit=20`; follow
 `pagination.nextCursor` with the same query. Legacy unpaged/full reads retain
-their original shape. Summary text and gaps are previews of the last validation;
+their original shape. The Web adds `latest=true` to select one latest version
+per Scene before filtering/pagination; exact detail pages retain history.
+Summary text and gaps are previews of the last validation;
 full/bounded details retain complete information and launches verify real bytes.
 
 `lw scene rm <name@rev> --json` and `lw asset rm <kind/name@rev> --json` move an

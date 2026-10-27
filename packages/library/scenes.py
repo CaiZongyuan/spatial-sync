@@ -346,10 +346,19 @@ class SceneLibrary:
         self._resolved.put(key, value, paths, recorded)
         return deepcopy(value)
 
+    def _versions(self, latest):
+        if not latest:
+            return self.versions.values()
+        selected = {}
+        for version in self.versions.values():
+            if version.name not in selected or version.rev > selected[version.name].rev:
+                selected[version.name] = version
+        return selected.values()
+
     @validation_read()
-    def list(self, query=None, launchable=None):
+    def list(self, query=None, launchable=None, *, latest=False):
         versions = sorted(
-            (self.resolved(version) for version in self.versions.values()
+            (self.resolved(version) for version in self._versions(latest)
              if not query or query.casefold() in f"{version.id} {version.metadata['title']}".casefold()),
             key=lambda version: (version.name, version.rev),
         )
@@ -363,12 +372,12 @@ class SceneLibrary:
         ]
 
     @validation_read()
-    def page(self, query=None, launchable=None, source=None, limit=None, cursor=None):
+    def page(self, query=None, launchable=None, source=None, limit=None, cursor=None, *, latest=False):
         """Browse the indexed declarations without opening models or resolving dependencies."""
         if limit is not None and not 1 <= limit <= 100:
             raise LibraryError("invalid_page", "limit must be between 1 and 100", 422)
         folded = query.casefold() if query else None
-        candidates = sorted((version for version in self.versions.values()
+        candidates = sorted((version for version in self._versions(latest)
                              if (not folded or folded in
                                  f"{version.id} {version.metadata['title']}".casefold())
                              and (source is None or source in version.metadata["sources"])),
@@ -377,7 +386,7 @@ class SceneLibrary:
             candidates = [version for version in candidates
                           if self.index_summary(version)["launchable"] is launchable]
         identity = hashlib.sha256(json.dumps([
-            query, launchable, source, limit,
+            query, launchable, source, limit, latest,
             [(version.id, version.content_hash) for version in candidates],
         ], ensure_ascii=False).encode()).hexdigest()
         offset = 0

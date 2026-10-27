@@ -529,13 +529,14 @@ def create_app(
         q: str | None = None, launchable: bool | None = None,
         source: Literal["synthetic", "newton"] | None = None,
         view: Literal["full", "summary"] = "full", limit: int | None = None,
-        cursor: str | None = None,
+        cursor: str | None = None, latest: bool = False,
     ):
         if view == "summary" or limit is not None or cursor is not None:
-            return await asyncio.to_thread(manager.library.page, q, launchable, source, limit, cursor)
+            return await asyncio.to_thread(manager.library.page, q, launchable, source, limit, cursor,
+                                           latest=latest)
         def full_list():
             result = []
-            for value in manager.library.list(q, launchable):
+            for value in manager.library.list(q, launchable, latest=latest):
                 if source is not None and source not in value["sources"]:
                     continue
                 version = manager.library.resolve(value["id"])

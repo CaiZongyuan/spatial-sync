@@ -44,8 +44,8 @@ function SceneLibrary() {
   const change = (next: Partial<Search>) => void navigate({ search: previous => ({ ...previous, ...next, cursor: undefined }), replace: true });
   const page = (cursor?: string | null) => void navigate({ search: previous => ({ ...previous, cursor: cursor ?? undefined }) });
   return <main className="scene-library-page">
-    <header className="scene-page-heading"><div><h1>场景库</h1><p>列表显示最近验证结果；打开版本查看详情，启动前会再次检查。</p></div>
-      <span className="scene-result-count">{scenes ? `${current?.pagination?.total ?? scenes.length} 个版本` : '读取中…'}</span></header>
+    <header className="scene-page-heading"><div><h1>场景库</h1><p>每个场景展示最新版本；历史版本可在详情中查看。</p></div>
+      <span className="scene-result-count">{scenes ? `${current?.pagination?.total ?? scenes.length} 个场景` : '读取中…'}</span></header>
     <section className="scene-toolbar" aria-label="场景筛选">
       <label className="scene-search"><Icon name="search" /><input aria-label="搜索场景" type="search" placeholder="搜索场景…" value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
       <label>物理源<select aria-label="物理源筛选" value={search.source ?? ''} onChange={event => change({ source: event.target.value as SceneSource || undefined })}>

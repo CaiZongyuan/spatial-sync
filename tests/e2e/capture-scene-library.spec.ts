@@ -88,7 +88,7 @@ test('a late old-theme image cannot replace the current static image', async ({ 
 test('static images load near the viewport and remain available when scrolling back', async ({ page, request }) => {
   const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary`)).json();
   const fixture = Array.from({ length: 35 }, (_, index) => ({ ...scenes[0],
-    id: `static-fixture@${index + 1}`, sceneId: 'static-fixture', rev: index + 1,
+    id: `static-fixture-${index}@1`, sceneId: `static-fixture-${index}`, rev: 1,
     thumbnailUrl: `/fixture-static/${index}.png`,
   }));
   const requested = new Set<string>();
@@ -109,7 +109,7 @@ test('static images load near the viewport and remain available when scrolling b
 });
 
 test('changing filters retires an already successful old response and preserves retry', async ({ page, request }) => {
-  const count = async (query: string) => (await (await request.get(`${api}/api/v1/library/scenes?view=summary&${query}`)).json()).scenes.length;
+  const count = async (query: string) => (await (await request.get(`${api}/api/v1/library/scenes?view=summary&latest=true&${query}`)).json()).scenes.length;
   const [all, synthetic, searched] = [await count(''), await count('source=synthetic'), await count('source=synthetic&q=lab-demo')];
   await page.addInitScript(() => {
     const original = window.fetch.bind(window);
@@ -169,16 +169,16 @@ async function watchStaticScene(page: Page, request: APIRequestContext) {
 
 test('real capture can be saved once and browsed as a static image without a live session', async ({ page, request }) => {
   const { errors, assertStatic } = await watchStaticScene(page, request);
-  await page.goto('/scenes/lab-demo/1');
+  await page.goto('/scenes/lab-demo/3');
   await expect(page.locator('canvas')).toHaveCount(1);
   await page.getByRole('button', { name: '生成列表缩略图' }).click();
   await expect(page.getByText('已保存列表缩略图。', { exact: true })).toBeVisible();
   const heavy: string[] = [];
   page.on('request', value => { if (/\.glb|\/preview\//.test(value.url())) heavy.push(value.url()); });
   await page.goto('/scenes');
-  const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@1' });
+  const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@3' });
   await expect(laboratory).toBeVisible();
-  const image = laboratory.getByRole('img', { name: 'lab-demo@1 的静态预览', exact: true });
+  const image = laboratory.getByRole('img', { name: 'lab-demo@3 的静态预览', exact: true });
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((value: HTMLImageElement) => value.naturalWidth)).toBeGreaterThan(20);
   await expect(page.locator('canvas')).toHaveCount(0);
@@ -189,6 +189,8 @@ test('real capture can be saved once and browsed as a static image without a liv
 test('scene library filters and URL preferences navigate to the exact version', async ({ page, request }) => {
   const { errors, assertStatic } = await watchStaticScene(page, request);
   await page.goto('/scenes');
+  await expect(page.locator('.scene-card')).toHaveCount(4);
+  await expect(page.locator('.scene-result-count')).toHaveText('4 个场景');
   await page.getByRole('button', { name: '列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
   await expect(page.locator('.scene-mini-thumbnail').first()).toHaveCSS('width', '72px');
@@ -197,11 +199,14 @@ test('scene library filters and URL preferences navigate to the exact version', 
   await page.getByLabel('物理源筛选').selectOption('newton');
   await expect(page.locator('.scene-library-table')).not.toContainText('lab-demo@1');
   await page.getByLabel('物理源筛选').selectOption('synthetic');
-  await expect(page.locator('.scene-library-table tbody tr')).toHaveCount(3);
+  await expect(page.locator('.scene-library-table tbody tr')).toHaveCount(1);
   await page.getByLabel('搜索场景').fill('not-present');
   await expect(page.getByRole('heading', { name: '没有匹配的场景' })).toBeVisible();
   await page.getByRole('button', { name: '清除筛选' }).click();
-  await page.getByRole('link', { name: 'lab-demo@1 Synthetic Laboratory', exact: true }).click();
+  await page.getByRole('link', { name: 'lab-demo@3 Synthetic Laboratory', exact: true }).click();
+  await expect(page).toHaveURL(/\/scenes\/lab-demo\/3/);
+  const history = page.getByRole('region', { name: '场景版本' });
+  await history.getByRole('link', { name: /lab-demo@1/ }).click();
   await expect(page).toHaveURL(/\/scenes\/lab-demo\/1/);
   await assertStatic();
   expect(errors).toEqual([]);

@@ -78,7 +78,7 @@ export const getSceneLibrary = (filters: { q?: string; launchable?: boolean; sou
   if (filters.q) params.set('q', filters.q);
   if (filters.launchable !== undefined) params.set('launchable', String(filters.launchable));
   if (filters.source) params.set('source', filters.source);
-  params.set('view', 'summary'); params.set('limit', '20');
+  params.set('view', 'summary'); params.set('limit', '20'); params.set('latest', 'true');
   if (filters.cursor) params.set('cursor', filters.cursor);
   return request<{ scenes: SceneVersion[]; pagination: ScenePagination }>(`/library/scenes?${params}`, { signal });
 };
