@@ -20,3 +20,8 @@ assets/scene-previews/** linguist-generated=true
 # Immutable Harness snapshots and Agent evaluation packages keep identical bytes.
 library/agents/** -text
 library/suites/lab-ops-basic/** -text
+# Explicitly retained #214 source contribution and immutable visual packages.
+assets/authoring/fr3-culture-lab/** -text
+library/assets/environment/fr3-culture-*/** -text
+library/assets/robot/fr3-culture-*/** -text
+library/scenes/fr3-culture-reference/** -text

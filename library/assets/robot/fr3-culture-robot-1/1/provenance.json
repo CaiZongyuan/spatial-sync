@@ -1,0 +1,390 @@
+{
+  "recipe": "image-prompt-reference/1",
+  "blender": "4.5.9 LTS",
+  "source": "assets/authoring/fr3-culture-lab/1/laboratory_final.blend",
+  "sourceSha256": "c19aa24f7b78e9a799098fbba44fa3f24e8a13a5293ac49cd5c0fdcb9f96947f",
+  "sourceObjects": [
+    "Cap grip rib",
+    "Cap grip rib.001",
+    "Cap grip rib.002",
+    "Cap grip rib.003",
+    "Cap grip rib.004",
+    "Cap grip rib.005",
+    "Cap grip rib.006",
+    "Cap grip rib.007",
+    "Cap grip rib.008",
+    "Cap grip rib.009",
+    "Cap grip rib.010",
+    "Cap grip rib.011",
+    "Cap grip rib.012",
+    "Cap grip rib.013",
+    "Cap grip rib.014",
+    "Cap grip rib.015",
+    "Cap grip rib.016",
+    "Cap grip rib.017",
+    "Cap grip rib.018",
+    "Cap grip rib.019",
+    "Cap grip rib.020",
+    "Cap grip rib.021",
+    "Cap grip rib.022",
+    "Cap grip rib.023",
+    "FR3 official left finger • node0",
+    "FR3 official left finger • node1",
+    "FR3 official link0 • _01_Base_URDF",
+    "FR3 official link0 • _01_Base_URDF_0",
+    "FR3 official link0 • _01_Base_URDF_1",
+    "FR3 official link0 • _01_Base_URDF_2",
+    "FR3 official link0 • _01_Base_URDF_3",
+    "FR3 official link0 • _01_Base_URDF_4",
+    "FR3 official link0 • _01_Base_URDF_5",
+    "FR3 official link1 • 01_SHOULDER",
+    "FR3 official link2 • 02_FP3_SHOULDER",
+    "FR3 official link3 • 03_FP3_ELBOW",
+    "FR3 official link3 • 03_FP3_ELBOW_0",
+    "FR3 official link4 • 04_FP3_ELBOW",
+    "FR3 official link4 • 04_FP3_ELBOW_0",
+    "FR3 official link5 • 05_FP3_LOWER_ARM",
+    "FR3 official link5 • 05_FP3_LOWER_ARM_0",
+    "FR3 official link5 • 05_FP3_LOWER_ARM_1",
+    "FR3 official link6 • 06_FP3_WRIST",
+    "FR3 official link6 • 06_FP3_WRIST_0",
+    "FR3 official link6 • 06_FP3_WRIST_1",
+    "FR3 official link6 • 06_FP3_WRIST_2",
+    "FR3 official link6 • 06_FP3_WRIST_3",
+    "FR3 official link6 • 06_FP3_WRIST_4",
+    "FR3 official link6 • 06_FP3_WRIST_5",
+    "FR3 official link6 • 06_FP3_WRIST_6",
+    "FR3 official link7 • 07_FP3_FLANGE",
+    "FR3 official link7 • 07_FP3_FLANGE_0",
+    "FR3 official link7 • 07_FP3_FLANGE_1",
+    "FR3 official link7 • 07_FP3_FLANGE_2",
+    "FR3 official right finger • node0",
+    "FR3 official right finger • node1",
+    "FR3 official white hand • node0",
+    "FR3 official white hand • node1",
+    "FR3 official white hand • node2",
+    "FR3 official white hand • node5",
+    "FR3 official white hand • node5_001",
+    "Pink medium conical meniscus",
+    "Tube blue screw cap",
+    "Tube clear cylindrical wall",
+    "Tube graduated ink tick",
+    "Tube graduated ink tick.001",
+    "Tube graduated ink tick.002",
+    "Tube graduated ink tick.003",
+    "Tube graduated ink tick.004",
+    "Tube graduated ink tick.005",
+    "Tube graduated ink tick.006",
+    "Tube pink culture medium",
+    "Tube specimen mark",
+    "Tube transparent conical tip"
+  ],
+  "triangles": 250912,
+  "coordinates": "metres, Z-up",
+  "approximations": [
+    "Static visual reference; Blender joint controls are not exported as device behavior",
+    "Procedural Noise/Bump, area lighting, volume and Cycles global illumination are not baked",
+    "Viewer supplies its own local lighting; this is not a Cycles beauty-image reproduction"
+  ],
+  "excluded": [
+    {
+      "name": "Warm exterior sky backing",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Continuous ceiling",
+      "reason": "cutaway ceiling"
+    },
+    {
+      "name": "Distant city building 0",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.001",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.002",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.003",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.004",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.005",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.006",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.007",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.008",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.009",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.010",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.011",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant city building 1",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.012",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.013",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.014",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.015",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.016",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.017",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.018",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.019",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.020",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant city building 2",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.021",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.022",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.023",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.024",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.025",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.026",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.027",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.028",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.029",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.030",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.031",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.032",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.033",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.034",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant city building 3",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.035",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.036",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.037",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.038",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.039",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.040",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.041",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.042",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.043",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.044",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant city building 4",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.045",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.046",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.047",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.048",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.049",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.050",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.051",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.052",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.053",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.054",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.055",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.056",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.057",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.058",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Distant facade horizontal line.059",
+      "reason": "photographic outdoor backdrop"
+    },
+    {
+      "name": "Atmospheric interior volume",
+      "reason": "volume is not a core glTF material"
+    }
+  ],
+  "licenseScope": "Original Franka license applies to robot source geometry only; laboratory contribution permission is in CONTRIBUTION_NOTICE.txt",
+  "files": {
+    "asset.usdc": {
+      "sha256": "3cdb7a251c2fda5c869fe2afc8d5f85c68d5f68ed3ae4c6da855c68e61e17e9d",
+      "bytes": 19088419
+    },
+    "asset.yaml": {
+      "sha256": "649f3af60e5b0e63a28d8533b6e1ce5c3972287e6b0d4024c5f21b03458abf38",
+      "bytes": 373
+    },
+    "CONTRIBUTION_NOTICE.txt": {
+      "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda",
+      "bytes": 1007
+    },
+    "LICENSE": {
+      "sha256": "4b25434e6ec2012e28a484f1d7924a0fd1a8bf232c2be2d50d584d299d04d6d6",
+      "bytes": 12926
+    },
+    "NOTICE": {
+      "sha256": "13991525876741e3dc94c46e0afce111dc0a5c6156c89bbbefd06547b84738fd",
+      "bytes": 581
+    },
+    "visual.glb": {
+      "sha256": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89",
+      "bytes": 13079368
+    }
+  }
+}

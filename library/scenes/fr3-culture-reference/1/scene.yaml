@@ -1,0 +1,12 @@
+name: fr3-culture-reference
+title: 图片与 Prompt 制作的细胞培养实验室
+description: 完整 Blender 场景的静态视觉派生物。机器人、器皿与仪器均为布景；无设备操作、碰撞或训练资格；区域灯、体积及 Cycles 全局光照未烘焙。
+sources:
+- newton
+stage: stage.usda
+simulation:
+  solver: xpbd
+  warmupSteps: 1
+derivedFrom:
+  factory: image-prompt-reference/1
+  sourceSha256: c19aa24f7b78e9a799098fbba44fa3f24e8a13a5293ac49cd5c0fdcb9f96947f

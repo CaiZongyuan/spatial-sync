@@ -7,6 +7,17 @@ in the person's original Agent conversation. Blender and the checkout's
 
 ## Baked-material workbench experiment
 
+The supplied full laboratory is now retained as an editable source contribution
+under `assets/authoring/fr3-culture-lab/1/`, with three bounded, static visual
+packages in the built-in library. Open `fr3-culture-reference@1` in the scene
+library to view its platform capture or start a read-only-purpose Newton scene.
+Blender is only needed to rebuild the assets. The source contribution's original
+robot visuals remain separate from the platform's interactive `robot/fr3@1`.
+Its canonical USD geometry and GLB visual derivatives retain source hashes and
+notices. Ceiling, outdoor photographic backdrop and volume are omitted for the
+cutaway browser view; Cycles/area-light reproduction and device operation are
+not claimed. See the source directory README for exact derivation commands.
+
 Issue #214 supplies a reproducible, local appearance sample. From an installed
 checkout with the frozen Python simulation/USD extras and Web dependencies:
 
