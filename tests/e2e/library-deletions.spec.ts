@@ -126,8 +126,16 @@ test('exact user asset moves directly to recovery storage and restores the same 
   expect((await (await request.get(`${api}/api/v1/approvals`)).json()).pendingCount).toBe(0);
   for (const file of files) expect((await request.get(api + file.url)).status()).toBe(404);
   await page.screenshot({ path: info.outputPath('direct-deletion-committed.png'), fullPage: true });
-  await panel.getByRole('button', { name: '恢复此版本', exact: true }).click();
-  await expect(panel.getByRole('status')).toContainText('原始版本已恢复');
+  await page.getByRole('link', { name: 'Recovery', exact: true }).click();
+  const recovery = page.getByRole('article', { name: imported.assetVersion, exact: true });
+  await expect(recovery.getByText('可恢复', { exact: true })).toBeVisible();
+  await expect(recovery.getByText('内容哈希', { exact: true })).not.toBeVisible();
+  await recovery.getByText('记录详情', { exact: true }).click();
+  await expect(recovery.getByText(imported.contentHash, { exact: true })).toBeVisible();
+  await recovery.getByRole('button', { name: '恢复此版本', exact: true }).click();
+  await expect(recovery.getByRole('status')).toContainText('原始版本已恢复');
+  await expect(recovery.getByText('已恢复', { exact: true })).toBeVisible();
+  await expect(recovery.getByRole('button', { name: '恢复此版本', exact: true })).toHaveCount(0);
   expect((await (await request.get(api + target)).json()).contentHash).toBe(imported.contentHash);
   for (const file of files) {
     const restored = await request.get(api + file.url);
@@ -139,4 +147,53 @@ test('exact user asset moves directly to recovery storage and restores the same 
   await info.attach('direct-removal-and-restore.json', { body: JSON.stringify({ health, imported, files, removed, record }), contentType: 'application/json' });
   expect(errors).toEqual([]);
   expect((await (await request.get(`${api}/api/v1/health`)).json()).sessions).toEqual([]);
+});
+
+test('recovery page retries failed reads and resets an expired page without stale navigation', async ({ page }) => {
+  let initialFailure = true, reset = false;
+  let releaseRetry!: () => void;
+  const retryGate = new Promise<void>(resolve => { releaseRetry = resolve; });
+  const cursors: (string | null)[] = [];
+  await page.route('**/api/v1/library/deletions?*', async route => {
+    const cursor = new URL(route.request().url()).searchParams.get('cursor');
+    cursors.push(cursor);
+    if (initialFailure) return route.fulfill({ status: 503, json: { detail: { message: '暂时无法读取记录' } } });
+    if (cursor) return route.fulfill({ status: 409, json: { detail: { message: '记录列表已变化，请从第一页重新读取' } } });
+    if (!reset) {
+      await retryGate;
+      return route.fulfill({ json: { deletions: [{
+        schema: 'lw.library-deletion/1', id: 'recovery-ui-record', resource: 'scene',
+        versionId: 'a-long-scene-version-name-for-recovery-layout@12', contentHash: 'a'.repeat(64),
+        requestId: 'recovery-ui-request', createdAtMs: 1793145600000, retainedBytes: 0, status: 'restored',
+      }], pagination: { total: 21, nextCursor: 'expired-cursor' } } });
+    }
+    return route.fulfill({ json: { deletions: [], pagination: { total: 0, nextCursor: null } } });
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/trash');
+  await expect(page.getByRole('heading', { name: '暂时无法读取回收站' })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveCount(0);
+  initialFailure = false;
+  await page.getByRole('button', { name: '重试当前页' }).click();
+  try {
+    await expect(page.getByRole('status')).toContainText('正在读取回收站');
+    await expect(page.getByRole('button', { name: '读取中…' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '下一页' })).toBeDisabled();
+    expect(await page.locator('.trash-skeleton i').first().evaluate(element => getComputedStyle(element).animationName)).toBe('none');
+  } finally { releaseRetry(); }
+  await expect(page.getByText('已恢复', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByText('记录详情', { exact: true }).click();
+  await expect(page.getByText('a'.repeat(64), { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('button', { name: '下一页' }).click();
+  await expect(page.getByRole('heading', { name: '暂时无法读取回收站' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '下一页' })).toBeDisabled();
+  reset = true;
+  await page.getByRole('button', { name: '返回第一页' }).click();
+  await expect(page.getByRole('heading', { name: '回收站为空' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '浏览场景库' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '上一页' })).toBeDisabled();
+  expect(cursors.filter(Boolean)).toEqual(['expired-cursor']);
+  expect(cursors.at(-1)).toBeNull();
 });
