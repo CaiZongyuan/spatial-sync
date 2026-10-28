@@ -6,10 +6,10 @@ from packages.programs.centrifuge.loading import rotation
 
 
 def grasp_geometry(body_pose, tcp_pose, offset, diameter, opening):
-    """Qualify a cylindrical handle between the calibrated FR3 finger pads.
+    """Check the moving grip frame and upper opening bound, without contact proof.
 
-    Dimensions are metres. The 2 mm closure allowance accommodates pad contact;
-    it cannot qualify an open hand or a handle wider than the physical opening.
+    Dimensions are metres. Joint-coordinate sums are not actual pad aperture;
+    physical_grasp must independently establish bilateral contact.
     """
     try:
         body, tcp, offset = (np.asarray(value, dtype=float) for value in (body_pose, tcp_pose, offset))
@@ -28,7 +28,36 @@ def grasp_geometry(body_pose, tcp_pose, offset, diameter, opening):
             and abs(local[0]) < 0.012
             and abs(local[1]) < 0.008
             and abs(local[2]) < 0.012
-            and diameter - 0.002 <= opening <= diameter + 2 * abs(local[1]) + 0.002
+            and opening <= diameter + 2 * abs(local[1]) + 0.002
         )
     except (TypeError, ValueError, IndexError):
+        return False
+
+
+def physical_grasp(
+    body_pose, tcp_pose, offset, diameter, opening, contacts, *, body, fingers, pad_shapes, shape_prefix
+):
+    """Require two physical pads on the intended surface, within 1 mm penetration."""
+    if not grasp_geometry(body_pose, tcp_pose, offset, diameter, opening):
+        return False
+    touching = set()
+    try:
+        if len(set(fingers)) != 2 or set(pad_shapes) != set(fingers):
+            return False
+        for contact in contacts:
+            if body not in contact.bodies:
+                continue
+            index = contact.bodies.index(body)
+            other = contact.bodies[1 - index]
+            shape = contact.shapes[index]
+            if other not in fingers or not (shape == shape_prefix or shape.startswith(shape_prefix + "/")):
+                continue
+            if not np.isfinite(contact.distance_m) or contact.distance_m < -0.001:
+                return False
+            if contact.distance_m <= 0:
+                if contact.shapes[1 - index] != pad_shapes[other]:
+                    return False
+                touching.add(other)
+        return touching == set(fingers)
+    except (ValueError, TypeError, IndexError, AttributeError):
         return False

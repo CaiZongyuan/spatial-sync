@@ -18,6 +18,8 @@ VELOCITY_LIMITS = (2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26)
 
 class RobotArmProgram:
     id, type, tick_priority = "robot_arm.newton", "robot-arm/v1", 10
+    gripper_speed_mps = .4
+    gripper_timeout_s = 2
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
@@ -220,7 +222,8 @@ class RobotArmProgram:
     def _drive_gripper(self, ctx, dt):
         # URDF finger speed is .2m/s each. A position step from80mm to0
         # otherwise crosses the contact interval between control snapshots.
-        self.gripper_target += float(np.clip(self.gripper_goal - self.gripper_target, -0.4 * dt, 0.4 * dt))
+        distance = self.gripper_speed_mps * dt
+        self.gripper_target += float(np.clip(self.gripper_goal - self.gripper_target, -distance, distance))
         for joint in self.fingers:
             ctx.physics.set_joint_target(joint, [self.gripper_target / 2])
         actual = self._width(ctx.physics)
@@ -312,7 +315,7 @@ class RobotArmProgram:
             done = (
                 self.elapsed >= 0.2 and self.stable >= 0.2 and (kind != "place" or not self.pending_release)
             )
-            if self.elapsed > 2:
+            if self.elapsed > self.gripper_timeout_s:
                 if kind == "pick":
                     self._recover_pick(ctx, name)
                 else:

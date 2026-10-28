@@ -27,6 +27,13 @@ class SiteRef:
     local: dict
 
 
+@dataclass(frozen=True)
+class PhysicalContact:
+    bodies: tuple[int, int]
+    shapes: tuple[str, str]
+    distance_m: float
+
+
 class PhysicsPort:
     def __init__(self, simulation, manifest):
         self.sim = simulation
@@ -76,6 +83,37 @@ class PhysicsPort:
 
     def bind_body(self, key):
         return self.bodies[key]
+
+    def collision_contacts(self, *, max_distance=0.0):
+        """Actual CPU MuJoCo contacts, mapped through Newton's shape identity.
+
+        MuJoCo sanitizes body names and includes separated pairs inside contact
+        margins. Neither is a physical contact oracle. Unknown backends fail
+        closed rather than returning an apparently empty contact list.
+        """
+        solver = self.sim.solver
+        if self.sim.solver_kind != "mujoco" or not self.sim.model.device.is_cpu:
+            raise ValueError("Physical contact queries require the CPU MuJoCo backend")
+        if not np.isfinite(max_distance):
+            raise ValueError("Contact distance bound must be finite")
+        if solver.mjc_geom_to_newton_shape is None:
+            raise ValueError("Solver contact identity mapping is unavailable")
+        mapping = solver.mjc_geom_to_newton_shape.numpy()[0]
+        shape_bodies = self.sim.model.shape_body.numpy()
+        result = []
+        for contact in solver.mj_data.contact[:solver.mj_data.ncon]:
+            if not np.isfinite(contact.dist):
+                raise ValueError("Solver contact distance is unknown")
+            if contact.dist > max_distance:
+                continue
+            shapes = tuple(int(mapping[int(geom)]) for geom in contact.geom)
+            if any(shape < 0 or shape >= self.sim.model.shape_count for shape in shapes):
+                raise ValueError("Solver contact has no Newton shape identity")
+            result.append(PhysicalContact(
+                tuple(int(shape_bodies[shape]) for shape in shapes),
+                tuple(self.sim.model.shape_label[shape] for shape in shapes), float(contact.dist),
+            ))
+        return result
 
     def preview_snapshot(self):
         from .kinematic_snapshot import KinematicSnapshot

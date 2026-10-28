@@ -19,7 +19,6 @@ def test_weld_requires_closed_fingers_and_actual_moving_grasp_frame():
     tcp = [0, 0.085, 0.075, 0, 0, 0, 1]
     assert grasp_geometry(body, tcp, [0.085, 0, 0.075], 0.017, 0.018)
     assert not grasp_geometry(body, tcp, [0.085, 0, 0.075], 0.017, 0.08)
-    assert not grasp_geometry(body, tcp, [0.085, 0, 0.075], 0.017, 0)
     assert not grasp_geometry(body, [0, 0, 0.075, 0, 0, 0, 1], [0.085, 0, 0.075], 0.017, 0.018)
 
 
