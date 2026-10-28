@@ -1,0 +1,18 @@
+type: labware/v1
+title: Physical passage labware
+description: Seating and lid facts use the actual body and Site poses.
+properties:
+  station:
+    schema:
+      type: [string, 'null']
+  location:
+    schema:
+      type: string
+  settled:
+    schema:
+      type: boolean
+  lidClosed:
+    schema:
+      type: boolean
+actions: {}
+events: {}
