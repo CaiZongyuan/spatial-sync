@@ -1,0 +1,42 @@
+type: passage-joint/v1
+title: Passage rail or door joint
+description: Position and completion use physical feedback; stops retain current targets.
+properties:
+  position:
+    schema: {type: number}
+  velocity:
+    schema: {type: number}
+  opened:
+    schema: {type: boolean}
+  closed:
+    schema: {type: boolean}
+  controlSafe:
+    schema: {type: boolean}
+  phase:
+    schema: {enum: [idle, moving, stopping]}
+actions:
+  move:
+    params:
+      position: {type: number}
+      owner: {type: string}
+      epoch: {type: integer, minimum: 0}
+      operationId: {type: string}
+    required: [position, owner, epoch, operationId]
+    longRunning: true
+  open:
+    params: &control
+      owner: {type: string}
+      epoch: {type: integer, minimum: 0}
+      operationId: {type: string}
+    required: &required [owner, epoch, operationId]
+    longRunning: true
+  close:
+    params: *control
+    required: *required
+    longRunning: true
+  stop:
+    params: *control
+    required: *required
+    concurrent: true
+    longRunning: true
+events: {}

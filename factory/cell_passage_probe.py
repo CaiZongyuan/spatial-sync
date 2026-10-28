@@ -12,7 +12,7 @@ from newton.solvers import SolverMuJoCo
 from pxr import Usd
 
 from factory.cell_passage import HANDLE, box, plate, translate
-from packages.programs.labware.grasp import grasp_geometry
+from packages.programs.labware.grasp import grasp_geometry, physical_grasp
 from packages.programs.robot_arm.trajectory import plan_trajectory
 from packages.sim_runtime.loaders import import_usd
 from packages.sim_runtime.manifest_export import export_manifest
@@ -25,7 +25,7 @@ ROBOT = "/World/Lab/Robot"
 BODY = "/World/Lab/Labware/Mother"
 
 
-def probe(source, output):
+def probe(source, output, *, obstacle=False):
     source, output = Path(source).resolve(), Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     text = (source / "scene/stage.usda").read_text()
@@ -96,6 +96,9 @@ def probe(source, output):
             stage, f"/World/Lab/Support{index}", (point[0], point[1], point[2] - 0.01), (0.135, 0.092, 0.02)
         )
         support.AddRotateZOp().Set(float(np.degrees(yaw)) if index else 0)
+    if obstacle:
+        point = origins[1]
+        box(stage, "/World/Lab/PayloadObstacle", (point[0], point[1], point[2] + 0.03), (0.04, 0.04, 0.04))
     stage.GetRootLayer().Save()
 
     def builder():
@@ -112,7 +115,60 @@ def probe(source, output):
     fingers = [port.bind_joint(ROBOT + f"/Joints/fr3_finger_joint{i}") for i in (1, 2)]
     hand, body = port.bind_body(ROBOT + "/fr3_hand"), port.bind_body(BODY)
     tcp = port.bind_site(ROBOT + "/fr3_hand/PhysicalTCP")
+    robot_bodies = {index for key, index in port.bodies.items() if key.startswith(ROBOT + "/")}
+    finger_bodies = {finger.child for finger in fingers}
+    pad_shapes = {
+        finger.child: ROBOT + "/fr3_" + name + "finger/Collision_3"
+        for finger, name in zip(fingers, ("left", "right"), strict=True)
+    }
     samples, contacts, motions = [], [], []
+    phase = "source"
+
+    def intended(contact):
+        if body not in contact.bodies:
+            return False
+        payload_index = contact.bodies.index(body)
+        other = 1 - payload_index
+        if contact.bodies[other] in finger_bodies and contact.shapes[payload_index] == BODY + "/Handle":
+            return (
+                phase in ("pickup", "transport", "place")
+                and contact.distance_m >= -0.001
+                and contact.shapes[other] == pad_shapes[contact.bodies[other]]
+            )
+        support = contact.shapes[other]
+        return (
+            contact.shapes[payload_index] == BODY + "/Floor"
+            and contact.distance_m >= -0.001
+            and (
+                phase in ("source", "pickup")
+                and support == "/World/Lab/Support0"
+                or phase in ("place", "released")
+                and support == "/World/Lab/Support1"
+            )
+        )
+
+    def touching():
+        return {
+            contact.bodies[1 - contact.bodies.index(body)]
+            for contact in port.collision_contacts()
+            if body in contact.bodies
+            and contact.bodies[1 - contact.bodies.index(body)] in finger_bodies
+            and contact.shapes[contact.bodies.index(body)] == BODY + "/Handle"
+        }
+
+    def qualified_grasp(opening):
+        return physical_grasp(
+            port.body[body],
+            np.r_[*port.site_pose(tcp)],
+            HANDLE,
+            0.017,
+            opening,
+            port.collision_contacts(),
+            body=body,
+            fingers=finger_bodies,
+            pad_shapes=pad_shapes,
+            shape_prefix=BODY + "/Handle",
+        )
 
     def advance():
         port.commit()
@@ -125,11 +181,18 @@ def probe(source, output):
                 "opening": sum(float(port.joint_q(f)[0]) for f in fingers),
             }
         )
-        mj = sim.solver.mj_model
-        for contact in sim.solver.mj_data.contact[: sim.solver.mj_data.ncon]:
-            names = [mj.body(int(mj.geom_bodyid[g])).name for g in contact.geom]
-            if contact.dist < -0.001 and any("Robot/" in n for n in names):
-                contacts.append({"time": sim.sim_time, "bodies": names, "penetrationM": -float(contact.dist)})
+        for contact in port.collision_contacts(max_distance=-0.001):
+            active = body in contact.bodies or any(index in robot_bodies for index in contact.bodies)
+            if active and not intended(contact):
+                contacts.append(
+                    {
+                        "time": sim.sim_time,
+                        "phase": phase,
+                        "bodyIndices": contact.bodies,
+                        "shapes": contact.shapes,
+                        "penetrationM": -contact.distance_m,
+                    }
+                )
 
     def move(target):
         plan = plan_trajectory(
@@ -147,15 +210,28 @@ def probe(source, output):
 
     def gripper(width, capture=False):
         initial = sum(float(port.joint_q(f)[0]) for f in fingers)
-        for frame in range(60):
-            commanded = initial + np.clip(width - initial, -0.3 * frame / 60, 0.3 * frame / 60)
+        for frame in range(180 if capture else 60):
+            rate = 0.04 if capture else 0.3
+            commanded = initial + np.clip(width - initial, -rate * frame / 60, rate * frame / 60)
             for finger in fingers:
                 port.set_joint_target(finger, [commanded / 2])
             advance()
             opening = sum(float(port.joint_q(f)[0]) for f in fingers)
-            if capture and grasp_geometry(
-                port.body[body], np.r_[*port.site_pose(tcp)], HANDLE, 0.017, opening
-            ):
+            if capture:
+                pairs = [
+                    contact
+                    for contact in port.collision_contacts(max_distance=0.01)
+                    if body in contact.bodies
+                    and any(i in finger_bodies for i in contact.bodies)
+                    and contact.shapes[contact.bodies.index(body)] == BODY + "/Handle"
+                ]
+                samples[-1]["fingerContacts"] = [
+                    {"bodies": row.bodies, "distanceM": row.distance_m} for row in pairs
+                ]
+                samples[-1]["graspQualified"] = grasp_geometry(
+                    port.body[body], np.r_[*port.site_pose(tcp)], HANDLE, 0.017, opening
+                )
+            if capture and qualified_grasp(opening):
                 return
 
     receipt = {
@@ -167,38 +243,66 @@ def probe(source, output):
         for _ in range(60):
             advance()
         move(grasp)
+        phase = "pickup"
         gripper(0, capture=True)
         opening = sum(float(port.joint_q(f)[0]) for f in fingers)
         tcp_pose = np.r_[*port.site_pose(tcp)]
-        qualified = grasp_geometry(port.body[body], tcp_pose, HANDLE, 0.017, opening)
+        qualified = qualified_grasp(opening)
+        grasp_contacts = [
+            {"bodyIndices": contact.bodies, "shapes": contact.shapes, "distanceM": contact.distance_m}
+            for contact in port.collision_contacts()
+            if body in contact.bodies and any(index in finger_bodies for index in contact.bodies)
+        ]
         receipt.update(
             graspQualified=qualified,
             actualOpeningM=opening,
             graspBodyPose=port.body[body].tolist(),
             actualTcpPose=tcp_pose.tolist(),
+            graspContacts=grasp_contacts,
         )
-        if not qualified:
+        if not qualified or touching() != finger_bodies:
             raise RuntimeError("Actual finger/handle geometry failed before weld")
         before = port.body[body].copy()
+        for finger in fingers:
+            port.set_joint_target(finger, [opening / 2])
         port.weld(hand, body)
         advance()
         receipt["activationDisplacementM"] = float(np.linalg.norm(port.body[body, :3] - before[:3]))
         lift = grasp.copy()
         lift[1] -= 0.18
         move(lift)
+        receipt["liftM"] = float(port.body[body, 2] - before[2])
+        phase = "transport"
         lift_dest = destination.copy()
         lift_dest[1] -= 0.18
         move(lift_dest)
+        phase = "place"
         move(destination)
         gripper(0.08)
         port.unweld(hand, body)
         advance()
+        phase = "released"
         move(lift_dest)
         for _ in range(60 * 10):
             advance()
         receipt["finalPose"] = port.body[body].tolist()
         receipt["destinationErrorM"] = float(np.linalg.norm(port.body[body, :3] - origins[1]))
-        receipt["success"] = receipt["destinationErrorM"] < 0.005 and not contacts
+        expected_quat = np.array([0, 0, np.sin(yaw / 2), np.cos(yaw / 2)])
+        final_quat = port.body[body, 3:]
+        agreement = abs(np.dot(final_quat, expected_quat) / np.linalg.norm(final_quat))
+        receipt["orientationErrorRad"] = float(2 * np.arccos(np.clip(agreement, 0, 1)))
+        receipt["finalSpeedMps"] = float(np.linalg.norm(port.velocity[body]))
+        positions = np.asarray([sample["pose"][:3] for sample in samples])
+        receipt["maxSampleDisplacementM"] = float(np.max(np.linalg.norm(np.diff(positions, axis=0), axis=1)))
+        receipt["success"] = bool(
+            receipt["destinationErrorM"] < 0.005
+            and receipt["orientationErrorRad"] < np.deg2rad(5)
+            and receipt["finalSpeedMps"] < 0.01
+            and receipt["activationDisplacementM"] < 0.001
+            and receipt["liftM"] >= 0.02
+            and receipt["maxSampleDisplacementM"] < 0.01
+            and not contacts
+        )
     except Exception as error:
         receipt["error"] = str(error)
         receipt["success"] = False
@@ -214,5 +318,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--obstacle", action="store_true")
     args = parser.parse_args()
-    probe(args.source, args.out)
+    probe(args.source, args.out, obstacle=args.obstacle)

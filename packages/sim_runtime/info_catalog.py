@@ -3,7 +3,9 @@
 from packages.info.catalog import Catalog, load_catalog
 from packages.programs.cell_passage.workcell import WorkcellProgram
 from packages.programs.centrifuge.newton import CentrifugeProgram
+from packages.programs.labware.centrifuge import PassageCentrifugeProgram
 from packages.programs.labware.facts import LabwareFactsProgram
+from packages.programs.labware.joints import PassageJointProgram
 from packages.programs.labware.motion import LabwareMotionProgram
 from packages.programs.robot_arm.newton import RobotArmProgram
 from packages.programs.robot_arm.policy import PolicyProgram
@@ -21,6 +23,8 @@ REGISTRY = {
         WorkcellProgram,
         LabwareFactsProgram,
         LabwareMotionProgram,
+        PassageCentrifugeProgram,
+        PassageJointProgram,
     )
 }
 
