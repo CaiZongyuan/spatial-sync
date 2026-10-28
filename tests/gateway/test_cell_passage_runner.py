@@ -20,8 +20,12 @@ class PublicHTTP(httpx.AsyncBaseTransport):
     def __init__(self, client):
         self.client = client
         self.lose_admission_response = False
+        self.lose_next_get = False
 
     async def handle_async_request(self, request):
+        if self.lose_next_get and request.method == "GET":
+            self.lose_next_get = False
+            raise httpx.ReadTimeout("Fixture dropped one public observation request")
         response = self.client.request(
             request.method, str(request.url), content=request.content, headers=request.headers
         )
@@ -100,6 +104,8 @@ async def test_lost_admission_response_observes_original_invocation_without_repl
         executor = await new_executor(client)
         transport.lose_admission_response = True
         assert (await executor.advance())["reason"] == "admission_unconfirmed"
+        transport.lose_next_get = True
+        assert (await executor.advance())["reason"] == "network_unavailable"
         for _ in range(100):
             result = await executor.advance()
             if result["status"] == "completed":

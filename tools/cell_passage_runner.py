@@ -98,6 +98,15 @@ class PassageExecutor:
 
     async def advance(self):
         """Observe once and dispatch at most one step, never replaying an uncertain POST."""
+        try:
+            return await self._advance()
+        except GatewayError as error:
+            if error.status_code is not None:
+                raise
+            return {"status": "observing", "reason": "network_unavailable", "active": self.active,
+                    "dispatchStopped": bool(self.blocked)}
+
+    async def _advance(self):
         plan = await self.client.plan_show(self.plan_id)
         session = await self.client.status()
         values = (await self.client.get_state([self.workcell]))["entities"][self.workcell]["values"]
@@ -105,6 +114,8 @@ class PassageExecutor:
             self.blocked = "session_changed"
         if plan["revision"] != self.revision:
             self.blocked = "plan_revised"
+        if plan.get("persistence", {}).get("status") == "failed":
+            self.blocked = "plan_persistence_failed"
         if (values["controlOwner"] != self.owner or values["controlEpoch"] != self.control_epoch
                 or values["controlMode"] != "auto"):
             self.blocked = "control_changed"
@@ -135,11 +146,11 @@ class PassageExecutor:
                     elif invocation["status"] != "succeeded" or step["status"] == "failed":
                         return {"status": "failed", "stepId": step_id, "invocation": invocation}
                     elif step["status"] == "done":
-                        self.active = None
                         values = (await self.client.get_state([self.workcell]))["entities"][
                             self.workcell
                         ]["values"]
                         self.material_revision = values["materialRevision"]
+                        self.active = None
             elif self.active.get("uncertain"):
                 self.blocked = "admission_unknown"
         if self.blocked:

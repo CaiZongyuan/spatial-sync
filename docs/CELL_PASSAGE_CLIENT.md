@@ -135,6 +135,24 @@ it cannot authorize recovery. `plan_completed` means the Plan finished, with
 
 ## Material result boundary
 
+The owned launch entrypoint wires build, teaching, immutable HTTP import,
+validation, Newton CPU launch, control claim and the round client:
+
+```bash
+python -m tools.cell_passage --source <read-only-platform_packages> \
+  --out .scratch/cell-passage/<fresh-run>
+```
+
+It uses API 8023 and viewer 5223 by default, checks both ports before starting,
+and gives its gateway an instance header so readiness cannot accidentally select
+another server. `--generated <package-root>` reuses an already built/taught
+package. `--prepare-only` publishes all Plans for browser execution;
+`--no-web --exit-after-run` closes owned services after a CLI trial and finalizes
+the session recording. It stops only processes and the session it created.
+Fresh output paths and a new round identity are required. The entrypoint keeps
+`experimentQualified:false`; running a candidate does not substitute for
+independent complete-passage acceptance.
+
 `tools/cell_passage_result.py` reads initial and final public snapshots. It
 checks all vessel, tip, counting, waste and residual contents for conservation,
 six separate origins, twelve distinct daughter identities, equal live-cell
