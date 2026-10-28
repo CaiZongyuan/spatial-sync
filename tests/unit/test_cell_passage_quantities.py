@@ -6,6 +6,7 @@ import pytest
 from packages.protocol.schema import InvokeRequest
 from tests.fixtures.cell_passage import build_workcell_host
 from tests.unit.test_cell_passage import execute, invoke
+from tests.unit.test_cell_passage_journal import set_ready
 
 
 def test_literal_float32_shortfall_can_be_dispensed_without_inventing_liquid(tmp_path):
@@ -254,6 +255,7 @@ def test_partial_fraction_keeps_original_resolved_remaining_instead_of_recomputi
     port.advance(0.0004)
     host.tick(host.sim_time + 0.1, 0.1)
     host.cancel("half")
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
     host.drain_events()
     snapshot = host.values()["/workcell"]["materialSnapshot"]
     receipt = snapshot["operations"][-1]
@@ -586,3 +588,207 @@ def test_zero_transfer_at_a_culture_preserves_contact_isolation(tmp_path):
     execute(host, port, "aspirateAvailable", "empty-culture", vessel="dry-culture")
     assert host.values()["/workcell"]["materialSnapshot"]["tip"]["contactCulture"] == "M1"
     assert invoke(host, "aspirateAvailable", "dirty-stock", vessel="stock").error.code == "cross_sample"
+
+
+def test_observed_native_plateau_establishes_hold_before_success_without_relaxing_velocity_gate(tmp_path):
+    host, port = build_workcell_host(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 3000,
+                "volumeUl": 2000,
+            }
+        ],
+    )
+    execute(host, port, "reserve", "reserve", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirateFraction", "half", vessel="source", fraction=0.5)
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    # Independent, frozen c1e native probe measurements, not a nominal target.
+    observed_q = 0.009999988600611687
+    port.q["pump"], port.velocities["pump"] = observed_q, 1.0244548320770264e-7
+    for _ in range(5):
+        host.tick(host.sim_time + 1 / 60, 1 / 60)
+    assert port.targets["pump"] == observed_q
+    assert host.values()["/workcell"]["controlSafe"] is False
+    assert host.active_invocations("/workcell")[0].status == "running"
+    assert host.values()["/workcell"]["materialSnapshot"]["operations"][-1]["status"] == "settling"
+    port.velocities["pump"] = 0
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    terminal = next(row for row in host.snapshot().invocations if row.invocationId == "half")
+    assert terminal.status == "succeeded"
+    receipt = terminal.result["receipt"]
+    assert receipt["appliedUl"] == pytest.approx(999.9988600611687, abs=1e-9)
+    assert receipt["untransferredUl"] == pytest.approx(0.0011399388313, abs=1e-9)
+    assert host.values()["/workcell"]["materialSnapshot"]["vessels"][0]["volumeUl"] == pytest.approx(
+        1000.0011399388313
+    )
+
+
+@pytest.mark.parametrize("reason", ["cancel", "control", "cabinet", "timeout", "large_velocity"])
+def test_normal_completion_settling_still_requires_safe_velocity_and_live_conditions(tmp_path, reason):
+    host, port = build_workcell_host(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 3000,
+                "volumeUl": 2000,
+            }
+        ],
+    )
+    execute(host, port, "reserve", "reserve", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirateFraction", "half", vessel="source", fraction=0.5)
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    port.q["pump"] = 0.009999988600611687
+    port.velocities["pump"] = 0.5 if reason == "large_velocity" else 1.0244548320770264e-7
+    for _ in range(5):
+        host.tick(host.sim_time + 1 / 60, 1 / 60)
+    assert host.values()["/workcell"]["controlSafe"] is False
+    assert host.active_invocations("/workcell")[0].status == "running"
+    if reason == "large_velocity":
+        return
+    if reason == "cancel":
+        host.cancel("half")
+    elif reason == "control":
+        assert (
+            invoke(host, "requestControl", "handoff", nextOwner="human", mode="manual").status == "accepted"
+        )
+    elif reason == "timeout":
+        host.tick(host.sim_time + 3601, 3601)
+    else:
+        set_ready(host, False, "cabinet-off")
+        host.tick(host.sim_time + 1 / 60, 1 / 60)
+        assert (
+            host.values()["/workcell"]["materialSnapshot"]["operations"][-1]["fault"] == "cabinet_not_ready"
+        )
+    port.velocities["pump"] = 0
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    final = next(row for row in host.snapshot().invocations if row.invocationId == "half")
+    assert final.status == ("cancelled" if reason in ("cancel", "control") else "failed")
+    if reason == "cabinet":
+        assert final.error.code == "cabinet_not_ready"
+    elif reason == "timeout":
+        assert final.error.code == "timeout"
+
+
+def test_repeated_reads_and_paused_clock_do_not_count_as_distinct_stable_physics_samples(tmp_path):
+    host, port = build_workcell_host(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 3000,
+                "volumeUl": 2000,
+            }
+        ],
+    )
+    execute(host, port, "reserve", "reserve", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirateFraction", "half", vessel="source", fraction=0.5)
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    requested_target = port.targets["pump"]
+    port.q["pump"], port.velocities["pump"] = 0.009999988600611687, 1.0244548320770264e-7
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    for _ in range(10):
+        host.values()
+        host.tick(host.sim_time, 1 / 60)
+    assert port.targets["pump"] == requested_target
+    assert host.values()["/workcell"]["materialSnapshot"]["operations"][-1]["status"] == "running"
+    for _ in range(3):
+        host.tick(host.sim_time + 1 / 60, 1 / 60)
+    assert port.targets["pump"] == port.q["pump"]
+    assert host.active_invocations("/workcell")[0].status == "running"
+
+
+def test_normal_completion_rechecks_total_remainder_after_actual_braking(tmp_path):
+    host, port = build_workcell_host(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 3000,
+                "volumeUl": 2000,
+            }
+        ],
+    )
+    execute(host, port, "reserve", "reserve", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirateFraction", "half", vessel="source", fraction=0.5)
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    port.q["pump"], port.velocities["pump"] = 0.009999905, 1.1e-7
+    for _ in range(5):
+        host.tick(host.sim_time + 1 / 60, 1 / 60)
+    assert host.active_invocations("/workcell")[0].status == "running"
+    port.q["pump"], port.velocities["pump"] = 0.009999895, 0
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    final = next(row for row in host.snapshot().invocations if row.invocationId == "half")
+    assert final.status == "failed" and final.error.code == "quantity_unreachable"
+    receipt = final.result or host.values()["/workcell"]["materialSnapshot"]["operations"][-1]
+    assert receipt["untransferredUl"] > 0.01
+    assert host.values()["/workcell"]["auditPassed"] is True
+
+
+def test_literal_mix_first_completed_stroke_is_not_the_completed_mix(tmp_path):
+    host, port = build_workcell_host(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 2000,
+                "volumeUl": 1000,
+                "culture": "M1",
+                "live": 600000,
+            }
+        ],
+    )
+    execute(host, port, "reserve", "reserve", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "mix", "mix", vessel="source", volumeUl=900)
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    port.advance(float(np.float32(0.009)))
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    assert host.active_invocations("/workcell")[0].status == "running"
+    assert port.targets["pump"] == 0
+    assert host.values()["/workcell"]["inFlightUl"] > 899
+    port.advance(0)
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    final = next(row for row in host.snapshot().invocations if row.invocationId == "mix")
+    assert final.status == "succeeded"
+    assert host.values()["/workcell"]["inFlightUl"] == 0
+    assert host.values()["/workcell"]["materialSnapshot"]["vessels"][0]["volumeUl"] == pytest.approx(1000)
+
+
+def test_zero_progress_timeout_receipt_cannot_be_cancelled_before_core_marks_it_failed(tmp_path):
+    host, port = build_workcell_host(tmp_path)
+    execute(host, port, "reserve", "reserve", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirateAvailable", "timeout", vessel="source")
+    host.tick(host.sim_time + 1 / 60, 1 / 60)
+    messages = host.tick(host.sim_time + 3601, 3601)
+    messages.extend(host.tick(host.sim_time + 1 / 60, 1 / 60))
+    terminal = next(
+        row for row in messages if row.type == "invocation.update" and row.invocationId == "timeout"
+    )
+    receipts = [
+        row.data["receipt"]
+        for row in messages
+        if row.type == "entity.event"
+        and row.event == "operationCompleted"
+        and row.data["receipt"]["operationId"] == "timeout"
+    ]
+    assert terminal.status == "failed" and terminal.error.code == "timeout"
+    assert len(receipts) == 1 and receipts[0]["status"] == "failed" and receipts[0]["fault"] == "timeout"
+    assert receipts[0]["appliedUl"] == 0 and receipts[0]["noTransfer"] is False

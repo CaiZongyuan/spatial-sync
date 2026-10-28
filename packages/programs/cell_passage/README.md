@@ -26,6 +26,10 @@ the fixed hold target completes cancellation. Reservations, tip attachment and
 liquid remain held throughout. Controlled braking return flow is accounted as
 net reverse liquid movement; uncommanded reversal during normal execution
 still invalidates the material estimate. Queued cancellation is unchanged.
+For an executing cancel callback, terminal accounting is finalized on the next
+program tick, even if it was already physically still. This lets an existing
+Core timeout failure retain priority over a premature cancelled receipt; it
+does not release reservations or permit a new liquid action in that interval.
 
 | Action | Additional parameters | Evidence and effect |
 |---|---|---|
@@ -86,9 +90,16 @@ is 0.01 uL. Allocation tolerance never relaxes the global material audit.
 Already-filled top-up, empty source/tip and below-resolution cases succeed with
 noTransfer=true, resolvedUl=appliedUl=0 and an explicit quantityOutcome such as
 at_target, empty_source or below_resolution. No pump target is issued. A
-positive resolved target instead remains running until positive observed
-progress, native target convergence and measured standstill; a zero first
-control sample cannot complete it. Even a zero-volume visit to a culture keeps
+positive resolved target instead requires positive observed progress. Once
+actual position repeats across three distinct physical frames and the total
+untransferred amount meets the fixed 0.01 uL budget, the program establishes
+holding targets at actual positions with zero target velocity. It retains the
+running handle and continues accounting until the original measured-standstill
+checks pass; a nonzero velocity is never reinterpreted as zero. The final
+remainder is checked again after braking. A repeated getter, paused clock or
+zero first control sample cannot trigger completion. Cancellation, ownership
+loss, cabinet/target failure or an already-failed invocation override normal
+completion. Even a zero-volume visit to a culture keeps
 conservative tip-contact isolation. Failed/cancelled fraction/all/top-up intents
 retain their original resolved target and partial progress. Recovery requires
 a new reviewed domain ID with an explicit remaining literal quantity or a new
