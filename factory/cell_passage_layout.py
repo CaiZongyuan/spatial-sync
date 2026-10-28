@@ -2,7 +2,7 @@
 
 from pxr import Gf, Sdf, UsdGeom, UsdPhysics
 
-from factory.cell_passage import HANDLE, LAB, box, cylinder, rigid, ring, site, translate
+from factory.cell_passage import HANDLE, LAB, WELLS, box, cylinder, rigid, ring, site, translate
 
 
 def relocate(stage, root, fixed_joint, delta):
@@ -12,9 +12,9 @@ def relocate(stage, root, fixed_joint, delta):
     joint.GetLocalPos0Attr().Set(Gf.Vec3f(*(point[i] + delta[i] for i in range(3))))
 
 
-def reference(stage, path, name, position):
+def reference(stage, path, name, position, kind="labware"):
     root = UsdGeom.Xform.Define(stage, path)
-    root.GetPrim().GetReferences().AddReference(f"library:assets/labware/{name}/1/asset.usda", "/Asset")
+    root.GetPrim().GetReferences().AddReference(f"library:assets/{kind}/{name}/1/asset.usda", "/Asset")
     translate(root, position)
     return root
 
@@ -87,15 +87,27 @@ def populate(stage):
             stage.RemovePrim(child.GetPath())
     UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(LAB + "/Joints/FlexZ")).GetUpperLimitAttr().Set(0.08)
     UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(LAB + "/Joints/FlexX")).GetUpperLimitAttr().Set(0.12)
-    for name in ("chemlab_corning_96well", "chemlab_flex_tiprack1000", "chemlab_nest_reservoir"):
+    for name in (
+        "chemlab_corning_96well",
+        "chemlab_flex_tiprack1000",
+        "chemlab_nest_reservoir",
+        "device_imager",
+        "worktables",
+    ):
         stage.RemovePrim("/World/Dressing/" + name)
+    for name in ("ImagerBench", "ImagerBase", "ImagerLeft", "ImagerRight", "ImagerTop", "RetainedImagerTray"):
+        stage.RemovePrim(LAB + "/Static/" + name)
+    reference(stage, LAB + "/PreparationBench", "passage-preparation-bench", (0, -0.9, 0), "environment")
+    reference(stage, LAB + "/BackBench", "passage-back-bench", (0, 0.38, 0), "environment")
+    reference(stage, LAB + "/Imager", "passage-open-imager", (-0.05, -0.68, 1.232), "device")
+    reference(stage, LAB + "/Labware/CollectionRack", "passage-tube-rack", (-0.2175, -0.5525, 0.86))
 
     stations = {
         "IncubatorMother": (-0.925, 0.23, 1.0858),
         "IncubatorA": (-0.575, 0.23, 1.0858),
         "IncubatorB": (-0.750, 0.23, 1.0858),
         "Imager": (-0.05, -0.68, 1.232),
-        "FlexPlate": (0.59, 0.29, 1.032),
+        "FlexPlate": (0.53, 0.29, 1.042),
         "DaughterAReady": (0.15, -0.66, 1.232),
         "DaughterBReady": (0.35, -0.66, 1.232),
         "CountingReady": (0.55, -0.66, 1.232),
@@ -104,7 +116,7 @@ def populate(stage):
     }
     for i, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
         stations["Rack" + name] = (-0.30 + (i % 4) * 0.055, -0.58 + (i // 4) * 0.055, 1.032)
-        stations[f"FlexTube{i + 1}"] = (0.565 + (i % 4) * 0.045, 0.405 + (i // 4) * 0.045, 1.032)
+        stations[f"FlexTube{i + 1}"] = (0.565 + (i % 4) * 0.045, 0.405 + (i // 4) * 0.045, 1.042)
     for i in range(4):
         stations[f"Lid{i + 1}"] = (-0.2 + i * 0.2, -0.85, 1.232)
     for i in range(8):
@@ -113,7 +125,7 @@ def populate(stage):
         value = site(stage, LAB + "/Sites/" + name, point)
         if name == "IncubatorA":
             value.AddRotateZOp().Set(180.0)
-        if not name.startswith("Incubator"):
+        if not name.startswith(("Incubator", "Rack")) and name != "Imager":
             size = (
                 (0.135, 0.092, 0.016) if not name.startswith(("Rack", "FlexTube")) else (0.025, 0.025, 0.012)
             )
@@ -124,6 +136,28 @@ def populate(stage):
                 (point[0], point[1], surface - size[2] / 2),
                 size,
             )
+            base = 0.96 if name.startswith("Flex") else 0.86
+            height = surface - size[2] - base
+            if name.startswith("FlexTube"):
+                box(
+                    stage,
+                    LAB + "/Fixtures/" + name + "/Riser",
+                    (point[0], point[1], base + height / 2),
+                    (0.012, 0.012, height),
+                )
+            else:
+                for sx in (-1, 1):
+                    for sy in (-1, 1):
+                        box(
+                            stage,
+                            LAB + "/Fixtures/" + name + f"/Leg{sx + 1}{sy + 1}",
+                            (
+                                point[0] + sx * (size[0] / 2 - 0.012),
+                                point[1] + sy * (size[1] / 2 - 0.012),
+                                base + height / 2,
+                            ),
+                            (0.012, 0.012, height),
+                        )
             if name.startswith(("Rack", "FlexTube")):
                 ring(
                     stage,
@@ -160,16 +194,32 @@ def populate(stage):
         grips[key], grips[lid] = [0.035, 0, 0.038], [-0.035, 0, 0.022]
 
     for name, point in {
-        "ReservoirPBS": (0.49, 0.49, 1.031),
-        "ReservoirTrypsin": (0.49, 0.57, 1.031),
-        "ReservoirMedium": (0.59, 0.565, 1.031),
-        "WasteLiquid": (0.79, 0.405, 1.031),
-        "SolidWaste": (0.79, 0.25, 1.031),
+        "ReservoirPBS": (0.49, 0.49, 1.041),
+        "ReservoirTrypsin": (0.49, 0.57, 1.041),
+        "ReservoirMedium": (0.59, 0.565, 1.041),
+        "WasteLiquid": (0.79, 0.405, 1.041),
+        "SolidWaste": (0.72, 0.245, 0.96),
     }.items():
         key = LAB + "/Labware/" + name
-        reference(stage, key, "passage-reservoir" if name.startswith("Reservoir") else "passage-waste", point)
+        asset = (
+            "passage-reservoir"
+            if name.startswith("Reservoir")
+            else "passage-tip-waste"
+            if name == "SolidWaste"
+            else "passage-waste"
+        )
+        reference(stage, key, asset, point)
         bodies[name] = key
-        box(stage, LAB + "/Fixtures/" + name, (point[0], point[1], point[2] - 0.0355), (0.09, 0.07, 0.071))
+        if name == "SolidWaste":
+            site(stage, key + "/Content", (0, 0, 0.084))
+            site(stage, key + "/Discard", (0, 0, 0.148))
+        if point[2] > 0.96:
+            box(
+                stage,
+                LAB + "/Fixtures/" + name,
+                (point[0], point[1], (point[2] + 0.96) / 2),
+                (0.09, 0.07, point[2] - 0.96),
+            )
 
     # Individual tips have real hollow shells, fixed rack bores, and a bottom
     # Site. The attached tip endpoint moves with the original CarriageZ body.
@@ -177,7 +227,7 @@ def populate(stage):
     for row in range(8):
         for col in range(12):
             name = f"Tip{row * 12 + col + 1:03d}"
-            point = (0.6905 + col * 0.009, 0.5085 + row * 0.009, 1.034)
+            point = (0.655 + col * 0.013, 0.512 + row * 0.013, 1.044)
             key = LAB + "/Labware/" + name
             reference(stage, key, "passage-tip-1000", point)
             site(stage, LAB + "/Labware/TipRack/" + name, point)
@@ -192,12 +242,14 @@ def populate(stage):
                 stage,
                 LAB + "/Fixtures/TipRack/" + name + "Guide",
                 (point[0], point[1], point[2] + 0.014),
-                0.0022,
+                0.0035,
                 0.010,
-                0.0005,
+                0.0006,
                 12,
             )
             tips.append({"id": name, "bodyKey": key, "site": LAB + "/Labware/TipRack/" + name})
+    box(stage, LAB + "/Fixtures/TipRack/Base", (0.7265, 0.5575, 0.997), (0.167, 0.104, 0.074))
+    box(stage, LAB + "/Fixtures/TipRack/Deck", (0.7265, 0.5575, 1.038), (0.167, 0.104, 0.008))
     tip_site = LAB + "/LiquidHandler/CarriageZ/TipSite"
     cache = UsdGeom.XformCache()
     carriage = stage.GetPrimAtPath(LAB + "/LiquidHandler/CarriageZ")
@@ -239,6 +291,9 @@ def populate(stage):
         "lids": lids,
         "graspOffsets": grips,
         "tips": tips,
+        "tipMatingOffsetLocalM": [0, 0, 0.050],
+        "tipAxisLocal": [0, 0, 1],
+        "tipInitialPose": "Root equals Rack Site; +Z up; circular coupling does not constrain yaw",
         "axisJoints": [LAB + "/Joints/Flex" + name for name in "XYZ"],
         "pumpJoint": LAB + "/Joints/FlexPump",
         "pumpStrokeM": 0.01,
@@ -260,6 +315,7 @@ def populate(stage):
             "axisDirections": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
             "qLowerM": [-0.24, -0.21, 0],
             "qUpperM": [0.12, 0.21, 0.08],
+            "alignmentToleranceM": 0.0003,
             "qualified": False,
         },
         "incubatorEntity": LAB + "/Incubator",
@@ -281,4 +337,10 @@ def populate(stage):
             "sashHeightCm": [18, 22],
         },
         "environmentTargets": {"temperatureC": 37, "co2Percent": 5, "humidityPercent": 95},
+        "tipDiscardSite": bodies["SolidWaste"] + "/Discard",
+        "imagerGeometry": {
+            "bodyKey": LAB + "/Imager/Frame",
+            "axisLocal": [0, 0, 1],
+            "focusLocalM": {name: list(point) for name, point in WELLS.items()},
+        },
     }

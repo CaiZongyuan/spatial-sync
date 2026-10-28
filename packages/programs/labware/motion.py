@@ -3,7 +3,7 @@
 import numpy as np
 from pydantic import Field, model_validator
 
-from packages.info.program import ProgramConfig
+from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation
 from packages.programs.robot_arm.newton import RobotArmProgram
 
@@ -154,10 +154,21 @@ class LabwareMotionProgram(RobotArmProgram):
         return guard(ctx, self.control_entity, params, self._resources(ctx, params))
 
     def accept(self, inv, ctx):
-        return self._guard(ctx, inv.params) or super().accept(inv, ctx)
+        failed = self._guard(ctx, inv.params) or super().accept(inv, ctx)
+        if failed or inv.action not in ("place", "pickPlace"):
+            return failed
+        name = inv.params["to"] if inv.action == "pickPlace" else inv.params["location"]
+        site = self.locations[name]["site"]
+        moving = (next((key for key in self.tubes if ctx.read(key,"location") ==
+                        self.locations[inv.params["from"]]["site"]), None)
+                  if inv.action == "pickPlace" else ctx.get("holding"))
+        occupied = [key for key in self.tubes if key != moving and ctx.read(key,"location") == site]
+        if occupied:
+            return Reject(code="station_occupied", message="The actual target station is occupied",
+                          details={"site":site,"occupants":occupied})
 
     def start(self, inv, ctx):
-        failed = self._guard(ctx, inv.params)
+        failed = self.accept(inv, ctx)
         if failed:
             inv.fail(failed.code, failed.message)
             return

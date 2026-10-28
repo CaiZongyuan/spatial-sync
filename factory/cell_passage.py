@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 import yaml
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, Vt
 
 LAB = "/World/Lab"
 WELLS = {
@@ -104,7 +104,8 @@ def plate(stage, path, *, lid=False):
                 stage, path + f"/SkirtRight{sign + 1}", (0.0665, sign * 0.028, -0.004), (0.0015, 0.032, 0.016)
             )
     else:
-        box(stage, path + "/Floor", (0, 0, 0.001), (0.12776, 0.08548, 0.002))
+        floor = box(stage, path + "/Floor", (0, 0, 0.001), (0.12776, 0.08548, 0.002))
+        floor.CreateDisplayOpacityAttr([0.35])
         for sign in (-1, 1):
             box(stage, path + f"/FrameX{sign + 1}", (sign * 0.06313, 0, 0.010), (0.0015, 0.08548, 0.016))
             box(stage, path + f"/FrameY{sign + 1}", (0, sign * 0.04199, 0.010), (0.12776, 0.0015, 0.016))
@@ -121,18 +122,18 @@ def plate(stage, path, *, lid=False):
 
 
 def tube(stage, path, *, lid=False):
-    root = rigid(stage, path, 0.012 if not lid else 0.004)
+    root = rigid(stage, path, 0.004)
     if lid:
         cylinder(stage, path + "/Cap", (0, 0, 0.004), 0.0105, 0.008)
-        box(stage, path + "/CarrierArm", (-0.0225, 0, 0.010), (0.025, 0.014, 0.004))
-        cylinder(stage, path + "/Handle", (-0.035, 0, 0.022), 0.0085, 0.024)
+        box(stage, path + "/CarrierArm", (-0.0225, 0, 0.009), (0.025, 0.006, 0.002))
+        ring(stage, path + "/Handle", (-0.035, 0, 0.022), 0.00835, 0.024, 0.0003, 16)
         site(stage, path + "/Grasp", (-0.035, 0, 0.022))
     else:
         cylinder(stage, path + "/Floor", (0, 0, 0.001), 0.0085, 0.002)
         ring(stage, path + "/Shell", (0, 0, 0.026), 0.008, 0.048, 0.001, 20)
         site(stage, path + "/Content", (0, 0, 0.003))
-        box(stage, path + "/CarrierArm", (0.02125, 0, 0.029), (0.0275, 0.012, 0.006))
-        cylinder(stage, path + "/Handle", (0.035, 0, 0.038), 0.0085, 0.024)
+        box(stage, path + "/CarrierArm", (0.02125, 0, 0.029), (0.0275, 0.006, 0.002))
+        ring(stage, path + "/Handle", (0.035, 0, 0.038), 0.00835, 0.024, 0.0003, 16)
         site(stage, path + "/Grasp", (0.035, 0, 0.038))
     return root
 
@@ -150,8 +151,43 @@ def vessel(stage, path, size=(0.08, 0.06, 0.035), *, mass=0.08):
 
 def tip(stage, path):
     root = rigid(stage, path, 0.001)
-    ring(stage, path + "/Nozzle", (0, 0, 0.0225), 0.0015, 0.045, 0.0004, 12)
-    ring(stage, path + "/Collar", (0, 0, 0.0475), 0.0035, 0.005, 0.0006, 16)
+    # Twelve convex wall sectors leave a real tapered bore (>1 mL below the
+    # 10 mm source nozzle) rather than substituting a filled cone.
+    import trimesh
+
+    faces = [
+        [0, 1, 3],
+        [0, 3, 2],
+        [4, 6, 7],
+        [4, 7, 5],
+        [0, 4, 5],
+        [0, 5, 1],
+        [2, 3, 7],
+        [2, 7, 6],
+        [0, 2, 6],
+        [0, 6, 4],
+        [1, 5, 7],
+        [1, 7, 3],
+    ]
+    for index in range(12):
+        points = []
+        angle = index * math.pi / 6
+        for z, inner, outer in ((0, 0.0007, 0.0011), (0.050, 0.00515, 0.0057)):
+            for radius in (inner, outer):
+                for theta in (angle, angle + math.pi / 6):
+                    points.append((radius * math.cos(theta), radius * math.sin(theta), z))
+        mesh = trimesh.Trimesh(points, faces, process=False)
+        mesh.fix_normals()
+        shape = UsdGeom.Mesh.Define(stage, path + f"/Nozzle/Wall{index:02d}")
+        shape.CreatePointsAttr(Vt.Vec3fArray(mesh.vertices.tolist()))
+        shape.CreateFaceVertexCountsAttr([3] * len(mesh.faces))
+        shape.CreateFaceVertexIndicesAttr(mesh.faces.ravel().tolist())
+        shape.CreateSubdivisionSchemeAttr("none")
+        shape.CreateDisplayColorAttr([Gf.Vec3f(0.6, 0.8, 0.86)])
+        UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
+        UsdPhysics.MeshCollisionAPI.Apply(shape.GetPrim()).CreateApproximationAttr("convexHull")
+        shape.GetPrim().CreateAttribute("newton:contactGap", Sdf.ValueTypeNames.Float).Set(CONTACT_GAP_M)
+    ring(stage, path + "/Collar", (0, 0, 0.056), 0.0057, 0.012, 0.0006, 16)
     site(stage, path + "/Content", (0, 0, 0))
     return root
 
@@ -165,6 +201,12 @@ def package(output, name, author, *, kind="labware"):
     author(stage, "/Asset")
     stage.SetDefaultPrim(stage.GetPrimAtPath("/Asset"))
     stage.GetRootLayer().Save()
+    visual = None
+    if stage.GetPrimAtPath("/Asset").HasAPI(UsdPhysics.RigidBodyAPI):
+        from factory.cell_passage_visuals import export
+
+        visual = "visual.glb"
+        (target / visual).write_bytes(export(stage))
     cache = UsdGeom.BBoxCache(0, ["default", "guide"])
     dimensions = list(cache.ComputeWorldBound(stage.GetPrimAtPath("/Asset")).ComputeAlignedRange().GetSize())
     (target / "asset.yaml").write_text(
@@ -174,6 +216,7 @@ def package(output, name, author, *, kind="labware"):
                 "kind": kind,
                 "title": name.replace("-", " "),
                 "stage": "asset.usda",
+                **({"visual": visual} if visual else {}),
                 "dimensionsM": dimensions,
                 "physics": {
                     "massKg": sum(
@@ -216,13 +259,16 @@ def build_labware(output):
             ("passage-collection-tube", tube),
             ("passage-tube-cap", lambda s, p: tube(s, p, lid=True)),
             ("passage-reservoir", vessel),
-            ("passage-waste", lambda s, p: vessel(s, p, (0.12, 0.10, 0.10))),
+            ("passage-waste", lambda s, p: vessel(s, p, (0.12, 0.10, 0.035))),
+            ("passage-tip-waste", lambda s, p: vessel(s, p, (0.20, 0.20, 0.144), mass=0.25)),
             ("passage-tip-1000", tip),
         )
     ]
 
 
 def build(source, output, *, bindings_overlay=None, with_workcell=False):
+    from packages.library.common import content_hash
+
     source, output = Path(source).resolve(), Path(output).resolve()
     if output.exists():
         raise ValueError("Output must be fresh; immutable package bytes are never overwritten")
@@ -235,22 +281,44 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
         metadata = yaml.safe_load((original / "asset.yaml").read_text(encoding="utf-8"))
         target = output / "assets" / metadata["id"] / "1"
         shutil.copytree(original, target)
-        from packages.library.common import content_hash
-
         receipts.append(
             {"id": metadata["id"] + "@1", "source": original.name, "contentHash": content_hash(original)}
         )
     build_labware(output)
+    from factory.cell_passage_fixtures import bench, inverted_imager, tube_rack
     from factory.cell_passage_incubator import build as build_incubator
     from factory.cell_passage_layout import centrifuge, populate
 
     build_incubator(source, output)
     package(output, "passage-centrifuge", lambda s, p: centrifuge(s, p, (0, 0, 0)), kind="device")
+    package(output, "passage-open-imager", inverted_imager, kind="device")
+    package(output, "passage-tube-rack", tube_rack)
+    package(output, "passage-preparation-bench", bench, kind="environment")
+    package(output, "passage-back-bench", lambda s, p: bench(s, p, 2.4, 0.9, 0.82), kind="environment")
     scene = output / "scenes/cell-passage/1"
     scene.mkdir(parents=True)
     shutil.copyfile(source_stage, scene / "stage.usda")
     stage = Usd.Stage.Open(str(scene / "stage.usda"))
     layout = populate(stage)
+    for name, asset in (("tipGeometry", "passage-tip-1000"), ("solidWasteRegion", "passage-tip-waste")):
+        path = output / "assets/labware" / asset / "1"
+        authored = Usd.Stage.Open(str(path / "asset.usda"))
+        bounds = (
+            UsdGeom.BBoxCache(0, ["default", "guide"])
+            .ComputeWorldBound(authored.GetPrimAtPath("/Asset"))
+            .ComputeAlignedRange()
+        )
+        lower, upper = list(bounds.GetMin()), list(bounds.GetMax())
+        if name == "solidWasteRegion":
+            lower = [lower[0] + 0.002, lower[1] + 0.002, lower[2] + 0.002]
+            upper = [upper[0] - 0.002, upper[1] - 0.002, upper[2]]
+        layout[name] = {
+            "asset": "labware/" + asset + "@1",
+            "contentHash": content_hash(path),
+            "lowerLocal": lower,
+            "upperLocal": upper,
+        }
+    layout["solidWasteRegion"].update(bodyKey=layout["bodies"]["SolidWaste"], contactAllowanceM=0.001)
     from factory.cell_passage_bindings import bindings
 
     mechanical = bindings(stage, layout)

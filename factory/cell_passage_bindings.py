@@ -119,7 +119,7 @@ def bindings(stage, layout):
                 "tubes": tubes,
                 "spindleJoint": LAB + "/Centrifuge/Spindle",
                 "lidJoint": LAB + "/Centrifuge/LidHinge",
-                "tareKg": {key: 0.016 for key in tubes},
+                "tareKg": {key: 0.008 for key in tubes},
                 "visualRpmCap": 60,
                 "densityKgPerL": 1.0,
                 "balanceToleranceKg": 0.00002,
