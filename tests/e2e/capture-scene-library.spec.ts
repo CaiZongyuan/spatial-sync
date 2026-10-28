@@ -186,6 +186,54 @@ test('real capture can be saved once and browsed as a static image without a liv
   await assertStatic(); expect(errors).toEqual([]);
 });
 
+test('a slow readonly capture can finish after fifteen seconds', async ({ page, request }) => {
+  const { errors, assertStatic } = await watchStaticScene(page, request);
+  await page.goto('/scenes/lab-demo/3');
+  await expect(page.locator('[data-camera-fitted=true]')).toBeVisible();
+  await page.clock.install();
+  let release!: () => void, requested!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { requested = resolve; });
+  await page.route('**/preview/synthetic/snapshot.bin', async route => {
+    requested(); await held; await route.continue().catch(() => {});
+  });
+  try {
+    await page.getByRole('button', { name: '生成列表缩略图', exact: true }).click();
+    await started;
+    await page.clock.fastForward(16_000);
+    await expect(page.getByRole('button', { name: '正在生成缩略图…', exact: true })).toBeDisabled();
+    release();
+    await expect(page.getByText('已保存列表缩略图。', { exact: true })).toBeVisible();
+    await assertStatic(); expect(errors).toEqual([]);
+  } finally { release(); }
+});
+
+test('a stuck readonly capture still times out and cannot save a late image', async ({ page, request }) => {
+  const { assertStatic } = await watchStaticScene(page, request);
+  await page.goto('/scenes/lab-demo/3');
+  await expect(page.locator('[data-camera-fitted=true]')).toBeVisible();
+  await page.clock.install();
+  let release!: () => void, requested!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { requested = resolve; });
+  const uploads: string[] = [];
+  page.on('request', value => { if (value.method() === 'POST' && value.url().includes('/library/thumbnails')) uploads.push(value.url()); });
+  await page.route('**/preview/synthetic/snapshot.bin', async route => {
+    requested(); await held; await route.continue().catch(() => {});
+  });
+  try {
+    await page.getByRole('button', { name: '生成列表缩略图', exact: true }).click();
+    await started;
+    await page.clock.fastForward(120_001);
+    await expect(page.getByText('生成缩略图超时，可以重试。', { exact: true })).toBeVisible();
+    await expect(page.locator('.scene-thumbnail-renderer')).toHaveCount(0);
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+    expect(uploads).toEqual([]);
+    await assertStatic();
+  } finally { release(); }
+});
+
 test('scene library filters and URL preferences navigate to the exact version', async ({ page, request }) => {
   const { errors, assertStatic } = await watchStaticScene(page, request);
   await page.goto('/scenes');

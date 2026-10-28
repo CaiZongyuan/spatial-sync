@@ -1,6 +1,9 @@
 """Pinned upstream HTTP journeys for three native metadata structures."""
 
+import hashlib
+import json
 import threading
+from pathlib import Path
 
 import httpx
 import pytest
@@ -244,6 +247,7 @@ def test_chemlab_native_indexes_import_bilingual_names_and_explicit_object_thumb
         tree: [
             file("assets/balance/model.glb"),
             file("media/thumb/balance.webp", 100),
+            file("previews/balance/panel_screenshot.png", 1),
             file("assets/labware/containers/beaker/model.glb"),
         ],
         resolve + "/release_manifest.json": {
@@ -297,6 +301,32 @@ def test_chemlab_native_indexes_import_bilingual_names_and_explicit_object_thumb
     assert beaker["facts"]["dimensionsM"] == [0.1, 0.1, 0.15]
     assert beaker["facts"]["coordinateSystem"] == {"up": "z"}
     assert beaker["fieldProvenance"]["facts"]["kind"] == "publisher"
+
+
+def test_declared_object_thumbnail_wins_over_smaller_screen_images():
+    screen = file("previews/density-meter/status_screenshot.png", 5)
+    declared = file("media/thumb/density-meter.webp", 5000, role="object")
+    assert preview_choice([screen, declared], explicit=declared["path"]) == declared
+    assert preview_choice([screen, declared]) == screen
+
+
+def test_explicit_path_cannot_promote_a_material_texture_to_object_preview():
+    material = file("previews/normal.png", 1)
+    object_image = file("previews/whole-device.webp", 100)
+    assert preview_choice([material, object_image], explicit=material["path"]) == object_image
+
+
+def test_portable_chemlab_instruments_reference_whole_object_thumbnails():
+    root = Path(__file__).resolve().parents[2] / "catalog"
+    data = (root / "data/chemlab.jsonl").read_text(encoding="utf-8")
+    entries = [json.loads(line) for line in data.splitlines()]
+    instruments = [entry for entry in entries if entry["id"].startswith("instrument.")]
+    assert len(instruments) == 203
+    for entry in instruments:
+        preview = entry["preview"]
+        assert preview["path"] == "media/thumb/" + entry["id"].partition(".")[2] + ".webp"
+        payload = (root / "thumbnails" / preview["thumbnail"]).read_bytes()
+        assert hashlib.sha256(payload).hexdigest() + ".webp" == preview["thumbnail"]
 
 
 def test_controlled_demand_preview_cache_and_primary_file_rejection(tmp_path):

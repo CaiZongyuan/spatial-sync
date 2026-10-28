@@ -12,6 +12,12 @@ rebuilt automatically from `catalog/data/` on startup or via `tools/sync_catalog
 CLI and MCP all query this shared repository index by default without requiring an
 external 1.8 GB metadata library.
 
+ChemLab instrument previews follow the publisher's explicit `thumb` field
+(`media/thumb/<instrument>.webp`) before any size-based fallback. Screen captures,
+status icons and other small supporting images cannot displace that declared
+whole-object view. The 62 labware/furniture entries without publisher object
+images retain an explicit missing state.
+
 ## Committed seed
 
 `catalog/simready.json` is the curated, committed subset of the five SF0
