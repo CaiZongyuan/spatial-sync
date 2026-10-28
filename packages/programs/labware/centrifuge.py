@@ -30,6 +30,12 @@ def modeled_slot_masses(slots, vessels, tare, density):
 class PassageCentrifugeProgram(CentrifugeProgram):
     id, type = "cell_passage.centrifuge", "passage-centrifuge/v1"
 
+    def _lid_open(self, port):
+        return abs(float(port.joint_q(self.lid)[0]) - 1.4) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02
+
+    def _lid_closed(self, port):
+        return abs(float(port.joint_q(self.lid)[0])) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02
+
     class Config(CentrifugeProgram.Config):
         controlEntity: str
         armBodies: list[str] = Field(
@@ -64,7 +70,11 @@ class PassageCentrifugeProgram(CentrifugeProgram):
             actualRpm=0,
             loadedEntities=self._slots(ctx),
             modeledMassKg=[0.0] * 4,
-            controlSafe=True,
+            controlSafe=bool(
+                abs(ctx.physics.joint_qd(self.spindle)[0]) < 0.05
+                and abs(ctx.physics.joint_qd(self.lid)[0]) < 0.02
+            ),
+            lidClosed=self._lid_closed(ctx.physics),
         )
 
     def _guard(self, inv, ctx):
@@ -99,7 +109,16 @@ class PassageCentrifugeProgram(CentrifugeProgram):
                 return Reject(code="unknown_clearance", message="Actual robot clearance is unconfirmed")
 
     def accept(self, inv, ctx):
-        failed = self._guard(inv, ctx) or super().accept(inv, ctx)
+        failed = self._guard(inv, ctx)
+        if failed:
+            return failed
+        if inv.action in ("openLid", "closeLid") and not abs(ctx.physics.joint_qd(self.spindle)[0]) < 0.05:
+            return Reject(code="rotor_moving", message="Actual rotor velocity is not confirmed stopped")
+        if inv.action == "start" and not self._lid_closed(ctx.physics):
+            return Reject(
+                code="lid_not_closed", message="Actual lid must be closed and stopped before spinning"
+            )
+        failed = super().accept(inv, ctx)
         if failed or inv.action != "start":
             return failed
         slots, _ = self._loading(ctx)
@@ -170,4 +189,5 @@ class PassageCentrifugeProgram(CentrifugeProgram):
             controlSafe=bool(safe),
             loadedEntities=self._slots(ctx),
             actualRpm=abs(float(ctx.physics.joint_qd(self.spindle)[0])) * 60 / (2 * math.pi),
+            lidClosed=self._lid_closed(ctx.physics),
         )

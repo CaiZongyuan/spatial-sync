@@ -16,8 +16,8 @@ class PassageJointProgram:
         lower: float = Field(allow_inf_nan=False)
         upper: float = Field(allow_inf_nan=False)
         maxSpeed: float = Field(gt=0, allow_inf_nan=False)
-        tolerance: float = Field(default=0.001, gt=0)
-        velocityTolerance: float = Field(default=0.01, gt=0)
+        tolerance: float = Field(default=0.001, gt=0, allow_inf_nan=False)
+        velocityTolerance: float = Field(default=0.01, gt=0, allow_inf_nan=False)
         role: Literal["axis", "outer", "inner"] = "axis"
         peerDoor: str | None = None
 
@@ -40,8 +40,10 @@ class PassageJointProgram:
         ctx.set(
             position=q,
             velocity=qd,
-            opened=abs(q - ctx.config.upper) < ctx.config.tolerance,
-            closed=abs(q - ctx.config.lower) < ctx.config.tolerance,
+            opened=abs(q - ctx.config.upper) < ctx.config.tolerance
+            and abs(qd) < ctx.config.velocityTolerance,
+            closed=abs(q - ctx.config.lower) < ctx.config.tolerance
+            and abs(qd) < ctx.config.velocityTolerance,
             phase="idle" if self.handle is None else "stopping" if self.cancel_pending else "moving",
             controlSafe=self.handle is None and abs(qd) < ctx.config.velocityTolerance,
         )
@@ -53,7 +55,23 @@ class PassageJointProgram:
         if failed:
             return failed
         role = ctx.config.role
-        if (role, inv.action) in (("inner", "open"), ("outer", "close")):
+        if inv.action == "stop":
+            return None
+        target = (
+            ctx.config.upper
+            if inv.action == "open"
+            else ctx.config.lower
+            if inv.action == "close"
+            else inv.params["position"]
+        )
+        actual = float(ctx.physics.joint_q(self.joint)[0])
+        peer_required = (
+            role == "inner"
+            and target > actual + ctx.config.tolerance
+            or role == "outer"
+            and target < actual - ctx.config.tolerance
+        )
+        if peer_required:
             needed = "opened" if role == "inner" else "closed"
             if (
                 ctx.read(ctx.config.peerDoor, needed) is not True

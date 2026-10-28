@@ -1,0 +1,99 @@
+type: passage-cabinet/v1
+title: Passage clean enclosure signals
+alerts:
+  lowInflow:
+    when:
+      property: inflowMs
+      lt: 0.4
+    forSeconds: 30
+    severity: critical
+    message: "\u751F\u7269\u5B89\u5168\u67DC\u8FDB\u98CE\u901F\u5EA6\u4F4E\u4E8E 0.4\
+      \ m/s"
+    hint: "\u68C0\u67E5\u98CE\u673A\u548C\u524D\u7A97"
+  unsafeUv:
+    when:
+      all:
+      - property: uvOn
+        equals: true
+      - property: sashHeightCm
+        gt: 0
+    forSeconds: 0
+    severity: critical
+    message: "\u524D\u7A97\u6253\u5F00\u65F6\u7D2B\u5916\u706F\u5904\u4E8E\u5F00\u542F\
+      \u72B6\u6001"
+description: Seeded teaching signal model. Mechanical door facts are separate; no
+  measured environmental sensor claim.
+properties:
+  inflowMs:
+    schema:
+      type: number
+      minimum: 0
+      maximum: 2
+    unit: m/s
+    deadband: 0.002
+    maxRateHz: 5
+    staleAfterSeconds: 3
+  sashHeightCm:
+    schema:
+      type: number
+      minimum: 0
+      maximum: 60
+    unit: cm
+    staleAfterSeconds: 3
+  uvOn:
+    schema:
+      type: boolean
+    staleAfterSeconds: 3
+  blowerOn:
+    schema:
+      type: boolean
+    staleAfterSeconds: 3
+  cabinetReady:
+    schema:
+      type: boolean
+  controlSafe:
+    schema:
+      type: boolean
+  signalSource:
+    schema:
+      enum:
+      - modeled
+actions:
+  setBlower:
+    description: Switch the blower.
+    params:
+      'on':
+        type: boolean
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - 'on'
+    - owner
+    - epoch
+    - operationId
+  setUv:
+    description: Switch UV using a fresh sash reading.
+    params:
+      'on':
+        type: boolean
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - 'on'
+    - owner
+    - epoch
+    - operationId
+    preconditions:
+    - property: sashHeightCm
+      notNull: true
+    risk: high
