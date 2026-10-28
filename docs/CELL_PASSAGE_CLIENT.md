@@ -150,10 +150,24 @@ it cannot authorize recovery. `plan_completed` means the Plan finished, with
 The owned launch entrypoint wires build, teaching, immutable HTTP import,
 validation, Newton CPU launch, control claim and the round client:
 
+Run this candidate from Linux/WSL with the simulation/USD Python environment
+and Linux Node on `PATH`. Install this checkout's front-end dependencies with
+the locked pnpm version before opening the viewer; do not reuse Windows
+`node_modules` or its platform-specific binaries in WSL. On a Windows-mounted
+WSL checkout, `pnpm install --frozen-lockfile --package-import-method=copy`
+avoids hard-link import assumptions. The launcher inherits `PYTHONPATH`, so
+include the repository and CLI source roots when using an existing environment:
+
 ```bash
-python -m tools.cell_passage --source <read-only-platform_packages> \
-  --out .scratch/cell-passage/<fresh-run>
+PYTHONPATH=.:apps/cli python -m tools.cell_passage --source <read-only-platform_packages> \
+  --out <private-linux-filesystem>/<fresh-run>
 ```
+
+The output directory contains the gateway Vault and must support POSIX private
+permissions (`0700` directories and `0600` files). A default `/mnt/c` or `/mnt/d`
+DrvFS mount can reject gateway startup because it does not preserve those
+permissions. Use a new owned output directory on the WSL Linux filesystem;
+the source checkout and read-only input library can remain on the mounted drive.
 
 It uses API 8023 and viewer 5223 by default, checks both ports before starting,
 and gives its gateway an instance header so readiness cannot accidentally select
