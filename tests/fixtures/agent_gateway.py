@@ -8,6 +8,7 @@ from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from packages.library import agents
 
 os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 
 
 class FakeHostSampler:

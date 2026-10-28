@@ -14,6 +14,7 @@ from tests.gateway.test_agent_rsi import agent_plan, complete_scope
 from tests.gateway.test_external_agent_evaluation import work
 
 os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 app = create_app(Settings(remote=False))
 context = {}
 

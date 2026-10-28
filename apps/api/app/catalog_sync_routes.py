@@ -7,10 +7,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from packages.library.common import LibraryError
 
 
-def install_catalog_sync_routes(app, sync, role_for):
+def install_catalog_sync_routes(app, sync, role_for, *, enabled=True):
     def operator(request):
         if role_for(request.headers) != "operator":
             raise LibraryError("not_permitted", "Operator permission is required", 403)
+        if not enabled:
+            raise LibraryError(
+                "not_supported", "Update the repository catalog with tools/sync_catalog.py", 409
+            )
 
     @app.get("/api/v1/library/catalog/sync")
     async def catalog_sync_status():

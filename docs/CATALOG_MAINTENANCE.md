@@ -1,4 +1,39 @@
-# HF metadata maintenance
+# Local asset catalog
+
+The default Lab host reads the three source JSONL files and WebP thumbnails
+tracked under `catalog/data/` and `catalog/thumbnails/`. Its generated SQLite
+cache and short sync status live in the ignored `catalog/local/` directory.
+Web, CLI and MCP share this catalog without a separate maintenance service.
+
+```powershell
+uv run --no-sync python tools/sync_catalog.py --rebuild --verify --check-thumbnails
+uv run --no-sync python tools/sync_catalog.py --sync-source simready --revision <40-hex>
+```
+
+Source sync reads the selected pinned revision through the existing recipe.
+Any entry extraction failure retains the previous source and records the failed
+identities in `catalog/local/sync_status.json`. An unchanged entry reuses its
+organized description and local thumbnail. Candidate files and SQLite are
+prepared together; runtime readers switch only when the verified SQLite file
+is committed. New processes serialize initial cache verification with updates.
+The running unified search and native metadata reads both follow the committed
+version; old page references explicitly expire after an update.
+
+After editing JSONL or pulling newer tracked data, run `--rebuild`, or restart
+the host to verify and rebuild the cache. An ordinary running query does not
+publish partially edited source files. Default Web pages hide legacy sync and
+maintenance controls; their write endpoints return `409 not_supported`.
+Agent-authored names, summaries and tags belong in the JSONL; the Agent performs
+the organization in its own session and preserves unknown technical fields.
+
+See [catalog/README.md](../catalog/README.md) for the layout and
+[the current specification](spec/LAB_ASSET_METADATA_PLATFORM_SPEC_V1.md) for scope.
+
+## Explicit legacy metadata hosts
+
+The remaining sections describe a deployment explicitly using `MetadataStore`
+or the standalone legacy host. Their runtime, history and evidence requirements
+do not apply to the default repository catalog.
 
 The existing `catalog sync` remains the lightweight directory update. Metadata maintenance is a separate, opt-in workflow over registered Hugging Face Source Collections. It uses the same gateway, a local SQLite database and an owned worker subprocess; it needs no Newton, Blender, GPU or external database.
 
@@ -53,15 +88,41 @@ Backup export emits `lw.catalog-metadata/2`, including retained image bytes and 
 
 ## Lab host library location
 
-The embedded Lab host keeps one library beside its experiment state by default: `<SPATIAL_STATE_ROOT>/catalog-metadata`. A deployment that already maintains a library elsewhere points the host at it without moving sessions, imports, recordings or other experiment state:
+The embedded Lab host serves the lightweight repository catalog from `<REPO_ROOT>/catalog`
+by default, backed by versioned `catalog/data/*.jsonl` files and `catalog/thumbnails/*.webp`
+images, with a local rebuildable SQLite cache in `catalog/local/catalog.sqlite3`.
+
+A deployment that maintains an external or custom metadata library elsewhere can override
+this location with:
 
 ```powershell
 $env:SPATIAL_CATALOG_METADATA_ROOT = 'C:/Users/<name>/.spatial-sync/state/catalog-metadata'
 ```
 
-Resolution order is an explicitly injected store (tests and fixtures), then `SPATIAL_CATALOG_METADATA_ROOT`, then the state-root default. The variable must be an absolute path; a path that does not name an existing directory fails at startup instead of creating a second empty library. Leaving it unset keeps each deployment isolated: `tests/conftest.py` and every fixture under `tests/fixtures/` clear the variable at import, so a test or a temporary host never inherits a user's library. `LW_CATALOG_STATE_ROOT` keeps its separate meaning for the standalone host below.
+Or point to an alternative lightweight catalog directory with:
 
-Startup logs the effective directory, where it came from and the release being served (`none (library is empty)` when no publication exists). The existing host lease still applies: one supervisor owns a library through `maintenance/host.lock`, and a second host reports `catalog_already_hosted` instead of interrupting active runs. The worker cache, maintenance checkpoints and thumbnails follow the store in use.
+```powershell
+$env:SPATIAL_CATALOG_ROOT = 'D:/path/to/catalog'
+```
+
+Resolution order is an explicitly injected store (tests and fixtures), then
+`SPATIAL_CATALOG_METADATA_ROOT` (if set to an existing directory), then
+`SPATIAL_CATALOG_ROOT`, and finally the repository default (`<REPO_ROOT>/catalog`).
+An explicit `SPATIAL_CATALOG_METADATA_ROOT` must be an absolute path naming an existing
+directory. Leaving it unset keeps test fixtures isolated: `tests/conftest.py` clears
+both variables so tests never inherit a developer's real library.
+
+Startup logs the effective directory, its resolution source and the release being served.
+The sync and rebuild utility is `tools/sync_catalog.py`: `--sync-source <id>
+[--revision <sha>]` performs a real fixed-revision read through the source
+recipes and activates verified candidates; `--rebuild` only regenerates the local
+SQLite cache from `catalog/data/`.
+
+This lightweight host has no maintenance runs or collection switches. Its status
+reports `capabilities.maintenance=false`, the Web asset page omits those controls,
+and run, collection and organization mutations answer `409 not_supported` instead
+of failing inside the router. Use the sync utility for source updates and keep the
+full maintenance platform for explicitly configured `MetadataStore` deployments.
 
 ## Independent host
 

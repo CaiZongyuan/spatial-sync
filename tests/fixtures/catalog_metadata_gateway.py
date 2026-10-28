@@ -13,6 +13,7 @@ from fastapi import Request
 from apps.api.app.main import create_app
 
 os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 
 REVISION = "a" * 40
 REQUESTS = []

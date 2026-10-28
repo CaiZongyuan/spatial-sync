@@ -20,6 +20,7 @@ def synthetic(kind, session_id):
 
 
 os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 app = create_app(
     Settings(node_trainer=(), remote=False), source_factory=synthetic, platform_sampler=Sampler()
 )

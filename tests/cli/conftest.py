@@ -40,10 +40,14 @@ def gateway_url(gateway_directory):
             cwd=ROOT,
             stdout=log,
             stderr=log,
-            env=os.environ | {
+            env={
+                key: value for key, value in os.environ.items()
+                if key not in ("SPATIAL_CATALOG_METADATA_ROOT", "SPATIAL_CATALOG_ROOT", "LW_CATALOG_ROOT")
+            } | {
                 "SPATIAL_RECORDINGS_ROOT": str(directory / "recordings"),
                 "SPATIAL_STATE_ROOT": str(directory / "state"),
                 "LW_LIBRARY": str(directory / "user-library"),
+                "LW_CATALOG": str(ROOT / "catalog" / "simready.json"),
             },
         )
         url = f"http://127.0.0.1:{port}"

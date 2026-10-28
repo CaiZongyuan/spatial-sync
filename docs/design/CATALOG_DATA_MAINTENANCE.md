@@ -1,5 +1,7 @@
 # 素材数据维护架构与执行流程
 
+> 2026-10-28：默认工作台采用[仓库内轻量目录](../spec/LAB_ASSET_METADATA_PLATFORM_SPEC_V1.md)，JSONL 和 WebP 随 Git 保存，SQLite 为可重建缓存。下面保留的队列、Runtime、回执和历史发布流程仅适用于显式旧式 MetadataStore 宿主。普通维护 Agent 从[当前操作指引](../CATALOG_MAINTENANCE.md)进入。
+
 > 实现架构 · 2026-10-27。细化[元数据平台规格](../spec/LAB_ASSET_METADATA_PLATFORM_SPEC_V1.md)，实现跟踪 [#208](https://github.com/CaiZongyuan/spatial-sync/issues/208)。交付维护能力与可复用 skill；真实全库整理由后续 Agent 在选定范围内执行。
 
 ## 目标与当前边界

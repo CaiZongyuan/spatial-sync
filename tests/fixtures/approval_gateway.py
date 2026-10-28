@@ -11,6 +11,7 @@ from pathlib import Path
 
 OWNED_ROOT = Path(__file__).resolve().parents[2] / ".scratch" / "viewer-e2e"
 os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 for variable, directory in (
     ("LW_LIBRARY", "library"), ("SPATIAL_STATE_ROOT", "state"), ("SPATIAL_RECORDINGS_ROOT", "recordings")
 ):

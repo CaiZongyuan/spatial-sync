@@ -17,7 +17,7 @@ export interface MetadataRun {
 export interface MetadataState {
   collections: MetadataCollection[]; runs: MetadataRun[];
   runtime: { configured: boolean; profile?: string | null }; skillsVersion?: string;
-  capabilities?: { externalOrganization: boolean; localThumbnails: boolean; nativeQueries: boolean };
+  capabilities?: { maintenance?: boolean; externalOrganization: boolean; localThumbnails: boolean; nativeQueries: boolean };
   release?: { id: string; collections: { id: string; coverage: Record<string, number | boolean | null> }[] } | null;
 }
 export interface CatalogVocabulary {
@@ -26,6 +26,10 @@ export interface CatalogVocabulary {
   tags: { id: string; name: { en: string; zh: string } }[];
 }
 const base = '/library/catalog/maintenance';
+// A host that states it has no maintenance runs must not offer run controls;
+// older hosts omit the flag and keep the full panel.
+export const maintenanceRunsAvailable = (state?: MetadataState) =>
+  state?.capabilities?.maintenance !== false;
 export const getMetadataState = (signal?: AbortSignal) => request<MetadataState>(base, { signal });
 export const getCatalogVocabulary = (version?: string, signal?: AbortSignal) =>
   request<CatalogVocabulary>(`${base}/vocabulary${version ? `?version=${encodeURIComponent(version)}` : ''}`, { signal });

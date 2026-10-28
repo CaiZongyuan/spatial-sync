@@ -17,6 +17,7 @@ from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_controller_publication import ControlledPublicationValidator
 
 os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 settings = Settings(node_token=TOKEN)
 starts = []
 publication_fault = {"active": False}

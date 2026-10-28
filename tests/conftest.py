@@ -21,3 +21,4 @@ def isolated_recordings(tmp_path, monkeypatch):
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "user-library"))
     # A developer shell may point the gateway at the maintained library; tests own their store.
     monkeypatch.delenv("SPATIAL_CATALOG_METADATA_ROOT", raising=False)
+    monkeypatch.setenv("SPATIAL_CATALOG_ROOT", "")
