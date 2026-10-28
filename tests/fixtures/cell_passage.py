@@ -17,6 +17,7 @@ class StrokePort:
         self.targets = self.q.copy()
         self.welds = set()
         self.velocities = self.q.copy()
+        self.positions = {}
 
     def bind_body(self, key):
         return key
@@ -46,7 +47,7 @@ class StrokePort:
         pass
 
     def site_pose(self, key):
-        return np.zeros(3), np.array([0, 0, 0, 1])
+        return np.asarray(self.positions.get(key, [0, 0, 0])), np.array([0, 0, 0, 1])
 
     def advance(self, pump):
         self.q["pump"] = float(
@@ -67,6 +68,9 @@ class FactsProgram:
         cycleRunSeconds: float = 2
         actualRotorTurns: float = 1
         phase: str = "idle"
+        lidClosed: bool = False
+        controlSafe: bool = True
+        holding: str = ""
 
     def init(self, ctx):
         ctx.set(**ctx.config.model_dump())
@@ -105,6 +109,11 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
             },
         }
     )
+    for binding in bindings:
+        if binding["program"] == WorkcellProgram.id:
+            cfg = binding["config"]
+            cfg.setdefault("contentSites", sorted({row["site"] for row in cfg["vessels"]}))
+            cfg.setdefault("tipRackSites", sorted({row["site"] for row in cfg["tips"]}))
     scene.write_text(yaml.safe_dump({"scene": "test", "entities": bindings}), encoding="utf8")
     manifest = SceneManifest(
         sessionId="test",
@@ -128,7 +137,7 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
             if name == "completedLoad"
             else {
                 "type": "boolean"
-                if name == "settled"
+                if name in ("settled", "lidClosed", "controlSafe")
                 else "number"
                 if name in ("cycleRunSeconds", "actualRotorTurns")
                 else "string"
