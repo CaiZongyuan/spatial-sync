@@ -37,7 +37,11 @@ class LabwareFactsProgram:
     class Config(ProgramConfig):
         robots: list[str]
         locationSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
-        lidBody: str | None = Field(default=None, json_schema_extra={"spatialReference": "body"})
+        lidBody: str | None = Field(
+            default=None,
+            exclude_if=lambda value: value is None,
+            json_schema_extra={"spatialReference": "body"},
+        )
         lidOffsetM: float = Field(default=0.018, gt=0, allow_inf_nan=False)
 
     def init(self, ctx):
