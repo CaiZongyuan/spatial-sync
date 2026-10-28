@@ -53,7 +53,7 @@ def audit_material_result(initial, final, mapping, *, volume_tolerance=0.01, cel
                 errors.append(f"{name} not conserved: {identity}")
     if (not final["reconciled"] or final["tip"]["id"]
             or final["tip"]["volumeUl"] > volume_tolerance or final["reservations"]
-            or any(row["status"] == "running" for row in final["operations"])):
+            or any(row["status"] in ("running", "settling") for row in final["operations"])):
         errors.append("Unreconciled material, installed tip, reservation or operation remains")
     before = {row["id"]: row for row in initial["vessels"]}
     after = {row["id"]: row for row in final["vessels"]}

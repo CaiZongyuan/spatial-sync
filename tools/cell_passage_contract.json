@@ -1,0 +1,35 @@
+{
+  "schema": "lw.cell-passage-client/1",
+  "workcellType": "cell-passage-workcell/v1",
+  "stages": [
+    {"id": 1, "name": "retrieve-observe", "title": "取出与观察", "firstStep": 100001, "lastStep": 199999},
+    {"id": 2, "name": "prepare-collect", "title": "清洗、解离与逐份收集", "firstStep": 200001, "lastStep": 299999},
+    {"id": 3, "name": "centrifuge-first", "title": "首批四份离心", "firstStep": 300001, "lastStep": 399999},
+    {"id": 4, "name": "centrifuge-second", "title": "第二批两份及配平管离心", "firstStep": 400001, "lastStep": 499999},
+    {"id": 5, "name": "resuspend-count", "title": "逐份重悬、取样与计数", "firstStep": 500001, "lastStep": 599999},
+    {"id": 6, "name": "reseed", "title": "十二子孔均分接种与补液", "firstStep": 600001, "lastStep": 699999},
+    {"id": 7, "name": "incubate-cleanup", "title": "回培养与废物收尾", "firstStep": 700001, "lastStep": 799999}
+  ],
+  "reconciliation": {
+    "cell-passage-workcell/v1": {
+      "observedProperties": ["controlOwner", "controlEpoch", "controlMode", "controlSafe", "phase", "materialRevision", "auditPassed", "inFlightUl"],
+      "safeEquals": {"controlSafe": true, "auditPassed": true}
+    },
+    "labware-motion/v1": {
+      "observedProperties": ["controlSafe", "phase", "holding", "atLocation", "zone", "gripperWidth", "jointPositions", "tcpPose"],
+      "safeEquals": {"controlSafe": true}
+    },
+    "labware/v1": {
+      "observedProperties": ["station", "location", "settled", "lidClosed"],
+      "safeEquals": {}
+    },
+    "passage-joint/v1": {
+      "observedProperties": ["position", "velocity", "opened", "closed", "controlSafe", "phase"],
+      "safeEquals": {"controlSafe": true}
+    },
+    "passage-centrifuge/v1": {
+      "observedProperties": ["phase", "lidOpen", "rpm", "remainingSeconds", "slots", "loadSafe", "completedCycle", "cycleRunSeconds", "actualRotorTurns", "controlSafe", "completedLoad", "loadedEntities", "modeledMassKg"],
+      "safeEquals": {"controlSafe": true}
+    }
+  }
+}

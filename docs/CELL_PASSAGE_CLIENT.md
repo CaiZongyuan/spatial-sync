@@ -1,0 +1,84 @@
+# Cell Passage clients
+
+The Cell Passage scheduler is a client. Device calls and Plan results use the
+existing HTTP pipeline; the gateway does not schedule this experiment. The
+Python scheduler is `tools/cell_passage_runner.py`. Its fixture tests exercise
+the real HTTP action and Plan services with an explicit synthetic actuator;
+they do not qualify Newton mechanics or a complete passage.
+
+## Shared documents and identities
+
+`tools/cell_passage_contract.json` is client data shared by the Python recipe
+helpers and the browser. It fixes seven stage ranges, starting at 100001,
+200001, …, 700001. A step keeps its integer ID through revisions. The JSON is
+bundled client data, not a new HTTP endpoint or protocol message. It also lists
+public mechanical properties by EntityType for reconciliation. Clients select
+only properties actually declared by the current Catalog, discover managed
+devices and vessel bodies through workcell config, and read current facts.
+
+An Operation Plan document contains ordinary `do` and `check` steps. Experimental
+waits use the workcell's `wait` action with `seconds`, driven by simulation time.
+The ordinary wall-clock HTTP `wait` endpoint is not an experimental timer.
+
+Each controlled action carries `owner`, `epoch`, and a distinct domain
+`operationId` in its existing params. `requestId` identifies one HTTP submission.
+Automatic and browser clients must use mutually exclusive control owners. A
+client taking control submits `requestControl`, observes the new epoch and
+holding mode, waits for source-reported `controlSafe`, and submits
+`confirmControl`. Acceptance of a control request does not prove standstill.
+The old owner must stop dispatch and continue observing accepted invocations.
+The source enforces generations even when a stale client read preceded takeover.
+
+## Submit once, observe to completion
+
+Actions use `POST /api/v1/sessions/{sessionId}/actions` with `wait:false`, plus
+`planId`, `stepId`, and `planRevision`. Conditions use the existing `/check`
+route with the same Plan references. A successful invocation is insufficient:
+the current Plan step must be `done`, including its `expect` result.
+
+If an action response is lost, read the Plan's
+`stepResults[String(stepId)].invocationId`, then observe that invocation with
+GET. Do not send a second action POST. If admission remains unknown, stop
+dispatch and retain the interrupted run. A network observation failure does
+not classify the device action as failed. The Python scheduler measures active
+step budgets in simulation seconds; a pause freezes that clock. Budget expiry
+retains the invocation and requires inspection, rather than replaying it.
+
+## Same-process reconciliation and revision
+
+Before resuming, pin sessionId, sceneRevision, session epoch, Plan revision,
+controlOwner/controlEpoch/controlMode and materialRevision. Inspect actual
+held objects, installed tip/liquid, reservations, vessel positions, lids,
+doors, rail and rotor facts. The shared property's `safeEquals` values must
+come from the source; clients never calculate `controlSafe` themselves.
+Review compound values directly from public state. Scalar conditions may be
+checked with `/check`. Check the pinned checkpoint again after the mechanical
+checks. Any changed checkpoint requires another inspection.
+
+An in-flight step must finish or be cancelled and actually settle before a
+revision. Use `POST /api/v1/plans/{planId}/revisions`; preserve every completed
+step's content exactly so its result remains immutable. `revise_remaining` in
+`tools/cell_passage_recipe.py` rewrites only unfinished action params to the
+current owner/epoch and a new operation identity. Failed steps require an
+explicit replacement. For partial liquid operations, review appliedUl,
+remainingUl, the tip and current source/destination contents and calculate a
+replacement for the actual remaining work. Changing operationId and retrying
+the original volume is not recovery. The browser may refuse failed-step
+continuation until such an explicit revision exists.
+
+`PassageExecutor.inspect/reconcile` are local Python methods, not remote APIs.
+The browser implements its own client scheduling through the same HTTP
+services. It must not call an imagined Python resume endpoint. A new Python
+executor accepts only a fresh, approved revision-one Plan with pending steps;
+process restart starts a new round rather than treating replay as a checkpoint.
+
+## Material result boundary
+
+`tools/cell_passage_result.py` reads initial and final public snapshots. It
+checks all vessel, tip, counting, waste and residual contents for conservation,
+six separate origins, twelve distinct daughter identities, equal live-cell
+allocation, the teaching recipe's 20 uL samples and 1000 uL daughter volumes,
+and remaining reservations or running/settling operations. Its positive result
+is named `material_valid`. Mechanical loading, actual incubation conditions,
+processing cycles and continuous recording require separate evidence; this
+material result alone cannot declare a complete passage.
