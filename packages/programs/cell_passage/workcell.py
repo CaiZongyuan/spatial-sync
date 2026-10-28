@@ -184,11 +184,12 @@ class WorkcellProgram:
     def _publish(self, ctx):
         self.state["revision"] += 1
         total = sum(row["volumeUl"] for row in self.state["vessels"]) + self.state["tip"]["volumeUl"]
+        cell_totals = self._cell_totals()
         balanced = (
             self.state["reconciled"]
             and abs(total - self.initial_volume) < 1e-6
             and all(
-                abs(value - self._cell_totals().get(culture, 0)) < 1e-5
+                abs(value - cell_totals.get(culture, 0)) < 1e-5
                 for culture, value in self.initial_cells.items()
             )
         )
@@ -269,7 +270,7 @@ class WorkcellProgram:
                 "operation_applied", "This domain operation has already been applied; use current remainder"
             )
         if action in ("requestControl", "confirmControl"):
-            return self._control(inv, ctx, commit=True)
+            return self._control(inv, ctx)
         if any(row["operationId"] == p["operationId"] for row in self.state["controlRequests"]):
             return self._reject(
                 "operation_applied", "This domain identity belongs to an applied control request"
@@ -283,6 +284,10 @@ class WorkcellProgram:
                 "Actuator feedback invalidated the material estimate; preserve this interrupted run",
             )
         if action == "reserve":
+            if p["device"] not in [ctx.key, *ctx.config.managedDevices]:
+                return self._reject(
+                    "unknown_device", "Reservations may be assigned only to configured workcell devices"
+                )
             for row in self.state["reservations"]:
                 if row["resource"] == p["resource"] and row["device"] != p["device"]:
                     return self._reject("resource_busy", "Resource is already reserved by another device")
@@ -293,6 +298,13 @@ class WorkcellProgram:
                 )
             if any(ctx.read(key, "controlSafe") is not True for key in ctx.config.managedDevices):
                 return self._reject("unsafe_release", "A managed device has not established safe hold")
+            for key in ctx.config.managedDevices:
+                try:
+                    holding = ctx.read(key, "holding")
+                except KeyError:
+                    continue  # Doors and centrifuges have no gripper holding property.
+                if holding == p["resource"]:
+                    return self._reject("unsafe_release", "The resource is still physically held by a device")
         if action == "pickupTip":
             tip = next((row for row in self.state["tips"] if row["id"] == p["tip"]), None)
             if self.state["tip"]["id"] or tip is None or tip["state"] != "unused":
@@ -383,8 +395,14 @@ class WorkcellProgram:
                 return self._reject("exposure_incomplete", "Teaching dissociation exposure is not complete")
         if action == "pellet":
             centrifuge = p["centrifuge"]
+            try:
+                completed_cycle = ctx.read(centrifuge, "completedCycle")
+            except KeyError:
+                return self._reject(
+                    "unknown_device", "The requested device does not publish centrifuge cycle evidence"
+                )
             if (
-                ctx.read(centrifuge, "completedCycle") != p["cycle"]
+                completed_cycle != p["cycle"]
                 or ctx.read(centrifuge, "phase") != "idle"
                 or (ctx.read(centrifuge, "cycleRunSeconds") or 0) < ctx.config.centrifugeSeconds
                 or (ctx.read(centrifuge, "actualRotorTurns") or 0) <= 0
@@ -403,7 +421,7 @@ class WorkcellProgram:
                     )
         return None
 
-    def _control(self, inv, ctx, *, commit):
+    def _control(self, inv, ctx):
         p = inv.params
         old = next((r for r in self.state["controlRequests"] if r["operationId"] == p["operationId"]), None)
         if old:
@@ -426,29 +444,28 @@ class WorkcellProgram:
                 return self._reject("not_safe", "A managed device has not established safe hold")
         elif ctx.get("controlMode") == "holding":
             return self._reject("handoff_pending", "Confirm the current handoff before requesting another")
-        if commit:
-            if inv.action == "requestControl":
-                ctx.set(controlEpoch=ctx.get("controlEpoch") + 1, controlMode="holding", controlSafe=False)
-                self.pending = {"owner": p["nextOwner"], "mode": p["mode"]}
-                self._hold(ctx)
-            else:
-                ctx.set(controlOwner=self.pending["owner"], controlMode=self.pending["mode"])
-                self.state["reservations"] = [
-                    r | {"owner": self.pending["owner"], "epoch": ctx.get("controlEpoch")}
-                    for r in self.state["reservations"]
-                ]
-                self.pending = None
-            self.state["controlRequests"].append(
-                {
-                    "operationId": p["operationId"],
-                    "epoch": ctx.get("controlEpoch"),
-                    "mode": ctx.get("controlMode"),
-                    "owner": ctx.get("controlOwner"),
-                    "action": inv.action,
-                    "paramsJson": json.dumps(p, sort_keys=True),
-                }
-            )
-            self._publish(ctx)
+        if inv.action == "requestControl":
+            ctx.set(controlEpoch=ctx.get("controlEpoch") + 1, controlMode="holding", controlSafe=False)
+            self.pending = {"owner": p["nextOwner"], "mode": p["mode"]}
+            self._hold(ctx)
+        else:
+            ctx.set(controlOwner=self.pending["owner"], controlMode=self.pending["mode"])
+            self.state["reservations"] = [
+                r | {"owner": self.pending["owner"], "epoch": ctx.get("controlEpoch")}
+                for r in self.state["reservations"]
+            ]
+            self.pending = None
+        self.state["controlRequests"].append(
+            {
+                "operationId": p["operationId"],
+                "epoch": ctx.get("controlEpoch"),
+                "mode": ctx.get("controlMode"),
+                "owner": ctx.get("controlOwner"),
+                "action": inv.action,
+                "paramsJson": json.dumps(p, sort_keys=True),
+            }
+        )
+        self._publish(ctx)
         return None
 
     def _hold(self, ctx):
@@ -467,7 +484,7 @@ class WorkcellProgram:
                 self._finish(ctx, "cancelled")
             else:
                 self.handle.fail(
-                    "pump_feedback_invalid",
+                    self.state["operations"][-1]["fault"],
                     "Actual pump progress cannot be reconciled with requested liquid transfer",
                 )
                 self._finish(ctx, "failed")
@@ -475,7 +492,9 @@ class WorkcellProgram:
 
     def _stationary(self, ctx):
         return all(
-            np.max(np.abs(ctx.physics.joint_qd(joint))) <= ctx.config.holdSpeedTolerance
+            np.isfinite(ctx.physics.joint_q(joint)).all()
+            and np.isfinite(ctx.physics.joint_qd(joint)).all()
+            and np.max(np.abs(ctx.physics.joint_qd(joint))) <= ctx.config.holdSpeedTolerance
             for joint in [*self.axes, self.pump]
         )
 
@@ -519,13 +538,20 @@ class WorkcellProgram:
         elif action in ("aspirate", "dispense", "mix"):
             origin = float(ctx.physics.joint_q(self.pump)[0])
             direction = -1 if action == "dispense" else 1
-            self.stroke = {"stage": "transfer", "origin": origin, "appliedUl": 0.0, "direction": direction}
+            self.stroke = {
+                "stage": "transfer",
+                "origin": origin,
+                "appliedUl": 0.0,
+                "completedUl": 0.0,
+                "direction": direction,
+            }
             ctx.physics.set_joint_target(
                 self.pump, [origin + direction * p["volumeUl"] / ctx.config.pumpUlPerUnit]
             )
         else:
             self._immediate(ctx)
-        self._publish(ctx)
+        if self.handle:
+            self._publish(ctx)
 
     def _immediate(self, ctx):
         inv, tip = self.handle, self.state["tip"]
@@ -591,12 +617,12 @@ class WorkcellProgram:
                         cell["pellet" + viability] += cell["suspended" + viability]
                         cell["suspended" + viability] = 0.0
                 row["processedCycle"], row["mixed"] = p["cycle"], False
-        elif action in ("wait", "move"):
+        elif action == "wait":
             return
         self._finish(ctx, "succeeded")
 
     def _apply_stroke(self, ctx):
-        if not self.handle or not self.stroke or self.stroke["stage"] != "transfer":
+        if not self.handle or not self.stroke:
             return
         inv, stroke = self.handle, self.stroke
         p, action = inv.params, inv.action
@@ -621,6 +647,11 @@ class WorkcellProgram:
         amount = max(0.0, actual - stroke["appliedUl"])
         if amount <= 1e-10:
             return
+        if self._accessible(ctx, p["vessel"]):
+            self.state["reconciled"] = False
+            operation["fault"] = "transfer_conditions_changed"
+            self._publish(ctx)
+            return
         row, tip = self._vessel(p["vessel"]), self.state["tip"]
         aspirating = action == "aspirate" or (action == "mix" and stroke["direction"] == 1)
         source, destination = (row, tip) if aspirating else (tip, row)
@@ -637,7 +668,7 @@ class WorkcellProgram:
             if row["exposureSince"] < 0:
                 row["exposureSince"] = ctx.sim_time
         stroke["appliedUl"] = actual
-        total = actual + (requested if action == "mix" and stroke["direction"] == -1 else 0)
+        total = actual + stroke["completedUl"]
         requested_total = requested * (2 if action == "mix" else 1)
         self.state["operations"][-1]["appliedUl"] = total
         ctx.set(lastAppliedUl=total, remainingUl=max(0, requested_total - total))
@@ -661,8 +692,7 @@ class WorkcellProgram:
                 self.last_good_q[joint] = measured.copy()
         inv = self.handle
         if inv is None:
-            if ctx.get("phase") == "holding":
-                ctx.set(controlSafe=self._stationary(ctx))
+            ctx.set(controlSafe=self._stationary(ctx))
             return
         rejection = guard(ctx, ctx.key, inv.params)
         if rejection:
@@ -684,7 +714,9 @@ class WorkcellProgram:
             ):
                 if action == "mix" and self.stroke["direction"] == 1:
                     origin = self.stroke["origin"]
-                    self.stroke.update(origin=q, direction=-1, appliedUl=0.0)
+                    self.stroke.update(
+                        origin=q, direction=-1, completedUl=self.stroke["appliedUl"], appliedUl=0.0
+                    )
                     ctx.physics.set_joint_target(self.pump, [origin])
                     return
                 if action == "mix":

@@ -403,3 +403,154 @@ def test_old_media_keeps_attached_cells_and_trypsin_wait_is_required_for_detachm
     execute(host, port, "detach", "detach", vessel="mother")
     cells = host.values()["/workcell"]["materialSnapshot"]["vessels"][0]["cells"][0]
     assert (cells["attachedLive"], cells["suspendedLive"]) == (0, 1000)
+
+
+def test_loss_of_alignment_during_executed_pump_progress_is_not_attributed_to_vessel(tmp_path):
+    host, port = workcell(tmp_path)
+    execute(host, port, "reserve", "res", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirate", "asp", vessel="source", volumeUl=100)
+    host.tick(host.sim_time + 0.1, 0.1)
+    port.positions["/sourceSite"] = [1, 0, 0]
+    port.advance(0.0004)
+    host.tick(host.sim_time + 0.1, 0.1)
+    state = host.values()["/workcell"]
+    assert state["auditPassed"] is False
+    assert state["materialSnapshot"]["reconciled"] is False
+    assert state["materialSnapshot"]["vessels"][0]["volumeUl"] == 500
+
+
+@pytest.mark.parametrize(
+    "amount,capacity,code", [(501, 1000, "insufficient_liquid"), (100, 50, "capacity_exceeded")]
+)
+def test_liquid_admission_preserves_state_when_stock_or_tip_capacity_is_insufficient(
+    tmp_path, amount, capacity, code
+):
+    host, port = workcell(tmp_path, config={"tipCapacityUl": capacity})
+    execute(host, port, "reserve", "res", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    before = host.values()["/workcell"]["materialSnapshot"]
+    rejected = invoke(host, "aspirate", "overflow", vessel="source", volumeUl=amount)
+    assert rejected.error.code == code
+    assert host.values()["/workcell"]["materialSnapshot"] == before
+
+
+def test_sample_contact_on_dispense_blocks_return_to_common_reagent_and_wrong_daughter(tmp_path):
+    host, port = workcell(
+        tmp_path,
+        vessels=[
+            {
+                "id": "medium",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 1000,
+                "volumeUl": 500,
+                "reagent": "medium",
+            },
+            {
+                "id": "mother",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 1000,
+                "culture": "M1",
+                "live": 1000,
+                "attached": True,
+            },
+            {
+                "id": "wrong-child",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 1000,
+                "culture": "D2",
+                "parent": "M2",
+            },
+        ],
+    )
+    execute(host, port, "reserve", "res", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    execute(host, port, "aspirate", "get-medium", vessel="medium", volumeUl=100)
+    execute(host, port, "dispense", "add-medium", vessel="mother", volumeUl=50)
+    assert (
+        invoke(host, "aspirate", "dirty-reagent", vessel="medium", volumeUl=20).error.code == "cross_sample"
+    )
+    assert (
+        invoke(host, "dispense", "wrong-lineage", vessel="wrong-child", volumeUl=20).error.code
+        == "cross_sample"
+    )
+
+
+@pytest.mark.parametrize(
+    "facts,config,code",
+    [
+        ({"lidClosed": True}, {"lidProperty": "lidClosed"}, "closed_vessel"),
+        ({"station": "/wrong"}, {"requiredStation": "/flex"}, "wrong_station"),
+    ],
+)
+def test_liquid_actions_require_actual_open_vessel_and_settled_station(tmp_path, facts, config, code):
+    host, port = workcell(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/peer",
+                "site": "/sourceSite",
+                "capacityUl": 1000,
+                "volumeUl": 500,
+                **config,
+            }
+        ],
+        facts=facts,
+    )
+    execute(host, port, "reserve", "res", resource="/peer", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    assert invoke(host, "aspirate", "asp", vessel="source", volumeUl=100).error.code == code
+
+
+def test_reservation_conflict_and_wrong_device_are_checked_before_motion(tmp_path):
+    host, port = workcell(tmp_path, facts={}, config={"managedDevices": ["/peer"]})
+    execute(host, port, "reserve", "robot-reservation", resource="/source", device="/peer")
+    assert (
+        invoke(host, "reserve", "conflict", resource="/source", device="/workcell").error.code
+        == "resource_busy"
+    )
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    assert invoke(host, "aspirate", "asp", vessel="source", volumeUl=100).error.code == "reservation_required"
+
+
+def test_accepted_old_generation_cannot_start_after_control_accept(tmp_path):
+    host, port = workcell(tmp_path)
+    assert invoke(host, "move", "queued", position=[0.2, 0.1, 0.05]).status == "accepted"
+    assert invoke(host, "requestControl", "handoff", nextOwner="human", mode="manual").status == "accepted"
+    host.tick(0.1, 0.1)
+    queued = next(row for row in host.snapshot().invocations if row.invocationId == "queued")
+    assert queued.status == "failed" and queued.error.code == "stale_control"
+    assert port.targets["x"] == 0
+
+
+def test_full_waste_does_not_discard_loaded_tip_or_hide_its_remaining_liquid(tmp_path):
+    host, port = workcell(
+        tmp_path,
+        vessels=[
+            {
+                "id": "source",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 1000,
+                "volumeUl": 500,
+            },
+            {"id": "waste", "entityKey": "/waste", "site": "/sourceSite", "capacityUl": 20, "waste": True},
+        ],
+        config={"wasteSite": "/sourceSite"},
+    )
+    execute(host, port, "reserve", "res", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    execute(host, port, "aspirate", "asp", vessel="source", volumeUl=40)
+    assert invoke(host, "discardTip", "discard", waste="waste").error.code == "waste_full"
+    assert host.values()["/workcell"]["inFlightUl"] == 40
+    assert ("/pipette", "/tip1") in port.welds
+
+
+def test_safe_standstill_does_not_release_a_resource_still_held_by_robot(tmp_path):
+    host, port = workcell(tmp_path, facts={"holding": "/source"}, config={"managedDevices": ["/peer"]})
+    execute(host, port, "reserve", "res", resource="/source", device="/peer")
+    assert invoke(host, "release", "unsafe", resource="/source").error.code == "unsafe_release"
