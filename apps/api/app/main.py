@@ -177,6 +177,7 @@ def create_app(
     controller_publication_validator=None,
 ) -> FastAPI:
     configure_gateway_logging()
+    gateway_log = logging.getLogger("spatial.gateway")
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
     catalog = AssetCatalog(
@@ -247,7 +248,23 @@ def create_app(
     from packages.catalog_metadata import MetadataError, MetadataStore
     from packages.catalog_metadata.maintenance import MetadataMaintenance
 
-    metadata_store = metadata_store or MetadataStore(settings.state_root / "catalog-metadata")
+    if metadata_store is None:
+        # An explicit root must already be a directory: a typo would otherwise create
+        # a second empty library and silently serve it instead of the maintained one.
+        if settings.catalog_metadata_root is not None and not settings.catalog_metadata_root.is_dir():
+            raise RuntimeError(
+                "SPATIAL_CATALOG_METADATA_ROOT must name an existing directory; "
+                f"received {settings.catalog_metadata_root}"
+            )
+        metadata_store = MetadataStore(
+            settings.catalog_metadata_root or settings.state_root / "catalog-metadata"
+        )
+        metadata_store_source = (
+            "SPATIAL_CATALOG_METADATA_ROOT" if settings.catalog_metadata_root is not None
+            else "state root default"
+        )
+    else:
+        metadata_store_source = "injected"
     metadata_maintenance = MetadataMaintenance(
         metadata_store, agent_profile=metadata_agent_profile, launch_workers=metadata_launch_workers,
     )
@@ -267,9 +284,18 @@ def create_app(
             await asyncio.to_thread(catalog_sync.startup)
             await metadata_maintenance.startup()
             catalog.attach_metadata(metadata_store)
+            gateway_log.info(
+                "catalog metadata store %s (from %s)", metadata_store.root, metadata_store_source
+            )
             # Restore a retained publication before the gateway accepts page reads.
             try:
-                if await asyncio.to_thread(metadata_store.latest_release) is not None:
+                release = await asyncio.to_thread(metadata_store.latest_release)
+                gateway_log.info(
+                    "catalog metadata release %s%s",
+                    release["id"] if release else "none",
+                    "" if release else " (library is empty)",
+                )
+                if release is not None:
                     await asyncio.to_thread(catalog.search, library_assets,
                                             scope="online", limit=1, page=1, view="cards")
             except Exception as exc:

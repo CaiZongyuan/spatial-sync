@@ -51,6 +51,18 @@ Retained derivatives live outside disposable source-image cache. Publications pi
 
 Backup export emits `lw.catalog-metadata/2`, including retained image bytes and bindings. Restore also reads legacy v1, validates images and references before activation and preserves the existing release on failure. JSON export retains the existing 256 MiB evidence bound and reports exhaustion explicitly. Restore does not change imported Assets, scenes, recordings or host credentials.
 
+## Lab host library location
+
+The embedded Lab host keeps one library beside its experiment state by default: `<SPATIAL_STATE_ROOT>/catalog-metadata`. A deployment that already maintains a library elsewhere points the host at it without moving sessions, imports, recordings or other experiment state:
+
+```powershell
+$env:SPATIAL_CATALOG_METADATA_ROOT = 'C:/Users/<name>/.spatial-sync/state/catalog-metadata'
+```
+
+Resolution order is an explicitly injected store (tests and fixtures), then `SPATIAL_CATALOG_METADATA_ROOT`, then the state-root default. The variable must be an absolute path; a path that does not name an existing directory fails at startup instead of creating a second empty library. Leaving it unset keeps each deployment isolated, so tests and temporary deployments always use their own directory rather than inheriting a user's library. `LW_CATALOG_STATE_ROOT` keeps its separate meaning for the standalone host below.
+
+Startup logs the effective directory, where it came from and the release being served (`none (library is empty)` when no publication exists). The existing host lease still applies: one supervisor owns a library through `maintenance/host.lock`, and a second host reports `catalog_already_hosted` instead of interrupting active runs. The worker cache, maintenance checkpoints and thumbnails follow the store in use.
+
 ## Independent host
 
 The HTTP implementation lives in `packages/catalog_metadata/http.py`. Both the Lab host and standalone `service.create_app` mount it; Lab auth and index preparation are injected. The core imports no Lab application, device, acquisition or simulation code. `requirements.txt` beside the module pins the minimal HTTP/image dependencies; optional Scenario decoding needs a prepared worker interpreter with `pyarrow`.
