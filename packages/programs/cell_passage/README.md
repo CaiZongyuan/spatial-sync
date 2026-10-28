@@ -56,6 +56,15 @@ waste or be discarded. Isolation checks use actual cell origins as well as the
 declared culture/parent and contact history; a blank identity does not erase
 cell contamination.
 
+The configured `cabinetEntity` must publish `cabinetReady=true` before pickup,
+discard, aspirate, dispense, mix or detachment. Accept and start both recheck;
+an in-flight readiness loss (false or unknown) writes fixed holding targets,
+accounts actual braking flow and fails only after measured standstill. The
+tip, liquid and reservations remain. Wait, cancellation, control handoff and
+the cabinet's own guarded repair/setter actions remain available. The complete
+scene includes `/World/Lab/Incubator` and `/World/Lab/LiquidHandler/Base` in
+managedDevices; their readiness/environment signals are explicitly modeled.
+
 `materialSnapshot` is one fixed-field object containing revision, reconciled,
 vessels, tips, installed tip, reservations, operations, observations and
 controlRequests. Every source/tip/destination change publishes one snapshot.
@@ -73,15 +82,47 @@ a verified transfer. Values are estimates through the last valid pump sample;
 observedUl records the discrepant mechanical feedback. Preserve that interrupted
 run and inspect it; this is not a persisted execution checkpoint.
 
+`operations` is a live recent-history projection, not the complete journal.
+It retains the newest 64 ordinary terminal rows plus every running/settling
+row, every fault, and every non-successful partial with appliedUl>0. These
+protected rows are not silently removed after later successful calls. Row
+fields also identify invocationId, owner, original paramsJson, tipId,
+endedSimTime and terminal materialRevision. `operationCount` counts material
+operations that actually passed startup validation; `terminalOperationCount`
+counts their completed accounting receipts; `archivedOperationCount` counts
+rows removed from the live projection. Thus retained row count plus archived
+count equals operationCount. Counters are available in the snapshot and as
+top-level Plan-compatible scalars; do not infer total completion from rows.length.
+Control requests and source-rejected/unstarted/queued-cancelled calls are not
+included in these material counters and keep their ordinary invocation evidence.
+
+Every material operation that completes source-side accounting emits one declared `operationCompleted`
+EntityEvent containing its complete terminal receipt, including failed and
+cancelled outcomes after braking has been accounted. Success.result also
+contains the same receipt. The existing reliable event stream and recording
+store retain these records independently of the live 64-row projection;
+snapshot observations precede the event and terminal invocation update. History
+consumers must honor the existing HTTP event gap indicator and use the recording
+for history older than the gateway's bounded event buffer. The generic recording
+reader replays the original receipt events and compact snapshots unchanged.
+There is no new database or recording/message format. Source-side used-ID
+tombstones are independent of projected rows and remain for that Program
+instance's lifetime, including source resets. A reset starts fresh round
+counters/material state; new round actions need new domain IDs. A new Source
+instance starts a fresh lifetime. Control receipt replay remains unchanged.
+Round/process interruption retains the ordinary invocation and last observed
+state evidence; an exited Source cannot invent a final-accounting receipt.
+
 Top-level Plan-compatible scalars are controlOwner/controlEpoch/controlMode,
 controlSafe, phase, materialRevision, auditPassed, samplesIndependent,
 inFlightUl, tipsRemaining, wasteFreeUl, lastOperationId, lastAppliedUl,
-remainingUl, observationRevision and lastObservedLive/lastObservedDead.
+remainingUl, observationRevision, lastObservedLive/lastObservedDead and the
+three operation counters above.
 No PlanStatus, InvokeRequest, JSONPath or recording shape changes are needed.
 Observe/count records identify the source as `simulated-state-model`, retain the
 material revision, vessel/culture/parent, and separate measured/model counts.
 
-Required config is axisJoints[3], pumpJoint, tipSite, pipetteBody,
+Required config is axisJoints[3], pumpJoint, tipSite, pipetteBody, cabinetEntity,
 vessels[{id,entityKey,site,capacityUl,...}], tips[{id,site,bodyKey}], contentSites
 and tipRackSites. The last two are unique top-level Site references that must
 exactly cover the corresponding nested sites; this lets the existing loader
@@ -100,8 +141,15 @@ and add 510 uL medium to each. Four samples form the first mass-balanced batch;
 the remaining two use the configured two balance tubes in the second batch.
 This is a teaching simulation, not a real biological protocol. Actual cycle
 load/rotation and every liquid action still need mechanical evidence.
+These recipe quantities are targets. A succeeded stroke retains its measured
+applied quantity within the fixed tolerance; it never rounds contents to the
+requested amount. Subsequent transfer parameters must come from current
+tip/vessel contents and receipts, with pending Plan steps revised when needed.
+In particular, a nominal full aspiration does not establish that a subsequent
+exact nominal dispense has sufficient liquid. The complete executor must handle
+that numerical boundary rather than changing stock guards or inventing liquid.
 
-Focused tests: `python -m pytest tests/unit/test_cell_passage.py
+Focused tests: `python -m pytest tests/unit/test_cell_passage.py tests/unit/test_cell_passage_journal.py
 tests/gateway/test_cell_passage_api.py -q`. The deterministic external actuator
 fixture proves Host/API/recorded-state semantics. It does not prove Newton
 geometry, real tip pickup or a full Cell Passage run.

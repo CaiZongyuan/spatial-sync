@@ -100,7 +100,10 @@ def workcell_binding(layout):
             LAB + "/Incubator/OuterDoor",
             LAB + "/Incubator/InnerDoor",
             LAB + "/Centrifuge",
+            LAB + "/Incubator",
+            LAB + "/LiquidHandler/Base",
         ],
+        cabinetEntity=LAB + "/LiquidHandler/Base",
         imagerStation=LAB + "/Sites/Imager",
         wasteSite=bodies["SolidWaste"] + "/Content",
     )
