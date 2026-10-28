@@ -75,8 +75,22 @@ def create_fixture_app(root):
                 ):
                     self._events.put_nowait(event)
 
-    settings = Settings(recordings_root=root / "recordings", state_root=root / "state", node_trainer=())
-    return create_app(settings, source_factory=lambda kind, sid: WorkcellSource(sid))
+    origins = tuple(value.strip() for value in os.getenv("SPATIAL_ALLOWED_ORIGINS", "").split(",")
+                    if value.strip())
+    settings = Settings(recordings_root=root / "recordings", state_root=root / "state", node_trainer=(),
+                        **({"allowed_origins": origins} if origins else {}))
+    app = create_app(settings, source_factory=lambda kind, sid: WorkcellSource(sid))
+
+    @app.get("/e2e/storage-roots")
+    async def storage_roots():
+        return {
+            "sceneLibrary": str(app.state.manager.library.roots["user"]),
+            "assetLibrary": str(app.state.library_assets.roots["user"]),
+            "state": str(settings.state_root.resolve()),
+            "recordings": str(settings.recordings_root.resolve()),
+        }
+
+    return app
 
 
 def fixture_app():
