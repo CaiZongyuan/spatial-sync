@@ -126,6 +126,10 @@ properties:
               vessel: *id002
               epoch: *id006
               startedSimTime: *id001
+              observedUl:
+                type: number
+              fault:
+                type: string
             required:
             - operationId
             - action
@@ -135,6 +139,8 @@ properties:
             - vessel
             - epoch
             - startedSimTime
+            - observedUl
+            - fault
         observations:
           type: array
           items:
@@ -171,6 +177,8 @@ properties:
             - epoch
             - mode
             - owner
+        reconciled:
+          type: boolean
       required:
       - revision
       - vessels
@@ -180,6 +188,7 @@ properties:
       - operations
       - observations
       - controlRequests
+      - reconciled
   materialRevision:
     schema: *id006
   controlOwner:
@@ -413,3 +422,25 @@ actions:
     - vessel
     timeoutSeconds: 3600
     concurrent: false
+  pellet:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      centrifuge:
+        type: string
+      cycle:
+        type: string
+      vessels:
+        type: array
+        items:
+          type: string
+        minItems: 1
+    required:
+    - owner
+    - epoch
+    - operationId
+    - centrifuge
+    - cycle
+    - vessels
+    timeoutSeconds: 10
