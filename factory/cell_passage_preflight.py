@@ -146,6 +146,7 @@ def run(library, output, seconds):
         }
         (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
         (output / "samples.json").write_text(json.dumps(sample_rows) + "\n")
+        (output / "contacts.json").write_text(json.dumps(contacts, indent=2) + "\n")
         print(json.dumps({key: value for key, value in receipt.items() if key != "initialMass"}, indent=2))
     return output
 

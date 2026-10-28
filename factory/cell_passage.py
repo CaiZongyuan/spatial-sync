@@ -286,7 +286,7 @@ def build_labware(output):
             ("passage-tube-cap", lambda s, p: tube(s, p, lid=True)),
             ("passage-reservoir", vessel),
             ("passage-waste", lambda s, p: vessel(s, p, (0.12, 0.10, 0.035))),
-            ("passage-tip-waste", lambda s, p: vessel(s, p, (0.20, 0.20, 0.144), mass=0.25)),
+            ("passage-tip-waste", lambda s, p: vessel(s, p, (0.20, 0.20, 0.107), mass=0.25)),
             ("passage-tip-1000", tip),
         )
     ]

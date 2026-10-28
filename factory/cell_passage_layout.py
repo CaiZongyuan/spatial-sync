@@ -122,7 +122,7 @@ def populate(stage):
     reference(stage, LAB + "/PreparationBench", "passage-preparation-bench", (0, -0.9, 0), "environment")
     reference(stage, LAB + "/BackBench", "passage-back-bench", (0, 0.38, 0), "environment")
     reference(stage, LAB + "/Imager", "passage-open-imager", (-0.05, -0.68, 1.232), "device")
-    reference(stage, LAB + "/Labware/CollectionRack", "passage-tube-rack", (-0.2175, -0.5525, 0.86))
+    reference(stage, LAB + "/Labware/CollectionRack", "passage-tube-rack", (-0.1825, -0.5525, 0.86))
 
     stations = {
         "IncubatorMother": (-0.925, 0.23, 1.0858),
@@ -137,12 +137,12 @@ def populate(stage):
         "WasteMother": (0.40, -0.50, 1.232),
     }
     for i, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
-        stations["Rack" + name] = (-0.30 + (i % 4) * 0.055, -0.58 + (i // 4) * 0.055, 1.032)
+        stations["Rack" + name] = (-0.265 + (i % 4) * 0.055, -0.58 + (i // 4) * 0.055, 1.032)
         stations[f"FlexTube{i + 1}"] = (0.535 + (i % 4) * 0.060, 0.385 + (i // 4) * 0.060, 1.042)
     for i in range(4):
         stations[f"Lid{i + 1}"] = (-0.2 + i * 0.2, -0.85, 1.232)
     for i in range(8):
-        stations[f"Lid{i + 5}"] = (-0.3 + i * 0.1, -0.44, 1.132)
+        stations[f"Lid{i + 5}"] = (-0.3 + i * 0.1, -0.36, 1.132)
     for name, point in stations.items():
         value = site(stage, LAB + "/Sites/" + name, point)
         if name == "IncubatorA":
@@ -161,7 +161,8 @@ def populate(stage):
                 (point[0], point[1], surface - size[2] / 2),
                 size,
             )
-            base = 0.96 if name.startswith("Flex") else 0.86
+            # Retained Flex slot rails reach 0.995 m, above its 0.985 m deck.
+            base = 0.995 if name.startswith("Flex") else 0.86
             height = surface - size[2] - base
             if name.startswith("FlexTube"):
                 box(
@@ -223,7 +224,7 @@ def populate(stage):
         "ReservoirTrypsin": (0.49, 0.57, 1.041),
         "ReservoirMedium": (0.59, 0.565, 1.041),
         "WasteLiquid": (0.85, 0.435, 1.041),
-        "SolidWaste": (0.72, 0.245, 0.96),
+        "SolidWaste": (0.72, 0.245, 0.997),
     }.items():
         key = LAB + "/Labware/" + name
         asset = (
@@ -236,16 +237,18 @@ def populate(stage):
         reference(stage, key, asset, point)
         bodies[name] = key
         if name == "SolidWaste":
-            site(stage, key + "/Content", (0, 0, 0.084))
-            site(stage, key + "/Discard", (0, 0, 0.148))
+            # The shallower vessel clears the original deck/slot solids while
+            # retaining the 1.104 m rim and reachable 1.108 m discard endpoint.
+            site(stage, key + "/Content", (0, 0, 0.047))
+            site(stage, key + "/Discard", (0, 0, 0.111))
         if name == "WasteLiquid":
             site(stage, key + "/Content", (-0.04, 0, 0.003))
         if point[2] > 0.96:
             box(
                 stage,
                 LAB + "/Fixtures/" + name,
-                (point[0], point[1], (point[2] + 0.96) / 2),
-                (0.09, 0.07, point[2] - 0.96),
+                (point[0], point[1], (point[2] + 0.995) / 2),
+                (0.20, 0.20, point[2] - 0.995) if name == "SolidWaste" else (0.09, 0.07, point[2] - 0.995),
             )
 
     # Individual tips have real hollow shells, fixed rack bores, and a bottom
