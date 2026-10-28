@@ -49,9 +49,11 @@ def passage_gateway(tmp_path_factory):
 
 
 @pytest.fixture
-def passage_http(passage_gateway):
+def passage_http(passage_gateway, request):
     started = perf_counter()
-    response = passage_gateway.post("/api/v1/sessions", json={"sceneId": "lab-demo"})
+    response = passage_gateway.post("/api/v1/sessions", json={
+        "sceneId": "lab-demo", "seed": getattr(request, "param", 42),
+    })
     response.raise_for_status()
     session = response.json()
     admitted = perf_counter()
@@ -254,3 +256,22 @@ async def test_preparation_publishes_all_seven_stage_plans_without_starting_acti
         for row in result["plans"]:
             plan = await client.plan_show(row["id"])
             assert plan["steps"][0]["status"] == "pending" and plan["stepResults"] == {}
+
+
+@pytest.mark.parametrize("passage_http", [99], indirect=True)
+async def test_known_generation_waits_for_source_reported_safe_settling_before_dispatch(passage_http):
+    server, session = passage_http
+    async with httpx.AsyncClient(base_url="http://testserver", transport=PublicHTTP(server)) as http:
+        client = GatewayClient(session=session, http=http)
+        executor = await new_executor(client)
+        result = await executor.advance()
+        assert (result["status"], result["reason"]) == ("observing", "devices_settling")
+        assert (await client.plan_show(executor.plan_id))["steps"][0]["status"] == "pending"
+        for _ in range(150):
+            result = await executor.advance()
+            if result.get("invocation"):
+                break
+            await asyncio.sleep(0.005)
+        assert result["invocation"]["invocationId"]
+        values = (await client.get_state(["/workcell"]))["entities"]["/workcell"]["values"]
+        assert values["controlSafe"] is True

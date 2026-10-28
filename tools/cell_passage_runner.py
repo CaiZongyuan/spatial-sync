@@ -24,6 +24,7 @@ class PassageExecutor:
         self.active = None
         self.blocked = None
         self.material_revision = material_revision
+        self.settling_since = None
 
     @classmethod
     async def open(cls, client, plan_id, workcell, *, owner, epoch, budget_seconds=120):
@@ -92,6 +93,7 @@ class PassageExecutor:
         self.owner, self.control_epoch = expected["controlOwner"], expected["controlEpoch"]
         self.material_revision = expected["materialRevision"]
         self.active, self.blocked = None, None
+        self.settling_since = None
         return {"status": "ready", "checkpoint": expected}
 
     async def advance(self):
@@ -156,7 +158,12 @@ class PassageExecutor:
         if plan["status"] == "completed":
             return {"status": "completed", "plan": plan}
         if not values["controlSafe"]:
-            return {"status": "reconcile_required", "reason": "devices_not_safe"}
+            if self.settling_since is None:
+                self.settling_since = session["simTime"]
+            elapsed = session["simTime"] - self.settling_since
+            return {"status": "budget_exceeded" if elapsed > self.budget_seconds else "observing",
+                    "reason": "devices_settling", "elapsedSimSeconds": elapsed}
+        self.settling_since = None
         step = next((row for row in plan["steps"] if row["status"] not in ("done", "skipped")), None)
         if step is None or step["status"] != "pending":
             return {"status": "reconcile_required", "reason": "step_not_pending"}

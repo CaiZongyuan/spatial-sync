@@ -49,6 +49,10 @@ def create_fixture_app(root):
                 extra_types=[Path("devices/types/labware.v1.yaml").read_text(encoding="utf8")],
             )
             self.catalog = self.host.catalog
+            # Seed 99 is an explicit external-actuator settling scenario.
+            if options.seed == 99:
+                self.actuator.velocities["x"] = 0.001
+                self.host.tick(0.000001, 0.000001)
             self.manifest = SceneManifest(
                 sessionId=self.session_id, sceneRevision="fixture-" + self.session_id,
                 revisionNumericId=1, sceneName="Cell Passage HTTP fixture",
@@ -70,6 +74,8 @@ def create_fixture_app(root):
             due = int(self.sim_time * self.options.controlHz + 1e-9)
             while self._control_index < due:
                 self._control_index += 1
+                if self.options.seed == 99:
+                    self.actuator.velocities["x"] = 0.001 if self.sim_time < 0.5 else 0.0
                 for event in self.host.tick(
                     self._control_index / self.options.controlHz, 1 / self.options.controlHz
                 ):
