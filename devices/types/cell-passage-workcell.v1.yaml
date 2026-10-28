@@ -1,0 +1,506 @@
+type: cell-passage-workcell/v1
+title: Cell Passage material and Flex workcell
+description: Single-writer symbolic material driven by measured Flex pump strokes;
+  teaching waits are not biological conditions.
+properties:
+  materialSnapshot:
+    schema:
+      type: object
+      properties:
+        revision: &id006
+          type: integer
+          minimum: 0
+        vessels:
+          type: array
+          items:
+            type: object
+            properties:
+              volumeUl: &id001
+                type: number
+                minimum: 0
+              components: &id004
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: &id002
+                      type: string
+                    volumeUl: *id001
+                  required:
+                  - name
+                  - volumeUl
+              cells: &id005
+                type: array
+                items:
+                  type: object
+                  properties:
+                    culture: *id002
+                    parent: *id002
+                    attachedLive: *id001
+                    attachedDead: *id001
+                    suspendedLive: *id001
+                    suspendedDead: *id001
+                    pelletLive: *id001
+                    pelletDead: *id001
+                  required:
+                  - culture
+                  - parent
+                  - attachedLive
+                  - attachedDead
+                  - suspendedLive
+                  - suspendedDead
+                  - pelletLive
+                  - pelletDead
+              id: *id002
+              entityKey: *id002
+              culture: *id002
+              parent: *id002
+              processedCycle: *id002
+              capacityUl: *id001
+              waste: &id003
+                type: boolean
+              mixed: *id003
+              exposureSince:
+                type: number
+            required:
+            - volumeUl
+            - components
+            - cells
+            - id
+            - entityKey
+            - culture
+            - parent
+            - processedCycle
+            - capacityUl
+            - waste
+            - mixed
+            - exposureSince
+        tips:
+          type: array
+          items:
+            type: object
+            properties:
+              id: *id002
+              state: *id002
+            required:
+            - id
+            - state
+        tip:
+          type: object
+          properties:
+            volumeUl: *id001
+            components: *id004
+            cells: *id005
+            id: *id002
+            contactCulture: *id002
+            contactWaste:
+              type: boolean
+          required:
+          - volumeUl
+          - components
+          - cells
+          - id
+          - contactCulture
+          - contactWaste
+        reservations:
+          type: array
+          items:
+            type: object
+            properties:
+              resource: *id002
+              device: *id002
+              owner: *id002
+              epoch: *id006
+            required:
+            - resource
+            - device
+            - owner
+            - epoch
+        operations:
+          type: array
+          items:
+            type: object
+            properties:
+              operationId: *id002
+              action: *id002
+              status: *id002
+              appliedUl: *id001
+              requestedUl: *id001
+              vessel: *id002
+              epoch: *id006
+              startedSimTime: *id001
+              observedUl:
+                type: number
+              fault:
+                type: string
+            required:
+            - operationId
+            - action
+            - status
+            - appliedUl
+            - requestedUl
+            - vessel
+            - epoch
+            - startedSimTime
+            - observedUl
+            - fault
+        observations:
+          type: array
+          items:
+            type: object
+            properties:
+              operationId: *id002
+              vessel: *id002
+              materialRevision: *id006
+              source: *id002
+              live: *id001
+              dead: *id001
+              volumeUl: *id001
+              simTime: *id001
+              kind:
+                type: string
+              entityKey:
+                type: string
+              culture:
+                type: string
+              parent:
+                type: string
+              modelLive:
+                type: number
+                minimum: 0
+              modelDead:
+                type: number
+                minimum: 0
+              measuredLive:
+                type: number
+                minimum: 0
+              measuredDead:
+                type: number
+                minimum: 0
+            required:
+            - operationId
+            - vessel
+            - materialRevision
+            - source
+            - live
+            - dead
+            - volumeUl
+            - simTime
+            - kind
+            - entityKey
+            - culture
+            - parent
+            - modelLive
+            - modelDead
+            - measuredLive
+            - measuredDead
+        controlRequests:
+          type: array
+          items:
+            type: object
+            properties:
+              operationId: *id002
+              epoch: *id006
+              mode: *id002
+              owner: *id002
+              action:
+                type: string
+              paramsJson:
+                type: string
+            required:
+            - operationId
+            - epoch
+            - mode
+            - owner
+            - action
+            - paramsJson
+        reconciled:
+          type: boolean
+      required:
+      - revision
+      - vessels
+      - tips
+      - tip
+      - reservations
+      - operations
+      - observations
+      - controlRequests
+      - reconciled
+  materialRevision:
+    schema: *id006
+  controlOwner:
+    schema: *id002
+  controlEpoch:
+    schema: *id006
+  controlMode:
+    schema:
+      enum:
+      - auto
+      - manual
+      - holding
+  controlSafe:
+    schema: *id003
+  phase:
+    schema: *id002
+  auditPassed:
+    schema: *id003
+  lastOperationId:
+    schema: *id002
+  lastAppliedUl:
+    schema: *id001
+  remainingUl:
+    schema: *id001
+  observationRevision:
+    schema: *id006
+  inFlightUl:
+    schema:
+      type: number
+      minimum: 0
+  wasteFreeUl:
+    schema:
+      type: number
+      minimum: 0
+  lastObservedLive:
+    schema:
+      type: number
+      minimum: 0
+  lastObservedDead:
+    schema:
+      type: number
+      minimum: 0
+  tipsRemaining:
+    schema:
+      type: integer
+      minimum: 0
+  samplesIndependent:
+    schema:
+      type: boolean
+actions:
+  requestControl:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: &id007
+        type: string
+        minLength: 1
+      nextOwner: *id002
+      mode:
+        enum:
+        - auto
+        - manual
+    required:
+    - owner
+    - epoch
+    - operationId
+    - nextOwner
+    - mode
+    timeoutSeconds: 3600
+    concurrent: true
+  confirmControl:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+    required:
+    - owner
+    - epoch
+    - operationId
+    timeoutSeconds: 3600
+    concurrent: true
+  reserve:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      resource: *id002
+      device: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - resource
+    - device
+    timeoutSeconds: 3600
+    concurrent: false
+  release:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      resource: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - resource
+    timeoutSeconds: 3600
+    concurrent: false
+  move:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      position:
+        type: array
+        items:
+          type: number
+        minItems: 3
+        maxItems: 3
+    required:
+    - owner
+    - epoch
+    - operationId
+    - position
+    timeoutSeconds: 3600
+    concurrent: false
+  pickupTip:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      tip: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - tip
+    timeoutSeconds: 3600
+    concurrent: false
+  discardTip:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      waste: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - waste
+    timeoutSeconds: 3600
+    concurrent: false
+  aspirate:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      vessel: *id002
+      volumeUl:
+        type: number
+        exclusiveMinimum: 0
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    - volumeUl
+    timeoutSeconds: 3600
+    concurrent: false
+  dispense:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      vessel: *id002
+      volumeUl:
+        type: number
+        exclusiveMinimum: 0
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    - volumeUl
+    timeoutSeconds: 3600
+    concurrent: false
+  mix:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      vessel: *id002
+      volumeUl:
+        type: number
+        exclusiveMinimum: 0
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    - volumeUl
+    timeoutSeconds: 3600
+    concurrent: false
+  wait:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      seconds: *id001
+    required:
+    - owner
+    - epoch
+    - operationId
+    - seconds
+    timeoutSeconds: 3600
+    concurrent: false
+  detach:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      vessel: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    timeoutSeconds: 3600
+    concurrent: false
+  observe:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      vessel: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    timeoutSeconds: 3600
+    concurrent: false
+  count:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      vessel: *id002
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    timeoutSeconds: 3600
+    concurrent: false
+  pellet:
+    params:
+      owner: *id002
+      epoch: *id006
+      operationId: *id007
+      centrifuge:
+        type: string
+      cycle:
+        type: string
+      vessels:
+        type: array
+        items:
+          type: string
+        minItems: 1
+    required:
+    - owner
+    - epoch
+    - operationId
+    - centrifuge
+    - cycle
+    - vessels
+    timeoutSeconds: 10

@@ -1,7 +1,10 @@
 """Program definitions shared by the Runner and gateway; imports no engine."""
 
 from packages.info.catalog import Catalog, load_catalog
+from packages.programs.cell_passage.workcell import WorkcellProgram
 from packages.programs.centrifuge.newton import CentrifugeProgram
+from packages.programs.labware.facts import LabwareFactsProgram
+from packages.programs.labware.motion import LabwareMotionProgram
 from packages.programs.robot_arm.newton import RobotArmProgram
 from packages.programs.robot_arm.policy import PolicyProgram
 from packages.programs.robot_arm.script import ScriptProgram
@@ -9,7 +12,16 @@ from packages.programs.tube.newton import TubeProgram
 
 REGISTRY = {
     program.id: program
-    for program in (RobotArmProgram, PolicyProgram, ScriptProgram, TubeProgram, CentrifugeProgram)
+    for program in (
+        RobotArmProgram,
+        PolicyProgram,
+        ScriptProgram,
+        TubeProgram,
+        CentrifugeProgram,
+        WorkcellProgram,
+        LabwareFactsProgram,
+        LabwareMotionProgram,
+    )
 }
 
 
