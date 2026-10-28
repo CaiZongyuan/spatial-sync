@@ -60,6 +60,16 @@ def audit_material_result(initial, final, mapping, *, volume_tolerance=0.01, cel
     if (len(before) != len(initial["vessels"]) or len(after) != len(final["vessels"])
             or before.keys() != after.keys()):
         errors.append("Vessel inventory changed or contains duplicate identities")
+    for identity in before.keys() & after.keys():
+        row, original = after[identity], before[identity]
+        if original.get("waste"):
+            continue
+        expected_origin = original["parent"] or original["culture"]
+        if any(
+            cell["culture"] != expected_origin and sum(cell[field] for field in CELL_FIELDS) > cell_tolerance
+            for cell in row["cells"]
+        ):
+            errors.append(f"Unexpected culture in vessel: {identity}")
     role_ids = [identity for row in mapping for identity in [row["mother"], row["sample"], *row["daughters"]]]
     if (len(mapping) != 6 or any(len(row["daughters"]) != 2 for row in mapping)
             or len(role_ids) != len(set(role_ids))):

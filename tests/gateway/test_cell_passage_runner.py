@@ -13,7 +13,7 @@ from apps.cli.lw.client import GatewayClient
 from tests.fixtures.cell_passage_gateway import create_fixture_app
 from tools.cell_passage_recipe import revise_remaining
 from tools.cell_passage_runner import PassageExecutor, drive_executor
-from tools.cell_passage_session import prepare_round
+from tools.cell_passage_session import execute_round, prepare_round
 
 
 class PublicHTTP(httpx.AsyncBaseTransport):
@@ -256,6 +256,11 @@ async def test_preparation_publishes_all_seven_stage_plans_without_starting_acti
         for row in result["plans"]:
             plan = await client.plan_show(row["id"])
             assert plan["steps"][0]["status"] == "pending" and plan["stepResults"] == {}
+        completed = await execute_round(client, result, tmp_path / "prepared", interval=0.005)
+        assert completed["status"] == "plans_completed"
+        assert completed["completedParts"] == [row["id"] for row in result["plans"]]
+        assert set(completed["stageResults"]) == {str(stage) for stage in range(1, 8)}
+        assert completed["experimentQualified"] is False
 
 
 @pytest.mark.parametrize("passage_http", [99], indirect=True)

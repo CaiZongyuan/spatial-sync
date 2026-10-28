@@ -348,7 +348,8 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
             "mechanicallyQualified": False, "environmentChecksAvailable": recipe.environment,
             "plans": recipe.plans, "tipsRequired": recipe.tip_index,
             "teachingConditions": {"daughterVolumeUl": 1000, "sampleVolumeUl": 20,
-                                   "requestedCentrifugeRpm": 800, "physicalRpmCap": 60}}
+                                   "requestedCentrifugeRpm": 800, "physicalRpmCap": 60,
+                                   "finalVolumeToleranceUl": 0.01, "finalCellTolerance": 0.000001}}
     return paginate_recipe(result, max_steps=max_steps) if max_steps else result
 
 

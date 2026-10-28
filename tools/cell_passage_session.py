@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from apps.cli.lw.client import GatewayClient, GatewayError
+from tools.cell_passage_runner import PassageExecutor, drive_executor
 
 TARGET_FIELDS = ("sessionId", "sceneRevision", "epoch")
 
@@ -94,12 +95,77 @@ async def prepare_round(client, recipe, output, *, workcell="/World/Lab/LiquidHa
     return record
 
 
+async def execute_round(client, record, output, *, interval=0.1, budget_seconds=120):
+    """Execute every prepared part in order without resetting between Plans.
+
+    This is Plan execution evidence, not an automatic mechanical qualification.
+    A stopped/interrupted round cannot be reopened by a new driver process.
+    """
+    if record["status"] != "prepared" or record.get("completedParts"):
+        raise ValueError("A new driver requires an unstarted prepared round")
+    output = Path(output)
+    path = output / "round.json"
+    workcell = record["workcell"]
+    last_material_revision = record["initialMaterialRevision"]
+    catalog = await client.catalog()
+    entities = catalog["entities"]
+    config = entities[workcell]["config"]
+    observed_keys = {workcell, *config.get("managedDevices", [])}
+    observed_keys.update(row["entityKey"] for row in record["initialMaterialSnapshot"]["vessels"])
+    observed_keys.intersection_update(entities)
+    record.update(status="running", completedParts=[], stageResults={}, experimentQualified=False)
+    _save(path, record)
+    try:
+        for part in record["plans"]:
+            session = await client.status()
+            values = (await client.get_state([workcell]))["entities"][workcell]["values"]
+            if (any(session[name] != expected for name, expected in record["target"].items())
+                    or values["materialRevision"] != last_material_revision
+                    or values["controlOwner"] != record["controlOwner"]
+                    or values["controlEpoch"] != record["controlEpoch"]
+                    or values["controlMode"] != "auto"):
+                raise ValueError("Round checkpoint changed at the part boundary; inspect the existing round")
+            record["activePart"] = part
+            _save(path, record)
+            executor = await PassageExecutor.open(
+                client, part["id"], workcell, owner=record["controlOwner"], epoch=record["controlEpoch"],
+                budget_seconds=budget_seconds,
+            )
+            result = await drive_executor(
+                executor, output / f"stage-{part['stage']}-part-{part['part']}.jsonl", interval=interval,
+            )
+            if result["status"] != "completed":
+                record.update(status="dispatch_stopped", stoppedResult=result)
+                _save(path, record)
+                return record
+            record["completedParts"].append(part["id"])
+            last_material_revision = executor.material_revision
+            if part["part"] == part["parts"]:
+                record["stageResults"][str(part["stage"])] = {
+                    "session": await client.status(),
+                    "state": await client.get_state(sorted(observed_keys)),
+                    "lastPlanId": part["id"], "materialRevision": last_material_revision,
+                }
+            _save(path, record)
+        record["status"] = "plans_completed"
+        record.pop("activePart", None)
+    except BaseException:
+        record["status"] = "interrupted"
+        _save(path, record)
+        raise
+    _save(path, record)
+    return record
+
+
 async def _main(args):
     recipe = json.loads(args.recipe.read_text(encoding="utf8"))
     async with GatewayClient(url=args.url, session=args.session) as client:
         record = await prepare_round(client, recipe, args.out, workcell=args.workcell)
+        if args.execute:
+            record = await execute_round(client, record, args.out)
         print(json.dumps({"status": record["status"], "plans": record["plans"],
                           "round": str(args.out / "round.json"), "mechanicallyQualified": False}))
+        return 0 if record["status"] in ("prepared", "plans_completed") else 3
 
 
 def main():
@@ -109,9 +175,10 @@ def main():
     parser.add_argument("--recipe", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--workcell", default="/World/Lab/LiquidHandler")
+    parser.add_argument("--execute", action="store_true", help="Execute all parts in this fresh round")
     import asyncio
 
-    asyncio.run(_main(parser.parse_args()))
+    raise SystemExit(asyncio.run(_main(parser.parse_args())))
 
 
 if __name__ == "__main__":

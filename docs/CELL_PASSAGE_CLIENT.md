@@ -69,6 +69,14 @@ python -m tools.cell_passage_session --session <session-id> \
   --recipe <new-round>/plans/recipe.json --out <new-round>/prepared
 ```
 
+Adding `--execute` drives every published stage/part in order in the same
+process. It checks the session, scene revision, control generation and material
+revision at every part boundary and records public stage snapshots plus one
+receipt per part. It keeps physical holds and contents across pages. Its
+terminal `plans_completed` explicitly keeps `experimentQualified:false`:
+separate material, mechanical/environment and continuous-recording acceptance
+is still required. A stopped round cannot be reopened by this driver.
+
 Actions use `POST /api/v1/sessions/{sessionId}/actions` with `wait:false`, plus
 `planId`, `stepId`, and `planRevision`. Conditions use the existing `/check`
 route with the same Plan references. A successful invocation is insufficient:

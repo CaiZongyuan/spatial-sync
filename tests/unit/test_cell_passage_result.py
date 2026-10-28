@@ -27,12 +27,14 @@ def worked_example():
         mother, culture = f"M{number}", f"culture-{number}"
         initial["vessels"].append(vessel(mother, 1000, culture=culture, live=100))
         initial["vessels"].extend([
-            vessel(f"C{number}", 0),
+            vessel(f"C{number}", 0, culture=f"counting-{number}", parent=culture),
             vessel(f"A{number}", 0, culture=f"daughter-a-{number}", parent=culture),
             vessel(f"B{number}", 0, culture=f"daughter-b-{number}", parent=culture),
         ])
         final["vessels"].append(vessel(mother, 0, culture=culture))
-        final["vessels"].append(vessel(f"C{number}", 20, culture=culture, live=2))
+        final["vessels"].append(vessel(
+            f"C{number}", 20, culture=f"counting-{number}", parent=culture, live=2,
+        ))
         final["vessels"].extend([
             vessel(f"A{number}", 1000, culture=f"daughter-a-{number}", parent=culture, live=49),
             vessel(f"B{number}", 1000, culture=f"daughter-b-{number}", parent=culture, live=49),
@@ -52,3 +54,11 @@ def test_six_independent_samples_are_conserved_and_wrong_source_daughter_is_reje
     a2 = next(row for row in wrong["vessels"] if row["id"] == "A2")
     a1["cells"], a2["cells"] = a2["cells"], a1["cells"]
     assert audit_material_result(initial, wrong, mapping)["status"] == "invalid"
+
+
+def test_conservation_alone_does_not_allow_cells_in_common_reagent():
+    initial, final, mapping = worked_example()
+    next(row for row in final["vessels"] if row["id"] == "medium")["cells"] = [cell("culture-1", 1)]
+    for identity in ("A1", "B1"):
+        next(row for row in final["vessels"] if row["id"] == identity)["cells"][0]["suspendedLive"] = 48.5
+    assert audit_material_result(initial, final, mapping)["status"] == "invalid"
