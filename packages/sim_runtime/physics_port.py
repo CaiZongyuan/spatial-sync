@@ -53,6 +53,8 @@ class PhysicsPort:
             )
             for i, label in enumerate(model.joint_label)
         }
+        self._joint_limit_lower = model.joint_limit_lower.numpy().copy()
+        self._joint_limit_upper = model.joint_limit_upper.numpy().copy()
         self.sites = {
             site.entityKey: SiteRef(
                 self.bodies[site.parentBodyKey] if site.parentBodyKey else -1, site.localPose.model_dump()
@@ -122,6 +124,13 @@ class PhysicsPort:
 
     def bind_joint(self, key):
         return self.joints[key]
+
+    def joint_limits(self, joint):
+        """Return copied physical DOF limits; nq and nv need not have equal offsets."""
+        ref = self.bind_joint(joint) if isinstance(joint, str) else joint
+        if not isinstance(ref, JointRef) or ref not in self.joints.values():
+            raise KeyError("Unknown physical joint reference")
+        return self._joint_limit_lower[ref.qd].copy(), self._joint_limit_upper[ref.qd].copy()
 
     def bind_site(self, key):
         return self.sites[key]
