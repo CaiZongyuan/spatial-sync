@@ -118,7 +118,7 @@ properties:
             - epoch
         operations:
           type: array
-          items: &id011
+          items: &id015
             type: object
             properties:
               operationId: *id002
@@ -147,6 +147,33 @@ properties:
               materialRevision:
                 type: integer
                 minimum: 0
+              quantityKind:
+                type: string
+              quantityOutcome:
+                type: string
+              remainderLocation:
+                type: string
+              resolvedUl:
+                type: number
+                minimum: 0
+              remainingUl:
+                type: number
+                minimum: 0
+              resolutionResidualUl:
+                type: number
+                minimum: 0
+              resolutionUl:
+                type: number
+                minimum: 0
+              untransferredUl:
+                type: number
+                minimum: 0
+              pumpStartM:
+                type: number
+              pumpTargetM:
+                type: number
+              noTransfer:
+                type: boolean
             required:
             - operationId
             - action
@@ -164,6 +191,17 @@ properties:
             - tipId
             - endedSimTime
             - materialRevision
+            - quantityKind
+            - quantityOutcome
+            - remainderLocation
+            - resolvedUl
+            - remainingUl
+            - resolutionResidualUl
+            - resolutionUl
+            - untransferredUl
+            - pumpStartM
+            - pumpTargetM
+            - noTransfer
         observations:
           type: array
           items:
@@ -313,6 +351,21 @@ properties:
     schema: *id008
   archivedOperationCount:
     schema: *id009
+  lastResolvedUl:
+    schema:
+      type: number
+      minimum: 0
+  lastResolutionResidualUl:
+    schema:
+      type: number
+      minimum: 0
+  lastUntransferredUl:
+    schema:
+      type: number
+      minimum: 0
+  lastQuantityOutcome:
+    schema:
+      type: string
 actions:
   requestControl:
     params:
@@ -542,11 +595,110 @@ actions:
     - cycle
     - vessels
     timeoutSeconds: 10
+  dispenseAll:
+    params:
+      owner: &id011
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+        minLength: 1
+      vessel: *id011
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    timeoutSeconds: 3600
+    concurrent: false
+    description: Resolve actual current tip contents and command a safe representable
+      pump target. Any resolution residue stays in the tip; no nominal quantity is
+      invented.
+  aspirateAvailable:
+    params:
+      owner: &id012
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+        minLength: 1
+      vessel: *id012
+      reserveUl:
+        type: number
+        minimum: 0
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    timeoutSeconds: 3600
+    concurrent: false
+    description: Resolve once at start from actual inventory, pump feedback and known
+      physical limits. Safe native target quantization leaves explicitly recorded
+      residue; retries need a new reviewed remaining intent.
+  aspirateFraction:
+    params:
+      owner: &id013
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+        minLength: 1
+      vessel: *id013
+      fraction:
+        type: number
+        exclusiveMinimum: 0
+        maximum: 1
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    - fraction
+    timeoutSeconds: 3600
+    concurrent: false
+    description: Resolve once at start from actual inventory, pump feedback and known
+      physical limits. Safe native target quantization leaves explicitly recorded
+      residue; retries need a new reviewed remaining intent.
+  aspirateTopUp:
+    params:
+      owner: &id014
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+        minLength: 1
+      vessel: *id014
+      targetVessel:
+        type: string
+      targetVolumeUl:
+        type: number
+        minimum: 0
+    required:
+    - owner
+    - epoch
+    - operationId
+    - vessel
+    - targetVessel
+    - targetVolumeUl
+    timeoutSeconds: 3600
+    concurrent: false
+    description: Resolve once at start from actual inventory, pump feedback and known
+      physical limits. Safe native target quantization leaves explicitly recorded
+      residue; retries need a new reviewed remaining intent.
 events:
   operationCompleted:
     schema:
       type: object
       properties:
-        receipt: *id011
+        receipt: *id015
       required:
       - receipt

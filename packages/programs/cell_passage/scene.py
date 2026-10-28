@@ -94,6 +94,7 @@ def workcell_binding(layout):
         tipRackSites=sorted({row["site"] for row in layout["tips"]}),
         vessels=vessels,
         pumpUlPerUnit=1000 / layout["pumpStrokeM"],
+        alignmentToleranceM=layout.get("pipetteCalibration", {}).get("alignmentToleranceM", 0.003),
         managedDevices=[
             LAB + "/Robot/fr3_link0",
             LAB + "/RailCarriage",
@@ -105,7 +106,7 @@ def workcell_binding(layout):
         ],
         cabinetEntity=LAB + "/LiquidHandler/Base",
         imagerStation=LAB + "/Sites/Imager",
-        wasteSite=bodies["SolidWaste"] + "/Content",
+        wasteSite=layout.get("tipDiscardSite", bodies["SolidWaste"] + "/Content"),
     )
     parsed = WorkcellProgram.Config.model_validate(config)
     return {
