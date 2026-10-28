@@ -48,6 +48,7 @@ function AssetLibrary() {
   const [attempt, setAttempt] = useState(0);
   const [sources, setSources] = useState<{ provider: string; dataset: string; entryCount: number }[]>([]);
   const [collections, setCollections] = useState<MetadataCollection[]>([]);
+  const [maintenanceAvailable, setMaintenanceAvailable] = useState(false);
   const [vocabulary, setVocabulary] = useState<CatalogVocabulary>();
   const [newPublication, setNewPublication] = useState(false);
   const pageSize = search.pageSize ?? 24;
@@ -144,8 +145,8 @@ function AssetLibrary() {
       <div className="asset-view-toggle" role="group" aria-label="视图">{(['card', 'list'] as const).map(view => <button key={view} aria-pressed={(search.view ?? 'card') === view} onClick={() => change({ view })}>{view === 'card' ? '▦ 卡片' : '☷ 列表'}</button>)}</div>
     </div>
     {scope !== 'local' && <>
-      <CatalogSyncPanel provider={search.provider} onSources={setSources} onPublished={() => setNewPublication(true)} />
-      <CatalogMaintenancePanel onCollections={setCollections} onPublication={() => setNewPublication(true)} />
+      {maintenanceAvailable && <CatalogSyncPanel provider={search.provider} onSources={setSources} onPublished={() => setNewPublication(true)} />}
+      <CatalogMaintenancePanel onCollections={setCollections} onAvailability={setMaintenanceAvailable} onPublication={() => setNewPublication(true)} />
       {newPublication && <p className="catalog-update-notice" role="status">有新目录可用。当前分页保持原发布。<button onClick={refresh}>查看最新目录</button></p>}
     </>}
     <section className="asset-filters" aria-label="素材筛选">

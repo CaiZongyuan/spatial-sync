@@ -1,5 +1,19 @@
 # SimReady catalog
 
+## Repository-local data
+
+`catalog/data/` contains versioned JSONL source files (`simready.jsonl`,
+`scenario.jsonl`, `chemlab.jsonl`) and the source manifest (`sources.json`).
+`catalog/thumbnails/` stores deduplicated WebP thumbnail images (maxEdge 384,
+quality 78, method 4). `catalog/local/` is reserved for the generated
+`catalog.sqlite3` query cache and temporary sync files; it is ignored by Git and
+rebuilt automatically from `catalog/data/` on startup or via `tools/sync_catalog.py`.
+`simready.json` remains the committed seed for legacy SF0 unit tests. The gateway,
+CLI and MCP all query this shared repository index by default without requiring an
+external 1.8 GB metadata library.
+
+## Committed seed
+
 `catalog/simready.json` is the curated, committed subset of the five SF0
 `nvidia/simready-assets` packages. It is the offline-readable source for
 catalog search, entry describe and read-only acquisition estimates until a full
@@ -11,7 +25,44 @@ gateway never imports `factory/`.
 The snapshot identity is `sha256:` plus the SHA-256 of the exact bytes of this
 file. `indexedAt` is a fixed curation timestamp, not the file modification time.
 
-## Full directory sync
+## Versioned data sync
+
+`tools/sync_catalog.py` separates a real source update from a local rebuild:
+
+Source extraction errors leave the selected source's previous records and
+database intact and name the failed entries in `catalog/local/sync_status.json`.
+Runtime readers follow the committed SQLite file, so a request during sync sees
+the previous or the new complete source version. Explicit rebuilds and cold
+cache verification serialize with sync activation through a local file lock.
+The running Web/CLI/MCP catalog refreshes its read snapshot after a commit;
+pagination pinned to the previous snapshot asks the caller to repeat the query.
+
+After manual edits to versioned JSONL, use `--rebuild` or restart the host.
+
+- `--sync-source <id> [--revision <40-hex>]` reads that collection from its fixed
+  Hugging Face revision through the existing source recipes, keeps summaries and
+  WebP thumbnails whose per-entry source fingerprint is unchanged, stages and
+  verifies a complete candidate catalog, then activates the JSONL, `sources.json`
+  and SQLite cache together. A failure before activation keeps the collection's
+  previous text, manifest and database rows. Success records the revision,
+  entry counts and per-entry additions/removals/changes in
+  `catalog/local/sync_status.json`.
+- `--rebuild` rebuilds the SQLite cache from `catalog/data/` without contacting
+  upstream, and `--verify` checks files, thumbnails and the query index.
+
+```powershell
+uv run --no-sync python tools/sync_catalog.py --sync-source simready --revision <40-hex>
+uv run --no-sync python tools/sync_catalog.py --rebuild --verify --check-thumbnails
+```
+
+The query cache is derived: an open reader that sees the database replaced by
+another process reloads the new release on its next query instead of serving an
+older release's state alongside newer rows.
+
+## Legacy directory sync
+
+This section applies to an explicitly configured legacy metadata deployment.
+The repository-backed host hides the old sync controls and rejects their writes.
 
 In the Web asset library select **在线** or **全部**, then **更新目录**.
 The same operations are available through HTTP, installed CLI and MCP:

@@ -1,0 +1,20 @@
+{
+  "schema": "lw.catalog-sources/1",
+  "sources": {
+    "chemlab": {
+      "dataset": "MBZUAI/ChemLab-Assets",
+      "revision": "3b67020dcccb22e60be3235f32b39d03da5959ab",
+      "url": "https://huggingface.co/datasets/MBZUAI/ChemLab-Assets/tree/3b67020dcccb22e60be3235f32b39d03da5959ab"
+    },
+    "scenario": {
+      "dataset": "scenario-labs/3d-collection",
+      "revision": "55b4c002b4c1529fc48da3dff98516c3069bfa3f",
+      "url": "https://huggingface.co/datasets/scenario-labs/3d-collection/tree/55b4c002b4c1529fc48da3dff98516c3069bfa3f"
+    },
+    "simready": {
+      "dataset": "nvidia/simready-assets",
+      "revision": "9eadae061bf3f6fcee629b3286d5593c05415b42",
+      "url": "https://huggingface.co/datasets/nvidia/simready-assets/tree/9eadae061bf3f6fcee629b3286d5593c05415b42"
+    }
+  }
+}

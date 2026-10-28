@@ -133,9 +133,11 @@ class CreateSession(Model):
 
 def _role(headers, settings: Settings):
     from packages.agent_evaluation.scope import current_scope
+
     if current_scope() is not None:
         return "operator"
     from packages.agent_rsi.scope import current_principal
+
     if current_principal() is not None:
         return "operator"
     if not settings.remote:
@@ -177,6 +179,7 @@ def create_app(
     controller_publication_validator=None,
 ) -> FastAPI:
     configure_gateway_logging()
+    startup_log = logging.getLogger("uvicorn.error")
     settings = settings or Settings()
     asset_registry = asset_registry or AssetRegistry.from_file()
     catalog = AssetCatalog(
@@ -192,7 +195,9 @@ def create_app(
     tensorboard = TensorBoardService(manager)
     if settings.live_bindings is not None:
         manager.live = DeviceHost(
-            load_bindings(settings.live_bindings), manager.approvals, manager.plans,
+            load_bindings(settings.live_bindings),
+            manager.approvals,
+            manager.plans,
             approval_timeout=settings.approval_timeout_seconds,
             recordings=recordings,
             inbox=manager.inbox,
@@ -207,8 +212,12 @@ def create_app(
     manager.training_plans.additional_in_use = notebooks.plan_in_use
     library_assets = manager.library_assets
     manager.library_deletions = LibraryDeletions(
-        library_assets, lambda: manager.library, manager.approvals, recordings,
-        manager.platform_sessions, StructuralValidator(settings.state_root, program_schemas),
+        library_assets,
+        lambda: manager.library,
+        manager.approvals,
+        recordings,
+        manager.platform_sessions,
+        StructuralValidator(settings.state_root, program_schemas),
         live=lambda: manager.live,
         suites=evaluations.suites,
         tasks=manager.tasks,
@@ -235,9 +244,7 @@ def create_app(
             )
         ),
     )
-    authoring = AuthoringReports(
-        settings.state_root, library_assets, lambda: manager.library
-    )
+    authoring = AuthoringReports(settings.state_root, library_assets, lambda: manager.library)
     from packages.catalog.resources import CatalogResources
     from packages.catalog.sources import CatalogSources
 
@@ -247,10 +254,67 @@ def create_app(
     from packages.catalog_metadata import MetadataError, MetadataStore
     from packages.catalog_metadata.maintenance import MetadataMaintenance
 
-    metadata_store = metadata_store or MetadataStore(settings.state_root / "catalog-metadata")
-    metadata_maintenance = MetadataMaintenance(
-        metadata_store, agent_profile=metadata_agent_profile, launch_workers=metadata_launch_workers,
-    )
+    if metadata_store is None:
+        # An explicit root must already be a directory: a typo would otherwise create
+        # a second empty library and silently serve it instead of the maintained one.
+        if settings.catalog_metadata_root is not None and not settings.catalog_metadata_root.is_dir():
+            raise RuntimeError(
+                "SPATIAL_CATALOG_METADATA_ROOT must name an existing directory; "
+                f"received {settings.catalog_metadata_root}"
+            )
+        if settings.catalog_metadata_root is not None:
+            from packages.catalog.lightweight import LightweightCatalogStore, LightweightMaintenance
+
+            if LightweightCatalogStore.is_available_at(settings.catalog_metadata_root):
+                metadata_store = LightweightCatalogStore(settings.catalog_metadata_root)
+                metadata_store_source = "SPATIAL_CATALOG_METADATA_ROOT (lightweight)"
+                metadata_maintenance = LightweightMaintenance(metadata_store)
+            else:
+                metadata_store = MetadataStore(settings.catalog_metadata_root)
+                metadata_store_source = "SPATIAL_CATALOG_METADATA_ROOT"
+                metadata_maintenance = MetadataMaintenance(
+                    metadata_store,
+                    agent_profile=metadata_agent_profile,
+                    launch_workers=metadata_launch_workers,
+                )
+        else:
+            from packages.catalog.lightweight import LightweightCatalogStore, LightweightMaintenance
+
+            catalog_root_env = os.environ.get("SPATIAL_CATALOG_ROOT")
+            target_catalog_root = (
+                Path(catalog_root_env)
+                if catalog_root_env
+                else (REPO_ROOT / "catalog" if catalog_root_env is None else None)
+            )
+            if (
+                target_catalog_root is not None
+                and catalog_path is None
+                and os.environ.get("LW_CATALOG") is None
+                and LightweightCatalogStore.is_available_at(target_catalog_root)
+            ):
+                metadata_store = LightweightCatalogStore(target_catalog_root)
+                metadata_store_source = "repository data default (lightweight)"
+                metadata_maintenance = LightweightMaintenance(metadata_store)
+            else:
+                metadata_store = MetadataStore(settings.state_root / "catalog-metadata")
+                metadata_store_source = "state root default"
+                metadata_maintenance = MetadataMaintenance(
+                    metadata_store,
+                    agent_profile=metadata_agent_profile,
+                    launch_workers=metadata_launch_workers,
+                )
+    else:
+        metadata_store_source = "injected"
+        from packages.catalog.lightweight import LightweightCatalogStore, LightweightMaintenance
+
+        if isinstance(metadata_store, LightweightCatalogStore):
+            metadata_maintenance = LightweightMaintenance(metadata_store)
+        else:
+            metadata_maintenance = MetadataMaintenance(
+                metadata_store,
+                agent_profile=metadata_agent_profile,
+                launch_workers=metadata_launch_workers,
+            )
 
     @asynccontextmanager
     async def lifespan(app):
@@ -267,11 +331,21 @@ def create_app(
             await asyncio.to_thread(catalog_sync.startup)
             await metadata_maintenance.startup()
             catalog.attach_metadata(metadata_store)
+            startup_log.info(
+                "catalog metadata store %s (from %s)", metadata_store.root, metadata_store_source
+            )
             # Restore a retained publication before the gateway accepts page reads.
             try:
-                if await asyncio.to_thread(metadata_store.latest_release) is not None:
-                    await asyncio.to_thread(catalog.search, library_assets,
-                                            scope="online", limit=1, page=1, view="cards")
+                release = await asyncio.to_thread(metadata_store.latest_release)
+                startup_log.info(
+                    "catalog metadata release %s%s",
+                    release["id"] if release else "none",
+                    "" if release else " (library is empty)",
+                )
+                if release is not None:
+                    await asyncio.to_thread(
+                        catalog.search, library_assets, scope="online", limit=1, page=1, view="cards"
+                    )
             except Exception as exc:
                 logging.getLogger(__name__).warning("Catalog query warm-up unavailable: %s", exc)
             metadata_maintenance.release_preparer = catalog.prepare_metadata_release
@@ -409,18 +483,33 @@ def create_app(
     from apps.api.app.controller_promotion_routes import install_controller_promotion_routes
 
     controller_promotions = install_controller_promotion_routes(
-        app, manager, app.state.robot_resources, lambda headers: _role(headers, settings),
+        app,
+        manager,
+        app.state.robot_resources,
+        lambda headers: _role(headers, settings),
         qualification=controller_promotion_qualification,
         publication_validator=controller_publication_validator,
     )
     install_cost_routes(app, manager, lambda headers: _role(headers, settings))
     install_history_routes(app, manager, recordings)
     install_inbox_routes(app, manager)
-    install_library_routes(app, library_assets, lambda: manager.library, manager,
-                           lambda headers: _role(headers, settings), catalog, authoring)
+    install_library_routes(
+        app,
+        library_assets,
+        lambda: manager.library,
+        manager,
+        lambda headers: _role(headers, settings),
+        catalog,
+        authoring,
+    )
     from apps.api.app.catalog_sync_routes import install_catalog_sync_routes
-    install_catalog_sync_routes(app, catalog_sync, lambda headers: _role(headers, settings))
+
+    install_catalog_sync_routes(
+        app, catalog_sync, lambda headers: _role(headers, settings),
+        enabled=not isinstance(metadata_store, LightweightCatalogStore),
+    )
     from apps.api.app.catalog_metadata_routes import install_catalog_metadata_routes
+
     install_catalog_metadata_routes(app, metadata_maintenance, lambda headers: _role(headers, settings))
     install_acquisition_routes(app, acquisitions)
     request_times = defaultdict(deque)
@@ -428,10 +517,10 @@ def create_app(
     async def access_control(request: Request, call_next):
         if app.state.metadata_worker_auth(request):
             return await call_next(request)
-        if (manager.jobs.authenticated_node(request.headers) and re.fullmatch(
+        if manager.jobs.authenticated_node(request.headers) and re.fullmatch(
             r"/api/v1/(?:nodes/local/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
             request.url.path,
-        )):
+        ):
             return await call_next(request)
         if (
             settings.remote
@@ -474,8 +563,10 @@ def create_app(
             # Direct ASGI delegation preserves the request's existing cancellation/cleanup semantics.
             if scope["type"] == "http":
                 request = Request(scope)
-                if (request.method in ("POST", "DELETE", "PUT", "PATCH")
-                        and _role(request.headers, settings) is not None):
+                if (
+                    request.method in ("POST", "DELETE", "PUT", "PATCH")
+                    and _role(request.headers, settings) is not None
+                ):
                     parts = request.url.path.split("/")
                     if len(parts) >= 5 and parts[1:4] == ["api", "v1", "sessions"]:
                         session = manager.sessions.get(parts[4])
@@ -485,7 +576,8 @@ def create_app(
                                 evaluations.require_interactive()
                             except HTTPException as error:
                                 response = JSONResponse(
-                                    {"detail": error.detail}, status_code=error.status_code,
+                                    {"detail": error.detail},
+                                    status_code=error.status_code,
                                 )
                                 await response(scope, receive, send)
                                 return
@@ -510,11 +602,17 @@ def create_app(
             "protocolVersion": PROTOCOL_VERSION,
             "protocolMinorVersion": PROTOCOL_MINOR_VERSION,
             "sessionCount": len(sessions),
-            "live": {"enabled": manager.live is not None,
-                     "state": manager.live.state if manager.live else "DISABLED"},
+            "live": {
+                "enabled": manager.live is not None,
+                "state": manager.live.state if manager.live else "DISABLED",
+            },
             "sessions": [
-                {"sessionId": s.session_id, "state": s.state, "source": s.kind,
-                 **({"evaluationId": s.evaluation_id} if s.evaluation_id else {})}
+                {
+                    "sessionId": s.session_id,
+                    "state": s.state,
+                    "source": s.kind,
+                    **({"evaluationId": s.evaluation_id} if s.evaluation_id else {}),
+                }
                 for s in sessions
             ],
             "evaluation": evaluations.status(),
@@ -526,14 +624,19 @@ def create_app(
 
     @app.get("/api/v1/library/scenes")
     async def library_scenes(
-        q: str | None = None, launchable: bool | None = None,
+        q: str | None = None,
+        launchable: bool | None = None,
         source: Literal["synthetic", "newton"] | None = None,
-        view: Literal["full", "summary"] = "full", limit: int | None = None,
-        cursor: str | None = None, latest: bool = False,
+        view: Literal["full", "summary"] = "full",
+        limit: int | None = None,
+        cursor: str | None = None,
+        latest: bool = False,
     ):
         if view == "summary" or limit is not None or cursor is not None:
-            return await asyncio.to_thread(manager.library.page, q, launchable, source, limit, cursor,
-                                           latest=latest)
+            return await asyncio.to_thread(
+                manager.library.page, q, launchable, source, limit, cursor, latest=latest
+            )
+
         def full_list():
             result = []
             for value in manager.library.list(q, launchable, latest=latest):
@@ -541,17 +644,28 @@ def create_app(
                     continue
                 version = manager.library.resolve(value["id"])
                 preview = previews.describe(version, source or value["sources"][0])
-                result.append(value | {"preview": preview, "entityCount": preview["entityCount"],
-                                       "deviceCount": preview["bindingCount"],
-                                       "countsReason": preview["reason"]})
+                result.append(
+                    value
+                    | {
+                        "preview": preview,
+                        "entityCount": preview["entityCount"],
+                        "deviceCount": preview["bindingCount"],
+                        "countsReason": preview["reason"],
+                    }
+                )
             return {"scenes": result}
+
         return await asyncio.to_thread(full_list)
 
     @app.get("/api/v1/library/scenes/{name}")
     @app.get("/api/v1/library/scenes/{name}/{rev}")
     async def library_scene(
-        name: str, rev: str | None = None, source: Literal["synthetic", "newton"] | None = None,
-        view: str = "full", section: str | None = None, offset: str = "0",
+        name: str,
+        rev: str | None = None,
+        source: Literal["synthetic", "newton"] | None = None,
+        view: str = "full",
+        section: str | None = None,
+        offset: str = "0",
         documentDigest: str | None = None,
     ):
         selector = f"{name}@{rev}" if rev is not None else name
@@ -559,27 +673,45 @@ def create_app(
         version = await asyncio.to_thread(manager.library.resolve, detail["id"])
         preview = await asyncio.to_thread(previews.describe, version, source or detail["sources"][0])
         detail.update(
-            preview=preview, entityCount=preview["entityCount"], deviceCount=preview["bindingCount"],
+            preview=preview,
+            entityCount=preview["entityCount"],
+            deviceCount=preview["bindingCount"],
             countsReason=preview["reason"],
         )
         related = await asyncio.to_thread(recordings.list)
         detail["recordings"] = [item for item in related if item.get("sceneVersion") == detail["id"]]
+
         def version_summaries():
             values = []
             for candidate in manager.library.versions.values():
                 if candidate.name != name:
                     continue
                 value = manager.library.resolved(candidate).summary()
-                values.append({
-                    key: value[key]
-                    for key in ("id", "rev", "contentHash", "launchable", "launchReason",
-                                "validationStatus")
-                })
+                values.append(
+                    {
+                        key: value[key]
+                        for key in (
+                            "id",
+                            "rev",
+                            "contentHash",
+                            "launchable",
+                            "launchReason",
+                            "validationStatus",
+                        )
+                    }
+                )
             return sorted(values, key=lambda item: item["rev"], reverse=True)
 
         detail["versions"] = await asyncio.to_thread(version_summaries)
-        return description_view(detail, "scene", selector, view=view, section=section, offset=offset,
-                                document_digest=documentDigest)
+        return description_view(
+            detail,
+            "scene",
+            selector,
+            view=view,
+            section=section,
+            offset=offset,
+            document_digest=documentDigest,
+        )
 
     @app.get("/api/v1/library/scenes/{name}/{rev}/preview/{source}/{relative:path}")
     async def library_preview_file(name: str, rev: str, source: str, relative: str):
@@ -588,8 +720,14 @@ def create_app(
             payload = await asyncio.to_thread(previews.read, version, source, relative)
         except (OSError, ValueError) as exc:
             raise HTTPException(404, {"code": "preview_unavailable", "message": str(exc)}) from exc
-        media = {".json": "application/json", ".bin": "application/octet-stream", ".glb": "model/gltf-binary",
-                 ".gltf": "model/gltf+json", ".png": "image/png", ".svg": "image/svg+xml"}
+        media = {
+            ".json": "application/json",
+            ".bin": "application/octet-stream",
+            ".glb": "model/gltf-binary",
+            ".gltf": "model/gltf+json",
+            ".png": "image/png",
+            ".svg": "image/svg+xml",
+        }
         return Response(payload, media_type=media.get(Path(relative).suffix, "application/octet-stream"))
 
     @app.get("/api/v1/platform")
@@ -612,9 +750,13 @@ def create_app(
             scene_version=body.sceneVersion,
             request_id=body.requestId,
         )
-        return JSONResponse(result, status_code=status, headers=(
-            {"Location": f"/api/v1/session-requests/{result['requestId']}"} if status == 202 else {}
-        ))
+        return JSONResponse(
+            result,
+            status_code=status,
+            headers=(
+                {"Location": f"/api/v1/session-requests/{result['requestId']}"} if status == 202 else {}
+            ),
+        )
 
     @app.get("/api/v1/sessions/{session_id}")
     async def session_summary(session_id: str):
@@ -623,9 +765,13 @@ def create_app(
     @app.post("/api/v1/sessions/{session_id}/viewer")
     async def open_viewer(session_id: str):
         if settings.remote:
-            raise HTTPException(403, {
-                "code": "viewer_local_only", "message": "Native Viewer is available only on the gateway host"
-            })
+            raise HTTPException(
+                403,
+                {
+                    "code": "viewer_local_only",
+                    "message": "Native Viewer is available only on the gateway host",
+                },
+            )
         return await manager.get(session_id).open_viewer()
 
     @app.post("/api/v1/sessions/{session_id}/commands")
@@ -822,11 +968,15 @@ def create_app(
                         session.require_interactive()
                         evaluations.require_interactive()
                     except HTTPException:
-                        connection.enqueue_reliable(encode(ServerError(
-                            code="invalid_message",
-                            message="evaluation_busy: This session is evaluator-owned and read-only",
-                            requestId=message.requestId,
-                        )))
+                        connection.enqueue_reliable(
+                            encode(
+                                ServerError(
+                                    code="invalid_message",
+                                    message="evaluation_busy: This session is evaluator-owned and read-only",
+                                    requestId=message.requestId,
+                                )
+                            )
+                        )
                         continue
                 if isinstance(message, Subscribe):
                     await session.observer_subscribe(connection, message)
@@ -887,8 +1037,10 @@ def create_app(
                         await connection.finish()
 
     from packages.agent_evaluation.scope import CaseAuthority
+
     app.add_middleware(CaseAuthority, service=external_evaluations)
     from packages.agent_rsi.scope import WorkflowAuthority
+
     app.add_middleware(WorkflowAuthority, service=agent_rsi)
     return app
 

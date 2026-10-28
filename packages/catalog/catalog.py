@@ -44,10 +44,48 @@ class AssetCatalog:
 
     def attach_metadata(self, store):
         """Keep maintenance storage independent; adapt it only for consumption."""
+        from packages.catalog.lightweight import LightweightCatalogStore
         from packages.catalog.maintained import ReleasedViews
+
         with self._lock:
             self.metadata_store = store
-            self._metadata_views = ReleasedViews(self, store)
+            if isinstance(store, LightweightCatalogStore):
+                self._load_lightweight(store)
+                self._metadata_views = None
+            else:
+                self._metadata_views = ReleasedViews(self, store)
+
+    def _load_lightweight(self, store):
+        snapshot, entries = store.load_entries()
+        semantic = build_semantic_index(entries, snapshot.id, embedder=self.embedder)
+        counts = {}
+        for entry in entries:
+            counts[entry.package_id] = counts.get(entry.package_id, 0) + 1
+        self.available, self.error = True, None
+        self.snapshot, self.entries, self.semantic = snapshot, entries, semantic
+        self.by_id = {entry.id: entry for entry in entries}
+        self.by_package = {entry.package_id: entry for entry in entries if counts[entry.package_id] == 1}
+
+    def _lightweight_view(self, release=None):
+        """Refresh once, then keep all nested reads on the same immutable snapshot."""
+        from packages.catalog.lightweight import LightweightCatalogStore
+
+        with self._lock:
+            if not isinstance(self.metadata_store, LightweightCatalogStore):
+                return self
+            latest = self.metadata_store.latest_release()
+            if latest and (self.snapshot is None or latest["id"] != self.snapshot.id):
+                self._load_lightweight(self.metadata_store)
+            if release and (self.snapshot is None or release != self.snapshot.id):
+                raise LibraryError(
+                    "release_expired", "Catalog changed; repeat the query without release", 409
+                )
+            view = copy.copy(self)
+            # All lightweight entries already carry their metadata. A view never
+            # consults the mutable store while resolving nested entries or assets.
+            view.metadata_store = None
+            view._metadata_views = None
+            return view
 
     def prepare_metadata_release(self, release, documents, *, vocabulary=None):
         """Build and persist the real consuming index before core activation."""
@@ -62,6 +100,25 @@ class AssetCatalog:
             return views.prepare(release, documents, base=base, vocabulary=vocabulary)
 
     def startup(self):
+        from packages.catalog.lightweight import LightweightCatalogStore
+
+        is_lightweight = (
+            self.path is not None
+            and self.path.is_dir()
+            and LightweightCatalogStore.is_available_at(self.path)
+        )
+        if is_lightweight:
+            try:
+                store = LightweightCatalogStore(self.path)
+                self._load_lightweight(store)
+                self.metadata_store = store
+                return
+            except Exception as exc:
+                LOGGER.warning(
+                    "Lightweight catalog startup unavailable: %s; falling back to seed catalog.",
+                    exc,
+                )
+
         try:
             if self.path is None:
                 raise CatalogFormatError("No catalog path is configured")
@@ -101,6 +158,9 @@ class AssetCatalog:
             self.archive_paths = tuple(archive_paths)
 
     def require(self):
+        view = self._lightweight_view()
+        if view is not self:
+            return view.require()
         if not self.available or self.snapshot is None:
             raise LibraryError(
                 "catalog_unavailable",
@@ -111,6 +171,9 @@ class AssetCatalog:
 
     def entry(self, provider, package, revision):
         with self._lock:
+            view = self._lightweight_view()
+            if view is not self:
+                return view.entry(provider, package, revision)
             self.require()
             identity = f"{provider}/{package}@{revision}"
             entry = self.by_id.get(identity) or self._historical.get(identity)
@@ -132,6 +195,7 @@ class AssetCatalog:
                 return entry
             if self.metadata_store is not None:
                 from packages.catalog.maintained import adapt_entry
+
                 try:
                     document = self.metadata_store.entry(identity)
                 except (KeyError, ValueError):
@@ -152,6 +216,9 @@ class AssetCatalog:
 
     def local_assets(self, library):
         """Correlate only through provenance source revision and package ID."""
+        view = self._lightweight_view()
+        if view is not self:
+            return view.local_assets(library)
         snapshot = self.snapshot if self.available else None
         values = getattr(library, "versions", {}) if library is not None else {}
         result = []
@@ -163,8 +230,12 @@ class AssetCatalog:
                 revision = provenance.get("sourceRevision")
                 provider = provenance.get("sourceProvider", "simready")
                 candidate = self.by_package.get(package) if isinstance(package, str) else None
-                if isinstance(package, str) and isinstance(revision, str) and (
-                    candidate is None or candidate.revision != revision or candidate.provider != provider
+                if (
+                    isinstance(package, str)
+                    and isinstance(revision, str)
+                    and (
+                        candidate is None or candidate.revision != revision or candidate.provider != provider
+                    )
                 ):
                     try:
                         # Historical provenance did not carry a provider. Never
@@ -184,12 +255,13 @@ class AssetCatalog:
     def search(self, library, **kwargs):
         with self._lock:
             release = kwargs.pop("release", None)
-            selected = self
+            selected = self._lightweight_view(release)
             if self._metadata_views is not None:
                 selected = self._metadata_views.select(release, kwargs.get("cursor"))
             elif release and (self.snapshot is None or release != self.snapshot.id):
-                raise LibraryError("release_expired", "Released view is unavailable; "
-                                   "repeat the search without release", 409)
+                raise LibraryError(
+                    "release_expired", "Released view is unavailable; repeat the search without release", 409
+                )
             result = search_catalog(selected, library, **kwargs)
             if kwargs.get("view") == "cards":
                 result["schema"] = "lw.catalog-cards/1"
@@ -197,7 +269,7 @@ class AssetCatalog:
 
     def release_document(self, identifier, *, offset=0, limit=4096):
         """Read an exact retained release in bounded Unicode-safe JSON chunks."""
-        if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 4096):
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 4096:
             raise LibraryError("invalid_release_page", "Use offset >= 0 and a limit from 1 to 4096", 400)
         if self.metadata_store is None:
             raise LibraryError("catalog_unavailable", "Metadata storage is not configured", 503)
@@ -205,32 +277,50 @@ class AssetCatalog:
         text = canonical_json(document)
         if offset > len(text):
             raise LibraryError("invalid_release_page", "Release offset is past the document", 400)
-        content = text[offset:offset + limit]
+        content = text[offset : offset + limit]
         next_offset = offset + len(content)
-        return {"schema": "lw.catalog-release-text/1", "id": document["id"], "encoding": "utf-8",
-                "offsetUnit": "unicode_code_points", "offset": offset, "limit": limit,
-                "totalCharacters": len(text), "text": content,
-                "nextOffset": next_offset if next_offset < len(text) else None}
+        return {
+            "schema": "lw.catalog-release-text/1",
+            "id": document["id"],
+            "encoding": "utf-8",
+            "offsetUnit": "unicode_code_points",
+            "offset": offset,
+            "limit": limit,
+            "totalCharacters": len(text),
+            "text": content,
+            "nextOffset": next_offset if next_offset < len(text) else None,
+        }
 
-    def describe(self, provider, package, revision, *, library=None, view="summary",
-                 document_digest=None, release=None):
+    def describe(
+        self, provider, package, revision, *, library=None, view="summary", document_digest=None, release=None
+    ):
+        selected = self._lightweight_view(release)
+        if selected is not self:
+            return selected.describe(
+                provider, package, revision, library=library, view=view, document_digest=document_digest
+            )
         if self._metadata_views is not None:
             with self._lock:
                 selected = self._metadata_views.select(release)
             if selected is not self:
-                return selected.describe(provider, package, revision, library=library, view=view,
-                                         document_digest=document_digest)
+                return selected.describe(
+                    provider, package, revision, library=library, view=view, document_digest=document_digest
+                )
         entry = self.entry(provider, package, revision)
         if self.resources is not None and entry.metadata is None:
             entry = self.resources.details(entry)
         with self._lock:
             local = [
-                item for item in self.local_assets(library)
+                item
+                for item in self.local_assets(library)
                 if item.entry is not None and item.entry.id == entry.id
             ]
             return entry_document(self, entry, local, view=view, document_digest=document_digest)
 
     def estimate(self, provider, package, revision, *, library=None, release=None):
+        selected = self._lightweight_view(release)
+        if selected is not self:
+            return selected.estimate(provider, package, revision, library=library)
         if self._metadata_views is not None:
             with self._lock:
                 selected = self._metadata_views.select(release)
@@ -241,7 +331,8 @@ class AssetCatalog:
             entry = self.resources.details(entry)
         with self._lock:
             local = [
-                item for item in self.local_assets(library)
+                item
+                for item in self.local_assets(library)
                 if item.entry is not None and item.entry.id == entry.id
             ]
             return estimate_document(self, entry, local)

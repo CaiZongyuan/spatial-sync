@@ -10,6 +10,8 @@ from apps.api.app.settings import Settings
 from packages.training.jobs import profile_key
 
 ROOT = Path(__file__).resolve().parents[2]
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+os.environ["SPATIAL_CATALOG_ROOT"] = ""
 for variable, name in (("LW_LIBRARY", "library"), ("SPATIAL_STATE_ROOT", "state"),
                        ("SPATIAL_RECORDINGS_ROOT", "recordings")):
     os.environ.setdefault(variable, str(ROOT / ".scratch/training-resources-e2e" / name))

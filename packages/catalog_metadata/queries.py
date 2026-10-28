@@ -10,9 +10,27 @@ def _clip(value, limit):
     return value[:limit] if isinstance(value, str) else value
 
 
+def _selected_release(store, db, release):
+    """Read the release of the database this query runs against.
+
+    The lightweight store can be replaced on disk by another process; it derives
+    the release from the open connection. Legacy releases are immutable, so the
+    store's own release lookup stays authoritative there.
+    """
+    if hasattr(store, "release_from_connection"):
+        selected = store.release_from_connection(db)
+        if release is not None and release != selected["id"]:
+            raise MetadataError("release_not_found", f"Unknown release {release}", 404)
+        return selected
+    return store.release(release)
+
+
 def describe(store, identity, *, release=None, section=None, offset=0, document_digest=None):
-    selected = store.release(release)
-    entry = store.entry(identity.removeprefix("catalog:"), release_id=selected["id"])
+    if hasattr(store, "read_entry"):
+        selected, entry = store.read_entry(identity.removeprefix("catalog:"), release_id=release)
+    else:
+        selected = store.release(release)
+        entry = store.entry(identity.removeprefix("catalog:"), release_id=selected["id"])
     fingerprint = digest(entry)
     if document_digest is not None and document_digest != fingerprint:
         raise MetadataError("catalog_changed", "Read a fresh entry after its document changed", 409)
@@ -122,26 +140,29 @@ def search(store, *, q="", collection=None, category=None, tag=None, release=Non
             raise MetadataError(
                 "cursor_mismatch", "Reuse the cursor with its original query and filters"
             ) from exc
-    selected = store.release(release)
-    where, parameters = ["release_id=?"], [selected["id"]]
-    for key, value in (("collectionId", collection), ("category", category)):
-        if value is not None:
-            where.append("json_extract(document, '$." + key + "')=?")
-            parameters.append(value)
-    if tag is not None:
-        where.append("EXISTS (SELECT 1 FROM json_each(json_extract(document,'$.tags')) WHERE value=?)")
-        parameters.append(tag)
-    if exact_query:
-        where.append("id=?")
-        parameters.append(exact)
-    else:
-        for word in q.casefold().split():
-            where.append(
-                "EXISTS (SELECT 1 FROM json_tree(search_text) WHERE type='text' AND instr(lower(value),?)>0)"
-            )
-            parameters.append(word)
-    condition = " AND ".join(where)
     with store.transaction(write=False) as db:
+        # Read the release from the same connection that executes the query, so
+        # a database replaced by another process cannot mix two generations.
+        selected = _selected_release(store, db, release)
+        where, parameters = ["release_id=?"], [selected["id"]]
+        for key, value in (("collectionId", collection), ("category", category)):
+            if value is not None:
+                where.append("json_extract(document, '$." + key + "')=?")
+                parameters.append(value)
+        if tag is not None:
+            where.append("EXISTS (SELECT 1 FROM json_each(json_extract(document,'$.tags')) WHERE value=?)")
+            parameters.append(tag)
+        if exact_query:
+            where.append("id=?")
+            parameters.append(exact)
+        else:
+            for word in q.casefold().split():
+                where.append(
+                    "EXISTS (SELECT 1 FROM json_tree(search_text) WHERE type='text' "
+                    "AND instr(lower(value),?)>0)"
+                )
+                parameters.append(word)
+        condition = " AND ".join(where)
         total = db.execute("SELECT COUNT(*) FROM release_entries WHERE " + condition, parameters).fetchone()[
             0
         ]

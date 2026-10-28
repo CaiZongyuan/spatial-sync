@@ -23,6 +23,10 @@ class MetadataError(ValueError):
         super().__init__(message)
         self.code, self.message, self.status, self.details = code, message, status, details
 
+    @property
+    def detail(self):
+        return {"code": self.code, "message": self.message, **self.details}
+
 
 def now():
     return datetime.now(UTC).isoformat()

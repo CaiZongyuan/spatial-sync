@@ -18,3 +18,5 @@ test-results/
 !.env.example
 /recordings/
 .worktrees/
+# Rebuildable local catalog index, SQLite sidecars and sync temporary files.
+/catalog/local/

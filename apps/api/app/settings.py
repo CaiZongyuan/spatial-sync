@@ -55,6 +55,12 @@ class Settings:
     live_bindings: Path | None = field(default_factory=lambda: (
         Path(os.environ["SPATIAL_LIVE_BINDINGS"]) if os.getenv("SPATIAL_LIVE_BINDINGS") else None
     ))
+    # Experimental state and the maintained metadata library have separate owners: a
+    # deployment keeps its state root while pointing this at an existing library.
+    catalog_metadata_root: Path | None = field(default_factory=lambda: (
+        Path(os.environ["SPATIAL_CATALOG_METADATA_ROOT"]).expanduser()
+        if os.getenv("SPATIAL_CATALOG_METADATA_ROOT") else None
+    ))
 
     def __post_init__(self):
         node_url = urlsplit(self.node_gateway_url)
@@ -68,6 +74,10 @@ class Settings:
             raise ValueError("recordings_keep must be positive")
         if self.live_retention_days < 1:
             raise ValueError("live_retention_days must be positive")
+        if self.catalog_metadata_root is not None and not self.catalog_metadata_root.is_absolute():
+            raise ValueError(
+                "SPATIAL_CATALOG_METADATA_ROOT must be an absolute directory path"
+            )
         if self.remote and (not self.operator_token or not self.allowed_origins):
             raise ValueError("remote mode requires an operator token and explicit allowed origins")
         if min(self.heartbeat_interval_seconds, self.send_timeout_seconds, self.reliable_queue_size) <= 0:

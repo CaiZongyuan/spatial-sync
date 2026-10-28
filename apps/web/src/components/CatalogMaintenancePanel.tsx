@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  controlMetadataRun, getMetadataState, setMetadataCollectionEnabled, startMetadataRun,
+  controlMetadataRun, getMetadataState, maintenanceRunsAvailable, setMetadataCollectionEnabled, startMetadataRun,
   type MetadataState,
 } from '../lib/catalog-maintenance';
 import { formatBytes } from '../lib/catalog';
@@ -17,9 +17,10 @@ const stageLabels: Record<string, string> = {
   previews: '缓存本地缩略图', awaiting_agent: '待外部 Agent 整理',
 };
 
-export function CatalogMaintenancePanel({ onPublication, onCollections }: {
+export function CatalogMaintenancePanel({ onPublication, onCollections, onAvailability }: {
   onPublication: () => void;
   onCollections: (values: MetadataState['collections']) => void;
+  onAvailability?: (available: boolean) => void;
 }) {
   const [state, setState] = useState<MetadataState>();
   const [error, setError] = useState<string>();
@@ -27,8 +28,8 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
   const [organizer, setOrganizer] = useState('runtime');
   const [previews, setPreviews] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const callbacks = useRef({ onPublication, onCollections });
-  callbacks.current = { onPublication, onCollections };
+  const callbacks = useRef({ onPublication, onCollections, onAvailability });
+  callbacks.current = { onPublication, onCollections, onAvailability };
   const previousRelease = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const controller = new AbortController();
@@ -39,11 +40,13 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
         if (controller.signal.aborted) return;
         setState(value); setError(undefined);
         callbacks.current.onCollections(value.collections);
+        callbacks.current.onAvailability?.(maintenanceRunsAvailable(value));
         const releaseId = value.release?.id ?? null;
         if (previousRelease.current !== undefined && previousRelease.current !== releaseId)
           callbacks.current.onPublication();
         previousRelease.current = releaseId;
-        timer = setTimeout(poll, value.runs.some(run => activeStatuses.has(run.status)) ? 1500 : 10000);
+        if (maintenanceRunsAvailable(value))
+          timer = setTimeout(poll, value.runs.some(run => activeStatuses.has(run.status)) ? 1500 : 10000);
       } catch (failure) {
         if (!controller.signal.aborted) { setError((failure as Error).message); timer = setTimeout(poll, 10000); }
       }
@@ -57,6 +60,9 @@ export function CatalogMaintenancePanel({ onPublication, onCollections }: {
     catch (failure) { setError((failure as Error).message); }
     finally { setBusy(false); }
   };
+  // The lightweight catalog is rebuilt from versioned files; it has no runs or
+  // collection switches, so the panel stays absent instead of offering 409s.
+  if (!state || !maintenanceRunsAvailable(state)) return null;
   return <details className="catalog-maintenance" aria-label="元数据维护">
     <summary>元数据维护 <span>{state?.collections.length ?? '…'} 个集合</span></summary>
     <p className="asset-small-note">清单、字段提取与整理覆盖分别统计。维护期间仍可浏览当前发布。</p>
