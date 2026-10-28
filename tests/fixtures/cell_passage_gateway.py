@@ -84,6 +84,7 @@ def create_fixture_app(root):
     origins = tuple(value.strip() for value in os.getenv("SPATIAL_ALLOWED_ORIGINS", "").split(",")
                     if value.strip())
     settings = Settings(recordings_root=root / "recordings", state_root=root / "state", node_trainer=(),
+                        live_bindings=None, node_token=None, node_capabilities=None,
                         **({"allowed_origins": origins} if origins else {}))
     app = create_app(settings, source_factory=lambda kind, sid: WorkcellSource(sid))
 

@@ -175,3 +175,15 @@ live-cell difference at most one cell, and final liquid volume tolerance
 stroke resolution; it does not loosen conservation or authorize quantity
 snapping. The shared client contract and each recipe sidecar retain these
 values so later failures cannot change the gate.
+
+The source quantity-intent actions are `aspirateAvailable` (optional reserved
+volume), `aspirateFraction`, `aspirateTopUp` (source plus target compartment and
+target volume), and `dispenseAll`. They resolve available amounts against
+actual pump position and limits at source startup; literal actions keep their
+existing semantics. The shared JSON classifies both families for clients.
+After a failed intent, do not run the same fraction/available/all intent again
+against a changed state. Review its original requested/resolved goal,
+applied/observed amount, current tip/vessels, and explicit untransferred
+resolution residual. A liquid replacement must state a reviewed literal
+remainder with a new operation identity. Untransferable residue stays at the
+receipt's `remainderLocation`; it is not invented transfer or disappearance.

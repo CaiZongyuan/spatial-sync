@@ -40,6 +40,7 @@ def gateway_app():
     settings = Settings(
         state_root=root / "state", recordings_root=root / "recordings", scene_previews_root=root / "previews",
         allowed_origins=tuple(os.environ["SPATIAL_ALLOWED_ORIGINS"].split(",")), node_trainer=(),
+        live_bindings=None, node_token=None, node_capabilities=None,
     )
     app = create_app(settings)
 
@@ -117,25 +118,40 @@ async def _install(client, library, output):
 
 
 async def _claim(client, workcell, owner):
+    config = (await client.catalog())["entities"][workcell]["config"]
+    managed = config.get("managedDevices", [])
     values = (await client.get_state([workcell]))["entities"][workcell]["values"]
-    await client.invoke_action(workcell, "requestControl", {
+    previous_owner, expected_epoch = values["controlOwner"], values["controlEpoch"] + 1
+    operation_id = "claim-" + uuid.uuid4().hex
+    accepted = await client.invoke_action(workcell, "requestControl", {
         "owner": values["controlOwner"], "epoch": values["controlEpoch"],
-        "operationId": "claim-" + uuid.uuid4().hex, "nextOwner": owner, "mode": "auto",
+        "operationId": operation_id, "nextOwner": owner, "mode": "auto",
     }, wait=False, actor="cli:cell-passage")
+    if accepted["status"] not in ("accepted", "running", "succeeded"):
+        return None
     for _ in range(600):
-        values = (await client.get_state([workcell]))["entities"][workcell]["values"]
-        if values["controlSafe"]:
+        state = (await client.get_state([workcell, *managed]))["entities"]
+        values = state[workcell]["values"]
+        if (values["controlOwner"] != previous_owner or values["controlEpoch"] != expected_epoch
+                or values["controlMode"] != "holding"):
+            return None
+        own_request = next((row for row in values["materialSnapshot"]["controlRequests"]
+                            if row["operationId"] == operation_id), None)
+        if own_request is None or own_request["epoch"] != expected_epoch:
+            return None
+        if values["controlSafe"] and all(state[key]["values"].get("controlSafe") is True for key in managed):
             break
         await asyncio.sleep(0.1)
     else:
-        raise ValueError("Source did not establish safe hold for automatic control")
+        return None
     await client.invoke_action(workcell, "confirmControl", {
         "owner": values["controlOwner"], "epoch": values["controlEpoch"],
         "operationId": "confirm-" + uuid.uuid4().hex,
     }, wait=False, actor="cli:cell-passage")
     values = (await client.get_state([workcell]))["entities"][workcell]["values"]
-    if values["controlOwner"] != owner or values["controlMode"] != "auto":
-        raise ValueError("Source did not confirm the requested control owner")
+    if (values["controlOwner"] != owner or values["controlMode"] != "auto"
+            or values["controlEpoch"] != expected_epoch):
+        return None
     return values["controlEpoch"]
 
 
@@ -151,6 +167,8 @@ async def _prepare(args, library, bootstrap):
     async with GatewayClient(url=url, session=session["sessionId"]) as client:
         owner = "runner-" + args.round
         epoch = await _claim(client, "/World/Lab/LiquidHandler", owner)
+        if epoch is None:
+            return {"status": "dispatch_stopped", "reason": "control_not_confirmed", "plans": []}
         recipe = compile_recipe(*load_inputs(library), owner=owner, epoch=epoch, round_id=args.round)
         if not recipe["environmentChecksAvailable"]:
             raise ValueError("The generated package lacks the required environment checks")

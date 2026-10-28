@@ -39,6 +39,11 @@ def revise_remaining(plan, *, owner, epoch, material_revision, expected_material
             raise ValueError("Replacement must preserve the step ID")
         step = deepcopy({name: selected[name] for name in ("id", "do", "check", "wait", "expect",
                                                          "timeoutSeconds") if name in selected})
+        if (status == "failed" and original.get("do", {}).get("action")
+                in CLIENT_CONTRACT["liquidActions"]["quantityIntent"] and "do" in step):
+            if (step["do"]["action"] not in CLIENT_CONTRACT["liquidActions"]["literal"]
+                    or "volumeUl" not in step["do"].get("params", {})):
+                raise ValueError("Failed quantity intent requires an explicit literal remainder after review")
         if status not in ("done", "skipped") and "do" in step:
             params = step["do"].setdefault("params", {})
             params.update(owner=owner, epoch=epoch)

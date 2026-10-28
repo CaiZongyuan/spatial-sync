@@ -6,6 +6,24 @@
     "siblingLive": 1,
     "finalVolumeUl": 0.01
   },
+  "mechanicalTolerances": {
+    "positionM": 0.005,
+    "orientationDegrees": 5,
+    "relativeSpeedMps": 0.01,
+    "basis": "Existing labware.facts seated_station thresholds, in native physics coordinates"
+  },
+  "liquidActions": {
+    "literal": ["aspirate", "dispense", "mix"],
+    "quantityIntent": ["aspirateAvailable", "aspirateFraction", "aspirateTopUp", "dispenseAll"],
+    "aspiration": ["aspirate", "aspirateAvailable", "aspirateFraction", "aspirateTopUp"],
+    "dispensing": ["dispense", "dispenseAll"],
+    "mixing": ["mix"],
+    "failedRemainder": {
+      "replayQuantityIntent": false,
+      "replacement": "Review the original resolved goal, actual applied amount and present material; use an explicit literal remainder or a reviewed check, with a new operation ID",
+      "reviewFields": ["quantityKind", "requestedUl", "resolvedUl", "appliedUl", "observedUl", "remainingUl", "resolutionResidualUl", "untransferredUl", "resolutionUl", "pumpStartM", "pumpTargetM", "quantityOutcome", "remainderLocation"]
+    }
+  },
   "roundPlanIdentity": {
     "idTemplate": "cp-{roundId}-stage{stage}-part{part}-of{parts}",
     "titleTemplate": "Cell Passage {roundId} · {stage}/7 · {stageTitle} · part {part}/{parts}",

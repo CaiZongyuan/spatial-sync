@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from apps.cli.lw.client import GatewayClient
 from tests.fixtures.cell_passage_gateway import create_fixture_app
+from tools.cell_passage_audit import audit_recording
 from tools.cell_passage_recipe import revise_remaining
 from tools.cell_passage_runner import PassageExecutor, drive_executor
 from tools.cell_passage_session import execute_round, prepare_round
@@ -297,6 +298,22 @@ async def test_preparation_publishes_all_seven_stage_plans_without_starting_acti
         assert completed["completedParts"] == [row["id"] for row in result["plans"]]
         assert set(completed["stageResults"]) == {str(stage) for stage in range(1, 8)}
         assert completed["experimentQualified"] is False
+        server.delete("/api/v1/sessions/" + session).raise_for_status()
+        metadata = await client.request("GET", f"/recordings/{session}/recording.json")
+        files = {}
+        for segment in metadata["segments"]:
+            files[segment["file"]] = await client.request(
+                "GET", f"/recordings/{session}/" + segment["file"], response_bytes=True,
+            )
+        report = audit_recording(metadata, files, completed["target"], completed["completedParts"])
+        assert report["status"] == "recording_valid", report
+        assert report["completedPlans"] == 7
+        assert report["recordedOperationReceipts"] == 7
+        corrupted = dict(files)
+        name = metadata["segments"][0]["file"]
+        corrupted[name] += b"\x00"
+        invalid = audit_recording(metadata, corrupted, completed["target"], completed["completedParts"])
+        assert invalid["status"] == "invalid"
 
 
 @pytest.mark.parametrize("passage_http", [99], indirect=True)

@@ -77,3 +77,23 @@ def test_failed_cycle_replacement_updates_pending_references_across_parts_and_ke
     assert documents["following-part"]["steps"][1]["do"]["params"]["cycle"] == new_cycle
     assert documents["following-part"]["steps"][1]["do"]["params"]["operationId"] == "apply-cycle"
     assert "completed-part" not in documents
+
+
+def test_failed_fraction_requires_explicit_literal_remainder_instead_of_recomputing_current_fraction():
+    step = {"id": 600001, "status": "failed", "do": {
+        "entity": "/workcell", "action": "aspirateFraction", "params": {
+            "owner": "old", "epoch": 0, "operationId": "partial-fraction", "vessel": "S1", "fraction": 0.5,
+        },
+    }}
+    plan = {"id": "part", "title": "Partial allocation", "revision": 1, "steps": [step]}
+    with pytest.raises(ValueError, match="literal remainder"):
+        revise_remaining(plan, owner="new", epoch=2, material_revision=8, expected_material_revision=8,
+                         replacements={600001: deepcopy(step)})
+    replacement = {"id": 600001, "do": {"entity": "/workcell", "action": "aspirate", "params": {
+        "vessel": "S1", "volumeUl": 40,
+    }}}
+    document = revise_remaining(
+        plan, owner="new", epoch=2, material_revision=8, expected_material_revision=8,
+        replacements={600001: replacement},
+    )
+    assert document["steps"][0]["do"]["params"]["volumeUl"] == 40
