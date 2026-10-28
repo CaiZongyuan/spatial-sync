@@ -1,12 +1,12 @@
 ---
-title: 介绍 Lab World：为 Agent 建设可以工作的物理世界
+title: 介绍 Lab World：Agent 的物理工作环境
 description: 从细胞观察与成像出发，Lab World 正在建设面向 Agent 的物理工作环境：以共同状态支撑行动，在虚拟世界练习，用真实结果验收，让经过验证的新版本继续参与改进。
 date: 2026-10-21
 author: Lab World 团队
 cover: /images/blog/introducing-lab-world.webp
 ---
 
-# 介绍 Lab World：为 Agent 建设可以工作的物理世界
+# 介绍 Lab World：Agent 的物理工作环境
 
 *更新于 2026 年 10 月 28 日*
 
