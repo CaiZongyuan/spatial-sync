@@ -25,9 +25,10 @@ export function GenerateThumbnail({ asset, scene }: { asset?: AssetVersion; scen
   }, [path]);
   useEffect(() => {
     if (!making) return;
+    // Large readonly scenes may need dozens of seconds to load all verified GLBs.
     const timer = setTimeout(() => {
       controller.current?.abort(); setMaking(false); setMessage('生成缩略图超时，可以重试。');
-    }, 15000);
+    }, 120000);
     return () => clearTimeout(timer);
   }, [making]);
   const done = useCallback((png?: string) => {

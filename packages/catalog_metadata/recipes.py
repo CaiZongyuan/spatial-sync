@@ -39,6 +39,8 @@ def preview_choice(files, *, explicit=None):
             continue
         if role != "object" and path != explicit and not OBJECT_IMAGE.search(path):
             continue
+        if path == explicit:
+            return value
         size = value.get("size")
         candidates.append((size if type(size) is int and size >= 0 else float("inf"), path, value))
     return min(candidates, default=(None, None, None), key=lambda value: (value[0], value[1]))[2]

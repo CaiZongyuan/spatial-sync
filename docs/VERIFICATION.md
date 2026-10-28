@@ -104,7 +104,8 @@ DELETE approvals and old receipts remain supported. Removed-version recovery
 does not reuse revision numbers for new imports or bypass reference protection.
 
 Library cards load static PNGs near the viewport. Detail pages can generate a
-thumbnail from the real read-only preview/model; these images are derived viewer
+thumbnail from the real read-only preview/model, allowing up to two minutes for
+large scene captures to load and frame; these images are derived viewer
 state, not validation evidence. The cache accepts bounded static RGB/RGBA PNGs
 and retains at most 128 entries / 64 MiB. Missing/invalidated images are truthful
 placeholders; lists create no WebGL/GLB work. `/trash` exposes recovery.
