@@ -138,7 +138,6 @@ def tube(stage, path, *, lid=False):
     root = rigid(stage, path, 0.004)
     if lid:
         cylinder(stage, path + "/Cap", (0, 0, 0.004), 0.0105, 0.008)
-        box(stage, path + "/IndexTab", (0.015, 0, 0.004), (0.014, 0.004, 0.008))
         ring(stage, path + "/Skirt", (0, 0, -0.004), 0.0095, 0.008, 0.001, 20)
         box(stage, path + "/CarrierArm", (-0.0225, 0, 0.009), (0.025, 0.006, 0.002))
         ring(stage, path + "/Handle", (-0.035, 0, 0.022), 0.00835, 0.024, 0.0003, 16)
@@ -149,8 +148,6 @@ def tube(stage, path, *, lid=False):
         site(stage, path + "/Content", (0, 0, 0.003))
         box(stage, path + "/CarrierArm", (0.02125, 0, 0.029), (0.0275, 0.006, 0.002))
         ring(stage, path + "/Handle", (0.035, 0, 0.038), 0.00835, 0.024, 0.0003, 16)
-        for sign in (-1, 1):
-            box(stage, path + f"/CapGuide{sign + 1}", (0.015, sign * 0.0035, 0.0445), (0.008, 0.002, 0.031))
         box(stage, path + "/RackIndex", (-0.015, 0, 0.020), (0.014, 0.006, 0.004))
         site(stage, path + "/Grasp", (0.035, 0, 0.038))
     return root
