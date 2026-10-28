@@ -33,6 +33,7 @@ class LabwareMotionProgram(RobotArmProgram):
         graspOffsets: dict[str, list[float]]
         gripDiameters: dict[str, float]
         gripShapePrefixes: dict[str, str] = Field(default_factory=dict)
+        fingerPadShapes: list[str] = Field(min_length=2, max_length=2)
 
         @model_validator(mode="after")
         def calibrated_grips(self):
@@ -54,6 +55,10 @@ class LabwareMotionProgram(RobotArmProgram):
         }
         self.control_entity = ctx.config.controlEntity
         self.grip_hold_width = None
+        self.pad_shapes = {
+            ctx.physics.bind_joint(key).child: shape
+            for key, shape in zip(ctx.config.fingerKeys, ctx.config.fingerPadShapes, strict=True)
+        }
         self.grip_prefixes = {
             ctx.physics.bind_body(key): ctx.config.gripShapePrefixes.get(key, key) for key in ctx.config.tubes
         }
@@ -83,6 +88,7 @@ class LabwareMotionProgram(RobotArmProgram):
             contacts,
             body=body,
             fingers={finger.child for finger in self.fingers},
+            pad_shapes=self.pad_shapes,
             shape_prefix=self.grip_prefixes[body],
         )
         if qualified:

@@ -117,6 +117,10 @@ def probe(source, output, *, obstacle=False):
     tcp = port.bind_site(ROBOT + "/fr3_hand/PhysicalTCP")
     robot_bodies = {index for key, index in port.bodies.items() if key.startswith(ROBOT + "/")}
     finger_bodies = {finger.child for finger in fingers}
+    pad_shapes = {
+        finger.child: ROBOT + "/fr3_" + name + "finger/Collision_3"
+        for finger, name in zip(fingers, ("left", "right"), strict=True)
+    }
     samples, contacts, motions = [], [], []
     phase = "source"
 
@@ -126,13 +130,21 @@ def probe(source, output, *, obstacle=False):
         payload_index = contact.bodies.index(body)
         other = 1 - payload_index
         if contact.bodies[other] in finger_bodies and contact.shapes[payload_index] == BODY + "/Handle":
-            return phase in ("pickup", "transport", "place")
+            return (
+                phase in ("pickup", "transport", "place")
+                and contact.distance_m >= -0.001
+                and contact.shapes[other] == pad_shapes[contact.bodies[other]]
+            )
         support = contact.shapes[other]
         return (
-            phase in ("source", "pickup")
-            and support == "/World/Lab/Support0"
-            or phase in ("place", "released")
-            and support == "/World/Lab/Support1"
+            contact.shapes[payload_index] == BODY + "/Floor"
+            and contact.distance_m >= -0.001
+            and (
+                phase in ("source", "pickup")
+                and support == "/World/Lab/Support0"
+                or phase in ("place", "released")
+                and support == "/World/Lab/Support1"
+            )
         )
 
     def touching():
@@ -145,9 +157,18 @@ def probe(source, output, *, obstacle=False):
         }
 
     def qualified_grasp(opening):
-        return physical_grasp(port.body[body], np.r_[*port.site_pose(tcp)], HANDLE, .017, opening,
-                              port.collision_contacts(), body=body, fingers=finger_bodies,
-                              shape_prefix=BODY + "/Handle")
+        return physical_grasp(
+            port.body[body],
+            np.r_[*port.site_pose(tcp)],
+            HANDLE,
+            0.017,
+            opening,
+            port.collision_contacts(),
+            body=body,
+            fingers=finger_bodies,
+            pad_shapes=pad_shapes,
+            shape_prefix=BODY + "/Handle",
+        )
 
     def advance():
         port.commit()

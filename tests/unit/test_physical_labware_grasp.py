@@ -21,6 +21,7 @@ def qualify(contacts, opening=0.01431):
         contacts,
         body=13,
         fingers={11, 12},
+        pad_shapes={11: "finger11/Pad", 12: "finger12/Pad"},
         shape_prefix="plate/Handle",
     )
 
@@ -46,3 +47,8 @@ def test_missing_margin_only_wrong_surface_or_deep_contact_cannot_qualify(contac
 
 def test_open_gripper_cannot_qualify_even_with_stale_contacts():
     assert not qualify([contact(11, -0.0002), contact(12, -0.0002)], opening=0.08)
+
+
+def test_other_shape_on_the_correct_finger_body_is_not_a_pad_contact():
+    wrong = SimpleNamespace(bodies=(13, 11), shapes=("plate/Handle", "finger11/Knuckle"), distance_m=-0.0002)
+    assert not qualify([wrong, contact(12, -0.0002)])
