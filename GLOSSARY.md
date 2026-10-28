@@ -123,6 +123,20 @@ _Avoid_: Scene revision (the per-session manifest counter), snapshot
 Scene content that is only rendered: no physics, no behavior, never part of the physics model.
 _Avoid_: Decoration, background entity
 
+## Experiments
+
+**Cell Passage** (细胞传代):
+One laboratory cycle that takes a culture ready for passage through observation, preparation, collection and reseeding, ending with its daughter cultures returned to incubation and the cycle's waste handled. A Cell Passage names the experimental process; an Operation Plan describes the intended actions for carrying it out.
+_Avoid_: Task (a training definition), Operation Plan (the stated intent rather than the experimental process)
+
+**Culture Lineage** (培养物谱系):
+The recorded mother-to-daughter relationships between separately tracked cultures across Cell Passages. Moving a culture between vessels does not itself create a new passage.
+_Avoid_: Container history (where a culture was held), Scene Version (a laboratory layout revision)
+
+**Culture** (培养物):
+A separately tracked cell population with an identity and origin independent of the vessel holding it. Transfer and processing preserve its association with that origin; reseeding creates daughter cultures with a recorded relationship to their mother.
+_Avoid_: Vessel (the physical container), Asset (a versioned physical package), Task (a training definition)
+
 ## Training
 
 **Job** (作业):
