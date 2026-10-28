@@ -72,6 +72,21 @@ services. It must not call an imagined Python resume endpoint. A new Python
 executor accepts only a fresh, approved revision-one Plan with pending steps;
 process restart starts a new round rather than treating replay as a checkpoint.
 
+For an existing owned session and a fresh JSON Plan document, run:
+
+```bash
+python -m tools.cell_passage_runner --session <session-id> --document plan.json \
+  --owner <current-owner> --epoch <current-control-epoch> --receipt <new-round>/run.jsonl
+```
+
+The driver appends and flushes observations and an end row. On exceptional exit
+it retains the active invocation and requests a new control generation in
+holding mode, only if it still owns the original generation. A failed network
+request leaves that hold explicitly unconfirmed. It does not claim standstill
+or release attachments/material. A receipt lacking an end row is interrupted;
+it cannot authorize recovery. `plan_completed` means the Plan finished, with
+`experimentQualified:false` until separate material/mechanical checks pass.
+
 ## Material result boundary
 
 `tools/cell_passage_result.py` reads initial and final public snapshots. It

@@ -1,21 +1,18 @@
 """Real HTTP/Plan pipeline with explicit synthetic mechanical feedback, not Newton proof."""
 
 import asyncio
+import json
 from copy import deepcopy
-from time import monotonic, perf_counter
+from time import perf_counter
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.api.app.main import create_app
-from apps.api.app.settings import Settings
-from apps.api.app.sources.synthetic_source import SyntheticSource
 from apps.cli.lw.client import GatewayClient
-from packages.protocol.schema import SceneManifest
-from tests.fixtures.cell_passage import build_workcell_host
+from tests.fixtures.cell_passage_gateway import create_fixture_app
 from tools.cell_passage_recipe import revise_remaining
-from tools.cell_passage_runner import PassageExecutor
+from tools.cell_passage_runner import PassageExecutor, drive_executor
 
 
 class PublicHTTP(httpx.AsyncBaseTransport):
@@ -38,43 +35,9 @@ class PublicHTTP(httpx.AsyncBaseTransport):
 def passage_gateway(tmp_path_factory):
     root = tmp_path_factory.mktemp("passage-http")
     started = perf_counter()
-    class WorkcellSource(SyntheticSource):
-        async def start(self, scene_id, options):
-            self.options = options.model_copy()
-            host_root = root / self.session_id
-            host_root.mkdir()
-            self.host, self.actuator = build_workcell_host(host_root)
-            self.catalog = self.host.catalog
-            self.manifest = SceneManifest(
-                sessionId=self.session_id, sceneRevision="fixture-" + self.session_id,
-                revisionNumericId=1, sceneName="Cell Passage HTTP fixture",
-                source={"kind": "synthetic", "physicsDt": options.physicsDt},
-                nodes=[{"kind": "group", "entityKey": "/workcell", "name": "Fixture workcell"}],
-            )
-            self.catalog.sceneRevision = self.manifest.sceneRevision
-            self._state = "RUNNING"
-            self._publish("stream.snapshot")
-            self._last_clock = monotonic()
-            self._task = asyncio.create_task(self._run(), name=f"passage-fixture-{self.session_id}")
-            return self.manifest, self.catalog
-
-        def _poses(self):
-            return []
-
-        def _advance(self, count):
-            self._step_index += count
-            due = int(self.sim_time * self.options.controlHz + 1e-9)
-            while self._control_index < due:
-                self._control_index += 1
-                for event in self.host.tick(
-                    self._control_index / self.options.controlHz, 1 / self.options.controlHz
-                ):
-                    self._events.put_nowait(event)
-
     with pytest.MonkeyPatch.context() as env:
         env.setenv("LW_LIBRARY", str(root / "library"))
-        settings = Settings(recordings_root=root / "recordings", state_root=root / "state", node_trainer=())
-        app = create_app(settings, source_factory=lambda kind, sid: WorkcellSource(sid))
+        app = create_fixture_app(root)
         constructed = perf_counter()
         with TestClient(app) as client:
             ready = perf_counter()
@@ -168,7 +131,7 @@ async def test_material_change_without_active_action_requires_reconciliation(pas
         executor = await new_executor(client)
         await client.invoke_action("/workcell", "reserve", {
             "owner": "auto", "epoch": 0, "operationId": "external-reservation",
-            "resource": "/source", "device": "/workcell",
+            "resource": "/peer", "device": "/workcell",
         }, wait=True, timeout=2)
         result = await executor.advance()
         assert (result["status"], result["reason"]) == ("reconcile_required", "material_changed")
@@ -241,3 +204,28 @@ async def test_failed_step_revision_reconciles_without_replaying_done_step(passa
             await asyncio.sleep(0.01)
         assert result["status"] == "completed", result
         assert result["plan"]["stepResults"]["1"] == failed["stepResults"]["1"]
+
+
+async def test_client_exit_keeps_interrupted_receipt_and_fences_own_generation(passage_http, tmp_path):
+    server, session = passage_http
+    async with httpx.AsyncClient(base_url="http://testserver", transport=PublicHTTP(server)) as http:
+        client = GatewayClient(session=session, http=http)
+        executor = await new_executor(client, seconds=5)
+        receipt = tmp_path / "round.jsonl"
+        task = asyncio.create_task(drive_executor(executor, receipt, interval=0.005))
+        try:
+            for _ in range(100):
+                plan = await client.plan_show(executor.plan_id)
+                if plan["steps"][0]["status"] == "running":
+                    break
+                await asyncio.sleep(0.005)
+            assert plan["steps"][0]["status"] == "running"
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        rows = [json.loads(line) for line in receipt.read_text(encoding="utf8").splitlines()]
+        assert rows[-1]["status"] == "interrupted"
+        assert rows[-1]["active"]["invocationId"]
+        values = (await client.get_state(["/workcell"]))["entities"]["/workcell"]["values"]
+        assert values["controlMode"] == "holding" and values["controlEpoch"] == 1

@@ -6,8 +6,12 @@ Call ``advance`` repeatedly; paused and observing results are not action failure
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import json
 import math
 import uuid
+from pathlib import Path
 
 from apps.cli.lw.client import TERMINAL, GatewayError
 
@@ -190,3 +194,99 @@ class PassageExecutor:
             return {"status": "observing", "reason": "admission_unconfirmed"}
         self.active["invocationId"] = result["invocationId"]
         return {"status": "observing", "invocation": result}
+
+
+async def drive_executor(executor, receipt_path, *, interval=0.1):
+    """Drive a fresh client and retain an append-only receipt on normal/exceptional exit.
+
+    The gateway recording remains authoritative. A receipt without an ``end``
+    row is interrupted (for example SIGKILL); it is never an execution checkpoint.
+    """
+    if not math.isfinite(interval) or interval <= 0:
+        raise ValueError("Polling interval must be finite and positive")
+    receipt_path = Path(receipt_path)
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async def hold_own_generation():
+        try:
+            values = (await executor.client.get_state([executor.workcell]))["entities"][
+                executor.workcell
+            ]["values"]
+            if (values["controlOwner"] != executor.owner
+                    or values["controlEpoch"] != executor.control_epoch):
+                return "already_fenced"
+            await executor.client.invoke_action(executor.workcell, "requestControl", {
+                "owner": executor.owner, "epoch": executor.control_epoch,
+                "operationId": "interrupt-" + uuid.uuid4().hex,
+                "nextOwner": "interrupted-" + executor.plan_id, "mode": "manual",
+            }, wait=False, actor="cli:cell-passage")
+            return "requested"
+        except GatewayError:
+            return "unconfirmed"
+
+    with receipt_path.open("x", encoding="utf8") as receipt:
+        def record(document):
+            receipt.write(json.dumps(document, ensure_ascii=False, allow_nan=False) + "\n")
+            receipt.flush()
+
+        record({"event": "start", "planId": executor.plan_id, "target": executor.target,
+                "controlOwner": executor.owner, "controlEpoch": executor.control_epoch,
+                "experimentQualified": False})
+        try:
+            previous = None
+            while True:
+                result = await executor.advance()
+                # Retain state transitions, rather than a stream of identical polls.
+                encoded = json.dumps(result, sort_keys=True, ensure_ascii=False)
+                if encoded != previous:
+                    record({"event": "observation", **result})
+                    previous = encoded
+                if result["status"] not in ("observing", "paused", "ready"):
+                    break
+                await asyncio.sleep(interval)
+        except BaseException:
+            hold = await hold_own_generation()
+            record({"event": "end", "status": "interrupted", "active": executor.active,
+                    "hold": hold, "experimentQualified": False})
+            raise
+        hold = None if result["status"] == "completed" else await hold_own_generation()
+        record({"event": "end", "status": "plan_completed" if result["status"] == "completed"
+                else "dispatch_stopped", "result": result, "active": executor.active,
+                "hold": hold, "experimentQualified": False})
+        return result
+
+
+async def _main(args):
+    from apps.cli.lw.client import GatewayClient
+
+    if args.receipt.exists():
+        raise ValueError("Receipt already exists; start a new round in a fresh output path")
+    document = json.loads(args.document.read_text(encoding="utf8"))
+    document["id"] = "passage-" + uuid.uuid4().hex
+    async with GatewayClient(url=args.url, session=args.session) as client:
+        plan = await client.plan_create(document, actor="cli:cell-passage")
+        executor = await PassageExecutor.open(
+            client, plan["id"], args.workcell, owner=args.owner, epoch=args.epoch,
+            budget_seconds=args.budget_seconds,
+        )
+        result = await drive_executor(executor, args.receipt)
+        print(json.dumps({"status": result["status"], "planId": plan["id"],
+                          "receipt": str(args.receipt), "experimentQualified": False}))
+        return 0 if result["status"] == "completed" else 3
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run a fresh Cell Passage Operation Plan through HTTP")
+    parser.add_argument("--url", default="http://127.0.0.1:8023")
+    parser.add_argument("--session", required=True)
+    parser.add_argument("--document", required=True, type=Path)
+    parser.add_argument("--receipt", required=True, type=Path)
+    parser.add_argument("--workcell", default="/World/Lab/LiquidHandler")
+    parser.add_argument("--owner", required=True)
+    parser.add_argument("--epoch", required=True, type=int)
+    parser.add_argument("--budget-seconds", type=float, default=120)
+    raise SystemExit(asyncio.run(_main(parser.parse_args())))
+
+
+if __name__ == "__main__":
+    main()

@@ -76,7 +76,8 @@ class FactsProgram:
         ctx.set(**ctx.config.model_dump())
 
 
-def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
+def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None,
+                        extra_bindings=(), extra_programs=(), extra_types=()):
     bindings = []
     if facts is not None:
         bindings.append(
@@ -109,6 +110,7 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
             },
         }
     )
+    bindings.extend(extra_bindings)
     for binding in bindings:
         if binding["program"] == WorkcellProgram.id:
             cfg = binding["config"]
@@ -127,6 +129,7 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
         ],
     )
     registry = {WorkcellProgram.id: WorkcellProgram, FactsProgram.id: FactsProgram}
+    registry.update({program.id: program for program in extra_programs})
     (tmp_path / "types").mkdir()
     definition = Path("devices/types/cell-passage-workcell.v1.yaml").read_text(encoding="utf8")
     (tmp_path / "types/workcell.yaml").write_text(definition, encoding="utf8")
@@ -151,6 +154,8 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
         ),
         encoding="utf8",
     )
+    for index, definition in enumerate(extra_types):
+        (tmp_path / f"types/extra-{index}.yaml").write_text(definition, encoding="utf8")
     port = StrokePort()
     host = HostCore(
         load_catalog(manifest, "test", registry, root=tmp_path, scene_file=scene), registry, physics=port
