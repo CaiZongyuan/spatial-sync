@@ -140,6 +140,8 @@ class WorkcellProgram:
         self.hold_targets = None
         self.stop_error = None
         self.used_operations = getattr(self, "used_operations", set())
+        self.control_receipts = getattr(self, "control_receipts", {})
+        self.control_generation = getattr(self, "control_generation", -1) + 1
         vessels = []
         for config in ctx.config.vessels:
             row = empty_content() | {
@@ -188,7 +190,7 @@ class WorkcellProgram:
         self.initial_cells = self._cell_totals()
         ctx.set(
             controlOwner="auto",
-            controlEpoch=0,
+            controlEpoch=self.control_generation,
             controlMode="auto",
             controlSafe=True,
             phase="idle",
@@ -298,7 +300,7 @@ class WorkcellProgram:
             )
         if action in ("requestControl", "confirmControl"):
             return self._control(inv, ctx)
-        if any(row["operationId"] == p["operationId"] for row in self.state["controlRequests"]):
+        if p["operationId"] in self.control_receipts:
             return self._reject(
                 "operation_applied", "This domain identity belongs to an applied control request"
             )
@@ -471,7 +473,7 @@ class WorkcellProgram:
 
     def _control(self, inv, ctx):
         p = inv.params
-        old = next((r for r in self.state["controlRequests"] if r["operationId"] == p["operationId"]), None)
+        old = self.control_receipts.get(p["operationId"])
         if old:
             if old["action"] != inv.action or old["paramsJson"] != json.dumps(p, sort_keys=True):
                 return self._reject(
@@ -493,7 +495,8 @@ class WorkcellProgram:
         elif ctx.get("controlMode") == "holding":
             return self._reject("handoff_pending", "Confirm the current handoff before requesting another")
         if inv.action == "requestControl":
-            ctx.set(controlEpoch=ctx.get("controlEpoch") + 1, controlMode="holding", controlSafe=False)
+            self.control_generation += 1
+            ctx.set(controlEpoch=self.control_generation, controlMode="holding", controlSafe=False)
             self.pending = {"owner": p["nextOwner"], "mode": p["mode"]}
             self._hold(ctx)
         else:
@@ -503,16 +506,16 @@ class WorkcellProgram:
                 for r in self.state["reservations"]
             ]
             self.pending = None
-        self.state["controlRequests"].append(
-            {
-                "operationId": p["operationId"],
-                "epoch": ctx.get("controlEpoch"),
-                "mode": ctx.get("controlMode"),
-                "owner": ctx.get("controlOwner"),
-                "action": inv.action,
-                "paramsJson": json.dumps(p, sort_keys=True),
-            }
-        )
+        receipt = {
+            "operationId": p["operationId"],
+            "epoch": ctx.get("controlEpoch"),
+            "mode": ctx.get("controlMode"),
+            "owner": ctx.get("controlOwner"),
+            "action": inv.action,
+            "paramsJson": json.dumps(p, sort_keys=True),
+        }
+        self.state["controlRequests"].append(receipt)
+        self.control_receipts[p["operationId"]] = receipt
         self._publish(ctx)
         return None
 
@@ -579,9 +582,7 @@ class WorkcellProgram:
     def start(self, inv, ctx):
         if inv.action in ("requestControl", "confirmControl"):
             # accept committed the request even while paused; start is receipt only.
-            result = next(
-                r for r in self.state["controlRequests"] if r["operationId"] == inv.params["operationId"]
-            )
+            result = self.control_receipts[inv.params["operationId"]]
             inv.succeed(result)
             return
         rejection = self.accept(inv, ctx)

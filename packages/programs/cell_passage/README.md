@@ -110,6 +110,15 @@ tombstones are independent of projected rows and remain for that Program
 instance's lifetime, including source resets. A reset starts fresh round
 counters/material state; new round actions need new domain IDs. A new Source
 instance starts a fresh lifetime. Control receipt replay remains unchanged.
+The workcell's control generation increases on a same-instance Reset as well
+as on handoff. A genuinely new Source starts at generation zero; clients must
+always read the current snapshot and must not assume Reset means zero. The
+outer Source epoch still rejects already-wrapped old requests, while the
+monotonic workcell generation also rejects delayed old action parameters wrapped
+by the gateway after Reset. Old control IDs retrieve their original receipt
+without changing this round's owner/generation/mode or adding an effective
+control request to its snapshot. Compare the receipt with current state;
+retrieval does not establish that the old request was applied to the new round.
 Round/process interruption retains the ordinary invocation and last observed
 state evidence; an exited Source cannot invent a final-accounting receipt.
 
