@@ -103,11 +103,11 @@ class PhysicsPort:
         mapping = solver.mjc_geom_to_newton_shape.numpy()[0]
         shape_bodies = self.sim.model.shape_body.numpy()
         result = []
-        for contact in solver.mj_data.contact[:solver.mj_data.ncon]:
-            if not np.isfinite(contact.dist):
-                raise ValueError("Solver contact distance is unknown")
-            if contact.dist > max_distance:
-                continue
+        distances = np.asarray(solver.mj_data.contact.dist[:solver.mj_data.ncon])
+        if not np.isfinite(distances).all():
+            raise ValueError("Solver contact distance is unknown")
+        for index in np.flatnonzero(distances <= max_distance):
+            contact = solver.mj_data.contact[int(index)]
             shapes = tuple(int(mapping[int(geom)]) for geom in contact.geom)
             if any(shape < 0 or shape >= self.sim.model.shape_count for shape in shapes):
                 raise ValueError("Solver contact has no Newton shape identity")

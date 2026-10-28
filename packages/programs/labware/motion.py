@@ -34,6 +34,7 @@ class LabwareMotionProgram(RobotArmProgram):
         gripDiameters: dict[str, float]
         gripShapePrefixes: dict[str, str]
         fingerPadShapes: list[str] = Field(min_length=2, max_length=2)
+        attachedLids: dict[str, str] = Field(default_factory=dict)
 
         @model_validator(mode="after")
         def calibrated_grips(self):
@@ -63,6 +64,8 @@ class LabwareMotionProgram(RobotArmProgram):
             for key in ctx.config.tubes
         }
         self.control_entity = ctx.config.controlEntity
+        self.carrying_lid = None
+        self.motion_payload = None
         self.grip_hold_width = None
         self.pad_shapes = {
             ctx.physics.bind_joint(key).child: shape
@@ -72,6 +75,7 @@ class LabwareMotionProgram(RobotArmProgram):
             ctx.physics.bind_body(key): ctx.config.gripShapePrefixes[key] for key in ctx.config.tubes
         }
         super().init(ctx)
+        ctx.set(unsafeContactCount=0, lastContactShapes=[], lastContactDepthM=0.0)
 
     def _finger_position(self, port, body):
         point, orientation = port.site_pose(self.tcp)
@@ -159,13 +163,25 @@ class LabwareMotionProgram(RobotArmProgram):
             return failed
         name = inv.params["to"] if inv.action == "pickPlace" else inv.params["location"]
         site = self.locations[name]["site"]
-        moving = (next((key for key in self.tubes if ctx.read(key,"location") ==
-                        self.locations[inv.params["from"]]["site"]), None)
-                  if inv.action == "pickPlace" else ctx.get("holding"))
-        occupied = [key for key in self.tubes if key != moving and ctx.read(key,"location") == site]
+        moving = (
+            next(
+                (
+                    key
+                    for key in self.tubes
+                    if ctx.read(key, "location") == self.locations[inv.params["from"]]["site"]
+                ),
+                None,
+            )
+            if inv.action == "pickPlace"
+            else ctx.get("holding")
+        )
+        occupied = [key for key in self.tubes if key != moving and ctx.read(key, "location") == site]
         if occupied:
-            return Reject(code="station_occupied", message="The actual target station is occupied",
-                          details={"site":site,"occupants":occupied})
+            return Reject(
+                code="station_occupied",
+                message="The actual target station is occupied",
+                details={"site": site, "occupants": occupied},
+            )
 
     def start(self, inv, ctx):
         failed = self.accept(inv, ctx)
@@ -174,9 +190,52 @@ class LabwareMotionProgram(RobotArmProgram):
             return
         ctx.set(controlSafe=False)
         super().start(inv, ctx)
+        if inv.action != "stop":
+            ctx.set(unsafeContactCount=0, lastContactShapes=[], lastContactDepthM=0.0)
+        body = (
+            ctx.get("holding") or self.pick_tube
+            if inv.action in ("pick", "place", "pickPlace")
+            else ctx.get("holding")
+        )
+        self.motion_payload = body
+        self.carrying_lid = (
+            ctx.config.attachedLids.get(body) if body and ctx.read(body, "lidClosed") is True else None
+        )
+
+    def _contact_guard(self, ctx):
+        active = {joint.child for joint in [*self.joints, *self.fingers] if joint.child >= 0} | {self.hand}
+        for key in (ctx.get("holding"), self.motion_payload, self.released, self.carrying_lid):
+            if key in self.tubes:
+                active.add(self.tubes[key])
+        try:
+            contacts = ctx.physics.collision_contacts(max_distance=-0.001)
+        except ValueError:
+            self._hold(ctx)
+            self._end(ctx, ("contact_unavailable", "Actual motion contact facts are unavailable"))
+            return False
+        hit = next((row for row in contacts if any(body in active for body in row.bodies)), None)
+        if hit is not None:
+            self._hold(ctx)
+            shapes, depth = list(hit.shapes), -hit.distance_m
+            ctx.set(
+                unsafeContactCount=ctx.get("unsafeContactCount") + 1,
+                lastContactShapes=shapes,
+                lastContactDepthM=depth,
+            )
+            ctx.emit("unsafeContact", shapes=shapes, depthM=depth)
+            self._end(
+                ctx,
+                ("unsafe_contact", "Actual arm or payload penetration exceeded 1 mm"),
+                shapes=shapes,
+                depthM=depth,
+            )
+            return False
+        return True
 
     def tick(self, ctx, dt):
         if self.handle is not None:
+            if not self._contact_guard(ctx):
+                return
             failed = self._guard(ctx, self.handle.params)
             if failed:
                 self._hold(ctx)

@@ -3,6 +3,17 @@ title: Labware carrier arm
 description: Physically aligned cylindrical carrier handles; taught paths require
   scene qualification.
 properties:
+  unsafeContactCount:
+    schema: {type: integer, minimum: 0}
+    description: Arm or active-payload penetrations deeper than 1 mm in the current motion.
+  lastContactShapes:
+    schema:
+      type: array
+      items: {type: string}
+      maxItems: 2
+  lastContactDepthM:
+    schema: {type: number, minimum: 0}
+    unit: m
   controlSafe:
     schema:
       type: boolean
@@ -209,4 +220,11 @@ actions:
     - epoch
     - operationId
     concurrent: true
-events: {}
+events:
+  unsafeContact:
+    schema:
+      type: object
+      properties:
+        shapes: {type: array, items: {type: string}, minItems: 2, maxItems: 2}
+        depthM: {type: number, minimum: 0}
+      required: [shapes, depthM]

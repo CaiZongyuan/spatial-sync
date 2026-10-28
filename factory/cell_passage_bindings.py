@@ -32,6 +32,7 @@ def bindings(stage, layout):
                 "graspOffsets": layout["graspOffsets"],
                 "gripDiameters": {key: 0.017 for key in movable},
                 "gripShapePrefixes": grip_shapes,
+                "attachedLids": layout["lids"],
                 "jointKeys": [LAB + f"/Robot/Joints/fr3_joint{i}" for i in range(1, 8)],
                 "fingerKeys": [LAB + f"/Robot/Joints/fr3_finger_joint{i}" for i in (1, 2)],
                 "fingerPadShapes": [
