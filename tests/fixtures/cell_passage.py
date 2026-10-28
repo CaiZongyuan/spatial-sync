@@ -76,8 +76,41 @@ class FactsProgram:
         ctx.set(**ctx.config.model_dump())
 
 
-def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
-    bindings = []
+class CabinetProgram:
+    id, type, tick_priority = "cabinet.test", "cabinet-test/v1", 1
+
+    class Config(ProgramConfig):
+        ready: bool | None = True
+
+    def init(self, ctx):
+        ctx.set(controlSafe=True)
+        if ctx.config.ready is not None:
+            ctx.set(cabinetReady=ctx.config.ready)
+
+    def start(self, inv, ctx):
+        ctx.set(cabinetReady=inv.params["ready"])
+        inv.succeed()
+
+
+def build_workcell_host(
+    tmp_path,
+    *,
+    vessels=None,
+    config=None,
+    facts=None,
+    cabinet_ready=True,
+    extra_bindings=(),
+    extra_programs=(),
+    extra_types=(),
+):
+    bindings = [
+        {
+            "key": "/cabinet",
+            "type": CabinetProgram.type,
+            "program": CabinetProgram.id,
+            "config": {"ready": cabinet_ready},
+        }
+    ]
     if facts is not None:
         bindings.append(
             {"key": "/peer", "type": FactsProgram.type, "program": FactsProgram.id, "config": facts}
@@ -93,6 +126,7 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
                 "pumpJoint": "pump",
                 "tipSite": "tip",
                 "pipetteBody": "/pipette",
+                "cabinetEntity": "/cabinet",
                 "vessels": vessels
                 or [
                     {
@@ -109,6 +143,7 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
             },
         }
     )
+    bindings.extend(extra_bindings)
     for binding in bindings:
         if binding["program"] == WorkcellProgram.id:
             cfg = binding["config"]
@@ -126,10 +161,31 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
             {"entityKey": name, "parentBodyKey": None, "localPose": {}} for name in ("/sourceSite", "/T1")
         ],
     )
-    registry = {WorkcellProgram.id: WorkcellProgram, FactsProgram.id: FactsProgram}
+    registry = {
+        WorkcellProgram.id: WorkcellProgram,
+        FactsProgram.id: FactsProgram,
+        CabinetProgram.id: CabinetProgram,
+    }
+    registry.update({program.id: program for program in extra_programs})
     (tmp_path / "types").mkdir()
     definition = Path("devices/types/cell-passage-workcell.v1.yaml").read_text(encoding="utf8")
     (tmp_path / "types/workcell.yaml").write_text(definition, encoding="utf8")
+    (tmp_path / "types/cabinet.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "type": CabinetProgram.type,
+                "title": "External cabinet signal",
+                "properties": {
+                    "cabinetReady": {"schema": {"type": ["boolean", "null"]}},
+                    "controlSafe": {"schema": {"type": "boolean"}},
+                },
+                "actions": {
+                    "setReady": {"params": {"ready": {"type": ["boolean", "null"]}}, "required": ["ready"]}
+                },
+            }
+        ),
+        encoding="utf8",
+    )
     fields = FactsProgram.Config.model_fields
     properties = {
         name: {
@@ -151,6 +207,8 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
         ),
         encoding="utf8",
     )
+    for index, definition in enumerate(extra_types):
+        (tmp_path / f"types/extra-{index}.yaml").write_text(definition, encoding="utf8")
     port = StrokePort()
     host = HostCore(
         load_catalog(manifest, "test", registry, root=tmp_path, scene_file=scene), registry, physics=port

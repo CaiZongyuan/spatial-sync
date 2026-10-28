@@ -13,6 +13,9 @@ from packages.info.program import ProgramConfig, Reject
 
 from .guard import guard
 
+LIQUID_ACTIONS = {"pickupTip", "discardTip", "aspirate", "dispense", "mix", "detach"}
+RECENT_OPERATIONS = 64
+
 
 class MaterialConfig(ProgramConfig):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
@@ -97,6 +100,7 @@ class WorkcellProgram:
         tips: list[Tip]
         contentSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
         tipRackSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
+        cabinetEntity: str
         managedDevices: list[str] = []
         pumpUlPerUnit: float = Field(default=100000, gt=0)
         tipCapacityUl: float = Field(default=1000, gt=0)
@@ -134,6 +138,10 @@ class WorkcellProgram:
         self.handle, self.stroke, self.pending = None, None, None
         self.stopping = False
         self.hold_targets = None
+        self.stop_error = None
+        self.used_operations = getattr(self, "used_operations", set())
+        self.control_receipts = getattr(self, "control_receipts", {})
+        self.control_generation = getattr(self, "control_generation", -1) + 1
         vessels = []
         for config in ctx.config.vessels:
             row = empty_content() | {
@@ -174,12 +182,15 @@ class WorkcellProgram:
             "operations": [],
             "observations": [],
             "controlRequests": [],
+            "operationCount": 0,
+            "terminalOperationCount": 0,
+            "archivedOperationCount": 0,
         }
         self.initial_volume = sum(row["volumeUl"] for row in vessels)
         self.initial_cells = self._cell_totals()
         ctx.set(
             controlOwner="auto",
-            controlEpoch=0,
+            controlEpoch=self.control_generation,
             controlMode="auto",
             controlSafe=True,
             phase="idle",
@@ -196,6 +207,9 @@ class WorkcellProgram:
             samplesIndependent=True,
             lastObservedLive=0.0,
             lastObservedDead=0.0,
+            operationCount=0,
+            terminalOperationCount=0,
+            archivedOperationCount=0,
         )
 
     def _publish(self, ctx):
@@ -232,6 +246,9 @@ class WorkcellProgram:
             wasteFreeUl=sum(
                 row["capacityUl"] - row["volumeUl"] for row in self.state["vessels"] if row["waste"]
             ),
+            operationCount=self.state["operationCount"],
+            terminalOperationCount=self.state["terminalOperationCount"],
+            archivedOperationCount=self.state["archivedOperationCount"],
         )
 
     def _cell_totals(self):
@@ -269,15 +286,21 @@ class WorkcellProgram:
     def _reject(self, code, message):
         return Reject(code=code, message=message)
 
+    def _cabinet_ready(self, ctx):
+        try:
+            return ctx.read(ctx.config.cabinetEntity, "cabinetReady") is True
+        except KeyError:
+            return False
+
     def accept(self, inv, ctx):
         p, action = inv.params, inv.action
-        if any(row["operationId"] == p["operationId"] for row in self.state["operations"]):
+        if p["operationId"] in self.used_operations:
             return self._reject(
                 "operation_applied", "This domain operation has already been applied; use current remainder"
             )
         if action in ("requestControl", "confirmControl"):
             return self._control(inv, ctx)
-        if any(row["operationId"] == p["operationId"] for row in self.state["controlRequests"]):
+        if p["operationId"] in self.control_receipts:
             return self._reject(
                 "operation_applied", "This domain identity belongs to an applied control request"
             )
@@ -292,6 +315,10 @@ class WorkcellProgram:
             return self._reject(
                 "material_unreconciled",
                 "Actuator feedback invalidated the material estimate; preserve this interrupted run",
+            )
+        if action in LIQUID_ACTIONS and not self._cabinet_ready(ctx):
+            return self._reject(
+                "cabinet_not_ready", "Cabinet readiness must be confirmed before liquid handling"
             )
         if action == "reserve":
             if p["device"] not in [ctx.key, *ctx.config.managedDevices]:
@@ -446,7 +473,7 @@ class WorkcellProgram:
 
     def _control(self, inv, ctx):
         p = inv.params
-        old = next((r for r in self.state["controlRequests"] if r["operationId"] == p["operationId"]), None)
+        old = self.control_receipts.get(p["operationId"])
         if old:
             if old["action"] != inv.action or old["paramsJson"] != json.dumps(p, sort_keys=True):
                 return self._reject(
@@ -468,7 +495,8 @@ class WorkcellProgram:
         elif ctx.get("controlMode") == "holding":
             return self._reject("handoff_pending", "Confirm the current handoff before requesting another")
         if inv.action == "requestControl":
-            ctx.set(controlEpoch=ctx.get("controlEpoch") + 1, controlMode="holding", controlSafe=False)
+            self.control_generation += 1
+            ctx.set(controlEpoch=self.control_generation, controlMode="holding", controlSafe=False)
             self.pending = {"owner": p["nextOwner"], "mode": p["mode"]}
             self._hold(ctx)
         else:
@@ -478,20 +506,24 @@ class WorkcellProgram:
                 for r in self.state["reservations"]
             ]
             self.pending = None
-        self.state["controlRequests"].append(
-            {
-                "operationId": p["operationId"],
-                "epoch": ctx.get("controlEpoch"),
-                "mode": ctx.get("controlMode"),
-                "owner": ctx.get("controlOwner"),
-                "action": inv.action,
-                "paramsJson": json.dumps(p, sort_keys=True),
-            }
-        )
+        receipt = {
+            "operationId": p["operationId"],
+            "epoch": ctx.get("controlEpoch"),
+            "mode": ctx.get("controlMode"),
+            "owner": ctx.get("controlOwner"),
+            "action": inv.action,
+            "paramsJson": json.dumps(p, sort_keys=True),
+        }
+        self.state["controlRequests"].append(receipt)
+        self.control_receipts[p["operationId"]] = receipt
         self._publish(ctx)
         return None
 
-    def _hold(self, ctx):
+    def _hold(self, ctx, failure=None):
+        if failure is not None:
+            self.stop_error = failure
+            if self.handle:
+                self.state["operations"][-1]["fault"] = failure[0]
         # Capture already executed stroke before replacing the old drive target.
         if self.stroke:
             self._apply_stroke(ctx)
@@ -509,7 +541,10 @@ class WorkcellProgram:
                 self.state["operations"][-1]["status"] = "settling"
                 self._publish(ctx)
         if self.handle and (self._stationary(ctx) or not self.state["reconciled"]):
-            if self.state["reconciled"]:
+            if self.state["reconciled"] and self.stop_error is not None:
+                self.handle.fail(*self.stop_error)
+                self._finish(ctx, "failed")
+            elif self.state["reconciled"]:
                 self.handle.cancelled()
                 self._finish(ctx, "cancelled")
             else:
@@ -547,9 +582,7 @@ class WorkcellProgram:
     def start(self, inv, ctx):
         if inv.action in ("requestControl", "confirmControl"):
             # accept committed the request even while paused; start is receipt only.
-            result = next(
-                r for r in self.state["controlRequests"] if r["operationId"] == inv.params["operationId"]
-            )
+            result = self.control_receipts[inv.params["operationId"]]
             inv.succeed(result)
             return
         rejection = self.accept(inv, ctx)
@@ -568,10 +601,19 @@ class WorkcellProgram:
             "startedSimTime": ctx.sim_time,
             "observedUl": 0.0,
             "fault": "",
+            "invocationId": inv.id,
+            "owner": p["owner"],
+            "paramsJson": json.dumps(p, sort_keys=True),
+            "tipId": self.state["tip"]["id"] or p.get("tip", ""),
+            "endedSimTime": -1.0,
+            "materialRevision": self.state["revision"] + 1,
         }
         self.state["operations"].append(operation)
+        self.state["operationCount"] += 1
+        self.used_operations.add(p["operationId"])
         self.handle, self.started = inv, ctx.sim_time
         self.stopping = False
+        self.stop_error = None
         ctx.set(
             controlSafe=False,
             phase=action,
@@ -586,7 +628,6 @@ class WorkcellProgram:
             origin = float(ctx.physics.joint_q(self.pump)[0])
             direction = -1 if action == "dispense" else 1
             self.stroke = {
-                "stage": "transfer",
                 "origin": origin,
                 "appliedUl": 0.0,
                 "completedUl": 0.0,
@@ -730,15 +771,45 @@ class WorkcellProgram:
         ctx.set(lastAppliedUl=total, remainingUl=max(0, requested_total - total))
         self._publish(ctx)
 
+    def _compact_operations(self):
+        def protected(row):
+            return (
+                row["status"] in ("running", "settling")
+                or bool(row["fault"])
+                or (row["status"] != "succeeded" and row["appliedUl"] > 0)
+            )
+
+        ordinary = [row["operationId"] for row in self.state["operations"] if not protected(row)]
+        keep = set(ordinary[-RECENT_OPERATIONS:])
+        previous = self.state["operations"]
+        self.state["operations"] = [row for row in previous if protected(row) or row["operationId"] in keep]
+        self.state["archivedOperationCount"] += len(previous) - len(self.state["operations"])
+
     def _finish(self, ctx, status):
         inv = self.handle
-        self.state["operations"][-1]["status"] = status
+        if inv.invocation.status in ("failed", "cancelled"):
+            status = inv.invocation.status
+        operation = self.state["operations"][-1]
+        operation.update(
+            status=status, endedSimTime=ctx.sim_time, materialRevision=self.state["revision"] + 1
+        )
+        if status == "failed" and not operation["fault"] and inv.invocation.error:
+            operation["fault"] = inv.invocation.error.code
+        receipt = dict(operation)
+        self.state["terminalOperationCount"] += 1
+        self._compact_operations()
+        ctx.emit("operationCompleted", receipt=receipt)
         if status == "succeeded":
             inv.succeed(
-                {"operationId": inv.params["operationId"], "materialRevision": self.state["revision"] + 1}
+                {
+                    "operationId": inv.params["operationId"],
+                    "materialRevision": self.state["revision"] + 1,
+                    "receipt": receipt,
+                }
             )
         self.handle, self.stroke = None, None
         self.stopping = False
+        self.stop_error = None
         ctx.set(controlSafe=self._stationary(ctx), phase="idle")
         self._publish(ctx)
 
@@ -762,6 +833,9 @@ class WorkcellProgram:
             self._hold(ctx)
             return
         p, action = inv.params, inv.action
+        if action in LIQUID_ACTIONS and not self._cabinet_ready(ctx):
+            self._hold(ctx, ("cabinet_not_ready", "Cabinet readiness was lost during liquid handling"))
+            return
         if action in ("aspirate", "dispense", "mix"):
             rejection = self._accessible(ctx, p["vessel"])
             if rejection:
