@@ -72,7 +72,10 @@ def ring(stage, path, center, radius, height, wall=0.001, segments=32):
             (x + radius * math.cos(angle), y + radius * math.sin(angle), z),
             (wall, 2 * radius * math.tan(math.pi / segments) + wall, height),
         )
-        shape.AddRotateZOp().Set(math.degrees(angle))
+        translate_op, scale_op = shape.GetOrderedXformOps()
+        rotate_op = shape.AddRotateZOp()
+        rotate_op.Set(math.degrees(angle))
+        shape.SetXformOpOrder([translate_op, rotate_op, scale_op])
 
 
 def site(stage, path, point):
