@@ -10,6 +10,7 @@ from pathlib import Path
 
 import yaml
 
+from .tip_pickup import TipGeometry
 from .workcell import WorkcellProgram
 
 LAB = "/World/Lab"
@@ -107,6 +108,12 @@ def workcell_binding(layout):
         cabinetEntity=LAB + "/LiquidHandler/Base",
         imagerStation=LAB + "/Sites/Imager",
         wasteSite=layout.get("tipDiscardSite", bodies["SolidWaste"] + "/Content"),
+        tipGeometry={
+            key: value
+            for key, value in layout.get("tipGeometry", {}).items()
+            if key in TipGeometry.model_fields
+        }
+        or None,
     )
     parsed = WorkcellProgram.Config.model_validate(config)
     return {

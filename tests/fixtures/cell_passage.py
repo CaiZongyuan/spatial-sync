@@ -18,6 +18,10 @@ class StrokePort:
         self.welds = set()
         self.velocities = self.q.copy()
         self.positions = {}
+        self.quaternions = {}
+        self.body_positions = {}
+        self.body_quaternions = {}
+        self.body_velocities = {}
         self.limits = {"pump": (np.array([0], dtype=np.float32), np.array([0.01], dtype=np.float32))}
 
     def bind_body(self, key):
@@ -34,6 +38,9 @@ class StrokePort:
 
     def bind_site(self, key):
         return key
+
+    def bind_sites(self, keys):
+        return tuple(keys)
 
     def joint_q(self, key):
         return np.array([self.q[key]])
@@ -52,7 +59,19 @@ class StrokePort:
         pass
 
     def site_pose(self, key):
-        return np.asarray(self.positions.get(key, [0, 0, 0])), np.array([0, 0, 0, 1])
+        return np.asarray(self.positions.get(key, [0, 0, 0])), np.asarray(
+            self.quaternions.get(key, [0, 0, 0, 1])
+        )
+
+    def body_pose(self, key):
+        if self.body_positions.get(key, []) is None:
+            raise ValueError("External pose unavailable")
+        return np.asarray(self.body_positions.get(key, [0, 0, 0])), np.asarray(
+            self.body_quaternions.get(key, [0, 0, 0, 1])
+        )
+
+    def relative_site_velocity(self, body, sites):
+        return np.asarray([self.body_velocities.get(body, [0, 0, 0]) for _ in sites])
 
     def advance(self, pump):
         self.q["pump"] = float(
@@ -136,6 +155,15 @@ def build_workcell_host(
                 "tipSite": "tip",
                 "pipetteBody": "/pipette",
                 "cabinetEntity": "/cabinet",
+                "tipGeometry": {
+                    "tipMatingOffsetLocalM": [0, 0, 0.05],
+                    "tipAxisLocal": [0, 0, 1],
+                    "headMatingOffsetLocalM": [0, 0, 0.05],
+                    "headAxisLocal": [0, 0, 1],
+                    "socketDepthM": 0.012,
+                    "socketInnerDiameterM": 0.0108,
+                    "nozzleOuterDiameterM": 0.01,
+                },
                 "vessels": vessels
                 or [
                     {
