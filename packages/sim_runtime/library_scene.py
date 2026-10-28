@@ -97,11 +97,19 @@ def configured_weld_pairs(bindings, bodies, sites):
     for binding in bindings:
         config, program = binding["config"], binding["program"]
         try:
-            if program == "robot_arm.newton":
+            if program in ("robot_arm.newton", "labware.motion"):
                 # Contact-mode opening also queries the disabled hand/tube weld.
                 parents = [bodies[config["handBody"]]]
-            elif program == "centrifuge.newton":
+            elif program in ("centrifuge.newton", "cell_passage.centrifuge"):
                 parents = [sites[key] for key in config["slotSites"]]
+            elif program == "cell_passage.workcell":
+                parent = bodies[config["pipetteBody"]]
+                for tip in config["tips"]:
+                    child = bodies[tip["bodyKey"]]
+                    if parent < 0 or child < 0 or parent == child:
+                        raise ValueError("Configured tip weld endpoints must be distinct imported bodies")
+                    pairs.add((parent, child))
+                continue
             else:
                 continue
             for parent in parents:

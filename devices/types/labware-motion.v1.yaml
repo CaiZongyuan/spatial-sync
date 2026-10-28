@@ -1,0 +1,211 @@
+type: labware-motion/v1
+title: Labware carrier arm
+description: Physically aligned cylindrical carrier handles; taught paths require
+  scene qualification.
+properties:
+  controlSafe:
+    schema:
+      type: boolean
+  phase:
+    schema:
+      enum:
+      - idle
+      - moving
+      - grasping
+      - releasing
+      - fault
+  jointPositions:
+    schema: &id001
+      type: array
+      items:
+        type: number
+      minItems: 7
+      maxItems: 7
+    unit: rad
+    deadband: 0.002
+    maxRateHz: 10
+  tcpPose:
+    schema: *id001
+    deadband: 0.001
+    maxRateHz: 10
+  gripperWidth:
+    schema:
+      type: number
+      minimum: 0
+      maximum: 0.08
+    unit: m
+    deadband: 0.0005
+    maxRateHz: 10
+  holding:
+    schema:
+      type:
+      - string
+      - 'null'
+  atLocation:
+    schema:
+      type:
+      - string
+      - 'null'
+  zone:
+    schema:
+      type:
+      - string
+      - 'null'
+actions:
+  home:
+    params:
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - owner
+    - epoch
+    - operationId
+    longRunning: true
+  moveJoints:
+    params:
+      positions: *id001
+      speed: &id002
+        type: number
+        minimum: 0.1
+        maximum: 1
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - positions
+    - owner
+    - epoch
+    - operationId
+    longRunning: true
+  moveTo:
+    params:
+      location:
+        type: string
+      pose:
+        enum:
+        - approach
+        - grasp
+      speed: *id002
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - location
+    - owner
+    - epoch
+    - operationId
+    longRunning: true
+  setGripper:
+    params:
+      width:
+        type: number
+        minimum: 0
+        maximum: 0.08
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - width
+    - owner
+    - epoch
+    - operationId
+  pick:
+    params:
+      location:
+        type: string
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - location
+    - owner
+    - epoch
+    - operationId
+    longRunning: true
+    preconditions:
+    - property: holding
+      isNull: true
+    description: Pick a tube; location_empty, grasp_failed, motion_timeout may be
+      returned.
+  place:
+    params:
+      location:
+        type: string
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - location
+    - owner
+    - epoch
+    - operationId
+    longRunning: true
+    preconditions:
+    - property: holding
+      notNull: true
+    description: Place the held tube; place_failed or motion_timeout may be returned.
+  pickPlace:
+    params:
+      from:
+        type: string
+      to:
+        type: string
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - from
+    - to
+    - owner
+    - epoch
+    - operationId
+    longRunning: true
+    preconditions:
+    - property: holding
+      isNull: true
+    description: Pick then place; location_empty, grasp_failed, place_failed, motion_timeout
+      may be returned.
+  stop:
+    params:
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - owner
+    - epoch
+    - operationId
+    concurrent: true
+events: {}
