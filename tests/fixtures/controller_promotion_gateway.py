@@ -1,5 +1,7 @@
 """Owned CLI/browser fixture: controlled scores/qualification, actual publication, zero Sources."""
 
+import os
+
 import anyio
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +16,7 @@ from tests.fixtures.controller_promotion_evidence import (
 from tests.gateway.test_training_jobs import TOKEN
 from tests.unit.test_controller_publication import ControlledPublicationValidator
 
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
 settings = Settings(node_token=TOKEN)
 starts = []
 publication_fault = {"active": False}

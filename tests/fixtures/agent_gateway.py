@@ -1,10 +1,13 @@
 """Source-free loopback fixture for public Agent CLI/MCP metadata and transport."""
 
+import os
 from pathlib import Path
 
 from apps.api.app.main import create_app
 from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from packages.library import agents
+
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
 
 
 class FakeHostSampler:

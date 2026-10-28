@@ -59,7 +59,7 @@ The embedded Lab host keeps one library beside its experiment state by default: 
 $env:SPATIAL_CATALOG_METADATA_ROOT = 'C:/Users/<name>/.spatial-sync/state/catalog-metadata'
 ```
 
-Resolution order is an explicitly injected store (tests and fixtures), then `SPATIAL_CATALOG_METADATA_ROOT`, then the state-root default. The variable must be an absolute path; a path that does not name an existing directory fails at startup instead of creating a second empty library. Leaving it unset keeps each deployment isolated, so tests and temporary deployments always use their own directory rather than inheriting a user's library. `LW_CATALOG_STATE_ROOT` keeps its separate meaning for the standalone host below.
+Resolution order is an explicitly injected store (tests and fixtures), then `SPATIAL_CATALOG_METADATA_ROOT`, then the state-root default. The variable must be an absolute path; a path that does not name an existing directory fails at startup instead of creating a second empty library. Leaving it unset keeps each deployment isolated: `tests/conftest.py` and every fixture under `tests/fixtures/` clear the variable at import, so a test or a temporary host never inherits a user's library. `LW_CATALOG_STATE_ROOT` keeps its separate meaning for the standalone host below.
 
 Startup logs the effective directory, where it came from and the release being served (`none (library is empty)` when no publication exists). The existing host lease still applies: one supervisor owns a library through `maintenance/host.lock`, and a second host reports `catalog_already_hosted` instead of interrupting active runs. The worker cache, maintenance checkpoints and thumbnails follow the store in use.
 

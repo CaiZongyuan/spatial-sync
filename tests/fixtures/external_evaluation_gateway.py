@@ -1,5 +1,7 @@
 """Owned Synthetic-only gateway for external handoff process-restart checks."""
 
+import os
+
 from apps.api.app.main import create_app
 from apps.api.app.platform_monitor import platform_snapshot, unavailable_system
 from apps.api.app.settings import Settings
@@ -17,6 +19,7 @@ def synthetic(kind, session_id):
     return SyntheticSource(session_id)
 
 
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
 app = create_app(
     Settings(node_trainer=(), remote=False), source_factory=synthetic, platform_sampler=Sampler()
 )

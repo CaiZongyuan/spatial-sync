@@ -13,6 +13,7 @@ import yaml
 from fastapi import Request
 
 ROOT = Path(__file__).resolve().parents[2]
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
 for variable, directory in (
     ("LW_LIBRARY", "library"),
     ("SPATIAL_STATE_ROOT", "state"),

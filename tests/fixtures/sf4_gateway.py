@@ -25,6 +25,7 @@ from packages.library.common import content_hash
 ROOT = Path(__file__).resolve().parents[2]
 OWNED = ROOT / ".scratch/sf4-e2e"
 NAME = "cart-isolation"
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
 for variable, directory in (
     ("LW_LIBRARY", "library"),
     ("SPATIAL_STATE_ROOT", "state"),

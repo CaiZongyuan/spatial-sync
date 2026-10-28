@@ -12,6 +12,8 @@ from fastapi import Request
 
 from apps.api.app.main import create_app
 
+os.environ.pop("SPATIAL_CATALOG_METADATA_ROOT", None)
+
 REVISION = "a" * 40
 REQUESTS = []
 CONTROL = {"delay": 0, "fail": False}
