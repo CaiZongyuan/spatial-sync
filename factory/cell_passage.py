@@ -284,7 +284,7 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
                     "Single-level simulation incubator derivative, synchronized collision and GLB",
                     "Original FR3 link geometry, hand frame, TCP and rail dimensions retained",
                     "Repositioned incubator and Flex; Flex Z restricted to 80 mm",
-                    "Physical plate/tube carriers, independent lids, tips, reservoirs, fixtures and four-slot centrifuge",
+                    "Physical carriers, independent lids, tips, reservoirs, fixtures and four-slot centrifuge",
                 ],
                 "mechanicallyQualified": False,
             },
