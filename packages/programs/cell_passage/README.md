@@ -97,3 +97,12 @@ Focused tests: `python -m pytest tests/unit/test_cell_passage.py
 tests/gateway/test_cell_passage_api.py -q`. The deterministic external actuator
 fixture proves Host/API/recorded-state semantics. It does not prove Newton
 geometry, real tip pickup or a full Cell Passage run.
+
+To generate the actual workcell binding from the factory's mechanical receipt:
+`python -m packages.programs.cell_passage.scene --layout <mechanical-layout.json>
+--out <workcell-binding.yaml>`. Merge that document's entities into the generated
+scene devices.yaml before immutable import. The command validates the Program
+config, emits six mothers, twelve daughters, six counting compartments, six
+sample tubes, two balance tubes, three reagent reservoirs and two waste rows,
+and retains the factory's actual 96 tip bodies/sites. It performs no physics
+qualification and does not overwrite the mechanical bindings.

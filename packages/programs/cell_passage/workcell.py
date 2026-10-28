@@ -280,6 +280,10 @@ class WorkcellProgram:
         rejection = guard(ctx, ctx.key, p)
         if rejection:
             return rejection
+        if self.stopping:
+            return self._reject(
+                "not_safe", "Wait for the previous operation to settle and finish material accounting"
+            )
         if not self.state["reconciled"]:
             return self._reject(
                 "material_unreconciled",
