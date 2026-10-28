@@ -30,6 +30,7 @@ import type { SessionClient } from '../../lib/stream/client';
 import type { FrameRecorder } from '../../lib/performance/frame-recorder';
 import { PlatformRuntimeContext } from '../../lib/platform-runtime';
 import { PhysicalAxes, PhysicalAxesProjection } from './PhysicalAxes';
+import { Icon } from '../Icon';
 
 export interface DebugLayers {
   colliders: boolean;
@@ -578,6 +579,8 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
   const framingKey = `${props.manifest.sceneRevision}:${props.captureKey ?? ''}:${props.cameraPreset ?? 'perspective'}`;
   const [fittedKey, setFittedKey] = useState<string>();
   const element = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenPending, setFullscreenPending] = useState(false);
   const axesElement = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
   const receivedState = useRef(false);
@@ -590,6 +593,32 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
     if (element.current) observer.observe(element.current);
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    const syncFullscreen = () => setFullscreen(document.fullscreenElement === element.current);
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && document.fullscreenElement === element.current) {
+        void document.exitFullscreen().catch(() => props.warn('无法退出全屏，请点击“退出全屏”重试。'));
+      }
+    };
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    document.addEventListener('keydown', exitOnEscape);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreen);
+      document.removeEventListener('keydown', exitOnEscape);
+    };
+  }, [props.warn]);
+  const toggleFullscreen = async () => {
+    if (!element.current || fullscreenPending) return;
+    setFullscreenPending(true);
+    try {
+      if (document.fullscreenElement === element.current) await document.exitFullscreen();
+      else await element.current.requestFullscreen();
+    } catch {
+      props.warn('无法切换全屏，请重试或检查浏览器的全屏权限。');
+    } finally {
+      setFullscreenPending(false);
+    }
+  };
   return (
     <div ref={element} className="viewport" data-testid="scene-viewport" data-camera-fitted={fittedKey === framingKey}>
       {displayScene ? <Canvas
@@ -605,8 +634,16 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
         <ViewerThemeContext.Provider value={theme}><SceneContents key={`${props.manifest.sceneRevision}:${props.captureKey ?? ''}`} {...props} fitRequest={fitRequest} onFramed={() => setFittedKey(framingKey)} axesElement={axesElement} reducedMotion={reducedMotion} renderContinuously={continuous} onLabelLayout={setLabels} /></ViewerThemeContext.Provider>
       </Canvas> : <div className="overview-loading" role="status">正在连接空间状态…</div>}
       {displayScene && !props.compact && !props.capture && <PhysicalAxes element={axesElement} theme={theme} />}
-      {displayScene && !props.capture && <button type="button" className="viewport-fit" aria-label="Fit scene"
-        onClick={() => setFitRequest(value => value + 1)}>重新取景</button>}
+      {displayScene && !props.capture && <div className="viewport-controls">
+        <button type="button" className="viewport-fit" aria-label="Fit scene"
+          onClick={() => setFitRequest(value => value + 1)}>重新取景</button>
+        <button type="button" className="viewport-fullscreen" aria-label={fullscreen ? '退出全屏' : '全屏'}
+          aria-pressed={fullscreen} disabled={!document.fullscreenEnabled || fullscreenPending}
+          title={!document.fullscreenEnabled ? '当前浏览器不支持全屏' : fullscreen ? '退出全屏（Esc）' : '全屏'}
+          onClick={() => void toggleFullscreen()}>
+          <Icon name={fullscreen ? 'exitFullscreen' : 'fullscreen'} />{fullscreen ? '退出全屏' : '全屏'}
+        </button>
+      </div>}
       {props.annotations && <DeviceAnnotationLayer labels={labels} annotations={props.annotations} selected={props.selected} select={props.select} />}
       {!props.compact && <><div className="viewport-label">
         <span className="live-dot" /> {props.client.readOnly ? '录制空间视图' : '实时空间视图'}{' '}
