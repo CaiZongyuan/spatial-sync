@@ -4,6 +4,8 @@ Liquid is a symbolic model driven by measured pump displacement, never elapsed
 time or the requested target. PhysicsPort supplies the mechanical observations.
 """
 
+import json
+
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
@@ -91,6 +93,7 @@ class WorkcellProgram:
         alignmentToleranceM: float = Field(default=0.003, gt=0)
         axisToleranceM: float = Field(default=0.0005, gt=0)
         holdSpeedTolerance: float = Field(default=0.0001, gt=0)
+        pumpToleranceUl: float = Field(default=0.01, gt=0)
         wasteSite: str = ""
         detachSeconds: float = Field(default=2, gt=0)
         imagerStation: str = ""
@@ -106,6 +109,7 @@ class WorkcellProgram:
     def init(self, ctx):
         self.axes = [ctx.physics.bind_joint(key) for key in ctx.config.axisJoints]
         self.pump = ctx.physics.bind_joint(ctx.config.pumpJoint)
+        self.last_good_q = {joint: ctx.physics.joint_q(joint).copy() for joint in [*self.axes, self.pump]}
         self.tip_site = ctx.physics.bind_site(ctx.config.tipSite)
         self.pipette_body = ctx.physics.bind_body(ctx.config.pipetteBody)
         self.tip_bodies = {row.id: ctx.physics.bind_body(row.bodyKey) for row in ctx.config.tips}
@@ -169,6 +173,12 @@ class WorkcellProgram:
             lastAppliedUl=0.0,
             remainingUl=0.0,
             observationRevision=0,
+            inFlightUl=0.0,
+            tipsRemaining=len(ctx.config.tips),
+            wasteFreeUl=sum(row["capacityUl"] - row["volumeUl"] for row in vessels if row["waste"]),
+            samplesIndependent=True,
+            lastObservedLive=0.0,
+            lastObservedDead=0.0,
         )
 
     def _publish(self, ctx):
@@ -182,7 +192,40 @@ class WorkcellProgram:
                 for culture, value in self.initial_cells.items()
             )
         )
-        ctx.set(materialSnapshot=self.state, materialRevision=self.state["revision"], auditPassed=balanced)
+        independent = all(
+            len(
+                {
+                    cell["culture"]
+                    for cell in row["cells"]
+                    if sum(value for key, value in cell.items() if key not in ("culture", "parent")) > 1e-8
+                }
+            )
+            <= 1
+            for row in self.state["vessels"]
+            if not row["waste"]
+        )
+        contents_valid = all(
+            -1e-6 <= row["volumeUl"] <= row.get("capacityUl", ctx.config.tipCapacityUl) + 1e-6
+            and abs(row["volumeUl"] - sum(c["volumeUl"] for c in row["components"])) < 1e-6
+            and all(
+                value >= -1e-6
+                for cell in row["cells"]
+                for key, value in cell.items()
+                if key not in ("culture", "parent")
+            )
+            for row in [*self.state["vessels"], self.state["tip"]]
+        )
+        ctx.set(
+            materialSnapshot=self.state,
+            materialRevision=self.state["revision"],
+            auditPassed=balanced and independent and contents_valid,
+            samplesIndependent=independent,
+            inFlightUl=self.state["tip"]["volumeUl"],
+            tipsRemaining=sum(row["state"] == "unused" for row in self.state["tips"]),
+            wasteFreeUl=sum(
+                row["capacityUl"] - row["volumeUl"] for row in self.state["vessels"] if row["waste"]
+            ),
+        )
 
     def _cell_totals(self):
         totals = {}
@@ -227,6 +270,10 @@ class WorkcellProgram:
             )
         if action in ("requestControl", "confirmControl"):
             return self._control(inv, ctx, commit=True)
+        if any(row["operationId"] == p["operationId"] for row in self.state["controlRequests"]):
+            return self._reject(
+                "operation_applied", "This domain identity belongs to an applied control request"
+            )
         rejection = guard(ctx, ctx.key, p)
         if rejection:
             return rejection
@@ -360,6 +407,11 @@ class WorkcellProgram:
         p = inv.params
         old = next((r for r in self.state["controlRequests"] if r["operationId"] == p["operationId"]), None)
         if old:
+            if old["action"] != inv.action or old["paramsJson"] != json.dumps(p, sort_keys=True):
+                return self._reject(
+                    "operation_conflict",
+                    "A control domain identity cannot be reused for different parameters",
+                )
             return None
         if p["epoch"] != ctx.get("controlEpoch") or p["owner"] != ctx.get("controlOwner"):
             return self._reject("stale_control", "Control request belongs to an older owner or epoch")
@@ -392,6 +444,8 @@ class WorkcellProgram:
                     "epoch": ctx.get("controlEpoch"),
                     "mode": ctx.get("controlMode"),
                     "owner": ctx.get("controlOwner"),
+                    "action": inv.action,
+                    "paramsJson": json.dumps(p, sort_keys=True),
                 }
             )
             self._publish(ctx)
@@ -402,7 +456,10 @@ class WorkcellProgram:
         if self.stroke:
             self._apply_stroke(ctx)
         for joint in [*self.axes, self.pump]:
-            ctx.physics.set_joint_target(joint, ctx.physics.joint_q(joint))
+            measured = ctx.physics.joint_q(joint)
+            if np.isfinite(measured).all():
+                self.last_good_q[joint] = measured.copy()
+            ctx.physics.set_joint_target(joint, self.last_good_q[joint])
             ctx.physics.set_joint_target_velocity(joint, [0])
         if self.handle:
             if self.state["reconciled"]:
@@ -511,9 +568,21 @@ class WorkcellProgram:
                     "dead": dead,
                     "volumeUl": row["volumeUl"],
                     "simTime": ctx.sim_time,
+                    "kind": action,
+                    "entityKey": row["entityKey"],
+                    "culture": row["culture"],
+                    "parent": row["parent"],
+                    "modelLive": live,
+                    "modelDead": dead,
+                    "measuredLive": live,
+                    "measuredDead": dead,
                 }
             )
-            ctx.set(observationRevision=len(self.state["observations"]))
+            ctx.set(
+                observationRevision=len(self.state["observations"]),
+                lastObservedLive=live,
+                lastObservedDead=dead,
+            )
         elif action == "pellet":
             for name in p["vessels"]:
                 row = self._vessel(name)
@@ -538,8 +607,12 @@ class WorkcellProgram:
             * ctx.config.pumpUlPerUnit
         )
         operation = self.state["operations"][-1]
-        operation["observedUl"] = actual
-        if not np.isfinite(actual) or actual > requested + 1e-6 or actual < stroke["appliedUl"] - 1e-6:
+        operation["observedUl"] = actual if np.isfinite(actual) else -1.0
+        if (
+            not np.isfinite(actual)
+            or actual > requested + ctx.config.pumpToleranceUl
+            or actual < stroke["appliedUl"] - ctx.config.pumpToleranceUl
+        ):
             self.state["reconciled"] = False
             operation["fault"] = "pump_feedback_invalid"
             self._publish(ctx)
@@ -551,10 +624,16 @@ class WorkcellProgram:
         row, tip = self._vessel(p["vessel"]), self.state["tip"]
         aspirating = action == "aspirate" or (action == "mix" and stroke["direction"] == 1)
         source, destination = (row, tip) if aspirating else (tip, row)
+        capacity = ctx.config.tipCapacityUl if aspirating else row["capacityUl"]
+        if amount > source["volumeUl"] + 1e-8 or destination["volumeUl"] + amount > capacity + 1e-8:
+            self.state["reconciled"] = False
+            operation["fault"] = "pump_feedback_invalid"
+            self._publish(ctx)
+            return
         move_content(source, destination, amount)
         if not row["waste"] and (row["parent"] or row["culture"]):
             tip["contactCulture"] = row["parent"] or row["culture"]
-        elif any(c["name"] == "trypsin" and c["volumeUl"] > 0 for c in row["components"]):
+        if not aspirating and any(c["name"] == "trypsin" and c["volumeUl"] > 0 for c in row["components"]):
             if row["exposureSince"] < 0:
                 row["exposureSince"] = ctx.sim_time
         stroke["appliedUl"] = actual
@@ -576,6 +655,10 @@ class WorkcellProgram:
         self._publish(ctx)
 
     def tick(self, ctx, dt):
+        for joint in [*self.axes, self.pump]:
+            measured = ctx.physics.joint_q(joint)
+            if np.isfinite(measured).all():
+                self.last_good_q[joint] = measured.copy()
         inv = self.handle
         if inv is None:
             if ctx.get("phase") == "holding":
@@ -596,7 +679,9 @@ class WorkcellProgram:
             if not self.state["reconciled"]:
                 self._hold(ctx)
                 return
-            if p["volumeUl"] - self.stroke["appliedUl"] < 1e-6:
+            if p["volumeUl"] - self.stroke["appliedUl"] <= ctx.config.pumpToleranceUl and self._stationary(
+                ctx
+            ):
                 if action == "mix" and self.stroke["direction"] == 1:
                     origin = self.stroke["origin"]
                     self.stroke.update(origin=q, direction=-1, appliedUl=0.0)

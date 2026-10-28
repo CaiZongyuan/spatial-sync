@@ -352,3 +352,54 @@ def test_six_origins_remain_independent_across_sample_and_twelve_daughters(tmp_p
     assert state["auditPassed"] is True
     assert snapshot["tip"]["volumeUl"] == 0
     assert all(tip["state"] == "discarded" for tip in snapshot["tips"])
+
+
+def test_old_media_keeps_attached_cells_and_trypsin_wait_is_required_for_detachment(tmp_path):
+    host, port = workcell(
+        tmp_path,
+        vessels=[
+            {
+                "id": "mother",
+                "entityKey": "/source",
+                "site": "/sourceSite",
+                "capacityUl": 2000,
+                "volumeUl": 500,
+                "culture": "M1",
+                "live": 1000,
+                "attached": True,
+            },
+            {
+                "id": "trypsin",
+                "entityKey": "/reagent",
+                "site": "/sourceSite",
+                "capacityUl": 2000,
+                "volumeUl": 500,
+                "reagent": "trypsin",
+            },
+            {"id": "waste", "entityKey": "/waste", "site": "/sourceSite", "capacityUl": 2000, "waste": True},
+        ],
+        config={
+            "wasteSite": "/sourceSite",
+            "tips": [
+                {"id": "T1", "site": "/T1", "bodyKey": "/tip1"},
+                {"id": "T2", "site": "/T1", "bodyKey": "/tip2"},
+            ],
+        },
+    )
+    for resource in ("/source", "/reagent", "/waste"):
+        execute(host, port, "reserve", resource, resource=resource, device="/workcell")
+    execute(host, port, "pickupTip", "pick-old", tip="T1")
+    execute(host, port, "aspirate", "old-media", vessel="mother", volumeUl=500)
+    execute(host, port, "dispense", "old-waste", vessel="waste", volumeUl=500)
+    state = host.values()["/workcell"]["materialSnapshot"]
+    assert state["vessels"][0]["cells"][0]["attachedLive"] == 1000
+    assert state["vessels"][2]["cells"][0]["suspendedLive"] == 0
+    execute(host, port, "discardTip", "discard-old", waste="waste")
+    execute(host, port, "pickupTip", "pick-trypsin", tip="T2")
+    execute(host, port, "aspirate", "get-trypsin", vessel="trypsin", volumeUl=200)
+    execute(host, port, "dispense", "add-trypsin", vessel="mother", volumeUl=200)
+    assert invoke(host, "detach", "premature-detach", vessel="mother").error.code == "exposure_incomplete"
+    host.tick(host.sim_time + 2, 2)
+    execute(host, port, "detach", "detach", vessel="mother")
+    cells = host.values()["/workcell"]["materialSnapshot"]["vessels"][0]["cells"][0]
+    assert (cells["attachedLive"], cells["suspendedLive"]) == (0, 1000)

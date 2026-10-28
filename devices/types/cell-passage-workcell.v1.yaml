@@ -154,6 +154,26 @@ properties:
               dead: *id001
               volumeUl: *id001
               simTime: *id001
+              kind:
+                type: string
+              entityKey:
+                type: string
+              culture:
+                type: string
+              parent:
+                type: string
+              modelLive:
+                type: number
+                minimum: 0
+              modelDead:
+                type: number
+                minimum: 0
+              measuredLive:
+                type: number
+                minimum: 0
+              measuredDead:
+                type: number
+                minimum: 0
             required:
             - operationId
             - vessel
@@ -163,6 +183,14 @@ properties:
             - dead
             - volumeUl
             - simTime
+            - kind
+            - entityKey
+            - culture
+            - parent
+            - modelLive
+            - modelDead
+            - measuredLive
+            - measuredDead
         controlRequests:
           type: array
           items:
@@ -172,11 +200,17 @@ properties:
               epoch: *id006
               mode: *id002
               owner: *id002
+              action:
+                type: string
+              paramsJson:
+                type: string
             required:
             - operationId
             - epoch
             - mode
             - owner
+            - action
+            - paramsJson
         reconciled:
           type: boolean
       required:
@@ -215,6 +249,29 @@ properties:
     schema: *id001
   observationRevision:
     schema: *id006
+  inFlightUl:
+    schema:
+      type: number
+      minimum: 0
+  wasteFreeUl:
+    schema:
+      type: number
+      minimum: 0
+  lastObservedLive:
+    schema:
+      type: number
+      minimum: 0
+  lastObservedDead:
+    schema:
+      type: number
+      minimum: 0
+  tipsRemaining:
+    schema:
+      type: integer
+      minimum: 0
+  samplesIndependent:
+    schema:
+      type: boolean
 actions:
   requestControl:
     params:
