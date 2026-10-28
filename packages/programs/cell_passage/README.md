@@ -32,7 +32,7 @@ still invalidates the material estimate. Queued cancellation is unchanged.
 | requestControl | nextOwner, mode (`auto` or `manual`) | Concurrent. accept increments epoch and commits holding while paused; writes safe targets, retains attachments/liquid. |
 | confirmControl | none | Concurrent. Requires actual workcell and managed-device standstill. accept transfers owner/mode and reservation generation; start only acknowledges the receipt. |
 | reserve | resource, device | Reserves one body or station for that device. Conflicting device is rejected. |
-| release | resource | Requires no liquid in flight, no active workcell motion, and safe managed devices. |
+| release | resource | Requires no liquid in flight, actual workcell axis/pump standstill, and safe managed devices. A still-held body cannot be released. |
 | move | position: [x,y,z] | Raw joint positions in metres. Actual feedback and standstill determine completion; clients must use the scene's collision-checked route. |
 | pickupTip | tip | Requires actual tip-site alignment and zero piston, then activates the predeclared physical tip weld. |
 | discardTip | waste | Requires configured solid-waste site alignment and waste capacity. Residual liquid/cells enter that waste row; the actual tip weld is released. |
@@ -41,7 +41,7 @@ still invalidates the material estimate. Queued cancellation is unchanged.
 | mix | vessel, volumeUl | Empty tip, real outbound and return piston strokes; each partial stroke changes contents. Completed return resuspends the pellet. |
 | wait | seconds | Teaching wait driven by simTime; pause freezes it. |
 | detach | vessel | Requires actual trypsin addition and configured teaching exposure; moves attached live/dead cells to suspension without creating cells. |
-| pellet | centrifuge, cycle, vessels: [content ID] | Requires completedCycle==cycle, phase idle, completedLoad containing all bodies, cycleRunSeconds>=configured teaching time and actualRotorTurns>0. Each vessel accepts that cycle once. |
+| pellet | centrifuge, cycle, vessels: [content ID] | Requires completedCycle==cycle, phase idle, completedLoad containing all bodies, cycleRunSeconds>=configured teaching time and actualRotorTurns>0. The centrifuge must retain reservations for itself and each processed body at the current owner/epoch through material application; accept and start recheck them. Each vessel accepts that cycle once. |
 | observe / count | vessel | Requires actual vessel facts station==imagerStation and settled. Publishes a deterministic simulated observation, preserving model truth. Sampling is an ordinary actual aspirate/dispense to a separately configured counting well. |
 
 Liquid actions require a reservation of the vessel entityKey assigned to the
@@ -50,6 +50,11 @@ must match actual settled facts, and the physical tip must align with its site.
 The same checks run at start and during execution. A sample-contact tip cannot
 enter another culture or a common reagent. A dispense into a culture also marks
 contact, even when the tip becomes empty. Use fresh tips when returning to reagent.
+Waste cannot be aspirated or mixed back into the experiment. A tip that enters
+waste retains `contactWaste=true` even when empty and may only discharge to
+waste or be discarded. Isolation checks use actual cell origins as well as the
+declared culture/parent and contact history; a blank identity does not erase
+cell contamination.
 
 `materialSnapshot` is one fixed-field object containing revision, reconciled,
 vessels, tips, installed tip, reservations, operations, observations and
@@ -77,7 +82,10 @@ Observe/count records identify the source as `simulated-state-model`, retain the
 material revision, vessel/culture/parent, and separate measured/model counts.
 
 Required config is axisJoints[3], pumpJoint, tipSite, pipetteBody,
-vessels[{id,entityKey,site,capacityUl,...}], tips[{id,site,bodyKey}]. Configure
+vessels[{id,entityKey,site,capacityUl,...}], tips[{id,site,bodyKey}], contentSites
+and tipRackSites. The last two are unique top-level Site references that must
+exactly cover the corresponding nested sites; this lets the existing loader
+validate and materialize every actual well/rack Site. Configure
 managedDevices, imagerStation, wasteSite and vessel lidProperty/requiredStation
 for the complete scene. Pump mapping defaults to 100000 uL/metre (1000 uL over
 10 mm), tipCapacityUl=1000, alignmentToleranceM=0.003, axisToleranceM=0.0005,

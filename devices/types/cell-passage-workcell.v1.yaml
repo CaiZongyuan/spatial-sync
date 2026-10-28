@@ -93,12 +93,15 @@ properties:
             cells: *id005
             id: *id002
             contactCulture: *id002
+            contactWaste:
+              type: boolean
           required:
           - volumeUl
           - components
           - cells
           - id
           - contactCulture
+          - contactWaste
         reservations:
           type: array
           items:

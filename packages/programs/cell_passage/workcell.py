@@ -51,6 +51,14 @@ def empty_content():
     return {"volumeUl": 0.0, "components": [], "cells": []}
 
 
+def content_origins(content):
+    return {
+        cell["culture"]
+        for cell in content["cells"]
+        if sum(value for key, value in cell.items() if key not in ("culture", "parent")) > 1e-8
+    }
+
+
 def move_content(source, target, amount):
     """Move only homogeneous suspended material; attached/pelleted cells remain."""
     fraction = amount / source["volumeUl"] if source["volumeUl"] else 0
@@ -87,6 +95,8 @@ class WorkcellProgram:
         pipetteBody: str = Field(json_schema_extra={"spatialReference": "body"})
         vessels: list[Vessel]
         tips: list[Tip]
+        contentSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
+        tipRackSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
         managedDevices: list[str] = []
         pumpUlPerUnit: float = Field(default=100000, gt=0)
         tipCapacityUl: float = Field(default=1000, gt=0)
@@ -104,6 +114,11 @@ class WorkcellProgram:
             for rows in (self.vessels, self.tips):
                 if len({row.id for row in rows}) != len(rows):
                     raise ValueError("Compartment and tip identities must be unique")
+            for sites, rows in ((self.contentSites, self.vessels), (self.tipRackSites, self.tips)):
+                if len(sites) != len(set(sites)) or set(sites) != {row.site for row in rows}:
+                    raise ValueError(
+                        "Top-level Site references must exactly cover the nested content/tip Sites"
+                    )
             return self
 
     def init(self, ctx):
@@ -154,7 +169,7 @@ class WorkcellProgram:
             "reconciled": True,
             "vessels": vessels,
             "tips": [{"id": row.id, "state": "unused"} for row in ctx.config.tips],
-            "tip": empty_content() | {"id": "", "contactCulture": ""},
+            "tip": empty_content() | {"id": "", "contactCulture": "", "contactWaste": False},
             "reservations": [],
             "operations": [],
             "observations": [],
@@ -195,18 +210,7 @@ class WorkcellProgram:
                 for culture, value in self.initial_cells.items()
             )
         )
-        independent = all(
-            len(
-                {
-                    cell["culture"]
-                    for cell in row["cells"]
-                    if sum(value for key, value in cell.items() if key not in ("culture", "parent")) > 1e-8
-                }
-            )
-            <= 1
-            for row in self.state["vessels"]
-            if not row["waste"]
-        )
+        independent = all(len(content_origins(row)) <= 1 for row in self.state["vessels"] if not row["waste"])
         contents_valid = all(
             -1e-6 <= row["volumeUl"] <= row.get("capacityUl", ctx.config.tipCapacityUl) + 1e-6
             and abs(row["volumeUl"] - sum(c["volumeUl"] for c in row["components"])) < 1e-6
@@ -298,7 +302,7 @@ class WorkcellProgram:
                 if row["resource"] == p["resource"] and row["device"] != p["device"]:
                     return self._reject("resource_busy", "Resource is already reserved by another device")
         if action == "release":
-            if self.handle or self.state["tip"]["volumeUl"] > 1e-8:
+            if self.handle or self.state["tip"]["volumeUl"] > 1e-8 or not self._stationary(ctx):
                 return self._reject(
                     "unsafe_release", "Stop motion and resolve in-flight liquid before release"
                 )
@@ -360,6 +364,13 @@ class WorkcellProgram:
                 return self._reject("tip_unavailable", "Install a fresh tip before liquid handling")
             if action in ("aspirate", "dispense", "mix"):
                 tip, amount = self.state["tip"], p["volumeUl"]
+                if (row["waste"] and action in ("aspirate", "mix")) or (
+                    tip["contactWaste"] and not (row["waste"] and action == "dispense")
+                ):
+                    return self._reject(
+                        "waste_return_forbidden",
+                        "Waste and waste-contact tips cannot return material to the experiment",
+                    )
                 source, destination = (tip, row) if action == "dispense" else (row, tip)
                 capacity = row["capacityUl"] if action == "dispense" else ctx.config.tipCapacityUl
                 if action == "mix" and tip["volumeUl"] > 1e-8:
@@ -372,22 +383,15 @@ class WorkcellProgram:
                     return self._reject(
                         "capacity_exceeded", "Requested transfer exceeds destination capacity"
                     )
-                cultures = {cell["culture"] for cell in row["cells"]}
-                contact = tip["contactCulture"]
-                allowed = {row["culture"], row["parent"]} | cultures
-                if contact and not row["waste"] and contact not in allowed:
+                expected = row["parent"] or row["culture"]
+                origins = content_origins(row)
+                tip_origins = content_origins(tip) | (
+                    {tip["contactCulture"]} if tip["contactCulture"] else set()
+                )
+                if not row["waste"] and ((origins - {expected}) or (tip_origins - {expected})):
                     return self._reject(
-                        "cross_sample", "Sample-contact tips cannot enter another culture or common reagent"
-                    )
-                if (
-                    action == "dispense"
-                    and cultures
-                    and contact
-                    and contact not in cultures
-                    and contact != row["parent"]
-                ):
-                    return self._reject(
-                        "cross_sample", "Destination culture is not descended from this sample"
+                        "cross_sample",
+                        "Contents or tip contact do not match this culture; keep reagent stocks cell-free",
                     )
                 if (
                     not row["mixed"]
@@ -424,6 +428,19 @@ class WorkcellProgram:
                 if row["processedCycle"] == p["cycle"]:
                     return self._reject(
                         "cycle_applied", "This completed cycle was already applied to the vessel"
+                    )
+            resources = {centrifuge, *(self.configs[name].entityKey for name in p["vessels"])}
+            for resource in resources:
+                if not any(
+                    lease["resource"] == resource
+                    and lease["device"] == centrifuge
+                    and lease["owner"] == p["owner"]
+                    and lease["epoch"] == p["epoch"]
+                    for lease in self.state["reservations"]
+                ):
+                    return self._reject(
+                        "reservation_required",
+                        "Retain centrifuge and processed-vessel reservations through material application",
                     )
         return None
 
@@ -501,7 +518,10 @@ class WorkcellProgram:
                     "Actual pump progress cannot be reconciled with requested liquid transfer",
                 )
                 self._finish(ctx, "failed")
-        ctx.set(controlSafe=self._stationary(ctx), phase="holding")
+        safe = self._stationary(ctx)
+        if self.handle is None and safe:
+            self.stopping, self.hold_targets = False, None
+        ctx.set(controlSafe=safe, phase="holding")
 
     def _stationary(self, ctx):
         for joint in [*self.axes, self.pump]:
@@ -600,7 +620,7 @@ class WorkcellProgram:
             move_content(tip, self._vessel(p["waste"]), tip["volumeUl"])
             next(r for r in self.state["tips"] if r["id"] == tip["id"])["state"] = "discarded"
             ctx.physics.unweld(self.pipette_body, self.tip_bodies[tip["id"]])
-            self.state["tip"] = empty_content() | {"id": "", "contactCulture": ""}
+            self.state["tip"] = empty_content() | {"id": "", "contactCulture": "", "contactWaste": False}
             ctx.physics.set_joint_target(self.pump, [0.0])
         elif action == "detach":
             for cell in self._vessel(p["vessel"])["cells"]:
@@ -693,8 +713,13 @@ class WorkcellProgram:
             self._publish(ctx)
             return
         move_content(source, destination, amount)
-        if not row["waste"] and (row["parent"] or row["culture"]):
-            tip["contactCulture"] = row["parent"] or row["culture"]
+        if row["waste"]:
+            tip["contactWaste"] = True
+        else:
+            origins = content_origins(row) | content_origins(tip)
+            tip["contactCulture"] = (
+                row["parent"] or row["culture"] or next(iter(origins), tip["contactCulture"])
+            )
         if not aspirating and any(c["name"] == "trypsin" and c["volumeUl"] > 0 for c in row["components"]):
             if row["exposureSince"] < 0:
                 row["exposureSince"] = ctx.sim_time
@@ -724,7 +749,10 @@ class WorkcellProgram:
                 self.last_good_q[joint] = measured.copy()
         inv = self.handle
         if inv is None:
-            ctx.set(controlSafe=self._stationary(ctx))
+            if self.stopping:
+                self._hold(ctx)
+            else:
+                ctx.set(controlSafe=self._stationary(ctx))
             return
         if self.stopping:
             self._hold(ctx)

@@ -109,6 +109,11 @@ def build_workcell_host(tmp_path, *, vessels=None, config=None, facts=None):
             },
         }
     )
+    for binding in bindings:
+        if binding["program"] == WorkcellProgram.id:
+            cfg = binding["config"]
+            cfg.setdefault("contentSites", sorted({row["site"] for row in cfg["vessels"]}))
+            cfg.setdefault("tipRackSites", sorted({row["site"] for row in cfg["tips"]}))
     scene.write_text(yaml.safe_dump({"scene": "test", "entities": bindings}), encoding="utf8")
     manifest = SceneManifest(
         sessionId="test",
