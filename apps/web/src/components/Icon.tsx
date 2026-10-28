@@ -34,6 +34,8 @@ const paths = {
   warning: 'M12 3l10 18H2z M12 9v5 M12 17h.01',
   copy: 'M8 8h13v13H8z M16 8V3H3v13h5',
   external: 'M14 3h7v7 M21 3L10 14 M10 4H3v17h17v-7',
+  fullscreen: 'M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5',
+  exitFullscreen: 'M3 8h5V3 M21 8h-5V3 M16 21v-5h5 M8 21v-5H3',
   theme: 'M12 2a10 10 0 1 0 0 20V2z M12 2a10 10 0 0 1 0 20',
   list: 'M8 5h13 M8 12h13 M8 19h13 M3 5h.01 M3 12h.01 M3 19h.01',
 } as const;
