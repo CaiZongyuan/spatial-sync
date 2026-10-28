@@ -118,7 +118,7 @@ properties:
             - epoch
         operations:
           type: array
-          items:
+          items: &id011
             type: object
             properties:
               operationId: *id002
@@ -133,6 +133,20 @@ properties:
                 type: number
               fault:
                 type: string
+              invocationId:
+                type: string
+              owner:
+                type: string
+              paramsJson:
+                type: string
+              tipId:
+                type: string
+              endedSimTime:
+                type: number
+                minimum: -1
+              materialRevision:
+                type: integer
+                minimum: 0
             required:
             - operationId
             - action
@@ -144,6 +158,12 @@ properties:
             - startedSimTime
             - observedUl
             - fault
+            - invocationId
+            - owner
+            - paramsJson
+            - tipId
+            - endedSimTime
+            - materialRevision
         observations:
           type: array
           items:
@@ -216,6 +236,15 @@ properties:
             - paramsJson
         reconciled:
           type: boolean
+        operationCount: &id007
+          type: integer
+          minimum: 0
+        terminalOperationCount: &id008
+          type: integer
+          minimum: 0
+        archivedOperationCount: &id009
+          type: integer
+          minimum: 0
       required:
       - revision
       - vessels
@@ -226,6 +255,9 @@ properties:
       - observations
       - controlRequests
       - reconciled
+      - operationCount
+      - terminalOperationCount
+      - archivedOperationCount
   materialRevision:
     schema: *id006
   controlOwner:
@@ -275,12 +307,18 @@ properties:
   samplesIndependent:
     schema:
       type: boolean
+  operationCount:
+    schema: *id007
+  terminalOperationCount:
+    schema: *id008
+  archivedOperationCount:
+    schema: *id009
 actions:
   requestControl:
     params:
       owner: *id002
       epoch: *id006
-      operationId: &id007
+      operationId: &id010
         type: string
         minLength: 1
       nextOwner: *id002
@@ -300,7 +338,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
     required:
     - owner
     - epoch
@@ -311,7 +349,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       resource: *id002
       device: *id002
     required:
@@ -326,7 +364,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       resource: *id002
     required:
     - owner
@@ -339,7 +377,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       position:
         type: array
         items:
@@ -357,7 +395,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       tip: *id002
     required:
     - owner
@@ -370,7 +408,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       waste: *id002
     required:
     - owner
@@ -383,7 +421,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       vessel: *id002
       volumeUl:
         type: number
@@ -400,7 +438,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       vessel: *id002
       volumeUl:
         type: number
@@ -417,7 +455,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       vessel: *id002
       volumeUl:
         type: number
@@ -434,7 +472,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       seconds: *id001
     required:
     - owner
@@ -447,7 +485,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       vessel: *id002
     required:
     - owner
@@ -460,7 +498,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       vessel: *id002
     required:
     - owner
@@ -473,7 +511,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       vessel: *id002
     required:
     - owner
@@ -486,7 +524,7 @@ actions:
     params:
       owner: *id002
       epoch: *id006
-      operationId: *id007
+      operationId: *id010
       centrifuge:
         type: string
       cycle:
@@ -504,3 +542,11 @@ actions:
     - cycle
     - vessels
     timeoutSeconds: 10
+events:
+  operationCompleted:
+    schema:
+      type: object
+      properties:
+        receipt: *id011
+      required:
+      - receipt

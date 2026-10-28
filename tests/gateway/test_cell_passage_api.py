@@ -3,10 +3,13 @@
 This proves API semantics, not Newton geometry or successful physical pipetting.
 """
 
+import json
+
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.sources.synthetic_source import SyntheticSource
+from packages.info.log import read_segment
 from tests.fixtures.cell_passage import build_workcell_host
 
 
@@ -85,3 +88,50 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
             if change["key"] == "/workcell" and "materialSnapshot" in change["values"]
         ]
         assert any(row["controlRequests"][0]["epoch"] == 1 for row in snapshots if row["controlRequests"])
+        confirm = client.post(
+            route + "/actions",
+            json={
+                "requestId": "confirm",
+                "entityKey": "/workcell",
+                "action": "confirmControl",
+                "wait": True,
+                "timeoutSeconds": 2,
+                "params": {"owner": "auto", "epoch": 1, "operationId": "confirm"},
+            },
+        )
+        assert confirm.status_code == 200 and confirm.json()["status"] == "succeeded", confirm.text
+        completed = client.post(
+            route + "/actions",
+            json={
+                "requestId": "recorded-wait",
+                "entityKey": "/workcell",
+                "action": "wait",
+                "wait": True,
+                "timeoutSeconds": 2,
+                "params": {"owner": "human", "epoch": 1, "operationId": "recorded-op", "seconds": 0},
+            },
+        )
+        assert completed.status_code == 200 and completed.json()["status"] == "succeeded", completed.text
+        receipt = completed.json()["result"]["receipt"]
+        history = client.get(route + "/events", params={"after": 0, "timeoutSeconds": 0}).json()["events"]
+        archived = [
+            row["message"]["data"]["receipt"]
+            for row in history
+            if row["message"]["type"] == "entity.event" and row["message"]["event"] == "operationCompleted"
+        ]
+        assert archived == [receipt]
+        assert client.delete(route).status_code == 204
+        base = f"/recordings/{session['sessionId']}"
+        metadata = client.get(base + "/recording.json").json()
+        recorded = [
+            json.loads(record.payload)
+            for segment in metadata["segments"]
+            for record in read_segment(client.get(base + "/" + segment["file"]).content).records
+            if record.kind == 2
+        ]
+        recorded_receipts = [
+            row["data"]["receipt"]
+            for row in recorded
+            if row["type"] == "entity.event" and row["event"] == "operationCompleted"
+        ]
+        assert recorded_receipts == [receipt]
