@@ -13,6 +13,8 @@ from packages.info.program import ProgramConfig, Reject
 
 from .guard import guard
 
+LIQUID_ACTIONS = {'pickupTip', 'discardTip', 'aspirate', 'dispense', 'mix', 'detach'}
+
 
 class MaterialConfig(ProgramConfig):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
@@ -97,6 +99,7 @@ class WorkcellProgram:
         tips: list[Tip]
         contentSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
         tipRackSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
+        cabinetEntity: str
         managedDevices: list[str] = []
         pumpUlPerUnit: float = Field(default=100000, gt=0)
         tipCapacityUl: float = Field(default=1000, gt=0)
@@ -134,6 +137,7 @@ class WorkcellProgram:
         self.handle, self.stroke, self.pending = None, None, None
         self.stopping = False
         self.hold_targets = None
+        self.stop_error = None
         vessels = []
         for config in ctx.config.vessels:
             row = empty_content() | {
@@ -269,6 +273,12 @@ class WorkcellProgram:
     def _reject(self, code, message):
         return Reject(code=code, message=message)
 
+    def _cabinet_ready(self, ctx):
+        try:
+            return ctx.read(ctx.config.cabinetEntity, 'cabinetReady') is True
+        except KeyError:
+            return False
+
     def accept(self, inv, ctx):
         p, action = inv.params, inv.action
         if any(row["operationId"] == p["operationId"] for row in self.state["operations"]):
@@ -293,6 +303,8 @@ class WorkcellProgram:
                 "material_unreconciled",
                 "Actuator feedback invalidated the material estimate; preserve this interrupted run",
             )
+        if action in LIQUID_ACTIONS and not self._cabinet_ready(ctx):
+            return self._reject('cabinet_not_ready', 'Cabinet readiness must be confirmed before liquid handling')
         if action == "reserve":
             if p["device"] not in [ctx.key, *ctx.config.managedDevices]:
                 return self._reject(
@@ -491,7 +503,11 @@ class WorkcellProgram:
         self._publish(ctx)
         return None
 
-    def _hold(self, ctx):
+    def _hold(self, ctx, failure=None):
+        if failure is not None:
+            self.stop_error = failure
+            if self.handle:
+                self.state['operations'][-1]['fault'] = failure[0]
         # Capture already executed stroke before replacing the old drive target.
         if self.stroke:
             self._apply_stroke(ctx)
@@ -509,7 +525,10 @@ class WorkcellProgram:
                 self.state["operations"][-1]["status"] = "settling"
                 self._publish(ctx)
         if self.handle and (self._stationary(ctx) or not self.state["reconciled"]):
-            if self.state["reconciled"]:
+            if self.state["reconciled"] and self.stop_error is not None:
+                self.handle.fail(*self.stop_error)
+                self._finish(ctx, 'failed')
+            elif self.state["reconciled"]:
                 self.handle.cancelled()
                 self._finish(ctx, "cancelled")
             else:
@@ -572,6 +591,7 @@ class WorkcellProgram:
         self.state["operations"].append(operation)
         self.handle, self.started = inv, ctx.sim_time
         self.stopping = False
+        self.stop_error = None
         ctx.set(
             controlSafe=False,
             phase=action,
@@ -739,6 +759,7 @@ class WorkcellProgram:
             )
         self.handle, self.stroke = None, None
         self.stopping = False
+        self.stop_error = None
         ctx.set(controlSafe=self._stationary(ctx), phase="idle")
         self._publish(ctx)
 
@@ -762,6 +783,9 @@ class WorkcellProgram:
             self._hold(ctx)
             return
         p, action = inv.params, inv.action
+        if action in LIQUID_ACTIONS and not self._cabinet_ready(ctx):
+            self._hold(ctx, ('cabinet_not_ready', 'Cabinet readiness was lost during liquid handling'))
+            return
         if action in ("aspirate", "dispense", "mix"):
             rejection = self._accessible(ctx, p["vessel"])
             if rejection:
