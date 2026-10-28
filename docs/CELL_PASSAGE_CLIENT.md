@@ -49,6 +49,12 @@ as full passage acceptance. With the environment bindings and managed-device
 configuration, it adds controlled incubator `waitReady` followed by public
 temperature/CO2/humidity/setpoint, actual door and clean-enclosure checks.
 Older packages without those bindings remain `environmentChecksAvailable:false`.
+Liquid calls use source-resolved available/fraction/top-up/all-tip intents:
+the client does not subtract nominal floating volumes from a local ledger.
+PBS, trypsin and counting samples retain literal doses; the fixed literal mix
+stroke is 900 uL, leaving inventory margin after actual resuspension.
+Disposal uses the authored `tipDiscardSite` when present, and the compiler
+rejects a workcell binding that still points to a different disposal Site.
 
 Seven stages are split into ordinary Plan parts of at most 128 steps, preferring
 complete transfer, mixing and transport groups. Flattened action order, params
@@ -167,6 +173,14 @@ and remaining reservations or running/settling operations. Its positive result
 is named `material_valid`. Mechanical loading, actual incubation conditions,
 processing cycles and continuous recording require separate evidence; this
 material result alone cannot declare a complete passage.
+
+`tools/cell_passage_audit.py` separately checks two spatial samples against
+their actual Manifest Sites in native coordinates, using the existing labware
+seating gates. It also reads finalized recording segment bytes with the
+existing codec/store, rejects gaps/truncation/reset episodes, and requires
+retained completion of every expected Plan part. These read-only reports keep
+`experimentQualified:false`; end-state alignment and readable recording bytes
+do not alone qualify loaded transport or a complete experiment.
 
 Before the first complete Newton run, the PM fixed separate gates in the
 approved simulation recipe: total per-origin cell conservation `1e-6`, sibling

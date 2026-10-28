@@ -4,6 +4,7 @@ from collections import Counter
 
 from packages.programs.cell_passage.scene import WELLS, workcell_binding
 from packages.protocol.schema import OperationPlan
+from tests.fixtures.cell_passage import build_workcell_host
 from tools.cell_passage_plan import compile_recipe, paginate_recipe
 
 
@@ -65,7 +66,7 @@ def recipe_inputs():
     return layout, teaching, binding, geometry
 
 
-def test_complete_recipe_has_independent_samples_two_balanced_batches_and_84_fresh_tips():
+def test_complete_recipe_has_independent_samples_two_balanced_batches_and_84_fresh_tips(tmp_path):
     recipe = compile_recipe(*recipe_inputs(), owner="auto", epoch=0, round_id="fixture")
     assert {row["stage"] for row in recipe["plans"]} == set(range(1, 8))
     assert recipe["mechanicallyQualified"] is False
@@ -75,9 +76,18 @@ def test_complete_recipe_has_independent_samples_two_balanced_batches_and_84_fre
     counts = Counter(call["action"] for call in calls)
     assert counts["pickupTip"] == counts["discardTip"] == 84
     assert counts["observe"] == counts["count"] == 6
+    assert counts["aspirate"] == 18
+    assert counts["aspirateAvailable"] == 30 and counts["aspirateFraction"] == 6
+    assert counts["aspirateTopUp"] == 24 and counts["dispenseAll"] == 78
+    assert counts["dispense"] == 0
+    assert {call["params"]["volumeUl"] for call in calls if call["action"] == "mix"} == {900}
     pellets = [call["params"]["vessels"] for call in calls if call["action"] == "pellet"]
     assert pellets == [["S1", "S2", "S3", "S4"], ["S5", "S6"]]
     assert len({call["params"]["operationId"] for call in calls}) == len(calls)
+    host, _ = build_workcell_host(tmp_path)
+    for call in calls:
+        if call["entity"] == "/World/Lab/LiquidHandler":
+            host.catalog.validate_params("/workcell", call["action"], call["params"])
     for stage in recipe["plans"]:
         OperationPlan.model_validate({"id": "fixture", "revision": 1, **stage["document"]})
         assert all(step["id"] // 100000 == stage["stage"] for step in stage["document"]["steps"])

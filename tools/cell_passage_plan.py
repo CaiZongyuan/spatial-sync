@@ -28,6 +28,8 @@ class _Recipe:
             raise ValueError("Complete reach teaching is required; transport still needs qualification")
         self.layout, self.geometry = layout, geometry
         self.config = binding["config"]
+        if layout.get("tipDiscardSite") and self.config["wasteSite"] != layout["tipDiscardSite"]:
+            raise ValueError("Workcell disposal binding does not match the authored discard Site")
         self.vessels = {row["id"]: row for row in self.config["vessels"]}
         self.locations = teaching["locations"]
         self.stations = dict(layout["initialStations"])
@@ -179,17 +181,19 @@ class _Recipe:
 
     def discard_tip(self):
         self.reserve(self.vessels["SolidWaste"]["entityKey"], WORKCELL)
-        self.move_tip(self.content_position("SolidWaste"))
+        site = self.layout.get("tipDiscardSite")
+        self.move_tip(self.geometry["staticSites"][site] if site else self.content_position("SolidWaste"))
         self.do(WORKCELL, "discardTip", {"waste": "SolidWaste"})
 
-    def transfer(self, source, target, amount):
+    def transfer(self, source, target, amount=None, *, action="aspirate", **quantity):
         for identity in (source, target):
             self.reserve(self.vessels[identity]["entityKey"], WORKCELL)
         self.fresh_tip()
         self.move_tip(self.content_position(source))
-        self.do(WORKCELL, "aspirate", {"vessel": source, "volumeUl": amount})
+        self.do(WORKCELL, action, {"vessel": source, **quantity,
+                                   **({"volumeUl": amount} if amount is not None else {})})
         self.move_tip(self.content_position(target))
-        self.do(WORKCELL, "dispense", {"vessel": target, "volumeUl": amount})
+        self.do(WORKCELL, "dispenseAll", {"vessel": target})
         self.discard_tip()
         self.cut()
 
@@ -197,7 +201,7 @@ class _Recipe:
         self.reserve(self.vessels[identity]["entityKey"], WORKCELL)
         self.fresh_tip()
         self.move_tip(self.content_position(identity))
-        self.do(WORKCELL, "mix", {"vessel": identity, "volumeUl": 1000})
+        self.do(WORKCELL, "mix", {"vessel": identity, "volumeUl": 900})
         self.discard_tip()
         self.cut()
 
@@ -255,15 +259,16 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
         recipe.lid(f"S{index}", True)
     for index, well in enumerate(WELLS, 1):
         mother = f"Mother/{well}"
-        recipe.transfer(mother, "WasteLiquid", 1000)
+        recipe.transfer(mother, "WasteLiquid", action="aspirateAvailable")
         recipe.transfer("ReservoirPBS", mother, 200)
-        recipe.transfer(mother, "WasteLiquid", 200)
+        recipe.transfer(mother, "WasteLiquid", action="aspirateAvailable")
         recipe.transfer("ReservoirTrypsin", mother, 200)
         recipe.do(WORKCELL, "wait", {"seconds": recipe.config["detachSeconds"]})
         recipe.move_tip(recipe.content_position(mother))
         recipe.do(WORKCELL, "detach", {"vessel": mother})
-        recipe.transfer("ReservoirMedium", mother, 800)
-        recipe.transfer(mother, f"S{index}", 1000)
+        recipe.transfer("ReservoirMedium", mother, action="aspirateTopUp",
+                        targetVessel=mother, targetVolumeUl=1000)
+        recipe.transfer(mother, f"S{index}", action="aspirateAvailable")
     recipe.lid("Mother", False)
     recipe.transport(body["Mother"], LAB + "/Sites/WasteMother")
     for index in range(1, 7):
@@ -282,8 +287,9 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     for index, well in enumerate(WELLS, 1):
         sample = f"S{index}"
         recipe.lid(sample, True)
-        recipe.transfer(sample, "WasteLiquid", 950)
-        recipe.transfer("ReservoirMedium", sample, 950)
+        recipe.transfer(sample, "WasteLiquid", action="aspirateAvailable", reserveUl=50)
+        recipe.transfer("ReservoirMedium", sample, action="aspirateTopUp",
+                        targetVessel=sample, targetVolumeUl=1000)
         recipe.mix(sample)
         recipe.transfer(sample, f"Counting/{well}", 20)
     recipe.lid("Counting", False)
@@ -298,8 +304,13 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
         recipe.transport(body[plate], LAB + "/Sites/FlexPlate")
         recipe.lid(plate, True)
         for index, well in enumerate(WELLS, 1):
-            recipe.transfer(f"S{index}", f"{plate}/{well}", 490)
-            recipe.transfer("ReservoirMedium", f"{plate}/{well}", 510)
+            target = f"{plate}/{well}"
+            if plate == "DaughterA":
+                recipe.transfer(f"S{index}", target, action="aspirateFraction", fraction=0.5)
+            else:
+                recipe.transfer(f"S{index}", target, action="aspirateAvailable")
+            recipe.transfer("ReservoirMedium", target, action="aspirateTopUp",
+                            targetVessel=target, targetVolumeUl=1000)
         recipe.lid(plate, False)
         recipe.transport(body[plate], LAB + f"/Sites/{plate}Ready")
     for index in range(1, 7):
@@ -348,6 +359,8 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
             "mechanicallyQualified": False, "environmentChecksAvailable": recipe.environment,
             "plans": recipe.plans, "tipsRequired": recipe.tip_index,
             "teachingConditions": {"daughterVolumeUl": 1000, "sampleVolumeUl": 20,
+                                   "collectionTargetUl": 1000, "resuspensionTargetUl": 1000,
+                                   "mixStrokeUl": 900,
                                    "requestedCentrifugeRpm": 800, "physicalRpmCap": 60,
                                    "finalVolumeToleranceUl": 0.01, "cellConservationTolerance": 0.000001,
                                    "siblingLiveTolerance": 1}}
@@ -412,6 +425,10 @@ def load_inputs(library):
             geometry["staticSites"][row["site"]] = list(world)
     for tip in layout["tips"]:
         geometry["staticSites"][tip["site"]] = list(matrix(tip["site"]).ExtractTranslation())
+    if layout.get("tipDiscardSite"):
+        geometry["staticSites"][layout["tipDiscardSite"]] = list(
+            matrix(layout["tipDiscardSite"]).ExtractTranslation()
+        )
     return layout, teaching, binding, geometry
 
 
