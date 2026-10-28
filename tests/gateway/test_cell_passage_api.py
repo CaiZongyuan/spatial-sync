@@ -120,6 +120,68 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
             if row["message"]["type"] == "entity.event" and row["message"]["event"] == "operationCompleted"
         ]
         assert archived == [receipt]
+        reset = client.post(route + "/commands", json={"requestId": "reset", "command": "reset"})
+        assert reset.status_code == 200, reset.text
+        current = client.get(route + "/state", params={"keys": "/workcell"}).json()["entities"]["/workcell"][
+            "values"
+        ]
+        assert current["controlOwner"] == "auto" and current["controlEpoch"] > 1
+        late_after_reset = client.post(
+            route + "/actions",
+            json={
+                "requestId": "late-after-reset",
+                "entityKey": "/workcell",
+                "action": "move",
+                "params": {
+                    "owner": "auto",
+                    "epoch": 0,
+                    "operationId": "old-auto-command",
+                    "position": [0.2, 0.1, 0.01],
+                },
+            },
+        )
+        assert (
+            late_after_reset.status_code == 409
+            and late_after_reset.json()["error"]["code"] == "stale_control"
+        )
+        old_control = client.post(
+            route + "/actions",
+            json={
+                "requestId": "old-control-query",
+                "entityKey": "/workcell",
+                "action": "requestControl",
+                "wait": True,
+                "timeoutSeconds": 2,
+                "params": params,
+            },
+        )
+        assert old_control.status_code == 200 and old_control.json()["result"] == done.json()["result"]
+        after = client.get(route + "/state", params={"keys": "/workcell"}).json()["entities"]["/workcell"][
+            "values"
+        ]
+        assert (after["controlOwner"], after["controlEpoch"], after["controlMode"]) == (
+            "auto",
+            current["controlEpoch"],
+            "auto",
+        )
+        assert after["materialSnapshot"]["controlRequests"] == []
+        fresh = client.post(
+            route + "/actions",
+            json={
+                "requestId": "fresh-after-reset",
+                "entityKey": "/workcell",
+                "action": "wait",
+                "wait": True,
+                "timeoutSeconds": 2,
+                "params": {
+                    "owner": "auto",
+                    "epoch": current["controlEpoch"],
+                    "operationId": "new-round-op",
+                    "seconds": 0,
+                },
+            },
+        )
+        assert fresh.status_code == 200 and fresh.json()["status"] == "succeeded", fresh.text
         assert client.delete(route).status_code == 204
         base = f"/recordings/{session['sessionId']}"
         metadata = client.get(base + "/recording.json").json()
@@ -134,4 +196,4 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
             for row in recorded
             if row["type"] == "entity.event" and row["event"] == "operationCompleted"
         ]
-        assert recorded_receipts == [receipt]
+        assert recorded_receipts == [receipt, fresh.json()["result"]["receipt"]]

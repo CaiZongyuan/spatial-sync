@@ -350,3 +350,73 @@ def test_unreconciled_fault_row_is_retained_beyond_the_ordinary_history_limit(tm
     assert receipt["status"] == "failed" and receipt["fault"] == "pump_feedback_invalid"
     assert receipt["appliedUl"] == pytest.approx(40) and receipt["observedUl"] == pytest.approx(150)
     assert snapshot["operationCount"] == 73 and snapshot["archivedOperationCount"] == 8
+
+
+def test_reset_rejects_late_old_control_params_even_when_outer_source_epoch_is_current(tmp_path):
+    host, port = build_workcell_host(tmp_path)
+    previous_generation = host.values()["/workcell"]["controlEpoch"]
+    host.reset(1)
+
+    def request(token, source_epoch, generation, action="move", **params):
+        return host.invoke(
+            InvokeRequest(
+                invocationId=token,
+                requestId=token,
+                entityKey="/workcell",
+                action=action,
+                epoch=source_epoch,
+                createdSimTime=0,
+                createdAtMs=0,
+                params={"owner": "auto", "epoch": generation, "operationId": token, **params},
+            )
+        )
+
+    late = request("late-old-params", 1, previous_generation, position=[0.2, 0.1, 0.01])
+    assert late.error.code == "stale_control"
+    generation = host.values()["/workcell"]["controlEpoch"]
+    assert generation > previous_generation
+    assert (
+        request("old-source-request", 0, generation, position=[0.2, 0.1, 0.01]).error.code == "session_reset"
+    )
+    assert request("fresh", 1, generation, position=[0.2, 0.1, 0.01]).status == "accepted"
+    host.tick(0.1, 0.1)
+    assert port.targets["x"] == 0.2
+    for key in ("x", "y", "z"):
+        port.q[key] = port.targets[key]
+    host.tick(0.2, 0.1)
+    assert host.values()["/workcell"]["materialSnapshot"]["operationCount"] == 1
+    assert (
+        next(row for row in host.snapshot().invocations if row.invocationId == "fresh").status == "succeeded"
+    )
+
+
+def test_old_control_receipt_after_reset_is_retrieved_without_applying_it_to_the_new_round(tmp_path):
+    host, _ = build_workcell_host(tmp_path)
+    params = {"owner": "auto", "epoch": 0, "operationId": "handoff", "nextOwner": "human", "mode": "manual"}
+    invoke(host, "requestControl", "handoff", nextOwner="human", mode="manual")
+    host.tick(0.1, 0.1)
+    original = next(row for row in host.snapshot().invocations if row.invocationId == "handoff").result
+    invoke(host, "confirmControl", "confirm", epoch=1)
+    host.tick(0.2, 0.1)
+    host.reset(1)
+    before = host.values()["/workcell"]
+    query = host.invoke(
+        InvokeRequest(
+            invocationId="old-receipt",
+            requestId="old-receipt",
+            entityKey="/workcell",
+            action="requestControl",
+            epoch=1,
+            createdSimTime=0,
+            createdAtMs=0,
+            params=params,
+        )
+    )
+    assert query.status == "accepted"
+    host.tick(0.1, 0.1)
+    receipt = next(row for row in host.snapshot().invocations if row.invocationId == "old-receipt").result
+    assert receipt == original
+    current = host.values()["/workcell"]
+    assert current == before
+    assert receipt["epoch"] < current["controlEpoch"]
+    assert current["controlMode"] == "auto" and current["materialSnapshot"]["controlRequests"] == []
