@@ -13,6 +13,9 @@ from .virtual import balanced
 class CentrifugeProgram:
     id, type, tick_priority = "centrifuge.newton", "centrifuge/v1", 30
 
+    def _lid_open(self, port):
+        return bool(port.joint_q(self.lid)[0] > .1)
+
     class Config(ProgramConfig):
         slotSites: list[str] = Field(
             min_length=4, max_length=4, json_schema_extra={"spatialReference": "site"}
@@ -46,7 +49,7 @@ class CentrifugeProgram:
         self.welded = []
         ctx.set(
             phase="idle",
-            lidOpen=bool(port.joint_q(self.lid)[0] > 0.1),
+            lidOpen=self._lid_open(port),
             rpm=0,
             remainingSeconds=0,
             slots=self._slots(ctx),
@@ -106,7 +109,7 @@ class CentrifugeProgram:
 
     def tick(self, ctx, dt):
         port = ctx.physics
-        ctx.set(lidOpen=bool(port.joint_q(self.lid)[0] > 0.1))
+        ctx.set(lidOpen=self._lid_open(port))
         if ctx.fact_due:
             ctx.set(slots=self._slots(ctx), loadSafe=not self._loading(ctx)[1])
         inv = self.handle

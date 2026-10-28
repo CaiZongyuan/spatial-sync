@@ -3,6 +3,9 @@ title: Passage four-slot centrifuge
 description: Four slots require zero, two opposite, or four tubes. Visual speed capped
   at 60 rpm; rotor stops on a whole revolution.
 properties:
+  lidClosed:
+    schema:
+      type: boolean
   actualRpm:
     schema:
       type: number

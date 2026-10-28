@@ -262,4 +262,23 @@ def populate(stage):
             "qUpperM": [0.12, 0.21, 0.08],
             "qualified": False,
         },
+        "incubatorEntity": LAB + "/Incubator",
+        "cabinetEntity": LAB + "/LiquidHandler/Base",
+        "managedDevices": [
+            LAB + "/Robot/fr3_link0",
+            LAB + "/RailCarriage",
+            LAB + "/Incubator/OuterDoor",
+            LAB + "/Incubator/InnerDoor",
+            LAB + "/Centrifuge",
+            LAB + "/Incubator",
+            LAB + "/LiquidHandler/Base",
+        ],
+        "environmentLimits": {
+            "temperatureC": [36.5, 37.5],
+            "co2Percent": [4.5, 5.5],
+            "humidityPercent": [90, 100],
+            "inflowMs": [0.4, 2.0],
+            "sashHeightCm": [18, 22],
+        },
+        "environmentTargets": {"temperatureC": 37, "co2Percent": 5, "humidityPercent": 95},
     }

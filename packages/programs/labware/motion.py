@@ -32,7 +32,7 @@ class LabwareMotionProgram(RobotArmProgram):
         controlEntity: str
         graspOffsets: dict[str, list[float]]
         gripDiameters: dict[str, float]
-        gripShapePrefixes: dict[str, str] = Field(default_factory=dict)
+        gripShapePrefixes: dict[str, str]
         fingerPadShapes: list[str] = Field(min_length=2, max_length=2)
 
         @model_validator(mode="after")
@@ -40,12 +40,21 @@ class LabwareMotionProgram(RobotArmProgram):
             from packages.programs.robot_arm.taught import require_postures
 
             require_postures(self.locations, [(None, None)] * 7)
-            if set(self.graspOffsets) != set(self.tubes) or set(self.gripDiameters) != set(self.tubes):
+            if (
+                len(set(self.tubes)) != len(self.tubes)
+                or len(set(self.jointKeys)) != 7
+                or len(set(self.fingerKeys)) != 2
+                or set(self.graspOffsets) != set(self.tubes)
+                or set(self.gripDiameters) != set(self.tubes)
+                or set(self.gripShapePrefixes) != set(self.tubes)
+            ):
                 raise ValueError("Every labware body needs an explicit physical grip")
             for key in self.tubes:
                 offset, diameter = self.graspOffsets[key], self.gripDiameters[key]
                 if len(offset) != 3 or not np.isfinite(offset).all() or not 0 < diameter <= 0.078:
                     raise ValueError("Grip offsets must be finite triples and fit the 80 mm hand")
+                if not self.gripShapePrefixes[key].startswith(key + "/"):
+                    raise ValueError("Grip surface must name a shape beneath its physical body")
             return self
 
     def init(self, ctx):
@@ -60,7 +69,7 @@ class LabwareMotionProgram(RobotArmProgram):
             for key, shape in zip(ctx.config.fingerKeys, ctx.config.fingerPadShapes, strict=True)
         }
         self.grip_prefixes = {
-            ctx.physics.bind_body(key): ctx.config.gripShapePrefixes.get(key, key) for key in ctx.config.tubes
+            ctx.physics.bind_body(key): ctx.config.gripShapePrefixes[key] for key in ctx.config.tubes
         }
         super().init(ctx)
 
@@ -115,6 +124,9 @@ class LabwareMotionProgram(RobotArmProgram):
             and max(abs(ctx.physics.joint_qd(j)[0]) for j in self.fingers) < 0.01
             and np.linalg.norm(ctx.physics.velocity[self.hand]) < 0.01
         )
+        holding = ctx.get("holding")
+        if holding:
+            safe = safe and np.linalg.norm(ctx.physics.velocity[self.tubes[holding]]) < 0.01
         ctx.set(controlSafe=bool(safe))
 
     def _placement(self, port, body, sites, key):

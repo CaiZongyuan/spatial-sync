@@ -4,6 +4,7 @@ from factory.cell_passage import LAB, site
 
 
 def bindings(stage, layout):
+    targets, limits = layout["environmentTargets"], layout["environmentLimits"]
     robot = LAB + "/Robot/fr3_link0"
     tubes = [
         key
@@ -124,5 +125,41 @@ def bindings(stage, layout):
                 "balanceToleranceKg": 0.00002,
             },
         }
+    )
+    entities.extend(
+        [
+            {
+                "key": LAB + "/Incubator",
+                "type": "passage-incubator/v1",
+                "program": "cell_passage.incubator",
+                "config": {
+                    "controlEntity": LAB + "/LiquidHandler",
+                    "outerDoorJoint": LAB + "/Joints/IncubatorOuterDoor",
+                    "innerDoorJoint": LAB + "/Joints/IncubatorInnerDoor",
+                    "initialTemperatureC": targets["temperatureC"],
+                    "setpointC": targets["temperatureC"],
+                    "initialCo2Percent": targets["co2Percent"],
+                    "initialHumidityPercent": targets["humidityPercent"],
+                    "targetHumidityPercent": targets["humidityPercent"],
+                    "targetCo2Percent": targets["co2Percent"],
+                    "temperatureRangeC": limits["temperatureC"],
+                    "co2RangePercent": limits["co2Percent"],
+                    "humidityRangePercent": limits["humidityPercent"],
+                    "timeConstantSeconds": 10,
+                },
+            },
+            {
+                "key": LAB + "/LiquidHandler/Base",
+                "type": "passage-cabinet/v1",
+                "program": "cell_passage.cabinet",
+                "config": {
+                    "controlEntity": LAB + "/LiquidHandler",
+                    "initialInflowMs": 0.45,
+                    "blowerOn": True,
+                    "uvOn": False,
+                    "sashHeightCm": 20,
+                },
+            },
+        ]
     )
     return {"scene": "cell-passage", "entities": entities}
