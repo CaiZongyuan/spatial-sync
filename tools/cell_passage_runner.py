@@ -6,6 +6,7 @@ Call ``advance`` repeatedly; paused and observing results are not action failure
 
 from __future__ import annotations
 
+import math
 import uuid
 
 from apps.cli.lw.client import TERMINAL, GatewayError
@@ -21,14 +22,73 @@ class PassageExecutor:
         self.material_revision = material_revision
 
     @classmethod
-    async def open(cls, client, plan_id, workcell, *, owner, epoch):
+    async def open(cls, client, plan_id, workcell, *, owner, epoch, budget_seconds=120):
+        if not math.isfinite(budget_seconds) or budget_seconds <= 0:
+            raise ValueError("budget_seconds must be finite and positive")
         plan = await client.plan_show(plan_id)
         if (plan.get("kind") != "operation" or plan.get("target") != "session"
-                or plan["status"] not in ("approved", "running", "completed")
-                or any(step["status"] not in ("pending", "done", "skipped") for step in plan["steps"])):
-            raise ValueError("Inspect/revise the Plan; a new executor cannot resume in-flight work")
+                or plan["status"] != "approved" or plan["revision"] != 1
+                or any(step["status"] != "pending" for step in plan["steps"])):
+            raise ValueError("A new executor requires a new round; reconcile only in the existing process")
         values = (await client.get_state([workcell]))["entities"][workcell]["values"]
-        return cls(client, plan, workcell, owner, epoch, values["materialRevision"])
+        executor = cls(client, plan, workcell, owner, epoch, values["materialRevision"])
+        executor.budget_seconds = budget_seconds
+        return executor
+
+    async def inspect(self):
+        """Return the public checkpoint to inspect before explicit same-process reconciliation."""
+        session = await self.client.status()
+        plan = await self.client.plan_show(self.plan_id)
+        values = (await self.client.get_state([self.workcell]))["entities"][self.workcell]["values"]
+        return {
+            **{name: session[name] for name in self.target},
+            "planRevision": plan["revision"],
+            **{name: values[name] for name in (
+                "controlOwner", "controlEpoch", "controlMode", "controlSafe", "materialRevision",
+            )},
+        }
+
+    async def reconcile(self, expected, *, checks):
+        """Adopt a reviewed checkpoint after revision, public mechanical checks and quiescence.
+
+        The scene-specific caller supplies checks for actual holds, doors, rotor,
+        occupancy and locations. This does not rewrite failed results or material.
+        """
+        if not checks:
+            raise ValueError("Reconciliation requires explicit public mechanical checks")
+        if await self.inspect() != expected:
+            raise ValueError("Checkpoint changed; inspect again")
+        if any(expected[name] != value for name, value in self.target.items()):
+            raise ValueError("Session reset or replaced; start a new round")
+        if expected["controlMode"] != "auto" or not expected["controlSafe"]:
+            raise ValueError("Control must be auto and devices safely stopped")
+        if self.active and self.active.get("invocationId"):
+            invocation = await self.client.get_invocation(self.active["invocationId"], timeout=1)
+            if invocation["status"] not in TERMINAL:
+                raise ValueError("Observe or cancel the in-flight invocation before reconciliation")
+        elif self.active:
+            raise ValueError("Admission remains unknown; retain this interrupted round")
+        plan = await self.client.plan_show(self.plan_id)
+        if (plan["status"] not in ("approved", "running", "completed")
+                or any(step["status"] not in ("pending", "done", "skipped") for step in plan["steps"])):
+            raise ValueError("Use the revision API to rebuild failed steps as pending")
+        values = (await self.client.get_state([self.workcell]))["entities"][self.workcell]["values"]
+        if not values["auditPassed"] or not values["materialSnapshot"]["reconciled"]:
+            raise ValueError("Material audit failed; retain the interrupted round")
+        for condition in checks:
+            op = next(key for key in condition if key not in ("entity", "property", "message", "by"))
+            result = await self.client.check_condition(
+                condition["entity"], condition["property"], op, condition[op], by=condition.get("by")
+            )
+            if not result["satisfied"]:
+                raise ValueError("Mechanical reconciliation check failed")
+        if await self.inspect() != expected:
+            raise ValueError("Checkpoint changed during reconciliation; inspect again")
+        self.revision = expected["planRevision"]
+        self.owner, self.control_epoch = expected["controlOwner"], expected["controlEpoch"]
+        self.material_revision = expected["materialRevision"]
+        self.active, self.blocked = None, None
+        return {"status": "ready", "checkpoint": expected}
 
     async def advance(self):
         """Observe once and dispatch at most one step, never replaying an uncertain POST."""
@@ -63,11 +123,16 @@ class PassageExecutor:
                 if invocation["status"] in TERMINAL:
                     # The Plan is authoritative for expect checks as well as invocation success.
                     plan = await self.client.plan_show(self.plan_id)
-                    step = next(row for row in plan["steps"] if row["id"] == step_id)
-                    if invocation["status"] != "succeeded" or step["status"] == "failed":
+                    step = next((row for row in plan["steps"] if row["id"] == step_id), None)
+                    if step is None:
+                        self.blocked = "plan_revised"
+                    elif invocation["status"] != "succeeded" or step["status"] == "failed":
                         return {"status": "failed", "stepId": step_id, "invocation": invocation}
-                    if step["status"] == "done":
+                    elif step["status"] == "done":
                         self.active = None
+                        values = (await self.client.get_state([self.workcell]))["entities"][
+                            self.workcell
+                        ]["values"]
                         self.material_revision = values["materialRevision"]
             elif self.active.get("uncertain"):
                 self.blocked = "admission_unknown"
@@ -80,6 +145,9 @@ class PassageExecutor:
         if session["state"] != "RUNNING":
             return {"status": "interrupted", "reason": session["state"]}
         if self.active:
+            if session["simTime"] - self.active["startedSimTime"] > self.budget_seconds:
+                return {"status": "budget_exceeded", "invocation": invocation,
+                        "elapsedSimSeconds": session["simTime"] - self.active["startedSimTime"]}
             return {"status": "observing", "invocation": invocation}
         if plan["status"] == "completed":
             return {"status": "completed", "plan": plan}
@@ -105,7 +173,8 @@ class PassageExecutor:
         if (params.get("owner") != self.owner or params.get("epoch") != self.control_epoch
                 or not params.get("operationId")):
             raise ValueError("Controlled actions require the pinned owner/epoch and an operationId")
-        self.active = {"stepId": step["id"], "requestId": uuid.uuid4().hex}
+        self.active = {"stepId": step["id"], "requestId": uuid.uuid4().hex,
+                       "startedSimTime": session["simTime"]}
         try:
             result = await self.client.request(
                 "POST", await self.client.route() + "/actions", actor=context.pop("actor"),

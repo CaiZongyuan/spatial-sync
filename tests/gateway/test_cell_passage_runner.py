@@ -53,15 +53,17 @@ def passage_http(tmp_path):
             client.delete("/api/v1/sessions/" + session["sessionId"])
 
 
-async def new_executor(client):
+async def new_executor(client, *, seconds=0.2, budget_seconds=120):
     plan = await client.plan_create({
         "title": "Fixture teaching wait", "target": "session", "steps": [{
             "id": 1, "do": {"entity": "/workcell", "action": "wait", "params": {
-                "owner": "auto", "epoch": 0, "operationId": "teaching-wait", "seconds": 0.2,
+                "owner": "auto", "epoch": 0, "operationId": "teaching-wait", "seconds": seconds,
             }},
         }],
     })
-    return await PassageExecutor.open(client, plan["id"], "/workcell", owner="auto", epoch=0)
+    return await PassageExecutor.open(
+        client, plan["id"], "/workcell", owner="auto", epoch=0, budget_seconds=budget_seconds
+    )
 
 
 async def test_paused_session_does_not_admit_plan_action_or_spend_experiment_budget(passage_http):
@@ -94,6 +96,8 @@ async def test_lost_admission_response_observes_original_invocation_without_repl
         assert result["status"] == "completed", result
         plan = await client.plan_show(executor.plan_id)
         assert len(plan["stepResults"]["1"]["invocationIds"]) == 1
+        with pytest.raises(ValueError, match="new round"):
+            await PassageExecutor.open(client, plan["id"], "/workcell", owner="auto", epoch=0)
 
 
 async def test_control_handoff_latches_dispatch_stop_even_if_owner_later_returns(passage_http):
@@ -122,3 +126,28 @@ async def test_material_change_without_active_action_requires_reconciliation(pas
         result = await executor.advance()
         assert (result["status"], result["reason"]) == ("reconcile_required", "material_changed")
         assert (await client.plan_show(executor.plan_id))["steps"][0]["status"] == "pending"
+        checkpoint = await executor.inspect()
+        assert (await executor.reconcile(checkpoint, checks=[{
+            "entity": "/workcell", "property": "controlSafe", "equals": True,
+        }]))["status"] == "ready"
+        assert (await executor.advance())["status"] == "observing"
+
+
+async def test_experiment_budget_uses_simulation_time_and_retains_running_invocation(passage_http):
+    server, session = passage_http
+    async with httpx.AsyncClient(base_url="http://testserver", transport=PublicHTTP(server)) as http:
+        client = GatewayClient(session=session, http=http)
+        executor = await new_executor(client, seconds=2, budget_seconds=0.02)
+        admitted = await executor.advance()
+        invocation_id = admitted["invocation"]["invocationId"]
+        await client.session_control("pause")
+        await asyncio.sleep(0.08)
+        assert (await executor.advance())["status"] == "paused"
+        await client.session_control("resume")
+        await asyncio.sleep(0.08)
+        result = await executor.advance()
+        assert result["status"] == "budget_exceeded"
+        assert result["invocation"]["invocationId"] == invocation_id
+        plan = await client.plan_show(executor.plan_id)
+        assert plan["steps"][0]["status"] == "running"
+        assert len(plan["stepResults"]["1"]["invocationIds"]) == 1
