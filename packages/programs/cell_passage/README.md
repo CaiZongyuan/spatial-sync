@@ -39,6 +39,10 @@ still invalidates the material estimate. Queued cancellation is unchanged.
 | aspirate | vessel, volumeUl | Actual positive piston displacement transfers homogeneous suspension into the tip. Attached and pellet cells remain. |
 | dispense | vessel, volumeUl | Actual negative piston displacement transfers tip contents into the destination. |
 | mix | vessel, volumeUl | Empty tip, real outbound and return piston strokes; each partial stroke changes contents. Completed return resuspends the pellet. |
+| aspirateAvailable | vessel, reserveUl (optional, defaults to 0) | Resolve current source volume minus the reserve. Resolution residue stays at the source. |
+| aspirateFraction | vessel, fraction (0 < fraction <= 1) | Resolve this fraction of current source volume once at startup. A later retry cannot reinterpret the original fraction. |
+| aspirateTopUp | vessel, targetVessel, targetVolumeUl | Aspirate the target's actual deficit minus existing clean tip liquid. Both bodies must be reserved; target lid/station/culture and capacity are rechecked. |
+| dispenseAll | vessel | Resolve current tip contents. Quantization residue stays in the tip and is recorded when discarded. |
 | wait | seconds | Teaching wait driven by simTime; pause freezes it. |
 | detach | vessel | Requires actual trypsin addition and configured teaching exposure; moves attached live/dead cells to suspension without creating cells. |
 | pellet | centrifuge, cycle, vessels: [content ID] | Requires completedCycle==cycle, phase idle, completedLoad containing all bodies, cycleRunSeconds>=configured teaching time and actualRotorTurns>0. The centrifuge must retain reservations for itself and each processed body at the current owner/epoch through material application; accept and start recheck them. Each vessel accepts that cycle once. |
@@ -55,6 +59,41 @@ waste retains `contactWaste=true` even when empty and may only discharge to
 waste or be discarded. Isolation checks use actual cell origins as well as the
 declared culture/parent and contact history; a blank identity does not erase
 cell contamination.
+
+The original aspirate/dispense/mix volumeUl remains a literal requested amount;
+its stock checks and calibration are unchanged. The four quantity-intent actions
+resolve from the single current snapshot, actual pump position and copied
+physical joint limits. Unknown/nonfinite limits fail closed. They reserve one
+native float32 coordinate quantum toward the starting position and round the
+command in the safe direction. Liquid and cells always follow measured pump
+displacement, never the rounded command or nominal requested amount. Large
+stock, tip-capacity or travel shortfalls reject; only explicitly retained
+resolution/travel residue within the fixed 0.01 uL budget can remain unresolved.
+There is no hidden air, overflow or artificial liquid correction in this rule.
+
+Receipts add quantityKind, resolvedUl, remainingUl, resolutionResidualUl,
+resolutionUl, untransferredUl, pumpStartM/pumpTargetM, quantityOutcome,
+remainderLocation and noTransfer. For intents, requestedUl is the ideal amount
+resolved once at startup; resolvedUl is the feasible command amount.
+appliedUl/observedUl remain actual progress. resolutionResidualUl is the
+ideal-to-command difference, remainingUl the command-to-observation remainder,
+and untransferredUl the ideal-to-observation remainder. The liquid remains in
+the named source vessel or installed tip. For a literal mix, progress and
+remaining amounts span both actual stroke legs. Global cell conservation stays
+at 1e-6; sibling live-cell allocation tolerance is 1, and final-volume tolerance
+is 0.01 uL. Allocation tolerance never relaxes the global material audit.
+
+Already-filled top-up, empty source/tip and below-resolution cases succeed with
+noTransfer=true, resolvedUl=appliedUl=0 and an explicit quantityOutcome such as
+at_target, empty_source or below_resolution. No pump target is issued. A
+positive resolved target instead remains running until positive observed
+progress, native target convergence and measured standstill; a zero first
+control sample cannot complete it. Even a zero-volume visit to a culture keeps
+conservative tip-contact isolation. Failed/cancelled fraction/all/top-up intents
+retain their original resolved target and partial progress. Recovery requires
+a new reviewed domain ID with an explicit remaining literal quantity or a new
+intent based on current vessel/tip truth; do not copy and re-evaluate an old
+fraction against an already-decreased source.
 
 The configured `cabinetEntity` must publish `cabinetReady=true` before pickup,
 discard, aspirate, dispense, mix or detachment. Accept and start both recheck;
@@ -127,6 +166,8 @@ controlSafe, phase, materialRevision, auditPassed, samplesIndependent,
 inFlightUl, tipsRemaining, wasteFreeUl, lastOperationId, lastAppliedUl,
 remainingUl, observationRevision, lastObservedLive/lastObservedDead and the
 three operation counters above.
+Quantity checks can also use lastResolvedUl, lastResolutionResidualUl,
+lastUntransferredUl and lastQuantityOutcome without JSONPath.
 No PlanStatus, InvokeRequest, JSONPath or recording shape changes are needed.
 Observe/count records identify the source as `simulated-state-model`, retain the
 material revision, vessel/culture/parent, and separate measured/model counts.
@@ -141,24 +182,31 @@ for the complete scene. Pump mapping defaults to 100000 uL/metre (1000 uL over
 10 mm), tipCapacityUl=1000, alignmentToleranceM=0.003, axisToleranceM=0.0005,
 holdSpeedTolerance=0.0001, pumpToleranceUl=0.01. These are fixed engineering
 configuration, not a permission to loosen a failed physical qualification.
+The exporter reads layout.pipetteCalibration.alignmentToleranceM when supplied
+and layout.tipDiscardSite for the drop point. wasteSite is an optional top-level
+Site reference, omitted when None, so a separate above-rim Discard point is
+materialized rather than replaced by the liquid Content point.
 
 The teaching recipe uses 200 uL PBS wash, 200 uL trypsin and 2 simulated seconds,
 then 800 uL medium for each independent 1000 uL collection. After pelleting,
-retain 50 uL residual, add 950 uL medium and mix. Remove 20 uL into the matching
+retain 50 uL residual, top up to 1000 uL and mix with a fresh tip using a literal
+900 uL actual outbound/return cycle. Remove 20 uL into the matching
 counting well, split the remaining 980 uL as 490/490 uL to its two daughters,
 and add 510 uL medium to each. Four samples form the first mass-balanced batch;
 the remaining two use the configured two balance tubes in the second batch.
 This is a teaching simulation, not a real biological protocol. Actual cycle
 load/rotation and every liquid action still need mechanical evidence.
-These recipe quantities are targets. A succeeded stroke retains its measured
+These recipe quantities are targets. Use available/reserve, fraction, top-up
+and all-tip intents for current-state amounts. A succeeded stroke retains its measured
 applied quantity within the fixed tolerance; it never rounds contents to the
-requested amount. Subsequent transfer parameters must come from current
+requested amount. Subsequent literal transfer parameters must come from current
 tip/vessel contents and receipts, with pending Plan steps revised when needed.
 In particular, a nominal full aspiration does not establish that a subsequent
 exact nominal dispense has sufficient liquid. The complete executor must handle
 that numerical boundary rather than changing stock guards or inventing liquid.
 
 Focused tests: `python -m pytest tests/unit/test_cell_passage.py tests/unit/test_cell_passage_journal.py
+tests/unit/test_cell_passage_quantities.py
 tests/gateway/test_cell_passage_api.py -q`. The deterministic external actuator
 fixture proves Host/API/recorded-state semantics. It does not prove Newton
 geometry, real tip pickup or a full Cell Passage run.

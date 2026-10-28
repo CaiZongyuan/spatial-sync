@@ -15,6 +15,16 @@ from .guard import guard
 
 LIQUID_ACTIONS = {"pickupTip", "discardTip", "aspirate", "dispense", "mix", "detach"}
 RECENT_OPERATIONS = 64
+QUANTITY_ACTIONS = {
+    "dispenseAll": "dispense",
+    "aspirateAvailable": "aspirate",
+    "aspirateFraction": "aspirate",
+    "aspirateTopUp": "aspirate",
+}
+
+
+def base_action(action):
+    return QUANTITY_ACTIONS.get(action, action)
 
 
 class MaterialConfig(ProgramConfig):
@@ -108,7 +118,11 @@ class WorkcellProgram:
         axisToleranceM: float = Field(default=0.0005, gt=0)
         holdSpeedTolerance: float = Field(default=0.0001, gt=0)
         pumpToleranceUl: float = Field(default=0.01, gt=0)
-        wasteSite: str = ""
+        wasteSite: str | None = Field(
+            default=None,
+            exclude_if=lambda value: value is None,
+            json_schema_extra={"spatialReference": "site"},
+        )
         detachSeconds: float = Field(default=2, gt=0)
         imagerStation: str = ""
         centrifugeSeconds: float = Field(default=2, gt=0)
@@ -139,6 +153,7 @@ class WorkcellProgram:
         self.stopping = False
         self.hold_targets = None
         self.stop_error = None
+        self.quantity = None
         self.used_operations = getattr(self, "used_operations", set())
         self.control_receipts = getattr(self, "control_receipts", {})
         self.control_generation = getattr(self, "control_generation", -1) + 1
@@ -210,6 +225,10 @@ class WorkcellProgram:
             operationCount=0,
             terminalOperationCount=0,
             archivedOperationCount=0,
+            lastResolvedUl=0.0,
+            lastResolutionResidualUl=0.0,
+            lastUntransferredUl=0.0,
+            lastQuantityOutcome="not_applicable",
         )
 
     def _publish(self, ctx):
@@ -220,7 +239,7 @@ class WorkcellProgram:
             self.state["reconciled"]
             and abs(total - self.initial_volume) < 1e-6
             and all(
-                abs(value - cell_totals.get(culture, 0)) < 1e-5
+                abs(value - cell_totals.get(culture, 0)) < 1e-6
                 for culture, value in self.initial_cells.items()
             )
         )
@@ -271,7 +290,7 @@ class WorkcellProgram:
             <= ctx.config.alignmentToleranceM
         )
 
-    def _accessible(self, ctx, name):
+    def _vessel_conditions(self, ctx, name):
         config = self.configs[name]
         if config.lidProperty and ctx.read(config.entityKey, config.lidProperty) is not False:
             return Reject(code="closed_vessel", message="Vessel lid must be confirmed open")
@@ -280,6 +299,11 @@ class WorkcellProgram:
             or ctx.read(config.entityKey, "settled") is not True
         ):
             return Reject(code="wrong_station", message="Vessel is not settled at its operation station")
+
+    def _accessible(self, ctx, name):
+        failed = self._vessel_conditions(ctx, name)
+        if failed:
+            return failed
         if not self._aligned(ctx, self.sites[name]):
             return Reject(code="not_aligned", message="Actual pipette tip is not aligned with the vessel")
 
@@ -292,8 +316,136 @@ class WorkcellProgram:
         except KeyError:
             return False
 
+    def _top_up_target(self, inv, ctx, source):
+        target = self._vessel(inv.params["targetVessel"])
+        if target is None or target["id"] == source["id"] or target["waste"]:
+            return self._reject("invalid_target", "Top-up needs a different experimental target vessel")
+        failed = guard(ctx, ctx.key, inv.params, [target["entityKey"]]) or self._vessel_conditions(
+            ctx, target["id"]
+        )
+        if failed:
+            return failed
+        if inv.params["targetVolumeUl"] > target["capacityUl"]:
+            return self._reject("capacity_exceeded", "Top-up goal exceeds the target vessel capacity")
+        tip = self.state["tip"]
+        origins = content_origins(source) | content_origins(tip) | content_origins(target)
+        if tip["contactCulture"]:
+            origins.add(tip["contactCulture"])
+        if origins - {target["parent"] or target["culture"]}:
+            return self._reject("cross_sample", "Top-up source, tip and target cultures are incompatible")
+        return target
+
+    def _quantity_plan(self, inv, ctx, row):
+        p, action, tip = inv.params, base_action(inv.action), self.state["tip"]
+        q = float(ctx.physics.joint_q(self.pump)[0])
+        direction = -1 if action == "dispense" else 1
+        requested = p.get("volumeUl", tip["volumeUl"])
+        plan = {
+            "quantityKind": "literal",
+            "requestedUl": requested,
+            "resolvedUl": requested,
+            "resolutionResidualUl": 0.0,
+            "resolutionUl": 0.0,
+            "pumpStartM": q,
+            "pumpTargetM": q + direction * requested / ctx.config.pumpUlPerUnit,
+            "quantityOutcome": "resolved",
+            "remainderLocation": "tip" if action == "dispense" else row["id"],
+        }
+        if inv.action not in QUANTITY_ACTIONS:
+            return plan
+        kind, empty_outcome = "allTip", "empty_tip"
+        if inv.action == "aspirateAvailable":
+            requested = max(0.0, row["volumeUl"] - p.get("reserveUl", 0.0))
+            kind, empty_outcome = (
+                "available",
+                "at_or_below_reserve" if p.get("reserveUl", 0) else "empty_source",
+            )
+        elif inv.action == "aspirateFraction":
+            requested = row["volumeUl"] * p["fraction"]
+            kind, empty_outcome = "fraction", "empty_source"
+        elif inv.action == "aspirateTopUp":
+            target = self._top_up_target(inv, ctx, row)
+            if isinstance(target, Reject):
+                return target
+            deficit = max(0.0, p["targetVolumeUl"] - target["volumeUl"])
+            if tip["volumeUl"] > deficit + 1e-8:
+                return self._reject(
+                    "tip_exceeds_target", "Existing tip liquid already exceeds the target deficit"
+                )
+            requested = max(0.0, deficit - tip["volumeUl"])
+            kind, empty_outcome = "topUp", "at_target" if not deficit else "tip_sufficient"
+        plan.update(quantityKind=kind, requestedUl=requested)
+        if not self._stationary(ctx):
+            return self._reject("not_safe", "Settle the mechanism before resolving a quantity intent")
+        try:
+            lower, upper = ctx.physics.joint_limits(self.pump)
+            lower, upper = (
+                np.asarray(lower, dtype=float).reshape(-1),
+                np.asarray(upper, dtype=float).reshape(-1),
+            )
+            if lower.size != 1 or upper.size != 1:
+                raise ValueError("Quantity intents need a scalar pump")
+            low, high = float(lower[0]), float(upper[0])
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return self._reject("pump_limits_unavailable", "Actual scalar pump limits must be known")
+        if not np.isfinite([q, low, high]).all() or low >= high:
+            return self._reject("pump_limits_unavailable", "Actual finite pump limits must be known")
+        quantum_m = abs(float(np.spacing(np.float32(max(abs(low), abs(high), abs(q))))))
+        quantum_ul = quantum_m * ctx.config.pumpUlPerUnit
+        if not np.isfinite(quantum_ul) or quantum_ul <= 0 or quantum_ul > ctx.config.pumpToleranceUl:
+            return self._reject(
+                "quantity_resolution", "Pump coordinate resolution cannot satisfy this tolerance"
+            )
+        if q < low - quantum_m or q > high + quantum_m:
+            return self._reject("pump_out_of_bounds", "Actual pump position is outside its known limits")
+        source = tip if action == "dispense" else row
+        capacity = (
+            row["capacityUl"] - row["volumeUl"]
+            if action == "dispense"
+            else ctx.config.tipCapacityUl - tip["volumeUl"]
+        )
+        physical = (q - low if direction == -1 else high - q) * ctx.config.pumpUlPerUnit
+        if requested > source["volumeUl"] + 1e-8:
+            return self._reject("insufficient_liquid", "Quantity intent exceeds actual source stock")
+        if requested - max(0, capacity) > ctx.config.pumpToleranceUl:
+            return self._reject("capacity_exceeded", "Quantity intent exceeds physical destination capacity")
+        if requested - max(0, physical) > ctx.config.pumpToleranceUl:
+            return self._reject("pump_capacity", "Quantity intent exceeds actual pump travel")
+        feasible = max(0.0, min(requested, source["volumeUl"], capacity, physical))
+        # Leave one native coordinate quantum on the safe side of the liquid
+        # boundary, then round toward the starting position. No liquid is rounded.
+        safe_target = q + direction * (feasible / ctx.config.pumpUlPerUnit - quantum_m)
+        if direction * (safe_target - q) <= 0:
+            target = q
+        else:
+            target = float(np.float32(safe_target))
+            if direction * (target - safe_target) > 0:
+                target = float(
+                    np.nextafter(np.float32(target), np.float32(-np.inf if direction == 1 else np.inf))
+                )
+        resolved = max(0.0, direction * (target - q) * ctx.config.pumpUlPerUnit)
+        residual = max(0.0, requested - resolved)
+        if residual > ctx.config.pumpToleranceUl:
+            return self._reject("quantity_resolution", "Untransferable residue exceeds the fixed tolerance")
+        if resolved == 0:
+            target = q
+        if resolved > 0 and not low <= target <= high:
+            return self._reject("quantity_resolution", "Representable target is outside actual pump limits")
+        plan.update(
+            resolvedUl=resolved,
+            resolutionResidualUl=residual,
+            resolutionUl=quantum_ul,
+            pumpTargetM=target,
+            quantityOutcome="resolved"
+            if resolved > 0
+            else "below_resolution"
+            if requested
+            else empty_outcome,
+        )
+        return plan
+
     def accept(self, inv, ctx):
-        p, action = inv.params, inv.action
+        p, action = inv.params, base_action(inv.action)
         if p["operationId"] in self.used_operations:
             return self._reject(
                 "operation_applied", "This domain operation has already been applied; use current remainder"
@@ -390,7 +542,11 @@ class WorkcellProgram:
             if action in ("aspirate", "dispense", "mix") and not self.state["tip"]["id"]:
                 return self._reject("tip_unavailable", "Install a fresh tip before liquid handling")
             if action in ("aspirate", "dispense", "mix"):
-                tip, amount = self.state["tip"], p["volumeUl"]
+                tip = self.state["tip"]
+                quantity = self._quantity_plan(inv, ctx, row)
+                if isinstance(quantity, Reject):
+                    return quantity
+                amount = quantity["resolvedUl"]
                 if (row["waste"] and action in ("aspirate", "mix")) or (
                     tip["contactWaste"] and not (row["waste"] and action == "dispense")
                 ):
@@ -589,13 +745,20 @@ class WorkcellProgram:
         if rejection:
             inv.fail(rejection.code, rejection.message)
             return
-        p, action = inv.params, inv.action
+        p, action = inv.params, base_action(inv.action)
+        self.quantity = None
+        if action in ("aspirate", "dispense", "mix"):
+            self.quantity = self._quantity_plan(inv, ctx, self._vessel(p["vessel"]))
+            if isinstance(self.quantity, Reject):
+                inv.fail(self.quantity.code, self.quantity.message)
+                self.quantity = None
+                return
         operation = {
             "operationId": p["operationId"],
-            "action": action,
+            "action": inv.action,
             "status": "running",
             "appliedUl": 0.0,
-            "requestedUl": p.get("volumeUl", 0.0),
+            "requestedUl": self.quantity["requestedUl"] if self.quantity else 0.0,
             "vessel": p.get("vessel", ""),
             "epoch": p["epoch"],
             "startedSimTime": ctx.sim_time,
@@ -607,7 +770,26 @@ class WorkcellProgram:
             "tipId": self.state["tip"]["id"] or p.get("tip", ""),
             "endedSimTime": -1.0,
             "materialRevision": self.state["revision"] + 1,
+            "quantityKind": "none",
+            "resolvedUl": 0.0,
+            "remainingUl": 0.0,
+            "resolutionResidualUl": 0.0,
+            "resolutionUl": 0.0,
+            "untransferredUl": 0.0,
+            "pumpStartM": 0.0,
+            "pumpTargetM": 0.0,
+            "quantityOutcome": "not_applicable",
+            "remainderLocation": "none",
+            "noTransfer": False,
         }
+        if self.quantity:
+            operation.update(self.quantity)
+            operation["noTransfer"] = operation["resolvedUl"] == 0
+            multiplier = 2 if action == "mix" else 1
+            operation.update(
+                remainingUl=operation["resolvedUl"] * multiplier,
+                untransferredUl=operation["requestedUl"] * multiplier,
+            )
         self.state["operations"].append(operation)
         self.state["operationCount"] += 1
         self.used_operations.add(p["operationId"])
@@ -616,15 +798,23 @@ class WorkcellProgram:
         self.stop_error = None
         ctx.set(
             controlSafe=False,
-            phase=action,
+            phase=inv.action,
             lastOperationId=p["operationId"],
             lastAppliedUl=0.0,
-            remainingUl=p.get("volumeUl", 0.0),
+            remainingUl=operation["remainingUl"],
+            lastResolvedUl=operation["resolvedUl"],
+            lastResolutionResidualUl=operation["resolutionResidualUl"],
+            lastUntransferredUl=operation["untransferredUl"],
+            lastQuantityOutcome=operation["quantityOutcome"],
         )
         if action == "move":
             for joint, value in zip(self.axes, p["position"], strict=True):
                 ctx.physics.set_joint_target(joint, [value])
         elif action in ("aspirate", "dispense", "mix"):
+            if self.quantity["resolvedUl"] == 0:
+                self._mark_tip_contact(self._vessel(p["vessel"]))
+                self._finish(ctx, "succeeded")
+                return
             origin = float(ctx.physics.joint_q(self.pump)[0])
             direction = -1 if action == "dispense" else 1
             self.stroke = {
@@ -632,10 +822,9 @@ class WorkcellProgram:
                 "appliedUl": 0.0,
                 "completedUl": 0.0,
                 "direction": direction,
+                "volumeUl": self.quantity["resolvedUl"],
             }
-            ctx.physics.set_joint_target(
-                self.pump, [origin + direction * p["volumeUl"] / ctx.config.pumpUlPerUnit]
-            )
+            ctx.physics.set_joint_target(self.pump, [self.quantity["pumpTargetM"]])
         else:
             self._immediate(ctx)
         if self.handle:
@@ -709,12 +898,27 @@ class WorkcellProgram:
             return
         self._finish(ctx, "succeeded")
 
+    def _mark_tip_contact(self, row):
+        tip = self.state["tip"]
+        if row["waste"]:
+            tip["contactWaste"] = True
+        else:
+            origins = content_origins(row) | content_origins(tip)
+            tip["contactCulture"] = (
+                row["parent"] or row["culture"] or next(iter(origins), tip["contactCulture"])
+            )
+
     def _apply_stroke(self, ctx):
         if not self.handle or not self.stroke:
             return
         inv, stroke = self.handle, self.stroke
-        p, action = inv.params, inv.action
-        requested = p["volumeUl"]
+        p, action = inv.params, base_action(inv.action)
+        requested = stroke["volumeUl"]
+        feedback_tolerance = (
+            ctx.config.pumpToleranceUl
+            if self.quantity["quantityKind"] == "literal"
+            else self.quantity["resolutionUl"]
+        )
         actual = (
             (float(ctx.physics.joint_q(self.pump)[0]) - stroke["origin"])
             * stroke["direction"]
@@ -724,9 +928,9 @@ class WorkcellProgram:
         operation["observedUl"] = actual if np.isfinite(actual) else -1.0
         if (
             not np.isfinite(actual)
-            or actual > requested + ctx.config.pumpToleranceUl
-            or (not self.stopping and actual < stroke["appliedUl"] - ctx.config.pumpToleranceUl)
-            or actual < -ctx.config.pumpToleranceUl
+            or actual > requested + feedback_tolerance
+            or (not self.stopping and actual < stroke["appliedUl"] - feedback_tolerance)
+            or actual < -feedback_tolerance
         ):
             self.state["reconciled"] = False
             operation["fault"] = "pump_feedback_invalid"
@@ -754,13 +958,7 @@ class WorkcellProgram:
             self._publish(ctx)
             return
         move_content(source, destination, amount)
-        if row["waste"]:
-            tip["contactWaste"] = True
-        else:
-            origins = content_origins(row) | content_origins(tip)
-            tip["contactCulture"] = (
-                row["parent"] or row["culture"] or next(iter(origins), tip["contactCulture"])
-            )
+        self._mark_tip_contact(row)
         if not aspirating and any(c["name"] == "trypsin" and c["volumeUl"] > 0 for c in row["components"]):
             if row["exposureSince"] < 0:
                 row["exposureSince"] = ctx.sim_time
@@ -768,7 +966,10 @@ class WorkcellProgram:
         total = actual + stroke["completedUl"]
         requested_total = requested * (2 if action == "mix" else 1)
         self.state["operations"][-1]["appliedUl"] = total
-        ctx.set(lastAppliedUl=total, remainingUl=max(0, requested_total - total))
+        remaining = max(0, requested_total - total)
+        untransferred = max(0, self.quantity["requestedUl"] * (2 if action == "mix" else 1) - total)
+        operation.update(remainingUl=remaining, untransferredUl=untransferred)
+        ctx.set(lastAppliedUl=total, remainingUl=remaining, lastUntransferredUl=untransferred)
         self._publish(ctx)
 
     def _compact_operations(self):
@@ -795,6 +996,14 @@ class WorkcellProgram:
         )
         if status == "failed" and not operation["fault"] and inv.invocation.error:
             operation["fault"] = inv.invocation.error.code
+        if operation["appliedUl"] > 0:
+            operation["quantityOutcome"] = (
+                "transferred_with_remainder" if operation["untransferredUl"] else "transferred"
+            )
+            if status != "succeeded":
+                operation["quantityOutcome"] = "partial"
+        elif operation["quantityKind"] != "none" and status != "succeeded":
+            operation["quantityOutcome"] = "not_completed"
         receipt = dict(operation)
         self.state["terminalOperationCount"] += 1
         self._compact_operations()
@@ -810,7 +1019,10 @@ class WorkcellProgram:
         self.handle, self.stroke = None, None
         self.stopping = False
         self.stop_error = None
-        ctx.set(controlSafe=self._stationary(ctx), phase="idle")
+        self.quantity = None
+        ctx.set(
+            lastQuantityOutcome=operation["quantityOutcome"], controlSafe=self._stationary(ctx), phase="idle"
+        )
         self._publish(ctx)
 
     def tick(self, ctx, dt):
@@ -832,10 +1044,15 @@ class WorkcellProgram:
         if rejection:
             self._hold(ctx)
             return
-        p, action = inv.params, inv.action
+        p, action = inv.params, base_action(inv.action)
         if action in LIQUID_ACTIONS and not self._cabinet_ready(ctx):
             self._hold(ctx, ("cabinet_not_ready", "Cabinet readiness was lost during liquid handling"))
             return
+        if inv.action == "aspirateTopUp":
+            failed = self._top_up_target(inv, ctx, self._vessel(p["vessel"]))
+            if isinstance(failed, Reject):
+                self._hold(ctx, (failed.code, failed.message))
+                return
         if action in ("aspirate", "dispense", "mix"):
             rejection = self._accessible(ctx, p["vessel"])
             if rejection:
@@ -846,9 +1063,15 @@ class WorkcellProgram:
             if not self.state["reconciled"]:
                 self._hold(ctx)
                 return
-            if p["volumeUl"] - self.stroke["appliedUl"] <= ctx.config.pumpToleranceUl and self._stationary(
-                ctx
-            ):
+            complete = self.stroke["volumeUl"] - self.stroke["appliedUl"] <= ctx.config.pumpToleranceUl
+            if self.quantity["quantityKind"] != "literal":
+                quantum_m = self.quantity["resolutionUl"] / ctx.config.pumpUlPerUnit
+                complete = (
+                    self.stroke["appliedUl"] > 0
+                    and abs(q - self.quantity["pumpTargetM"]) <= quantum_m
+                    and abs(float(ctx.physics.joint_qd(self.pump)[0])) <= quantum_m
+                )
+            if complete and self._stationary(ctx):
                 if action == "mix" and self.stroke["direction"] == 1:
                     origin = self.stroke["origin"]
                     self.stroke.update(
@@ -867,7 +1090,7 @@ class WorkcellProgram:
             elif self.handle:
                 inv.progress(
                     self.state["operations"][-1]["appliedUl"]
-                    / (p["volumeUl"] * (2 if action == "mix" else 1))
+                    / (self.stroke["volumeUl"] * (2 if action == "mix" else 1))
                 )
         elif action == "wait":
             if ctx.sim_time - self.started >= p["seconds"]:

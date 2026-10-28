@@ -5,6 +5,7 @@ This proves API semantics, not Newton geometry or successful physical pipetting.
 
 import json
 
+import numpy as np
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -25,6 +26,12 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
 
         def _poses(self):
             return self.fixed_poses if hasattr(self, "fixed_poses") else super()._poses()
+
+        def _advance(self, count):
+            # External actuator fixture only: feedback follows the buffered
+            # native float32 target, never the requested liquid quantity.
+            self.actuator.advance(float(np.float32(self.actuator.targets["pump"])))
+            super()._advance(count)
 
     with TestClient(create_app(source_factory=lambda kind, sid: WorkcellSource(sid))) as client:
         session = client.post("/api/v1/sessions", json={"sceneId": "lab-demo"}).json()
@@ -120,6 +127,30 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
             if row["message"]["type"] == "entity.event" and row["message"]["event"] == "operationCompleted"
         ]
         assert archived == [receipt]
+        quantity_receipts = []
+        for action, token, parameters in [
+            ("reserve", "quantity-reserve", {"resource": "/source", "device": "/workcell"}),
+            ("pickupTip", "quantity-tip", {"tip": "T1"}),
+            ("aspirateAvailable", "quantity-source", {"vessel": "source"}),
+            ("dispenseAll", "quantity-tip-return", {"vessel": "source"}),
+        ]:
+            response = client.post(
+                route + "/actions",
+                json={
+                    "requestId": token,
+                    "entityKey": "/workcell",
+                    "action": action,
+                    "wait": True,
+                    "timeoutSeconds": 2,
+                    "params": {"owner": "human", "epoch": 1, "operationId": token, **parameters},
+                },
+            )
+            assert response.status_code == 200 and response.json()["status"] == "succeeded", response.text
+            quantity_receipts.append(response.json()["result"]["receipt"])
+        resolved = quantity_receipts[2]
+        assert resolved["quantityKind"] == "available" and resolved["requestedUl"] == 500
+        assert 0 < resolved["appliedUl"] <= resolved["resolvedUl"] < 500
+        assert quantity_receipts[3]["quantityKind"] == "allTip"
         reset = client.post(route + "/commands", json={"requestId": "reset", "command": "reset"})
         assert reset.status_code == 200, reset.text
         current = client.get(route + "/state", params={"keys": "/workcell"}).json()["entities"]["/workcell"][
@@ -196,4 +227,4 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
             for row in recorded
             if row["type"] == "entity.event" and row["event"] == "operationCompleted"
         ]
-        assert recorded_receipts == [receipt, fresh.json()["result"]["receipt"]]
+        assert recorded_receipts == [receipt, *quantity_receipts, fresh.json()["result"]["receipt"]]

@@ -18,6 +18,7 @@ class StrokePort:
         self.welds = set()
         self.velocities = self.q.copy()
         self.positions = {}
+        self.limits = {"pump": (np.array([0], dtype=np.float32), np.array([0.01], dtype=np.float32))}
 
     def bind_body(self, key):
         return key
@@ -39,6 +40,10 @@ class StrokePort:
 
     def joint_qd(self, key):
         return np.array([self.velocities[key]])
+
+    def joint_limits(self, key):
+        lower, upper = self.limits[key]
+        return lower.copy(), upper.copy()
 
     def set_joint_target(self, key, value):
         self.targets[key] = float(value[0])
@@ -74,6 +79,10 @@ class FactsProgram:
 
     def init(self, ctx):
         ctx.set(**ctx.config.model_dump())
+
+    def start(self, inv, ctx):
+        ctx.set(lidClosed=inv.params["closed"])
+        inv.succeed()
 
 
 class CabinetProgram:
@@ -203,7 +212,12 @@ def build_workcell_host(
     }
     (tmp_path / "types/facts.yaml").write_text(
         yaml.safe_dump(
-            {"type": FactsProgram.type, "title": "External mechanical facts", "properties": properties}
+            {
+                "type": FactsProgram.type,
+                "title": "External mechanical facts",
+                "properties": properties,
+                "actions": {"setLid": {"params": {"closed": {"type": "boolean"}}, "required": ["closed"]}},
+            }
         ),
         encoding="utf8",
     )
