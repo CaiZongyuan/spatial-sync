@@ -165,6 +165,15 @@ Fresh output paths and a new round identity are required. The entrypoint keeps
 `experimentQualified:false`; running a candidate does not substitute for
 independent complete-passage acceptance.
 
+`--repeats 3 --no-web --exit-after-run` imports once and starts three fresh
+seed-42 Sessions against that same immutable scene version/hash, closing each
+previous Session and recording before the next. It does not reset/replay a
+prior running Source. `source-inputs.json` freezes the authored inputs used by
+the compiler. Each run retains final public state and actual spatial samples,
+then checks quantities, container/lid destinations, both centrifuge batches,
+modeled environmental conditions and actual discarded-tip geometry. Recording
+checks follow normal session close. Failed gates stop further repeats.
+
 `tools/cell_passage_result.py` reads initial and final public snapshots. It
 checks all vessel, tip, counting, waste and residual contents for conservation,
 six separate origins, twelve distinct daughter identities, equal live-cell
@@ -181,6 +190,11 @@ existing codec/store, rejects gaps/truncation/reset episodes, and requires
 retained completion of every expected Plan part. These read-only reports keep
 `experimentQualified:false`; end-state alignment and readable recording bytes
 do not alone qualify loaded transport or a complete experiment.
+Discarded-tip checks transform all eight corners of the actual tip bounds
+into the actual solid-waste body's frame, using the authored region and
+contact allowance. An inventory `discarded` label or a root point inside the
+bin alone is insufficient. The supplied geometry metadata is not itself
+evidence that any tip physically arrived there.
 
 Before the first complete Newton run, the PM fixed separate gates in the
 approved simulation recipe: total per-origin cell conservation `1e-6`, sibling

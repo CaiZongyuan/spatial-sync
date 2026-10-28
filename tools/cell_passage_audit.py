@@ -3,14 +3,27 @@
 import hashlib
 import json
 import math
+from itertools import product
 
 from packages.info.log import read_segment, segment_metadata
 from packages.info.recording import recording_metadata
 from packages.info.store import StateStore
-from packages.protocol.math import compose_pose, normalize_quaternion
+from packages.protocol.math import compose_pose, normalize_quaternion, rotate_vector
 from packages.protocol.schema import EntityObservations, EntitySnapshot
 from packages.transport import FrameCodec
 from tools.cell_passage_recipe import CLIENT_CONTRACT
+
+
+def _body_poses(manifest, frame):
+    nodes = {row["entityKey"]: row["streamId"] for row in manifest["nodes"] if row["kind"] == "body"}
+    values = {row[0]: {"p": row[1:4], "q": row[4:8]} for row in frame["poses"]}
+    if len(values) != len(frame["poses"]):
+        raise ValueError("Spatial sample has duplicate stream identities")
+    for pose in values.values():
+        if len(pose["p"]) != 3 or not all(math.isfinite(value) for value in pose["p"]):
+            raise ValueError("Spatial sample contains unknown/nonfinite body positions")
+        normalize_quaternion(pose["q"])
+    return {key: values[stream] for key, stream in nodes.items()}
 
 
 def audit_spatial_state(manifest, before, after, expected_sites):
@@ -29,16 +42,8 @@ def audit_spatial_state(manifest, before, after, expected_sites):
         dt = after["simTime"] - before["simTime"]
         if not math.isfinite(dt) or dt <= 0:
             raise ValueError("Spatial settling needs two distinct simulation times")
-        nodes = {row["entityKey"]: row["streamId"] for row in manifest["nodes"] if row["kind"] == "body"}
         sites = {row["entityKey"]: row for row in manifest["sites"]}
-
-        def poses(frame):
-            values = {row[0]: {"p": row[1:4], "q": row[4:8]} for row in frame["poses"]}
-            if len(values) != len(frame["poses"]):
-                raise ValueError("Spatial sample has duplicate stream identities")
-            return {key: values[stream] for key, stream in nodes.items()}
-
-        previous, current = poses(before), poses(after)
+        previous, current = _body_poses(manifest, before), _body_poses(manifest, after)
 
         def site_pose(key, body_poses):
             value = sites[key]
@@ -68,6 +73,54 @@ def audit_spatial_state(manifest, before, after, expected_sites):
                 errors.append("Body is not aligned and settled: " + body)
         return {"status": "invalid" if errors else "spatial_state_valid", "errors": errors, "bodies": rows,
                 "nativeSource": manifest["source"]["kind"] == "newton", "experimentQualified": False}
+    except (ValueError, KeyError, TypeError) as error:
+        return {"status": "invalid", "error": str(error), "experimentQualified": False}
+
+
+def audit_tip_destinations(manifest, frame, layout, material):
+    """Check real discarded-tip bounds in the actual waste-body frame, not just state labels."""
+    try:
+        if any(frame[name] != manifest[name] for name in ("sessionId", "sceneRevision")):
+            raise ValueError("Tip poses do not belong to the supplied Manifest")
+        poses = _body_poses(manifest, frame)
+        region, geometry = layout["solidWasteRegion"], layout["tipGeometry"]
+        allowance = region["contactAllowanceM"]
+        if not math.isfinite(allowance) or allowance < 0:
+            raise ValueError("An authored finite contact allowance is required")
+        lower, upper = region["lowerLocal"], region["upperLocal"]
+        tip_lower, tip_upper = geometry["lowerLocal"], geometry["upperLocal"]
+        for lo, hi in ((lower, upper), (tip_lower, tip_upper)):
+            if (len(lo) != 3 or len(hi) != 3 or not all(math.isfinite(value) for value in [*lo, *hi])
+                    or any(a >= b for a, b in zip(lo, hi, strict=True))):
+                raise ValueError("Actual authored geometry bounds are required")
+        waste = poses[region["bodyKey"]]
+        quaternion = normalize_quaternion(waste["q"])
+        inverse = [-quaternion[0], -quaternion[1], -quaternion[2], quaternion[3]]
+        tips = {row["id"]: row for row in layout["tips"]}
+        states = {row["id"]: row["state"] for row in material["tips"]}
+        if material["tip"]["id"] or tips.keys() != states.keys() or len(states) != len(material["tips"]):
+            raise ValueError("Unknown, duplicate or still-installed tip inventory")
+        checked, errors = [], []
+        corners = list(product(*zip(tip_lower, tip_upper, strict=True)))
+        for identity, state in states.items():
+            if state == "unused":
+                continue
+            if state != "discarded":
+                raise ValueError("Unfinished or unknown tip state: " + identity)
+            pose = poses[tips[identity]["bodyKey"]]
+            valid = True
+            for corner in corners:
+                world = compose_pose(pose, {"p": corner, "q": [0, 0, 0, 1]})["p"]
+                local = rotate_vector(inverse, [world[i] - waste["p"][i] for i in range(3)])
+                if any(value < lower[i] - allowance or value > upper[i] + allowance
+                       for i, value in enumerate(local)):
+                    valid = False
+            checked.append({"id": identity, "body": tips[identity]["bodyKey"], "contained": valid})
+            if not valid:
+                errors.append("Discarded tip protrudes from the actual waste region: " + identity)
+        return {"status": "invalid" if errors else "tip_destinations_valid", "errors": errors,
+                "discardedTips": checked, "unusedTips": sum(state == "unused" for state in states.values()),
+                "contactAllowanceM": allowance, "experimentQualified": False}
     except (ValueError, KeyError, TypeError) as error:
         return {"status": "invalid", "error": str(error), "experimentQualified": False}
 
