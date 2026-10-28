@@ -130,7 +130,37 @@ async def test_control_handoff_latches_dispatch_stop_even_if_owner_later_returns
         }, wait=False)
         result = await executor.advance()
         assert (result["status"], result["reason"]) == ("reconcile_required", "control_changed")
-        assert (await client.plan_show(executor.plan_id))["steps"][0]["status"] == "pending"
+        await client.invoke_action("/workcell", "confirmControl", {
+            "owner": "auto", "epoch": 1, "operationId": "manual-confirm",
+        }, wait=False)
+        await client.invoke_action("/workcell", "requestControl", {
+            "owner": "human", "epoch": 1, "operationId": "auto-return",
+            "nextOwner": "auto-returned", "mode": "auto",
+        }, wait=False)
+        await client.invoke_action("/workcell", "confirmControl", {
+            "owner": "human", "epoch": 2, "operationId": "auto-confirm",
+        }, wait=False)
+        assert (await executor.advance())["status"] == "reconcile_required"
+        plan = await client.plan_show(executor.plan_id)
+        assert plan["steps"][0]["status"] == "pending"
+        checkpoint = await executor.inspect()
+        revised = await client.plan_revise(executor.plan_id, revise_remaining(
+            plan, owner="auto-returned", epoch=2, material_revision=checkpoint["materialRevision"],
+            expected_material_revision=checkpoint["materialRevision"],
+        ))
+        assert revised["steps"][0]["do"]["params"]["operationId"] == "teaching-wait"
+        await executor.reconcile(await executor.inspect(), checks=[{
+            "entity": "/workcell", "property": "controlSafe", "equals": True,
+        }])
+        assert (await executor.advance())["status"] == "paused"
+        await client.session_control("resume")
+        for _ in range(100):
+            result = await executor.advance()
+            if result["status"] == "completed":
+                break
+            await asyncio.sleep(0.01)
+        assert result["status"] == "completed", result
+        assert len(result["plan"]["stepResults"]["1"]["invocationIds"]) == 1
 
 
 async def test_material_change_without_active_action_requires_reconciliation(passage_http):
