@@ -12,6 +12,7 @@ from pydantic import ConfigDict, Field, model_validator
 from packages.info.program import ProgramConfig, Reject
 
 from .guard import guard
+from .tip_pickup import TipGeometry, check_pickup
 
 LIQUID_ACTIONS = {"pickupTip", "discardTip", "aspirate", "dispense", "mix", "detach"}
 RECENT_OPERATIONS = 64
@@ -108,6 +109,7 @@ class WorkcellProgram:
         pipetteBody: str = Field(json_schema_extra={"spatialReference": "body"})
         vessels: list[Vessel]
         tips: list[Tip]
+        tipGeometry: TipGeometry | None = Field(default=None, exclude_if=lambda value: value is None)
         contentSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
         tipRackSites: list[str] = Field(json_schema_extra={"spatialReference": "site"})
         cabinetEntity: str
@@ -149,6 +151,7 @@ class WorkcellProgram:
         self.configs = {row.id: row for row in ctx.config.vessels}
         self.sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.vessels}
         self.tip_sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.tips}
+        self.tip_docks = {row.id: ctx.physics.bind_sites([row.site]) for row in ctx.config.tips}
         self.handle, self.stroke, self.pending = None, None, None
         self.stopping = False
         self.hold_targets = None
@@ -508,6 +511,18 @@ class WorkcellProgram:
                 return self._reject(
                     "pump_not_zero", "Return empty pipette piston to zero before fitting a tip"
                 )
+            if not self._stationary(ctx):
+                return self._reject("not_safe", "Measured head/pump standstill is required before tip pickup")
+            failed = check_pickup(
+                ctx.physics,
+                ctx.config.tipGeometry,
+                self.tip_bodies[p["tip"]],
+                self.tip_docks[p["tip"]],
+                self.tip_site,
+                ctx.config.alignmentToleranceM,
+            )
+            if failed:
+                return failed
         if action == "discardTip":
             if not self.state["tip"]["id"]:
                 return self._reject("tip_unavailable", "No tip is installed")

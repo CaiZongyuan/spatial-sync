@@ -38,7 +38,7 @@ does not release reservations or permit a new liquid action in that interval.
 | reserve | resource, device | Reserves one body or station for that device. Conflicting device is rejected. |
 | release | resource | Requires no liquid in flight, actual workcell axis/pump standstill, and safe managed devices. A still-held body cannot be released. |
 | move | position: [x,y,z] | Raw joint positions in metres. Actual feedback and standstill determine completion; clients must use the scene's collision-checked route. |
-| pickupTip | tip | Requires actual tip-site alignment and zero piston, then activates the predeclared physical tip weld. |
+| pickupTip | tip | Requires actual body/dynamic dock/head/socket fit, seated stock-tip relative velocity, measured head/pump standstill and zero piston before the predeclared physical weld. |
 | discardTip | waste | Requires configured solid-waste site alignment and waste capacity. Residual liquid/cells enter that waste row; the actual tip weld is released. |
 | aspirate | vessel, volumeUl | Actual positive piston displacement transfers homogeneous suspension into the tip. Attached and pellet cells remain. |
 | dispense | vessel, volumeUl | Actual negative piston displacement transfers tip contents into the destination. |
@@ -63,6 +63,29 @@ waste retains `contactWaste=true` even when empty and may only discharge to
 waste or be discarded. Isolation checks use actual cell origins as well as the
 declared culture/parent and contact history; a blank identity does not erase
 cell contamination.
+
+Pickup uses the factory's same-source tipGeometry, not only unused state or a
+static rack label. The tip body Root is its fluid endpoint. Body Root and the
+rotated mating seat must still match the current dock; the actual head endpoint
+must match the actual tip endpoint and seat. Both actual nozzle-segment ends
+are projected against the actual socket axis and must fit its positive radial
+clearance and axial insertion range. Separate head-to-rack and tip-to-rack
+errors cannot be added into an unsafe assembly gap. Axis inversion/tilt,
+unknown/nonfinite pose or velocity, an absent descriptor, a dropped/unsettled
+tip and a socket without clearance reject before any weld or inventory write.
+Circular yaw is intentionally unconstrained. Tip/dock relative speed must be
+below the existing seated-station 0.01 m/s threshold; head motion uses the
+existing measured joint velocity rules. Intake and startup both read the
+current physical facts.
+
+The calibrated descriptor uses mating offset [0,0,0.05] m, socket insertion
+depth 0.012 m, minimum straight socket ID 0.0108 m and maximum nozzle OD
+0.0100 m (0.0004 m radial gap). The new layout supplies alignmentToleranceM
+0.0003. The guard limits positional checks by that calibration and the actual
+geometric gap, and rotates both mating offsets/axes by their actual poses.
+It does not infer an arbitrary yaw-angle gate or replace actual body pose with
+the expected dock pose. These guards do not by themselves qualify the complete
+physical pickup route or installed-tip clearance.
 
 The original aspirate/dispense/mix volumeUl remains a literal requested amount;
 its stock checks and calibration are unchanged. The four quantity-intent actions
@@ -197,6 +220,12 @@ The exporter reads layout.pipetteCalibration.alignmentToleranceM when supplied
 and layout.tipDiscardSite for the drop point. wasteSite is an optional top-level
 Site reference, omitted when None, so a separate above-rim Discard point is
 materialized rather than replaced by the liquid Content point.
+Pickup additionally requires tipGeometry with tipMatingOffsetLocalM,
+tipAxisLocal, headMatingOffsetLocalM, headAxisLocal, socketDepthM,
+socketInnerDiameterM and nozzleOuterDiameterM. The exporter selects these
+fields from layout.tipGeometry, leaving asset/hash/actual bounds in the
+immutable mechanical-layout receipt. An older layout without the descriptor
+remains inspectable but cannot silently qualify tip pickup.
 
 The teaching recipe uses 200 uL PBS wash, 200 uL trypsin and 2 simulated seconds,
 then 800 uL medium for each independent 1000 uL collection. After pelleting,
@@ -218,6 +247,7 @@ that numerical boundary rather than changing stock guards or inventing liquid.
 
 Focused tests: `python -m pytest tests/unit/test_cell_passage.py tests/unit/test_cell_passage_journal.py
 tests/unit/test_cell_passage_quantities.py
+tests/unit/test_cell_passage_tip_pickup.py
 tests/gateway/test_cell_passage_api.py -q`. The deterministic external actuator
 fixture proves Host/API/recorded-state semantics. It does not prove Newton
 geometry, real tip pickup or a full Cell Passage run.
