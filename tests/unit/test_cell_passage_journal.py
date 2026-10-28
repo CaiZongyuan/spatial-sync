@@ -218,6 +218,7 @@ async def test_recording_replay_retains_every_receipt_after_live_history_compact
         tick()
         host.cancel("cancelled-transfer")
         record(host.drain_events())
+        tick()
         invoke(host, "aspirate", "failed-transfer", vessel="source", volumeUl=100)
         tick()
         port.advance(0.0008)

@@ -154,6 +154,10 @@ class WorkcellProgram:
         self.hold_targets = None
         self.stop_error = None
         self.quantity = None
+        self.completing = False
+        self.quantity_previous_q, self.quantity_stable_samples = None, 0
+        self.quantity_previous_frame = None
+        self.cancelled_at_tick = None
         self.used_operations = getattr(self, "used_operations", set())
         self.control_receipts = getattr(self, "control_receipts", {})
         self.control_generation = getattr(self, "control_generation", -1) + 1
@@ -654,6 +658,8 @@ class WorkcellProgram:
             self.control_generation += 1
             ctx.set(controlEpoch=self.control_generation, controlMode="holding", controlSafe=False)
             self.pending = {"owner": p["nextOwner"], "mode": p["mode"]}
+            self.completing = False
+            self.cancelled_at_tick = None
             self._hold(ctx)
         else:
             ctx.set(controlOwner=self.pending["owner"], controlMode=self.pending["mode"])
@@ -676,10 +682,12 @@ class WorkcellProgram:
         return None
 
     def _hold(self, ctx, failure=None):
+        completed_success = False
         if failure is not None:
             self.stop_error = failure
-            if self.handle:
+            if self.handle and self.state["operations"][-1]["fault"] != failure[0]:
                 self.state["operations"][-1]["fault"] = failure[0]
+                self._publish(ctx)
         # Capture already executed stroke before replacing the old drive target.
         if self.stroke:
             self._apply_stroke(ctx)
@@ -696,10 +704,21 @@ class WorkcellProgram:
             if self.handle and self.state["reconciled"]:
                 self.state["operations"][-1]["status"] = "settling"
                 self._publish(ctx)
-        if self.handle and (self._stationary(ctx) or not self.state["reconciled"]):
+        close_allowed = self.cancelled_at_tick is None or ctx.tick_index > self.cancelled_at_tick
+        if self.handle and close_allowed and (self._stationary(ctx) or not self.state["reconciled"]):
             if self.state["reconciled"] and self.stop_error is not None:
                 self.handle.fail(*self.stop_error)
                 self._finish(ctx, "failed")
+            elif self.state["reconciled"] and self.completing:
+                if self.state["operations"][-1]["untransferredUl"] <= ctx.config.pumpToleranceUl:
+                    self._finish(ctx, "succeeded")
+                    completed_success = self.state["operations"][-1]["status"] == "succeeded"
+                else:
+                    self.state["operations"][-1]["fault"] = "quantity_unreachable"
+                    self.handle.fail(
+                        "quantity_unreachable", "Settled quantity exceeds the fixed remainder budget"
+                    )
+                    self._finish(ctx, "failed")
             elif self.state["reconciled"]:
                 self.handle.cancelled()
                 self._finish(ctx, "cancelled")
@@ -712,7 +731,7 @@ class WorkcellProgram:
         safe = self._stationary(ctx)
         if self.handle is None and safe:
             self.stopping, self.hold_targets = False, None
-        ctx.set(controlSafe=safe, phase="holding")
+        ctx.set(controlSafe=safe, phase="idle" if completed_success else "holding")
 
     def _stationary(self, ctx):
         for joint in [*self.axes, self.pump]:
@@ -796,6 +815,10 @@ class WorkcellProgram:
         self.handle, self.started = inv, ctx.sim_time
         self.stopping = False
         self.stop_error = None
+        self.completing = False
+        self.quantity_previous_q, self.quantity_stable_samples = None, 0
+        self.quantity_previous_frame = None
+        self.cancelled_at_tick = None
         ctx.set(
             controlSafe=False,
             phase=inv.action,
@@ -1020,6 +1043,8 @@ class WorkcellProgram:
         self.stopping = False
         self.stop_error = None
         self.quantity = None
+        self.completing = False
+        self.cancelled_at_tick = None
         ctx.set(
             lastQuantityOutcome=operation["quantityOutcome"], controlSafe=self._stationary(ctx), phase="idle"
         )
@@ -1037,11 +1062,12 @@ class WorkcellProgram:
             else:
                 ctx.set(controlSafe=self._stationary(ctx))
             return
-        if self.stopping:
+        if self.stopping and not self.completing:
             self._hold(ctx)
             return
         rejection = guard(ctx, ctx.key, inv.params)
         if rejection:
+            self.completing = False
             self._hold(ctx)
             return
         p, action = inv.params, base_action(inv.action)
@@ -1053,6 +1079,9 @@ class WorkcellProgram:
             if isinstance(failed, Reject):
                 self._hold(ctx, (failed.code, failed.message))
                 return
+        if self.stopping:
+            self._hold(ctx)
+            return
         if action in ("aspirate", "dispense", "mix"):
             rejection = self._accessible(ctx, p["vessel"])
             if rejection:
@@ -1065,12 +1094,31 @@ class WorkcellProgram:
                 return
             complete = self.stroke["volumeUl"] - self.stroke["appliedUl"] <= ctx.config.pumpToleranceUl
             if self.quantity["quantityKind"] != "literal":
-                quantum_m = self.quantity["resolutionUl"] / ctx.config.pumpUlPerUnit
-                complete = (
-                    self.stroke["appliedUl"] > 0
-                    and abs(q - self.quantity["pumpTargetM"]) <= quantum_m
-                    and abs(float(ctx.physics.joint_qd(self.pump)[0])) <= quantum_m
-                )
+                frame = getattr(ctx.physics, "last_time", ctx.sim_time)
+                if frame is not None and (
+                    self.quantity_previous_frame is None or frame > self.quantity_previous_frame
+                ):
+                    self.quantity_stable_samples = (
+                        self.quantity_stable_samples + 1 if q == self.quantity_previous_q else 1
+                    )
+                    self.quantity_previous_q, self.quantity_previous_frame = q, frame
+                if self.stroke["appliedUl"] > 0 and self.quantity_stable_samples >= 3:
+                    if self.state["operations"][-1]["untransferredUl"] <= ctx.config.pumpToleranceUl:
+                        # Resolved position can plateau while the backend still
+                        # reports a tiny velocity. Establish an actual holding
+                        # target; do not reinterpret that velocity as standstill.
+                        self.completing = True
+                        self._hold(ctx)
+                    else:
+                        self._hold(
+                            ctx,
+                            (
+                                "quantity_unreachable",
+                                "Pump position settled before the fixed quantity tolerance was met",
+                            ),
+                        )
+                    return
+                complete = False
             if complete and self._stationary(ctx):
                 if action == "mix" and self.stroke["direction"] == 1:
                     origin = self.stroke["origin"]
@@ -1104,6 +1152,11 @@ class WorkcellProgram:
 
     def cancel(self, inv, ctx):
         if self.handle and self.handle.id == inv.id:
+            self.completing = False
+            # Core may assign a timeout failure immediately after this callback.
+            # Finalize the accounting receipt on the next tick, preserving that
+            # authoritative status instead of emitting a premature cancellation.
+            self.cancelled_at_tick = ctx.tick_index
             self._hold(ctx)
         else:
             inv.cancelled()

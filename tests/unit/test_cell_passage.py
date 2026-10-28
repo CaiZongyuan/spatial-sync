@@ -37,6 +37,7 @@ def test_partial_stroke_cancel_retains_liquid_and_operation_identity(tmp_path):
     assert state["tip"]["volumeUl"] == 40
     assert state["operations"][-1]["appliedUl"] == 40
     assert port.targets["pump"] == 0.0004
+    host.tick(host.sim_time + 0.1, 0.1)
     retry = invoke(host, "aspirate", "new-request", operationId="asp", vessel="source", volumeUl=100)
     assert retry.error.code == "operation_applied"
 
