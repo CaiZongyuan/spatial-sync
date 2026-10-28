@@ -38,7 +38,7 @@ export function useRemovalProgress(record: LibraryRemoval | undefined, update: (
   return error;
 }
 
-export function RemovalResult({ record, update }: { record: LibraryRemoval; update: (value: LibraryRemoval) => void }) {
+export function RemovalResult({ record, update, compact = false }: { record: LibraryRemoval; update: (value: LibraryRemoval) => void; compact?: boolean }) {
   const permissions = useContext(ApprovalInboxContext);
   const canOperate = permissions.inbox?.role === 'operator' && !permissions.error;
   const [error, setError] = useState<string>(), [busy, setBusy] = useState(false);
@@ -48,13 +48,14 @@ export function RemovalResult({ record, update }: { record: LibraryRemoval; upda
     committed: '版本已移到回收站，可恢复。', blocked: '检查未通过，版本已保留。',
     failed: '执行未完成，版本已保留。', restoring: '正在恢复原始版本。', restored: '原始版本已恢复。',
   };
-  return <div><p role="status">{labels[record.status]}</p>
-    {record.status === 'committed' && <><p>回收站保留 {record.retainedBytes.toLocaleString()} 字节，尚未释放这部分磁盘。</p>
+  return <div className="removal-result"><p className="removal-status" role="status">{labels[record.status]}</p>
+    {record.status === 'committed' && <>{!compact && <p>回收站保留 {record.retainedBytes.toLocaleString()} 字节，尚未释放这部分磁盘。</p>}
       <button disabled={busy || !canOperate} onClick={async () => {
         setBusy(true); setError(undefined);
         try { update(await restoreLibraryVersion(record.id)); } catch (error) { setError((error as Error).message); }
         finally { setBusy(false); }
-      }}>恢复此版本</button></>}
+      }}>{busy ? '正在提交恢复…' : '恢复此版本'}</button>
+      {!canOperate && <p className="removal-permission-note">{permissions.error ? '无法确认操作权限，请稍后刷新。' : permissions.inbox ? '当前为只读访问，无法恢复版本。' : '正在确认操作权限…'}</p>}</>}
     {record.error && <><p role="alert">{record.error.message}</p><LibraryReferences inspection={record.error} /></>}
     {(error || progressError) && <p role="alert">{error || progressError} <button onClick={() => {
       void getLibraryRemoval(record.id).then(update).catch(error => setError((error as Error).message));
