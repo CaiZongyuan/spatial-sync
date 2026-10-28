@@ -4,7 +4,7 @@ from collections import Counter
 
 from packages.programs.cell_passage.scene import WELLS, workcell_binding
 from packages.protocol.schema import OperationPlan
-from tools.cell_passage_plan import compile_recipe
+from tools.cell_passage_plan import compile_recipe, paginate_recipe
 
 
 def recipe_inputs():
@@ -67,7 +67,9 @@ def recipe_inputs():
 
 def test_complete_recipe_has_independent_samples_two_balanced_batches_and_84_fresh_tips():
     recipe = compile_recipe(*recipe_inputs(), owner="auto", epoch=0, round_id="fixture")
-    assert len(recipe["plans"]) == 7 and recipe["mechanicallyQualified"] is False
+    assert {row["stage"] for row in recipe["plans"]} == set(range(1, 8))
+    assert recipe["mechanicallyQualified"] is False
+    assert max(len(row["document"]["steps"]) for row in recipe["plans"]) <= 128
     steps = [step for plan in recipe["plans"] for step in plan["document"]["steps"]]
     calls = [step["do"] for step in steps if "do" in step]
     counts = Counter(call["action"] for call in calls)
@@ -79,3 +81,35 @@ def test_complete_recipe_has_independent_samples_two_balanced_batches_and_84_fre
     for stage in recipe["plans"]:
         OperationPlan.model_validate({"id": "fixture", "revision": 1, **stage["document"]})
         assert all(step["id"] // 100000 == stage["stage"] for step in stage["document"]["steps"])
+
+
+def test_environment_uses_controlled_simulation_wait_and_public_final_ranges():
+    layout, teaching, binding, geometry = recipe_inputs()
+    layout.update(incubatorEntity="/World/Lab/Incubator", cabinetEntity="/World/Lab/LiquidHandler/Base",
+                  environmentLimits={"temperatureC": [36.5, 37.5], "co2Percent": [4.5, 5.5],
+                                     "humidityPercent": [90, 100], "inflowMs": [0.4, 2],
+                                     "sashHeightCm": [18, 22]})
+    binding["config"]["managedDevices"].extend([layout["incubatorEntity"], layout["cabinetEntity"]])
+    recipe = compile_recipe(
+        layout, teaching, binding, geometry, owner="auto", epoch=0, round_id="environment"
+    )
+    final = [step for row in recipe["plans"] if row["stage"] == 7 for step in row["document"]["steps"]]
+    assert recipe["environmentChecksAvailable"] is True
+    waits = [step["do"] for step in final if step.get("do", {}).get("action") == "waitReady"]
+    assert len(waits) == 1 and waits[0]["entity"] == "/World/Lab/Incubator"
+    assert waits[0]["params"]["timeoutSeconds"] == 90
+    conditions = [step["check"] for step in final if "check" in step]
+    assert {"entity": "/World/Lab/Incubator", "property": "temperatureC", "gte": 36.5} in conditions
+    assert {"entity": "/World/Lab/Incubator", "property": "temperatureC", "lte": 37.5} in conditions
+
+
+def test_page_boundaries_preserve_complete_action_order_and_global_identity():
+    unpaged = compile_recipe(*recipe_inputs(), owner="auto", epoch=0, round_id="paging", max_steps=None)
+    paged = paginate_recipe(unpaged, max_steps=128)
+    assert [step for row in paged["plans"] for step in row["document"]["steps"]] == [
+        step for row in unpaged["plans"] for step in row["document"]["steps"]
+    ]
+    for stage in range(1, 8):
+        parts = [row for row in paged["plans"] if row["stage"] == stage]
+        assert [row["part"] for row in parts] == list(range(1, len(parts) + 1))
+        assert all(row["parts"] == len(parts) for row in parts)

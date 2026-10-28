@@ -37,14 +37,27 @@ class _Recipe:
         self.q = [0.0, 0.0, 0.0]
         self.plans, self.steps = [], []
         self.phase = 0
+        self.environment = all(name in layout for name in (
+            "incubatorEntity", "cabinetEntity", "environmentLimits",
+        ))
+        if self.environment and not {layout["incubatorEntity"], layout["cabinetEntity"]}.issubset(
+            self.config["managedDevices"]
+        ):
+            raise ValueError("Environment devices must participate in source-side managed control")
 
     def stage(self, number):
+        if self.plans:
+            self.cut()
         self.phase = number
         self.steps = []
-        self.plans.append({"stage": number, "document": {
+        self.cuts = []
+        self.plans.append({"stage": number, "cutAfterSteps": self.cuts, "document": {
             "title": f"Cell Passage {self.round_id} · {number}/7 · {STAGES[number - 1]['title']}",
             "target": "session", "steps": self.steps,
         }})
+
+    def cut(self):
+        self.cuts.append(len(self.steps))
 
     def do(self, entity, action, params=None, *, expect=None):
         identity = self.phase * 100000 + len(self.steps) + 1
@@ -114,6 +127,7 @@ class _Recipe:
         self.stations[body] = target
         for resource in (source, target, body):
             self.release(resource)
+        self.cut()
 
     def lid(self, name, opened):
         body = self.layout["bodies"][name]
@@ -123,6 +137,7 @@ class _Recipe:
         self.transport(lid, destination)
         self.check(body, "lidClosed", "equals", not opened)
         self.release(body)
+        self.cut()
 
     def move_tip(self, world):
         calibration = self.layout["pipetteCalibration"]
@@ -176,6 +191,7 @@ class _Recipe:
         self.move_tip(self.content_position(target))
         self.do(WORKCELL, "dispense", {"vessel": target, "volumeUl": amount})
         self.discard_tip()
+        self.cut()
 
     def mix(self, identity):
         self.reserve(self.vessels[identity]["entityKey"], WORKCELL)
@@ -183,6 +199,7 @@ class _Recipe:
         self.move_tip(self.content_position(identity))
         self.do(WORKCELL, "mix", {"vessel": identity, "volumeUl": 1000})
         self.discard_tip()
+        self.cut()
 
     def observe(self, plate, kind):
         body = self.layout["bodies"][plate]
@@ -213,10 +230,12 @@ class _Recipe:
             self.transport(self.layout["bodies"][name], target)
 
 
-def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_id):
+def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_id, max_steps=128):
     recipe = _Recipe(layout, teaching, binding, geometry, owner, epoch, round_id)
     body = layout["bodies"]
     recipe.stage(1)
+    if recipe.environment:
+        recipe.check(layout["cabinetEntity"], "cabinetReady", "equals", True)
     for entity in (RAIL, CENTRIFUGE, LAB + "/Incubator/OuterDoor", LAB + "/Incubator/InnerDoor"):
         recipe.reserve(entity, entity)
     recipe.do(LAB + "/Incubator/OuterDoor", "open")
@@ -227,6 +246,8 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.do(LAB + "/Incubator/OuterDoor", "close")
 
     recipe.stage(2)
+    if recipe.environment:
+        recipe.check(layout["cabinetEntity"], "cabinetReady", "equals", True)
     recipe.transport(body["Mother"], LAB + "/Sites/FlexPlate")
     recipe.lid("Mother", True)
     for index in range(1, 7):
@@ -254,6 +275,8 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.batch(["S5", "S6"], [("S5", 1), ("B5", 3), ("S6", 2), ("B6", 4)])
 
     recipe.stage(5)
+    if recipe.environment:
+        recipe.check(layout["cabinetEntity"], "cabinetReady", "equals", True)
     recipe.transport(body["Counting"], LAB + "/Sites/FlexPlate")
     recipe.lid("Counting", True)
     for index, well in enumerate(WELLS, 1):
@@ -269,6 +292,8 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.transport(body["Counting"], LAB + "/Sites/WasteCounting")
 
     recipe.stage(6)
+    if recipe.environment:
+        recipe.check(layout["cabinetEntity"], "cabinetReady", "equals", True)
     for plate in ("DaughterA", "DaughterB"):
         recipe.transport(body[plate], LAB + "/Sites/FlexPlate")
         recipe.lid(plate, True)
@@ -287,20 +312,69 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.transport(body["DaughterA"], LAB + "/Sites/IncubatorA")
     recipe.transport(body["DaughterB"], LAB + "/Sites/IncubatorB")
     recipe.do(ROBOT, "home")
+    recipe.do(RAIL, "move", {"position": 0.4})
     recipe.do(LAB + "/Incubator/InnerDoor", "close")
     recipe.do(LAB + "/Incubator/OuterDoor", "close")
     recipe.do(CENTRIFUGE, "closeLid")
+    if recipe.environment:
+        incubator, cabinet = layout["incubatorEntity"], layout["cabinetEntity"]
+        recipe.reserve(incubator, incubator)
+        recipe.do(incubator, "waitReady", {"timeoutSeconds": 90})
+        for entity, prop, value in (
+            (incubator, "environmentReady", True), (incubator, "doorKnown", True),
+            (incubator, "doorOpen", False), (incubator, "signalSource", "modeled"),
+            (cabinet, "cabinetReady", True), (cabinet, "signalSource", "modeled"),
+            (cabinet, "blowerOn", True), (cabinet, "uvOn", False),
+        ):
+            recipe.check(entity, prop, "equals", value)
+        for prop, (lower, upper) in layout["environmentLimits"].items():
+            entity = cabinet if prop in ("inflowMs", "sashHeightCm") else incubator
+            recipe.check(entity, prop, "gte", lower)
+            recipe.check(entity, prop, "lte", upper)
+        recipe.check(incubator, "setpointC", "gte", 36.9)
+        recipe.check(incubator, "setpointC", "lte", 37.1)
     recipe.park()
     for resource in list(recipe.leases):
         recipe.release(resource)
+    for name in ("DaughterA", "DaughterB", "Mother", "Counting", *[f"S{i}" for i in range(1, 7)], "B5", "B6"):
+        recipe.check(body[name], "station", "equals", recipe.stations[body[name]])
+        recipe.check(body[name], "settled", "equals", True)
+        recipe.check(body[name], "lidClosed", "equals", True)
     for entity, prop, value in ((WORKCELL, "auditPassed", True), (WORKCELL, "samplesIndependent", True),
                                 (WORKCELL, "inFlightUl", 0), (ROBOT, "controlSafe", True)):
         recipe.check(entity, prop, "equals", value)
-    return {"schema": "lw.cell-passage-recipe/1", "roundId": round_id,
-            "mechanicallyQualified": False, "environmentChecksAvailable": False,
+    recipe.cut()
+    result = {"schema": "lw.cell-passage-recipe/1", "roundId": round_id,
+            "mechanicallyQualified": False, "environmentChecksAvailable": recipe.environment,
             "plans": recipe.plans, "tipsRequired": recipe.tip_index,
             "teachingConditions": {"daughterVolumeUl": 1000, "sampleVolumeUl": 20,
                                    "requestedCentrifugeRpm": 800, "physicalRpmCap": 60}}
+    return paginate_recipe(result, max_steps=max_steps) if max_steps else result
+
+
+def paginate_recipe(recipe, *, max_steps=128):
+    """Split only at completed step boundaries, preferring complete logical groups.
+
+    Step/action identities and flattened content remain unchanged; a page boundary
+    never resets material, releases a payload or creates a successful result.
+    """
+    if not isinstance(max_steps, int) or max_steps < 1:
+        raise ValueError("max_steps must be a positive integer")
+    plans = []
+    for stage in recipe["plans"]:
+        steps, pages, start = stage["document"]["steps"], [], 0
+        while start < len(steps):
+            limit = min(start + max_steps, len(steps))
+            cuts = [position for position in stage["cutAfterSteps"] if start < position <= limit]
+            end = max(cuts) if cuts else limit
+            pages.append(steps[start:end])
+            start = end
+        for part, page in enumerate(pages, 1):
+            plans.append({"stage": stage["stage"], "part": part, "parts": len(pages), "document": {
+                "title": stage["document"]["title"] + f" · part {part}/{len(pages)}",
+                "target": "session", "steps": page,
+            }})
+    return {**recipe, "plans": plans, "maxPartSteps": max_steps}
 
 
 def load_inputs(library):
@@ -354,9 +428,10 @@ def main():
     sizes = []
     for plan in recipe["plans"]:
         raw = json.dumps(plan["document"], ensure_ascii=False, separators=(",", ":")).encode("utf8")
-        path = args.out / f"stage-{plan['stage']}.plan.json"
+        path = args.out / f"stage-{plan['stage']}-part-{plan['part']}.plan.json"
         path.write_bytes(raw)
-        sizes.append({"stage": plan["stage"], "steps": len(plan["document"]["steps"]),
+        sizes.append({"stage": plan["stage"], "part": plan["part"], "parts": plan["parts"],
+                      "steps": len(plan["document"]["steps"]),
                       "jsonBytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
     recipe["documents"] = sizes
     (args.out / "recipe.json").write_text(

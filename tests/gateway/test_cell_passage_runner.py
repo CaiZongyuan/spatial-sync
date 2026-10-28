@@ -13,6 +13,7 @@ from apps.cli.lw.client import GatewayClient
 from tests.fixtures.cell_passage_gateway import create_fixture_app
 from tools.cell_passage_recipe import revise_remaining
 from tools.cell_passage_runner import PassageExecutor, drive_executor
+from tools.cell_passage_session import prepare_round
 
 
 class PublicHTTP(httpx.AsyncBaseTransport):
@@ -229,3 +230,27 @@ async def test_client_exit_keeps_interrupted_receipt_and_fences_own_generation(p
         assert rows[-1]["active"]["invocationId"]
         values = (await client.get_state(["/workcell"]))["entities"]["/workcell"]["values"]
         assert values["controlMode"] == "holding" and values["controlEpoch"] == 1
+
+
+async def test_preparation_publishes_all_seven_stage_plans_without_starting_actions(passage_http, tmp_path):
+    server, session = passage_http
+    async with httpx.AsyncClient(base_url="http://testserver", transport=PublicHTTP(server)) as http:
+        client = GatewayClient(session=session, http=http)
+        recipe = {"schema": "lw.cell-passage-recipe/1", "roundId": "public-fixture",
+                  "mechanicallyQualified": False, "environmentChecksAvailable": False, "plans": [
+                      {"stage": stage, "part": 1, "parts": 1, "document": {
+                       "title": f"Cell Passage public-fixture · {stage}/7 · Fixture · part 1/1",
+                       "target": "session", "steps": [{"id": stage * 100000 + 1, "do": {
+                           "entity": "/workcell", "action": "wait", "params": {
+                               "owner": "auto", "epoch": 0, "operationId": f"stage-{stage}", "seconds": 0.001,
+                           },
+                       }}]}} for stage in range(1, 8)
+                  ]}
+        result = await prepare_round(client, recipe, tmp_path / "prepared", workcell="/workcell")
+        assert result["status"] == "prepared"
+        assert [row["id"] for row in result["plans"]] == [
+            f"cp-public-fixture-stage{stage}-part1-of1" for stage in range(1, 8)
+        ]
+        for row in result["plans"]:
+            plan = await client.plan_show(row["id"])
+            assert plan["steps"][0]["status"] == "pending" and plan["stepResults"] == {}

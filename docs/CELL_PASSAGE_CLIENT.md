@@ -39,21 +39,35 @@ python -m tools.cell_passage_plan --library <generated-package-root> \
   --out <new-round>/plans --round <round-id> --owner <owner> --epoch <epoch>
 ```
 
-It writes seven ordinary stage Plan documents and a local recipe sidecar. The
+It writes ordinary stage/part Plan documents and a local recipe sidecar. The
 compiler schedules six separate sources, four plus two sample centrifuge
 batches with two balance tubes, six counting samples, twelve daughter wells
 and 84 fresh tips. Moving between different rail positions uses pick, a held
 home retreat, rail motion, and place. A generated document is planned intent:
-`mechanicallyQualified:false` and `environmentChecksAvailable:false` prohibit
-treating compilation or reach teaching as full passage acceptance. Environmental
-readiness checks are not yet included in this compiler candidate.
+`mechanicallyQualified:false` prohibits treating compilation or reach teaching
+as full passage acceptance. With the environment bindings and managed-device
+configuration, it adds controlled incubator `waitReady` followed by public
+temperature/CO2/humidity/setpoint, actual door and clean-enclosure checks.
+Older packages without those bindings remain `environmentChecksAvailable:false`.
 
-Seven stage Plans keep each existing full-record Plan journal smaller than one
-large document. A round scheduler must execute every stage in order under the
+Seven stages are split into ordinary Plan parts of at most 128 steps, preferring
+complete transfer, mixing and transport groups. Flattened action order, params
+and global identities are unchanged. A boundary never resets contents, releases
+a payload or synthesizes success. A round scheduler must execute every part in order under the
 same session/scene/control checkpoint and continuous recording; one completed
-stage cannot be reported as a completed passage. The public title format is
-`Cell Passage {roundId} · {stage}/7 · {stageTitle}`. The browser can read those
+part cannot be reported as a completed passage. The public ID format is
+`cp-{roundId}-stage{stage}-part{part}-of{parts}` and title format is
+`Cell Passage {roundId} · {stage}/7 · {stageTitle} · part {part}/{parts}`.
+Clients require seven stages, complete consecutive part numbers and consistent
+part totals. The browser can read those
 ordinary Plans; the local recipe sidecar is not exposed as an HTTP endpoint.
+
+Publish all parts into an existing owned session without starting actions:
+
+```bash
+python -m tools.cell_passage_session --session <session-id> \
+  --recipe <new-round>/plans/recipe.json --out <new-round>/prepared
+```
 
 Actions use `POST /api/v1/sessions/{sessionId}/actions` with `wait:false`, plus
 `planId`, `stepId`, and `planRevision`. Conditions use the existing `/check`
