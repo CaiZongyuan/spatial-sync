@@ -554,3 +554,26 @@ def test_safe_standstill_does_not_release_a_resource_still_held_by_robot(tmp_pat
     host, port = workcell(tmp_path, facts={"holding": "/source"}, config={"managedDevices": ["/peer"]})
     execute(host, port, "reserve", "res", resource="/source", device="/peer")
     assert invoke(host, "release", "unsafe", resource="/source").error.code == "unsafe_release"
+
+
+def test_cancel_accounts_braking_piston_motion_until_measured_standstill(tmp_path):
+    host, port = workcell(tmp_path)
+    execute(host, port, "reserve", "res", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    invoke(host, "aspirate", "asp", vessel="source", volumeUl=100)
+    host.tick(host.sim_time + 0.1, 0.1)
+    port.advance(0.0004)
+    port.velocities["pump"] = 0.001
+    host.tick(host.sim_time + 0.1, 0.1)
+    host.cancel("asp")
+    assert host.active_invocations("/workcell")[0].status == "running"
+    port.q["pump"] = 0.00045
+    host.tick(host.sim_time + 0.1, 0.1)
+    assert host.values()["/workcell"]["inFlightUl"] == pytest.approx(45)
+    port.q["pump"], port.velocities["pump"] = 0.0004, 0
+    host.tick(host.sim_time + 0.1, 0.1)
+    state = host.values()["/workcell"]
+    assert state["inFlightUl"] == pytest.approx(40)
+    assert state["materialSnapshot"]["vessels"][0]["volumeUl"] == pytest.approx(460)
+    assert state["auditPassed"] is True
+    assert not host.active_invocations("/workcell")

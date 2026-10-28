@@ -19,6 +19,14 @@ including when its invocation was partially cancelled. Read its recorded
 the current remainder. A control operationId can retrieve its original receipt;
 reuse with different parameters is rejected.
 
+Cancellation uses the existing Program cancellation lifecycle: an executing
+invocation remains running with operation status `settling` and phase `holding`
+while measured braking displacement is accounted. Only actual standstill at
+the fixed hold target completes cancellation. Reservations, tip attachment and
+liquid remain held throughout. Controlled braking return flow is accounted as
+net reverse liquid movement; uncommanded reversal during normal execution
+still invalidates the material estimate. Queued cancellation is unchanged.
+
 | Action | Additional parameters | Evidence and effect |
 |---|---|---|
 | requestControl | nextOwner, mode (`auto` or `manual`) | Concurrent. accept increments epoch and commits holding while paused; writes safe targets, retains attachments/liquid. |

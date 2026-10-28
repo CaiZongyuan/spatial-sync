@@ -117,6 +117,8 @@ class WorkcellProgram:
         self.sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.vessels}
         self.tip_sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.tips}
         self.handle, self.stroke, self.pending = None, None, None
+        self.stopping = False
+        self.hold_targets = None
         vessels = []
         for config in ctx.config.vessels:
             row = empty_content() | {
@@ -472,13 +474,20 @@ class WorkcellProgram:
         # Capture already executed stroke before replacing the old drive target.
         if self.stroke:
             self._apply_stroke(ctx)
-        for joint in [*self.axes, self.pump]:
-            measured = ctx.physics.joint_q(joint)
-            if np.isfinite(measured).all():
-                self.last_good_q[joint] = measured.copy()
-            ctx.physics.set_joint_target(joint, self.last_good_q[joint])
-            ctx.physics.set_joint_target_velocity(joint, [0])
-        if self.handle:
+        if not self.stopping:
+            self.hold_targets = {}
+            for joint in [*self.axes, self.pump]:
+                measured = ctx.physics.joint_q(joint)
+                if np.isfinite(measured).all():
+                    self.last_good_q[joint] = measured.copy()
+                ctx.physics.set_joint_target(joint, self.last_good_q[joint])
+                self.hold_targets[joint] = self.last_good_q[joint].copy()
+                ctx.physics.set_joint_target_velocity(joint, [0])
+            self.stopping = True
+            if self.handle and self.state["reconciled"]:
+                self.state["operations"][-1]["status"] = "settling"
+                self._publish(ctx)
+        if self.handle and (self._stationary(ctx) or not self.state["reconciled"]):
             if self.state["reconciled"]:
                 self.handle.cancelled()
                 self._finish(ctx, "cancelled")
@@ -491,12 +500,25 @@ class WorkcellProgram:
         ctx.set(controlSafe=self._stationary(ctx), phase="holding")
 
     def _stationary(self, ctx):
-        return all(
-            np.isfinite(ctx.physics.joint_q(joint)).all()
-            and np.isfinite(ctx.physics.joint_qd(joint)).all()
-            and np.max(np.abs(ctx.physics.joint_qd(joint))) <= ctx.config.holdSpeedTolerance
-            for joint in [*self.axes, self.pump]
-        )
+        for joint in [*self.axes, self.pump]:
+            q, velocity = ctx.physics.joint_q(joint), ctx.physics.joint_qd(joint)
+            pump_tolerance = ctx.config.pumpToleranceUl / ctx.config.pumpUlPerUnit
+            speed_tolerance = (
+                min(ctx.config.holdSpeedTolerance, pump_tolerance)
+                if joint == self.pump
+                else ctx.config.holdSpeedTolerance
+            )
+            if (
+                not np.isfinite(q).all()
+                or not np.isfinite(velocity).all()
+                or np.max(np.abs(velocity)) > speed_tolerance
+            ):
+                return False
+            if self.stopping and self.hold_targets:
+                tolerance = pump_tolerance if joint == self.pump else ctx.config.axisToleranceM
+                if np.max(np.abs(q - self.hold_targets[joint])) > tolerance:
+                    return False
+        return True
 
     def start(self, inv, ctx):
         if inv.action in ("requestControl", "confirmControl"):
@@ -525,6 +547,7 @@ class WorkcellProgram:
         }
         self.state["operations"].append(operation)
         self.handle, self.started = inv, ctx.sim_time
+        self.stopping = False
         ctx.set(
             controlSafe=False,
             phase=action,
@@ -637,14 +660,16 @@ class WorkcellProgram:
         if (
             not np.isfinite(actual)
             or actual > requested + ctx.config.pumpToleranceUl
-            or actual < stroke["appliedUl"] - ctx.config.pumpToleranceUl
+            or (not self.stopping and actual < stroke["appliedUl"] - ctx.config.pumpToleranceUl)
+            or actual < -ctx.config.pumpToleranceUl
         ):
             self.state["reconciled"] = False
             operation["fault"] = "pump_feedback_invalid"
             self._publish(ctx)
             return
         actual = max(0.0, actual)
-        amount = max(0.0, actual - stroke["appliedUl"])
+        change = actual - stroke["appliedUl"]
+        amount = abs(change)
         if amount <= 1e-10:
             return
         if self._accessible(ctx, p["vessel"]):
@@ -655,7 +680,9 @@ class WorkcellProgram:
         row, tip = self._vessel(p["vessel"]), self.state["tip"]
         aspirating = action == "aspirate" or (action == "mix" and stroke["direction"] == 1)
         source, destination = (row, tip) if aspirating else (tip, row)
-        capacity = ctx.config.tipCapacityUl if aspirating else row["capacityUl"]
+        if change < 0:
+            source, destination = destination, source
+        capacity = destination.get("capacityUl", ctx.config.tipCapacityUl)
         if amount > source["volumeUl"] + 1e-8 or destination["volumeUl"] + amount > capacity + 1e-8:
             self.state["reconciled"] = False
             operation["fault"] = "pump_feedback_invalid"
@@ -682,6 +709,7 @@ class WorkcellProgram:
                 {"operationId": inv.params["operationId"], "materialRevision": self.state["revision"] + 1}
             )
         self.handle, self.stroke = None, None
+        self.stopping = False
         ctx.set(controlSafe=self._stationary(ctx), phase="idle")
         self._publish(ctx)
 
@@ -693,6 +721,9 @@ class WorkcellProgram:
         inv = self.handle
         if inv is None:
             ctx.set(controlSafe=self._stationary(ctx))
+            return
+        if self.stopping:
+            self._hold(ctx)
             return
         rejection = guard(ctx, ctx.key, inv.params)
         if rejection:
