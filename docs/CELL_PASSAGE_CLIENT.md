@@ -31,6 +31,30 @@ The source enforces generations even when a stale client read preceded takeover.
 
 ## Submit once, observe to completion
 
+The offline compiler reads a generated package, its reach teaching, workcell
+binding and actual USD Site offsets:
+
+```bash
+python -m tools.cell_passage_plan --library <generated-package-root> \
+  --out <new-round>/plans --round <round-id> --owner <owner> --epoch <epoch>
+```
+
+It writes seven ordinary stage Plan documents and a local recipe sidecar. The
+compiler schedules six separate sources, four plus two sample centrifuge
+batches with two balance tubes, six counting samples, twelve daughter wells
+and 84 fresh tips. Moving between different rail positions uses pick, a held
+home retreat, rail motion, and place. A generated document is planned intent:
+`mechanicallyQualified:false` and `environmentChecksAvailable:false` prohibit
+treating compilation or reach teaching as full passage acceptance. Environmental
+readiness checks are not yet included in this compiler candidate.
+
+Seven stage Plans keep each existing full-record Plan journal smaller than one
+large document. A round scheduler must execute every stage in order under the
+same session/scene/control checkpoint and continuous recording; one completed
+stage cannot be reported as a completed passage. The public title format is
+`Cell Passage {roundId} · {stage}/7 · {stageTitle}`. The browser can read those
+ordinary Plans; the local recipe sidecar is not exposed as an HTTP endpoint.
+
 Actions use `POST /api/v1/sessions/{sessionId}/actions` with `wait:false`, plus
 `planId`, `stepId`, and `planRevision`. Conditions use the existing `/check`
 route with the same Plan references. A successful invocation is insufficient:

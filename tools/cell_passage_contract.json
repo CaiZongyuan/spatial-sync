@@ -30,6 +30,14 @@
     "passage-centrifuge/v1": {
       "observedProperties": ["phase", "lidOpen", "rpm", "remainingSeconds", "slots", "loadSafe", "completedCycle", "cycleRunSeconds", "actualRotorTurns", "controlSafe", "completedLoad", "loadedEntities", "modeledMassKg"],
       "safeEquals": {"controlSafe": true}
+    },
+    "passage-incubator/v1": {
+      "observedProperties": ["temperatureC", "co2Percent", "humidityPercent", "setpointC", "doorOpen", "doorKnown", "environmentReady", "controlSafe", "signalSource"],
+      "safeEquals": {"controlSafe": true, "doorKnown": true}
+    },
+    "passage-cabinet/v1": {
+      "observedProperties": ["inflowMs", "sashHeightCm", "uvOn", "blowerOn", "cabinetReady", "controlSafe", "signalSource"],
+      "safeEquals": {"controlSafe": true, "cabinetReady": true}
     }
   }
 }
