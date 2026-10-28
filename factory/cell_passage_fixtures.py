@@ -88,4 +88,11 @@ def tube_rack(stage, root):
         x, y = (index % 4 - 1.5) * 0.055, (index // 4 - 0.5) * 0.055
         box(stage, frame + "/" + name + "Floor", (x, y, 0.166), (0.025, 0.025, 0.012))
         ring(stage, frame + "/" + name + "Guide", (x, y, 0.178), 0.010, 0.012, 0.001, 16)
+        for sign in (-1, 1):
+            box(
+                stage,
+                frame + "/" + name + f"Index{sign + 1}",
+                (x - 0.014, y + sign * 0.0045, 0.184),
+                (0.008, 0.002, 0.024),
+            )
         site(stage, frame + "/" + name, (x, y, 0.172))

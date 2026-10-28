@@ -2,7 +2,22 @@
 
 from pxr import Gf, Sdf, UsdGeom, UsdPhysics
 
-from factory.cell_passage import HANDLE, LAB, WELLS, box, cylinder, rigid, ring, site, translate
+from factory.cell_passage import (
+    HANDLE,
+    LAB,
+    TIP_BORE_BOTTOM_RADIUS_M,
+    TIP_BORE_TOP_RADIUS_M,
+    TIP_HEIGHT_M,
+    TIP_MATING_Z_M,
+    TIP_SOCKET_INNER_RADIUS_M,
+    WELLS,
+    box,
+    cylinder,
+    rigid,
+    ring,
+    site,
+    translate,
+)
 
 
 def relocate(stage, root, fixed_joint, delta):
@@ -36,6 +51,13 @@ def centrifuge(stage, root=LAB + "/Centrifuge", origin=(-0.53, -0.65, 0.96)):
     for number, (x, y) in enumerate(((0.12, 0), (0, 0.12), (-0.12, 0), (0, -0.12)), 1):
         cylinder(stage, root + f"/Rotor/Slot{number}Floor", (x, y, 0.002), 0.011, 0.004)
         ring(stage, root + f"/Rotor/Slot{number}Guide", (x, y, 0.014), 0.010, 0.020, 0.001, 24)
+        for sign in (-1, 1):
+            box(
+                stage,
+                root + f"/Rotor/Slot{number}Index{sign + 1}",
+                (x - 0.014, y + sign * 0.0045, 0.016),
+                (0.008, 0.002, 0.024),
+            )
         key = root + f"/Rotor/Slot{number}"
         site(stage, key, (x, y, 0.004))
         slot_keys.append(key)
@@ -116,7 +138,7 @@ def populate(stage):
     }
     for i, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
         stations["Rack" + name] = (-0.30 + (i % 4) * 0.055, -0.58 + (i // 4) * 0.055, 1.032)
-        stations[f"FlexTube{i + 1}"] = (0.565 + (i % 4) * 0.045, 0.405 + (i // 4) * 0.045, 1.042)
+        stations[f"FlexTube{i + 1}"] = (0.535 + (i % 4) * 0.060, 0.385 + (i // 4) * 0.060, 1.042)
     for i in range(4):
         stations[f"Lid{i + 1}"] = (-0.2 + i * 0.2, -0.85, 1.232)
     for i in range(8):
@@ -129,7 +151,10 @@ def populate(stage):
             size = (
                 (0.135, 0.092, 0.016) if not name.startswith(("Rack", "FlexTube")) else (0.025, 0.025, 0.012)
             )
-            surface = point[2] - (0.012 if name in ("Lid1", "Lid2", "Lid3", "Lid4") else 0)
+            offset = (
+                0.012 if name in ("Lid1", "Lid2", "Lid3", "Lid4") else 0.008 if name.startswith("Lid") else 0
+            )
+            surface = point[2] - offset
             box(
                 stage,
                 LAB + "/Fixtures/" + name + "/Support",
@@ -197,7 +222,7 @@ def populate(stage):
         "ReservoirPBS": (0.49, 0.49, 1.041),
         "ReservoirTrypsin": (0.49, 0.57, 1.041),
         "ReservoirMedium": (0.59, 0.565, 1.041),
-        "WasteLiquid": (0.79, 0.405, 1.041),
+        "WasteLiquid": (0.85, 0.435, 1.041),
         "SolidWaste": (0.72, 0.245, 0.96),
     }.items():
         key = LAB + "/Labware/" + name
@@ -213,6 +238,8 @@ def populate(stage):
         if name == "SolidWaste":
             site(stage, key + "/Content", (0, 0, 0.084))
             site(stage, key + "/Discard", (0, 0, 0.148))
+        if name == "WasteLiquid":
+            site(stage, key + "/Content", (-0.04, 0, 0.003))
         if point[2] > 0.96:
             box(
                 stage,
@@ -291,9 +318,24 @@ def populate(stage):
         "lids": lids,
         "graspOffsets": grips,
         "tips": tips,
-        "tipMatingOffsetLocalM": [0, 0, 0.050],
+        "tipMatingOffsetLocalM": [0, 0, TIP_MATING_Z_M],
         "tipAxisLocal": [0, 0, 1],
         "tipInitialPose": "Root equals Rack Site; +Z up; circular coupling does not constrain yaw",
+        "tipCoupling": {
+            "tipEndpointLocalM": [0, 0, 0],
+            "socketSeatLocalM": [0, 0, TIP_MATING_Z_M],
+            "socketMouthLocalM": [0, 0, TIP_HEIGHT_M],
+            "socketMinimumInnerDiameterM": 2 * TIP_SOCKET_INNER_RADIUS_M,
+            "nozzleMaximumOuterDiameterM": 0.010,
+            "insertionLengthM": TIP_HEIGHT_M - TIP_MATING_Z_M,
+            "boreBelowMatingVolumeUl": TIP_MATING_Z_M
+            * (
+                TIP_BORE_BOTTOM_RADIUS_M**2
+                + TIP_BORE_BOTTOM_RADIUS_M * TIP_BORE_TOP_RADIUS_M
+                + TIP_BORE_TOP_RADIUS_M**2
+            )
+            * 1e9,
+        },
         "axisJoints": [LAB + "/Joints/Flex" + name for name in "XYZ"],
         "pumpJoint": LAB + "/Joints/FlexPump",
         "pumpStrokeM": 0.01,

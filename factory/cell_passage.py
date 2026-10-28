@@ -23,6 +23,11 @@ WELLS = {
 }
 HANDLE = (0.070, 0, 0.075)
 CONTACT_GAP_M = 0.002
+TIP_MATING_Z_M = 0.050
+TIP_HEIGHT_M = 0.062
+TIP_BORE_BOTTOM_RADIUS_M = 0.0007
+TIP_BORE_TOP_RADIUS_M = 0.00515
+TIP_SOCKET_INNER_RADIUS_M = 0.0054
 
 
 def author_contact_gap(stage):
@@ -61,6 +66,14 @@ def cylinder(stage, path, center, radius, height, color=(0.6, 0.8, 0.86)):
     return shape
 
 
+def rotate_box_z(shape, degrees):
+    """Keep dimensions in the box's local frame before rotating into its parent."""
+    translate_op, scale_op = shape.GetOrderedXformOps()
+    rotate_op = shape.AddRotateZOp()
+    rotate_op.Set(degrees)
+    shape.SetXformOpOrder([translate_op, rotate_op, scale_op])
+
+
 def ring(stage, path, center, radius, height, wall=0.001, segments=32):
     """Convex wall tiles leave the entire bore free for a real pipette/tube."""
     x, y, z = center
@@ -72,10 +85,7 @@ def ring(stage, path, center, radius, height, wall=0.001, segments=32):
             (x + radius * math.cos(angle), y + radius * math.sin(angle), z),
             (wall, 2 * radius * math.tan(math.pi / segments) + wall, height),
         )
-        translate_op, scale_op = shape.GetOrderedXformOps()
-        rotate_op = shape.AddRotateZOp()
-        rotate_op.Set(math.degrees(angle))
-        shape.SetXformOpOrder([translate_op, rotate_op, scale_op])
+        rotate_box_z(shape, math.degrees(angle))
 
 
 def site(stage, path, point):
@@ -128,6 +138,8 @@ def tube(stage, path, *, lid=False):
     root = rigid(stage, path, 0.004)
     if lid:
         cylinder(stage, path + "/Cap", (0, 0, 0.004), 0.0105, 0.008)
+        box(stage, path + "/IndexTab", (0.015, 0, 0.004), (0.014, 0.004, 0.008))
+        ring(stage, path + "/Skirt", (0, 0, -0.004), 0.0095, 0.008, 0.001, 20)
         box(stage, path + "/CarrierArm", (-0.0225, 0, 0.009), (0.025, 0.006, 0.002))
         ring(stage, path + "/Handle", (-0.035, 0, 0.022), 0.00835, 0.024, 0.0003, 16)
         site(stage, path + "/Grasp", (-0.035, 0, 0.022))
@@ -137,6 +149,9 @@ def tube(stage, path, *, lid=False):
         site(stage, path + "/Content", (0, 0, 0.003))
         box(stage, path + "/CarrierArm", (0.02125, 0, 0.029), (0.0275, 0.006, 0.002))
         ring(stage, path + "/Handle", (0.035, 0, 0.038), 0.00835, 0.024, 0.0003, 16)
+        for sign in (-1, 1):
+            box(stage, path + f"/CapGuide{sign + 1}", (0.015, sign * 0.0035, 0.0445), (0.008, 0.002, 0.031))
+        box(stage, path + "/RackIndex", (-0.015, 0, 0.020), (0.014, 0.006, 0.004))
         site(stage, path + "/Grasp", (0.035, 0, 0.038))
     return root
 
@@ -175,7 +190,10 @@ def tip(stage, path):
     for index in range(12):
         points = []
         angle = index * math.pi / 6
-        for z, inner, outer in ((0, 0.0007, 0.0011), (0.050, 0.00515, 0.0057)):
+        for z, inner, outer in (
+            (0, TIP_BORE_BOTTOM_RADIUS_M, 0.0011),
+            (TIP_MATING_Z_M, TIP_BORE_TOP_RADIUS_M, 0.0057),
+        ):
             for radius in (inner, outer):
                 for theta in (angle, angle + math.pi / 6):
                     points.append((radius * math.cos(theta), radius * math.sin(theta), z))
@@ -190,7 +208,15 @@ def tip(stage, path):
         UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
         UsdPhysics.MeshCollisionAPI.Apply(shape.GetPrim()).CreateApproximationAttr("convexHull")
         shape.GetPrim().CreateAttribute("newton:contactGap", Sdf.ValueTypeNames.Float).Set(CONTACT_GAP_M)
-    ring(stage, path + "/Collar", (0, 0, 0.056), 0.0057, 0.012, 0.0006, 16)
+    ring(
+        stage,
+        path + "/Collar",
+        (0, 0, (TIP_MATING_Z_M + TIP_HEIGHT_M) / 2),
+        TIP_SOCKET_INNER_RADIUS_M + 0.0003,
+        TIP_HEIGHT_M - TIP_MATING_Z_M,
+        0.0006,
+        16,
+    )
     site(stage, path + "/Content", (0, 0, 0))
     return root
 
@@ -322,6 +348,15 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
             "upperLocal": upper,
         }
     layout["solidWasteRegion"].update(bodyKey=layout["bodies"]["SolidWaste"], contactAllowanceM=0.001)
+    layout["tipGeometry"].update(
+        tipMatingOffsetLocalM=[0, 0, TIP_MATING_Z_M],
+        tipAxisLocal=[0, 0, 1],
+        headMatingOffsetLocalM=[0, 0, TIP_MATING_Z_M],
+        headAxisLocal=[0, 0, 1],
+        socketDepthM=TIP_HEIGHT_M - TIP_MATING_Z_M,
+        socketInnerDiameterM=2 * TIP_SOCKET_INNER_RADIUS_M,
+        nozzleOuterDiameterM=0.010,
+    )
     from factory.cell_passage_bindings import bindings
 
     mechanical = bindings(stage, layout)
