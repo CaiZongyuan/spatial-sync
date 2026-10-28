@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 import yaml
-from pxr import Gf, Usd, UsdGeom, UsdPhysics
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
 LAB = "/World/Lab"
 WELLS = {
@@ -22,6 +22,14 @@ WELLS = {
     for col in range(1, 4)
 }
 HANDLE = (0.070, 0, 0.075)
+CONTACT_GAP_M = 0.002
+
+
+def author_contact_gap(stage):
+    """Bound inactive candidates for millimetre fixtures, preserving their surfaces."""
+    for prim in stage.Traverse():
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            prim.CreateAttribute("newton:contactGap", Sdf.ValueTypeNames.Float).Set(CONTACT_GAP_M)
 
 
 def translate(prim, point):
@@ -37,6 +45,7 @@ def box(stage, path, center, size, color=(0.36, 0.65, 0.72)):
     shape.AddScaleOp().Set(Gf.Vec3f(*size))
     shape.CreateDisplayColorAttr([Gf.Vec3f(*color)])
     UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
+    shape.GetPrim().CreateAttribute("newton:contactGap", Sdf.ValueTypeNames.Float).Set(CONTACT_GAP_M)
     return shape
 
 
@@ -48,6 +57,7 @@ def cylinder(stage, path, center, radius, height, color=(0.6, 0.8, 0.86)):
     translate(shape, center)
     shape.CreateDisplayColorAttr([Gf.Vec3f(*color)])
     UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
+    shape.GetPrim().CreateAttribute("newton:contactGap", Sdf.ValueTypeNames.Float).Set(CONTACT_GAP_M)
     return shape
 
 
@@ -244,6 +254,7 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
     from factory.cell_passage_bindings import bindings
 
     mechanical = bindings(stage, layout)
+    author_contact_gap(stage)
     if with_workcell:
         from packages.programs.cell_passage.scene import workcell_binding
 
@@ -287,6 +298,7 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
                     "Physical carriers, lids, tips, reservoirs, fixtures and four-slot centrifuge",
                 ],
                 "mechanicallyQualified": False,
+                "contactGapM": CONTACT_GAP_M,
             },
             indent=2,
         )

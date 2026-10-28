@@ -1,6 +1,7 @@
 """Minimal real FR3/carrier risk probe; no bodies are moved after initialization."""
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -11,7 +12,7 @@ import warp as wp
 from newton.solvers import SolverMuJoCo
 from pxr import Usd
 
-from factory.cell_passage import HANDLE, box, plate, translate
+from factory.cell_passage import HANDLE, author_contact_gap, box, plate, translate
 from packages.programs.labware.grasp import grasp_geometry, physical_grasp
 from packages.programs.robot_arm.trajectory import plan_trajectory
 from packages.sim_runtime.loaders import import_usd
@@ -99,6 +100,7 @@ def probe(source, output, *, obstacle=False):
     if obstacle:
         point = origins[1]
         box(stage, "/World/Lab/PayloadObstacle", (point[0], point[1], point[2] + 0.03), (0.04, 0.04, 0.04))
+    author_contact_gap(stage)
     stage.GetRootLayer().Save()
 
     def builder():
@@ -235,6 +237,11 @@ def probe(source, output, *, obstacle=False):
                 return
 
     receipt = {
+        "schema": "lw.cell-passage-carrier-probe/1",
+        "factorySha256": hashlib.sha256(Path(__file__).with_name("cell_passage.py").read_bytes()).hexdigest(),
+        "probeSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "sourceStageSha256": hashlib.sha256((source / "scene/stage.usda").read_bytes()).hexdigest(),
+        "contactGapM": 0.002,
         "sourceTcpM": source_point.tolist(),
         "destinationTcpM": dest_point.tolist(),
         "home": home.tolist(),
@@ -255,7 +262,7 @@ def probe(source, output, *, obstacle=False):
         ]
         receipt.update(
             graspQualified=qualified,
-            actualOpeningM=opening,
+            fingerJointSumM=opening,
             graspBodyPose=port.body[body].tolist(),
             actualTcpPose=tcp_pose.tolist(),
             graspContacts=grasp_contacts,
