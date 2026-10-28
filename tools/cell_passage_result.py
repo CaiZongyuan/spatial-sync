@@ -7,14 +7,16 @@ CELL_FIELDS = ("attachedLive", "attachedDead", "suspendedLive", "suspendedDead",
 LIVE_FIELDS = ("attachedLive", "suspendedLive", "pelletLive")
 
 
-def audit_material_result(initial, final, mapping, *, volume_tolerance=0.01, cell_tolerance=0.000001):
+def audit_material_result(initial, final, mapping, *, volume_tolerance=0.01, cell_tolerance=0.000001,
+                          sibling_live_tolerance=1):
     """Check six mother/sample/daughter mappings against two public material snapshots.
 
     Includes every vessel (waste, counting and residual included) and the installed
     tip in conservation. Tolerances are inputs fixed before execution, never fitted.
     A valid material result says nothing about actual transport or incubation.
     """
-    if any(not math.isfinite(value) or value < 0 for value in (volume_tolerance, cell_tolerance)):
+    if any(not math.isfinite(value) or value < 0
+           for value in (volume_tolerance, cell_tolerance, sibling_live_tolerance)):
         raise ValueError("Audit tolerances must be finite and nonnegative")
     errors, lineages = [], []
 
@@ -106,7 +108,7 @@ def audit_material_result(initial, final, mapping, *, volume_tolerance=0.01, cel
         if abs(sample["volumeUl"] - 20) > volume_tolerance or live(sample) <= 0:
             errors.append(f"Invalid counting sample: {sample['id']}")
         yields = [live(daughter) for daughter in daughters]
-        if abs(yields[0] - yields[1]) > cell_tolerance:
+        if abs(yields[0] - yields[1]) > sibling_live_tolerance:
             errors.append(f"Unequal daughter allocation: {row['mother']}")
         lineages.append({"mother": row["mother"], "origin": origin,
                          "sampleLive": live(sample), "daughterLive": yields})

@@ -62,3 +62,15 @@ def test_conservation_alone_does_not_allow_cells_in_common_reagent():
     for identity in ("A1", "B1"):
         next(row for row in final["vessels"] if row["id"] == identity)["cells"][0]["suspendedLive"] = 48.5
     assert audit_material_result(initial, final, mapping)["status"] == "invalid"
+
+
+def test_sibling_live_tolerance_is_separate_from_strict_global_conservation():
+    initial, final, mapping = worked_example()
+    a = next(row for row in final["vessels"] if row["id"] == "A1")
+    b = next(row for row in final["vessels"] if row["id"] == "B1")
+    a["cells"][0]["suspendedLive"], b["cells"][0]["suspendedLive"] = 49.4, 48.6
+    assert audit_material_result(initial, final, mapping)["status"] == "material_valid"
+    a["cells"][0]["suspendedLive"], b["cells"][0]["suspendedLive"] = 49.6, 48.4
+    assert audit_material_result(initial, final, mapping)["status"] == "invalid"
+    a["cells"][0]["suspendedLive"], b["cells"][0]["suspendedLive"] = 49.0001, 49
+    assert audit_material_result(initial, final, mapping)["status"] == "invalid"

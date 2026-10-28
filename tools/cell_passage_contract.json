@@ -1,12 +1,19 @@
 {
   "schema": "lw.cell-passage-client/1",
   "workcellType": "cell-passage-workcell/v1",
+  "quantityTolerances": {
+    "cellConservation": 0.000001,
+    "siblingLive": 1,
+    "finalVolumeUl": 0.01
+  },
   "roundPlanIdentity": {
     "idTemplate": "cp-{roundId}-stage{stage}-part{part}-of{parts}",
     "titleTemplate": "Cell Passage {roundId} · {stage}/7 · {stageTitle} · part {part}/{parts}",
     "maxPartSteps": 128,
     "ordering": "stage ascending, then part ascending; all seven stages and every declared part are required",
-    "stepIdentity": "Global stage block IDs and operation IDs are preserved across parts and revisions of done steps"
+    "stepIdentity": "Global step IDs persist; done and unchanged unstarted pending operation IDs persist; replacements get a new operation ID",
+    "operationReferences": ["pellet.params.cycle", "completedCycle.equals", "lastOperationId.equals"],
+    "requestIdentity": "One request ID per dispatch attempt; an unanswered attempt is observed without reposting; a new owner/revision attempt gets a new request ID"
   },
   "stages": [
     {"id": 1, "name": "retrieve-observe", "title": "取出与观察", "firstStep": 100001, "lastStep": 199999},
@@ -19,7 +26,7 @@
   ],
   "reconciliation": {
     "cell-passage-workcell/v1": {
-      "observedProperties": ["controlOwner", "controlEpoch", "controlMode", "controlSafe", "phase", "materialRevision", "auditPassed", "inFlightUl"],
+      "observedProperties": ["controlOwner", "controlEpoch", "controlMode", "controlSafe", "phase", "materialRevision", "auditPassed", "inFlightUl", "operationCount", "terminalOperationCount", "archivedOperationCount"],
       "safeEquals": {"controlSafe": true, "auditPassed": true}
     },
     "labware-motion/v1": {
@@ -35,11 +42,11 @@
       "safeEquals": {"controlSafe": true}
     },
     "passage-centrifuge/v1": {
-      "observedProperties": ["phase", "lidOpen", "rpm", "remainingSeconds", "slots", "loadSafe", "completedCycle", "cycleRunSeconds", "actualRotorTurns", "controlSafe", "completedLoad", "loadedEntities", "modeledMassKg"],
+      "observedProperties": ["phase", "lidOpen", "rpm", "actualRpm", "remainingSeconds", "slots", "loadSafe", "completedCycle", "cycleRunSeconds", "actualRotorTurns", "controlSafe", "completedLoad", "loadedEntities", "modeledMassKg"],
       "safeEquals": {"controlSafe": true}
     },
     "passage-incubator/v1": {
-      "observedProperties": ["temperatureC", "co2Percent", "humidityPercent", "setpointC", "humiditySetpointPercent", "temperatureReadyRangeC", "co2ReadyRangePercent", "humidityReadyRangePercent", "doorOpen", "doorKnown", "environmentReady", "controlSafe", "signalSource"],
+      "observedProperties": ["temperatureC", "co2Percent", "humidityPercent", "setpointC", "humiditySetpointPercent", "temperatureReadyRangeC", "co2ReadyRangePercent", "humidityReadyRangePercent", "doorOpen", "doorKnown", "environmentReady", "phase", "waitElapsedSeconds", "controlSafe", "signalSource"],
       "safeEquals": {"controlSafe": true, "doorKnown": true}
     },
     "passage-cabinet/v1": {

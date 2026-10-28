@@ -104,13 +104,19 @@ checks. Any changed checkpoint requires another inspection.
 An in-flight step must finish or be cancelled and actually settle before a
 revision. Use `POST /api/v1/plans/{planId}/revisions`; preserve every completed
 step's content exactly so its result remains immutable. `revise_remaining` in
-`tools/cell_passage_recipe.py` rewrites only unfinished action params to the
-current owner/epoch and a new operation identity. Failed steps require an
+`tools/cell_passage_recipe.py` updates the owner/epoch of unchanged, unstarted
+pending actions while preserving their domain operation identities and cycle
+references. Failed or explicitly replaced actions receive a new operation ID. Failed steps require an
 explicit replacement. For partial liquid operations, review appliedUl,
 remainingUl, the tip and current source/destination contents and calculate a
 replacement for the actual remaining work. Changing operationId and retrying
 the original volume is not recovery. The browser may refuse failed-step
-continuation until such an explicit revision exists.
+continuation until such an explicit revision exists. `revise_round_remaining`
+rewrites dependent pending `pellet.cycle` and `completedCycle`/`lastOperationId`
+checks across all supplied parts; completed parts and steps are unchanged.
+Publish every affected part before dispatch resumes. A new owner/revision uses
+a new HTTP requestId for its new attempt; it does not reuse a prior rejected or
+unanswered request's cached result.
 
 `PassageExecutor.inspect/reconcile` are local Python methods, not remote APIs.
 The browser implements its own client scheduling through the same HTTP
@@ -161,3 +167,11 @@ and remaining reservations or running/settling operations. Its positive result
 is named `material_valid`. Mechanical loading, actual incubation conditions,
 processing cycles and continuous recording require separate evidence; this
 material result alone cannot declare a complete passage.
+
+Before the first complete Newton run, the PM fixed separate gates in the
+approved simulation recipe: total per-origin cell conservation `1e-6`, sibling
+live-cell difference at most one cell, and final liquid volume tolerance
+`0.01 uL`. The sibling tolerance accounts for discrete allocation and float32
+stroke resolution; it does not loosen conservation or authorize quantity
+snapping. The shared client contract and each recipe sidecar retain these
+values so later failures cannot change the gate.
