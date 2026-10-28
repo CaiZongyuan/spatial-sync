@@ -109,7 +109,12 @@ class LabwareMotionProgram(RobotArmProgram):
 
     def _facts(self, ctx):
         super()._facts(ctx)
-        safe = self.handle is None and max(abs(ctx.physics.joint_qd(j)[0]) for j in self.joints) < 0.02
+        safe = (
+            self.handle is None
+            and max(abs(ctx.physics.joint_qd(j)[0]) for j in self.joints) < 0.02
+            and max(abs(ctx.physics.joint_qd(j)[0]) for j in self.fingers) < 0.01
+            and np.linalg.norm(ctx.physics.velocity[self.hand]) < 0.01
+        )
         ctx.set(controlSafe=bool(safe))
 
     def _placement(self, port, body, sites, key):

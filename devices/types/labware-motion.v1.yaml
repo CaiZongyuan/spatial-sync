@@ -29,6 +29,7 @@ properties:
     deadband: 0.001
     maxRateHz: 10
   gripperWidth:
+    description: Sum of finger joint coordinates; physical pad contacts qualify the grip.
     schema:
       type: number
       minimum: 0
