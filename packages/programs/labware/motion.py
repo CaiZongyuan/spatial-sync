@@ -8,11 +8,13 @@ from packages.programs.centrifuge.loading import rotation
 from packages.programs.robot_arm.newton import RobotArmProgram
 
 from .facts import seated_station
-from .grasp import grasp_geometry
+from .grasp import physical_grasp
 
 
 class LabwareMotionProgram(RobotArmProgram):
     id, type = "labware.motion", "labware-motion/v1"
+    gripper_speed_mps = 0.04
+    gripper_timeout_s = 3
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
@@ -30,6 +32,7 @@ class LabwareMotionProgram(RobotArmProgram):
         controlEntity: str
         graspOffsets: dict[str, list[float]]
         gripDiameters: dict[str, float]
+        gripShapePrefixes: dict[str, str] = Field(default_factory=dict)
 
         @model_validator(mode="after")
         def calibrated_grips(self):
@@ -50,6 +53,10 @@ class LabwareMotionProgram(RobotArmProgram):
             for key in ctx.config.tubes
         }
         self.control_entity = ctx.config.controlEntity
+        self.grip_hold_width = None
+        self.grip_prefixes = {
+            ctx.physics.bind_body(key): ctx.config.gripShapePrefixes.get(key, key) for key in ctx.config.tubes
+        }
         super().init(ctx)
 
     def _finger_position(self, port, body):
@@ -63,7 +70,33 @@ class LabwareMotionProgram(RobotArmProgram):
 
     def _grasp_ready(self, port, body, opening):
         offset, diameter = self.body_grips[body]
-        return grasp_geometry(port.body[body], np.r_[*port.site_pose(self.tcp)], offset, diameter, opening)
+        try:
+            contacts = port.collision_contacts()
+        except ValueError:
+            return False  # Unavailable physics cannot qualify a fixed grasp.
+        qualified = physical_grasp(
+            port.body[body],
+            np.r_[*port.site_pose(self.tcp)],
+            offset,
+            diameter,
+            opening,
+            contacts,
+            body=body,
+            fingers={finger.child for finger in self.fingers},
+            shape_prefix=self.grip_prefixes[body],
+        )
+        if qualified:
+            self.grip_hold_width = opening
+        return qualified
+
+    def _drive_gripper(self, ctx, dt):
+        if (
+            self.grip_hold_width is not None
+            and self.gripper_goal < self.grip_hold_width
+            and any(ctx.physics.welds.active(self.hand, body) for body in self.tubes.values())
+        ):
+            self.gripper_goal = self.gripper_target = self.grip_hold_width
+        super()._drive_gripper(ctx, dt)
 
     def _release_opening(self, port, body):
         return self.body_grips[body][1] + 2 * abs(self._finger_position(port, body)[1]) + 0.003
