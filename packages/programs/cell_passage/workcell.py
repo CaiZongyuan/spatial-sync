@@ -694,10 +694,15 @@ class WorkcellProgram:
                 return self._reject(
                     "unknown_device", "The requested device does not publish centrifuge cycle evidence"
                 )
+            cycle_seconds = ctx.read(centrifuge, "cycleRunSeconds")
             if (
                 completed_cycle != p["cycle"]
                 or ctx.read(centrifuge, "phase") != "idle"
-                or (ctx.read(centrifuge, "cycleRunSeconds") or 0) < ctx.config.centrifugeSeconds
+                or type(cycle_seconds) not in (int, float)
+                or not np.isfinite(cycle_seconds)
+                # Match the centrifuge's existing completed-duration predicate;
+                # preserve the measured value rather than snapping it to 2 s.
+                or cycle_seconds + 1e-9 < ctx.config.centrifugeSeconds
                 or (ctx.read(centrifuge, "actualRotorTurns") or 0) <= 0
             ):
                 return self._reject(

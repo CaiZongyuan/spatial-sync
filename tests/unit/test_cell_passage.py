@@ -1,9 +1,12 @@
 """Cell Passage behavior through the public HostCore boundary."""
 
+import math
+
 import pytest
 
 from packages.protocol.schema import InvokeRequest
 from tests.fixtures.cell_passage import build_workcell_host as workcell
+from tests.fixtures.cell_passage import FactsProgram
 
 
 def invoke(host, action, token, **params):
@@ -185,7 +188,8 @@ def test_pump_overtravel_or_reverse_feedback_cannot_report_a_balanced_transfer(t
     assert port.targets["pump"] == invalid_feedback
 
 
-def test_model_pellet_requires_actual_completed_load_and_applies_cycle_once(tmp_path):
+@pytest.mark.parametrize("seconds", [2.0, math.nextafter(2.0, 0)])
+def test_model_pellet_requires_actual_completed_load_and_applies_cycle_once(tmp_path, seconds):
     host, port = workcell(
         tmp_path,
         vessels=[
@@ -199,7 +203,7 @@ def test_model_pellet_requires_actual_completed_load_and_applies_cycle_once(tmp_
                 "live": 1000,
             }
         ],
-        facts={},
+        facts={"cycleRunSeconds": seconds},
         config={"managedDevices": ["/peer"]},
     )
     assert (
@@ -217,6 +221,7 @@ def test_model_pellet_requires_actual_completed_load_and_applies_cycle_once(tmp_
     host.tick(host.sim_time + 0.1, 0.1)
     cell = host.values()["/workcell"]["materialSnapshot"]["vessels"][0]["cells"][0]
     assert (cell["suspendedLive"], cell["pelletLive"]) == (0, 1000)
+    assert host.values()["/peer"]["cycleRunSeconds"] == seconds
     assert (
         invoke(
             host, "pellet", "duplicate", centrifuge="/peer", cycle="cycle-1", vessels=["source"]
@@ -230,6 +235,7 @@ def test_model_pellet_requires_actual_completed_load_and_applies_cycle_once(tmp_
     [
         ({"completedLoad": []}, "wrong_load"),
         ({"cycleRunSeconds": 0.1}, "cycle_incomplete"),
+        ({"cycleRunSeconds": 1.99}, "cycle_incomplete"),
         ({"actualRotorTurns": 0}, "cycle_incomplete"),
         ({"phase": "decelerating"}, "cycle_incomplete"),
     ],
@@ -240,6 +246,26 @@ def test_pellet_rejects_unproven_physical_processing(tmp_path, facts, code):
         invoke(host, "pellet", "pellet", centrifuge="/peer", cycle="cycle-1", vessels=["source"]).error.code
         == code
     )
+
+
+def test_pellet_rejects_unknown_cycle_duration(tmp_path):
+    class MissingDurationFacts(FactsProgram):
+        def init(self, ctx):
+            values = ctx.config.model_dump()
+            values.pop("cycleRunSeconds")
+            ctx.set(**values)
+
+    host, _ = workcell(tmp_path, facts={}, extra_programs=[MissingDurationFacts])
+    assert "cycleRunSeconds" not in host.values()["/peer"]
+    result = invoke(host, "pellet", "pellet", centrifuge="/peer", cycle="cycle-1", vessels=["source"])
+    assert result.error.code == "cycle_incomplete"
+
+
+@pytest.mark.parametrize("seconds", [math.inf, -math.inf, math.nan])
+def test_host_rejects_nonfinite_cycle_duration_evidence(tmp_path, seconds):
+    # Public binding/property validation prevents publishing nonfinite facts.
+    with pytest.raises(ValueError, match="finite"):
+        workcell(tmp_path, facts={"cycleRunSeconds": seconds})
 
 
 def test_count_is_simulated_observation_of_actual_loaded_sample_and_never_changes_truth(tmp_path):
