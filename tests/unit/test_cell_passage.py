@@ -5,8 +5,8 @@ import math
 import pytest
 
 from packages.protocol.schema import InvokeRequest
-from tests.fixtures.cell_passage import build_workcell_host as workcell
 from tests.fixtures.cell_passage import FactsProgram
+from tests.fixtures.cell_passage import build_workcell_host as workcell
 
 
 def invoke(host, action, token, **params):
