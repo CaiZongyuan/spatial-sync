@@ -112,6 +112,11 @@ class _Recipe:
         self.do(WORKCELL, "move", {"position": target})
         self.q = target
 
+    def clear_incubator(self):
+        self.do(ROBOT, "home")
+        self.do(RAIL, "move", {"position": 0.4})
+        self.rail = 0.4
+
     def transport(self, body, target):
         self.park()
         source = self.stations[body]
@@ -246,6 +251,7 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.do(LAB + "/Incubator/InnerDoor", "open")
     recipe.transport(body["Mother"], LAB + "/Sites/Imager")
     recipe.observe("Mother", "observe")
+    recipe.clear_incubator()
     recipe.do(LAB + "/Incubator/InnerDoor", "close")
     recipe.do(LAB + "/Incubator/OuterDoor", "close")
 
@@ -322,8 +328,7 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.do(LAB + "/Incubator/InnerDoor", "open")
     recipe.transport(body["DaughterA"], LAB + "/Sites/IncubatorA")
     recipe.transport(body["DaughterB"], LAB + "/Sites/IncubatorB")
-    recipe.do(ROBOT, "home")
-    recipe.do(RAIL, "move", {"position": 0.4})
+    recipe.clear_incubator()
     recipe.do(LAB + "/Incubator/InnerDoor", "close")
     recipe.do(LAB + "/Incubator/OuterDoor", "close")
     recipe.do(CENTRIFUGE, "closeLid")

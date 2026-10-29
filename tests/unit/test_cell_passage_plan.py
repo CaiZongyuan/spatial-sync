@@ -113,6 +113,19 @@ def test_environment_uses_controlled_simulation_wait_and_public_final_ranges():
     assert {"entity": "/World/Lab/Incubator", "property": "temperatureC", "lte": 37.5} in conditions
 
 
+def test_both_incubator_returns_retract_the_arm_and_rail_before_closing():
+    recipe = compile_recipe(*recipe_inputs(), owner="auto", epoch=0, round_id="door-clearance")
+    for stage in (1, 7):
+        calls = [step["do"] for row in recipe["plans"] if row["stage"] == stage
+                 for step in row["document"]["steps"] if "do" in step]
+        close = next(index for index, call in enumerate(calls)
+                     if call["entity"] == "/World/Lab/Incubator/InnerDoor" and call["action"] == "close")
+        assert (calls[close - 2]["entity"], calls[close - 2]["action"]) == (
+            "/World/Lab/Robot/fr3_link0", "home")
+        assert (calls[close - 1]["entity"], calls[close - 1]["action"],
+                calls[close - 1]["params"]["position"]) == ("/World/Lab/RailCarriage", "move", .4)
+
+
 def test_page_boundaries_preserve_complete_action_order_and_global_identity():
     unpaged = compile_recipe(*recipe_inputs(), owner="auto", epoch=0, round_id="paging", max_steps=None)
     paged = paginate_recipe(unpaged, max_steps=128)
