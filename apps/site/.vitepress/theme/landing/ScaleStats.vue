@@ -9,11 +9,11 @@ const fmt = (n: number) => n.toLocaleString('en-US')
 
 <template>
   <div class="ss pl-panel">
-    <div class="pl-panel-head"><span>所有实验室</span></div>
+    <div class="pl-panel-head"><span>所有工作站</span></div>
     <div class="pl-panel-body grid">
-      <div><span class="v">{{ fmt(s.labs) }}</span><span class="k">座实验室</span></div>
-      <div><span class="v">{{ fmt(s.goals) }}</span><span class="k">个进行中的目标</span></div>
-      <div><span class="v accent">{{ fmt(s.skills) }}</span><span class="k">项共享的策略与技能</span></div>
+      <div><span class="v">{{ fmt(s.labs) }}</span><span class="k">个接入的工作站</span></div>
+      <div><span class="v">{{ fmt(s.goals) }}</span><span class="k">个进行中的任务</span></div>
+      <div><span class="v accent">{{ fmt(s.skills) }}</span><span class="k">项经过验证、可复用的技能</span></div>
     </div>
   </div>
 </template>

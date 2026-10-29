@@ -1,11 +1,13 @@
 // A stylized isometric laboratory whose whole state is a pure
-// function of the story clock. Geometry is procedural (no real FR3 meshes) and
+// function of the film clock. Geometry is procedural (no real FR3 meshes) and
 // all colors come from the --m-* material tokens, re-read on theme change.
+// The film opens with World Building over the idle lab; everything after it
+// runs on the lab story's own clock.
 
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { clamp, lerp, ramp, smooth, window01 } from './story'
+import { BUILT, clamp, labT, lerp, ramp, smooth, window01 } from './story'
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
 const TAU = Math.PI * 2
@@ -62,12 +64,17 @@ class Mats {
   simGrid = new THREE.LineBasicMaterial({ transparent: true })
   tape = new THREE.LineDashedMaterial({ transparent: true, dashSize: 0.12, gapSize: 0.08 })
   path = new THREE.LineDashedMaterial({ transparent: true, dashSize: 0.045, gapSize: 0.03 })
+  buildFill = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  buildEdge = new THREE.LineBasicMaterial({ transparent: true, depthWrite: false })
+  buildScan = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  buildOk = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
   ao: THREE.MeshBasicMaterial
   accent = new THREE.Color()
   ok = new THREE.Color()
   bad = new THREE.Color()
   warn = new THREE.Color()
   edgeO = 0.3
+  edgeBase = new THREE.Color()
   dark01 = true
 
   constructor() {
@@ -117,8 +124,13 @@ class Mats {
     this.ledBad.color = this.bad
     this.ring.color = this.accent
     this.edgeO = num('--m-edge-o', 0.3)
-    this.edge.color = col('--m-edge')
+    this.edgeBase = col('--m-edge')
+    this.edge.color = this.edgeBase.clone()
     this.edge.opacity = this.edgeO
+    this.buildFill.color = this.accent
+    this.buildEdge.color = this.accent
+    this.buildScan.color = this.accent
+    this.buildOk.color = this.ok
     this.edgeAccent.color = this.accent
     this.grid.color = col('--m-grid')
     this.grid.opacity = this.dark01 ? 0.55 : 0.6
@@ -513,6 +525,12 @@ export class LabStage {
   flowPairs: { a: Cell; b: Cell; phase: number; speed: number }[] = []
   waves: THREE.Mesh[] = []
   anchors: Record<string, THREE.Vector3> = {}
+  build = new THREE.Group()
+  scanPlane = new THREE.Group()
+  volumes: { g: THREE.Object3D; at: number }[] = []
+  joints: { g: THREE.Object3D; at: number }[] = []
+  axes: THREE.AxesHelper[] = []
+  validRing: THREE.Mesh
   width = 1
   height = 1
   offsetX = 0
@@ -548,11 +566,13 @@ export class LabStage {
     this.scanRing = this.ringMesh(1, 0.012)
     this.failRing = this.ringMesh(0.05, 0.006, m.ledBad)
     this.goodRing = this.ringMesh(0.05, 0.006, m.ledGood)
+    this.validRing = this.ringMesh(1, 0.012, m.buildOk)
     this.capsule = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.08, 0.08, 2, 0.03), m.led)
     this.pathLine = new THREE.Line(new THREE.BufferGeometry(), m.path)
     this.dots = this.glow = this.flow = undefined as never
 
     this.buildLab()
+    this.buildWorld()
     this.buildSim()
     this.buildCity()
     this.scene.add(this.lab, this.sim, this.cityGroup)
@@ -812,6 +832,64 @@ export class LabStage {
     this.anchors.arm = V()
   }
 
+  /** World Building overlays: scan sweep, collision volumes, joint rings and axes. */
+  private buildWorld() {
+    const m = this.mats
+    const scan = new THREE.Mesh(new THREE.PlaneGeometry(4.7, 2.3), m.buildScan)
+    scan.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(4.7, 2.3)), m.buildEdge))
+    scan.rotation.y = Math.PI / 2
+    scan.position.y = 1.15
+    scan.renderOrder = 4
+    this.scanPlane.add(scan)
+    this.build.add(this.scanPlane)
+
+    const volume = (x: number, y: number, z: number, w: number, h: number, d: number, at: number) => {
+      const geo = new THREE.BoxGeometry(w, h, d)
+      geo.translate(0, h / 2, 0)
+      const box = new THREE.Mesh(geo, m.buildFill)
+      box.renderOrder = 4
+      box.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), m.buildEdge))
+      box.position.set(x, y, z)
+      this.build.add(box)
+      this.volumes.push({ g: box, at })
+    }
+    volume(0, 0.03, 0.05, 2.66, 0.9, 1.3, 3.1)
+    volume(RACK.x, RACK.y, RACK.z, 0.5, 0.26, 0.3, 3.5)
+    volume(CF.x, CF.y, CF.z, 0.7, 0.34, 0.7, 3.7)
+    volume(DET.x, DET.y, DET.z, 0.52, 0.28, 0.4, 4.0)
+    volume(INC.x, 0.06, INC.z, 1.28, 1.96, 0.82, 4.2)
+    volume(1.85, 0, -1.75, 1.62, 1.9, 0.92, 4.5)
+
+    const joint = (parent: THREE.Object3D, y: number, z: number, r: number, at: number, flat = false) => {
+      const mat = new THREE.MeshBasicMaterial({ color: m.accent, transparent: true, depthWrite: false })
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.007, 8, 64), mat)
+      ring.position.set(0, y, z)
+      if (flat) ring.rotation.x = -Math.PI / 2
+      ring.renderOrder = 5
+      parent.add(ring)
+      this.joints.push({ g: ring, at })
+    }
+    joint(this.arm.root, 0.05, 0, 0.22, 3.7, true)
+    joint(this.arm.yaw, COLUMN - 0.07, -0.085, 0.13, 4.0)
+    joint(this.arm.shoulder, L1, -0.075, 0.115, 4.2)
+    joint(this.arm.elbow, L2, -0.06, 0.1, 4.5)
+
+    for (const [x, y, z] of [[RACK.x, RACK.y, RACK.z], [CF.x, CF.y, CF.z], [DET.x, DET.y, DET.z], [INC.x, 0.08, INC.z + 0.4]] as const) {
+      const ax = new THREE.AxesHelper(0.32)
+      ax.position.set(x, y + 0.004, z)
+      const mat = ax.material as THREE.LineBasicMaterial
+      mat.transparent = true
+      mat.depthTest = false
+      ax.renderOrder = 6
+      this.build.add(ax)
+      this.axes.push(ax)
+    }
+
+    this.validRing.position.set(0, 0.012, 0)
+    this.build.add(this.validRing)
+    this.lab.add(this.build)
+  }
+
   private makeTube(glass: THREE.Material, medium: THREE.Material, capMat: THREE.Material, parent: THREE.Object3D): Tube {
     const g = new THREE.Group()
     const shell = cyl(0.026, 0.022, 0.15, glass, null, 18)
@@ -987,6 +1065,7 @@ export class LabStage {
     this.aoStrength = num('--m-ao', 0.5)
     m.ao.opacity = this.aoStrength * 0.7
     for (const r of this.ringMats) r.color.copy(m.accent)
+    for (const j of this.joints) ((j.g as THREE.Mesh).material as THREE.MeshBasicMaterial).color.copy(m.accent)
     if (!this.dots) return
     this.cells.forEach((c, i) => this.dots.setColorAt(i, c.good ? m.ok : m.accent))
     this.dots.setColorAt(this.cells.length, m.accent)
@@ -1019,9 +1098,10 @@ export class LabStage {
 
   // ---- per-frame ------------------------------------------------------------
 
-  update(t: number, now: number) {
+  update(film: number, now: number) {
     const m = this.mats
     const amb = this.opts.reducedMotion ? 0 : now
+    const t = labT(film)
 
     // Camera.
     const cam = filmCam(t)
@@ -1151,8 +1231,47 @@ export class LabStage {
     // City.
     this.updateCity(t, amb)
 
+    // World Building.
+    this.updateBuild(film)
+
     // AO strength stays tied to the token.
     m.ao.opacity = this.aoStrength * 0.7
+  }
+
+  private updateBuild(film: number) {
+    const m = this.mats
+    const on = film < BUILT
+    this.build.visible = on
+    for (const j of this.joints) j.g.visible = on
+    // Geometry: every edge in the lab lights up as the scan passes.
+    const wire = on ? window01(film, 1.1, 6.2, 0.8) : 0
+    m.edge.color.copy(m.edgeBase).lerp(m.accent, 0.6 * wire)
+    m.edge.opacity = lerp(m.edgeO, 0.75, wire)
+    if (!on) return
+    const sweep = clamp((film - 1.0) / 2.3)
+    this.scanPlane.visible = sweep > 0 && sweep < 1
+    this.scanPlane.position.x = lerp(-3.1, 3.1, smooth(sweep))
+    m.buildScan.opacity = 0.45 * Math.sin(Math.PI * sweep)
+    // Physics: collision volumes, joint rings and axes, then they hand over to semantics.
+    const phys = window01(film, 3.0, 8.0, 0.6)
+    m.buildFill.opacity = 0.16 * phys
+    m.buildEdge.opacity = Math.max(phys, Math.sin(Math.PI * sweep))
+    for (const v of this.volumes) v.g.scale.setScalar(Math.max(0.001, lerp(0.92, 1, ramp(film, v.at, v.at + 0.35)) * (film >= v.at ? 1 : 0)))
+    for (const j of this.joints) {
+      const k = ramp(film, j.at, j.at + 0.4)
+      j.g.scale.setScalar(Math.max(0.001, k))
+      ;((j.g as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.95 * k * window01(film, 0, 8.0, 0.6)
+    }
+    const axes = window01(film, 3.9, 7.7, 0.5)
+    for (const a of this.axes) {
+      a.visible = axes > 0.01
+      ;(a.material as THREE.LineBasicMaterial).opacity = 0.85 * axes
+    }
+    // Validation: one pulse across the floor once the scene checks out.
+    const v = clamp((film - 7.7) / 1.1)
+    this.validRing.visible = v > 0 && v < 1
+    this.validRing.scale.setScalar(0.4 + 3.4 * v)
+    m.buildOk.opacity = 0.8 * (1 - v)
   }
 
   private updateSim(t: number, amb: number) {

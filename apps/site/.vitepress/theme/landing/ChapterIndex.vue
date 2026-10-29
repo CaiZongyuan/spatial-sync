@@ -10,10 +10,10 @@ const flat = (s: string) => s.replace('\n', '')
 
 <template>
   <section id="chapters" class="ci pl-section">
-    <p class="pl-eyebrow pl-rule"><span>逐章速览</span></p>
+    <p class="pl-eyebrow pl-rule"><span>动画逐章速览</span></p>
     <div class="pl-section-head">
       <h2><span class="nb">九个画面，</span><span class="nb">一条闭环</span></h2>
-      <p class="pl-section-lede">从一句目标到一千座实验室。点任意一章，回到动画里的那一刻。</p>
+      <p class="pl-section-lede">从一句目标，到可以复用的物理智能。点任意一章，回到动画里的那一刻。</p>
     </div>
     <ol class="grid">
       <li v-for="(c, i) in CHAPTERS" :key="c.id">

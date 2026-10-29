@@ -33,12 +33,15 @@ const RUN: Line[] = [
 
 <template>
   <section id="real-run" class="pl-section">
-    <p class="pl-eyebrow pl-rule"><span>今天已经能做的</span></p>
+    <p class="pl-eyebrow pl-rule"><span>08 · What Exists Today</span></p>
     <div class="pl-section-head">
-      <h2><span class="nb">一次真实的运行，</span><span class="nb">包括被拦下的那一步</span></h2>
-      <p class="pl-section-lede">这是 Synthetic 仿真实验室里的一次真实运行，下面是 lw 命令行的节选。计划里有高风险动作（设定培养箱温度），整份计划先等批准；关盖时机械臂还没离开，被互锁拦下；agent 修订计划、再次获批后，流程走完。</p>
+      <h2><span class="nb">愿景很远，</span><span class="nb">但基础已经开始运行</span></h2>
+      <p class="pl-section-lede">我们已经建立了一个可以运行的实验室信息与空间工作台：场景与资产有版本，Newton 与 Synthetic 仿真会话在浏览器里实时可见，Web、命令行和 MCP 通过同一条执行管线操作设备。设备操作声明参数、前置条件和互锁，高风险动作需要人批准，每一次调用、结果和设备事件都被记录。</p>
       <StatusChip status="delivered" />
     </div>
+
+    <h3 class="run-head"><span class="nb">一次真实的运行，</span><span class="nb">包括被拦下的那两步</span></h3>
+    <p class="run-lede">这是 Synthetic 仿真实验室里的一次真实运行，下面是命令行节选。计划里有高风险动作，整份计划先被拦下等待批准；获批后机械臂完成搬运，但关盖时它还没离开离心机区域，再次被互锁拒绝；计划修订、重新获批，机械臂先回到安全位置，离心机才继续执行。</p>
 
     <div class="grid">
       <figure class="term">
@@ -57,12 +60,19 @@ const RUN: Line[] = [
         <figcaption><span class="mono">人工关口 · 实际截图</span>提交、批准、修订后再提交，每一步都留在时间线里。</figcaption>
       </figure>
     </div>
+
+    <div class="proof">
+      <p class="proof-claim"><span class="nb">在 Lab World 中，</span><span class="nb">动作不是一条发出后</span><span class="nb">就被假定成功的命令。</span></p>
+      <p class="proof-body">它有前置条件、执行状态、结果检查、拒绝原因、操作记录和必要的人类控制。这次运行不是真实硬件上的自主实验，也不是完整的机器人学习闭环；它证明的是这一切赖以成立的工程基础。场景自动构建、复杂机器人任务训练、真实硬件集成与 Real2Sim 驱动的策略改进，正沿着这套基础设施逐步推进。</p>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .pl-section-head :deep(.pl-chip) { margin-top: 18px; }
-.grid { margin-top: 56px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start; }
+.pl .run-head { margin-top: 72px; font-size: clamp(22px, 2.4vw, 28px); line-height: 1.35; }
+.pl .run-lede { margin-top: 14px; max-width: 760px; font-size: 15.5px; line-height: 1.85; color: var(--ink-2); }
+.grid { margin-top: 36px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start; }
 .wide { margin-top: 24px; }
 .term { margin: 0; border-radius: 14px; border: 1px solid var(--line); background: var(--term-bg); box-shadow: var(--shadow-1); overflow: hidden; }
 .term-bar { display: flex; align-items: center; gap: 14px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--term-line); color: var(--term-dim); font-size: 11px; }
@@ -75,10 +85,14 @@ pre { margin: 0; padding: 18px 20px 22px; overflow-x: auto; font-family: var(--f
 .line.ok { color: var(--term-ok); }
 .line.bad { color: var(--term-bad); }
 .shot img { background: var(--figure-ground); }
+.proof { margin-top: 72px; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: start; padding-top: 32px; border-top: 1px solid var(--line-2); }
+.pl .proof-claim { font-family: var(--font-display); font-weight: 600; font-size: clamp(24px, 2.8vw, 34px); line-height: 1.45; color: var(--ink); }
+.pl .proof-body { font-size: 15.5px; line-height: 1.9; color: var(--ink-2); }
 .tall img { aspect-ratio: auto; }
 
 @media (max-width: 900px) {
-  .grid { grid-template-columns: 1fr; }
+  .grid, .proof { grid-template-columns: 1fr; }
+  .proof { gap: 20px; }
   pre { font-size: 11.5px; }
 }
 </style>

@@ -4,19 +4,19 @@ import StatusChip from './StatusChip.vue'
 import type { Status } from './story'
 
 const GROUPS: { status: Status; items: string[] }[] = [
-  { status: 'delivered', items: ['单一物理源（Newton 或 Synthetic）同步到浏览器', 'Web、lw CLI、MCP 共用一条动作管线', '素材库与场景库：不可变版本与验证报告', '传感器、告警、历史与 agent 收件箱（仿真设备）', '操作计划、逐步追踪与机械臂路径预览', '平台 skill：教 agent 用 lw 操作实验室'] },
-  { status: 'progress', items: ['计划页与会话页的计划面板', 'fr3-lab 场景导入与抓取验证', '真实设备经 Device Host 与 MQTT 接入'] },
-  { status: 'planned', items: ['Claude Code 通过 MCP 走完整条流程', '训练作业、训练视图与平台内评估', 'Agent 与 Controller 两层 RSI、评估中心与成本中心'] },
-  { status: 'vision', items: ['由目标驱动的长程自主实验', '跨实验室共享的能力库'] },
+  { status: 'delivered', items: ['单一物理源（Newton 或 Synthetic），空间状态实时同步到浏览器', 'Web、命令行与 MCP 共用一条动作管线：前置条件、互锁与人工批准', '场景工厂：Agent 检索素材、调用 Blender 组装场景', '场景与素材库：不可变版本、验证报告与 Newton 预览', '传感器、告警、历史与 Agent 收件箱；真实设备经 Device Host 与 MQTT 接入', '操作计划、逐步核对与机械臂路径预览', '训练、评估、提升与回滚的工程链路；Agent Harness 版本化'] },
+  { status: 'progress', items: ['完整贴壁细胞传代仿真：器皿、移液与机械搬运'] },
+  { status: 'planned', items: ['学习式接触抓取策略达到正式提升标准', '真实 Workcell 上的端到端任务', 'Real2Sim：用真实运行校准仿真', 'Sim2Sim：跨物理后端验证策略', '真实模型的完整评估集与 Agent 层改进'] },
+  { status: 'vision', items: ['由目标驱动的长程自主实验', '跨工作站复用经过验证的技能'] },
 ]
 </script>
 
 <template>
   <section class="pl-section">
-    <p class="pl-eyebrow pl-rule"><span>现在能做什么</span></p>
+    <p class="pl-eyebrow pl-rule"><span>今天的状态</span></p>
     <div class="pl-section-head">
-      <h2><span class="nb">愿景很远，</span><span class="nb">每一步都标清楚</span></h2>
-      <p class="pl-section-lede">上面的动画是我们要去的地方。下面是它今天真实的样子。</p>
+      <h2><span class="nb">从一个个</span><span class="nb">可验证的能力开始</span></h2>
+      <p class="pl-section-lede">页首的动画是我们要去的地方。下面是它今天真实的样子：已经交付的能力、正在推进的工作，以及接下来的路线。</p>
     </div>
     <div class="sl-cols">
       <div v-for="g in GROUPS" :key="g.status" class="col">

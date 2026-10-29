@@ -1,6 +1,7 @@
 // The landing storyboard. The film runs on one clock `t` in seconds, and every
 // overlay and 3D pose is a pure function of it, so scrolling either way, jumping
-// to a chapter and rendering a still all agree.
+// to a chapter and rendering a still all agree. The film opens with World
+// Building; the lab story that follows keeps its own clock, `labT`.
 
 export type Status = 'delivered' | 'progress' | 'planned' | 'vision'
 
@@ -11,10 +12,22 @@ export const STATUS_LABEL: Record<Status, string> = {
   vision: '愿景',
 }
 
+/** The three parts of Lab World; every chapter shows one of them at work. */
+export type Part = 'world' | 'brain' | 'rsi'
+
+export const PARTS: { id: Part; name: string; line: string; href: string }[] = [
+  { id: 'world', name: 'World Building', line: '构建可计算、可仿真的物理世界', href: '#world-building' },
+  { id: 'brain', name: 'Agentic 大脑', line: '理解目标、操控设备、核对结果', href: '#agentic-brain' },
+  { id: 'rsi', name: 'RSI 进化', line: '从真实反馈中递归自我改进', href: '#rsi' },
+]
+
+export const PART_LABEL = Object.fromEntries(PARTS.map((p) => [p.id, p.name])) as Record<Part, string>
+
 export interface Chapter {
   id: string
   n: string
   kicker: string
+  part: Part
   title: string
   body: string
   status: Status
@@ -24,22 +37,28 @@ export interface Chapter {
 }
 
 export const CHAPTERS: Chapter[] = [
-  { id: 'goal', n: '00', kicker: '目标', title: '你只需要说一句话', body: '「在 4 个培养温度下比较样本生长，找出最佳条件。」这是人在整个流程里唯一一次打字。', status: 'vision', start: 0, end: 5, key: 4.2 },
-  { id: 'sense', n: '01', kicker: '感知', title: '先看清整个实验室', body: '机器人、离心机、培养箱、环境传感器：agent 通过同一个平台读到每台设备能做什么、此刻怎样、还缺什么。', status: 'delivered', start: 5, end: 11, key: 10.2 },
-  { id: 'plan', n: '02', kicker: '规划', title: '自己拆出实验流程', body: '目标被拆成一串操作计划，每一步写明要做什么、期望看到什么。机械臂要走的路径，在动手之前就画出来。', status: 'delivered', start: 11, end: 17, key: 15.4 },
-  { id: 'run', n: '03', kicker: '执行', title: '长程执行，\n连续数天', body: '上千个动作逐一打勾。读数有历史，异常有告警，agent 每一轮先查收件箱。', status: 'vision', start: 17, end: 26, key: 21.8 },
-  { id: 'find', n: '04', kicker: '发现', title: '从失败里找到瓶颈', body: 'agent 回看录制：「把试管插进离心机」这一步只有 62% 成功率，失败集中在对位阶段。', status: 'planned', start: 26, end: 31, key: 29.6 },
-  { id: 'evolve', n: '05', kicker: '进化', title: '自己训练，\n再接回流程', body: 'agent 起草训练计划；人批准后，在 256 个并行环境里训练。评估达到 94/100、人再次批准，新策略接回设备程序，agent 同时记下一条新技能。', status: 'planned', start: 31, end: 42, key: 37.2 },
-  { id: 'result', n: '06', kicker: '结果', title: '拿到实验结果', body: '流程恢复，样本全部完成检测：37 °C 组生长最快。', status: 'vision', start: 42, end: 48, key: 47.4 },
-  { id: 'loop', n: '07', kicker: '闭环', title: '每一轮，\n都让下一轮更好', body: '目标、规划、执行、发现、进化、结果，再回到目标：这就是 RSI（Recursive Self-Improvement，递归自我改进）。每次改进都经过评估、可以追溯；人只在两处关口点一下批准。', status: 'planned', start: 48, end: 52, key: 51.6 },
-  { id: 'scale', n: '08', kicker: '规模', title: '然后，\n是一千座实验室', body: '每座实验室有自己的 agent 和目标。任何一处学到的策略和技能，都会流向所有实验室。让科学发现的速度，不再受限于人手。', status: 'vision', start: 52, end: 62, key: 61.4 },
+  { id: 'build', n: '00', kicker: '构建', part: 'world', title: '先把实验室，\n搭进数字世界', body: '从参考照片和素材库出发，Agent 用 Blender 搭出三维场景，再补上碰撞体、关节和设备语义。看起来对还不够，物理上也要对。', status: 'progress', start: 0, end: 9, key: 5.4 },
+  { id: 'goal', n: '01', kicker: '目标', part: 'brain', title: '说出目标，\n而不是编写底层操作', body: '「在 4 个培养温度下比较样本生长，找出最佳条件。」人只说要什么；怎么做，交给 Agentic 大脑。', status: 'vision', start: 9, end: 14, key: 13.2 },
+  { id: 'sense', n: '02', kicker: '感知', part: 'brain', title: '先看清整个实验室', body: '机器人、离心机、培养箱、传感器：每台设备在哪里、能做什么、此刻怎样、还缺什么，Agent 都从同一个平台读到。', status: 'delivered', start: 14, end: 20, key: 19.2 },
+  { id: 'plan', n: '03', kicker: '规划', part: 'brain', title: '自己拆出流程，\n动手之前先预演', body: '目标被拆成可检查的步骤，每一步写明期望结果。机械臂要走的路径，在真实动作之前先在仿真里算出来。', status: 'delivered', start: 20, end: 26, key: 24.4 },
+  { id: 'run', n: '04', kicker: '执行', part: 'brain', title: '长程执行，\n每一步都核对结果', body: '上千个动作逐一执行、逐一核对。关盖被互锁拒绝，Agent 就修订计划、先让机械臂回位；读数有历史，异常有告警。', status: 'vision', start: 26, end: 35, key: 30.8 },
+  { id: 'find', n: '05', kicker: '发现', part: 'rsi', title: '从失败里，\n找到瓶颈', body: 'Agent 回看录制：「把试管插进离心机」只有 62% 成功率，失败集中在对位阶段。现实暴露了仿真没有预见的偏差。', status: 'planned', start: 35, end: 40, key: 38.6 },
+  { id: 'evolve', n: '06', kicker: '进化', part: 'rsi', title: '自己训练，\n再接回流程', body: 'Agent 起草训练计划；人批准后，在 256 个并行环境里训练。独立评估达到 94/100、人再次批准，新策略接回设备程序，Agent 同时写下一条新技能。', status: 'planned', start: 40, end: 51, key: 46.2 },
+  { id: 'result', n: '07', kicker: '结果', part: 'rsi', title: '带着新能力，\n拿到实验结果', body: '流程恢复，样本全部完成检测：37 °C 组生长最快。从目标、计划到每一个动作，都留下完整证据。', status: 'vision', start: 51, end: 57, key: 56.4 },
+  { id: 'loop', n: '08', kicker: '闭环', part: 'rsi', title: '每一轮，\n都让下一轮更好', body: '构建、规划、执行、发现、进化，再回到构建：这就是 RSI（Recursive Self-Improvement，递归自我改进）。每次改进都经过评估、可以追溯；人只在关口点一下批准。', status: 'planned', start: 57, end: 61, key: 60.6 },
+  { id: 'scale', n: '09', kicker: '规模', part: 'rsi', title: '一次部署建立能力，\n下一次部署复用经验', body: '每座实验室有自己的 Agent 和目标。经过验证、获得许可的技能流向更多工作站，让下一座实验室更容易交付。', status: 'vision', start: 61, end: 71, key: 70.4 },
 ]
 
-export const DURATION = 62
+export const DURATION = 71
+
+/** World Building takes the film's first seconds; the lab story starts after it. */
+export const BUILT = 9
+export const labT = (t: number) => Math.max(0, t - BUILT)
 
 export const HERO = {
-  eyebrow: 'Lab World',
-  lede: '你给一个目标。agent 自己设计流程、操控设备，从失败里训练新策略，直到拿到结果，再把学到的带到下一座实验室。',
+  eyebrow: 'Agentic Physical AI',
+  tagline: 'From Digital Intelligence to Physical Intelligence.',
+  lede: '让 AI Agent 走出屏幕：构建可计算的物理世界，操控真实设备，并从真实反馈中递归自我改进。',
 }
 
 export function chapterAt(t: number): Chapter {
@@ -75,7 +94,20 @@ export type LineKind = 'human' | 'agent' | 'cmd' | 'out' | 'alert' | 'gate' | 'g
 
 export interface Line { t: number; kind: LineKind; text: string; type?: number }
 
-export const CONSOLE: Line[] = [
+// World Building, in film time.
+const BUILD_LINES: Line[] = [
+  { t: 0.7, kind: 'agent', text: '先把这间实验室搭进数字世界。' },
+  { t: 1.6, kind: 'out', text: '参考照片 6 张 · 识别 6 台设备，从素材库匹配 4 个模型' },
+  { t: 3.2, kind: 'agent', text: '补上碰撞体、关节与限位。' },
+  { t: 4.1, kind: 'out', text: '碰撞体 14 个 · 机械臂 6 轴 · 离心机盖锁铰链' },
+  { t: 5.6, kind: 'agent', text: '为每台设备写下能做什么、何时不能做。' },
+  { t: 6.4, kind: 'out', text: '离心机 closeLid / start · 机械臂 pickPlace / home' },
+  { t: 7.4, kind: 'cmd', text: 'lw scene import lab-culture' },
+  { t: 8.1, kind: 'good', text: '场景验证通过 · lab-culture@1' },
+]
+
+// The lab story, on its own clock.
+const LAB_LINES: Line[] = [
   { t: 0.9, kind: 'human', text: '在 4 个培养温度下比较样本生长，找出最佳条件', type: 2.4 },
   { t: 4.1, kind: 'agent', text: '收到目标。先检查实验室里有什么。' },
   { t: 5.6, kind: 'cmd', text: 'lw ls --json' },
@@ -90,6 +122,8 @@ export const CONSOLE: Line[] = [
   { t: 14.0, kind: 'agent', text: '预览第 1 步的机械臂路径：无碰撞。' },
   { t: 17.4, kind: 'cmd', text: 'lw do /World/Lab/RobotA pickPlace from=rack.A1 to=centrifuge.slot1 --plan plan-0042 --step 1' },
   { t: 19.2, kind: 'good', text: '第 1 步完成 · 期望 slot1 有管：通过' },
+  { t: 20.0, kind: 'alert', text: '关盖被互锁拒绝：机械臂还在离心机区域' },
+  { t: 20.5, kind: 'agent', text: '修订计划：先让机械臂回位，再关盖。' },
   { t: 21.0, kind: 'cmd', text: 'lw do /World/Lab/Centrifuge start rpm=4000 durationSeconds=30 --plan plan-0042 --step 6' },
   { t: 23.0, kind: 'cmd', text: 'lw history /World/Lab/Incubator temperatureC --since 24h --every 1h' },
   { t: 23.6, kind: 'out', text: '4 个温区稳定，偏差 < 0.2 °C' },
@@ -110,6 +144,10 @@ export const CONSOLE: Line[] = [
   { t: 45.6, kind: 'cmd', text: 'lw history /World/Lab/Detector od600 --since 72h' },
   { t: 46.6, kind: 'good', text: '结论：37 °C 组生长最快' },
 ]
+
+export const CONSOLE: Line[] = [...BUILD_LINES, ...LAB_LINES.map((l) => ({ ...l, t: l.t + BUILT }))]
+/** The goal, the one line a person types. */
+export const GOAL = CONSOLE.find((l) => l.kind === 'human')!
 
 export interface VisibleLine extends Line { shown: string; age: number; typing: boolean }
 
@@ -203,7 +241,7 @@ export function growth(temp: number, h: number) {
 
 export const resultProgress = (t: number) => ramp(t, 44.6, 47.0)
 
-export const LOOP_NODES = ['目标', '规划', '执行', '发现', '进化', '结果']
+export const LOOP_NODES = ['构建', '规划', '执行', '发现', '进化']
 
 export function libraryAt(t: number) {
   const cards = [] as { kind: 'policy' | 'skill'; title: string; meta: string; at: number }[]
@@ -228,7 +266,24 @@ export type Tone = 'plain' | 'accent' | 'warn' | 'bad' | 'good'
 
 export interface LabelSpec { id: string; anchor: string; text: string; tone: Tone; o: number }
 
-export function labelsAt(t: number): LabelSpec[] {
+/** World Building labels, in film time: geometry, then physics, then device semantics. */
+function buildLabels(t: number): LabelSpec[] {
+  const L: LabelSpec[] = []
+  const push = (id: string, anchor: string, text: string, tone: Tone, o: number) => { if (o > 0.01) L.push({ id, anchor, text, tone, o }) }
+  push('b-inc', 'incubator', '几何 · 1.16 × 0.70 × 1.86 m', 'accent', window01(t, 1.5, 3.5, 0.3))
+  push('b-cf', 'centrifuge', '几何 · 直径 0.58 m', 'accent', window01(t, 1.9, 3.5, 0.3))
+  push('b-arm', 'arm', '关节 · 6 轴 · 限位与速度', 'accent', window01(t, 3.6, 5.8, 0.3))
+  push('b-cf2', 'centrifuge', '碰撞体 · 盖锁铰链', 'accent', window01(t, 4.0, 5.8, 0.3))
+  push('b-rack', 'rack', '碰撞体 · 8 个槽位', 'accent', window01(t, 4.4, 5.8, 0.3))
+  push('b-cf3', 'centrifuge', '能做 closeLid / start · 盖开时不能启动', 'plain', window01(t, 6.0, 8.2, 0.3))
+  push('b-arm2', 'arm', '能做 pickPlace / home', 'plain', window01(t, 6.4, 8.2, 0.3))
+  push('b-inc2', 'incubator', '能做 setSetpoint · 4 个温区', 'plain', window01(t, 6.8, 8.2, 0.3))
+  return L
+}
+
+export function labelsAt(film: number): LabelSpec[] {
+  if (film < BUILT) return buildLabels(film)
+  const t = labT(film)
   const L: LabelSpec[] = []
   const sense = (at: number) => Math.min(ramp(t, at, at + 0.5), 1 - ramp(t, 16.6, 17.2) * 0.75)
   const hideAfter = 1 - ramp(t, 51.6, 52.6)
