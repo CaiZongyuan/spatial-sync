@@ -233,6 +233,9 @@ class RobotArmProgram:
                 ctx.physics.unweld(self.hand, body)
                 self.pending_release.remove(body)
 
+    def _gripper_settled(self, ctx, kind, actual, dt):
+        return abs(actual - self.last_width) < 0.0005
+
     def tick(self, ctx, dt):
         port = ctx.physics
         if ctx.fact_due:
@@ -311,7 +314,7 @@ class RobotArmProgram:
                 # error; nominal opening alone can push an offset tube away.
                 if self._grasp_ready(port, body, actual):
                     port.weld(self.hand, body)
-            self.stable = self.stable + dt if abs(actual - self.last_width) < 0.0005 else 0
+            self.stable = self.stable + dt if self._gripper_settled(ctx, kind, actual, dt) else 0
             self.last_width = actual
             done = (
                 self.elapsed >= 0.2 and self.stable >= 0.2 and (kind != "place" or not self.pending_release)

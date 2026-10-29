@@ -283,9 +283,15 @@ Web 展示当前阶段/步骤、六个母孔到十二个子孔的关系、所选
 metre range, defaulting to 80 mm. It applies consistently to automatic pickup,
 place release and recovery. Explicit `setGripper` requests retain their existing
 width semantics. The Cell Passage factory selects 50 mm for its 17 mm grips and
-55 mm rack pitch; this is a scene calibration, not an OEM performance claim.
+neighbor clearance; this is a scene calibration, not an OEM performance claim.
 Actual bilateral pad contact, weld qualification, release feedback and the 1 mm
 penetration guard remain required. Older scenes keep their 80 mm default.
+`gripperSpeedMPerS` defaults to the existing 40 mm/s limit; the factory selects
+20 mm/s. Automatic pickup completes only with an active physically qualified
+weld and measured stationary fingers. Automatic opening/release also requires
+the actual opening target and stationary feedback. A slow per-tick displacement
+does not establish a settled grasp. Explicit gripper commands and the older
+robot program keep their existing completion behavior.
 
 ## P6 posture contexts
 
