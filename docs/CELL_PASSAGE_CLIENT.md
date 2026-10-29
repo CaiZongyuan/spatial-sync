@@ -164,6 +164,12 @@ or release attachments/material. A receipt lacking an end row is interrupted;
 it cannot authorize recovery. `plan_completed` means the Plan finished, with
 `experimentQualified:false` until separate material/mechanical checks pass.
 
+The exit row's `hold` records request/operation/invocation identities and the
+actual invocation status. Rejected, failed or cancelled requests retain that
+outcome; accepted/running/succeeded only mean `acknowledged`, never global safe
+handoff (`globalSafeConfirmed:false`). Lost replies remain `unconfirmed` with
+known identities; the exit driver does not repeat the POST or infer standstill.
+
 ## Material result boundary
 
 The owned launch entrypoint wires build, teaching, immutable HTTP import,

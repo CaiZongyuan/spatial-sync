@@ -226,21 +226,42 @@ async def drive_executor(executor, receipt_path, *, interval=0.1):
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def hold_own_generation():
+        hold = {"status": "unconfirmed", "globalSafeConfirmed": False}
         try:
             values = (await executor.client.get_state([executor.workcell]))["entities"][
                 executor.workcell
             ]["values"]
             if (values["controlOwner"] != executor.owner
                     or values["controlEpoch"] != executor.control_epoch):
-                return "already_fenced"
-            await executor.client.invoke_action(executor.workcell, "requestControl", {
+                return {**hold, "status": "already_fenced", "reason": "control_generation_changed"}
+            params = {
                 "owner": executor.owner, "epoch": executor.control_epoch,
                 "operationId": "interrupt-" + uuid.uuid4().hex,
                 "nextOwner": "interrupted-" + executor.plan_id, "mode": "manual",
-            }, wait=False, actor="cli:cell-passage")
-            return "requested"
-        except GatewayError:
-            return "unconfirmed"
+            }
+            hold.update(requestId=uuid.uuid4().hex, operationId=params["operationId"])
+            result = await executor.client.request(
+                "POST", await executor.client.route(executor.workcell) + "/actions", actor="cli:cell-passage",
+                json={"requestId": hold["requestId"], "entityKey": executor.workcell,
+                      "action": "requestControl", "params": params, "wait": False, "timeoutSeconds": 120},
+                timeout=130,
+            )
+            status = result.get("status")
+            hold.update(invocationId=result.get("invocationId"), invocationStatus=status,
+                        reason=(result.get("error") or {}).get("code") or status)
+            if not hold["invocationId"] or result.get("requestId") != hold["requestId"]:
+                hold["reason"] = "invocation_identity_unconfirmed"
+                return hold
+            if status in ("rejected", "failed", "cancelled"):
+                hold["status"] = status
+            elif status in ("accepted", "running", "pending_approval", "succeeded"):
+                hold["status"] = "acknowledged"
+            return hold
+        except GatewayError as error:
+            # Admission may have happened: retain identity, never repeat this POST.
+            hold.update(reason="admission_unconfirmed" if "requestId" in hold else "observation_unavailable",
+                        error=error.document()["error"])
+            return hold
 
     with receipt_path.open("x", encoding="utf8") as receipt:
         def record(document):
