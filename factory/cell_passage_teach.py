@@ -39,6 +39,9 @@ def teach(library, *, reuse_locations=None):
     scene = library / "scenes/cell-passage/1"
     reusable = (yaml.safe_load(Path(reuse_locations).read_text())["locations"] if reuse_locations else {})
     layout = json.loads((scene / "mechanical-layout.json").read_text())
+    from factory.cell_passage_calibration import demo_calibration
+
+    calibration = demo_calibration() if layout.get("demonstration") else {}
     stage = composed_stage(library)
     with wp.ScopedDevice("cpu"):
         builder = newton.ModelBuilder(up_axis=newton.Axis.Z)
@@ -49,10 +52,10 @@ def teach(library, *, reuse_locations=None):
     starts, dstarts = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
     joints = [model.joint_label.index(ROBOT + f"/Joints/fr3_joint{i}") for i in range(1, 8)]
     indices = starts[joints]
-    rail = starts[model.joint_label.index(LAB + "/Joints/RailCarriage")]
     hand = model.body_label.index(ROBOT + "/fr3_hand")
-    lower = model.joint_limit_lower.numpy()[dstarts[joints]].astype(float) + 1e-5
-    upper = model.joint_limit_upper.numpy()[dstarts[joints]].astype(float) - 1e-5
+    physical_lower = model.joint_limit_lower.numpy()[dstarts[joints]].astype(float)
+    physical_upper = model.joint_limit_upper.numpy()[dstarts[joints]].astype(float)
+    lower, upper = physical_lower + 1e-5, physical_upper - 1e-5
     q = model.joint_q.numpy().copy()
     with wp.ScopedDevice("cpu"):
         newton.eval_fk(model, state.joint_q, state.joint_qd, state)
@@ -74,7 +77,7 @@ def teach(library, *, reuse_locations=None):
     home = np.asarray([0, -0.4, 0, -2, 0, 1.6, 0.7853981634])
     cap_bodies = {layout["lids"][layout["bodies"][name]] for name in (
         "S1", "S2", "S3", "S4", "S5", "S6", "B5", "B6")}
-    solved, receipts, failed = {}, [], []
+    solved, receipts, failed, waypoint_checks = {}, [], [], []
 
     def forward(values):
         q[indices] = values
@@ -86,8 +89,20 @@ def teach(library, *, reuse_locations=None):
         return pose[:3] + rot.apply([0, 0, 0.1034]), rot
 
     for descriptor in locations(layout):
-        q[rail] = descriptor["railPositionM"]
-        target_rotation = Rotation.from_euler("z", descriptor["yawRad"]) * Rotation.from_euler("x", math.pi)
+        for context in descriptor["postureContext"]["joints"]:
+            q[starts[model.joint_label.index(context["joint"])]] = context["position"]
+        entry = calibration.get(descriptor["name"], {})
+        for index, positions in enumerate(entry.get("transportWaypoints", [])):
+            values = np.asarray(positions, dtype=float)
+            if (values.shape != (7,) or not np.isfinite(values).all()
+                    or np.any(values < physical_lower) or np.any(values > physical_upper)):
+                raise ValueError("Transport waypoint is outside the physical joint contract")
+            point, rotation = forward(values)
+            waypoint_checks.append({"location": descriptor["name"], "index": index,
+                                    "tcpP": point.tolist(), "tcpQ": rotation.as_quat().tolist()})
+        target_rotation = Rotation.from_euler(
+            "z", descriptor["yawRad"] + descriptor.get("gripYawOffsetRad", 0)
+        ) * Rotation.from_euler("x", math.pi)
         row, measures = {}, []
         seed = home.copy()
         seed[0] = np.clip(
@@ -96,7 +111,9 @@ def teach(library, *, reuse_locations=None):
             upper[0],
         )
         poses = [("approach", "approachTarget"), ("grasp", "target")]
-        if layout.get("demonstration") and descriptor.get("body") in cap_bodies:
+        if layout.get("demonstration") and (
+            (not entry and descriptor.get("body") in cap_bodies) or "preInsertion" in entry.get("poses", {})
+        ):
             descriptor["preInsertionTarget"] = (np.array(descriptor["target"]) + [0, 0, .011]).tolist()
             poses.insert(1, ("preInsertion", "preInsertionTarget"))
         elif (layout.get("demonstration")
@@ -122,15 +139,21 @@ def teach(library, *, reuse_locations=None):
                 )
 
             best = None
-            cached = reusable.get(descriptor["name"], {}).get(pose_name)
+            profile = calibration.get(descriptor["name"])
+            cached = (profile["poses"].get(pose_name) if profile
+                      else reusable.get(descriptor["name"], {}).get(pose_name))
             if cached is not None and len(cached) == 7 and np.isfinite(cached).all():
-                if np.all(np.asarray(cached) >= lower) and np.all(np.asarray(cached) <= upper):
+                if (np.all(np.asarray(cached) >= physical_lower)
+                        and np.all(np.asarray(cached) <= physical_upper)):
                     point, rotation = forward(cached)
                     error = float(np.linalg.norm(point - target))
                     angle = float((target_rotation.inv() * rotation).magnitude())
                     if error < .001 and angle < .01:
                         best = {"positions": cached, "positionErrorM": error, "angleErrorRad": angle,
                                 "reusedAfterActualFK": True}
+            if profile and best is None:
+                raise ValueError(f"Demonstration calibration no longer matches actual FK/limits: "
+                                 f"{descriptor['name']}.{pose_name}")
             trials = () if best is not None else (
                 seed, home, np.asarray([seed[0], -0.8, 0.5, -2.3, -0.5, 1.7, 0.8]))
             for trial in trials:
@@ -177,6 +200,7 @@ def teach(library, *, reuse_locations=None):
                 "locations": receipts,
                 "failed": failed,
                 "initialBodyPoseChecks": body_checks,
+                "routeWaypointChecks": waypoint_checks,
                 "modelCounts": {
                     "bodies": model.body_count,
                     "shapes": model.shape_count,
