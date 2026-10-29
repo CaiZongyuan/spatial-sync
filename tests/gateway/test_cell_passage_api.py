@@ -59,6 +59,8 @@ def test_paused_control_commit_is_visible_through_http_and_recorded_without_prot
             "values"
         ]
         assert (values["controlMode"], values["controlEpoch"]) == ("holding", 1)
+        assert values["contactFactsAvailable"] is True
+        assert values["unsafeContactCount"] == 0
         stale = client.post(
             route + "/actions",
             json={
