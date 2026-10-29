@@ -121,6 +121,13 @@ def populate(stage):
         stage.RemovePrim(LAB + "/Static/" + name)
     reference(stage, LAB + "/PreparationBench", "passage-preparation-bench", (0, -0.9, 0), "environment")
     reference(stage, LAB + "/BackBench", "passage-back-bench", (0, 0.38, 0), "environment")
+    # Trim the retained conservative bench proxy between the new tables:
+    # preparation ends at Y=-0.600, back table begins at Y=-0.070.
+    # Both unchanged rail footprints remain fully supported, with >=32.5 mm
+    # to the nearest bench edge; each neighboring table has a 5 mm gap.
+    robot_bench = stage.GetPrimAtPath(LAB + "/Static/RobotBench")
+    robot_bench.GetAttribute("xformOp:scale").Set(Gf.Vec3f(1.58, 0.520, 0.06))
+    robot_bench.GetAttribute("xformOp:translate").Set(Gf.Vec3d(0, -0.335, 0.83))
     reference(stage, LAB + "/Imager", "passage-open-imager", (-0.05, -0.68, 1.232), "device")
     reference(stage, LAB + "/Labware/CollectionRack", "passage-tube-rack", (-0.1825, -0.5525, 0.86))
 
