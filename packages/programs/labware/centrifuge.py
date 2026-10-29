@@ -31,10 +31,10 @@ class PassageCentrifugeProgram(CentrifugeProgram):
     id, type = "cell_passage.centrifuge", "passage-centrifuge/v1"
 
     def _lid_open(self, port):
-        return abs(float(port.joint_q(self.lid)[0]) - 1.4) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02
+        return bool(abs(float(port.joint_q(self.lid)[0]) - 1.4) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02)
 
     def _lid_closed(self, port):
-        return abs(float(port.joint_q(self.lid)[0])) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02
+        return bool(abs(float(port.joint_q(self.lid)[0])) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02)
 
     class Config(CentrifugeProgram.Config):
         controlEntity: str
