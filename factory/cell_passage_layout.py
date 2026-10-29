@@ -1,5 +1,7 @@
 """Fixed physical layout shared by the factory and offline qualification tools."""
 
+import math
+
 from pxr import Gf, Sdf, UsdGeom, UsdPhysics
 
 from factory.cell_passage import (
@@ -140,7 +142,8 @@ def populate(stage, *, demonstration=False):
     robot_bench.GetAttribute("xformOp:translate").Set(Gf.Vec3d(0, -0.335, 0.83))
     reference(stage, LAB + "/Imager", "passage-open-imager", (-0.05, -0.68, 1.232), "device")
     rack_pitch = .065 if demonstration else .055
-    rack_origin = (-.265 + 1.5 * rack_pitch, -.58 + .5 * rack_pitch, .86)
+    rack_y = -.97 if demonstration else -.58
+    rack_origin = (-.265 + 1.5 * rack_pitch, rack_y + .5 * rack_pitch, .86)
     rack_asset = "passage-tube-rack-wide" if demonstration else "passage-tube-rack"
     reference(stage, LAB + "/Labware/CollectionRack", rack_asset, rack_origin)
 
@@ -163,12 +166,16 @@ def populate(stage, *, demonstration=False):
         stations["IncubatorTransit"] = (-0.35, -0.20, 1.45)
         stations["IncubatorATransit"] = (-0.35, -0.20, 1.45)
     for i, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
-        stations["Rack" + name] = (-0.265 + (i % 4) * rack_pitch, -0.58 + (i // 4) * rack_pitch, 1.032)
+        stations["Rack" + name] = (-0.265 + (i % 4) * rack_pitch, rack_y + (i // 4) * rack_pitch, 1.032)
         stations[f"FlexTube{i + 1}"] = (0.535 + (i % 4) * 0.060, 0.385 + (i // 4) * 0.060, 1.042)
     for i in range(4):
-        stations[f"Lid{i + 1}"] = (-0.2 + i * 0.2, -0.85, 1.232)
+        stations[f"Lid{i + 1}"] = (
+            (0.2 if demonstration else -0.2) + i * 0.2, -.95 if demonstration else -.85, 1.232
+        )
     for i in range(8):
         stations[f"Lid{i + 5}"] = (-0.3 + i * 0.1, -0.44, 1.132)
+    if demonstration:
+        stations["Lid12"] = (.90, -.80, 1.132)
     for name, point in stations.items():
         value = site(stage, LAB + "/Sites/" + name, point)
         if name == "IncubatorA":
@@ -360,6 +367,18 @@ def populate(stage, *, demonstration=False):
         "library:assets/device/passage-centrifuge/1/asset.usda", "/Asset"
     )
     translate(value, (-0.53, -0.65, 0.96))
+    if demonstration:
+        # Lower the self-authored pivot to the skirt bottom, while preserving
+        # every closed world shape by raising geometry in the body's frame.
+        lid = stage.OverridePrim(root + "/Lid")
+        lid.CreateAttribute("xformOp:translate", Sdf.ValueTypeNames.Double3).Set(Gf.Vec3d(0, -.195, .095))
+        cover = stage.OverridePrim(root + "/Lid/Cover")
+        cover.CreateAttribute("xformOp:translate", Sdf.ValueTypeNames.Double3).Set(Gf.Vec3d(0, .195, .05))
+        skirt = UsdGeom.Xform.Define(stage, root + "/Lid/Skirt")
+        skirt.AddTranslateOp().Set(Gf.Vec3d(0, 0, .05))
+        hinge = UsdPhysics.RevoluteJoint(stage.OverridePrim(root + "/LidHinge"))
+        hinge.CreateLocalPos0Attr(Gf.Vec3f(0, -.195, .095))
+        hinge.CreateUpperLimitAttr(100.)
     slot_keys = [root + f"/Rotor/Slot{i}" for i in range(1, 5)]
     moving_bodies = []
     for name in ("FlexY", "FlexX", "FlexZ", "FlexPump"):
@@ -369,7 +388,17 @@ def populate(stage, *, demonstration=False):
         moving_bodies.append(str(targets[0]))
     if len(set(moving_bodies)) != len(moving_bodies):
         raise ValueError("Controlled Flex joint bodies must be distinct")
+    calibration = {}
+    if demonstration:
+        from factory.cell_passage_calibration import demo_calibration
+
+        calibration = demo_calibration()
     layout = {
+        **({"transportWaypoints": {
+            name: entry["transportWaypoints"] for name, entry in calibration.items()
+            if entry.get("transportWaypoints")
+        }, "centrifugeLidSelfCheck": True} if demonstration else {}),
+        "centrifugeLidOpenRad": math.radians(100) if demonstration else 1.4,
         "schema": "lw.cell-passage-layout/1",
         "mechanicallyQualified": False,
         "movingBodyKeys": moving_bodies,

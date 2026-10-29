@@ -62,9 +62,15 @@ def locations(layout):
                 "zone": zone or ("centrifuge" if "/Centrifuge/" in site else leaf),
             }
         )
+        if "/Centrifuge/" in site and layout.get("demonstration"):
+            result[-1]["postureContext"]["joints"].append({
+                "joint": LAB + "/Centrifuge/LidHinge", "position": layout["centrifugeLidOpenRad"],
+            })
 
     for key, point in stations.items():
         name = key.rsplit("/", 1)[1]
+        if layout.get("demonstration") and name in ("FlexTube7", "FlexTube8"):
+            continue  # Physical stations remain, outside this demonstration's taught scope.
         if name.endswith("Transit"):
             add(name + ".transit", key, point, [0, 0, 0], yaw=yaws.get(key, 0))
             result[-1]["approachTarget"] = list(point)
@@ -95,6 +101,8 @@ def locations(layout):
             candidates = [("Rack" + name, 0.05), (f"FlexTube{index.index(name) + 1}", 0.05)]
             offset = [-0.035, 0, 0.022]
         for station, height in candidates:
+            if layout.get("demonstration") and station in ("FlexTube7", "FlexTube8"):
+                continue
             key = LAB + "/Sites/" + station
             point = [*stations[key][:2], stations[key][2] + height]
             add(
@@ -107,5 +115,7 @@ def locations(layout):
                 reference_site=key,
                 target_offset=[offset[0], offset[1], offset[2] + height],
             )
-    return result
+    from factory.cell_passage_calibration import apply_calibration
+
+    return apply_calibration(layout, result)
 
