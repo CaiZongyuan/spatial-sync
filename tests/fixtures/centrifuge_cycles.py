@@ -160,10 +160,12 @@ def build_cycle_host(root, *, legacy=False):
     return host, port, manifest
 
 
-def advance_until_terminal(host, port, identity, *, count=5000):
+def advance_until_terminal(host, port, identity, *, count=5000, events=None):
     for _ in range(count):
         port.advance(.1)
-        host.tick(host.sim_time + .1, .1)
+        emitted = host.tick(host.sim_time + .1, .1)
+        if events is not None:
+            events.extend(emitted)
         invocation = next(row for row in host.snapshot().invocations if row.invocationId == identity)
         if invocation.status in ("succeeded", "failed", "cancelled"):
             return invocation

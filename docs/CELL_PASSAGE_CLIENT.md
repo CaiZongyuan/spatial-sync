@@ -212,6 +212,35 @@ is named `material_valid`. Mechanical loading, actual incubation conditions,
 processing cycles and continuous recording require separate evidence; this
 material result alone cannot declare a complete passage.
 
+The passage centrifuge's successful `start` result is a versioned
+`lw.centrifuge-cycle-receipt/1` object. It contains `entityKey`, `invocationId`,
+`operationId`, `owner`, control `epoch`, `completedCycle`, four ordered
+`completedLoad` slots (including null empty slots), `cycleRunSeconds`,
+`actualRotorTurns`, `actualRpm`, `rotorStopped`, `lidClosed` and
+`completedSimTime`. The source builds it before its sole successful terminal
+update from actual angle/load/velocity and accumulated simulation run time.
+Stopped means the existing spindle-speed gate below 0.05 rad/s; the actual
+lid must also be closed and stopped. Cancellation, unknown load or absent
+actual rotation cannot produce valid completed evidence. The old
+`centrifuge.newton` class keeps its `None` result and unchanged `runCompleted`
+event; that legacy result is unavailable evidence for this experiment.
+
+After takeover or refresh, read the ordinary stored Plan's cycle `start` step
+and its `stepResults[str(stepId)].invocationId`, then GET that invocation through
+the existing session route. Verify its successful terminal/result identity
+against the actual Plan action, expected batch, source stop gates and time.
+The receipt's owner/epoch describes the completed action; a later control owner
+does not rewrite it. The generic invocation archive reads recorded results
+after the 50-entry Host and 1000-entry gateway windows have expired. Disabled,
+missing or unreadable history stays `history_unavailable`; never rerun a cycle
+or infer its result from a done step. There is no new workflow store or route.
+
+`collect_cycle_evidence` reads both stages 3 and 4 this way. Retained local
+stage snapshots are cross-checked when present; without snapshots, the measured
+invocation receipts remain independently readable. A snapshot alone does not
+replace a missing receipt: the audit reports unavailable. Other full-passage
+material, physical and recording gates still apply.
+
 `tools/cell_passage_audit.py` separately checks two spatial samples against
 their actual Manifest Sites in native coordinates, using the existing labware
 seating gates. It also reads finalized recording segment bytes with the
