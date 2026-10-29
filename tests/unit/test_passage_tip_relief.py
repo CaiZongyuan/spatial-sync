@@ -1,6 +1,9 @@
 """Measure the actual polygon walls, unchanged rack region and tip envelope."""
 
 import math
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +12,37 @@ from pxr import Usd, UsdGeom, UsdPhysics
 
 from factory.cell_passage import tip
 from factory.cell_passage_tip import bore_volume_ul, relief
+
+
+def test_tip_authoring_runs_without_optional_scipy():
+    code = """
+import importlib.abc
+import math
+import sys
+
+class NoScipy(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "scipy" or fullname.startswith("scipy."):
+            raise ModuleNotFoundError("No module named 'scipy'", name=fullname)
+
+sys.meta_path.insert(0, NoScipy())
+from pxr import Usd, UsdGeom, UsdPhysics
+from factory.cell_passage import tip
+from factory.cell_passage_tip import relief
+
+for author, count in ((tip, 12), (relief, 36)):
+    stage = Usd.Stage.CreateInMemory()
+    author(stage, "/Asset")
+    assert sum(prim.IsA(UsdGeom.Mesh) for prim in stage.Traverse()) == count
+    assert math.isclose(
+        UsdPhysics.MassAPI(stage.GetPrimAtPath("/Asset")).GetMassAttr().Get(), .001, rel_tol=1e-6
+    )
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[2],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def authored(author):
