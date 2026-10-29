@@ -19,6 +19,13 @@ for GPU-free checks. Newton requires `--extra simulation --extra usd`.
 Do not resynchronize an environment while it serves another process;
 `uv run --no-sync` preserves installed extras. Use one API worker and one Runner.
 
+Newton startup defaults to a 180-second wall budget. An owned gateway can set
+`SPATIAL_NEWTON_STARTUP_TIMEOUT_SECONDS=600`; the value must be finite, positive,
+and at most 1800 seconds. This changes initialization only; action intake keeps
+its 500 ms deadline. Startup timeout errors identify `TimeoutError`, the
+`await_ready` phase, budget and elapsed wall time, then close the owned candidate.
+Clients waiting for initialization should use the same explicit startup budget.
+
 ## Mandatory checks
 
 ```powershell
