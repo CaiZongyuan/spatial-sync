@@ -20,3 +20,7 @@
 .cell-passage fieldset { margin: 10px 0; border: 1px solid var(--line-2); }
 .cell-passage table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .cell-passage td, .cell-passage th { padding: 5px; text-align: left; border-bottom: 1px solid var(--line); }
+.passage-environment { margin: 12px 18px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.passage-environment h3 { margin: 0 0 10px; font-size: 14px; }
+.passage-environment dd { margin: 4px 0; }
+.passage-advanced { margin-top: 12px; }

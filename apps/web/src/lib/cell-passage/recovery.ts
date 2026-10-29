@@ -28,16 +28,21 @@ export function revisePlans(plans: PlanDocument[], owner: string, epoch: number,
   for (const plan of plans) {
     const supplied = replacements[plan.id] ?? {};
     if (Object.keys(supplied).some(key => !plan.steps.some(step => step.id === Number(key)))) throw new Error('修订引用未知步骤');
-    if (plan.steps.every(step => step.status === 'done')) continue;
+    if (plan.steps.every(step => step.status === 'done')) {
+      if (Object.keys(supplied).length) throw new Error('已完成分段不能改写');
+      continue;
+    }
     const steps = plan.steps.map(original => {
       const replacement = supplied[original.id];
       if (original.status === 'running') throw new Error('先处理在途调用，再修订');
-      if (['done', 'skipped'].includes(original.status) && replacement) throw new Error('已完成或跳过步骤不能改写');
-      const started = original.status === 'failed' || !!plan.stepResults[String(original.id)]?.invocationIds?.length || !!plan.stepResults[String(original.id)]?.invocationId;
-      if (!['done', 'skipped'].includes(original.status) && started && !replacement) throw new Error('已启动或失败步骤必须明确修订，不能重放');
+      if (original.status === 'pending' && (plan.stepResults[String(original.id)]?.invocationId || plan.stepResults[String(original.id)]?.invocationIds?.length || plan.stepResults[String(original.id)]?.consumed))
+        throw new Error('pending 步骤已有受理证据；只观察原调用，不能重新修订派发');
+      if (original.status === 'done' && replacement) throw new Error('已完成步骤不能改写');
+      const started = ['failed', 'skipped'].includes(original.status) || !!plan.stepResults[String(original.id)]?.invocationIds?.length || !!plan.stepResults[String(original.id)]?.invocationId;
+      if (original.status !== 'done' && started && !replacement) throw new Error('已启动、失败或跳过步骤必须明确修订，不能重放');
       const selected = structuredClone(replacement ?? original);
       if (selected.id !== original.id) throw new Error('修订必须保留步骤身份');
-      if (original.status === 'failed' && 'do' in original && passageContract.liquidActions.quantityIntent.includes(original.do.action) &&
+      if (['failed', 'skipped'].includes(original.status) && 'do' in original && passageContract.liquidActions.quantityIntent.includes(original.do.action) &&
           'do' in selected && (!passageContract.liquidActions.literal.includes(selected.do.action) || typeof selected.do.params.volumeUl !== 'number'))
         throw new Error('失败的数量意图必须改为核对后的明确剩余操作，不能再次计算 fraction/all');
       const next = { ...selected, status: 'pending' as const };

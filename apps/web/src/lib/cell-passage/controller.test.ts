@@ -30,7 +30,7 @@ function fixture() {
   if ('do' in plan.steps[0]) plan.steps[0].do.params.owner = controller.owner;
   return { controller, session, values, plan, http, setInvocation: (status: string) => { invocation = { ...invocation, status }; }, lose: () => { loseResponse = true; } };
 }
-const catalog = { entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: ['/w'], vessels: [{ entityKey: '/w' }] } } }, types: { 'cell-passage-workcell/v1': { properties: { controlSafe: {} } } } } as unknown as Catalog;
+const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: ['/w'], vessels: [{ entityKey: '/w' }] } } }, types: { 'cell-passage-workcell/v1': { properties: { controlSafe: {} } } } } as unknown as Catalog;
 async function arm(f: ReturnType<typeof fixture>) { const review = await f.controller.review('p', catalog); await f.controller.prepareRemaining('p', review); await f.controller.arm('p'); }
 const actionCalls = (f: ReturnType<typeof fixture>) => f.http.mock.calls.filter(([path]) => path.endsWith('/actions'));
 describe('passage browser scheduling through existing HTTP/Plan API', () => {
@@ -54,6 +54,33 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
     if ('do' in f.plan.steps[0]) f.plan.steps[0].do.params.operationId = 'unknown';
     expect(await f.controller.receiptFor('p', f.plan.steps[0])).toBeUndefined();
     expect(actionCalls(f)).toHaveLength(0);
+  });
+  it('reviews noisy modeled environmental values but verifies readiness rather than exact temperature', async () => {
+    const f = fixture(); const c = structuredClone(catalog);
+    c.entities['/w'].config.managedDevices = ['/inc'];
+    c.entities['/inc'] = { type: 'passage-incubator/v1' } as never;
+    c.types['passage-incubator/v1'] = { properties: { controlSafe: {}, doorKnown: {}, temperatureC: {}, environmentReady: {} } } as never;
+    let temperature = 37;
+    const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => {
+      const result = await original(path, options);
+      if (path.includes('/state?')) (result as { entities: Record<string, unknown> }).entities['/inc'] = { values: { controlSafe: true, doorKnown: true, temperatureC: temperature, environmentReady: true }, meta: {} };
+      return result;
+    });
+    const review = await f.controller.review('p', c); temperature = 37.02;
+    await f.controller.prepareRemaining('p', review);
+    const checked = f.http.mock.calls.filter(([path]) => path.endsWith('/check')).map(([, options]) => JSON.parse(String(options?.body)).property);
+    expect(checked).toContain('environmentReady'); expect(checked).not.toContain('temperatureC');
+  });
+  it('reads a static physical reservoir without inventing an information-plane station', async () => {
+    const f = fixture(); const c = structuredClone(catalog);
+    c.entities['/w'].config.vessels = [{ entityKey: '/reservoir', site: '/reservoir/Content' }];
+    const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => path.endsWith('/scene') ? { nodes: [{ entityKey: '/reservoir', kind: 'body' }], sites: [{ entityKey: '/reservoir/Content', parentBodyKey: '/reservoir' }] } :
+      path.includes('/pose?') ? { p: [0, 0, 0], q: [0, 0, 0, 1], epoch: 0, sceneRevision: 'r' } : original(path, options));
+    const review = await f.controller.review('p', c);
+    expect(review.staticPoses).toHaveLength(1); expect(review.facts.some(fact => fact.entity === '/reservoir' && fact.property === 'station')).toBe(false);
+    await f.controller.prepareRemaining('p', review);
   });
   it('requires a reviewed checkpoint before enabling any material dispatch', async () => {
     const f = fixture();
@@ -90,7 +117,7 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
     expect(f.http.mock.calls.some(([path]) => path.endsWith('/revisions'))).toBe(false);
   });
   it('rejects changed material after human inspection before revision', async () => {
-    const f = fixture(); const review = await f.controller.review('p', catalog); f.values.materialRevision++;
+    const f = fixture(); const review = await f.controller.review('p', catalog); f.values.materialRevision++; f.values.materialSnapshot.revision++;
     await expect(f.controller.prepareRemaining('p', review)).rejects.toThrow('先核对');
     expect(f.http.mock.calls.some(([path]) => path.endsWith('/revisions'))).toBe(false);
   });

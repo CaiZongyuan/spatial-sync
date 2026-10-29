@@ -22,14 +22,6 @@ test('passage Web submits once, fences takeover, freezes time and replays withou
     await page.goto(`/sessions/${sessionId}?plan=${plan.id}`);
     await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
     const controls = page.getByRole('region', { name: '传代控制' });
-    await controls.getByRole('button', { name: '申请浏览器控制', exact: true }).click();
-    await expect(controls.getByRole('button', { name: '确认停稳交接' })).toBeEnabled();
-    await controls.getByRole('button', { name: '确认停稳交接' }).click();
-    await expect(controls.getByRole('status')).toContainText('已确认控制交接');
-    await controls.getByRole('button', { name: '读取现场核对' }).click();
-    await controls.locator('.passage-review input').check();
-    await controls.getByRole('button', { name: '准备未开始步骤' }).click();
-    await expect(controls.getByRole('status')).toContainText('已修订');
     let admittedPosts = 0;
     await page.route('**/api/v1/sessions/*/actions', async interception => {
       const body = interception.request().postDataJSON();
@@ -39,22 +31,20 @@ test('passage Web submits once, fences takeover, freezes time and replays withou
         await interception.abort('failed');
       } else await interception.continue();
     });
-    await controls.getByRole('button', { name: '执行一步' }).click();
+    await controls.getByRole('button', { name: '单步', exact: true }).click();
     await expect(page.getByTestId('plan-step-100001')).toHaveAttribute('data-status', 'done');
     await expect(page.getByTestId('plan-step-100002')).toHaveAttribute('data-status', 'pending');
     expect(admittedPosts).toBe(1);
     const observed: PlanDocument = await (await request.get(`${api}/api/v1/plans/${plan.id}`)).json();
     expect(observed.stepResults['100001'].invocationIds).toHaveLength(1);
     await expect(controls.getByRole('status')).toContainText('当前步骤已完成');
-    await controls.getByRole('button', { name: '自动推进' }).click();
+    await expect(controls.locator('input[type=checkbox]:visible')).toHaveCount(0);
+    await controls.getByRole('button', { name: '运行', exact: true }).click();
     await expect(page.getByTestId('plan-step-100002')).toHaveAttribute('data-status', 'running');
     await controls.getByRole('button', { name: '暂停', exact: true }).click();
     await expect(controls.getByRole('status')).toContainText('已暂停');
     const before = await (await request.get(route)).json();
-    await controls.getByRole('button', { name: '人工接管', exact: true }).click();
-    await controls.getByRole('button', { name: '取消在途调用' }).click();
-    await expect(controls.getByRole('button', { name: '确认停稳交接' })).toBeEnabled();
-    await controls.getByRole('button', { name: '确认停稳交接' }).click();
+    await controls.getByRole('button', { name: '接管', exact: true }).click();
     await expect.poll(async () => (await (await request.get(`${route}/state?keys=%2Fworkcell`)).json()).entities['/workcell'].values.controlMode).toBe('manual');
     const after = await (await request.get(route)).json();
     expect(after.simTime).toBe(before.simTime);
@@ -79,4 +69,53 @@ test('passage Web submits once, fences takeover, freezes time and replays withou
   } finally {
     if (!stopped) await request.delete(route);
   }
+});
+
+test('failed fractional intent keeps its original resolved goal and resumes only an explicit literal remainder', async ({ page, request }, info) => {
+  test.setTimeout(90_000);
+  const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', seed: 77, continueWithoutObservers: true } });
+  expect(created.ok()).toBe(true); const { sessionId } = await created.json(); const route = `${api}/api/v1/sessions/${sessionId}`;
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  try {
+    const actions = [
+      { action: 'reserve', params: { resource: '/peer', device: '/workcell' } },
+      { action: 'pickupTip', params: { tip: 'T1' } },
+      { action: 'aspirateFraction', params: { vessel: 'source', fraction: .5 } },
+    ];
+    const submitted = await request.post(`${api}/api/v1/plans`, { data: { title: 'Synthetic resolved fraction recovery', sessionId, target: 'session',
+      steps: actions.map((action, index) => ({ id: 200001 + index, do: { entity: '/workcell', action: action.action,
+        params: { ...action.params, owner: 'auto', epoch: 0, operationId: `fraction-${index}` } } })) } });
+    expect(submitted.ok()).toBe(true); const plan: PlanDocument = await submitted.json();
+    const posts: { action: string; params: Record<string, unknown> }[] = [];
+    page.on('request', message => { if (message.method() === 'POST' && message.url().endsWith('/actions')) { const body = message.postDataJSON(); if (body.planId) posts.push(body); } });
+    await page.goto(`/sessions/${sessionId}?plan=${plan.id}`);
+    await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
+    const controls = page.getByRole('region', { name: '传代控制' });
+    await controls.getByRole('button', { name: '运行', exact: true }).click();
+    await expect(page.getByTestId('plan-step-200003')).toHaveAttribute('data-status', 'failed', { timeout: 20_000 });
+    const state = async () => (await (await request.get(`${route}/state?keys=%2Fworkcell`)).json()).entities['/workcell'].values;
+    const failed = await state();
+    const receipt = failed.materialSnapshot.operations.find((row: { operationId: string }) => row.operationId === 'fraction-2');
+    expect(receipt.requestedUl).toBe(250); expect(receipt.resolvedUl).toBeCloseTo(250, 2); expect(receipt.appliedUl).toBeCloseTo(40, 5); expect(receipt.remainingUl).toBeCloseTo(210, 2);
+    expect(failed.materialSnapshot.vessels[0].volumeUl).toBeCloseTo(460, 5); expect(failed.materialSnapshot.tip.volumeUl).toBeCloseTo(40, 5);
+    await controls.getByRole('button', { name: '接管', exact: true }).click();
+    await expect.poll(async () => (await state()).controlMode).toBe('manual');
+    await controls.getByRole('button', { name: '继续', exact: true }).click();
+    await expect(controls.getByRole('heading', { name: '续行前核对' })).toBeVisible();
+    const form = controls.locator('fieldset').filter({ hasText: '200003' });
+    await expect(form).toContainText('原解析目标 250'); await expect(form).toContainText('已实转 40');
+    await form.getByRole('button', { name: /^填入原解析目标剩量/ }).click();
+    await form.getByRole('checkbox', { name: /已核对原目标/ }).check();
+    await info.attach('fraction-40-remainder-review.png', { body: await page.screenshot(), contentType: 'image/png' });
+    await controls.getByRole('button', { name: '继续', exact: true }).click();
+    await expect(page.getByTestId('plan-step-200003')).toHaveAttribute('data-status', 'done', { timeout: 20_000 });
+    const after = await state();
+    expect(posts.filter(row => row.action === 'aspirateFraction')).toHaveLength(1);
+    const repair = posts.filter(row => row.action === 'aspirate'); expect(repair).toHaveLength(1);
+    expect(Number(repair[0].params.volumeUl)).toBeCloseTo(210, 2); expect(repair[0].params.operationId).not.toBe('fraction-2');
+    expect(repair[0].params).not.toHaveProperty('fraction');
+    expect(after.materialSnapshot.vessels[0].volumeUl).toBeCloseTo(250, 2); expect(after.materialSnapshot.tip.volumeUl).toBeCloseTo(250, 2);
+    expect(after.materialSnapshot.operations.find((row: { operationId: string }) => row.operationId === 'fraction-2').appliedUl).toBeCloseTo(40, 5);
+    expect(errors).toEqual([]);
+  } finally { await request.delete(route); }
 });

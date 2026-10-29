@@ -40,6 +40,13 @@ describe('reviewed material recovery and stable round identities', () => {
   });
   it('rejects pending steps with a previous admitted invocation unless explicitly revised', () => {
     const p = plan([call(1, 'aspirate')]); p.stepResults['1'] = { invocationId: 'previous' };
-    expect(() => revisePlans([p], 'web', 2)).toThrow('已启动');
+    expect(() => revisePlans([p], 'web', 2)).toThrow('只观察原调用');
+    expect(() => revisePlans([p], 'web', 2, { p: { 1: call(1, 'aspirate') as PlanStep } })).toThrow('只观察原调用');
+  });
+  it('requires explicit skipped replacements and allows reviewed checks without replaying the action', () => {
+    const p = plan([call(1, 'aspirateFraction', { fraction: .5 }, 'skipped')]);
+    expect(() => revisePlans([p], 'web', 2)).toThrow('跳过');
+    const documents = revisePlans([p], 'web', 2, { p: { 1: { id: 1, status: 'pending', check: { entity: '/w', property: 'controlSafe', equals: true } } } });
+    expect(documents.get('p')?.steps[0]).toMatchObject({ check: { property: 'controlSafe' } });
   });
 });

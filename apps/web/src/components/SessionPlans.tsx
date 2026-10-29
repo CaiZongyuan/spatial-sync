@@ -26,7 +26,7 @@ export function SessionPlans({ client, selection, selectPlan, selectStep }: {
       {selection.entries.length > 0 && <select aria-label="选择操作计划" value={plan?.id ?? ''} onChange={event => selectPlan(event.target.value)}>
         {!plan && <option value="">选择计划</option>}{selection.entries.map(value => <option key={value.plan.id} value={value.plan.id}>{value.plan.title} · r{value.plan.revision}</option>)}
       </select>}</header>
-    <CellPassage client={client} plan={plan} />
+    <CellPassage client={client} plan={plan} plans={selection.entries.map(entry => entry.plan)} selectPlan={selectPlan} />
     {plan ? <PlanChecklist {...{ client, plan, entry }} document={metadata.document} previous={metadata.previous}
       selected={selected?.id} select={selectStep} metadataError={metadata.error} metadataRetry={metadata.refresh}
       historyError={metadata.historyError} previewControls={<PreviewNotice preview={preview} />} /> :

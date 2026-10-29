@@ -49,6 +49,10 @@ def create_fixture_app(root):
                 extra_types=[Path("devices/types/labware.v1.yaml").read_text(encoding="utf8")],
             )
             self.catalog = self.host.catalog
+            # Seed 77 retains 40 uL of the first positive pump command until a
+            # public control-generation change. Later commands follow measured
+            # targets. This is external actuator feedback, never Newton proof.
+            self.limited_pump_epoch = None
             # Seed 99 is an explicit external-actuator settling scenario.
             if options.seed == 99:
                 self.actuator.velocities["x"] = 0.001
@@ -76,6 +80,14 @@ def create_fixture_app(root):
                 self._control_index += 1
                 if self.options.seed == 99:
                     self.actuator.velocities["x"] = 0.001 if self.sim_time < 0.5 else 0.0
+                if self.options.seed == 77:
+                    epoch = self.host.values()["/workcell"]["controlEpoch"]
+                    target = self.actuator.targets["pump"]
+                    if self.limited_pump_epoch is None and target > 0.0004:
+                        self.limited_pump_epoch = epoch
+                    self.actuator.advance(
+                        min(target, 0.0004) if epoch == self.limited_pump_epoch else target
+                    )
                 for event in self.host.tick(
                     self._control_index / self.options.controlHz, 1 / self.options.controlHz
                 ):
