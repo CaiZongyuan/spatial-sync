@@ -26,6 +26,11 @@ Automatic and browser clients must use mutually exclusive control owners. A
 client taking control submits `requestControl`, observes the new epoch and
 holding mode, waits for source-reported `controlSafe`, and submits
 `confirmControl`. Acceptance of a control request does not prove standstill.
+Acknowledgements can precede fact publication. The client sends each phase once,
+waits for its own invocation and matching operation/parameter receipt, and allows
+the exact prior snapshot while those facts propagate. A different owner or
+session/scene/epoch stops dispatch. Confirmation also waits for its own receipt,
+the requested owner/mode, and all managed devices' actual safe flags.
 The old owner must stop dispatch and continue observing accepted invocations.
 The source enforces generations even when a stale client read preceded takeover.
 
