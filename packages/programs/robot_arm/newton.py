@@ -18,6 +18,8 @@ VELOCITY_LIMITS = (2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26)
 
 class RobotArmProgram:
     id, type, tick_priority = "robot_arm.newton", "robot-arm/v1", 10
+    gripper_speed_mps = .4
+    gripper_timeout_s = 2
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
@@ -43,7 +45,7 @@ class RobotArmProgram:
         self.hand, self.tcp = port.bind_body(ctx.config.handBody), port.bind_site(ctx.config.tcpSite)
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
         self.locations = ctx.config.locations["locations"]
-        self.grasp_height = ctx.config.graspHeightM
+        self.grasp_height = getattr(ctx.config, "graspHeightM", 0.0)
         self.handle, self.segment, self.plan = None, None, []
         self.transport, self.cancel_requested, self.released = False, False, None
         self.pick_tube = None
@@ -67,6 +69,16 @@ class RobotArmProgram:
     def _in_fingers(self, port, tube):
         local = self._finger_position(port, tube)
         return abs(local[0]) < 0.016 and abs(local[1]) < 0.02 and abs(local[2]) < 0.025
+
+    def _release_opening(self, port, body):
+        return 0.017 + 2 * abs(self._finger_position(port, body)[1])
+
+    def _grasp_ready(self, port, body, opening):
+        return opening <= self._release_opening(port, body) and self._in_fingers(port, body)
+
+    def _placement(self, port, body, sites, key):
+        return tube_location(port.body[body], port.relative_site_velocity(body, sites),
+                             port.site_poses(sites), [key]) == key
 
     def _facts(self, ctx):
         port = ctx.physics
@@ -210,13 +222,13 @@ class RobotArmProgram:
     def _drive_gripper(self, ctx, dt):
         # URDF finger speed is .2m/s each. A position step from80mm to0
         # otherwise crosses the contact interval between control snapshots.
-        self.gripper_target += float(np.clip(self.gripper_goal - self.gripper_target, -0.4 * dt, 0.4 * dt))
+        distance = self.gripper_speed_mps * dt
+        self.gripper_target += float(np.clip(self.gripper_goal - self.gripper_target, -distance, distance))
         for joint in self.fingers:
             ctx.physics.set_joint_target(joint, [self.gripper_target / 2])
         actual = self._width(ctx.physics)
         for body in tuple(self.pending_release):
-            local = self._finger_position(ctx.physics, body)
-            if actual >= 0.017 + 2 * abs(local[1]):
+            if actual >= self._release_opening(ctx.physics, body):
                 ctx.physics.unweld(self.hand, body)
                 self.pending_release.remove(body)
 
@@ -294,17 +306,16 @@ class RobotArmProgram:
             actual = self._width(port)
             if kind == "pick" and ctx.config.graspMode == "weld":
                 body = self.tubes[self.pick_tube]
-                local = self._finger_position(port, body)
                 # Capture at first pad contact, including measured centering
                 # error; nominal opening alone can push an offset tube away.
-                if actual <= 0.017 + 2 * abs(local[1]) and self._in_fingers(port, body):
+                if self._grasp_ready(port, body, actual):
                     port.weld(self.hand, body)
             self.stable = self.stable + dt if abs(actual - self.last_width) < 0.0005 else 0
             self.last_width = actual
             done = (
                 self.elapsed >= 0.2 and self.stable >= 0.2 and (kind != "place" or not self.pending_release)
             )
-            if self.elapsed > 2:
+            if self.elapsed > self.gripper_timeout_s:
                 if kind == "pick":
                     self._recover_pick(ctx, name)
                 else:
@@ -347,11 +358,9 @@ class RobotArmProgram:
             site = self.locations[name]["site"]
             sites = port.bind_sites([site])
             try:
-                actual = tube_location(port.body[self.tubes[self.pick_tube]],
-                                       port.relative_site_velocity(self.tubes[self.pick_tube], sites),
-                                       port.site_poses(sites), [site])
                 sampled_at = float(port.last_time)
-                valid = actual == site and np.isfinite(sampled_at)
+                valid = (self._placement(port, self.tubes[self.pick_tube], sites, site)
+                         and np.isfinite(sampled_at))
             except (ValueError, TypeError):
                 valid, sampled_at = False, 0
             if not valid:

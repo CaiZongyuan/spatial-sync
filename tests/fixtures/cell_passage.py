@@ -1,0 +1,258 @@
+"""Public HostCore seam; a deterministic external PhysicsPort records real stroke feedback."""
+
+from pathlib import Path
+
+import numpy as np
+import yaml
+
+from packages.info.catalog import load_catalog
+from packages.info.program import HostCore, ProgramConfig
+from packages.programs.cell_passage.workcell import WorkcellProgram
+from packages.protocol.schema import SceneManifest
+
+
+class StrokePort:
+    def __init__(self):
+        self.q = {key: 0.0 for key in ("x", "y", "z", "pump")}
+        self.targets = self.q.copy()
+        self.welds = set()
+        self.velocities = self.q.copy()
+        self.positions = {}
+        self.quaternions = {}
+        self.body_positions = {}
+        self.body_quaternions = {}
+        self.body_velocities = {}
+        self.limits = {"pump": (np.array([0], dtype=np.float32), np.array([0.01], dtype=np.float32))}
+
+    def bind_body(self, key):
+        return key
+
+    def weld(self, parent, child):
+        self.welds.add((parent, child))
+
+    def unweld(self, parent, child):
+        self.welds.remove((parent, child))
+
+    def bind_joint(self, key):
+        return key
+
+    def bind_site(self, key):
+        return key
+
+    def bind_sites(self, keys):
+        return tuple(keys)
+
+    def joint_q(self, key):
+        return np.array([self.q[key]])
+
+    def joint_qd(self, key):
+        return np.array([self.velocities[key]])
+
+    def joint_limits(self, key):
+        lower, upper = self.limits[key]
+        return lower.copy(), upper.copy()
+
+    def set_joint_target(self, key, value):
+        self.targets[key] = float(value[0])
+
+    def set_joint_target_velocity(self, key, value):
+        pass
+
+    def site_pose(self, key):
+        return np.asarray(self.positions.get(key, [0, 0, 0])), np.asarray(
+            self.quaternions.get(key, [0, 0, 0, 1])
+        )
+
+    def body_pose(self, key):
+        if self.body_positions.get(key, []) is None:
+            raise ValueError("External pose unavailable")
+        return np.asarray(self.body_positions.get(key, [0, 0, 0])), np.asarray(
+            self.body_quaternions.get(key, [0, 0, 0, 1])
+        )
+
+    def relative_site_velocity(self, body, sites):
+        return np.asarray([self.body_velocities.get(body, [0, 0, 0]) for _ in sites])
+
+    def advance(self, pump):
+        self.q["pump"] = float(
+            np.clip(
+                pump, min(self.q["pump"], self.targets["pump"]), max(self.q["pump"], self.targets["pump"])
+            )
+        )
+
+
+class FactsProgram:
+    id, type, tick_priority = "facts.test", "facts-test/v1", 1
+
+    class Config(ProgramConfig):
+        station: str = "/imager"
+        settled: bool = True
+        completedCycle: str = "cycle-1"
+        completedLoad: list[str] = ["/source"]
+        cycleRunSeconds: float = 2
+        actualRotorTurns: float = 1
+        phase: str = "idle"
+        lidClosed: bool = False
+        controlSafe: bool = True
+        holding: str = ""
+
+    def init(self, ctx):
+        ctx.set(**ctx.config.model_dump())
+
+    def start(self, inv, ctx):
+        ctx.set(lidClosed=inv.params["closed"])
+        inv.succeed()
+
+
+class CabinetProgram:
+    id, type, tick_priority = "cabinet.test", "cabinet-test/v1", 1
+
+    class Config(ProgramConfig):
+        ready: bool | None = True
+
+    def init(self, ctx):
+        ctx.set(controlSafe=True)
+        if ctx.config.ready is not None:
+            ctx.set(cabinetReady=ctx.config.ready)
+
+    def start(self, inv, ctx):
+        ctx.set(cabinetReady=inv.params["ready"])
+        inv.succeed()
+
+
+def build_workcell_host(
+    tmp_path,
+    *,
+    vessels=None,
+    config=None,
+    facts=None,
+    cabinet_ready=True,
+    extra_bindings=(),
+    extra_programs=(),
+    extra_types=(),
+):
+    bindings = [
+        {
+            "key": "/cabinet",
+            "type": CabinetProgram.type,
+            "program": CabinetProgram.id,
+            "config": {"ready": cabinet_ready},
+        }
+    ]
+    if facts is not None:
+        bindings.append(
+            {"key": "/peer", "type": FactsProgram.type, "program": FactsProgram.id, "config": facts}
+        )
+    scene = tmp_path / "devices.yaml"
+    bindings.append(
+        {
+            "key": "/workcell",
+            "type": WorkcellProgram.type,
+            "program": WorkcellProgram.id,
+            "config": {
+                "axisJoints": ["x", "y", "z"],
+                "pumpJoint": "pump",
+                "tipSite": "tip",
+                "pipetteBody": "/pipette",
+                "cabinetEntity": "/cabinet",
+                "tipGeometry": {
+                    "tipMatingOffsetLocalM": [0, 0, 0.05],
+                    "tipAxisLocal": [0, 0, 1],
+                    "headMatingOffsetLocalM": [0, 0, 0.05],
+                    "headAxisLocal": [0, 0, 1],
+                    "socketDepthM": 0.012,
+                    "socketInnerDiameterM": 0.0108,
+                    "nozzleOuterDiameterM": 0.01,
+                },
+                "vessels": vessels
+                or [
+                    {
+                        "id": "source",
+                        "entityKey": "/source",
+                        "site": "/sourceSite",
+                        "capacityUl": 1000,
+                        "volumeUl": 500,
+                        "reagent": "medium",
+                    }
+                ],
+                "tips": [{"id": "T1", "site": "/T1", "bodyKey": "/tip1"}],
+                **(config or {}),
+            },
+        }
+    )
+    bindings.extend(extra_bindings)
+    for binding in bindings:
+        if binding["program"] == WorkcellProgram.id:
+            cfg = binding["config"]
+            cfg.setdefault("contentSites", sorted({row["site"] for row in cfg["vessels"]}))
+            cfg.setdefault("tipRackSites", sorted({row["site"] for row in cfg["tips"]}))
+    scene.write_text(yaml.safe_dump({"scene": "test", "entities": bindings}), encoding="utf8")
+    manifest = SceneManifest(
+        sessionId="test",
+        sceneRevision="r",
+        revisionNumericId=1,
+        sceneName="test",
+        source={"kind": "synthetic", "physicsDt": 1 / 240},
+        nodes=[{"kind": "group", "entityKey": row["key"], "name": row["key"]} for row in bindings],
+        sites=[
+            {"entityKey": name, "parentBodyKey": None, "localPose": {}} for name in ("/sourceSite", "/T1")
+        ],
+    )
+    registry = {
+        WorkcellProgram.id: WorkcellProgram,
+        FactsProgram.id: FactsProgram,
+        CabinetProgram.id: CabinetProgram,
+    }
+    registry.update({program.id: program for program in extra_programs})
+    (tmp_path / "types").mkdir()
+    definition = Path("devices/types/cell-passage-workcell.v1.yaml").read_text(encoding="utf8")
+    (tmp_path / "types/workcell.yaml").write_text(definition, encoding="utf8")
+    (tmp_path / "types/cabinet.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "type": CabinetProgram.type,
+                "title": "External cabinet signal",
+                "properties": {
+                    "cabinetReady": {"schema": {"type": ["boolean", "null"]}},
+                    "controlSafe": {"schema": {"type": "boolean"}},
+                },
+                "actions": {
+                    "setReady": {"params": {"ready": {"type": ["boolean", "null"]}}, "required": ["ready"]}
+                },
+            }
+        ),
+        encoding="utf8",
+    )
+    fields = FactsProgram.Config.model_fields
+    properties = {
+        name: {
+            "schema": {"type": "array", "items": {"type": "string"}}
+            if name == "completedLoad"
+            else {
+                "type": "boolean"
+                if name in ("settled", "lidClosed", "controlSafe")
+                else "number"
+                if name in ("cycleRunSeconds", "actualRotorTurns")
+                else "string"
+            }
+        }
+        for name in fields
+    }
+    (tmp_path / "types/facts.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "type": FactsProgram.type,
+                "title": "External mechanical facts",
+                "properties": properties,
+                "actions": {"setLid": {"params": {"closed": {"type": "boolean"}}, "required": ["closed"]}},
+            }
+        ),
+        encoding="utf8",
+    )
+    for index, definition in enumerate(extra_types):
+        (tmp_path / f"types/extra-{index}.yaml").write_text(definition, encoding="utf8")
+    port = StrokePort()
+    host = HostCore(
+        load_catalog(manifest, "test", registry, root=tmp_path, scene_file=scene), registry, physics=port
+    )
+    return host, port

@@ -1,0 +1,198 @@
+type: passage-centrifuge/v1
+title: Passage four-slot centrifuge
+description: Four slots require zero, two opposite, or four tubes. Visual speed capped
+  at 60 rpm; rotor stops on a whole revolution.
+properties:
+  lidClosed:
+    schema:
+      type: boolean
+  actualRpm:
+    schema:
+      type: number
+      minimum: 0
+    unit: rpm
+    description: Actual Newton spindle velocity, distinct from the teaching ramp.
+  phase:
+    schema:
+      enum:
+      - idle
+      - accelerating
+      - running
+      - decelerating
+      - fault
+  lidOpen:
+    schema:
+      type: boolean
+  rpm:
+    schema:
+      type: number
+      minimum: 0
+      maximum: 15000
+    unit: rpm
+    deadband: 10
+    maxRateHz: 5
+  remainingSeconds:
+    schema:
+      type: number
+      minimum: 0
+    unit: s
+    maxRateHz: 1
+  slots:
+    schema:
+      type: array
+      items:
+        type:
+        - string
+        - 'null'
+      minItems: 4
+      maxItems: 4
+    description: Reliably seated tubes; null does not prove the rotor area is empty.
+  loadSafe:
+    schema:
+      type: boolean
+    description: Loading is confirmed safe; false includes unsafe or unknown loading.
+  completedCycle:
+    schema:
+      type: string
+  cycleRunSeconds:
+    schema:
+      type: number
+      minimum: 0
+  actualRotorTurns:
+    schema:
+      type: number
+      minimum: 0
+  controlSafe:
+    schema:
+      type: boolean
+  completedLoad:
+    schema:
+      type: array
+      items:
+        type:
+        - string
+        - 'null'
+      maxItems: 4
+  loadedEntities:
+    schema:
+      type: array
+      items:
+        type:
+        - string
+        - 'null'
+      maxItems: 4
+  modeledMassKg:
+    schema:
+      type: array
+      items:
+        type: number
+        minimum: 0
+      minItems: 4
+      maxItems: 4
+alerts:
+  unsafeLoad:
+    when:
+      property: loadSafe
+      equals: false
+    forSeconds: 1
+    severity: warning
+    message: Rotor loading is unsafe or unconfirmed; start is blocked
+    hint: Inspect the rotor and settle or remove the reported tubes before starting
+actions:
+  openLid:
+    params:
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - owner
+    - epoch
+    - operationId
+    preconditions:
+    - property: phase
+      equals: idle
+      message: Wait for the rotor to stop before opening the lid
+    timeoutSeconds: 5
+  closeLid:
+    params:
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - owner
+    - epoch
+    - operationId
+    preconditions:
+    - property: phase
+      equals: idle
+    timeoutSeconds: 5
+  start:
+    params:
+      rpm:
+        type: number
+        minimum: 500
+        maximum: 15000
+        unit: rpm
+      durationSeconds:
+        type: number
+        minimum: 1
+        maximum: 3600
+        unit: s
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - rpm
+    - durationSeconds
+    - owner
+    - epoch
+    - operationId
+    preconditions:
+    - property: lidOpen
+      equals: false
+      message: The lid is open; call closeLid first
+    - property: phase
+      equals: idle
+    longRunning: true
+    timeoutSeconds: 3700
+    description: Run then decelerate; unsafe_load rejects unsafe or unknown loading
+      before motion, and imbalanced rejects nonopposite loading. Loading is checked
+      again at startup.
+  stop:
+    params:
+      owner:
+        type: string
+      epoch:
+        type: integer
+        minimum: 0
+      operationId:
+        type: string
+    required:
+    - owner
+    - epoch
+    - operationId
+    concurrent: true
+events:
+  runCompleted:
+    schema:
+      type: object
+      properties:
+        rpm:
+          type: number
+        durationSeconds:
+          type: number
+      required:
+      - rpm
+      - durationSeconds

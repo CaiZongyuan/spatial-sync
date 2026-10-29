@@ -27,6 +27,13 @@ class SiteRef:
     local: dict
 
 
+@dataclass(frozen=True)
+class PhysicalContact:
+    bodies: tuple[int, int]
+    shapes: tuple[str, str]
+    distance_m: float
+
+
 class PhysicsPort:
     def __init__(self, simulation, manifest):
         self.sim = simulation
@@ -46,6 +53,8 @@ class PhysicsPort:
             )
             for i, label in enumerate(model.joint_label)
         }
+        self._joint_limit_lower = model.joint_limit_lower.numpy().copy()
+        self._joint_limit_upper = model.joint_limit_upper.numpy().copy()
         self.sites = {
             site.entityKey: SiteRef(
                 self.bodies[site.parentBodyKey] if site.parentBodyKey else -1, site.localPose.model_dump()
@@ -77,6 +86,37 @@ class PhysicsPort:
     def bind_body(self, key):
         return self.bodies[key]
 
+    def collision_contacts(self, *, max_distance=0.0):
+        """Actual CPU MuJoCo contacts, mapped through Newton's shape identity.
+
+        MuJoCo sanitizes body names and includes separated pairs inside contact
+        margins. Neither is a physical contact oracle. Unknown backends fail
+        closed rather than returning an apparently empty contact list.
+        """
+        solver = self.sim.solver
+        if self.sim.solver_kind != "mujoco" or not self.sim.model.device.is_cpu:
+            raise ValueError("Physical contact queries require the CPU MuJoCo backend")
+        if not np.isfinite(max_distance):
+            raise ValueError("Contact distance bound must be finite")
+        if solver.mjc_geom_to_newton_shape is None:
+            raise ValueError("Solver contact identity mapping is unavailable")
+        mapping = solver.mjc_geom_to_newton_shape.numpy()[0]
+        shape_bodies = self.sim.model.shape_body.numpy()
+        result = []
+        distances = np.asarray(solver.mj_data.contact.dist[:solver.mj_data.ncon])
+        if not np.isfinite(distances).all():
+            raise ValueError("Solver contact distance is unknown")
+        for index in np.flatnonzero(distances <= max_distance):
+            contact = solver.mj_data.contact[int(index)]
+            shapes = tuple(int(mapping[int(geom)]) for geom in contact.geom)
+            if any(shape < 0 or shape >= self.sim.model.shape_count for shape in shapes):
+                raise ValueError("Solver contact has no Newton shape identity")
+            result.append(PhysicalContact(
+                tuple(int(shape_bodies[shape]) for shape in shapes),
+                tuple(self.sim.model.shape_label[shape] for shape in shapes), float(contact.dist),
+            ))
+        return result
+
     def preview_snapshot(self):
         from .kinematic_snapshot import KinematicSnapshot
 
@@ -84,6 +124,13 @@ class PhysicsPort:
 
     def bind_joint(self, key):
         return self.joints[key]
+
+    def joint_limits(self, joint):
+        """Return copied physical DOF limits; nq and nv need not have equal offsets."""
+        ref = self.bind_joint(joint) if isinstance(joint, str) else joint
+        if not isinstance(ref, JointRef) or ref not in self.joints.values():
+            raise KeyError("Unknown physical joint reference")
+        return self._joint_limit_lower[ref.qd].copy(), self._joint_limit_upper[ref.qd].copy()
 
     def bind_site(self, key):
         return self.sites[key]
