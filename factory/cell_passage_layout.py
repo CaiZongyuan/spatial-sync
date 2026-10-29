@@ -142,14 +142,21 @@ def populate(stage):
     for i in range(4):
         stations[f"Lid{i + 1}"] = (-0.2 + i * 0.2, -0.85, 1.232)
     for i in range(8):
-        stations[f"Lid{i + 5}"] = (-0.3 + i * 0.1, -0.36, 1.132)
+        stations[f"Lid{i + 5}"] = (-0.3 + i * 0.1, -0.44, 1.132)
     for name, point in stations.items():
         value = site(stage, LAB + "/Sites/" + name, point)
         if name == "IncubatorA":
             value.AddRotateZOp().Set(180.0)
         if not name.startswith(("Incubator", "Rack")) and name != "Imager":
+            # Caps need their own support: a plate-sized stand puts its legs
+            # inside the rail carriage or the neighboring centrifuge cover.
+            cap_park = name.startswith("Lid") and int(name[3:]) > 4
             size = (
-                (0.135, 0.092, 0.016) if not name.startswith(("Rack", "FlexTube")) else (0.025, 0.025, 0.012)
+                (0.060, 0.030, 0.008)
+                if cap_park
+                else (0.025, 0.025, 0.012)
+                if name.startswith(("Rack", "FlexTube"))
+                else (0.135, 0.092, 0.016)
             )
             offset = (
                 0.012 if name in ("Lid1", "Lid2", "Lid3", "Lid4") else 0.008 if name.startswith("Lid") else 0
