@@ -75,10 +75,11 @@ class JointPort:
     def set_joint_target_velocity(self, *_):
         pass
 
-    def collision_contacts(self, *, max_distance=0):
+    def collision_contacts(self, *, max_distance=0, bodies=None):
         if self.contact_error:
             raise ValueError("Unknown contact backend")
-        return [row for row in self.contacts if row.distance_m <= max_distance]
+        return [row for row in self.contacts if row.distance_m <= max_distance
+                and (bodies is None or any(body in bodies for body in row.bodies))]
 
     def collision_bounds(self, body):
         if self.bounds_error:

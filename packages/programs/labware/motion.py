@@ -119,7 +119,7 @@ class LabwareMotionProgram(RobotArmProgram):
     def _grasp_ready(self, port, body, opening):
         offset, diameter = self.body_grips[body]
         try:
-            contacts = port.collision_contacts()
+            contacts = port.collision_contacts(bodies={body})
         except ValueError:
             return False  # Unavailable physics cannot qualify a fixed grasp.
         qualified = physical_grasp(

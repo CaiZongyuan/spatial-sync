@@ -1,8 +1,10 @@
 """Indexed CPU snapshot and one buffered actuator commit per control tick."""
 
 import os
+from copy import copy
 from dataclasses import dataclass
 from itertools import product
+from numbers import Integral
 from time import monotonic
 from types import SimpleNamespace
 
@@ -34,6 +36,21 @@ class PhysicalContact:
     bodies: tuple[int, int]
     shapes: tuple[str, str]
     distance_m: float
+
+
+def _scope_masks(contype, affinity, interested):
+    """Encode the original pair truth table using only interested classes."""
+    ct, af = np.asarray(contype, dtype=np.uint32), np.asarray(affinity, dtype=np.uint32)
+    classes = np.unique(np.stack((ct[interested], af[interested]), axis=1), axis=0)
+    if len(classes) > 32:
+        return None
+    scoped_ct, scoped_af = np.zeros_like(ct), np.zeros_like(af)
+    for index, (kind, accepts) in enumerate(classes):
+        bit = np.uint32(1) << np.uint32(index)
+        allowed = ((kind & af) | (ct & accepts)) != 0
+        scoped_af[allowed] |= bit
+        scoped_ct[interested & (ct == kind) & (af == accepts)] = bit
+    return scoped_ct.view(np.int32), scoped_af.view(np.int32)
 
 
 class PhysicsPort:
@@ -73,6 +90,8 @@ class PhysicsPort:
         )
         self._contact_data = self._contact_state = None
         self._contact_cache = self._contact_error = None
+        self._contact_scope_cache, self._contact_scope_errors = {}, {}
+        self._contact_scope_model = None
         self._targets = tuple(
             wp.clone(array, device="cpu", pinned=model.device.is_cuda)
             for array in (simulation.control.joint_target_q, simulation.control.joint_target_qd)
@@ -95,7 +114,7 @@ class PhysicsPort:
     def bind_body(self, key):
         return self.bodies[key]
 
-    def collision_contacts(self, *, max_distance=0.0):
+    def collision_contacts(self, *, max_distance=0.0, bodies=None):
         """Captured-pose CPU contacts, mapped through Newton's shape identity.
 
         MuJoCo sanitizes body names and includes separated pairs inside contact
@@ -116,6 +135,36 @@ class PhysicsPort:
             raise ValueError("Contact model identity changed; a new PhysicsPort is required")
         if solver.mjc_geom_to_newton_shape is None or solver.mjc_body_to_newton is None:
             raise ValueError("Solver contact identity mapping is unavailable")
+        scope = None
+        if bodies is not None:
+            if (not bodies or any(isinstance(body, bool) or not isinstance(body, Integral)
+                                  or not -1 <= body < len(self.frame_body) for body in bodies)):
+                raise ValueError("Contact body scope is unknown")
+            scope = tuple(sorted(set(int(body) for body in bodies)))
+        scoped = scope is not None and os.getenv("SPATIAL_NEWTON_CONTACT_SCOPED") == "1"
+        if scoped and scope not in self._contact_scope_cache:
+            if scope in self._contact_scope_errors:
+                raise ValueError(self._contact_scope_errors[scope])
+            native = self._scope_model(scope)
+            if native is None:
+                scoped = False  # Unsupported encoding/callback: keep the original full query.
+            else:
+                try:
+                    self._contact_scope_cache[scope] = self._current_contacts(native=native)
+                except (AttributeError, AssertionError, RuntimeError, TypeError, ValueError) as error:
+                    self._contact_scope_errors[scope] = f"Scoped contact facts are unavailable: {error}"
+                    raise ValueError(self._contact_scope_errors[scope]) from error
+        if scoped:
+            snapshot = self._contact_scope_cache[scope]
+        else:
+            snapshot = self._full_contacts()
+        selected = np.flatnonzero(snapshot.distances <= max_distance)
+        if scope is not None and len(selected):
+            owners = snapshot.shape_bodies[snapshot.mapping[snapshot.geometries[selected]]]
+            selected = selected[np.any(np.isin(owners, scope), axis=1)]
+        return self._decode_contacts(snapshot, selected)
+
+    def _full_contacts(self):
         if self._contact_error is not None:
             raise ValueError(self._contact_error)
         if self._contact_cache is None:
@@ -124,11 +173,38 @@ class PhysicsPort:
             except (AttributeError, AssertionError, RuntimeError, TypeError, ValueError) as error:
                 self._contact_error = f"Captured-pose contact facts are unavailable: {error}"
                 raise ValueError(self._contact_error) from error
-        snapshot = self._contact_cache
+        return self._contact_cache
+
+    def _scope_model(self, bodies):
+        import mujoco
+
+        native = self.sim.solver.mj_model
+        if native.nflex or native.nplugin or mujoco.get_mjcb_contactfilter() is not None:
+            return None
+        mapping = self.sim.solver.mjc_geom_to_newton_shape.numpy()
+        if (mapping.shape != (1, native.ngeom) or np.any(mapping < 0)
+                or np.any(mapping >= self.sim.model.shape_count)):
+            return None
+        owners = self.sim.model.shape_body.numpy()[mapping[0]]
+        masks = _scope_masks(native.geom_contype, native.geom_conaffinity, np.isin(owners, bodies))
+        if masks is None:
+            return None
+        if self._contact_scope_model is None:
+            self._contact_scope_model = copy(native)
+        query_model = self._contact_scope_model
+        query_model.geom_contype[:], query_model.geom_conaffinity[:] = masks
+        query_model.body_contype[:] = 0
+        query_model.body_conaffinity[:] = 0
+        np.bitwise_or.at(query_model.body_contype, query_model.geom_bodyid, query_model.geom_contype)
+        np.bitwise_or.at(query_model.body_conaffinity, query_model.geom_bodyid, query_model.geom_conaffinity)
+        return query_model
+
+    @staticmethod
+    def _decode_contacts(snapshot, selected):
         result = []
         # Positive margin pairs dominate large scenes. Select compact rows
         # before allocating Python objects or resolving shape/body identities.
-        for index in np.flatnonzero(snapshot.distances <= max_distance):
+        for index in selected:
             index = int(index)
             row = snapshot.decoded.get(index)
             if row is None:
@@ -142,11 +218,11 @@ class PhysicsPort:
             result.append(row)
         return result
 
-    def _current_contacts(self):
+    def _current_contacts(self, *, native=None):
         import mujoco
 
         solver, model = self.sim.solver, self.sim.model
-        native = solver.mj_model
+        native = solver.mj_model if native is None else native
         if model.world_count != 1 or native.nflex or native.nplugin:
             raise ValueError("Contact snapshots require one rigid CPU world without plugins")
         geometry_map = solver.mjc_geom_to_newton_shape.numpy()
@@ -160,7 +236,7 @@ class PhysicsPort:
                 or not np.isfinite(self.qd).all() or not np.isfinite(self.last_time)):
             raise ValueError("Captured pose, coordinates and time must be finite")
         if self._contact_data is None:
-            self._contact_data = mujoco.MjData(native)
+            self._contact_data = mujoco.MjData(solver.mj_model)
             self._contact_state = SimpleNamespace(
                 joint_q=wp.array(self.q, dtype=wp.float32, device=model.device),
                 joint_qd=wp.array(self.qd, dtype=wp.float32, device=model.device),
@@ -293,6 +369,7 @@ class PhysicsPort:
                 or not np.array_equal(old_body, self.frame_body) or not np.array_equal(old_q, self.q)
                 or not np.array_equal(old_qd, self.qd)):
             self._contact_cache = self._contact_error = None
+            self._contact_scope_cache, self._contact_scope_errors = {}, {}
         self._contact_epoch = epoch
         self.velocity = (
             (self.body[:, :3] - previous) / dt

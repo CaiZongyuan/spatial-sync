@@ -26,10 +26,11 @@ class StrokePort:
         self.contacts = []
         self.contact_error = None
 
-    def collision_contacts(self, *, max_distance=0.0):
+    def collision_contacts(self, *, max_distance=0.0, bodies=None):
         if self.contact_error:
             raise ValueError(self.contact_error)
-        return [row for row in self.contacts if row.distance_m <= max_distance]
+        return [row for row in self.contacts if row.distance_m <= max_distance
+                and (bodies is None or any(body in bodies for body in row.bodies))]
 
     def bind_body(self, key):
         return key

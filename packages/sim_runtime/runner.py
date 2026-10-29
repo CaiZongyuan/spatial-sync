@@ -152,7 +152,10 @@ class _Runner:
         self._viewer_error = None
         sleep_requested = os.getenv("SPATIAL_NEWTON_CPU_SLEEPING") == "1"
         contact_requested = os.getenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY") == "1"
-        if (sleep_requested or contact_requested) and os.getenv("SPATIAL_PASSAGE_RUN_ROOT"):
+        scoped_requested = os.getenv("SPATIAL_NEWTON_CONTACT_SCOPED") == "1"
+        if (sleep_requested or contact_requested or scoped_requested) and os.getenv(
+            "SPATIAL_PASSAGE_RUN_ROOT"
+        ):
             # An owned-demo receipt, not a protocol/recording-format extension.
             directory = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]) / "runtime" / "native-options"
             directory.mkdir(parents=True, exist_ok=True)
@@ -160,6 +163,8 @@ class _Runner:
                 "sessionId": session_id, "runnerPID": os.getpid(), "cpuSleepingRequested": sleep_requested,
                 "nativeCpuSleepingEnabled": self.sim.native_cpu_sleeping,
                 "contactCollisionOnlyRequested": contact_requested,
+                "contactScopedRequested": scoped_requested,
+                "contactScopedFallback": "full-query when scope encoding or backend is unsupported",
                 "contactCollisionOnlyEnabled": bool(
                     contact_requested and self.sim.solver_kind == "mujoco" and self.sim.model.device.is_cpu
                     and self.sim.model.world_count == 1 and not self.sim.solver.mj_model.nflex

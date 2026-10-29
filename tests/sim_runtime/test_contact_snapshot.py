@@ -20,6 +20,45 @@ from packages.sim_runtime.simulation import NewtonSimulation
 pytestmark = pytest.mark.newton
 
 
+@pytest.mark.parametrize("collision_only", ["0", "1"])
+def test_scoped_contacts_reuse_private_data_and_preserve_live_model(monkeypatch, collision_only):
+    monkeypatch.setenv("SPATIAL_NEWTON_CONTACT_SCOPED", "1")
+    monkeypatch.setenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY", collision_only)
+    with NewtonSimulation("phase", device="cpu", physics_dt=.01, config=moving_box(-.001, .2)) as sim:
+        port = observed(sim)
+        before = live_buffers(sim)
+        full = port.collision_contacts()
+        data = port._contact_data
+        body = port.bind_body("/World/Box")
+        scoped = port.collision_contacts(bodies={body})
+        assert scoped == full and scoped
+        assert port._contact_data is data
+        assert port._contact_scope_model is not sim.solver.mj_model
+        snapshot = port._contact_scope_cache[(body,)]
+        assert port.collision_contacts(bodies={body}) == scoped
+        assert port._contact_scope_cache[(body,)] is snapshot
+        assert live_buffers(sim) == before
+        sim.step(1)
+        port.capture()
+        assert not port._contact_scope_cache
+        assert port.collision_contacts(bodies={body}) == port.collision_contacts()
+        assert port._contact_data is data
+
+
+def test_scope_masks_preserve_interested_pair_truth_with_signed_bit():
+    from packages.sim_runtime.physics_port import _scope_masks
+
+    ct = np.array([0, 1, 2, 0x80000000, 0xffffffff], dtype=np.uint32)
+    af = np.array([0xffffffff, 0x80000000, 1, 2, 0], dtype=np.uint32)
+    interested = np.array([False, True, False, True, True])
+    scoped_ct, scoped_af = _scope_masks(ct.view(np.int32), af.view(np.int32), interested)
+    original = ((ct[:, None] & af) | (af[:, None] & ct)) != 0
+    actual = ((scoped_ct[:, None] & scoped_af) | (scoped_af[:, None] & scoped_ct)) != 0
+    np.testing.assert_array_equal(actual, original & (interested[:, None] | interested))
+    ct = np.arange(33, dtype=np.uint32)
+    assert _scope_masks(ct, ct, np.ones(33, dtype=bool)) is None
+
+
 def moving_box(gap, velocity):
     def builder():
         result = newton.ModelBuilder(up_axis=newton.Axis.Z, gravity=(0, 0, 0))

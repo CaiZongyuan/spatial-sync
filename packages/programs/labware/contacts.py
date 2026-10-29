@@ -12,7 +12,7 @@ def contacts_for_bodies(port, bodies, *, limit_m=CONTACT_LIMIT_M):
     try:
         if not math.isfinite(limit_m) or not 0 < limit_m <= .002:
             raise ValueError("Contact allowance must be finite and at most 2 mm")
-        contacts = port.collision_contacts(max_distance=-limit_m)
+        contacts = port.collision_contacts(max_distance=-limit_m, bodies=bodies)
         result = []
         for row in contacts:
             if (len(row.bodies) != 2 or None in row.bodies or len(row.shapes) != 2

@@ -378,7 +378,9 @@ class WorkcellProgram:
             active = self.moving_bodies.copy()
             if self.state["tip"]["id"]:
                 active.add(self.tip_bodies[self.state["tip"]["id"]])
-            contacts = ctx.physics.collision_contacts(max_distance=-ctx.config.contactAllowanceM)
+            contacts = ctx.physics.collision_contacts(
+                max_distance=-ctx.config.contactAllowanceM, bodies=active,
+            )
             hit = None
             for row in contacts:
                 if (
