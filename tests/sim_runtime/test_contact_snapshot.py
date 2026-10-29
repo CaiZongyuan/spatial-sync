@@ -1,5 +1,7 @@
 """Contact position-stage facts must match the captured post-step pose."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -34,6 +36,69 @@ def moving_box(gap, velocity):
 def observed(sim):
     manifest = export_manifest(sim, session_id="phase", scene_revision="r", revision_numeric_id=1)
     return PhysicsPort(sim, manifest)
+
+
+def test_sparse_contact_selection_decodes_only_matching_rows(monkeypatch):
+    """Pure array fixture: no solver/model construction or native stepping."""
+    import mujoco
+
+    from packages.sim_runtime import physics_port
+
+    distances = np.r_[[-.0015, -.0005, 0], np.full(4096, .001)]
+    geometries = np.tile([0, 1], (len(distances), 1))
+    contacts = SimpleNamespace(dist=distances, geom=geometries)
+
+    class ContactArray:
+        dist, geom = contacts.dist, contacts.geom
+
+        def __getitem__(self, index):
+            return SimpleNamespace(dist=self.dist[index], geom=self.geom[index])
+
+    def array(value):
+        return SimpleNamespace(numpy=lambda: np.asarray(value))
+
+    native = SimpleNamespace(nbody=2, ngeom=2, nflex=0, nplugin=0, body_mocapid=np.array([-1, -1]))
+    model = SimpleNamespace(world_count=1, shape_count=2, shape_body=array([-1, 0]),
+                            shape_label=["wall", "box"], device=SimpleNamespace(is_cpu=True))
+    solver = SimpleNamespace(mj_model=native, mjc_geom_to_newton_shape=array([[0, 1]]),
+                             mjc_body_to_newton=array([[-1, 0]]), _update_mjc_data=lambda *args: None)
+    port = object.__new__(PhysicsPort)
+    port.sim = SimpleNamespace(model=model, solver=solver, solver_kind="mujoco")
+    port._contact_binding = (
+        model, solver, native, solver.mjc_geom_to_newton_shape, solver.mjc_body_to_newton,
+    )
+    port._contact_cache = port._contact_error = None
+    port.q = port.qd = np.zeros(0, dtype=np.float32)
+    port.last_time = 0
+    port.frame_body = np.array([[.2, 0, 0, 0, 0, 0, 1]])
+    port._contact_data = SimpleNamespace(contact=ContactArray(), ncon=len(distances),
+                                         xpos=np.array([[0, 0, 0], [.2, 0, 0]]),
+                                         xquat=np.array([[1, 0, 0, 0], [1, 0, 0, 0]]))
+    port._contact_state = SimpleNamespace(joint_q=SimpleNamespace(assign=lambda value: None),
+                                          joint_qd=SimpleNamespace(assign=lambda value: None))
+    monkeypatch.setattr(mujoco, "mj_fwdPosition", lambda *args: None)
+    decoded = []
+    real_contact = physics_port.PhysicalContact
+
+    def count(*args):
+        decoded.append(args)
+        return real_contact(*args)
+
+    monkeypatch.setattr(physics_port, "PhysicalContact", count)
+    assert port.collision_contacts(max_distance=-.002) == []
+    assert len(decoded) == 0, "Unselected positive margins must never become Python contact objects"
+    rows = port.collision_contacts()
+    assert [row.distance_m for row in rows] == distances[:3].tolist()
+    assert all(row.bodies == (-1, 0) and row.shapes == ("wall", "box") for row in rows)
+    assert len(decoded) == 3
+    assert len(port.collision_contacts(max_distance=-.001)) == 1 and len(decoded) == 3
+    assert len(port.collision_contacts(max_distance=.002)) == len(distances)
+    assert len(decoded) == len(distances)
+    # Even an unselected positive row must retain the existing finite check.
+    distances[-1] = np.nan
+    port._contact_cache = None
+    with pytest.raises(ValueError, match="distance is unknown"):
+        port.collision_contacts(max_distance=-.002)
 
 
 @pytest.mark.parametrize("gap,velocity", [(.0001, -.2), (-.0001, .2)])

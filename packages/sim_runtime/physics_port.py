@@ -123,7 +123,23 @@ class PhysicsPort:
             except (AttributeError, AssertionError, RuntimeError, TypeError, ValueError) as error:
                 self._contact_error = f"Captured-pose contact facts are unavailable: {error}"
                 raise ValueError(self._contact_error) from error
-        return [row for row in self._contact_cache if row.distance_m <= max_distance]
+        snapshot = self._contact_cache
+        result = []
+        # Positive margin pairs dominate large scenes. Select compact rows
+        # before allocating Python objects or resolving shape/body identities.
+        for index in np.flatnonzero(snapshot.distances <= max_distance):
+            index = int(index)
+            row = snapshot.decoded.get(index)
+            if row is None:
+                shapes = snapshot.mapping[snapshot.geometries[index]]
+                row = PhysicalContact(
+                    tuple(int(snapshot.shape_bodies[shape]) for shape in shapes),
+                    tuple(snapshot.shape_labels[shape] for shape in shapes),
+                    float(snapshot.distances[index]),
+                )
+                snapshot.decoded[index] = row
+            result.append(row)
+        return result
 
     def _current_contacts(self):
         import mujoco
@@ -182,20 +198,20 @@ class PhysicsPort:
             raise ValueError("Query pose does not match the captured Newton frame")
         mapping = geometry_map[0]
         shape_bodies = model.shape_body.numpy()
-        result = []
-        distances = np.asarray(query.contact.dist[:query.ncon])
+        distances = np.array(query.contact.dist[:query.ncon], copy=True)
         if not np.isfinite(distances).all():
             raise ValueError("Solver contact distance is unknown")
-        for index in range(query.ncon):
-            contact = query.contact[index]
-            shapes = tuple(int(mapping[int(geom)]) for geom in contact.geom)
-            if any(shape < 0 or shape >= model.shape_count for shape in shapes):
-                raise ValueError("Solver contact has no Newton shape identity")
-            result.append(PhysicalContact(
-                tuple(int(shape_bodies[shape]) for shape in shapes),
-                tuple(model.shape_label[shape] for shape in shapes), float(contact.dist),
-            ))
-        return tuple(result)
+        geometries = np.array(query.contact.geom[:query.ncon], copy=True)
+        if (geometries.shape != (query.ncon, 2) or np.any(geometries < 0)
+                or np.any(geometries >= len(mapping))):
+            raise ValueError("Solver contact geometry identity is unknown")
+        shapes = mapping[geometries]
+        if np.any(shapes < 0) or np.any(shapes >= model.shape_count):
+            raise ValueError("Solver contact has no Newton shape identity")
+        return SimpleNamespace(
+            distances=distances, geometries=geometries, mapping=mapping.copy(),
+            shape_bodies=shape_bodies.copy(), shape_labels=tuple(model.shape_label), decoded={},
+        )
 
     def preview_snapshot(self):
         from .kinematic_snapshot import KinematicSnapshot
