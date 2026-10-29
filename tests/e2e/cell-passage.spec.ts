@@ -161,3 +161,35 @@ for (const seed of [77, 78]) test(`mid-run takeover uses declared configuration 
     await info.attach(`config-expected-mid-${seed}.png`, { body: await page.screenshot(), contentType: 'image/png' });
   } finally { await request.delete(route); }
 });
+
+test('cell passage physical toolbar cannot bypass the fenced experiment pause or keyboard gate', async ({ page, request }) => {
+  const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', seed: 99, realtimeFactor: .1 } });
+  expect(created.ok()).toBe(true); const { sessionId } = await created.json(), route = `${api}/api/v1/sessions/${sessionId}`;
+  try {
+    await request.post(`${route}/commands`, { data: { requestId: 'fixture-freeze', command: 'pause' } });
+    const prepared = await request.post(`${api}/api/v1/plans`, { data: { title: 'Paused safety entrypoint', sessionId, target: 'session',
+      steps: [{ id: 100001, do: { entity: '/workcell', action: 'wait', params: { owner: 'auto', epoch: 0, operationId: 'future', seconds: 1 } } }] } });
+    expect(prepared.ok()).toBe(true); const plan = await prepared.json();
+    const physical: string[] = [];
+    page.on('websocket', socket => socket.on('framesent', frame => {
+      if (typeof frame.payload !== 'string') return;
+      const body = JSON.parse(frame.payload); if (body.type === 'command' && ['pause', 'resume', 'step', 'reset'].includes(body.command)) physical.push(body.command);
+    }));
+    await page.goto(`/sessions/${sessionId}?plan=${plan.id}`);
+    await expect(page.getByRole('region', { name: '细胞传代工作台' })).toBeVisible();
+    for (const name of ['Resume simulation', 'Step simulation', 'Reset simulation', 'Reload scene']) {
+      const button = page.getByRole('button', { name, exact: true }); await expect(button).toBeDisabled();
+      await button.evaluate(button => (button as HTMLButtonElement).click());
+    }
+    const state = async () => (await (await request.get(`${route}/state?keys=%2Fworkcell`)).json()).entities['/workcell'].values;
+    const before = await state(), time = (await (await request.get(route)).json()).simTime;
+    await page.getByRole('region', { name: '传代控制' }).getByRole('button', { name: '暂停', exact: true }).click();
+    await expect.poll(async () => (await state()).controlEpoch).toBeGreaterThan(before.controlEpoch);
+    const stale = await request.post(`${route}/actions`, { data: { requestId: 'late-before-takeover', entityKey: '/workcell', action: 'wait',
+      params: { owner: before.controlOwner, epoch: before.controlEpoch, operationId: 'late-before-takeover', seconds: 1 } } });
+    expect(stale.status()).toBe(409); expect((await stale.json()).error.code).toBe('stale_control');
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Space'); await page.keyboard.press('.');
+    expect((await (await request.get(route)).json()).simTime).toBe(time); expect(physical).toEqual([]);
+  } finally { await request.delete(route); }
+});
