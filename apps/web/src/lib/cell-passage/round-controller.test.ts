@@ -15,6 +15,8 @@ function roundFixture() {
       vessels: [], tips: [], tip: { id: '', volumeUl: 0, components: [], cells: [] }, reservations: [], observations: [], operations: [], controlRequests: [] } } };
   const admitted: { planId: string; params: Record<string, JsonValue> }[] = [];
   const controls: string[] = [];
+  const controlInvocations = new Map<string, unknown>();
+  entity.meta.controlSafe = { simTime: 1, sampleTimeMs: 100, source: 'virtual' };
   const session = { sessionId: 's', sceneRevision: 'r', epoch: 0, simTime: 1, state: 'RUNNING' };
   const behavior = { holdSafe: true, dropAdmission: false };
   let next = { owner: '', mode: 'auto' };
@@ -39,14 +41,17 @@ function roundFixture() {
         next = { owner: body.params.nextOwner, mode: body.params.mode };
         (object(entity.values.materialSnapshot)!.controlRequests as JsonValue[]).push({ action: 'requestControl', operationId: body.params.operationId,
           epoch: entity.values.controlEpoch, owner: entity.values.controlOwner, mode: entity.values.controlMode, paramsJson: JSON.stringify(body.params) });
-        return { invocationId: 'request', status: 'accepted' };
+        const row = { ...body, invocationId: `request-${entity.values.controlEpoch}`, epoch: session.epoch, status: 'succeeded', startedSimTime: session.simTime };
+        controlInvocations.set(row.invocationId, row); entity.meta.controlSafe.sampleTimeMs++;
+        return structuredClone(row);
       }
       if (body.action === 'confirmControl') {
         if (entity.values.controlSafe !== true) throw new Error('fixture rejects unsafe confirmation');
         controls.push(body.action); entity.values.controlOwner = next.owner; entity.values.controlMode = next.mode;
         (object(entity.values.materialSnapshot)!.controlRequests as JsonValue[]).push({ action: 'confirmControl', operationId: body.params.operationId,
           epoch: entity.values.controlEpoch, owner: entity.values.controlOwner, mode: entity.values.controlMode, paramsJson: JSON.stringify(body.params) });
-        return { invocationId: 'confirm', status: 'accepted' };
+        const row = { ...body, invocationId: `confirm-${entity.values.controlEpoch}`, epoch: session.epoch, status: 'succeeded', startedSimTime: session.simTime };
+        controlInvocations.set(row.invocationId, row); return structuredClone(row);
       }
       const active = plans.find(plan => plan.id === body.planId)!;
       admitted.push({ planId: body.planId, params: body.params });
@@ -58,7 +63,7 @@ function roundFixture() {
       if (behavior.dropAdmission) { behavior.dropAdmission = false; throw new TypeError('admitted response lost'); }
       return { invocationId: `i-${admitted.length}`, status: 'succeeded' };
     }
-    if (path.includes('/invocations/')) return { status: 'succeeded' };
+    if (path.includes('/invocations/')) return structuredClone(controlInvocations.get(path.split('/').at(-1)!) ?? { status: 'succeeded' });
     throw new Error(path);
   };
   const controller = new PassageController('s', '/w', http as never);

@@ -13,29 +13,125 @@ function fixture() {
     status: 'approved', steps: [{ id: 200001, status: 'pending', do: { entity: '/w', action: 'aspirate', params: { owner: '', epoch: 3, operationId: 'liquid-1', vessel: 'mother', volumeUl: 200 } } }], stepResults: {} } as unknown as PlanDocument;
   let invocation = { invocationId: 'i', status: 'running' };
   let loseResponse = false;
+  const controlInvocations = new Map<string, Record<string, unknown>>();
+  const safeMeta = { simTime: 1, sampleTimeMs: 100, source: 'virtual' as const };
   const http = vi.fn(async (path: string, options?: RequestInit): Promise<unknown> => {
     if (path === '/sessions/s') return structuredClone(session);
     if (path === '/plans/p') return structuredClone(plan);
-    if (path.includes('/state?')) return { entities: { '/w': { key: '/w', rev: 1, values: structuredClone(values), meta: {} } } };
+    if (path.includes('/state?')) return { entities: { '/w': { key: '/w', rev: 1, values: structuredClone(values), meta: { controlSafe: structuredClone(safeMeta) } } } };
     if (path.includes('/invocations?')) return { invocations: [] };
     if (path.endsWith('/check')) return { satisfied: true };
     if (path.endsWith('/revisions')) return structuredClone(plan);
     if (path === '/sessions/s/actions') {
       if (loseResponse) throw new TypeError('network response lost');
+      const body = JSON.parse(String(options?.body));
+      if (['requestControl', 'confirmControl'].includes(body.action)) {
+        const row = { ...body, invocationId: `control-${controlInvocations.size}`, epoch: session.epoch, status: 'succeeded', startedSimTime: session.simTime };
+        controlInvocations.set(row.invocationId, row); safeMeta.sampleTimeMs++;
+        return structuredClone(row);
+      }
       return structuredClone(invocation);
     }
-    if (path.includes('/invocations/')) return structuredClone(invocation);
+    if (path.includes('/invocations/')) return structuredClone(controlInvocations.get(path.split('/').at(-1)!) ?? invocation);
     throw new Error(`Unexpected request ${path}`);
   });
   const controller = new PassageController('s', '/w', http as never);
   values.controlOwner = controller.owner;
   if ('do' in plan.steps[0]) plan.steps[0].do.params.owner = controller.owner;
-  return { controller, session, values, plan, http, setInvocation: (status: string) => { invocation = { ...invocation, status }; }, lose: () => { loseResponse = true; } };
+  return { controller, session, values, plan, http, safeMeta, controlInvocations, setInvocation: (status: string) => { invocation = { ...invocation, status }; }, lose: () => { loseResponse = true; } };
 }
 const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: ['/w'], tips: [], vessels: [{ id: 'source', entityKey: '/w', site: '/sourceSite', capacityUl: 1000, volumeUl: 500, reagent: 'medium' }] } } }, types: { 'cell-passage-workcell/v1': { properties: { controlSafe: {} } } } } as unknown as Catalog;
 async function arm(f: ReturnType<typeof fixture>) { const review = await f.controller.review('p', catalog); await f.controller.prepareRemaining('p', review); await f.controller.arm('p'); }
 const actionCalls = (f: ReturnType<typeof fixture>) => f.http.mock.calls.filter(([path]) => path.endsWith('/actions'));
 describe('passage browser scheduling through existing HTTP/Plan API', () => {
+  it('waits for Source start and a fresh controlSafe property sample, not the global clock', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    await f.controller.begin('p', catalog, 'manual');
+    const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    const invocation = [...f.controlInvocations.values()][0]; invocation.status = 'accepted'; invocation.startedSimTime = null;
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl', epoch: 4,
+      owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(1);
+    invocation.status = 'running'; invocation.startedSimTime = 2;
+    f.session.simTime = 10;
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(1);
+    f.safeMeta.simTime = 2; f.safeMeta.sampleTimeMs++;
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
+  });
+  it('retries definitive never-started not_safe only after new physical samples with bounded new request identities', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    await f.controller.begin('p', catalog, 'manual');
+    const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl', epoch: 4,
+      owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+    await f.controller.progress();
+    const confirm = [...f.controlInvocations.values()][1];
+    Object.assign(confirm, { status: 'rejected', startedSimTime: null, error: { code: 'not_safe' } });
+    f.safeMeta.sampleTimeMs--; // Posting is not itself a new physical sample.
+    for (let n = 0; n < 3; n++) await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(2);
+    f.safeMeta.sampleTimeMs += 2; await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(3);
+    const first = JSON.parse(String(actionCalls(f)[1][1]?.body));
+    const second = JSON.parse(String(actionCalls(f)[2][1]?.body));
+    expect(second.params).toEqual(first.params); expect(second.requestId).not.toBe(first.requestId);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const current = [...f.controlInvocations.values()].at(-1)!;
+      Object.assign(current, { status: 'rejected', startedSimTime: null, error: { code: 'not_safe' } });
+      await f.controller.progress();
+      f.safeMeta.sampleTimeMs++;
+      if (attempt === 0) await f.controller.progress();
+      else await expect(f.controller.progress()).rejects.toThrow('上限');
+    }
+    expect(actionCalls(f)).toHaveLength(4); expect(f.controller.flow?.phase).toBe('blocked');
+  });
+  it('recovers a discarded HTTP 409 invocation by GET before classifying a definitive rejection', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    let rejectConfirm = true;
+    const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => {
+      if (path.includes('/invocations?entity=')) return { invocations: [...f.controlInvocations.values()] };
+      const result = await original(path, options);
+      if (path.endsWith('/actions') && JSON.parse(String(options?.body)).action === 'confirmControl' && rejectConfirm) {
+        rejectConfirm = false;
+        const row = [...f.controlInvocations.values()].at(-1)!;
+        Object.assign(row, { status: 'rejected', startedSimTime: null, error: { code: 'not_safe' } });
+        f.safeMeta.sampleTimeMs--;
+        throw new Error('HTTP 409 top-level Invocation discarded by request()');
+      }
+      return result;
+    });
+    await f.controller.begin('p', catalog, 'manual');
+    const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl', epoch: 4,
+      owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+    await f.controller.progress(); await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(2);
+    f.safeMeta.sampleTimeMs++; await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(3);
+  });
+  it('requires every managed controlSafe sample to be fresh before confirmation', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    const c = structuredClone(catalog); c.entities['/w'].config.managedDevices = ['/managed'];
+    const managed = { key: '/managed', values: { controlSafe: true }, meta: { controlSafe: { simTime: 0, sampleTimeMs: 10, source: 'virtual' } } };
+    const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => {
+      const result = await original(path, options);
+      if (path.includes('/state?')) (result as { entities: Record<string, unknown> }).entities['/managed'] = structuredClone(managed);
+      return result;
+    });
+    await f.controller.begin('p', c, 'manual');
+    const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl', epoch: 4,
+      owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(1);
+    managed.meta.controlSafe.simTime = 1; managed.meta.controlSafe.sampleTimeMs++;
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
+  });
   it('does not repost across a real HTTP ACK followed by delayed state publication', async () => {
     const f = fixture(); f.values.controlOwner = 'previous';
     const server = createServer(async (req, res) => {
@@ -129,7 +225,7 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
     f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl',
       epoch: 4, owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
     f.lose(); await f.controller.progress();
-    for (let n = 0; n < 3; n++) await f.controller.progress();
+    for (let n = 0; n < 3; n++) { f.safeMeta.sampleTimeMs++; await f.controller.progress(); }
     f.values.controlOwner = f.controller.owner; f.values.controlMode = 'manual';
     for (let n = 0; n < 3; n++) await f.controller.progress();
     expect(actionCalls(f)).toHaveLength(2); expect(f.controller.flow?.phase).toBe('acquiring');
