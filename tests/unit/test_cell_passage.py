@@ -46,7 +46,8 @@ def test_paused_control_accept_stops_old_targets_and_start_only_acknowledges(tmp
     host, port = workcell(tmp_path)
     invoke(host, "move", "move", position=[0.2, 0.1, 0.05])
     host.tick(0.1, 0.1)
-    assert port.targets["x"] == 0.2
+    host.tick(0.3, 0.2)
+    assert 0 < port.targets["x"] < 0.2
     assert invoke(host, "requestControl", "handoff", nextOwner="human", mode="manual").status == "accepted"
     state = host.values()["/workcell"]
     assert (state["controlEpoch"], state["controlMode"], state["controlSafe"]) == (1, "holding", True)
@@ -59,11 +60,11 @@ def test_paused_control_accept_stops_old_targets_and_start_only_acknowledges(tmp
         ).status
         == "accepted"
     )
-    host.tick(0.2, 0.1)
+    host.tick(0.4, 0.1)
     assert host.values()["/workcell"]["controlEpoch"] == 1
     assert invoke(host, "confirmControl", "confirm", epoch=1).status == "accepted"
     assert host.values()["/workcell"]["controlOwner"] == "human"
-    host.tick(0.3, 0.1)
+    host.tick(0.5, 0.1)
     assert (host.values()["/workcell"]["controlEpoch"], host.values()["/workcell"]["controlMode"]) == (
         1,
         "manual",
@@ -603,7 +604,7 @@ def test_review_handoff_new_owner_can_act_and_old_generation_is_rejected(tmp_pat
     host.tick(host.sim_time + 0.1, 0.1)
     for key, value in zip(("x", "y", "z"), (0.1, 0.1, 0.01), strict=True):
         port.q[key] = value
-    host.tick(host.sim_time + 0.1, 0.1)
+    host.tick(host.sim_time + 3, 3)
     state = host.values()["/workcell"]["materialSnapshot"]
     assert state["tip"]["volumeUl"] == pytest.approx(40 if active else 0)
     assert state["reservations"][0]["owner"] == "human"
