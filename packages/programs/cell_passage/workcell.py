@@ -118,6 +118,10 @@ class WorkcellProgram:
         tipCapacityUl: float = Field(default=1000, gt=0)
         alignmentToleranceM: float = Field(default=0.003, gt=0)
         axisToleranceM: float = Field(default=0.0005, gt=0)
+        # Teaching simulation drive limits, not OEM performance specifications.
+        xySpeedMPerS: float = Field(default=0.2, gt=0)
+        zSpeedMPerS: float = Field(default=0.05, gt=0)
+        axisAccelerationMPerS2: float = Field(default=0.25, gt=0)
         holdSpeedTolerance: float = Field(default=0.0001, gt=0)
         pumpToleranceUl: float = Field(default=0.01, gt=0)
         wasteSite: str | None = Field(
@@ -153,6 +157,7 @@ class WorkcellProgram:
         self.tip_sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.tips}
         self.tip_docks = {row.id: ctx.physics.bind_sites([row.site]) for row in ctx.config.tips}
         self.handle, self.stroke, self.pending = None, None, None
+        self.motion = None
         self.stopping = False
         self.hold_targets = None
         self.stop_error = None
@@ -697,6 +702,8 @@ class WorkcellProgram:
         return None
 
     def _hold(self, ctx, failure=None):
+        # Invalidated motion must never restore its old endpoint after a pause.
+        self.motion = None
         completed_success = False
         if failure is not None:
             self.stop_error = failure
@@ -846,8 +853,18 @@ class WorkcellProgram:
             lastQuantityOutcome=operation["quantityOutcome"],
         )
         if action == "move":
-            for joint, value in zip(self.axes, p["position"], strict=True):
-                ctx.physics.set_joint_target(joint, [value])
+            origin = np.array([float(ctx.physics.joint_q(joint)[0]) for joint in self.axes])
+            goal = np.array(p["position"], dtype=float)
+            distance = np.abs(goal - origin)
+            speed = np.array([ctx.config.xySpeedMPerS] * 2 + [ctx.config.zSpeedMPerS])
+            # Quintic smoothstep peaks: |s'|=15/8, |s''|=10/sqrt(3).
+            # One shared duration synchronizes XYZ and keeps each axis bounded.
+            duration = max(
+                float(np.max(1.875 * distance / speed)),
+                float(np.sqrt(np.max((10 / np.sqrt(3)) * distance / ctx.config.axisAccelerationMPerS2))),
+            )
+            self.motion = (origin, goal, duration)
+            self._move_target(ctx)
         elif action in ("aspirate", "dispense", "mix"):
             if self.quantity["resolvedUl"] == 0:
                 self._mark_tip_contact(self._vessel(p["vessel"]))
@@ -1054,7 +1071,7 @@ class WorkcellProgram:
                     "receipt": receipt,
                 }
             )
-        self.handle, self.stroke = None, None
+        self.handle, self.stroke, self.motion = None, None, None
         self.stopping = False
         self.stop_error = None
         self.quantity = None
@@ -1064,6 +1081,18 @@ class WorkcellProgram:
             lastQuantityOutcome=operation["quantityOutcome"], controlSafe=self._stationary(ctx), phase="idle"
         )
         self._publish(ctx)
+
+    def _move_target(self, ctx):
+        origin, goal, duration = self.motion
+        elapsed = max(0.0, ctx.sim_time - self.started)
+        u = min(elapsed / duration, 1.0) if duration else 1.0
+        fraction = u**3 * (10 + u * (-15 + 6 * u))
+        velocity = (30 * u**2 * (1 - u)**2 / duration) if duration else 0.0
+        target = goal if u == 1 else origin + (goal - origin) * fraction
+        for joint, position, speed in zip(self.axes, target, (goal - origin) * velocity, strict=True):
+            ctx.physics.set_joint_target(joint, [float(position)])
+            ctx.physics.set_joint_target_velocity(joint, [float(speed)])
+        return u == 1
 
     def tick(self, ctx, dt):
         for joint in [*self.axes, self.pump]:
@@ -1159,7 +1188,7 @@ class WorkcellProgram:
             if ctx.sim_time - self.started >= p["seconds"]:
                 self._finish(ctx, "succeeded")
         elif action == "move":
-            if self._stationary(ctx) and all(
+            if self._move_target(ctx) and self._stationary(ctx) and all(
                 abs(float(ctx.physics.joint_q(j)[0]) - value) <= ctx.config.axisToleranceM
                 for j, value in zip(self.axes, p["position"], strict=True)
             ):
