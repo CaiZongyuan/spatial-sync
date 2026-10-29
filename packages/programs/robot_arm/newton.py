@@ -54,6 +54,7 @@ class RobotArmProgram:
         self.pending_release = set()
         self.place_since = None
         self.gripper_target = self.gripper_goal = self._width(port)
+        self.gripper_start_width = self.gripper_target
         ctx.set(phase="idle", holding=None, atLocation=None, zone=None)
         self._facts(ctx)
 
@@ -236,6 +237,9 @@ class RobotArmProgram:
     def _gripper_settled(self, ctx, kind, actual, dt):
         return abs(actual - self.last_width) < 0.0005
 
+    def _gripper_budget(self, start, goal):
+        return self.gripper_timeout_s
+
     def tick(self, ctx, dt):
         port = ctx.physics
         if ctx.fact_due:
@@ -263,6 +267,7 @@ class RobotArmProgram:
             self.segment = self.plan.pop(0)
             kind, target, name = self.segment
             self.elapsed, self.stable, self.last_width = 0.0, 0.0, self._width(port)
+            self.gripper_start_width = self.last_width
             self.place_since = None
             if name:
                 ctx.set(zone=self.locations[name]["zone"])
@@ -319,7 +324,7 @@ class RobotArmProgram:
             done = (
                 self.elapsed >= 0.2 and self.stable >= 0.2 and (kind != "place" or not self.pending_release)
             )
-            if self.elapsed > self.gripper_timeout_s:
+            if self.elapsed > self._gripper_budget(self.gripper_start_width, width):
                 if kind == "pick":
                     self._recover_pick(ctx, name)
                 else:

@@ -107,12 +107,13 @@ def test_release_and_explicit_gripper_require_their_actual_opening():
     assert not program._gripper_settled(ctx, "gripper", .03, 1 / 60)
 
 
-def test_explicit_80mm_command_does_not_complete_while_slow_fingers_are_still_moving():
+@pytest.mark.parametrize("initial_width", [.017, .04])
+def test_explicit_80mm_command_does_not_complete_while_slow_fingers_are_still_moving(initial_width):
     ctx, values = configured_context()
     ctx.fact_due = True
     ctx.config = LabwareMotionProgram.Config.model_validate(
         ctx.config.model_dump() | {"automaticOpenWidthM": .05, "gripperSpeedMPerS": .02})
-    measured, targets = {7: .02, 8: .02}, {}
+    measured, targets = {7: initial_width / 2, 8: initial_width / 2}, {}
     ctx.physics.joint_q = lambda joint: [measured.get(joint.child, 0)]
     ctx.physics.set_joint_target = lambda joint, target: targets.update({joint.child: target[0]})
     ctx.physics.collision_contacts = lambda **kwargs: []
@@ -130,7 +131,7 @@ def test_explicit_80mm_command_does_not_complete_while_slow_fingers_are_still_mo
         assert not statuses and program.handle is inv
         measured.update(targets)
     assert values["gripperWidth"] < .075 and program.gripper_goal == .08
-    for index in range(80):
+    for index in range(200):
         program.tick(ctx, 1 / 60)
         measured.update(targets)
         if statuses:

@@ -293,6 +293,10 @@ the actual opening target and stationary feedback. A slow per-tick displacement
 does not establish a settled grasp. Explicit labware gripper commands retain
 their full 80 mm request range and also require their actual target and stationary
 feedback. The older robot program keeps its existing completion behavior.
+Each labware gripper segment budgets its measured starting distance divided by
+the configured speed plus 0.5 seconds for settling, with the existing three
+seconds as a minimum. This covers a full explicit 17-to-80 mm opening at 20 mm/s
+without treating movement as completion. The action intake deadline is unchanged.
 
 ## P6 posture contexts
 

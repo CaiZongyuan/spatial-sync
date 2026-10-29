@@ -148,6 +148,9 @@ class LabwareMotionProgram(RobotArmProgram):
                     and ctx.physics.welds.active(self.hand, self.tubes[self.pick_tube]))
         return stationary and abs(actual - self.gripper_goal) < .001
 
+    def _gripper_budget(self, start, goal):
+        return max(self.gripper_timeout_s, abs(goal - start) / self.gripper_speed_mps + .5)
+
     def _facts(self, ctx):
         super()._facts(ctx)
         safe = (
