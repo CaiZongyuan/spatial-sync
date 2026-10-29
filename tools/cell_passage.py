@@ -21,7 +21,7 @@ from pathlib import Path
 import httpx
 import yaml
 
-from apps.cli.lw.client import GatewayClient
+from apps.cli.lw.client import GatewayClient, GatewayError
 from packages.library.common import content_hash
 from tools.cell_passage_audit import (
     audit_recording,
@@ -98,17 +98,36 @@ def _asset_order(library):
 
 
 async def _install(client, library, output, expected_upload_hash):
+    """Observe/import exact dependencies, then retain and enforce scene admission."""
     receipts = []
     for package in _asset_order(library):
         metadata = yaml.safe_load((package / "asset.yaml").read_text(encoding="utf8"))
         expected = metadata["id"] + "@" + package.name
-        # The import service owns deduplication, including its original upload
-        # hash. A published hash also includes generated validation metadata.
-        receipt = await client.library_import(package)
+        upload_hash = content_hash(package)
+        try:
+            existing = await client.library_describe(expected, view="full")
+        except GatewayError as error:
+            if error.status_code != 404:
+                raise
+            existing = None
+        report = (existing or {}).get("validation") or {}
+        if (existing is not None and existing.get("assetVersion") == expected
+                and report.get("importContentHash") == upload_hash):
+            # A read observation is not a new import job. Published hashes also
+            # include generated validation metadata, so compare the upload hash.
+            receipt = {
+                "kind": "asset", "assetVersion": expected,
+                "contentHash": existing["contentHash"], "deduplicated": True,
+                "observation": "existing_exact_upload_hash", "validation": report,
+            }
+        else:
+            receipt = await client.library_import(package)
         receipts.append(receipt)
         _write(output / "imports.json", receipts)
         if receipt["assetVersion"] != expected:
-            raise ValueError("Fresh owned library assigned an unexpected dependency revision")
+            raise ValueError("Owned library assigned an unexpected dependency revision")
+        if receipt["validation"].get("importContentHash") != upload_hash:
+            raise ValueError("Imported dependency differs from the frozen source: " + expected)
         if any(check["status"] == "fail" for check in receipt["validation"]["checks"]):
             raise ValueError("Generated dependency failed validation: " + expected)
     scene = library / "scenes/cell-passage/1"

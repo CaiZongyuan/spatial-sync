@@ -301,7 +301,7 @@ def build_labware(output):
     provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
     provenance["derivedFrom"] = {
         "asset": "labware/passage-tip-1000@1",
-        "contentHash": content_hash(output / "assets/labware/passage-tip-1000/1"),
+        "importContentHash": content_hash(output / "assets/labware/passage-tip-1000/1"),
         "prototypeSha256": PROTOTYPE_SHA256,
         "profileZInnerVertexRadiusOuterVertexRadiusM": PROFILE,
         "scope": "Self-authored geometry variant; original nozzle, TCP and tip Root are unchanged",
