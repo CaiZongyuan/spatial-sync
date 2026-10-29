@@ -348,6 +348,12 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
         layout["demonstration"] = {"enabled": True, "contactAllowanceM": .002,
                                    "alignmentToleranceM": .001, "preInsertionHeightM": .011,
                                    "formalPrecisionQualified": False}
+        layout["demonstration"]["rackSeatingContactAllowanceM"] = .005
+        layout["demonstration"]["rackSeatingContactPairs"] = [
+            [LAB + "/Labware/" + name + "/Floor",
+             LAB + "/Labware/CollectionRack/Frame/" + name + "Floor"]
+            for name in [f"S{i}" for i in range(1, 7)] + ["B5", "B6"]
+        ]
         layout["pipetteCalibration"]["alignmentToleranceM"] = .001
     from factory.cell_passage_tip import ASSET_NAME
 
@@ -402,6 +408,14 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
         for binding in mechanical["entities"]:
             if binding["program"] in ("labware.motion", "cell_passage.joint", "cell_passage.workcell"):
                 binding["config"]["contactAllowanceM"] = .002
+            if (binding["program"] == "labware.motion"
+                    or binding["key"] == LAB + "/RailCarriage"):
+                binding["config"]["seatingContactPairs"] = layout["demonstration"][
+                    "rackSeatingContactPairs"
+                ]
+                binding["config"]["seatingContactAllowanceM"] = layout["demonstration"][
+                    "rackSeatingContactAllowanceM"
+                ]
             if binding["program"] == "labware.motion":
                 binding["config"]["jointAccelerationRadPerS2"] = .5
                 binding["config"]["symmetricPreInsertionLocations"] = list(
@@ -415,7 +429,8 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
         "scene.yaml": {
             "name": "cell-passage",
             "title": "Cell Passage workcell",
-            "description": ("Approximate demonstration: 2 mm contacts; not formal precision qualification."
+            "description": ("Approximate demonstration: 2 mm contacts, with 5 mm only for eight exact "
+                            "tube-floor/rack-floor seating pairs; not formal precision qualification."
                             if demonstration else "Physical workcell; qualification receipts are separate."),
             "sources": ["newton"],
             "stage": "stage.usda",
