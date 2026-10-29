@@ -7,6 +7,7 @@ substitute for the required three Newton runs and independent acceptance.
 import argparse
 import asyncio
 import json
+import math
 import os
 import re
 import shutil
@@ -171,6 +172,15 @@ async def _claim(client, workcell, owner):
         current = await client.status()
         return all(current[name] == value for name, value in target.items())
 
+    async def managed_idle():
+        route = await client.route()
+        for status in ("accepted", "running", "pending_approval"):
+            rows = (await client.request("GET", route + "/invocations",
+                                         params={"status": status, "limit": 1000}))["invocations"]
+            if len(rows) >= 1000 or any(row["entityKey"] in managed for row in rows):
+                return False
+        return True
+
     async def observe(accepted, action, params, wanted, epochs, owners, modes):
         for _ in range(600):
             if not await same_session():
@@ -188,8 +198,14 @@ async def _claim(client, workcell, owner):
             receipt = witnessed(values, action, params)
             if receipt is False:
                 return None
-            if (actual == wanted and receipt is True and values["controlSafe"] is True
-                    and all(state[key]["values"].get("controlSafe") is True for key in managed)):
+            started = invocation.get("startedSimTime")
+            sampled = values.get("controlSafeAtSimTime")
+            fresh = (type(sampled) in (int, float) and math.isfinite(sampled)
+                     and started is not None and sampled >= started)
+            if (actual == wanted and receipt is True and invocation["status"] == "succeeded"
+                    and started is not None and fresh and values["controlSafe"] is True
+                    and all(state[key]["values"].get("controlSafe") is True for key in managed)
+                    and await managed_idle()):
                 return values
             await asyncio.sleep(0.1)
         return None

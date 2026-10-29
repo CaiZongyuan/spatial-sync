@@ -5,6 +5,8 @@ time or the requested target. PhysicsPort supplies the mechanical observations.
 """
 
 import json
+import math
+from numbers import Real
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
@@ -228,6 +230,7 @@ class WorkcellProgram:
             controlEpoch=self.control_generation,
             controlMode="auto",
             controlSafe=True,
+            controlSafeAtSimTime=None,
             phase="idle",
             materialSnapshot=self.state,
             materialRevision=0,
@@ -255,7 +258,18 @@ class WorkcellProgram:
             lastContactDepthM=0.0,
         )
         self._contact_failure(ctx)
-        ctx.set(controlSafe=not self.contact_blocked and self._stationary(ctx))
+        self._observe_safety(ctx, not self.contact_blocked and self._stationary(ctx))
+
+    def _observe_safety(self, ctx, safe, **values):
+        """Publish only with a just-evaluated contact/standstill predicate."""
+        sampled = getattr(ctx.physics, "last_time", ctx.sim_time)
+        if (ctx.get("contactFactsAvailable") is not True or isinstance(sampled, bool)
+                or not isinstance(sampled, Real) or not math.isfinite(sampled) or sampled < 0):
+            sampled = None
+        else:
+            sampled = float(sampled)
+        ctx.set(controlSafe=safe, controlSafeAtSimTime=sampled, **values)
+        return sampled
 
     def _publish(self, ctx):
         self.state["revision"] += 1
@@ -743,14 +757,20 @@ class WorkcellProgram:
             failed = self._contact_failure(ctx)
             if failed:
                 return failed
+            previously_safe = ctx.get("controlSafe") is True
+            stationary = self._stationary(ctx)
+            sampled = self._observe_safety(ctx, not self.contact_blocked and stationary)
+            details = {"controlSafeAtSimTime": sampled} if sampled is not None else {}
             if (
                 ctx.get("controlMode") != "holding"
-                or ctx.get("controlSafe") is not True
-                or not self._stationary(ctx)
+                or not previously_safe
+                or not stationary
             ):
-                return self._reject("not_safe", "Workcell has not established safe hold")
+                return Reject(code="not_safe", message="Workcell has not established safe hold",
+                              details=details)
             if any(ctx.read(key, "controlSafe") is not True for key in ctx.config.managedDevices):
-                return self._reject("not_safe", "A managed device has not established safe hold")
+                return Reject(code="not_safe", message="A managed device has not established safe hold",
+                              details=details)
         elif ctx.get("controlMode") == "holding":
             return self._reject("handoff_pending", "Confirm the current handoff before requesting another")
         if inv.action == "requestControl":
@@ -833,7 +853,7 @@ class WorkcellProgram:
         safe = not self.contact_blocked and self._stationary(ctx)
         if self.handle is None and safe:
             self.stopping, self.hold_targets = False, None
-        ctx.set(controlSafe=safe, phase="idle" if completed_success else "holding")
+        self._observe_safety(ctx, safe, phase="idle" if completed_success else "holding")
 
     def _stationary(self, ctx):
         for joint in [*self.axes, self.pump]:
@@ -1157,9 +1177,9 @@ class WorkcellProgram:
         self.quantity = None
         self.completing = False
         self.cancelled_at_tick = None
-        ctx.set(
+        self._observe_safety(
+            ctx, not self.contact_blocked and self._stationary(ctx),
             lastQuantityOutcome=operation["quantityOutcome"],
-            controlSafe=not self.contact_blocked and self._stationary(ctx),
             phase="idle",
         )
         self._publish(ctx)
@@ -1191,7 +1211,7 @@ class WorkcellProgram:
             if self.stopping:
                 self._hold(ctx)
             else:
-                ctx.set(controlSafe=not self.contact_blocked and self._stationary(ctx))
+                self._observe_safety(ctx, not self.contact_blocked and self._stationary(ctx))
             return
         if self.stopping and not self.completing:
             self._hold(ctx)

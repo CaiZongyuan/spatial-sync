@@ -420,6 +420,8 @@ def test_old_control_receipt_after_reset_is_retrieved_without_applying_it_to_the
     receipt = next(row for row in host.snapshot().invocations if row.invocationId == "old-receipt").result
     assert receipt == original
     current = host.values()["/workcell"]
-    assert current == before
+    # The new round's read-only safety sampling advances on this tick; replay
+    # must still leave every control/material value untouched.
+    assert current == before | {"controlSafeAtSimTime": 0.1}
     assert receipt["epoch"] < current["controlEpoch"]
     assert current["controlMode"] == "auto" and current["materialSnapshot"]["controlRequests"] == []
