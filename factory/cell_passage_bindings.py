@@ -43,6 +43,7 @@ def bindings(stage, layout):
                 "handBody": LAB + "/Robot/fr3_hand",
                 "tcpSite": LAB + "/Robot/fr3_hand/Frames/fr3_hand_tcp",
                 "speedScale": 0.3,
+                "automaticOpenWidthM": 0.05,
                 "graspMode": "weld",
             },
         }

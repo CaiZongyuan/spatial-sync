@@ -277,6 +277,16 @@ Web 展示当前阶段/步骤、六个母孔到十二个子孔的关系、所选
 - 既有源码：`apps/cli/lw/client.py`、`packages/info/plans.py`、`packages/info/program.py`、`packages/programs/robot_arm/newton.py`、`devices/types/`、`apps/web/src/components/PlanChecklist.tsx`。
 - [平台 PRD](LAB_RSI_PLATFORM_PRD_V1.md)、[信息平面](LAB_INFORMATION_FOUNDATION_SPEC_V1.md)、[操作计划](LAB_LIVE_OPERATIONS_SPEC_V1.md)、[素材与场景](LAB_ASSETS_AND_SCENES_SPEC_V1.md)、[Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md)、[验证要求](../VERIFICATION.md)。
 - [ADR-0001](../adr/0001-usd-canonical-scene-format.md)、[ADR-0002](../adr/0002-tube-grasp-point-and-physical-tcp.md)、[ADR-0004](../adr/0004-scene-authoring-through-external-factories.md)。
+## Automatic gripper opening
+
+`labware.motion` accepts `automaticOpenWidthM` in the physical hand's `(0, 0.08]`
+metre range, defaulting to 80 mm. It applies consistently to automatic pickup,
+place release and recovery. Explicit `setGripper` requests retain their existing
+width semantics. The Cell Passage factory selects 50 mm for its 17 mm grips and
+55 mm rack pitch; this is a scene calibration, not an OEM performance claim.
+Actual bilateral pad contact, weld qualification, release feedback and the 1 mm
+penetration guard remain required. Older scenes keep their 80 mm default.
+
 ## P6 posture contexts
 
 The carrier arm keeps the original physical TCP and its existing endpoint
