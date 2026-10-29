@@ -302,7 +302,10 @@ async def _start_session(client, identifier, output, *, startup_timeout_seconds=
 
 async def _prepare(args, inputs, bootstrap, identifier, round_id, output):
     url = f"http://127.0.0.1:{args.api_port}"
-    bootstrap.update(sessionRequestId="request-" + uuid.uuid4().hex, status="starting_source")
+    bootstrap.pop("session", None)
+    bootstrap.pop("launchCleanup", None)
+    bootstrap.update(sessionRequestId="request-" + uuid.uuid4().hex, sessionClosed=False,
+                     status="starting_source")
     _write(args.out / "bootstrap.json", bootstrap)
     async with GatewayClient(url=url) as client:
         session = await _start_session(client, identifier, output,
