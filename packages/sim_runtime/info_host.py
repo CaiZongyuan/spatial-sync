@@ -139,11 +139,11 @@ class NewtonInfoHost:
         self.emit([result])
         return result
 
-    def cancel(self, invocation_id, *, admit=None):
-        return self._intake(self.host.cancel, invocation_id, admit=admit)
+    def cancel(self, invocation_id):
+        return self._intake(self.host.cancel, invocation_id)
 
-    def revoke_before_start(self, invocation_id, *, admit=None):
-        return self._intake(self.host.revoke_before_start, invocation_id, admit=admit)
+    def revoke_before_start(self, invocation_id):
+        return self._intake(self.host.revoke_before_start, invocation_id)
 
     def reset(self):
         self.timings.clear()

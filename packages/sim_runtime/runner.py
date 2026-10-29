@@ -21,7 +21,7 @@ from packages.transport import FrameCodec, PipeWriter
 
 
 class RpcFence:
-    """Bounded private IPC leases, revocable without waiting for slow physics.
+    """Bounded new-invoke IPC leases, revocable without waiting for slow physics.
 
     Only the gateway reserves/retires leases. The Runner claims a live lease
     immediately before the synchronous Host callback, never on its reader thread.
@@ -378,7 +378,9 @@ class _Runner:
                 result = (
                     self.info.invoke(InvokeRequest.model_validate(packet["request"]), admit=admit)
                     if kind == "invoke"
-                    else getattr(self.info, kind)(packet["invocationId"], admit=admit)
+                    # A timeout cannot withdraw an already sent safety intent
+                    # against an old invocation. Only creating new work expires.
+                    else getattr(self.info, kind)(packet["invocationId"])
                 )
             except TimeoutError:
                 self.control.offer({"kind": "rpc_expired", "token": token})
