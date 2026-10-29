@@ -260,12 +260,15 @@ def package(output, name, author, *, kind="labware"):
         encoding="utf-8",
     )
     (target / "LICENSE.txt").write_text("CC0-1.0\nSelf-authored procedural geometry.\n", encoding="utf-8")
+    from factory.cell_passage_provenance import file_hashes
+
     (target / "provenance.json").write_text(
         json.dumps(
             {
                 "generator": "factory/cell_passage.py",
                 "physicsVerified": False,
                 "scope": "Physical hollow labware and carrier; no modeled material state.",
+                "files": file_hashes(target),
             },
             indent=2,
         )
