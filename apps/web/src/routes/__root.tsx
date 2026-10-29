@@ -5,7 +5,7 @@ export const Route = createRootRoute({
   component: PlatformShell,
   errorComponent: ({ error }) => (
     <main className="error-page">
-      <span className="eyebrow">SPATIAL SYNC</span>
+      <span className="eyebrow">Lab World</span>
       <h1>Unable to open the workspace</h1>
       <p>{error instanceof Error ? error.message : String(error)}</p>
       <Link to="/sessions">Back to sessions</Link>
