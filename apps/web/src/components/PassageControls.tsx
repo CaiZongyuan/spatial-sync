@@ -26,8 +26,8 @@ export function PassageControls({ client, workcell, plan, blocked, selectPlan }:
   const [polling, setPolling] = useState(false);
   const alive = useRef(true);
   const accessBlocked = client.readOnly ? '回放不可执行' : view.role !== 'operator' ? '需要操作者权限' :
-    view.connection !== 'connected' ? '连接不可用' : view.evaluationId ? '评估会话禁止人工控制' : !plan ? '先选择操作计划' : undefined;
-  const disabled = blocked ?? accessBlocked;
+    view.connection !== 'connected' ? '连接不可用' : view.evaluationId ? '评估会话禁止人工控制' : undefined;
+  const disabled = blocked ?? accessBlocked ?? (!plan ? '先选择操作计划；可先暂停以建立安全保持' : undefined);
   const controlMode = material?.values.controlMode;
   const controlSafe = material?.values.controlSafe === true;
   useEffect(() => {
