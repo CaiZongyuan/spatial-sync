@@ -381,10 +381,12 @@ def test_reset_rejects_late_old_control_params_even_when_outer_source_epoch_is_c
     )
     assert request("fresh", 1, generation, position=[0.2, 0.1, 0.01]).status == "accepted"
     host.tick(0.1, 0.1)
-    assert port.targets["x"] == 0.2
-    for key in ("x", "y", "z"):
-        port.q[key] = port.targets[key]
-    host.tick(0.2, 0.1)
+    assert port.targets["x"] == 0
+    host.tick(0.3, 0.2)
+    assert 0 < port.targets["x"] < 0.2
+    for key, value in zip(("x", "y", "z"), (0.2, 0.1, 0.01), strict=True):
+        port.q[key] = value
+    host.tick(3, 2.7)
     assert host.values()["/workcell"]["materialSnapshot"]["operationCount"] == 1
     assert (
         next(row for row in host.snapshot().invocations if row.invocationId == "fresh").status == "succeeded"
