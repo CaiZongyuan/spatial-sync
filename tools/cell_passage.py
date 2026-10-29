@@ -148,41 +148,79 @@ async def _install(client, library, output, expected_upload_hash):
 
 
 async def _claim(client, workcell, owner):
+    session = await client.status()
+    target = {name: session[name] for name in ("sessionId", "sceneRevision", "epoch")}
     config = (await client.catalog())["entities"][workcell]["config"]
     managed = config.get("managedDevices", [])
-    values = (await client.get_state([workcell]))["entities"][workcell]["values"]
-    previous_owner, expected_epoch = values["controlOwner"], values["controlEpoch"] + 1
-    operation_id = "claim-" + uuid.uuid4().hex
-    accepted = await client.invoke_action(workcell, "requestControl", {
-        "owner": values["controlOwner"], "epoch": values["controlEpoch"],
-        "operationId": operation_id, "nextOwner": owner, "mode": "auto",
-    }, wait=False, actor="cli:cell-passage")
+    initial = (await client.get_state([workcell]))["entities"][workcell]["values"]
+    previous_owner, previous_epoch = initial["controlOwner"], initial["controlEpoch"]
+    expected_epoch = previous_epoch + 1
+
+    def witnessed(values, action, params):
+        rows = values["materialSnapshot"]["controlRequests"]
+        row = next((row for row in rows if row["operationId"] == params["operationId"]), None)
+        if row is None:
+            return None  # The source acknowledgement can precede fact publication.
+        try:
+            return (row["epoch"] == expected_epoch and row["action"] == action
+                    and json.loads(row["paramsJson"]) == params)
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    async def same_session():
+        current = await client.status()
+        return all(current[name] == value for name, value in target.items())
+
+    async def observe(accepted, action, params, wanted, epochs, owners, modes):
+        for _ in range(600):
+            if not await same_session():
+                return None
+            invocation = await client.get_invocation(accepted["invocationId"])
+            if (invocation["status"] not in ("accepted", "running", "succeeded")
+                    or invocation["entityKey"] != workcell or invocation["action"] != action
+                    or invocation["params"] != params):
+                return None
+            state = (await client.get_state([workcell, *managed]))["entities"]
+            values = state[workcell]["values"]
+            actual = (values["controlOwner"], values["controlEpoch"], values["controlMode"])
+            if actual[0] not in owners or actual[1] not in epochs or actual[2] not in modes:
+                return None
+            receipt = witnessed(values, action, params)
+            if receipt is False:
+                return None
+            if (actual == wanted and receipt is True and values["controlSafe"] is True
+                    and all(state[key]["values"].get("controlSafe") is True for key in managed)):
+                return values
+            await asyncio.sleep(0.1)
+        return None
+
+    request = {"owner": previous_owner, "epoch": previous_epoch,
+               "operationId": "claim-" + uuid.uuid4().hex, "nextOwner": owner, "mode": "auto"}
+    if not await same_session():
+        return None
+    accepted = await client.invoke_action(workcell, "requestControl", request,
+                                          wait=False, actor="cli:cell-passage")
     if accepted["status"] not in ("accepted", "running", "succeeded"):
         return None
-    for _ in range(600):
-        state = (await client.get_state([workcell, *managed]))["entities"]
-        values = state[workcell]["values"]
-        if (values["controlOwner"] != previous_owner or values["controlEpoch"] != expected_epoch
-                or values["controlMode"] != "holding"):
-            return None
-        own_request = next((row for row in values["materialSnapshot"]["controlRequests"]
-                            if row["operationId"] == operation_id), None)
-        if own_request is None or own_request["epoch"] != expected_epoch:
-            return None
-        if values["controlSafe"] and all(state[key]["values"].get("controlSafe") is True for key in managed):
-            break
-        await asyncio.sleep(0.1)
-    else:
+    values = await observe(
+        accepted, "requestControl", request, (previous_owner, expected_epoch, "holding"),
+        {previous_epoch, expected_epoch}, {previous_owner}, {initial["controlMode"], "holding"},
+    )
+    if values is None:
         return None
-    await client.invoke_action(workcell, "confirmControl", {
-        "owner": values["controlOwner"], "epoch": values["controlEpoch"],
-        "operationId": "confirm-" + uuid.uuid4().hex,
-    }, wait=False, actor="cli:cell-passage")
-    values = (await client.get_state([workcell]))["entities"][workcell]["values"]
-    if (values["controlOwner"] != owner or values["controlMode"] != "auto"
-            or values["controlEpoch"] != expected_epoch):
+    confirm = {"owner": previous_owner, "epoch": expected_epoch,
+               "operationId": "confirm-" + uuid.uuid4().hex}
+    if not await same_session():
         return None
-    return values["controlEpoch"]
+    accepted = await client.invoke_action(workcell, "confirmControl", confirm,
+                                          wait=False, actor="cli:cell-passage")
+    if accepted["status"] not in ("accepted", "running", "succeeded"):
+        return None
+    values = await observe(
+        accepted, "confirmControl", confirm, (owner, expected_epoch, "auto"),
+        {expected_epoch}, {previous_owner, owner}, {"holding", "auto"},
+    )
+    return expected_epoch if values is not None else None
 
 
 async def _prepare(args, inputs, bootstrap, identifier, round_id, output):
