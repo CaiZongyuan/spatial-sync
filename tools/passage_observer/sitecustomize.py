@@ -4,11 +4,14 @@ import atexit
 import json
 import os
 import queue
+import sys
 import threading
 from pathlib import Path
 
 _directory = os.environ.get("SPATIAL_PASSAGE_CONTACT_TRACE_DIR")
-if _directory:
+# NewtonSource uses spawn. Keep the owned API, driver and resource tracker
+# engine-free; only the spawned physics worker installs this diagnostic hook.
+if _directory and "--multiprocessing-fork" in sys.argv:
     from packages.sim_runtime.physics_port import PhysicsPort
 
     _pending = queue.Queue(maxsize=256)
