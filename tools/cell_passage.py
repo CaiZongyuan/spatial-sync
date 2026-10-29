@@ -38,15 +38,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def gateway_app():
     """A normal gateway with owned roots and an instance identity for safe startup."""
+    root = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]).resolve() / "runtime"
+    nonce = os.environ["SPATIAL_PASSAGE_OWNER_NONCE"]
+    origins = tuple(os.environ["SPATIAL_ALLOWED_ORIGINS"].split(","))
+    for name, directory in (
+        ("LW_LIBRARY", "library"), ("SPATIAL_STATE_ROOT", "state"),
+        ("SPATIAL_RECORDINGS_ROOT", "recordings"), ("SPATIAL_SCENE_PREVIEWS_ROOT", "previews"),
+        ("SPATIAL_CATALOG_METADATA_ROOT", "catalog-metadata"),
+    ):
+        path = root / directory
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.environ[name] = str(path)
+    # main constructs its default app while importing; bind every owned root
+    # before importing it, as well as before constructing this factory's app.
     from apps.api.app.main import create_app
     from apps.api.app.settings import Settings
 
-    root = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]).resolve() / "runtime"
-    nonce = os.environ["SPATIAL_PASSAGE_OWNER_NONCE"]
-    os.environ["LW_LIBRARY"] = str(root / "library")
     settings = Settings(
         state_root=root / "state", recordings_root=root / "recordings", scene_previews_root=root / "previews",
-        allowed_origins=tuple(os.environ["SPATIAL_ALLOWED_ORIGINS"].split(",")), node_trainer=(),
+        allowed_origins=origins, node_trainer=(),
         live_bindings=None, node_token=None, node_capabilities=None,
     )
     app = create_app(settings)

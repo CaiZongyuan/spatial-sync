@@ -194,6 +194,10 @@ Fresh output paths and a new round identity are required. The entrypoint keeps
 `experimentQualified:false`; running a candidate does not substitute for
 independent complete-passage acceptance.
 
+The gateway factory binds its library, state, recordings, previews and catalog
+metadata directories below the run's `runtime/` before importing the gateway.
+Inherited resource-root environment variables cannot redirect these owned stores.
+
 `--repeats 3 --no-web --exit-after-run` imports once and starts three fresh
 seed-42 Sessions against that same immutable scene version/hash, closing each
 previous Session and recording before the next. It does not reset/replay a
