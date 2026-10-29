@@ -116,6 +116,10 @@ async def _install(client, library, output, expected_upload_hash):
     _write(output / "imports.json", receipts)
     report = await client.library_validate(receipt["sceneVersion"])
     _write(output / "validation.json", report)
+    if not report.get("launchable") or any(
+        check["status"] == "fail" for check in report["checks"]
+    ):
+        raise ValueError("Generated scene is not launchable; inspect validation.json")
     return receipt["sceneVersion"]
 
 
