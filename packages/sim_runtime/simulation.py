@@ -1,5 +1,6 @@
 """A reusable real-Newton step boundary, independent of HTTP and IPC."""
 
+import os
 from time import perf_counter
 
 import newton
@@ -31,6 +32,7 @@ class NewtonSimulation:
         self.state = self.model.state()
         self.next_state = self.model.state()
         self.control = self.model.control()
+        self.native_cpu_sleeping = False
         with wp.ScopedDevice(self.model.device):
             if self.solver_kind == "mujoco":
                 self.solver = SolverMuJoCo(
@@ -46,6 +48,13 @@ class NewtonSimulation:
                     from .mujoco_bvh import normalize_body_bvh
 
                     normalize_body_bvh(self.solver.mj_model)
+                    if os.getenv("SPATIAL_NEWTON_CPU_SLEEPING") == "1":
+                        import mujoco
+
+                        # Native CPU support; Newton's enable_sleeping=True
+                        # option is GPU-only. Preserve compiled AUTO/NEVER policy.
+                        self.solver.mj_model.opt.enableflags |= int(mujoco.mjtEnableBit.mjENBL_SLEEP)
+                        self.native_cpu_sleeping = True
                 self.collision_pipeline, self.contacts = None, None
             else:
                 self.solver = (

@@ -1,10 +1,12 @@
 """Spawn entrypoint. Importing this module does not import the simulation engine."""
 
 import contextlib
+import json
 import multiprocessing as mp
 import os
 import time
 import uuid
+from pathlib import Path
 
 from packages.info.preview import PreviewRequest, SourcePreview
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
@@ -148,6 +150,15 @@ class _Runner:
         )
         self.viewer = None
         self._viewer_error = None
+        if os.getenv("SPATIAL_NEWTON_CPU_SLEEPING") == "1" and os.getenv("SPATIAL_PASSAGE_RUN_ROOT"):
+            # An owned-demo receipt, not a protocol/recording-format extension.
+            directory = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]) / "runtime" / "native-options"
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"cpu-sleeping-{os.getpid()}.json").write_text(json.dumps({
+                "sessionId": session_id, "runnerPID": os.getpid(), "cpuSleepingRequested": True,
+                "nativeCpuSleepingEnabled": self.sim.native_cpu_sleeping,
+                "device": str(self.sim.model.device), "solver": self.sim.solver_kind,
+            }, indent=2), encoding="utf-8")
         if self.info.port:
             self.extractor.readback_mode = "control-snapshot-reuse"
 
