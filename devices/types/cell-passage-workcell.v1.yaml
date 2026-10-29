@@ -3,6 +3,10 @@ title: Cell Passage material and Flex workcell
 description: Single-writer symbolic material driven by measured Flex pump strokes;
   teaching waits are not biological conditions.
 properties:
+  controlSafeAtSimTime:
+    schema: {type: [number, 'null'], minimum: 0}
+    unit: s
+    description: Actual physics-frame time of the paired contact/standstill predicate; null means no certified sample.
   contactFactsAvailable:
     schema: {type: boolean}
     description: Actual CPU collision identities and signed distances are available for declared Flex bodies.

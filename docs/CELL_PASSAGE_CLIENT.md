@@ -31,6 +31,13 @@ waits for its own invocation and matching operation/parameter receipt, and allow
 the exact prior snapshot while those facts propagate. A different owner or
 session/scene/epoch stops dispatch. Confirmation also waits for its own receipt,
 the requested owner/mode, and all managed devices' actual safe flags.
+The source's `controlSafeAtSimTime` is sampled with the same contact/standstill
+predicate as `controlSafe`, using the actual physics frame when available. The
+client requires a completed, started invocation and this own sampling time at
+or after its start. An unchanged managed-device safe flag can remain valid;
+global clock advancement or a pre-handoff workcell safe value cannot replace
+the new workcell sample. A definite `not_safe` rejection includes that same
+sampling time when known; an uncertain acknowledgement never permits resubmission.
 The old owner must stop dispatch and continue observing accepted invocations.
 The source enforces generations even when a stale client read preceded takeover.
 
