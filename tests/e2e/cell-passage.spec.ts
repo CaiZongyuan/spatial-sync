@@ -104,7 +104,10 @@ test('failed fractional intent keeps its original resolved goal and resumes only
     await expect(controls.getByRole('heading', { name: '续行前核对' })).toBeVisible();
     const form = controls.locator('fieldset').filter({ hasText: '200003' });
     await expect(form).toContainText('原解析目标 250'); await expect(form).toContainText('已实转 40');
-    await form.getByRole('button', { name: /^填入原解析目标剩量/ }).click();
+    await form.getByRole('button', { name: /^采用原解析余量/ }).click();
+    const precise = form.getByLabel('后续操作量（µL）');
+    await expect(precise).not.toBeVisible();
+    expect(Number(await precise.inputValue())).toBe(receipt.remainingUl);
     await form.getByRole('checkbox', { name: /已核对原目标/ }).check();
     await info.attach('fraction-40-remainder-review.png', { body: await page.screenshot(), contentType: 'image/png' });
     await controls.getByRole('button', { name: '继续', exact: true }).click();
@@ -117,5 +120,44 @@ test('failed fractional intent keeps its original resolved goal and resumes only
     expect(after.materialSnapshot.vessels[0].volumeUl).toBeCloseTo(250, 2); expect(after.materialSnapshot.tip.volumeUl).toBeCloseTo(250, 2);
     expect(after.materialSnapshot.operations.find((row: { operationId: string }) => row.operationId === 'fraction-2').appliedUl).toBeCloseTo(40, 5);
     expect(errors).toEqual([]);
+  } finally { await request.delete(route); }
+});
+
+for (const seed of [77, 78]) test(`mid-run takeover uses declared configuration totals and ${seed === 77 ? 'retains a distinct fresh-sample status' : 'rejects a short producer'}`, async ({ page, request }, info) => {
+  test.setTimeout(60_000);
+  const created = await request.post(`${api}/api/v1/sessions`, { data: { sceneId: 'lab-demo', seed, continueWithoutObservers: true } });
+  expect(created.ok()).toBe(true); const { sessionId } = await created.json(), route = `${api}/api/v1/sessions/${sessionId}`;
+  try {
+    for (const [index, action] of [
+      { action: 'reserve', params: { resource: '/peer', device: '/workcell' } },
+      { action: 'pickupTip', params: { tip: 'T1' } },
+      { action: 'aspirateFraction', params: { vessel: 'source', fraction: .5 } },
+    ].entries()) {
+      const response = await request.post(`${route}/actions`, { data: { requestId: `external-${index}`, entityKey: '/workcell', ...action,
+        params: { ...action.params, owner: 'auto', epoch: 0, operationId: `external-${index}` }, wait: true, timeoutSeconds: 3 } });
+      expect(response.ok()).toBe(true); expect((await response.json()).status).toBe(index === 2 ? 'failed' : 'succeeded');
+    }
+    const source = async () => (await (await request.get(`${route}/state?keys=%2Fworkcell`)).json()).entities['/workcell'].values;
+    const before = await source(); expect(before.materialSnapshot.tip.volumeUl).toBeCloseTo(40, 5);
+    const prepared = await request.post(`${api}/api/v1/plans`, { data: { title: 'Mid-run browser checkpoint', target: 'session', sessionId,
+      steps: [{ id: 100001, do: { entity: '/workcell', action: 'wait', params: { owner: 'auto', epoch: 0, operationId: 'future-wait', seconds: 1 } } }] } });
+    expect(prepared.ok()).toBe(true); const plan = await prepared.json();
+    await page.goto(`/sessions/${sessionId}?plan=${plan.id}`);
+    await expect(page.getByTestId('connection-status')).toHaveAttribute('data-connection', 'connected');
+    const controls = page.getByRole('region', { name: '传代控制' });
+    await controls.getByRole('button', { name: '单步', exact: true }).click();
+    await expect(page.getByTestId('passage-initial-basis')).toContainText('固定配方配置预期 · 总液量 500');
+    await expect(page.getByTestId('passage-initial-basis')).toContainText('未观察到，中途状态不充当原始初态');
+    if (seed === 77) await expect(controls.getByRole('heading', { name: '续行前核对' })).toBeVisible();
+    else await expect(controls.getByRole('status')).toContainText('与配置预期守恒不符');
+    const after = await source(); expect(after.operationCount).toBe(before.operationCount);
+    expect(after.materialSnapshot.vessels[0].volumeUl).toBe(before.materialSnapshot.vessels[0].volumeUl);
+    expect(after.materialSnapshot.tip.volumeUl).toBe(before.materialSnapshot.tip.volumeUl);
+    await expect(page.getByTestId('plan-step-100001')).toHaveAttribute('data-status', 'pending');
+    const visible = await controls.locator('[aria-label="主要传代操作"] button').evaluateAll(buttons => buttons.every(button => {
+      const bounds = button.getBoundingClientRect(); return bounds.top >= 0 && bounds.bottom < innerHeight;
+    }));
+    expect(visible).toBe(true);
+    await info.attach(`config-expected-mid-${seed}.png`, { body: await page.screenshot(), contentType: 'image/png' });
   } finally { await request.delete(route); }
 });

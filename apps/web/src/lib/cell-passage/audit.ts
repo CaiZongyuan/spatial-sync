@@ -11,7 +11,7 @@ function number(value: unknown): number { if (typeof value !== 'number' || !Numb
 function record(value: unknown) { const row = object(value); if (!row) throw new Error('末态结构未知'); return row; }
 function list(value: unknown) { if (!Array.isArray(value) || value.some(item => !object(item))) throw new Error('末态列表未知'); return rows(value); }
 
-export function auditMaterial(initialValue: unknown, finalValue: unknown) {
+export function auditConservation(initialValue: unknown, finalValue: unknown) {
   const initial = record(initialValue), final = record(finalValue), errors: string[] = [];
   const tolerance = passageContract.quantityTolerances;
   function totals(snapshot: Record<string, JsonValue>) {
@@ -33,12 +33,26 @@ export function auditMaterial(initialValue: unknown, finalValue: unknown) {
     return { components, cells };
   }
   const before = totals(initial), after = totals(final);
+  const originals = list(initial.vessels), actual = list(final.vessels);
+  if (new Set(actual.map(row => row.id)).size !== actual.length || actual.length !== originals.length || originals.some(row => !actual.some(value => value.id === row.id))) errors.push('器皿清单变更或重复');
+  for (const expected of originals) {
+    const row = actual.find(row => row.id === expected.id);
+    if (row && ['entityKey', 'culture', 'parent'].some(key => key in expected && row[key] !== expected[key])) errors.push(`器皿固定身份不符：${expected.id}`);
+  }
+  const expectedTips = list(initial.tips), actualTips = list(final.tips), installed = record(final.tip);
+  if (expectedTips.length !== actualTips.length || new Set(actualTips.map(row => row.id)).size !== actualTips.length || expectedTips.some(row => !actualTips.some(tip => tip.id === row.id))) errors.push('吸头固定清单变更或重复');
+  if ((installed.id && !actualTips.some(tip => tip.id === installed.id && tip.state === 'installed')) || (!installed.id && number(installed.volumeUl) > tolerance.finalVolumeUl)) errors.push('吸头身份或在途液体不一致');
   for (const [kind, limit] of [['components', tolerance.finalVolumeUl], ['cells', tolerance.cellConservation]] as const) {
     for (const key of new Set([...before[kind].keys(), ...after[kind].keys()]))
       if (Math.abs((before[kind].get(key) ?? 0) - (after[kind].get(key) ?? 0)) > limit) errors.push(`全量守恒失败：${kind} ${key}`);
   }
+  return errors;
+}
+
+export function auditMaterial(initialValue: unknown, finalValue: unknown) {
+  const initial = record(initialValue), final = record(finalValue), errors = auditConservation(initial, final);
+  const tolerance = passageContract.quantityTolerances;
   const vessels = list(final.vessels), original = list(initial.vessels);
-  if (new Set(vessels.map(row => row.id)).size !== vessels.length || vessels.length !== original.length || original.some(row => !vessels.some(value => value.id === row.id))) errors.push('器皿清单变更或重复');
   if (final.reconciled !== true || record(final.tip).id || number(record(final.tip).volumeUl) > tolerance.finalVolumeUl || list(final.reservations).length || list(final.operations).some(row => ['running', 'settling'].includes(String(row.status)))) errors.push('仍有未核对物料、吸头、占用或在途操作');
   const mothers = original.filter(row => String(row.id).startsWith('Mother/'));
   const children = new Set<string>();

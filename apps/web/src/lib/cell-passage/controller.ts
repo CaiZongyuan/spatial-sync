@@ -1,11 +1,12 @@
 import { ApiError, request } from '../api';
 import type { Catalog, Invocation, JsonValue, SceneManifest, Snapshot } from '../protocol';
 import type { PlanDocument, PlanStep } from '../plans/model';
-import { materialState, object, passageContract } from './model';
+import { materialState, object, passageContract, rows } from './model';
 import type { EntityValues } from '../protocol';
 import { liquidAction, operationReceipt, revisePlans } from './recovery';
 import { passageRound, roundIdentity } from './round';
-import { auditFinal, type FinalAudit } from './audit';
+import { auditConservation, auditFinal, type FinalAudit } from './audit';
+import { compareFreshInitial, configurationInitial, type ConfigurationInitial } from './configuration';
 
 type Session = { sessionId: string; sceneRevision: string; epoch: number; state: string; simTime: number; sceneVersion?: string; sceneContentHash?: string };
 type Transport = <T>(path: string, options?: RequestInit) => Promise<T>;
@@ -28,6 +29,8 @@ export class PassageController {
   private round?: { current: string; revisions: Map<string, number> };
   private revisionUncertain = false;
   private initialMaterial?: JsonValue;
+  private expectedInitial?: ConfigurationInitial;
+  private initialComparison?: string[];
   private auditBefore?: Snapshot;
   private stageStates = new Map<number, Record<string, EntityValues>>();
   finalAudit?: FinalAudit;
@@ -43,11 +46,16 @@ export class PassageController {
   get dispatching() { return !this.stopped; }
   get observing() { return !!this.active; }
   get currentPlanId() { return this.flow?.planId ?? this.round?.current; }
+  get initialSummary() {
+    if (!this.expectedInitial) return undefined;
+    return { basis: this.expectedInitial.basis, volumeUl: rows(this.expectedInitial.material.vessels).reduce((sum, row) => sum + Number(row.volumeUl), 0),
+      fresh: this.initialComparison === undefined ? 'not-observed' : this.initialComparison.length ? 'mismatched' : 'matched' };
+  }
   get polling() { return this.flow ? ['acquiring', 'running'].includes(this.flow.phase) : this.dispatching || this.observing; }
   block() { this.stop(); if (this.flow) this.flow = { ...this.flow, phase: 'blocked' }; }
   private async captureFinal(checkpoint: Checkpoint, plans: PlanDocument[]) {
     try {
-      if (!this.initialMaterial) failure('本浏览器没有本轮初始权威物料快照；保留记录供独立审核');
+      if (!this.expectedInitial) failure('本轮不可变配置预期未知；保留记录供独立审核');
       const version = checkpoint.session.sceneVersion;
       if (!version) failure('实际场景版本未知');
       const frame = await this.http<Snapshot>(`${this.route()}/snapshot`);
@@ -60,7 +68,8 @@ export class PassageController {
       const state = await this.http<{ entities: Record<string, EntityValues> }>(`${this.route()}/state?keys=`);
       const final = await this.inspect(checkpoint.plan.id);
       if (this.checkpointToken(final) !== this.checkpointToken(checkpoint)) failure('末态采样期间控制、计划或物料发生变化');
-      this.finalAudit = auditFinal(this.initialMaterial, final.entity.values.materialSnapshot, layout, manifest, this.auditBefore, frame, state.entities, plans, this.stageStates);
+      this.finalAudit = auditFinal(this.expectedInitial.material, final.entity.values.materialSnapshot, layout, manifest, this.auditBefore, frame, state.entities, plans, this.stageStates);
+      if (this.initialComparison?.length) { this.finalAudit.errors.push(...this.initialComparison); this.finalAudit.material = false; this.finalAudit.status = 'invalid'; }
     } catch (error) {
       this.finalAudit = { status: 'unavailable', material: false, spatial: false, environment: false, experimentQualified: false,
         errors: [error instanceof Error ? error.message : String(error)] };
@@ -295,6 +304,11 @@ export class PassageController {
     const checkpoint = await this.inspect(planId);
     if (catalog.sceneRevision !== checkpoint.session.sceneRevision) failure('Catalog 与当前场景版本不一致，禁止续行');
     const values = this.valid(checkpoint);
+    const expected = configurationInitial(catalog, this.workcell, checkpoint.session.sceneRevision);
+    if (this.expectedInitial && this.expectedInitial.fingerprint !== expected.fingerprint) failure('同一场景的固定配方配置发生变化，请另开一轮核对');
+    this.expectedInitial = expected;
+    const conservation = auditConservation(expected.material, values.materialSnapshot);
+    if (conservation.length) failure(`当前物料与配置预期守恒不符：${conservation.join('；')}`);
     if (values.controlOwner !== this.owner || !['auto', 'manual'].includes(String(values.controlMode)) || values.controlSafe !== true) failure('先完成浏览器控制交接并停稳');
     const binding = catalog.entities[this.workcell];
     if (!binding || !Array.isArray(binding.config.managedDevices) || !Array.isArray(binding.config.vessels)) failure('机械核对配置缺失');
@@ -380,8 +394,11 @@ export class PassageController {
     for (const step of plan.steps) if (step.status === 'failed' && 'do' in step && liquidAction(step.do.action) && !(await this.receiptFor(planId, step)))
       failure('原操作的可靠 receipt 不可用；保留现场并核对记录，禁止按当前余量重新计算');
     const documents = revisePlans(plans, this.owner, Number(values.controlEpoch), { [plan.id]: replacements });
-    if (!this.initialMaterial && plans.every(part => part.steps.every(step => step.status === 'pending')) && object(values.materialSnapshot)?.operationCount === 0)
+    if (!this.initialMaterial && plans.every(part => part.steps.every(step => step.status === 'pending')) && object(values.materialSnapshot)?.operationCount === 0) {
       this.initialMaterial = structuredClone(values.materialSnapshot);
+      if (this.expectedInitial) this.initialComparison = compareFreshInitial(this.expectedInitial, this.initialMaterial);
+      if (this.initialComparison?.length) failure(`fresh 初态不符合配置预期：${this.initialComparison.join('；')}`);
+    }
     const revisions = new Map(plans.map(part => [part.id, part.revision]));
     let selected = plan;
     for (const [id, document] of documents) {

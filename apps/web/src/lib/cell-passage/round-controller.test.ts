@@ -12,13 +12,13 @@ function roundFixture() {
   }))) as unknown as PlanDocument[];
   const entity: EntityValues = { key: '/w', rev: 1, meta: {}, values: { controlOwner: '', controlEpoch: 4, controlMode: 'auto',
     controlSafe: true, materialRevision: 0, auditPassed: true, materialSnapshot: { operationCount: 0, revision: 0, reconciled: true,
-      vessels: [], tips: [], tip: { volumeUl: 0 }, reservations: [], observations: [], operations: [], controlRequests: [] } } };
+      vessels: [], tips: [], tip: { id: '', volumeUl: 0, components: [], cells: [] }, reservations: [], observations: [], operations: [], controlRequests: [] } } };
   const admitted: { planId: string; params: Record<string, JsonValue> }[] = [];
   const controls: string[] = [];
   const session = { sessionId: 's', sceneRevision: 'r', epoch: 0, simTime: 1, state: 'RUNNING' };
   const behavior = { holdSafe: true, dropAdmission: false };
   let next = { owner: '', mode: 'auto' };
-  const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: [], vessels: [] } } },
+  const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: [], vessels: [], tips: [] } } },
     types: { 'cell-passage-workcell/v1': { properties: { controlSafe: {} } } } } as unknown as Catalog;
   const http = async (path: string, options?: RequestInit): Promise<unknown> => {
     const body = options?.body ? JSON.parse(String(options.body)) : undefined;

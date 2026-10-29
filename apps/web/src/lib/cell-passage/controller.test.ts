@@ -6,7 +6,8 @@ import type { PlanDocument } from '../plans/model';
 function fixture() {
   const session = { sessionId: 's', sceneRevision: 'r', epoch: 0, state: 'RUNNING', simTime: 1 };
   const values = { controlOwner: '', controlEpoch: 3, controlMode: 'auto', controlSafe: true, materialRevision: 4,
-    auditPassed: true, materialSnapshot: { revision: 4, reconciled: true, tips: [], tip: { id: '', volumeUl: 0 }, vessels: [], reservations: [], observations: [], operations: [], controlRequests: [] as unknown[] } };
+    auditPassed: true, materialSnapshot: { revision: 4, reconciled: true, tips: [], tip: { id: '', volumeUl: 0, components: [], cells: [] },
+      vessels: [{ id: 'source', entityKey: '/w', culture: '', parent: '', capacityUl: 1000, volumeUl: 500, components: [{ name: 'medium', volumeUl: 500 }], cells: [] }], reservations: [], observations: [], operations: [], controlRequests: [] as unknown[] } };
   const plan = { id: 'p', kind: 'operation', target: 'session', sessionId: 's', sceneRevision: 'r', epoch: 0, revision: 1,
     status: 'approved', steps: [{ id: 200001, status: 'pending', do: { entity: '/w', action: 'aspirate', params: { owner: '', epoch: 3, operationId: 'liquid-1', vessel: 'mother', volumeUl: 200 } } }], stepResults: {} } as unknown as PlanDocument;
   let invocation = { invocationId: 'i', status: 'running' };
@@ -30,10 +31,32 @@ function fixture() {
   if ('do' in plan.steps[0]) plan.steps[0].do.params.owner = controller.owner;
   return { controller, session, values, plan, http, setInvocation: (status: string) => { invocation = { ...invocation, status }; }, lose: () => { loseResponse = true; } };
 }
-const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: ['/w'], vessels: [{ entityKey: '/w' }] } } }, types: { 'cell-passage-workcell/v1': { properties: { controlSafe: {} } } } } as unknown as Catalog;
+const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-workcell/v1', config: { managedDevices: ['/w'], tips: [], vessels: [{ id: 'source', entityKey: '/w', site: '/sourceSite', capacityUl: 1000, volumeUl: 500, reagent: 'medium' }] } } }, types: { 'cell-passage-workcell/v1': { properties: { controlSafe: {} } } } } as unknown as Catalog;
 async function arm(f: ReturnType<typeof fixture>) { const review = await f.controller.review('p', catalog); await f.controller.prepareRemaining('p', review); await f.controller.arm('p'); }
 const actionCalls = (f: ReturnType<typeof fixture>) => f.http.mock.calls.filter(([path]) => path.endsWith('/actions'));
 describe('passage browser scheduling through existing HTTP/Plan API', () => {
+  it('binds configuration expectations during a mid-run first read without relabelling it as a fresh observed initial state', async () => {
+    const f = fixture(), c = structuredClone(catalog);
+    c.entities['/w'].config.tips = [{ id: 'T1', site: '/T1', bodyKey: '/tip' }];
+    const material = f.values.materialSnapshot;
+    material.vessels[0].volumeUl = 460; material.vessels[0].components[0].volumeUl = 460;
+    material.tip.id = 'T1'; material.tip.volumeUl = 40; material.tip.components.push({ name: 'medium', volumeUl: 40 } as never);
+    material.tips.push({ id: 'T1', state: 'installed' } as never);
+    await f.controller.review('p', c);
+    expect(f.controller.initialSummary).toMatchObject({ basis: 'configuration-expectation', volumeUl: 500, fresh: 'not-observed' });
+    expect(material.vessels[0].volumeUl).toBe(460); expect(actionCalls(f)).toHaveLength(0);
+    material.vessels[0].volumeUl = 450; material.vessels[0].components[0].volumeUl = 450;
+    await expect(f.controller.review('p', c)).rejects.toThrow('与配置预期守恒不符');
+    expect(f.controller.initialSummary?.volumeUl).toBe(500);
+  });
+  it('does not replace an existing expected baseline using a stale or silently changed Catalog', async () => {
+    const f = fixture(); await f.controller.review('p', catalog);
+    const c = structuredClone(catalog); c.sceneRevision = 'old';
+    await expect(f.controller.review('p', c)).rejects.toThrow('Catalog');
+    c.sceneRevision = 'r'; (c.entities['/w'].config.vessels as { volumeUl: number }[])[0].volumeUl = 450;
+    await expect(f.controller.review('p', c)).rejects.toThrow('固定配方配置发生变化');
+    expect(f.controller.initialSummary?.volumeUl).toBe(500); expect(actionCalls(f)).toHaveLength(0);
+  });
   it('finds a protected/archived resolved receipt through the known invocation without recalculating from stock', async () => {
     const f = fixture(); f.plan.steps[0].status = 'failed';
     if ('do' in f.plan.steps[0]) f.plan.steps[0].do.action = 'aspirateFraction';
@@ -74,7 +97,8 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
   });
   it('reads a static physical reservoir without inventing an information-plane station', async () => {
     const f = fixture(); const c = structuredClone(catalog);
-    c.entities['/w'].config.vessels = [{ entityKey: '/reservoir', site: '/reservoir/Content' }];
+    c.entities['/w'].config.vessels = [{ id: 'source', entityKey: '/reservoir', site: '/reservoir/Content', capacityUl: 1000, volumeUl: 500, reagent: 'medium' }];
+    f.values.materialSnapshot.vessels[0].entityKey = '/reservoir';
     const original = f.http.getMockImplementation()!;
     f.http.mockImplementation(async (path, options) => path.endsWith('/scene') ? { nodes: [{ entityKey: '/reservoir', kind: 'body' }], sites: [{ entityKey: '/reservoir/Content', parentBodyKey: '/reservoir' }] } :
       path.includes('/pose?') ? { p: [0, 0, 0], q: [0, 0, 0, 1], epoch: 0, sceneRevision: 'r' } : original(path, options));

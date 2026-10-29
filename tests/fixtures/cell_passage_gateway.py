@@ -42,13 +42,19 @@ def create_fixture_app(root):
             self.host, self.actuator = build_workcell_host(
                 host_root,
                 vessels=[{"id": "source", "entityKey": "/peer", "site": "/sourceSite",
-                          "capacityUl": 1000, "volumeUl": 500, "reagent": "medium"}],
+                          "capacityUl": 1000, "volumeUl": 450 if options.seed == 78 else 500,
+                          "reagent": "medium"}],
                 extra_bindings=[{"key": "/peer", "type": PublicLabwareFacts.type,
                                  "program": PublicLabwareFacts.id, "config": {}}],
                 extra_programs=[PublicLabwareFacts],
                 extra_types=[Path("devices/types/labware.v1.yaml").read_text(encoding="utf8")],
             )
             self.catalog = self.host.catalog
+            if options.seed == 78:
+                # Deliberately inconsistent producer, fixed before publication:
+                # declared stock 500, actual initialized stock 450. Clients must
+                # not adopt the first mid-run state as their expected baseline.
+                self.catalog.entities["/workcell"]["config"]["vessels"][0]["volumeUl"] = 500
             # Seed 77 retains 40 uL of the first positive pump command until a
             # public control-generation change. Later commands follow measured
             # targets. This is external actuator feedback, never Newton proof.
@@ -80,7 +86,7 @@ def create_fixture_app(root):
                 self._control_index += 1
                 if self.options.seed == 99:
                     self.actuator.velocities["x"] = 0.001 if self.sim_time < 0.5 else 0.0
-                if self.options.seed == 77:
+                if self.options.seed in (77, 78):
                     epoch = self.host.values()["/workcell"]["controlEpoch"]
                     target = self.actuator.targets["pump"]
                     if self.limited_pump_epoch is None and target > 0.0004:

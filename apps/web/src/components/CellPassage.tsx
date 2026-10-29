@@ -32,11 +32,11 @@ function PassageState({ client, entityKey, ready, plan, plans, selectPlan }: { c
   return <section className="cell-passage" aria-label="细胞传代工作台">
     <header><div><span>实验状态模型 · {client.readOnly ? '录制回放' : '源侧权威状态'}</span><h2>细胞传代</h2></div><p>阶段：{passageStage(activeStep?.id)} · 设备 {text(values.phase)} · 物料修订 {quantity(snapshot?.revision)}</p></header>
     {warning && <p role="alert">{warning}</p>}
+    {!client.readOnly && <PassageControls client={client} workcell={entityKey} plan={plan} blocked={warning} selectPlan={selectPlan} />}
     <dl className="passage-summary"><div><dt>控制状态</dt><dd>{text(values.controlMode)} · {values.controlSafe === true ? '源侧已停稳' : values.controlSafe === false ? '尚未停稳' : '安全状态未知'}</dd></div>
       <div><dt>可用吸头</dt><dd>{quantity(values.tipsRemaining)}</dd></div><div><dt>废物剩余容量</dt><dd>{quantity(values.wasteFreeUl)} µL</dd></div>
       <div><dt>在途液体 / 已装吸头</dt><dd>{quantity(values.inFlightUl)} µL / {tip?.id === '' ? '未安装' : text(tip?.id)}</dd></div></dl>
     {round && <div className="passage-round"><h3>本轮分段计划</h3><p>{parts.filter(part => part.status === 'completed').length} / {parts.length} 已显示分段步骤完成；全部七阶段及末态另行核验</p><details><summary>七阶段与分段</summary><ol>{parts.map(part => <li key={part.id}><button onClick={() => selectPlan?.(part.id)}>{part.title} · {part.status}</button></li>)}</ol></details></div>}
-    {!client.readOnly && <PassageControls client={client} workcell={entityKey} plan={plan} blocked={warning} selectPlan={selectPlan} />}
     <h3>母孔 → 子孔谱系</h3>
     {families.length ? <ul className="passage-lineage">{families.map(({ mother, children }) => <li key={text(mother.id)}><b>{text(mother.id)} · {text(mother.culture)}</b><span> → </span>{children.length ? children.map(child => <button key={text(child.id)} onClick={() => select(text(child.id))}>{text(child.id)} · {quantity(liveCells(child))} 活细胞</button>) : <span>子孔未知</span>}</li>)}</ul> : <p>尚无已知谱系</p>}
     <h3>器皿内容</h3><label>选择器皿 <select value={text(vessel?.id)} onChange={event => select(event.target.value)}>{vessels.map(row => <option key={text(row.id)} value={text(row.id)}>{text(row.id)}</option>)}</select></label>

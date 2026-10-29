@@ -119,6 +119,7 @@ export function PassageControls({ client, workcell, plan, blocked, selectPlan }:
         return controller.continueFlow(controller.flow.phase === 'review' ? await revisedFailures() : {}, controller.flow.phase === 'review');
       })}>继续</button>
     </div>
+    {controller.initialSummary && <p className="passage-initial" data-testid="passage-initial-basis">初态基准：固定配方配置预期 · 总液量 {quantity(controller.initialSummary.volumeUl)} µL；fresh 实读物料对照：{controller.initialSummary.fresh === 'matched' ? '通过' : controller.initialSummary.fresh === 'mismatched' ? '不一致' : '未观察到，中途状态不充当原始初态'}</p>}
     {disabled && <p>{disabled}</p>}
     {receiptError && <p role="alert">{receiptError}</p>}
     {controller.finalAudit && <section aria-label="本轮末态核验"><h4>末态核验：{controller.finalAudit.status === 'observations_valid' ? '观测检查通过' : '未通过或证据不足'}</h4><ul><li>物料守恒与十二子孔：{controller.finalAudit.material ? '通过' : '未通过/未知'}</li><li>实际就座与废吸头：{controller.finalAudit.spatial ? '通过' : '未通过/未知'}</li><li>教学环境：{controller.finalAudit.environment ? '通过' : '未通过/未知'}</li></ul><p>完整实验验收仍需连续录制与运输证据；单个分段完成不代表实验成功。</p>{controller.finalAudit.errors.length > 0 && <details><summary>核验缺项与差异</summary><ul>{controller.finalAudit.errors.map((error, index) => <li key={index}>{error}</li>)}</ul></details>}</section>}
@@ -129,14 +130,19 @@ export function PassageControls({ client, workcell, plan, blocked, selectPlan }:
       const liquid = 'do' in step && liquidAction(step.do.action);
       const snapshot = object(material?.values.materialSnapshot);
       const relevant = 'do' in step ? rows(snapshot?.vessels).filter(row => row.id === step.do.params.vessel || row.id === step.do.params.targetVessel) : [];
+      const input = replacements[step.id];
+      const adopted = operation?.remainingUl !== undefined && input?.volume === String(operation.remainingUl);
       return <fieldset key={step.id}><legend>修订失败步骤 {step.id} · {'do' in step ? step.do.action : '检查'}</legend>
         {liquid && <><p>原解析目标 {quantity(operation?.resolvedUl)} µL；已实转 {quantity(operation?.appliedUl)} µL；解析目标剩余 {quantity(operation?.remainingUl)} µL；分辨率余量 {quantity(operation?.resolutionResidualUl)} µL。以原 receipt 与当前器皿/吸头内容修订明确操作，不重新计算 fraction、top-up 或 all。</p>
           <label><input type="checkbox" checked={replacements[step.id]?.checkOnly ?? false} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], checkOnly: event.target.checked, approved: false } }))} /> 改为仅核对当前物料快照，不再移液（明确变更本步骤意图）</label>
           <table aria-label={`步骤 ${step.id} 当前物料`}><thead><tr><th>当前位置</th><th>实际液量 µL</th></tr></thead><tbody>{relevant.map(row => <tr key={text(row.id)}><td>{text(row.id)}</td><td>{quantity(row.volumeUl)}</td></tr>)}<tr><td>已装吸头</td><td>{quantity(object(snapshot?.tip)?.volumeUl)}</td></tr></tbody></table>
           <details><summary>原操作与余量明细</summary><dl>{['requestedUl', 'resolvedUl', 'appliedUl', 'observedUl', 'remainingUl', 'untransferredUl', 'resolutionResidualUl', 'quantityOutcome', 'remainderLocation'].map(key => <div key={key}><dt>{key}</dt><dd>{factLabel(operation?.[key])}</dd></div>)}</dl></details>
-          {liquid === 'mix' && <label>修复方向<select value={replacements[step.id]?.direction ?? ''} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], direction: event.target.value as 'aspirate' | 'dispense', approved: false } }))}><option value="">根据当前吸头内容选择</option><option value="aspirate">吸液</option><option value="dispense">分液</option></select></label>}
-          <label>后续操作量（µL）<input type="number" min="0" step="any" value={replacements[step.id]?.volume ?? ''} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: event.target.value, approved: false } }))} /></label></>}
-        {liquid && typeof operation?.remainingUl === 'number' && operation.remainingUl > 0 && <button onClick={() => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: String(operation.remainingUl), approved: false } }))}>填入原解析目标剩量 {quantity(operation.remainingUl)} µL</button>}
+          <p>后续操作：{input?.checkOnly ? '仅核对当前物料' : adopted ? `采用原解析余量，约 ${quantity(Number(input?.volume))} µL（保留原始精度）` : input?.volume ? `明确液量，约 ${quantity(Number(input.volume))} µL` : '尚未选择'}</p>
+          <details><summary>精确编辑后续操作</summary>
+            {liquid === 'mix' && <label>修复方向<select value={input?.direction ?? ''} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], direction: event.target.value as 'aspirate' | 'dispense', approved: false } }))}><option value="">根据当前吸头内容选择</option><option value="aspirate">吸液</option><option value="dispense">分液</option></select></label>}
+            <label>后续操作量（µL）<input type="number" min="0" step="any" value={input?.volume ?? ''} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: event.target.value, approved: false } }))} /></label>
+          </details></>}
+        {liquid && typeof operation?.remainingUl === 'number' && operation.remainingUl > 0 && <button onClick={() => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: String(operation.remainingUl), approved: false } }))}>采用原解析余量 · 约 {quantity(operation.remainingUl)} µL</button>}
         <label><input type="checkbox" disabled={!!liquid && !operation && step.status !== 'skipped'} checked={replacements[step.id]?.approved ?? false} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: previous[step.id]?.volume ?? '', approved: event.target.checked } }))} /> 已核对原目标、实际量和当前余量差异；采用上述明确修订，不重放原数量意图</label>
       </fieldset>;
     })}
