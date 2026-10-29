@@ -45,6 +45,25 @@ fixtures. Native tests compare signed distance, effective constraint cutoff and
 normal force against the previous envelope. Original asset bytes and other
 scenes' defaults are unchanged.
 
+The scene uses `labware/passage-tip-1000-relief@1`, a separate derivative of the
+retained `passage-tip-1000@1`. Its provenance records the original package hash
+and the tested local profile. The actual polygon has a 5.4 mm minimum inner
+radius through Z=46..50 mm below the unchanged mating seat; the 0..20 mm rack
+region, 50 mm mating frame, 62 mm height and 1 g estimated mass are retained.
+The mass center remains automatically computed from the collider geometry.
+
+The new scene explicitly models ideal pump motor gravity compensation through
+the supported MuJoCo body/joint attributes. This also contributes to ancestor
+FlexZ forces; it is a teaching controller, not an OEM motor specification.
+Pump stiffness/damping/force limit are 20000 N/m, 1000 Ns/m and 100 N. The
+source's bounded simulation-time trajectory uses 0.2 m/s XY, 0.05 m/s Z and
+0.25 m/s² acceleration limits. The binding declares actual moving bodies from
+the controlled USD joints; unavailable contact observations fail closed.
+
+Existing published asset bytes are never replaced. The public installer
+deduplicates exact upload hashes and retains the scene's returned version; a
+source folder named `1` does not force a newly imported scene to revision 1.
+
 Public import, validation, launch, controlled actions, continuous loaded-motion
 recordings, long seating checks and a real platform viewport are separate
 qualification evidence. The ordinary verification requirements still apply.
