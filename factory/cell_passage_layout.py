@@ -94,7 +94,13 @@ def centrifuge(stage, root=LAB + "/Centrifuge", origin=(-0.53, -0.65, 0.96)):
 
 
 def populate(stage, *, demonstration=False):
-    relocate(stage, LAB + "/Incubator", LAB + "/Joints/IncubatorFixed", (0.60, -0.23, 0))
+    incubator_lift = 0.015 if demonstration else 0.0
+    incubator_backset = 0.110 if demonstration else 0.0
+    # Keep the complete door sweep clear of rails and the neighboring centrifuge.
+    relocate(
+        stage, LAB + "/Incubator", LAB + "/Joints/IncubatorFixed",
+        (0.60, -0.23 + incubator_backset, incubator_lift),
+    )
     relocate(stage, LAB + "/LiquidHandler", LAB + "/Joints/LiquidHandlerFixed", (-0.40, -0.18, 0))
     # Removable upper shelves are omitted in this derived configuration.
     # The three plate bays share the lowest shelf; the unchanged hand and
@@ -120,6 +126,11 @@ def populate(stage, *, demonstration=False):
         stage.RemovePrim(LAB + "/Static/" + name)
     reference(stage, LAB + "/PreparationBench", "passage-preparation-bench", (0, -0.9, 0), "environment")
     reference(stage, LAB + "/BackBench", "passage-back-bench", (0, 0.38, 0), "environment")
+    if demonstration:
+        box(
+            stage, LAB + "/Fixtures/IncubatorRiser",
+            (-0.749, 0.38015 + incubator_backset, 0.8275), (0.73, 0.67, 0.015),
+        )
     # Trim the retained conservative bench proxy between the new tables:
     # preparation ends at Y=-0.600, back table begins at Y=-0.070.
     # Both unchanged rail footprints remain fully supported, with >=32.5 mm
@@ -134,9 +145,9 @@ def populate(stage, *, demonstration=False):
     reference(stage, LAB + "/Labware/CollectionRack", rack_asset, rack_origin)
 
     stations = {
-        "IncubatorMother": (-0.925, 0.23, 1.0858),
-        "IncubatorA": (-0.575, 0.23, 1.0858),
-        "IncubatorB": (-0.750, 0.23, 1.0858),
+        "IncubatorMother": (-0.925, 0.23 + incubator_backset, 1.0858 + incubator_lift),
+        "IncubatorA": (-0.575, 0.23 + incubator_backset, 1.0858 + incubator_lift),
+        "IncubatorB": (-0.750, 0.23 + incubator_backset, 1.0858 + incubator_lift),
         "Imager": (-0.05, -0.68, 1.232),
         "FlexPlate": (0.53, 0.29, 1.042),
         "DaughterAReady": (0.15, -0.66, 1.232),
