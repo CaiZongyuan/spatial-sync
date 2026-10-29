@@ -1,6 +1,9 @@
 """Procedural assets cross the same S4 boundary as public library imports."""
 
+import pytest
 import yaml
+
+pytest.importorskip("pxr.Usd")
 
 from factory.cell_passage import package, vessel
 from packages.library.structural import validate
