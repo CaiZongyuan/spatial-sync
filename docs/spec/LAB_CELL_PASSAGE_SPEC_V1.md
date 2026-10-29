@@ -290,8 +290,9 @@ penetration guard remain required. Older scenes keep their 80 mm default.
 20 mm/s. Automatic pickup completes only with an active physically qualified
 weld and measured stationary fingers. Automatic opening/release also requires
 the actual opening target and stationary feedback. A slow per-tick displacement
-does not establish a settled grasp. Explicit gripper commands and the older
-robot program keep their existing completion behavior.
+does not establish a settled grasp. Explicit labware gripper commands retain
+their full 80 mm request range and also require their actual target and stationary
+feedback. The older robot program keeps its existing completion behavior.
 
 ## P6 posture contexts
 

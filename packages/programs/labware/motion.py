@@ -142,8 +142,6 @@ class LabwareMotionProgram(RobotArmProgram):
         return self.body_grips[body][1] + 2 * abs(self._finger_position(port, body)[1]) + 0.003
 
     def _gripper_settled(self, ctx, kind, actual, dt):
-        if self.handle.action == "setGripper":
-            return super()._gripper_settled(ctx, kind, actual, dt)
         stationary = dt > 0 and abs(actual - self.last_width) <= min(.002, self.gripper_speed_mps * .1) * dt
         if kind == "pick":
             return (stationary and self.pick_tube in self.tubes
