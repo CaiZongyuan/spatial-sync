@@ -8,6 +8,8 @@ import numpy as np
 import trimesh
 import yaml
 
+from factory.cell_passage_provenance import file_hashes
+
 
 def build(source, output):
     original = source / "assets/verified-world-lab-incubator-base"
@@ -55,13 +57,6 @@ def build(source, output):
         "configuration": "Simulation single-level derivative; no manufacturer hardware-modification approval",
         "collisionRecipe": "Composed stage removes Collision_shelf_2/3/4 and their hole surfaces",
     }
-    provenance["files"] = {
-        str(path.relative_to(target)).replace("\\", "/"): {
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            "bytes": path.stat().st_size,
-        }
-        for path in sorted(target.rglob("*"))
-        if path.is_file() and path.name != "provenance.json"
-    }
+    provenance["files"] = file_hashes(target)
     (target / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     return target
