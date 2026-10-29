@@ -168,8 +168,8 @@ def tip(stage, path):
     root = rigid(stage, path, 0.001)
     # Twelve convex wall sectors leave a real tapered bore (>1 mL below the
     # 10 mm source nozzle) rather than substituting a filled cone.
-    import trimesh
-
+    # These triangles already have consistent outward winding. Author the
+    # fixed topology directly, without optional graph/normal-repair packages.
     faces = [
         [0, 1, 3],
         [0, 3, 2],
@@ -194,12 +194,10 @@ def tip(stage, path):
             for radius in (inner, outer):
                 for theta in (angle, angle + math.pi / 6):
                     points.append((radius * math.cos(theta), radius * math.sin(theta), z))
-        mesh = trimesh.Trimesh(points, faces, process=False)
-        mesh.fix_normals()
         shape = UsdGeom.Mesh.Define(stage, path + f"/Nozzle/Wall{index:02d}")
-        shape.CreatePointsAttr(Vt.Vec3fArray(mesh.vertices.tolist()))
-        shape.CreateFaceVertexCountsAttr([3] * len(mesh.faces))
-        shape.CreateFaceVertexIndicesAttr(mesh.faces.ravel().tolist())
+        shape.CreatePointsAttr(Vt.Vec3fArray(points))
+        shape.CreateFaceVertexCountsAttr([3] * len(faces))
+        shape.CreateFaceVertexIndicesAttr([index for face in faces for index in face])
         shape.CreateSubdivisionSchemeAttr("none")
         shape.CreateDisplayColorAttr([Gf.Vec3f(0.6, 0.8, 0.86)])
         UsdPhysics.CollisionAPI.Apply(shape.GetPrim())

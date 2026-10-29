@@ -26,8 +26,6 @@ def bore_volume_ul():
 
 
 def relief(stage, root):
-    import trimesh
-
     # Keep the old Root, mass and 50..62 mm collar. Never rewrite the old asset.
     tip(stage, root)
     stage.RemovePrim(root + "/Nozzle")
@@ -39,12 +37,10 @@ def relief(stage, root):
                 for radius in (inner, outer):
                     for theta in (angle, angle + math.pi / 6):
                         points.append((radius * math.cos(theta), radius * math.sin(theta), z))
-            mesh = trimesh.Trimesh(points, FACES, process=False)
-            mesh.fix_normals()
             shape = UsdGeom.Mesh.Define(stage, root + f"/Nozzle/Segment{segment}/Wall{index:02d}")
-            shape.CreatePointsAttr(Vt.Vec3fArray(mesh.vertices.tolist()))
-            shape.CreateFaceVertexCountsAttr([3] * len(mesh.faces))
-            shape.CreateFaceVertexIndicesAttr(mesh.faces.ravel().tolist())
+            shape.CreatePointsAttr(Vt.Vec3fArray(points))
+            shape.CreateFaceVertexCountsAttr([3] * len(FACES))
+            shape.CreateFaceVertexIndicesAttr([index for face in FACES for index in face])
             shape.CreateSubdivisionSchemeAttr("none")
             shape.CreateDisplayColorAttr([Gf.Vec3f(0.6, 0.8, 0.86)])
             UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
