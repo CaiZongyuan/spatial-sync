@@ -11,7 +11,7 @@ function roundFixture() {
     steps: [{ id: (index + 1) * 100000 + part + 1, status: 'pending', do: { entity: '/w', action: 'wait', params: { owner: 'old', epoch: 0, operationId: `global-${index}-${part}`, seconds: 1 } } }],
   }))) as unknown as PlanDocument[];
   const entity: EntityValues = { key: '/w', rev: 1, meta: {}, values: { controlOwner: '', controlEpoch: 4, controlMode: 'auto',
-    controlSafe: true, materialRevision: 0, auditPassed: true, materialSnapshot: { operationCount: 0, revision: 0, reconciled: true,
+    controlSafe: true, controlSafeAtSimTime: 1, materialRevision: 0, auditPassed: true, materialSnapshot: { operationCount: 0, revision: 0, reconciled: true,
       vessels: [], tips: [], tip: { id: '', volumeUl: 0, components: [], cells: [] }, reservations: [], observations: [], operations: [], controlRequests: [] } } };
   const admitted: { planId: string; params: Record<string, JsonValue> }[] = [];
   const controls: string[] = [];
@@ -42,7 +42,7 @@ function roundFixture() {
         (object(entity.values.materialSnapshot)!.controlRequests as JsonValue[]).push({ action: 'requestControl', operationId: body.params.operationId,
           epoch: entity.values.controlEpoch, owner: entity.values.controlOwner, mode: entity.values.controlMode, paramsJson: JSON.stringify(body.params) });
         const row = { ...body, invocationId: `request-${entity.values.controlEpoch}`, epoch: session.epoch, status: 'succeeded', startedSimTime: session.simTime };
-        controlInvocations.set(row.invocationId, row); entity.meta.controlSafe.sampleTimeMs++;
+        controlInvocations.set(row.invocationId, row);
         return structuredClone(row);
       }
       if (body.action === 'confirmControl') {

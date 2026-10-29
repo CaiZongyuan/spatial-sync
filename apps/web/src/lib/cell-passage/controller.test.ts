@@ -6,7 +6,7 @@ import type { PlanDocument } from '../plans/model';
 
 function fixture() {
   const session = { sessionId: 's', sceneRevision: 'r', epoch: 0, state: 'RUNNING', simTime: 1 };
-  const values = { controlOwner: '', controlEpoch: 3, controlMode: 'auto', controlSafe: true, materialRevision: 4,
+  const values = { controlOwner: '', controlEpoch: 3, controlMode: 'auto', controlSafe: true, controlSafeAtSimTime: 1 as number | undefined, materialRevision: 4,
     auditPassed: true, materialSnapshot: { revision: 4, reconciled: true, tips: [], tip: { id: '', volumeUl: 0, components: [], cells: [] },
       vessels: [{ id: 'source', entityKey: '/w', culture: '', parent: '', capacityUl: 1000, volumeUl: 500, components: [{ name: 'medium', volumeUl: 500 }], cells: [] }], reservations: [], observations: [], operations: [], controlRequests: [] as unknown[] } };
   const plan = { id: 'p', kind: 'operation', target: 'session', sessionId: 's', sceneRevision: 'r', epoch: 0, revision: 1,
@@ -27,7 +27,7 @@ function fixture() {
       const body = JSON.parse(String(options?.body));
       if (['requestControl', 'confirmControl'].includes(body.action)) {
         const row = { ...body, invocationId: `control-${controlInvocations.size}`, epoch: session.epoch, status: 'succeeded', startedSimTime: session.simTime };
-        controlInvocations.set(row.invocationId, row); safeMeta.sampleTimeMs++;
+        controlInvocations.set(row.invocationId, row);
         return structuredClone(row);
       }
       return structuredClone(invocation);
@@ -44,7 +44,7 @@ const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-wo
 async function arm(f: ReturnType<typeof fixture>) { const review = await f.controller.review('p', catalog); await f.controller.prepareRemaining('p', review); await f.controller.arm('p'); }
 const actionCalls = (f: ReturnType<typeof fixture>) => f.http.mock.calls.filter(([path]) => path.endsWith('/actions'));
 describe('passage browser scheduling through existing HTTP/Plan API', () => {
-  it('waits for Source start and a fresh controlSafe property sample, not the global clock', async () => {
+  it('waits for Source success and fresh physical readiness time, not old Boolean metadata or the global clock', async () => {
     const f = fixture(); f.values.controlOwner = 'previous';
     await f.controller.begin('p', catalog, 'manual');
     const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
@@ -56,7 +56,9 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
     invocation.status = 'running'; invocation.startedSimTime = 2;
     f.session.simTime = 10;
     await f.controller.progress(); expect(actionCalls(f)).toHaveLength(1);
-    f.safeMeta.simTime = 2; f.safeMeta.sampleTimeMs++;
+    invocation.status = 'succeeded';
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(1);
+    f.values.controlSafeAtSimTime = 2;
     await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
   });
   it('retries definitive never-started not_safe only after new physical samples with bounded new request identities', async () => {
@@ -68,11 +70,14 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
       owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
     await f.controller.progress();
     const confirm = [...f.controlInvocations.values()][1];
-    Object.assign(confirm, { status: 'rejected', startedSimTime: null, error: { code: 'not_safe' } });
-    f.safeMeta.sampleTimeMs--; // Posting is not itself a new physical sample.
+    Object.assign(confirm, { status: 'rejected', startedSimTime: null, endedSimTime: 3, error: { code: 'not_safe' } });
     for (let n = 0; n < 3; n++) await f.controller.progress();
     expect(actionCalls(f)).toHaveLength(2);
-    f.safeMeta.sampleTimeMs += 2; await f.controller.progress();
+    f.safeMeta.sampleTimeMs += 2; // Refreshed metadata is not fresh physical evidence.
+    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
+    f.values.controlSafeAtSimTime = 2; await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
+    f.values.controlSafeAtSimTime = 3; await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
+    f.values.controlSafeAtSimTime = 4; await f.controller.progress();
     expect(actionCalls(f)).toHaveLength(3);
     const first = JSON.parse(String(actionCalls(f)[1][1]?.body));
     const second = JSON.parse(String(actionCalls(f)[2][1]?.body));
@@ -81,7 +86,7 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
       const current = [...f.controlInvocations.values()].at(-1)!;
       Object.assign(current, { status: 'rejected', startedSimTime: null, error: { code: 'not_safe' } });
       await f.controller.progress();
-      f.safeMeta.sampleTimeMs++;
+      f.values.controlSafeAtSimTime!++;
       if (attempt === 0) await f.controller.progress();
       else await expect(f.controller.progress()).rejects.toThrow('上限');
     }
@@ -98,7 +103,6 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
         rejectConfirm = false;
         const row = [...f.controlInvocations.values()].at(-1)!;
         Object.assign(row, { status: 'rejected', startedSimTime: null, error: { code: 'not_safe' } });
-        f.safeMeta.sampleTimeMs--;
         throw new Error('HTTP 409 top-level Invocation discarded by request()');
       }
       return result;
@@ -110,11 +114,12 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
       owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
     await f.controller.progress(); await f.controller.progress();
     expect(actionCalls(f)).toHaveLength(2);
-    f.safeMeta.sampleTimeMs++; await f.controller.progress();
+    f.values.controlSafeAtSimTime = 2; await f.controller.progress();
     expect(actionCalls(f)).toHaveLength(3);
   });
-  it('requires every managed controlSafe sample to be fresh before confirmation', async () => {
+  it('accepts current idle managed safe values with unchanged Host metadata when physical readiness is fresh', async () => {
     const f = fixture(); f.values.controlOwner = 'previous';
+    f.safeMeta.simTime = 0;
     const c = structuredClone(catalog); c.entities['/w'].config.managedDevices = ['/managed'];
     const managed = { key: '/managed', values: { controlSafe: true }, meta: { controlSafe: { simTime: 0, sampleTimeMs: 10, source: 'virtual' } } };
     const original = f.http.getMockImplementation()!;
@@ -128,12 +133,42 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
     f.values.controlEpoch = 4; f.values.controlMode = 'holding';
     f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl', epoch: 4,
       owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
-    await f.controller.progress(); expect(actionCalls(f)).toHaveLength(1);
-    managed.meta.controlSafe.simTime = 1; managed.meta.controlSafe.sampleTimeMs++;
+    // HostCore publishes changed values only. Idle True metadata legitimately stays at zero.
+    Object.assign(f.values, { controlSafeAtSimTime: 1 });
     await f.controller.progress(); expect(actionCalls(f)).toHaveLength(2);
+    expect(managed.meta.controlSafe.simTime).toBe(0);
   });
+  it.each(['missing', 'early', 'nonfinite', 'unsafe', 'managed-unsafe', 'managed-stale', 'ready-stale'] as const)(
+    'does not confirm with %s physical readiness evidence', async invalid => {
+      const f = fixture(); f.values.controlOwner = 'previous';
+      const c = structuredClone(catalog); c.entities['/w'].config.managedDevices = ['/managed'];
+      const managed = { key: '/managed', values: { controlSafe: invalid !== 'managed-unsafe' },
+        meta: { controlSafe: { simTime: 0, sampleTimeMs: 10, source: 'virtual', stale: invalid === 'managed-stale' } } };
+      const original = f.http.getMockImplementation()!;
+      f.http.mockImplementation(async (path, options) => {
+        const result = await original(path, options);
+        if (path.includes('/state?')) {
+          const entities = (result as { entities: Record<string, unknown> }).entities;
+          entities['/managed'] = structuredClone(managed);
+          if (invalid === 'ready-stale') (entities['/w'] as { meta: Record<string, unknown> }).meta.controlSafeAtSimTime = { stale: true };
+        }
+        return result;
+      });
+      await f.controller.begin('p', c, 'manual');
+      const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+      f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+      f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl', epoch: 4,
+        owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+      if (invalid === 'missing') f.values.controlSafeAtSimTime = undefined;
+      if (invalid === 'early') f.values.controlSafeAtSimTime = .99;
+      if (invalid === 'nonfinite') f.values.controlSafeAtSimTime = NaN;
+      if (invalid === 'unsafe') f.values.controlSafe = false;
+      for (let n = 0; n < 3; n++) await f.controller.progress();
+      expect(actionCalls(f)).toHaveLength(1); expect(f.controller.dispatching).toBe(false);
+    });
   it('does not repost across a real HTTP ACK followed by delayed state publication', async () => {
     const f = fixture(); f.values.controlOwner = 'previous';
+    f.safeMeta.simTime = 0; f.values.controlSafeAtSimTime = undefined;
     const server = createServer(async (req, res) => {
       let body = ''; for await (const chunk of req) body += chunk;
       try { const result = await f.http(req.url!, body ? { method: req.method, body } : undefined);
@@ -155,9 +190,12 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
       f.values.controlEpoch = 4; f.values.controlMode = 'holding';
       f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl',
         epoch: 4, owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+      await controller.progress(); expect(actionCalls(f)).toHaveLength(1);
+      f.values.controlSafeAtSimTime = 1;
       await controller.progress();
       for (let n = 0; n < 4; n++) await controller.progress();
       expect(actionCalls(f)).toHaveLength(2);
+      expect(f.safeMeta.simTime).toBe(0); // Real HTTP does not invent Host metadata refreshes.
     } finally { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
   });
   it.each(['owner', 'epoch', 'scene', 'session'] as const)('stops an outstanding handoff when %s conflicts', async change => {

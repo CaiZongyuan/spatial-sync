@@ -45,8 +45,8 @@ export class PassageController {
   private stopGeneration = 0;
   private handoff?: { sessionEpoch: number; sceneRevision: string; owner: string; epoch: number; baselineMode: JsonValue;
     mode: 'auto' | 'manual'; requestId: string; params: Record<string, JsonValue>; invocationId?: string;
-    baselineSafeSample?: number; confirmAttempts: number;
-    confirm?: { requestId: string; params: Record<string, JsonValue>; invocationId?: string; safeSamples: Record<string, number>; rejected?: boolean } };
+    confirmAttempts: number;
+    confirm?: { requestId: string; params: Record<string, JsonValue>; invocationId?: string; readyAt: number; rejected?: boolean } };
   constructor(readonly sessionId: string, readonly workcell: string, private http: Transport = request) {}
   private route = () => `/sessions/${encodeURIComponent(this.sessionId)}`;
   stop() { this.stopped = true; this.stopGeneration++; }
@@ -160,7 +160,7 @@ export class PassageController {
           if (checkpoint.session.state === 'PAUSED') flow.phase = 'paused-hold';
           return '正在观察物理停稳与在途调用终态；暂停时请继续推进物理制动';
         }
-        if (!await this.freshHandoffSafety(flow.planId)) return '等待请求启动后的真实停稳属性采样；自动派发仍停止';
+        if (await this.freshHandoffSafety(flow.planId) === undefined) return '等待请求完成后的真实停稳物理采样；自动派发仍停止';
         await this.confirmControl(flow.planId);
         return '正在等待同一次确认交接的源侧回执';
       }
@@ -280,7 +280,7 @@ export class PassageController {
     // Source accept fences the old epoch even when the simulation is paused.
     const handoff = this.handoff = { sessionEpoch: session.epoch, sceneRevision: session.sceneRevision,
       owner: String(values.controlOwner), epoch: Number(values.controlEpoch), baselineMode: values.controlMode, mode,
-      baselineSafeSample: entity.meta.controlSafe?.sampleTimeMs, confirmAttempts: 0,
+      confirmAttempts: 0,
       requestId: crypto.randomUUID(), params: { owner: values.controlOwner, epoch: values.controlEpoch,
         operationId: crypto.randomUUID(), nextOwner: this.owner, mode }, invocationId: undefined as string | undefined };
     try {
@@ -340,31 +340,30 @@ export class PassageController {
     if (!invocation) return;
     if (invocation.status === 'rejected' && invocation.error?.code === 'not_safe' && invocation.startedSimTime == null) {
       confirm.rejected = true;
-      // Do not reuse a sample that was already visible when rejection was observed.
-      const observed = checkpoint.entity.meta.controlSafe?.sampleTimeMs;
-      if (typeof observed === 'number' && Number.isFinite(observed)) confirm.safeSamples[this.workcell] = Math.max(confirm.safeSamples[this.workcell], observed);
+      // Only the producer's actual physical evaluation timestamp advances readiness.
+      for (const observed of [checkpoint.entity.values.controlSafeAtSimTime, invocation.endedSimTime])
+        if (typeof observed === 'number' && Number.isFinite(observed)) confirm.readyAt = Math.max(confirm.readyAt, observed);
     } else if (['rejected', 'failed', 'cancelled'].includes(invocation.status)) { this.block(); failure('确认交接未成功；保留现场'); }
   }
-  private async freshHandoffSafety(planId: string): Promise<Record<string, number> | undefined> {
+  private async freshHandoffSafety(planId: string): Promise<number | undefined> {
     const h = this.handoff!;
     const invocation = await this.controlInvocation(h, 'requestControl');
     if (!invocation) return;
-    if (!['running', 'succeeded'].includes(invocation.status) || typeof invocation.startedSimTime !== 'number' || !Number.isFinite(invocation.startedSimTime)) return;
+    if (invocation.status !== 'succeeded' || typeof invocation.startedSimTime !== 'number' || !Number.isFinite(invocation.startedSimTime)) return;
     const managed = this.flow?.catalog.entities[this.workcell]?.config.managedDevices;
     if (!Array.isArray(managed)) return;
     const keys = [...new Set([this.workcell, ...managed.map(String)])];
     const state = await this.http<{ entities: Record<string, EntityValues> }>(`${this.route()}/state?keys=${encodeURIComponent(keys.join(','))}`);
-    const samples: Record<string, number> = {};
     for (const key of keys) {
       const entity = state.entities[key]; const meta = entity?.meta.controlSafe;
-      if (entity?.values.controlSafe !== true || !meta || meta.stale || !Number.isFinite(meta.simTime) || meta.simTime < invocation.startedSimTime ||
-          !Number.isFinite(meta.sampleTimeMs) || (key === this.workcell && (h.baselineSafeSample === undefined || meta.sampleTimeMs <= h.baselineSafeSample)) ||
-          (h.confirm?.rejected && meta.sampleTimeMs <= h.confirm.safeSamples[key])) return;
-      samples[key] = meta.sampleTimeMs;
+      if (entity?.values.controlSafe !== true || !meta || meta.stale) return;
     }
+    const workcell = state.entities[this.workcell]; const readyAt = workcell.values.controlSafeAtSimTime;
+    if (typeof readyAt !== 'number' || !Number.isFinite(readyAt) || readyAt < invocation.startedSimTime ||
+        workcell.meta.controlSafeAtSimTime?.stale || (h.confirm?.rejected && readyAt <= h.confirm.readyAt)) return;
     const checkpoint = await this.inspect(planId); this.valid(checkpoint);
     if (this.handoffState(checkpoint) !== 'holding') return;
-    return samples;
+    return readyAt;
   }
   private async pendingControlled() {
     const lists = await Promise.all(['pending_approval', 'accepted', 'running'].map(status =>
@@ -381,11 +380,11 @@ export class PassageController {
     if (this.handoff) {
       const h = this.handoff;
       if ((h.confirm && !h.confirm.rejected) || this.handoffState(checkpoint) !== 'holding') return;
-      const safeSamples = await this.freshHandoffSafety(planId);
-      if (!safeSamples) return;
+      const readyAt = await this.freshHandoffSafety(planId);
+      if (readyAt === undefined) return;
       if (h.confirmAttempts >= 3) { this.block(); failure('安全确认重试已达上限；保留现场'); }
       const confirm = h.confirm = { requestId: crypto.randomUUID(), params: h.confirm?.params ?? { owner: values.controlOwner,
-        epoch: values.controlEpoch, operationId: crypto.randomUUID() }, safeSamples, invocationId: undefined as string | undefined };
+        epoch: values.controlEpoch, operationId: crypto.randomUUID() }, readyAt, invocationId: undefined as string | undefined };
       h.confirmAttempts++;
       try {
         const invocation = await this.http<Invocation>(`${this.route()}/actions`, post({ requestId: confirm.requestId,
