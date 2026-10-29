@@ -25,6 +25,14 @@ class PassageExecutor:
         self.blocked = None
         self.material_revision = material_revision
         self.settling_since = None
+        self.managed_devices = None
+
+    def _settling(self, sim_time, reason, **details):
+        if self.settling_since is None:
+            self.settling_since = sim_time
+        elapsed = sim_time - self.settling_since
+        return {"status": "budget_exceeded" if elapsed > self.budget_seconds else "observing",
+                "reason": reason, "elapsedSimSeconds": elapsed, **details}
 
     @classmethod
     async def open(cls, client, plan_id, workcell, *, owner, epoch, budget_seconds=120):
@@ -169,12 +177,7 @@ class PassageExecutor:
         if plan["status"] == "completed":
             return {"status": "completed", "plan": plan}
         if not values["controlSafe"]:
-            if self.settling_since is None:
-                self.settling_since = session["simTime"]
-            elapsed = session["simTime"] - self.settling_since
-            return {"status": "budget_exceeded" if elapsed > self.budget_seconds else "observing",
-                    "reason": "devices_settling", "elapsedSimSeconds": elapsed}
-        self.settling_since = None
+            return self._settling(session["simTime"], "devices_settling")
         step = next((row for row in plan["steps"] if row["status"] not in ("done", "skipped")), None)
         if step is None or step["status"] != "pending":
             return {"status": "reconcile_required", "reason": "step_not_pending"}
@@ -183,6 +186,7 @@ class PassageExecutor:
         context = {"actor": "cli:cell-passage", "planId": self.plan_id,
                    "stepId": step["id"], "planRevision": self.revision}
         if "check" in step:
+            self.settling_since = None
             condition = step["check"]
             op = next(key for key in condition if key not in ("entity", "property", "message", "by"))
             result = await self.client.check_condition(
@@ -195,6 +199,19 @@ class PassageExecutor:
         if (params.get("owner") != self.owner or params.get("epoch") != self.control_epoch
                 or not params.get("operationId")):
             raise ValueError("Controlled actions require the pinned owner/epoch and an operationId")
+        if action["entity"] == self.workcell and action["action"] == "release":
+            if self.managed_devices is None:
+                catalog = await self.client.catalog()
+                self.managed_devices = catalog["entities"][self.workcell]["config"]["managedDevices"]
+            if self.managed_devices:
+                state = (await self.client.get_state(self.managed_devices))["entities"]
+                unsafe = [key for key in self.managed_devices
+                          if state.get(key, {}).get("values", {}).get("controlSafe") is not True]
+                if unsafe:
+                    return self._settling(
+                        session["simTime"], "managed_devices_settling", unsafeDevices=unsafe,
+                    )
+        self.settling_since = None
         self.active = {"stepId": step["id"], "requestId": uuid.uuid4().hex,
                        "startedSimTime": session["simTime"]}
         try:
