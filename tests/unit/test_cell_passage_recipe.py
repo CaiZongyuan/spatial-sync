@@ -47,9 +47,10 @@ def test_unstarted_control_rebind_preserves_cycle_operation_identity():
     assert result["steps"][1]["do"]["params"]["owner"] == "web-new"
 
 
-def test_failed_cycle_replacement_updates_pending_references_across_parts_and_keeps_done_parts():
+@pytest.mark.parametrize("status", ["failed", "skipped"])
+def test_cycle_replacement_updates_pending_references_across_parts_and_keeps_done_parts(status):
     start = {"id": "start-part", "title": "Start", "revision": 1, "steps": [{
-        "id": 300001, "status": "failed", "do": {"entity": "/cent", "action": "start", "params": {
+        "id": 300001, "status": status, "do": {"entity": "/cent", "action": "start", "params": {
             "owner": "old", "epoch": 0, "operationId": "failed-cycle", "rpm": 800, "durationSeconds": 2,
         }},
     }]}
@@ -97,3 +98,81 @@ def test_failed_fraction_requires_explicit_literal_remainder_instead_of_recomput
         replacements={600001: replacement},
     )
     assert document["steps"][0]["do"]["params"]["volumeUl"] == 40
+
+
+@pytest.mark.parametrize("status", ["failed", "skipped"])
+def test_interrupted_step_requires_review_and_can_be_replaced_with_a_check(status):
+    original = {"id": 100001, "status": status, "do": {
+        "entity": "/workcell", "action": "wait", "params": {
+            "owner": "old", "epoch": 0, "operationId": "skipped-wait", "seconds": 2,
+        },
+    }}
+    plan = {"id": "skipped-part", "title": "Skipped", "revision": 1, "steps": [original]}
+    checkpoint = dict(owner="new", epoch=2, material_revision=8, expected_material_revision=8)
+    with pytest.raises(ValueError, match="replacement"):
+        revise_round_remaining([plan], **checkpoint)
+    replacement = {"id": 100001, "check": {
+        "entity": "/workcell", "property": "controlSafe", "equals": True,
+    }}
+    before = deepcopy(plan)
+    documents = revise_round_remaining(
+        [plan], **checkpoint, replacements={plan["id"]: {100001: replacement}},
+    )
+    assert documents[plan["id"]]["steps"] == [replacement]
+    assert plan == before
+
+
+def test_skipped_cycle_replacement_updates_references_in_the_same_part():
+    plan = {"id": "cycle-part", "title": "Skipped cycle", "revision": 1, "steps": [
+        {"id": 300001, "status": "skipped", "do": {
+            "entity": "/cent", "action": "start", "params": {
+                "owner": "old", "epoch": 0, "operationId": "skipped-cycle", "rpm": 800,
+                "durationSeconds": 2,
+            },
+        }},
+        {"id": 300002, "status": "pending", "check": {
+            "entity": "/cent", "property": "completedCycle", "equals": "skipped-cycle",
+        }},
+    ]}
+    documents = revise_round_remaining(
+        [plan], owner="new", epoch=2, material_revision=8, expected_material_revision=8,
+        replacements={plan["id"]: {300001: deepcopy(plan["steps"][0])}},
+    )
+    steps = documents[plan["id"]]["steps"]
+    assert steps[0]["do"]["params"]["operationId"] == "passage-cycle-part-r2-s300001-e2"
+    assert steps[1]["check"]["equals"] == steps[0]["do"]["params"]["operationId"]
+
+
+@pytest.mark.parametrize("status", ["done", "running"])
+def test_replacements_cannot_rewrite_done_or_replay_in_flight_actions(status):
+    step = {"id": 1, "status": status, "do": {"entity": "/workcell", "action": "wait", "params": {
+        "owner": "old", "epoch": 0, "operationId": "existing", "seconds": 1,
+    }}}
+    plan = {"id": "part", "title": "Protected", "revision": 1, "steps": [step]}
+    with pytest.raises(ValueError, match="preserved|Observe"):
+        revise_remaining(plan, owner="new", epoch=2, material_revision=8, expected_material_revision=8,
+                         replacements={1: deepcopy(step)})
+
+
+@pytest.mark.parametrize("explicit_replacement", [False, True])
+def test_admitted_pending_step_remains_observe_only_even_with_a_replacement(explicit_replacement):
+    step = {"id": 1, "status": "pending", "do": {"entity": "/workcell", "action": "wait", "params": {
+        "owner": "old", "epoch": 0, "operationId": "existing", "seconds": 1,
+    }}}
+    plan = {"id": "part", "title": "Lost response", "revision": 1, "steps": [step],
+            "stepResults": {"1": {"invocationId": "accepted-invocation", "consumed": True}}}
+    with pytest.raises(ValueError, match="Observe"):
+        revise_remaining(plan, owner="new", epoch=2, material_revision=8, expected_material_revision=8,
+                         replacements={1: deepcopy(step)} if explicit_replacement else None)
+
+
+def test_round_revision_rejects_replacing_done_steps_in_a_completed_part():
+    step = {"id": 1, "status": "done", "check": {
+        "entity": "/workcell", "property": "controlSafe", "equals": True,
+    }}
+    plan = {"id": "part", "title": "Completed", "revision": 1, "steps": [step]}
+    with pytest.raises(ValueError, match="preserved"):
+        revise_round_remaining(
+            [plan], owner="new", epoch=2, material_revision=8, expected_material_revision=8,
+            replacements={"part": {1: deepcopy(step)}},
+        )

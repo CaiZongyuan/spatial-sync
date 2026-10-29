@@ -112,8 +112,15 @@ revision. Use `POST /api/v1/plans/{planId}/revisions`; preserve every completed
 step's content exactly so its result remains immutable. `revise_remaining` in
 `tools/cell_passage_recipe.py` updates the owner/epoch of unchanged, unstarted
 pending actions while preserving their domain operation identities and cycle
-references. Failed or explicitly replaced actions receive a new operation ID. Failed steps require an
-explicit replacement. For partial liquid operations, review appliedUl,
+references. Failed or explicitly replaced actions receive a new operation ID.
+Failed and skipped steps require an explicit reviewed replacement, which may
+be a check. Only done content/results survive the ordinary revision API;
+skipped steps cannot silently remain skipped or automatically replay their
+original action. A part containing skipped steps therefore still requires
+review, even when its other steps are done. Done steps cannot be replaced.
+Running steps, or a pending step with an admission receipt, remain observe-only;
+resolve the existing invocation before preparing a revision. Explicitly supplying
+a replacement does not override an unresolved admission. For partial liquid operations, review appliedUl,
 remainingUl, the tip and current source/destination contents and calculate a
 replacement for the actual remaining work. Changing operationId and retrying
 the original volume is not recovery. The browser may refuse failed-step

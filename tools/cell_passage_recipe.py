@@ -13,7 +13,7 @@ STAGES = CLIENT_CONTRACT["stages"]
 def revise_remaining(plan, *, owner, epoch, material_revision, expected_material_revision, replacements=None):
     """Build a normal revision document after reviewing the current material state.
 
-    A failed action needs an explicit replacement, including any recalculated
+    A failed or skipped step needs an explicit replacement, including any recalculated
     remaining volume. Merely changing operationId would replay the original amount.
     Done content is immutable; the gateway carries its existing result forward.
     """
@@ -30,10 +30,14 @@ def revise_remaining(plan, *, owner, epoch, material_revision, expected_material
         identity, status = original["id"], original["status"]
         if status == "running":
             raise ValueError("Observe or cancel running steps before revising")
-        if status == "failed" and identity not in replacements:
-            raise ValueError(f"Failed step {identity} requires a reviewed replacement")
-        if status in ("done", "skipped") and identity in replacements:
-            raise ValueError("Completed/skipped steps must be preserved")
+        result = plan.get("stepResults", {}).get(str(identity), {})
+        if status == "pending" and (result.get("invocationId") or result.get("invocationIds")
+                                    or result.get("consumed")):
+            raise ValueError("Observe the admitted pending step before revising")
+        if status in ("failed", "skipped") and identity not in replacements:
+            raise ValueError(f"{status.capitalize()} step {identity} requires a reviewed replacement")
+        if status == "done" and identity in replacements:
+            raise ValueError("Completed steps must be preserved")
         selected = replacements.get(identity, original)
         if selected["id"] != identity:
             raise ValueError("Replacement must preserve the step ID")
@@ -44,7 +48,7 @@ def revise_remaining(plan, *, owner, epoch, material_revision, expected_material
             if (step["do"]["action"] not in CLIENT_CONTRACT["liquidActions"]["literal"]
                     or "volumeUl" not in step["do"].get("params", {})):
                 raise ValueError("Failed quantity intent requires an explicit literal remainder after review")
-        if status not in ("done", "skipped") and "do" in step:
+        if status != "done" and "do" in step:
             params = step["do"].setdefault("params", {})
             params.update(owner=owner, epoch=epoch)
             if status == "failed" or identity in replacements:
@@ -63,7 +67,9 @@ def revise_round_remaining(plans, *, owner, epoch, material_revision, expected_m
     replacements = replacements or {}
     documents, changed = {}, {}
     for plan in plans:
-        if all(step["status"] in ("done", "skipped") for step in plan["steps"]):
+        if all(step["status"] == "done" for step in plan["steps"]):
+            if replacements.get(plan["id"]):
+                raise ValueError("Completed steps must be preserved")
             continue
         document = revise_remaining(
             plan, owner=owner, epoch=epoch, material_revision=material_revision,
@@ -71,7 +77,7 @@ def revise_round_remaining(plans, *, owner, epoch, material_revision, expected_m
         )
         documents[plan["id"]] = document
         for old, new in zip(plan["steps"], document["steps"], strict=True):
-            if "do" not in old or old["status"] in ("done", "skipped"):
+            if "do" not in old or "do" not in new or old["status"] == "done":
                 continue
             old_id, new_id = old["do"]["params"]["operationId"], new["do"]["params"]["operationId"]
             if old_id != new_id:
@@ -82,7 +88,7 @@ def revise_round_remaining(plans, *, owner, epoch, material_revision, expected_m
         if plan["id"] not in documents:
             continue
         for old, step in zip(plan["steps"], documents[plan["id"]]["steps"], strict=True):
-            if old["status"] in ("done", "skipped"):
+            if old["status"] == "done":
                 continue
             call = step.get("do", {})
             if call.get("action") == "pellet":
