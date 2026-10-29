@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { SceneDiagnostics } from './SceneDiagnostics';
 import {
   InstancedPrimitives,
@@ -28,7 +28,6 @@ import { DeviceAnnotations, DeviceAnnotationLayer, type DeviceAnnotation } from 
 import type { PlacedLabel } from '../../lib/scene/label-layout';
 import type { SessionClient } from '../../lib/stream/client';
 import type { FrameRecorder } from '../../lib/performance/frame-recorder';
-import { PlatformRuntimeContext } from '../../lib/platform-runtime';
 import { PhysicalAxes, PhysicalAxesProjection } from './PhysicalAxes';
 import { Icon } from '../Icon';
 
@@ -560,13 +559,6 @@ interface ViewportProps {
 }
 
 export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
-  const reportSource = useContext(PlatformRuntimeContext), runtimeOwner = useId();
-  const sourceVersion = props.client.readOnly ? undefined : props.manifest.source.newtonVersion ?? undefined;
-  useEffect(() => {
-    if (!sourceVersion) return;
-    reportSource(runtimeOwner, sourceVersion);
-    return () => reportSource(runtimeOwner);
-  }, [reportSource, runtimeOwner, sourceVersion]);
   const running = useSyncExternalStore(props.client.subscribe, () => {
     const view = props.client.getSnapshot();
     return view.connection === 'connected' && view.sessionState === 'RUNNING';

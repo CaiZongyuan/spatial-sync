@@ -1,11 +1,10 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApprovalInboxContext, useApprovalInbox } from '../lib/approvals';
 import '../approvals.css';
 import { AlertContext, useAlerts } from '../lib/live';
 import '../live.css';
 import { Icon } from './Icon';
-import { PlatformRuntimeContext } from '../lib/platform-runtime';
 import { CostAnomalyContext, useCostAnomalies } from '../lib/cost';
 
 type Theme = 'system' | 'light' | 'dark';
@@ -29,7 +28,7 @@ const pages = [
   { to: '/plans', label: 'Plans', text: '计划', icon: 'plans' },
   { to: '/train', label: 'Training', text: '训练', icon: 'training' },
   { to: '/eval', label: 'Evaluation', text: '评估', icon: 'evaluation' },
-  { to: '/runtime-sessions', label: 'Runtime records', text: '运行记录', icon: 'recordings' },
+  { to: '/runtime-sessions', label: 'Runtime records', text: '运行记录', icon: 'terminal' },
   { to: '/cost', label: 'Cost', text: '成本', icon: 'cost' },
   { to: '/resources/gpu', label: 'Resources', text: '资源', icon: 'resources' },
   { to: '/approvals', label: 'Approvals', text: '待审批', icon: 'approvals' },
@@ -47,14 +46,6 @@ export function PlatformShell() {
   const alertCount = alertState.activeCapped ? '≥1000' : activeAlerts;
   const pendingCount = replay || approvals.error ? undefined : approvals.inbox?.pendingCount;
   const [collapsed, setCollapsed] = useState(() => preference(sidebarKey) === 'true');
-  const [sourceVersions, setSourceVersions] = useState(new Map<string, string>());
-  const reportSource = useCallback((owner: string, version?: string) => setSourceVersions(current => {
-    if (current.get(owner) === version) return current;
-    const next = new Map(current);
-    if (version) next.set(owner, version); else next.delete(owner);
-    return next;
-  }), []);
-  const versions = [...new Set(sourceVersions.values())];
   const [theme, setTheme] = useState<Theme>(() => {
     const value = preference(themeKey);
     return value === 'light' || value === 'dark' ? value : 'system';
@@ -71,9 +62,9 @@ export function PlatformShell() {
   return <div className={`platform-shell ${collapsed ? 'is-collapsed' : ''}`}>
     <a className="skip-link" href="#page-content">Skip to content</a>
     <aside className="platform-sidebar" aria-label="Platform navigation">
-      <Link to="/" className="platform-brand" aria-label="Lab platform home">
+      <Link to="/" className="platform-brand" aria-label="Lab World home">
         <span className="platform-brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l8.2 4.6L12 12.8 3.8 8.2z M3.8 8.2v7.4l8.2 4.6 8.2-4.6V8.2 M12 12.8v7.4" /></svg></span>
-        <span className="sidebar-label"><strong>spatial-sync</strong><small>仪器控制台 · local</small></span>
+        <span className="sidebar-label"><strong>Lab World</strong><small>仪器控制台 · local</small></span>
       </Link>
       <nav aria-label="Main navigation">
         {pages.map(page => <Link key={page.to} to={page.to} className={`nav-item ${current.to === page.to ? 'is-current' : ''}`}
@@ -89,9 +80,6 @@ export function PlatformShell() {
         </Link>)}
       </nav>
       <div className="sidebar-footer">
-        <dl className="sidebar-runtime sidebar-label"><div title="平台未提供 GPU 租约信息"><dt>GPU 租约</dt><dd>未知</dd></div>
-          <div title={versions.length ? '来自当前活动视口的实际 Newton 源' : '当前页面没有活动 Newton 源的版本元数据'}>
-            <dt>Newton</dt><dd>{versions.length === 1 ? versions[0] : versions.length ? '多个版本' : '未知'}</dd></div></dl>
         <label className="theme-picker" title="Color theme">
           <Icon name="theme" /><span className="sidebar-label">主题</span>
           <select aria-label="Color theme" value={theme} onChange={event => setTheme(event.target.value as Theme)}>
@@ -106,7 +94,7 @@ export function PlatformShell() {
     </aside>
     <div className={`platform-page ${detail ? 'is-detail' : ''}`}>
       <header className="page-topbar">
-        <nav aria-label="Breadcrumb"><Link to="/">spatial-sync</Link><span>›</span>
+        <nav aria-label="Breadcrumb"><Link to="/">Lab World</Link><span>›</span>
           <Link to={current.to}>{current.text}</Link>
           {detail && <><span>/</span><span className="breadcrumb-id">{decodeURIComponent(detailId)}</span></>}
           {pathname === '/resources/gpu' && <><span>/</span><span>Compute</span></>}
@@ -118,7 +106,7 @@ export function PlatformShell() {
         {!replay && activeAlerts !== undefined && activeAlerts > 0 && <Link to="/live" className="live-topbar-chip">告警 {alertCount}</Link>}
         {!replay && alertState.error && <span className="approval-topbar-chip" role="status">告警暂不可用</span>}
       </header>
-      <div id="page-content" tabIndex={-1}><PlatformRuntimeContext.Provider value={reportSource}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><CostAnomalyContext.Provider value={costAnomalies}><Outlet /></CostAnomalyContext.Provider></ApprovalInboxContext.Provider></AlertContext.Provider></PlatformRuntimeContext.Provider></div>
+      <div id="page-content" tabIndex={-1}><AlertContext.Provider value={alertState}><ApprovalInboxContext.Provider value={approvals}><CostAnomalyContext.Provider value={costAnomalies}><Outlet /></CostAnomalyContext.Provider></ApprovalInboxContext.Provider></AlertContext.Provider></div>
     </div>
   </div>;
 }
