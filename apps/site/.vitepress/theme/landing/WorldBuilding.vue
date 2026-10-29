@@ -33,7 +33,8 @@ const STATUS: { s: Status; t: string }[] = [
     </div>
 
     <figure class="pl-figure hero-fig">
-      <img :src="withBase('/images/landing/build-world.webp')" alt="同一张实验台从左到右逐渐变化：真实照片、灰色三维模型，再到带碰撞体、关节轴和坐标系的仿真模型" width="1600" height="900" loading="lazy" decoding="async" />
+      <img :src="withBase('/images/product/fr3-blender.webp')" alt="FR3 实验室的 Blender 场景渲染，机械臂位于生物安全柜和打开的离心机之间" width="1600" height="1000" loading="lazy" decoding="async" />
+      <figcaption><span class="mono">场景制作 · Blender 渲染</span>实验台、器皿与仪器，在三维场景中建立空间关系。</figcaption>
     </figure>
     <ol class="layers">
       <li v-for="(l, i) in LAYERS" :key="l.name">

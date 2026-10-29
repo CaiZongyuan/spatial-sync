@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// One real run on the Synthetic laboratory (lab-demo@3), captured on 2026-10-21:
-// the transcript is the actual lw session, the pictures are the actual Web pages.
+// Current project views and platform screenshots; the expandable transcript is
+// a separate Synthetic run (lab-demo@3) captured on 2026-10-21.
 import { withBase } from 'vitepress'
-import StatusChip from './StatusChip.vue'
 
 type Line = { kind: 'cmd' | 'ok' | 'bad' | 'note'; text: string }
 const RUN: Line[] = [
@@ -35,64 +34,79 @@ const RUN: Line[] = [
   <section id="real-run" class="pl-section">
     <p class="pl-eyebrow pl-rule"><span>08 · What Exists Today</span></p>
     <div class="pl-section-head">
-      <h2><span class="nb">愿景很远，</span><span class="nb">但基础已经开始运行</span></h2>
-      <p class="pl-section-lede">我们已经建立了一个可以运行的实验室信息与空间工作台：场景与资产有版本，Newton 与 Synthetic 仿真会话在浏览器里实时可见，Web、命令行和 MCP 通过同一条执行管线操作设备。设备操作声明参数、前置条件和互锁，高风险动作需要人批准，每一次调用、结果和设备事件都被记录。</p>
-      <StatusChip status="delivered" />
+      <h2><span class="nb">看得见的场景，</span><span class="nb">用得上的工作台</span></h2>
+      <p class="pl-section-lede">从一座细胞培养工作站，到一整个实验室。场景、素材和设备能力汇入同一个平台，人和 Agent 可以在这里查看环境、提交计划、操作设备，并追溯每一次调用的结果。</p>
     </div>
 
-    <h3 class="run-head"><span class="nb">一次真实的运行，</span><span class="nb">包括被拦下的那两步</span></h3>
-    <p class="run-lede">这是 Synthetic 仿真实验室里的一次真实运行，下面是命令行节选。计划里有高风险动作，整份计划先被拦下等待批准；获批后机械臂完成搬运，但关盖时它还没离开离心机区域，再次被互锁拒绝；计划修订、重新获批，机械臂先回到安全位置，离心机才继续执行。</p>
+    <figure class="pl-figure scene-hero">
+      <a :href="withBase('/images/product/workcell-overview.webp')" target="_blank" rel="noopener" aria-label="查看细胞培养 Workcell 大图">
+        <img :src="withBase('/images/product/workcell-overview.webp')" alt="细胞培养 Workcell 的平台空间视图：玻璃围护内的机械臂、培养箱、移液设备和工作台" width="1600" height="1000" loading="lazy" decoding="async" />
+      </a>
+      <figcaption><span class="mono">细胞培养 Workcell · 平台空间视图</span>机器人、仪器、轨道与实验台，放进同一个可查看的空间。</figcaption>
+    </figure>
+    <div class="platform-head">
+      <h3>一个入口，连接整个实验室</h3>
+      <p>侧栏连接场景、素材、计划、训练与运行记录；空间视图与场景信息在同一张工作台上展开。</p>
+    </div>
+    <figure class="pl-figure platform-shot">
+      <a :href="withBase('/images/product/platform-dark.webp')" target="_blank" rel="noopener" aria-label="查看深色平台完整截图">
+        <img :src="withBase('/images/product/platform-dark.webp')" alt="Lab World 深色模式完整界面，包含导航侧栏、细胞培养 Workcell 空间视图、场景版本和操作面板" width="1796" height="1018" loading="lazy" decoding="async" />
+      </a>
+      <figcaption><span class="mono">Lab World · 深色模式 · 实际截图</span>场景视图、固定版本与设备信息，集中在同一个入口。</figcaption>
+    </figure>
+    <figure class="pl-figure platform-shot asset-shot">
+        <a :href="withBase('/images/product/assets-nvidia-dark.webp')" target="_blank" rel="noopener" aria-label="查看 NVIDIA 在线素材库完整截图">
+          <img :src="withBase('/images/product/assets-nvidia-dark.webp')" alt="深色模式素材库，选中在线素材与 NVIDIA SimReady 来源筛选，卡片展示对应素材及预览图" width="1796" height="1018" loading="lazy" decoding="async" />
+        </a>
+        <figcaption><span class="mono">素材库 · NVIDIA SimReady</span>在线目录按来源筛选，浏览素材、预览与元数据。</figcaption>
+    </figure>
 
-    <div class="grid">
-      <figure class="term">
-        <div class="term-bar"><span class="dots"><i /><i /><i /></span><span class="mono">lab-demo@3 · Synthetic · 节选</span></div>
-        <pre><code><span v-for="(l, i) in RUN" :key="i" class="line" :class="l.kind"><b v-if="l.kind === 'cmd'">$ </b>{{ l.text }}
+    <details class="run-evidence">
+      <summary>查看一次实际运行：计划、审批与互锁<span aria-hidden="true">＋</span></summary>
+      <div class="evidence-body">
+        <p>下面是 Synthetic 仿真实验室里一次独立运行的命令行节选。计划先等待批准；机械臂完成搬运后，关盖被互锁拒绝。计划修订、重新获批，机械臂回到安全位置，离心机才继续执行。</p>
+        <figure class="term">
+          <div class="term-bar"><span class="mono">lab-demo@3 · Synthetic · 2026-10-21 · 节选</span></div>
+          <pre><code><span v-for="(l, i) in RUN" :key="i" class="line" :class="l.kind"><b v-if="l.kind === 'cmd'">$ </b>{{ l.text }}
 </span></code></pre>
-      </figure>
-      <figure class="pl-figure shot tall">
-        <img :src="withBase('/images/product/workbench.webp')" alt="会话工作台：实时空间视图下方是关联调用列表，显示 start 运行中、closeLid 和 home 已成功" width="1173" height="1225" loading="lazy" decoding="async" />
-        <figcaption><span class="mono">会话工作台 · 实际截图</span>实时空间视图，以及这次运行的每一个调用。</figcaption>
-      </figure>
-    </div>
-    <div class="wide">
-      <figure class="pl-figure shot">
-        <img :src="withBase('/images/product/approvals.webp')" alt="待审批页：计划「离心两支样本并开始培养」等待批准，右侧活动时间线记录了提交、批准与再次提交" width="1600" height="507" loading="lazy" decoding="async" />
-        <figcaption><span class="mono">人工关口 · 实际截图</span>提交、批准、修订后再提交，每一步都留在时间线里。</figcaption>
-      </figure>
-    </div>
-
-    <div class="proof">
-      <p class="proof-claim"><span class="nb">在 Lab World 中，</span><span class="nb">动作不是一条发出后</span><span class="nb">就被假定成功的命令。</span></p>
-      <p class="proof-body">它有前置条件、执行状态、结果检查、拒绝原因、操作记录和必要的人类控制。这次运行不是真实硬件上的自主实验，也不是完整的机器人学习闭环；它证明的是这一切赖以成立的工程基础。场景自动构建、复杂机器人任务训练、真实硬件集成与 Real2Sim 驱动的策略改进，正沿着这套基础设施逐步推进。</p>
-    </div>
+        </figure>
+        <p class="evidence-note">这段记录展示计划、前置条件、审批与结果检查的执行链路。场景图片展示各自的空间与设备布局；完整机器人任务、真实硬件实验与学习效果，需要各自的运行验证。</p>
+      </div>
+    </details>
   </section>
 </template>
 
 <style scoped>
-.pl-section-head :deep(.pl-chip) { margin-top: 18px; }
-.pl .run-head { margin-top: 72px; font-size: clamp(22px, 2.4vw, 28px); line-height: 1.35; }
-.pl .run-lede { margin-top: 14px; max-width: 760px; font-size: 15.5px; line-height: 1.85; color: var(--ink-2); }
-.grid { margin-top: 36px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start; }
-.wide { margin-top: 24px; }
-.term { margin: 0; border-radius: 14px; border: 1px solid var(--line); background: var(--term-bg); box-shadow: var(--shadow-1); overflow: hidden; }
-.term-bar { display: flex; align-items: center; gap: 14px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--term-line); color: var(--term-dim); font-size: 11px; }
-.dots { display: flex; gap: 6px; }
-.dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--term-dot); }
-pre { margin: 0; padding: 18px 20px 22px; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.85; color: var(--term-ink); }
+.scene-hero { margin-top: 44px; }
+.scene-hero img { width: 100%; aspect-ratio: 8 / 5; object-fit: cover; background: #171716; }
+.asset-shot { margin-top: 28px; }
+.pl-figure a { display: block; border-radius: 12px; overflow: hidden; }
+.pl-figure a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+.platform-head { margin: 64px 0 24px; }
+.pl .platform-head h3 { font-size: clamp(22px, 2.4vw, 28px); }
+.pl .platform-head p { margin-top: 12px; max-width: 700px; font-size: 15px; line-height: 1.85; color: var(--ink-2); }
+.platform-shot a { border: 1px solid var(--line-2); box-shadow: var(--shadow-1); }
+.platform-shot img { width: 100%; height: auto; }
+.run-evidence { margin-top: 40px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 24px; font-size: 15px; color: var(--ink-2); cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary span { color: var(--accent-ink); font-size: 22px; }
+details[open] summary span { rotate: 45deg; }
+.evidence-body { padding: 0 24px 24px; }
+.pl .evidence-body p { font-size: 14px; line-height: 1.85; color: var(--ink-2); }
+.term { margin: 20px 0 0; border: 1px solid var(--term-line); border-radius: 10px; overflow: hidden; background: var(--term-bg); }
+.term-bar { padding: 12px 18px; border-bottom: 1px solid var(--term-line); color: var(--term-dim); font-size: 11px; }
+pre { margin: 0; padding: 18px 20px; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.85; color: var(--term-ink); }
 .line { white-space: pre-wrap; overflow-wrap: anywhere; }
 .line b { font-weight: 400; color: var(--term-dim); }
 .line.note { color: var(--term-dim); }
 .line.ok { color: var(--term-ok); }
 .line.bad { color: var(--term-bad); }
-.shot img { background: var(--figure-ground); }
-.proof { margin-top: 72px; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: start; padding-top: 32px; border-top: 1px solid var(--line-2); }
-.pl .proof-claim { font-family: var(--font-display); font-weight: 600; font-size: clamp(24px, 2.8vw, 34px); line-height: 1.45; color: var(--ink); }
-.pl .proof-body { font-size: 15.5px; line-height: 1.9; color: var(--ink-2); }
-.tall img { aspect-ratio: auto; }
-
-@media (max-width: 900px) {
-  .grid, .proof { grid-template-columns: 1fr; }
-  .proof { gap: 20px; }
-  pre { font-size: 11.5px; }
+.pl .evidence-note { margin-top: 18px; color: var(--muted); }
+@media (max-width: 700px) {
+  .platform-head { margin-top: 44px; }
+  summary { padding: 18px; font-size: 14px; }
+  .evidence-body { padding: 0 18px 18px; }
+  pre { padding: 16px; font-size: 11.5px; }
 }
 </style>
