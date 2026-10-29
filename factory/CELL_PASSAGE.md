@@ -51,6 +51,8 @@ and the tested local profile. The actual polygon has a 5.4 mm minimum inner
 radius through Z=46..50 mm below the unchanged mating seat; the 0..20 mm rack
 region, 50 mm mating frame, 62 mm height and 1 g estimated mass are retained.
 The mass center remains automatically computed from the collider geometry.
+The rack adapter stays above the retained Flex slot rails and rests on four
+explicit feet on the original deck/insert faces; it does not fill those solids.
 
 The new scene explicitly models ideal pump motor gravity compensation through
 the supported MuJoCo body/joint attributes. This also contributes to ancestor

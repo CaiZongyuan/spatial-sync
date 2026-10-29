@@ -291,7 +291,18 @@ def populate(stage):
                 12,
             )
             tips.append({"id": name, "bodyKey": key, "site": LAB + "/Labware/TipRack/" + name})
-    box(stage, LAB + "/Fixtures/TipRack/Base", (0.7265, 0.5575, 0.997), (0.167, 0.104, 0.074))
+    # The original Flex deck/slot inserts remain solid. Keep the rack adapter
+    # above their 0.995 m rails and support it on four actual deck/insert faces.
+    box(stage, LAB + "/Fixtures/TipRack/Base", (0.7265, 0.5575, 1.0145), (0.167, 0.104, 0.039))
+    for column, x in enumerate((0.660, 0.790)):
+        for row, (y, bottom) in enumerate(((0.536, 0.985), (0.590, 0.9885))):
+            height = 0.995 - bottom
+            box(
+                stage,
+                LAB + f"/Fixtures/TipRack/Foot{column}{row}",
+                (x, y, bottom + height / 2),
+                (0.012, 0.012, height),
+            )
     box(stage, LAB + "/Fixtures/TipRack/Deck", (0.7265, 0.5575, 1.038), (0.167, 0.104, 0.008))
     tip_site = LAB + "/LiquidHandler/CarriageZ/TipSite"
     cache = UsdGeom.XformCache()
