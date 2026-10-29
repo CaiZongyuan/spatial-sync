@@ -489,6 +489,8 @@ def demo(args):
     args.out.mkdir(parents=True, exist_ok=False)
     library = args.generated.resolve() if args.generated else args.out / "generated"
     bootstrap = {"status": "building", "roundId": args.round, "experimentQualified": False}
+    if getattr(args, "demonstration", False):
+        bootstrap["demonstration"] = {"contactAllowanceM": .002, "formalPrecisionQualified": False}
     _write(args.out / "bootstrap.json", bootstrap)
     processes, logs = [], []
     nonce = uuid.uuid4().hex
@@ -504,6 +506,10 @@ def demo(args):
         "SPATIAL_NODE_TRAINER": "[]",
         "SPATIAL_NEWTON_STARTUP_TIMEOUT_SECONDS": str(startup_budget),
     }
+    if getattr(args, "demonstration", False):
+        env["SPATIAL_PASSAGE_CONTACT_TRACE_DIR"] = str(args.out / "raw-contacts")
+        env["PYTHONPATH"] = os.pathsep.join((str(ROOT / "tools/passage_observer"),
+                                           str(ROOT), str(ROOT / "apps/cli"), env.get("PYTHONPATH", "")))
     try:
         if args.source:
             for command in (
@@ -511,8 +517,15 @@ def demo(args):
                  "--out", str(library), "--with-workcell"],
                 [sys.executable, "-m", "factory.cell_passage_teach", "--library", str(library)],
             ):
+                if getattr(args, "demonstration", False) and "factory.cell_passage" in command:
+                    command.append("--demonstration")
                 subprocess.run(command, cwd=ROOT, env=env, check=True)
         inputs = load_inputs(library)
+        actual_demo = inputs[0].get("demonstration")
+        if getattr(args, "demonstration", False) and not actual_demo:
+            raise ValueError("Selected input was not generated with --demonstration")
+        if actual_demo:
+            bootstrap["demonstration"] = actual_demo
         scene_import_hash = content_hash(library / "scenes/cell-passage/1")
         _write(args.out / "source-inputs.json", {
             "layout": inputs[0], "teaching": inputs[1], "workcellBinding": inputs[2], "geometry": inputs[3],
@@ -631,6 +644,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--round", default=uuid.uuid4().hex[:12])
     parser.add_argument("--repeats", type=int, default=1, help="Fresh sessions sharing one imported scene")
+    parser.add_argument("--demonstration", action="store_true", help="Explicit 2 mm approximate one-run demo")
     parser.add_argument("--api-port", type=int, default=8023)
     parser.add_argument("--web-port", type=int, default=5223)
     parser.add_argument("--startup-timeout-seconds", type=float, default=600,

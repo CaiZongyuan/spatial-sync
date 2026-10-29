@@ -290,6 +290,16 @@ Web 展示当前阶段/步骤、六个母孔到十二个子孔的关系、所选
 - [ADR-0001](../adr/0001-usd-canonical-scene-format.md)、[ADR-0002](../adr/0002-tube-grasp-point-and-physical-tcp.md)、[ADR-0004](../adr/0004-scene-authoring-through-external-factories.md)。
 ## Automatic gripper opening
 
+An explicit factory/client `--demonstration` mode selects a single approximate
+run for recording: 2 mm contact allowance shared by grasp qualification and the
+arm, rail/door and held-tip guards; 1 mm Flex alignment; and an offline taught
+11 mm pre-insertion waypoint for tube caps. The wider 65 mm rack is a new asset;
+older assets and the default 1 mm contact limit remain unchanged. Actual bilateral
+pad contact, held-object facts, release/seating feedback, joint bounds and unknown
+contact rejection still apply. Receipts label this mode and never claim formal
+precision qualification. Runtime placement uses the normal actuator trajectory;
+it neither teleports bodies nor blocks action intake with an online IK solve.
+
 `labware.motion` accepts `automaticOpenWidthM` in the physical hand's `(0, 0.08]`
 metre range, defaulting to 80 mm. It applies consistently to automatic pickup,
 place release and recovery. Explicit `setGripper` requests retain their existing

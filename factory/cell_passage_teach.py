@@ -71,6 +71,8 @@ def teach(library):
             }
         )
     home = np.asarray([0, -0.4, 0, -2, 0, 1.6, 0.7853981634])
+    cap_bodies = {layout["lids"][layout["bodies"][name]] for name in (
+        "S1", "S2", "S3", "S4", "S5", "S6", "B5", "B6")}
     solved, receipts, failed = {}, [], []
 
     def forward(values):
@@ -92,7 +94,11 @@ def teach(library):
             lower[0],
             upper[0],
         )
-        for pose_name, target_name in (("approach", "approachTarget"), ("grasp", "target")):
+        poses = [("approach", "approachTarget"), ("grasp", "target")]
+        if layout.get("demonstration") and descriptor.get("body") in cap_bodies:
+            descriptor["preInsertionTarget"] = (np.array(descriptor["target"]) + [0, 0, .011]).tolist()
+            poses.insert(1, ("preInsertion", "preInsertionTarget"))
+        for pose_name, target_name in poses:
             target = np.asarray(descriptor[target_name])
 
             def residual(values):

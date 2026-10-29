@@ -308,7 +308,7 @@ def build_labware(output):
     return [*packages, variant]
 
 
-def build(source, output, *, bindings_overlay=None, with_workcell=False):
+def build(source, output, *, bindings_overlay=None, with_workcell=False, demonstration=False):
     from packages.library.common import content_hash
 
     source, output = Path(source).resolve(), Path(output).resolve()
@@ -327,7 +327,7 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
             {"id": metadata["id"] + "@1", "source": original.name, "contentHash": content_hash(original)}
         )
     build_labware(output)
-    from factory.cell_passage_fixtures import bench, inverted_imager, tube_rack
+    from factory.cell_passage_fixtures import bench, inverted_imager, tube_rack, wide_tube_rack
     from factory.cell_passage_incubator import build as build_incubator
     from factory.cell_passage_layout import centrifuge, populate
 
@@ -335,13 +335,20 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
     package(output, "passage-centrifuge", lambda s, p: centrifuge(s, p, (0, 0, 0)), kind="device")
     package(output, "passage-open-imager", inverted_imager, kind="device")
     package(output, "passage-tube-rack", tube_rack)
+    if demonstration:
+        package(output, "passage-tube-rack-wide", wide_tube_rack)
     package(output, "passage-preparation-bench", bench, kind="environment")
     package(output, "passage-back-bench", lambda s, p: bench(s, p, 2.4, 0.9, 0.82), kind="environment")
     scene = output / "scenes/cell-passage/1"
     scene.mkdir(parents=True)
     shutil.copyfile(source_stage, scene / "stage.usda")
     stage = Usd.Stage.Open(str(scene / "stage.usda"))
-    layout = populate(stage)
+    layout = populate(stage, demonstration=demonstration)
+    if demonstration:
+        layout["demonstration"] = {"enabled": True, "contactAllowanceM": .002,
+                                   "alignmentToleranceM": .001, "preInsertionHeightM": .011,
+                                   "formalPrecisionQualified": False}
+        layout["pipetteCalibration"]["alignmentToleranceM"] = .001
     from factory.cell_passage_tip import ASSET_NAME
 
     for name, asset in (("tipGeometry", ASSET_NAME), ("solidWasteRegion", "passage-tip-waste")):
@@ -391,13 +398,22 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
         if any(row["key"] in owned for row in extra):
             raise ValueError("Overlay cannot replace a mechanical owner")
         mechanical["entities"].extend(extra)
+    if demonstration:
+        for binding in mechanical["entities"]:
+            if binding["program"] in ("labware.motion", "cell_passage.joint", "cell_passage.workcell"):
+                binding["config"]["contactAllowanceM"] = .002
+            if binding["program"] == "labware.motion":
+                binding["config"]["jointAccelerationRadPerS2"] = .5
+            if binding["program"] == "cell_passage.workcell":
+                binding["config"]["axisToleranceM"] = .001
     stage.GetRootLayer().Save()
     (scene / "mechanical-layout.json").write_text(json.dumps(layout, indent=2) + "\n", encoding="utf-8")
     for name, content in {
         "scene.yaml": {
             "name": "cell-passage",
             "title": "Cell Passage workcell",
-            "description": "Physical workcell; qualification receipts are separate.",
+            "description": ("Approximate demonstration: 2 mm contacts; not formal precision qualification."
+                            if demonstration else "Physical workcell; qualification receipts are separate."),
             "sources": ["newton"],
             "stage": "stage.usda",
             "simulation": {"solver": "mujoco", "warmupSteps": 1},
@@ -453,10 +469,12 @@ if __name__ == "__main__":
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--bindings-overlay", type=Path)
+    parser.add_argument("--demonstration", action="store_true", help="Explicit approximate demonstration")
     parser.add_argument(
         "--with-workcell", action="store_true", help="Assemble the P2-owned workcell generator output"
     )
     args = parser.parse_args()
     print(
-        build(args.source, args.out, bindings_overlay=args.bindings_overlay, with_workcell=args.with_workcell)
+        build(args.source, args.out, bindings_overlay=args.bindings_overlay, with_workcell=args.with_workcell,
+              demonstration=args.demonstration)
     )

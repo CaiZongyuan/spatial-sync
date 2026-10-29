@@ -77,15 +77,15 @@ def inverted_imager(stage, root):
         site(stage, frame + "/Focus" + well, (x, y, z))
 
 
-def tube_rack(stage, root):
+def tube_rack(stage, root, *, pitch=0.055, deck_size=(0.22, 0.10)):
     frame = mounted(stage, root, 0.35)
-    box(stage, frame + "/Base", (0, 0, 0.004), (0.22, 0.10, 0.008))
-    box(stage, frame + "/Deck", (0, 0, 0.154), (0.22, 0.10, 0.012))
-    for x in (-0.095, 0.095):
-        for y in (-0.040, 0.040):
+    box(stage, frame + "/Base", (0, 0, 0.004), (*deck_size, 0.008))
+    box(stage, frame + "/Deck", (0, 0, 0.154), (*deck_size, 0.012))
+    for x in (-(deck_size[0] / 2 - .015), deck_size[0] / 2 - .015):
+        for y in (-(deck_size[1] / 2 - .010), deck_size[1] / 2 - .010):
             box(stage, frame + f"/Post{int(x > 0)}{int(y > 0)}", (x, y, 0.084), (0.012, 0.012, 0.152))
     for index, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
-        x, y = (index % 4 - 1.5) * 0.055, (index // 4 - 0.5) * 0.055
+        x, y = (index % 4 - 1.5) * pitch, (index // 4 - 0.5) * pitch
         box(stage, frame + "/" + name + "Floor", (x, y, 0.166), (0.025, 0.025, 0.012))
         ring(stage, frame + "/" + name + "Guide", (x, y, 0.178), 0.010, 0.012, 0.001, 16)
         for sign in (-1, 1):
@@ -96,3 +96,8 @@ def tube_rack(stage, root):
                 (0.008, 0.002, 0.024),
             )
         site(stage, frame + "/" + name, (x, y, 0.172))
+
+
+def wide_tube_rack(stage, root):
+    """Versioned demonstration fixture; the original 55 mm rack stays unchanged."""
+    return tube_rack(stage, root, pitch=.065, deck_size=(.25, .12))
