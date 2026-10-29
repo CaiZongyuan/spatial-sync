@@ -20,11 +20,14 @@ from packages.sim_runtime.pacer import Pacer
 from packages.sim_runtime.runner import _Runner
 from packages.transport import PipeWriter, create_transport
 from tests.fixtures.cell_passage import build_workcell_host
+from tests.sim_runtime.test_info_host_intake import BufferedPort
+from tests.unit.test_cell_passage import execute, invoke
 
 
 @asynccontextmanager
-async def wired_runner(tmp_path, monkeypatch, step_seconds):
+async def wired_runner(tmp_path, monkeypatch, step_seconds, *, prepare=None, control_tick_every=1):
     host, _ = build_workcell_host(tmp_path)
+    port = prepare(host) if prepare else None
     parent, child = create_transport()
     entered, release, handled = (threading.Event() for _ in range(3))
     runner = object.__new__(_Runner)
@@ -43,11 +46,12 @@ async def wired_runner(tmp_path, monkeypatch, step_seconds):
     runner._render_viewer = lambda now: None
     runner.stats = lambda: {}
     runner.seq = 0
-    runner.sim = SimpleNamespace(sim_time=0.0, paused=False, physics_dt=.01, epoch=0)
+    runner.sim = SimpleNamespace(sim_time=host.sim_time, paused=False, physics_dt=.01, epoch=0)
     runner.sim.pause = lambda: setattr(runner.sim, "paused", True)
     runner.sim.resume = lambda: setattr(runner.sim, "paused", False)
     runner.info = object.__new__(NewtonInfoHost)
-    runner.info.host, runner.info.port, runner.info.sim = host, None, runner.sim
+    runner.info.host, runner.info.port, runner.info.sim = host, port, runner.sim
+    runner.actuator = port
     runner.info.catalog, runner.info.emit = host.catalog, runner._info_events
     runner.info.timings, runner.info.tick_ms = deque(maxlen=10), 0
     admission = []
@@ -69,8 +73,10 @@ async def wired_runner(tmp_path, monkeypatch, step_seconds):
                 assert release.wait(2), "Intake was not synchronized with the first physics step"
             time.sleep(step_seconds)
             runner.sim.sim_time += .01
-            runner.info.tick(runner.sim.sim_time, .01)
+            if round((runner.sim.sim_time - host_start) / .01) % control_tick_every == 0:
+                runner.info.tick(runner.sim.sim_time, .01 * control_tick_every)
 
+    host_start = host.sim_time
     runner.sim.step = step
 
     def frame(kind="transform.frame", *, reliable=False):
@@ -99,6 +105,8 @@ async def wired_runner(tmp_path, monkeypatch, step_seconds):
                               approvals=SimpleNamespace(for_invocation=lambda token: None),
                               plans=SimpleNamespace(invocation=lambda *args: None))
     pipeline = ActionPipeline(session, host.catalog, source._info_store, lambda update: None)
+    for active in host.snapshot().invocations:
+        pipeline.table.apply(active)
     try:
         assert await asyncio.to_thread(entered.wait, 2)
         yield source, runner, pipeline, release, handled, admission
@@ -142,6 +150,82 @@ async def test_action_pipeline_admits_between_slow_physics_steps(tmp_path, monke
         )
         assert elapsed < .5
         assert runner._steps == pytest.approx(runner.sim.sim_time / .01)
+
+
+def carried_liquid(host, *, running):
+    port = BufferedPort()
+    host.physics = port
+    execute(host, port, "reserve", "res", resource="/source", device="/workcell")
+    execute(host, port, "pickupTip", "pick", tip="T1")
+    if running:
+        invoke(host, "aspirate", "asp", vessel="source", volumeUl=100)
+        host.tick(host.sim_time + .1, .1)
+        port.q["pump"], port.velocities["pump"] = .0004, .001
+        host.tick(host.sim_time + .1, .1)
+    else:
+        execute(host, port, "aspirate", "asp", vessel="source", volumeUl=40)
+        invoke(host, "wait", "queued", seconds=10)
+    port.actual_q.update(port.q)
+    port.actual_qd.update(port.velocities)
+    port.commit()
+    return port
+
+
+@pytest.mark.asyncio
+async def test_timed_out_cancel_remains_a_late_safety_intent_with_net_settlement(tmp_path, monkeypatch):
+    async with wired_runner(
+        tmp_path, monkeypatch, .56, prepare=lambda h: carried_liquid(h, running=True),
+    ) as fixture:
+        source, runner, pipeline, release, handled, trace = fixture
+        task = asyncio.create_task(pipeline.cancel("asp", "operator"))
+        while not source._pending:
+            await asyncio.sleep(0)
+        await asyncio.to_thread(source._writer.queue.join)
+        release.set()
+        unconfirmed = await task
+        assert unconfirmed.status == "failed" and unconfirmed.error.code == "source_unavailable"
+        await source._request("program_execution", key="/workcell", timeout=3)
+        port = runner.actuator
+        assert port.native_targets["pump"] == .0004
+        assert port.welds == {("/pipette", "/tip1")}
+        assert runner.info.host.values()["/workcell"]["inFlightUl"] == pytest.approx(40)
+        target_time = runner.sim.sim_time + .01
+        port.actual_q["pump"] = .00045
+        async with asyncio.timeout(3):
+            while runner.sim.sim_time < target_time - 1e-9:
+                await asyncio.sleep(.01)
+        assert runner.info.host.values()["/workcell"]["inFlightUl"] == pytest.approx(45)
+        target_time = runner.sim.sim_time + .01
+        port.actual_q["pump"], port.actual_qd["pump"] = .0004, 0
+        async with asyncio.timeout(3):
+            while runner.sim.sim_time < target_time - 1e-9:
+                await asyncio.sleep(.01)
+        values = runner.info.host.values()["/workcell"]
+        assert values["inFlightUl"] == pytest.approx(40)
+        assert port.welds == {("/pipette", "/tip1")}
+        stopped = next(x for x in runner.info.snapshot().invocations if x.invocationId == "asp")
+        assert stopped.status == "cancelled"
+        assert pipeline.table.get("asp").status == "failed"  # Never resurrect a gateway terminal.
+
+
+@pytest.mark.asyncio
+async def test_timed_out_revoke_still_cancels_only_the_queued_old_invocation(tmp_path, monkeypatch):
+    async with wired_runner(
+        tmp_path, monkeypatch, .56, prepare=lambda h: carried_liquid(h, running=False), control_tick_every=2,
+    ) as fixture:
+        source, runner, pipeline, release, handled, trace = fixture
+        task = asyncio.create_task(source.revoke_before_start("queued"))
+        while not source._pending:
+            await asyncio.sleep(0)
+        await asyncio.to_thread(source._writer.queue.join)
+        release.set()
+        with pytest.raises(TimeoutError):
+            await task
+        await source._request("program_execution", key="/workcell", timeout=3)
+        old = next(x for x in runner.info.snapshot().invocations if x.invocationId == "queued")
+        assert old.status == "cancelled" and old.startedSimTime is None
+        assert runner.info.host.values()["/workcell"]["inFlightUl"] == pytest.approx(40)
+        assert runner.actuator.welds == {("/pipette", "/tip1")}
 
 
 @pytest.mark.asyncio

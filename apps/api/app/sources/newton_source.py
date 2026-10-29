@@ -328,10 +328,12 @@ class NewtonSource:
         expires_at = time.monotonic() + timeout
         lease = None
         try:
-            if kind in ("invoke", "cancel", "revoke_before_start"):
+            if kind == "invoke":
                 lease = self._rpc_fence.reserve()
-            self._writer.offer({"kind": kind, "token": token, "expiresAt": expires_at,
-                                "admission": lease, **payload})
+            packet = {"kind": kind, "token": token, **payload}
+            if lease is not None:
+                packet.update(expiresAt=expires_at, admission=lease)
+            self._writer.offer(packet)
             return await asyncio.wait_for(future, timeout=max(0, expires_at - time.monotonic()))
         finally:
             if lease is not None:
