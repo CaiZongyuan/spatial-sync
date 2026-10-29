@@ -1,6 +1,14 @@
 {
   "schema": "lw.cell-passage-client/1",
   "workcellType": "cell-passage-workcell/v1",
+  "centrifugeCycleReceipt": {
+    "schema": "lw.centrifuge-cycle-receipt/1",
+    "stages": [3, 4],
+    "stoppedSpeedRadPerSecond": 0.05,
+    "minimumRunSeconds": 2,
+    "lookup": "Plan stepResults[str(stepId)].invocationId -> existing session invocation GET",
+    "missingEvidence": "unavailable; never infer from Plan done or reissue the action"
+  },
   "quantityTolerances": {
     "cellConservation": 0.000001,
     "siblingLive": 1,

@@ -107,6 +107,10 @@ class CentrifugeProgram:
         self.handle = self.handle or inv
         self.stopping = True
 
+    def _completion_result(self, inv, ctx):
+        """Optional derived evidence, or Reject, before the unique success update."""
+        return None
+
     def tick(self, ctx, dt):
         port = ctx.physics
         ctx.set(lidOpen=self._lid_open(port))
@@ -168,6 +172,10 @@ class CentrifugeProgram:
             if self.stopping:
                 inv.cancelled()
             else:
-                ctx.emit("runCompleted", rpm=target, durationSeconds=duration)
-                inv.succeed()
+                result = self._completion_result(inv, ctx)
+                if isinstance(result, Reject):
+                    inv.fail(result.code, result.message, **result.details)
+                else:
+                    ctx.emit("runCompleted", rpm=target, durationSeconds=duration)
+                    inv.succeed(result)
             self.handle = None

@@ -31,7 +31,8 @@ class PassageCentrifugeProgram(CentrifugeProgram):
     id, type = "cell_passage.centrifuge", "passage-centrifuge/v1"
 
     def _lid_open(self, port):
-        return bool(abs(float(port.joint_q(self.lid)[0]) - 1.4) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02)
+        return bool(abs(float(port.joint_q(self.lid)[0]) - 1.4) < 0.02
+                    and abs(port.joint_qd(self.lid)[0]) < 0.02)
 
     def _lid_closed(self, port):
         return bool(abs(float(port.joint_q(self.lid)[0])) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02)
@@ -178,8 +179,6 @@ class PassageCentrifugeProgram(CentrifugeProgram):
         super().tick(ctx, dt)
         if inv is not None and inv.action == "start":
             ctx.set(cycleRunSeconds=self.running, actualRotorTurns=self.cycle_turns)
-            if self.handle is None and inv.invocation.status == "succeeded":
-                ctx.set(completedCycle=inv.params["operationId"], completedLoad=self.cycle_load)
         safe = (
             self.handle is None
             and abs(ctx.physics.joint_qd(self.spindle)[0]) < 0.05
@@ -191,3 +190,24 @@ class PassageCentrifugeProgram(CentrifugeProgram):
             actualRpm=abs(float(ctx.physics.joint_qd(self.spindle)[0])) * 60 / (2 * math.pi),
             lidClosed=self._lid_closed(ctx.physics),
         )
+
+    def _completion_result(self, inv, ctx):
+        slots, issues = self._loading(ctx)
+        speed = abs(float(ctx.physics.joint_qd(self.spindle)[0]))
+        if (issues or slots != self.cycle_load or not any(slots)
+                or not math.isfinite(self.cycle_turns) or self.cycle_turns <= 0
+                or not math.isfinite(self.running) or self.running + 1e-9 < inv.params["durationSeconds"]
+                or not math.isfinite(speed) or speed >= .05 or not self._lid_closed(ctx.physics)):
+            return Reject(code="cycle_evidence_unavailable",
+                          message="Actual completed cycle evidence is unconfirmed")
+        ctx.set(completedCycle=inv.params["operationId"], completedLoad=slots,
+                cycleRunSeconds=self.running, actualRotorTurns=self.cycle_turns)
+        return {
+            "schema": "lw.centrifuge-cycle-receipt/1", "entityKey": ctx.key, "invocationId": inv.id,
+            "operationId": inv.params["operationId"],
+            "owner": inv.params["owner"], "epoch": inv.params["epoch"],
+            "completedCycle": inv.params["operationId"], "completedLoad": list(slots),
+            "cycleRunSeconds": self.running, "actualRotorTurns": self.cycle_turns,
+            "actualRpm": speed * 60 / (2 * math.pi), "rotorStopped": True, "lidClosed": True,
+            "completedSimTime": ctx.sim_time,
+        }

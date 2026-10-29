@@ -169,7 +169,9 @@ actions:
     timeoutSeconds: 3700
     description: Run then decelerate; unsafe_load rejects unsafe or unknown loading
       before motion, and imbalanced rejects nonopposite loading. Loading is checked
-      again at startup.
+      again at startup. Successful processing returns an lw.centrifuge-cycle-receipt/1
+      invocation result with measured turns, run time, actual completed load and
+      stopped feedback. Missing or unconfirmed evidence cannot establish a completed cycle.
   stop:
     params:
       owner:

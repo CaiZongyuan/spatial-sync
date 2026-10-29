@@ -23,7 +23,12 @@ import yaml
 
 from apps.cli.lw.client import GatewayClient, GatewayError
 from packages.library.common import content_hash
-from tools.cell_passage_audit import audit_recording, audit_spatial_state, audit_tip_destinations
+from tools.cell_passage_audit import (
+    audit_recording,
+    audit_spatial_state,
+    audit_tip_destinations,
+    collect_cycle_evidence,
+)
 from tools.cell_passage_plan import compile_recipe, load_inputs
 from tools.cell_passage_result import audit_material_result
 from tools.cell_passage_session import execute_round, prepare_round
@@ -270,22 +275,19 @@ async def capture_final_state(client, layout, recipe, record, output):
     if (centrifuge.get("phase") != "idle" or centrifuge.get("controlSafe") is not True
             or centrifuge.get("lidOpen") is not False or centrifuge.get("loadedEntities") != [None] * 4):
         errors.append("Centrifuge is not stopped, closed and empty")
-    for stage, names in ((3, ("S1", "S2", "S3", "S4")), (4, ("S5", "S6", "B5", "B6"))):
-        facts = record["stageResults"][str(stage)]["state"]["entities"]["/World/Lab/Centrifuge"]["values"]
-        cycle = next(step["do"]["params"]["operationId"] for part in recipe["plans"] if part["stage"] == stage
-                     for step in part["document"]["steps"]
-                     if step.get("do", {}).get("entity") == "/World/Lab/Centrifuge"
-                     and step["do"]["action"] == "start")
-        if (set(facts["completedLoad"]) != {layout["bodies"][name] for name in names}
-                or facts["cycleRunSeconds"] < 2 or facts["actualRotorTurns"] <= 0
-                or facts["completedCycle"] != cycle):
-            errors.append("Missing actual completed centrifuge batch evidence: " + str(stage))
+    cycles = await collect_cycle_evidence(client, record, {
+        stage: [layout["bodies"][name] for name in names]
+        for stage, names in ((3, ("S1", "S2", "S3", "S4")), (4, ("S5", "S6", "B5", "B6")))
+    })
+    if cycles["status"] != "cycle_evidence_valid":
+        errors.append("Actual completed centrifuge batch receipts are unavailable or inconsistent")
     if len(tips.get("discardedTips", [])) != recipe["tipsRequired"]:
         errors.append("Actual discarded tip inventory differs from this nominal recipe")
     valid = (not errors and material["status"] == "material_valid"
              and spatial["status"] == "spatial_state_valid" and tips["status"] == "tip_destinations_valid")
     report = {"status": "final_state_valid" if valid else "invalid", "errors": errors,
-              "material": material, "spatial": spatial, "tipDestinations": tips, "experimentQualified": False}
+              "material": material, "spatial": spatial, "tipDestinations": tips, "cycles": cycles,
+              "experimentQualified": False}
     _write(output / "final-audit.json", report)
     return report
 

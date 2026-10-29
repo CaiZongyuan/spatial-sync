@@ -14,6 +14,91 @@ from packages.transport import FrameCodec
 from tools.cell_passage_recipe import CLIENT_CONTRACT
 
 
+def audit_cycle_receipt(invocation, *, entity, operation_id, load, minimum_run_seconds):
+    """Validate a retained measured result, never infer a cycle from Plan completion."""
+    receipt = invocation.get("result")
+    errors = []
+    contract = CLIENT_CONTRACT["centrifugeCycleReceipt"]
+    if not isinstance(receipt, dict) or receipt.get("schema") != contract["schema"]:
+        return {"status": "unavailable", "errors": ["Measured cycle receipt is unavailable"]}
+    params = invocation.get("params", {})
+    expected = {"entityKey": entity, "invocationId": invocation.get("invocationId"),
+                "operationId": operation_id, "completedCycle": operation_id,
+                "owner": params.get("owner"), "epoch": params.get("epoch"),
+                "rotorStopped": True, "lidClosed": True, "completedSimTime": invocation.get("endedSimTime")}
+    if (invocation.get("status") != "succeeded" or invocation.get("action") != "start"
+            or invocation.get("entityKey") != entity or params.get("operationId") != operation_id
+            or any(receipt.get(key) != value for key, value in expected.items())):
+        errors.append("Cycle identity or successful stopped terminal does not match")
+    slots = receipt.get("completedLoad", [])
+    if (not isinstance(slots, list) or len(slots) != 4
+            or any(x is not None and not isinstance(x, str) for x in slots)
+            or sorted(x for x in slots if x is not None) != sorted(load)):
+        errors.append("Actual completed load differs from the expected batch")
+    numbers = [receipt.get(key) for key in (
+        "cycleRunSeconds", "actualRotorTurns", "actualRpm", "completedSimTime",
+    )]
+    if (not all(type(value) in (int, float) and math.isfinite(value) for value in numbers)
+            or numbers[0] + 1e-9 < minimum_run_seconds or numbers[1] <= 0
+            or not 0 <= numbers[2] < contract["stoppedSpeedRadPerSecond"] * 60 / (2 * math.pi)
+            or numbers[3] < 0):
+        errors.append("Measured run time, rotation or stopped feedback is invalid")
+    return {"status": "invalid" if errors else "cycle_receipt_valid", "errors": errors, "receipt": receipt}
+
+
+async def collect_cycle_evidence(client, record, expected_loads, *, entity="/World/Lab/Centrifuge"):
+    """Read Plan-bound invocation results, including generic recording-backed history."""
+    from apps.cli.lw.client import GatewayError
+
+    if set(expected_loads) != set(CLIENT_CONTRACT["centrifugeCycleReceipt"]["stages"]):
+        raise ValueError("Both centrifuge batches are required")
+    batches = {}
+    for stage, load in expected_loads.items():
+        try:
+            calls = []
+            for descriptor in record["plans"]:
+                if descriptor["stage"] != stage:
+                    continue
+                plan = await client.plan_show(descriptor["id"])
+                if any(plan.get(name) != value for name, value in record["target"].items()):
+                    raise ValueError("Cycle Plan target changed")
+                calls.extend((plan, step) for step in plan["steps"]
+                             if step.get("do", {}).get("entity") == entity
+                             and step["do"]["action"] == "start")
+            if len(calls) != 1:
+                raise ValueError("Exactly one Plan-bound cycle is required per batch")
+            plan, step = calls[0]
+            identity = plan.get("stepResults", {}).get(str(step["id"]), {}).get("invocationId")
+            if step["status"] != "done" or not identity:
+                raise ValueError("A completed Plan-bound cycle invocation is unavailable")
+            invocation = await client.get_invocation(identity)
+            if (invocation.get("params") != step["do"]["params"]
+                    or invocation.get("epoch") != record["target"]["epoch"]):
+                raise ValueError("Cycle invocation differs from its Plan action")
+            report = audit_cycle_receipt(invocation, entity=entity,
+                                         operation_id=step["do"]["params"]["operationId"], load=load,
+                                         minimum_run_seconds=max(
+                                             CLIENT_CONTRACT["centrifugeCycleReceipt"]["minimumRunSeconds"],
+                                             step["do"]["params"]["durationSeconds"],
+                                         ))
+            snapshot = record.get("stageResults", {}).get(str(stage), {}).get("state", {}).get("entities", {})
+            facts = snapshot.get(entity, {}).get("values")
+            if report["status"] == "cycle_receipt_valid" and facts is not None:
+                keys = ("completedCycle", "completedLoad", "cycleRunSeconds", "actualRotorTurns")
+                if any(facts.get(key) != report["receipt"][key] for key in keys):
+                    report = {**report, "status": "invalid",
+                              "errors": ["Stage snapshot disagrees with the retained cycle receipt"]}
+            batches[str(stage)] = {**report, "invocationId": identity,
+                                   "stageSnapshotAvailable": facts is not None}
+        except (GatewayError, ValueError, KeyError, TypeError) as error:
+            batches[str(stage)] = {"status": "unavailable", "errors": [str(error)]}
+    statuses = {row["status"] for row in batches.values()}
+    status = ("cycle_evidence_valid" if statuses == {"cycle_receipt_valid"}
+              else "invalid" if "invalid" in statuses else "unavailable")
+    return {"status": status,
+            "batches": batches, "experimentQualified": False}
+
+
 def _body_poses(manifest, frame):
     nodes = {row["entityKey"]: row["streamId"] for row in manifest["nodes"] if row["kind"] == "body"}
     values = {row[0]: {"p": row[1:4], "q": row[4:8]} for row in frame["poses"]}
