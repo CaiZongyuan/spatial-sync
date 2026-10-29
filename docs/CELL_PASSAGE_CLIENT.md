@@ -168,6 +168,14 @@ permissions (`0700` directories and `0600` files). A default `/mnt/c` or `/mnt/d
 DrvFS mount can reject gateway startup because it does not preserve those
 permissions. Use a new owned output directory on the WSL Linux filesystem;
 the source checkout and read-only input library can remain on the mounted drive.
+Set `umask 077` before launching so the run's files and directories stay private.
+The current workstation profile uses Linux Node 24.18.0 from
+`/home/caii/.nvm/versions/node/v24.18.0/bin`, Python from
+`/home/caii/.venvs/spatial-issue35/bin/python`, this checkout's Linux dependencies,
+and a fresh directory under
+`/home/caii/.local/state/spatial-sync/.scratch/cell-passage-p3/` for output.
+The real owned API/Vite startup and shutdown smoke covers this profile without
+creating a Scene or Session; it does not qualify the complete Newton command.
 
 It uses API 8023 and viewer 5223 by default, checks both ports before starting,
 and gives its gateway an instance header so readiness cannot accidentally select
