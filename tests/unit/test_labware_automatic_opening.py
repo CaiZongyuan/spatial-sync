@@ -28,6 +28,14 @@ def test_automatic_opening_must_fit_the_physical_hand(width):
         LabwareMotionProgram.Config.model_validate(ctx.config.model_dump() | {"automaticOpenWidthM": width})
 
 
+@pytest.mark.parametrize("diameter", [.05, .06])
+def test_configured_automatic_opening_must_clear_every_grip(diameter):
+    ctx, _ = configured_context()
+    with pytest.raises(ValueError, match="configured automatic opening"):
+        LabwareMotionProgram.Config.model_validate(ctx.config.model_dump() | {
+            "automaticOpenWidthM": .05, "gripDiameters": {"held": .017, "occupant": diameter}})
+
+
 def test_pick_approach_uses_calibrated_opening_without_changing_explicit_set_gripper():
     ctx, program = ArmContext(), RobotArmProgram()
     program.gripper_open_width_m = .05

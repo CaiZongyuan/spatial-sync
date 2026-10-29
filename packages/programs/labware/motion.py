@@ -70,6 +70,8 @@ class LabwareMotionProgram(RobotArmProgram):
                 offset, diameter = self.graspOffsets[key], self.gripDiameters[key]
                 if len(offset) != 3 or not np.isfinite(offset).all() or not 0 < diameter <= 0.078:
                     raise ValueError("Grip offsets must be finite triples and fit the 80 mm hand")
+                if diameter >= self.automaticOpenWidthM:
+                    raise ValueError("Every grip must fit inside the configured automatic opening")
                 if not self.gripShapePrefixes[key].startswith(key + "/"):
                     raise ValueError("Grip surface must name a shape beneath its physical body")
             return self
