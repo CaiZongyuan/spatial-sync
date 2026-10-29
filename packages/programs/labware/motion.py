@@ -54,12 +54,16 @@ class LabwareMotionProgram(RobotArmProgram):
         gripShapePrefixes: dict[str, str]
         fingerPadShapes: list[str] = Field(min_length=2, max_length=2)
         attachedLids: dict[str, str] = Field(default_factory=dict)
+        symmetricPreInsertionLocations: list[str] = Field(default_factory=list)
 
         @model_validator(mode="after")
         def calibrated_grips(self):
             from packages.programs.robot_arm.taught import require_postures
 
             require_postures(self.locations, [(None, None)] * 7)
+            for name in self.symmetricPreInsertionLocations:
+                if "preInsertion" not in self.locations["locations"].get(name, {}):
+                    raise ValueError("Symmetric insertion requires a taught preInsertion posture")
             if (
                 len(set(self.tubes)) != len(self.tubes)
                 or len(set(self.jointKeys)) != 7
@@ -84,6 +88,7 @@ class LabwareMotionProgram(RobotArmProgram):
         self.gripper_speed_mps = ctx.config.gripperSpeedMPerS
         self.contact_allowance_m = ctx.config.contactAllowanceM
         self.joint_acceleration = ctx.config.jointAccelerationRadPerS2
+        self.symmetric_pre_insertion = set(ctx.config.symmetricPreInsertionLocations)
         self.body_grips = {
             ctx.physics.bind_body(key): (ctx.config.graspOffsets[key], ctx.config.gripDiameters[key])
             for key in ctx.config.tubes
@@ -226,15 +231,18 @@ class LabwareMotionProgram(RobotArmProgram):
             return
         ctx.set(controlSafe=False)
         super().start(inv, ctx)
-        if inv.action in ("place", "pickPlace"):
+        if inv.action in ("pick", "place", "pickPlace"):
             staged = []
             for index, segment in enumerate(self.plan):
                 kind, _, name = segment
                 if (kind == "move" and name and index + 1 < len(self.plan)
-                        and self.plan[index + 1][0] == "place"
+                        and (self.plan[index + 1][0] == "place"
+                             or self.plan[index + 1][0] == "pick" and name in self.symmetric_pre_insertion)
                         and "preInsertion" in self.locations[name]):
                     staged.append(("move", self.locations[name]["preInsertion"], name))
                 staged.append(segment)
+                if kind in ("pick", "place") and name in self.symmetric_pre_insertion:
+                    staged.append(("move", self.locations[name]["preInsertion"], name))
             self.plan, self.total = staged, len(staged)
         if inv.action != "stop":
             ctx.set(unsafeContactCount=0, lastContactShapes=[], lastContactDepthM=0.0)
@@ -247,6 +255,23 @@ class LabwareMotionProgram(RobotArmProgram):
         self.carrying_lid = (
             ctx.config.attachedLids.get(body) if body and ctx.read(body, "lidClosed") is True else None
         )
+
+    def _preview_targets(self, action, params):
+        if action not in ("pick", "place", "pickPlace"):
+            return super()._preview_targets(action, params)
+        operations = (("pick", params["from"]), ("place", params["to"])) if action == "pickPlace" else (
+            (action, params["location"]),)
+        targets = []
+        for operation, name in operations:
+            location = self.locations[name]
+            middle = [location["preInsertion"]] if "preInsertion" in location else []
+            symmetric = name in self.symmetric_pre_insertion
+            incoming = middle if operation == "place" or symmetric else []
+            outgoing = middle if symmetric else []
+            targets.extend([
+                location["approach"], *incoming, location["grasp"], *outgoing, location["approach"],
+            ])
+        return targets
 
     def _contact_guard(self, ctx):
         active = {joint.child for joint in [*self.joints, *self.fingers] if joint.child >= 0} | {self.hand}

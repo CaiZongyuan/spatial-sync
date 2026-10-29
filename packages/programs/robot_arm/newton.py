@@ -120,8 +120,11 @@ class RobotArmProgram:
             if not any(ctx.read(tube, "location") == self.locations[name]["site"] for tube in self.tubes):
                 return Reject(code="location_empty", message=f"No tube at {name}")
 
+    def _preview_targets(self, action, params):
+        return joint_targets(action, params, self.locations, HOME)
+
     def preview(self, action, params, ctx):
-        targets = joint_targets(action, params, self.locations, HOME)
+        targets = self._preview_targets(action, params)
         if targets is None:
             return None
         snapshot = ctx.kinematics

@@ -123,17 +123,34 @@ class _Recipe:
         pickup, placement = self.location(source, body), self.location(target, body)
         for resource in (body, source, target):
             self.reserve(resource, ROBOT)
+        transit = self.layout.get("incubatorTransitLocations", {})
+
+        def enter_or_leave(location):
+            name = transit.get(location["name"])
+            if name:
+                descriptor = next(row for row in self.locations if row["name"] == name)
+                self.reserve(descriptor["site"], ROBOT)
+                self.do(ROBOT, "moveTo", {"location": name, "pose": "approach"})
+
         self.rail_to(pickup)
+        enter_or_leave(pickup)
         self.do(ROBOT, "pick", {"location": pickup["name"]},
                 expect={"entity": ROBOT, "property": "holding", "equals": body})
+        enter_or_leave(pickup)
         self.rail_to(placement)
+        enter_or_leave(placement)
         self.do(ROBOT, "place", {"location": placement["name"]},
                 expect={"entity": ROBOT, "property": "holding", "isNull": True})
+        enter_or_leave(placement)
         self.check(body, "station", "equals", target)
         self.check(body, "settled", "equals", True)
         self.stations[body] = target
         for resource in (source, target, body):
             self.release(resource)
+        for location in (pickup, placement):
+            if location["name"] in transit:
+                name = transit[location["name"]]
+                self.release(next(row["site"] for row in self.locations if row["name"] == name))
         self.cut()
 
     def lid(self, name, opened):

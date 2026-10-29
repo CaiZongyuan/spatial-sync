@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import pytest
 import yaml
 
 from packages.library.metadata import scene_metadata
@@ -58,3 +59,24 @@ def test_scene_import_accepts_and_retains_optional_pre_insertion(tmp_path):
     for name, value in documents.items():
         (tmp_path / name).write_text(yaml.safe_dump(value))
     assert scene_metadata(tmp_path)[2]["locations"]["target"]["preInsertion"] == [.1] * 7
+
+
+@pytest.mark.parametrize("action", ["pick", "place"])
+def test_opted_in_insertion_preview_matches_ingress_and_loaded_or_released_retreat(action):
+    ctx, _ = configured_context()
+    if action == "place":
+        previous_read = ctx.read
+        ctx.read = lambda entity, prop: (
+            "elsewhere" if entity == "occupant" and prop == "location" else previous_read(entity, prop))
+    pre = [.1] * 7
+    ctx.config.locations["locations"]["target"]["preInsertion"] = pre
+    ctx.config = LabwareMotionProgram.Config.model_validate(
+        ctx.config.model_dump() | {"symmetricPreInsertionLocations": ["target"]}
+    )
+    program = LabwareMotionProgram()
+    program.init(ctx)
+    params = {"location": "target", "owner": "auto", "epoch": 0, "operationId": "staged-" + action}
+    program.start(SimpleNamespace(action=action, params=params), ctx)
+    actual = [values for kind, values, _ in program.plan if kind == "move"]
+    assert actual == [[0.] * 7, pre, [0.] * 7, pre, [0.] * 7]
+    assert program._preview_targets(action, params) == actual

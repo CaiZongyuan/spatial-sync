@@ -145,7 +145,10 @@ def populate(stage, *, demonstration=False):
     reference(stage, LAB + "/Labware/CollectionRack", rack_asset, rack_origin)
 
     stations = {
-        "IncubatorMother": (-0.925, 0.23 + incubator_backset, 1.0858 + incubator_lift),
+        # Mother leaves before the daughter bays are occupied. Its temporary
+        # working position clears the open inner door during loaded withdrawal.
+        "IncubatorMother": (-0.885 if demonstration else -0.925,
+                            0.23 + incubator_backset, 1.0858 + incubator_lift),
         "IncubatorA": (-0.575, 0.23 + incubator_backset, 1.0858 + incubator_lift),
         "IncubatorB": (-0.750, 0.23 + incubator_backset, 1.0858 + incubator_lift),
         "Imager": (-0.05, -0.68, 1.232),
@@ -156,6 +159,9 @@ def populate(stage, *, demonstration=False):
         "WasteCounting": (0.60, -0.84, 1.232),
         "WasteMother": (0.40, -0.50, 1.232),
     }
+    if demonstration:
+        stations["IncubatorTransit"] = (-0.35, -0.20, 1.45)
+        stations["IncubatorATransit"] = (-0.35, -0.20, 1.45)
     for i, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
         stations["Rack" + name] = (-0.265 + (i % 4) * rack_pitch, -0.58 + (i // 4) * rack_pitch, 1.032)
         stations[f"FlexTube{i + 1}"] = (0.535 + (i % 4) * 0.060, 0.385 + (i // 4) * 0.060, 1.042)
@@ -401,7 +407,15 @@ def populate(stage, *, demonstration=False):
         "tipSite": tip_site,
         "pipetteBody": LAB + "/LiquidHandler/CarriageZ",
         "slotSites": slot_keys,
-        "stationYawRad": {LAB + "/Sites/IncubatorA": 3.141592653589793},
+        "stationYawRad": {
+            LAB + "/Sites/IncubatorA": 3.141592653589793,
+            **({LAB + "/Sites/IncubatorATransit": 3.141592653589793} if demonstration else {}),
+        },
+        **({"incubatorTransitLocations": {
+            "IncubatorMother.plate": "IncubatorTransit.transit",
+            "IncubatorA.plate": "IncubatorATransit.transit",
+            "IncubatorB.plate": "IncubatorTransit.transit",
+        }} if demonstration else {}),
         "initialStations": {
             **{bodies[name]: LAB + "/Sites/" + station for name, station in starts.items()},
             **{

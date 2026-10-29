@@ -404,6 +404,9 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
                 binding["config"]["contactAllowanceM"] = .002
             if binding["program"] == "labware.motion":
                 binding["config"]["jointAccelerationRadPerS2"] = .5
+                binding["config"]["symmetricPreInsertionLocations"] = list(
+                    layout["incubatorTransitLocations"]
+                )
             if binding["program"] == "cell_passage.workcell":
                 binding["config"]["axisToleranceM"] = .001
     stage.GetRootLayer().Save()
