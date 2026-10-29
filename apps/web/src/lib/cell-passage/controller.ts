@@ -169,6 +169,8 @@ export class PassageController {
   async continueFlow(replacements: Record<number, PlanStep> = {}, reviewed = false) {
     const flow = this.flow;
     if (!flow) failure('先选择本轮计划');
+    if (flow.mode === 'manual' && !flow.single && !['paused-hold', 'paused'].includes(flow.phase))
+      return this.begin(flow.planId, flow.catalog, 'auto');
     if (flow.phase === 'paused-hold' || flow.phase === 'paused') {
       await this.resume(); flow.beganSimTime = (await this.inspect(flow.planId)).session.simTime;
       flow.phase = 'acquiring'; return '仿真已恢复以完成保持与核对；自动派发尚未恢复';

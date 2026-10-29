@@ -87,6 +87,15 @@ describe('one browser owner across a complete round', () => {
     await f.controller.progress(); await f.controller.progress();
     expect(f.admitted).toHaveLength(1); expect(f.controller.flow?.phase).toBe('ready'); expect(f.controller.polling).toBe(false);
   });
+  it('continues automatically when source confirms manual ownership before the client observes its manual phase', async () => {
+    const f = roundFixture(); f.entity.values.controlOwner = 'external';
+    await f.controller.begin(f.plans[0].id, f.catalog, 'manual'); await f.controller.progress();
+    expect(f.entity.values.controlMode).toBe('manual'); expect(f.controller.flow?.phase).toBe('acquiring');
+    await f.controller.continueFlow();
+    expect(f.controller.flow?.mode).toBe('auto');
+    await f.controller.progress(); await f.controller.progress();
+    expect(f.controller.flow?.phase).toBe('running'); expect(f.admitted).toHaveLength(0);
+  });
   it('pause fences the source even before a run flow was started', async () => {
     const f = roundFixture(); f.entity.values.controlOwner = 'external'; await f.controller.pause();
     expect(f.session.state).toBe('PAUSED'); expect(f.session.simTime).toBe(1); expect(f.entity.values.controlEpoch).toBe(5);
