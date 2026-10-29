@@ -37,6 +37,19 @@ from tools.cell_passage_session import execute_round, prepare_round
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class _OwnedValidationClient(GatewayClient):
+    """Match this owned gateway's physics wall budget, retaining ordinary RPC deadlines."""
+
+    def __init__(self, *args, validation_budget=600, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.validation_budget = validation_budget
+
+    async def request(self, method, path, **kwargs):
+        if method == "POST" and (path == "/api/v1/library/imports" or path.endswith("/validate")):
+            kwargs["timeout"] = max(240, self.validation_budget + 30)
+        return await super().request(method, path, **kwargs)
+
+
 def gateway_app():
     """A normal gateway with owned roots and an instance identity for safe startup."""
     root = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]).resolve() / "runtime"
@@ -149,7 +162,9 @@ async def _install(client, library, output, expected_upload_hash):
         raise ValueError("Imported scene does not match the frozen recipe inputs")
     receipts.append(receipt)
     _write(output / "imports.json", receipts)
-    report = await client.library_validate(receipt["sceneVersion"])
+    report = receipt["validation"]
+    if not (report.get("launchable") and report.get("physics", {}).get("status") == "completed"):
+        report = await client.library_validate(receipt["sceneVersion"])
     _write(output / "validation.json", report)
     if not report.get("launchable") or any(
         check["status"] == "fail" for check in report["checks"]
@@ -423,7 +438,9 @@ async def capture_final_state(client, layout, recipe, record, output):
 
 
 async def _install_once(args, library, expected_upload_hash):
-    async with GatewayClient(url=f"http://127.0.0.1:{args.api_port}") as client:
+    budget = getattr(args, "startup_timeout_seconds", 600)
+    async with _OwnedValidationClient(url=f"http://127.0.0.1:{args.api_port}",
+                                     validation_budget=budget) as client:
         return await _install(client, library, args.out, expected_upload_hash)
 
 
@@ -505,6 +522,7 @@ def demo(args):
         "SPATIAL_API_URL": url, "SPATIAL_NEWTON_DEVICE": "cpu", "SPATIAL_RECORDINGS_ENABLED": "1",
         "SPATIAL_NODE_TRAINER": "[]",
         "SPATIAL_NEWTON_STARTUP_TIMEOUT_SECONDS": str(startup_budget),
+        "SPATIAL_LIBRARY_PHYSICS_TIMEOUT_SECONDS": str(startup_budget),
     }
     if getattr(args, "demonstration", False):
         env["SPATIAL_PASSAGE_CONTACT_TRACE_DIR"] = str(args.out / "raw-contacts")
