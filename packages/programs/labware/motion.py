@@ -36,6 +36,7 @@ class LabwareMotionProgram(RobotArmProgram):
         tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
         speedScale: float = Field(default=0.3, gt=0, le=1)
         automaticOpenWidthM: float = Field(default=.08, gt=0, le=.08, allow_inf_nan=False)
+        gripperSpeedMPerS: float = Field(default=.04, gt=0, le=.04, allow_inf_nan=False)
         graspMode: str = Field(default="weld", pattern="^weld$")
         jointKeys: list[str] = Field(
             min_length=7, max_length=7, json_schema_extra={"spatialReference": "joint", "posture": True}
@@ -78,6 +79,7 @@ class LabwareMotionProgram(RobotArmProgram):
 
     def init(self, ctx):
         self.gripper_open_width_m = ctx.config.automaticOpenWidthM
+        self.gripper_speed_mps = ctx.config.gripperSpeedMPerS
         self.body_grips = {
             ctx.physics.bind_body(key): (ctx.config.graspOffsets[key], ctx.config.gripDiameters[key])
             for key in ctx.config.tubes
@@ -138,6 +140,15 @@ class LabwareMotionProgram(RobotArmProgram):
 
     def _release_opening(self, port, body):
         return self.body_grips[body][1] + 2 * abs(self._finger_position(port, body)[1]) + 0.003
+
+    def _gripper_settled(self, ctx, kind, actual, dt):
+        if self.handle.action == "setGripper":
+            return super()._gripper_settled(ctx, kind, actual, dt)
+        stationary = dt > 0 and abs(actual - self.last_width) <= min(.002, self.gripper_speed_mps * .1) * dt
+        if kind == "pick":
+            return (stationary and self.pick_tube in self.tubes
+                    and ctx.physics.welds.active(self.hand, self.tubes[self.pick_tube]))
+        return stationary and abs(actual - self.gripper_goal) < .001
 
     def _facts(self, ctx):
         super()._facts(ctx)

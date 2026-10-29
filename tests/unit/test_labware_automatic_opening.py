@@ -14,10 +14,11 @@ def test_scene_calibration_sets_automatic_opening_and_legacy_default_stays_80mm(
     ctx, _ = configured_context()
     assert ctx.config.automaticOpenWidthM == .08
     ctx.config = LabwareMotionProgram.Config.model_validate(
-        ctx.config.model_dump() | {"automaticOpenWidthM": .05})
+        ctx.config.model_dump() | {"automaticOpenWidthM": .05, "gripperSpeedMPerS": .02})
     program = LabwareMotionProgram()
     program.init(ctx)
     assert program.gripper_open_width_m == .05
+    assert program.gripper_speed_mps == .02
     assert RobotArmProgram.gripper_open_width_m == .08
 
 
@@ -73,3 +74,34 @@ def test_failed_pick_recovery_uses_same_calibrated_opening_and_keeps_weld_until_
     ctx.physics.width = .05
     program._drive_gripper(ctx, 1 / 60)
     assert not ctx.physics.enabled and not program.pending_release
+
+
+def test_slow_automatic_motion_is_not_stationary_and_pick_requires_an_actual_weld():
+    ctx, _ = configured_context()
+    program = LabwareMotionProgram()
+    program.init(ctx)
+    program.handle = SimpleNamespace(action="pick")
+    program.pick_tube = "held"
+    program.last_width = .05
+    program.gripper_goal = 0
+    assert not program._gripper_settled(ctx, "pick", .05 - .02 / 60, 1 / 60)
+    program.last_width = .017
+    ctx.physics.welds.active = lambda hand, body: False
+    assert not program._gripper_settled(ctx, "pick", .017, 1 / 60)
+    ctx.physics.welds.active = lambda hand, body: True
+    assert program._gripper_settled(ctx, "pick", .017, 1 / 60)
+
+
+def test_automatic_release_waits_for_its_opening_but_explicit_gripper_keeps_legacy_completion():
+    ctx, _ = configured_context()
+    program = LabwareMotionProgram()
+    program.init(ctx)
+    program.handle = SimpleNamespace(action="place")
+    program.last_width = .03
+    program.gripper_goal = .05
+    assert not program._gripper_settled(ctx, "place", .03, 1 / 60)
+    program.last_width = .05
+    assert program._gripper_settled(ctx, "place", .05, 1 / 60)
+    program.handle = SimpleNamespace(action="setGripper")
+    program.last_width = .03
+    assert program._gripper_settled(ctx, "gripper", .03, 1 / 60)
