@@ -507,6 +507,7 @@ def demo(args):
     library = args.generated.resolve() if args.generated else args.out / "generated"
     bootstrap = {"status": "building", "roundId": args.round, "experimentQualified": False}
     bootstrap["nativeCpuSleepingRequested"] = os.getenv("SPATIAL_NEWTON_CPU_SLEEPING") == "1"
+    bootstrap["contactCollisionOnlyRequested"] = os.getenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY") == "1"
     if getattr(args, "demonstration", False):
         bootstrap["demonstration"] = {"contactAllowanceM": .002, "formalPrecisionQualified": False}
     _write(args.out / "bootstrap.json", bootstrap)

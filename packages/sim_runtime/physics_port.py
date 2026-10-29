@@ -1,5 +1,6 @@
 """Indexed CPU snapshot and one buffered actuator commit per control tick."""
 
+import os
 from dataclasses import dataclass
 from itertools import product
 from time import monotonic
@@ -182,10 +183,15 @@ class PhysicsPort:
             pose = self.frame_body[body]
             query.mocap_pos[mocap] = pose[:3]
             query.mocap_quat[mocap] = pose[[6, 3, 4, 5]]
-        # Supported position stage includes geometry/BVH/constraint setup, but
-        # no integration, control callback or dynamics solve. All output is
-        # private, never the live solver's contacts/warmstart/targets.
-        mujoco.mj_fwdPosition(native, query)
+        # Both paths update rigid geometry without integration/control/dynamics.
+        # The owned opt-in omits unused constraint assembly; the supported full
+        # position stage remains the default. All output stays private.
+        if os.getenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY") == "1":
+            mujoco.mj_kinematics(native, query)
+            mujoco.mj_comPos(native, query)
+            mujoco.mj_collision(native, query)
+        else:
+            mujoco.mj_fwdPosition(native, query)
         mapped = np.flatnonzero(body_map >= 0)
         expected = self.frame_body[body_map[mapped]]
         actual_q = query.xquat[mapped][:, [1, 2, 3, 0]]

@@ -157,6 +157,7 @@ class _Runner:
             (directory / f"cpu-sleeping-{os.getpid()}.json").write_text(json.dumps({
                 "sessionId": session_id, "runnerPID": os.getpid(), "cpuSleepingRequested": True,
                 "nativeCpuSleepingEnabled": self.sim.native_cpu_sleeping,
+                "contactCollisionOnlyRequested": os.getenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY") == "1",
                 "device": str(self.sim.model.device), "solver": self.sim.solver_kind,
             }, indent=2), encoding="utf-8")
         if self.info.port:

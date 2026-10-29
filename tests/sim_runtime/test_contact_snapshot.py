@@ -1,5 +1,6 @@
 """Contact position-stage facts must match the captured post-step pose."""
 
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -77,6 +78,9 @@ def test_sparse_contact_selection_decodes_only_matching_rows(monkeypatch):
     port._contact_state = SimpleNamespace(joint_q=SimpleNamespace(assign=lambda value: None),
                                           joint_qd=SimpleNamespace(assign=lambda value: None))
     monkeypatch.setattr(mujoco, "mj_fwdPosition", lambda *args: None)
+    monkeypatch.setattr(mujoco, "mj_kinematics", lambda *args: None)
+    monkeypatch.setattr(mujoco, "mj_comPos", lambda *args: None)
+    monkeypatch.setattr(mujoco, "mj_collision", lambda *args: None)
     decoded = []
     real_contact = physics_port.PhysicalContact
 
@@ -192,7 +196,9 @@ def test_initial_reset_and_same_time_getters_use_one_query_per_actual_capture(mo
     import mujoco
 
     collisions = []
-    collision = mujoco.mj_fwdPosition
+    stage = ("mj_collision" if os.getenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY") == "1"
+             else "mj_fwdPosition")
+    collision = getattr(mujoco, stage)
 
     def observe(model, data):
         collisions.append(id(data))
@@ -200,7 +206,7 @@ def test_initial_reset_and_same_time_getters_use_one_query_per_actual_capture(mo
 
     with NewtonSimulation("phase", device="cpu", physics_dt=.01, config=moving_box(-.0001, .2)) as sim:
         port = observed(sim)
-        monkeypatch.setattr(mujoco, "mj_fwdPosition", observe)
+        monkeypatch.setattr(mujoco, stage, observe)
         initial = port.collision_contacts()
         assert initial and len(collisions) == 1
         assert port.collision_contacts(max_distance=-.001) == []
