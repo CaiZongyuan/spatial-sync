@@ -3,6 +3,7 @@ import type { Catalog, Invocation, JsonValue } from '../protocol';
 import type { PlanDocument, PlanStep } from '../plans/model';
 import { materialState, object, passageContract } from './model';
 import type { EntityValues } from '../protocol';
+import { liquidAction, operationReceipt, revisePlans } from './recovery';
 
 type Session = { sessionId: string; sceneRevision: string; epoch: number; state: string; simTime: number };
 type Transport = <T>(path: string, options?: RequestInit) => Promise<T>;
@@ -27,6 +28,34 @@ export class PassageController {
   stop() { this.stopped = true; }
   get dispatching() { return !this.stopped; }
   get observing() { return !!this.active; }
+  async receiptFor(planId: string, step: PlanStep) {
+    if (!('do' in step)) return undefined;
+    const operationId = step.do.params.operationId;
+    const valid = (value: unknown) => {
+      const row = object(value);
+      return row && row.operationId === operationId && ['succeeded', 'failed', 'cancelled'].includes(String(row.status)) &&
+        ['appliedUl', ...(passageContract.liquidActions.quantityIntent.includes(step.do.action) ? ['resolvedUl', 'remainingUl'] : [])]
+          .every(key => typeof row[key] === 'number' && Number.isFinite(row[key]) && Number(row[key]) >= 0) ? row : undefined;
+    };
+    const { entity, plan } = await this.inspect(planId);
+    const current = valid(operationReceipt(step, entity.values.materialSnapshot));
+    if (current) return current;
+    const result = plan.stepResults[String(step.id)];
+    const ids = result?.invocationIds ?? (result?.invocationId ? [result.invocationId] : []);
+    for (const id of [...ids].reverse()) {
+      const invocation = await this.http<Invocation>(`${this.route()}/invocations/${encodeURIComponent(id)}`);
+      const receipt = valid(object(invocation.result)?.receipt) ?? valid(invocation.result);
+      if (receipt) return receipt;
+    }
+    // The event stream may have a history gap. An unavailable receipt is never reconstructed from current stock.
+    const history = await this.http<{ events: { message: { type: string; entityKey?: string; event?: string; data?: JsonValue } }[] }>(`${this.route()}/events?after=0&timeoutSeconds=0`);
+    for (const event of [...history.events].reverse()) {
+      if (event.message.entityKey === this.workcell && event.message.event === 'operationCompleted') {
+        const receipt = valid(object(event.message.data)?.receipt); if (receipt) return receipt;
+      }
+    }
+    return undefined;
+  }
   async inspect(planId: string): Promise<Checkpoint> {
     const [session, plan, state] = await Promise.all([
       this.http<Session>(this.route()), this.http<PlanDocument>(`/plans/${encodeURIComponent(planId)}`),
@@ -148,12 +177,10 @@ export class PassageController {
     }
     if (this.checkpointToken(await this.inspect(planId)) !== review.token) failure('核对期间现场已变化，禁止续行');
     const plan = checkpoint.plan;
-    const steps = plan.steps.map(step => {
-      const next = { ...(['failed', 'skipped'].includes(step.status) ? replacements[step.id] : step), status: 'pending' };
-      if (step.status === 'done' || !('do' in next)) return next;
-      return { ...next, do: { ...next.do, params: { ...next.do.params, owner: this.owner,
-        epoch: values.controlEpoch, operationId: crypto.randomUUID() } } };
-    });
+    for (const step of plan.steps) if (step.status === 'failed' && 'do' in step && liquidAction(step.do.action) && !(await this.receiptFor(planId, step)))
+      failure('原操作的可靠 receipt 不可用；保留现场并核对记录，禁止按当前余量重新计算');
+    const steps = revisePlans([plan], this.owner, Number(values.controlEpoch), { [plan.id]: replacements }).get(plan.id)?.steps;
+    if (!steps) return plan;
     const revised = await this.http<PlanDocument>(`/plans/${encodeURIComponent(planId)}/revisions`, post({ id: plan.id, kind: 'operation',
       target: plan.target, title: plan.title, sessionId: this.sessionId, status: 'draft', steps }));
     const current = await this.inspect(planId);

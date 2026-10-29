@@ -34,6 +34,27 @@ const catalog = { entities: { '/w': { type: 'cell-passage-workcell/v1', config: 
 async function arm(f: ReturnType<typeof fixture>) { const review = await f.controller.review('p', catalog); await f.controller.prepareRemaining('p', review); await f.controller.arm('p'); }
 const actionCalls = (f: ReturnType<typeof fixture>) => f.http.mock.calls.filter(([path]) => path.endsWith('/actions'));
 describe('passage browser scheduling through existing HTTP/Plan API', () => {
+  it('finds a protected/archived resolved receipt through the known invocation without recalculating from stock', async () => {
+    const f = fixture(); f.plan.steps[0].status = 'failed';
+    if ('do' in f.plan.steps[0]) f.plan.steps[0].do.action = 'aspirateFraction';
+    f.plan.stepResults['200001'] = { invocationId: 'original' };
+    const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => path.endsWith('/invocations/original') ? { result: { receipt: {
+      operationId: 'liquid-1', status: 'failed', resolvedUl: 250, appliedUl: 40, remainingUl: 210,
+    } } } : original(path, options));
+    expect(await f.controller.receiptFor('p', f.plan.steps[0])).toMatchObject({ resolvedUl: 250, appliedUl: 40, remainingUl: 210 });
+    expect(actionCalls(f)).toHaveLength(0);
+  });
+  it('reads reliable terminal events after live-window eviction and leaves missing receipts unknown', async () => {
+    const f = fixture(); const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => path.includes('/events?') ? { events: [{ message: {
+      type: 'entity.event', entityKey: '/w', event: 'operationCompleted', data: { receipt: { operationId: 'liquid-1', status: 'cancelled', appliedUl: 40 } },
+    } }] } : original(path, options));
+    expect(await f.controller.receiptFor('p', f.plan.steps[0])).toMatchObject({ appliedUl: 40 });
+    if ('do' in f.plan.steps[0]) f.plan.steps[0].do.params.operationId = 'unknown';
+    expect(await f.controller.receiptFor('p', f.plan.steps[0])).toBeUndefined();
+    expect(actionCalls(f)).toHaveLength(0);
+  });
   it('requires a reviewed checkpoint before enabling any material dispatch', async () => {
     const f = fixture();
     await expect(f.controller.arm('p')).rejects.toThrow('读取现场核对');
@@ -60,7 +81,7 @@ describe('passage browser scheduling through existing HTTP/Plan API', () => {
     const submitted = JSON.parse(String(options?.body));
     expect(submitted.steps[0]).toEqual({ ...done, status: 'pending' });
     expect(submitted.steps[1].do.params).toMatchObject({ owner: f.controller.owner, epoch: 3, volumeUl: 200 });
-    expect(submitted.steps[1].do.params.operationId).not.toBe('liquid-1');
+    expect(submitted.steps[1].do.params.operationId).toBe('liquid-1');
   });
   it('refuses failed transfer recovery without an explicit reviewed replacement', async () => {
     const f = fixture(); f.plan.steps[0].status = 'failed';

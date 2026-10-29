@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { OperationPlan } from '../lib/protocol';
+import type { JsonValue, OperationPlan } from '../lib/protocol';
 import type { SessionClient } from '../lib/stream/client';
 import type { PlanStep } from '../lib/plans/model';
 import { factLabel, object, quantity, rows, text } from '../lib/cell-passage/model';
 import { useEntity } from '../lib/info/hooks';
 import { PassageController, type Review } from '../lib/cell-passage/controller';
+import { liquidAction, literalRemainder } from '../lib/cell-passage/recovery';
 
 export function PassageControls({ client, workcell, plan, blocked }: {
   client: SessionClient; workcell: string; plan?: OperationPlan; blocked?: string;
 }) {
   const material = useEntity(client.info, workcell);
-  const [replacements, setReplacements] = useState<Record<number, { approved: boolean; volume: string }>>({});
+  const [replacements, setReplacements] = useState<Record<number, { approved: boolean; volume: string; direction?: 'aspirate' | 'dispense' }>>({});
+  const [receipts, setReceipts] = useState<Record<number, Record<string, JsonValue>>>({});
+  const [receiptError, setReceiptError] = useState('');
   const view = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const controller = useMemo(() => new PassageController(client.sessionId, workcell), [client, workcell, plan?.id]);
   const metadata = useSyncExternalStore(client.info.subscribeMetadata, client.info.getMetadata);
@@ -26,6 +29,15 @@ export function PassageControls({ client, workcell, plan, blocked }: {
   const disabled = blocked ?? accessBlocked;
   const controlMode = material?.values.controlMode;
   const controlSafe = material?.values.controlSafe === true;
+  useEffect(() => {
+    let cancelled = false; setReceipts({}); setReceiptError('');
+    if (plan) void Promise.all(plan.steps.filter(step => step.status === 'failed' && 'do' in step && liquidAction(step.do.action)).map(async step => {
+      const receipt = await controller.receiptFor(plan.id, step);
+      if (!receipt) throw new Error('原操作 receipt 未找到，请保留现场并核对录制；不能重新计算数量意图');
+      return [step.id, receipt] as const;
+    })).then(values => { if (!cancelled) setReceipts(Object.fromEntries(values)); }).catch(error => { if (!cancelled) setReceiptError(String(error.message ?? error)); });
+    return () => { cancelled = true; };
+  }, [controller, plan?.revision, material?.values.materialRevision]);
   useEffect(() => { setReview(undefined); setReviewed(false); setReplacements({}); }, [controller, material?.values.controlEpoch, material?.values.materialRevision, plan?.revision]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; controller.stop(); }; }, [controller]);
   useEffect(() => {
@@ -56,10 +68,11 @@ export function PassageControls({ client, workcell, plan, blocked }: {
       const input = replacements[step.id];
       if (!input?.approved) throw new Error(`先明确修订失败步骤 ${step.id}`);
       if ('do' in step) {
-        const liquid = ['aspirate', 'dispense', 'mix'].includes(step.do.action);
+        const liquid = liquidAction(step.do.action);
         const volume = Number(input.volume);
         if (liquid && (!input.volume || !Number.isFinite(volume) || volume <= 0)) throw new Error('根据已应用量与当前液体填写剩余操作量');
-        result[step.id] = { ...step, do: { ...step.do, params: { ...step.do.params, ...(liquid ? { volumeUl: volume } : {}) } } };
+        if (liquid && !receipts[step.id]) throw new Error('原始操作 receipt 未知，禁止续行');
+        result[step.id] = liquid ? literalRemainder(step, volume, input.direction) : step;
       } else result[step.id] = step;
     }
     return result;
@@ -81,15 +94,22 @@ export function PassageControls({ client, workcell, plan, blocked }: {
   return <section className="passage-controls" aria-label="传代控制">
     <h3>运行与交接</h3><p role="status">{message}</p>
     {disabled && <p>{disabled}</p>}
+    {receiptError && <p role="alert">{receiptError}</p>}
     {controlMode === 'holding' && <p>已禁止先前控制继续操作；{controlSafe ? '源侧工作单元已停稳，确认仍会核验所有受管设备' : '正在建立物理保持目标并等待实测停稳，尚不可确认交接'}。</p>}
     {review && <div className="passage-review"><h4>现场核对</h4><ul>{review.facts.map(fact => <li key={`${fact.entity}:${fact.property}`}><code>{fact.entity}</code> · {fact.property}：{factLabel(fact.value)}</li>)}</ul><label><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} /> 已核对以上机械事实及当前物料、在途液体和占用</label></div>}
     {plan?.steps.filter(step => step.status === 'failed').map(step => {
-      const operation = 'do' in step ? rows(object(material?.values.materialSnapshot)?.operations).find(row => row.operationId === step.do.params.operationId) : undefined;
-      const liquid = 'do' in step && ['aspirate', 'dispense', 'mix'].includes(step.do.action);
+      const operation = receipts[step.id];
+      const liquid = 'do' in step && liquidAction(step.do.action);
+      const snapshot = object(material?.values.materialSnapshot);
+      const relevant = 'do' in step ? rows(snapshot?.vessels).filter(row => row.id === step.do.params.vessel || row.id === step.do.params.targetVessel) : [];
       return <fieldset key={step.id}><legend>修订失败步骤 {step.id} · {'do' in step ? step.do.action : '检查'}</legend>
-        {liquid && <><p>已应用 {quantity(operation?.appliedUl)} µL；请求 {quantity(operation?.requestedUl)} µL；状态 {text(operation?.status)}。以当前器皿和吸头内容决定后续量；不自动重放原量。</p>
+        {liquid && <><p>原解析目标 {quantity(operation?.resolvedUl)} µL；已实转 {quantity(operation?.appliedUl)} µL；解析目标剩余 {quantity(operation?.remainingUl)} µL；分辨率余量 {quantity(operation?.resolutionResidualUl)} µL。以原 receipt 与当前器皿/吸头内容修订明确操作，不重新计算 fraction、top-up 或 all。</p>
+          <table aria-label={`步骤 ${step.id} 当前物料`}><thead><tr><th>当前位置</th><th>实际液量 µL</th></tr></thead><tbody>{relevant.map(row => <tr key={text(row.id)}><td>{text(row.id)}</td><td>{quantity(row.volumeUl)}</td></tr>)}<tr><td>已装吸头</td><td>{quantity(object(snapshot?.tip)?.volumeUl)}</td></tr></tbody></table>
+          <details><summary>原操作与余量明细</summary><dl>{['requestedUl', 'resolvedUl', 'appliedUl', 'observedUl', 'remainingUl', 'untransferredUl', 'resolutionResidualUl', 'quantityOutcome', 'remainderLocation'].map(key => <div key={key}><dt>{key}</dt><dd>{factLabel(operation?.[key])}</dd></div>)}</dl></details>
+          {liquid === 'mix' && <label>修复方向<select value={replacements[step.id]?.direction ?? ''} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], direction: event.target.value as 'aspirate' | 'dispense', approved: false } }))}><option value="">根据当前吸头内容选择</option><option value="aspirate">吸液</option><option value="dispense">分液</option></select></label>}
           <label>后续操作量（µL）<input type="number" min="0" step="any" value={replacements[step.id]?.volume ?? ''} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: event.target.value, approved: false } }))} /></label></>}
-        <label><input type="checkbox" checked={replacements[step.id]?.approved ?? false} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { volume: previous[step.id]?.volume ?? '', approved: event.target.checked } }))} /> 已根据现场核对修订此步骤；以新操作身份执行上述后续操作</label>
+        {liquid && typeof operation?.remainingUl === 'number' && operation.remainingUl > 0 && <button onClick={() => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: String(operation.remainingUl), approved: false } }))}>填入原解析目标剩量 {quantity(operation.remainingUl)} µL</button>}
+        <label><input type="checkbox" disabled={!!liquid && !operation} checked={replacements[step.id]?.approved ?? false} onChange={event => setReplacements(previous => ({ ...previous, [step.id]: { ...previous[step.id], volume: previous[step.id]?.volume ?? '', approved: event.target.checked } }))} /> 已核对原目标、实际量和当前余量差异；以新操作身份执行上述明确后续操作</label>
       </fieldset>;
     })}
     <div className="passage-buttons">
