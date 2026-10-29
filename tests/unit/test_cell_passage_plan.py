@@ -2,6 +2,8 @@
 
 from collections import Counter
 
+import pytest
+
 from packages.programs.cell_passage.scene import WELLS, workcell_binding
 from packages.protocol.schema import OperationPlan
 from tests.fixtures.cell_passage import build_workcell_host
@@ -136,3 +138,107 @@ def test_page_boundaries_preserve_complete_action_order_and_global_identity():
         parts = [row for row in paged["plans"] if row["stage"] == stage]
         assert [row["part"] for row in parts] == list(range(1, len(parts) + 1))
         assert all(row["parts"] == len(parts) for row in parts)
+
+
+def test_transport_waypoints_enter_forward_exit_reverse_and_retain_payload_leases():
+    layout, teaching, binding, geometry = recipe_inputs()
+    source, destination = "IncubatorMother", "Imager"
+    entry, landing = [[.1] * 7, [.2] * 7], [[.3] * 7, [.4] * 7]
+    layout["transportWaypoints"] = {source: entry, destination: landing}
+    for row in teaching["locations"]:
+        if row["name"] in (source, destination):
+            row["railPositionM"] = -.4 if row["name"] == source else .3
+    recipe = compile_recipe(layout, teaching, binding, geometry,
+                            owner="auto", epoch=0, round_id="waypoints", max_steps=None)
+    steps = recipe["plans"][0]["document"]["steps"]
+    calls = [step["do"] for step in steps if "do" in step]
+    pick = next(i for i, c in enumerate(calls) if c["action"] == "pick")
+    place = next(i for i, c in enumerate(calls) if c["action"] == "place")
+    assert [c["params"]["positions"] for c in calls[pick - 2:pick]] == entry
+    assert [c["params"]["positions"] for c in calls[pick + 1:pick + 3]] == entry[::-1]
+    assert [c["action"] for c in calls[pick + 3:pick + 5]] == ["home", "move"]
+    assert [c["params"]["positions"] for c in calls[place - 2:place]] == landing
+    assert [c["params"]["positions"] for c in calls[place + 1:place + 3]] == landing[::-1]
+    assert all(c["entity"] == "/World/Lab/Robot/fr3_link0" and c["action"] == "moveJoints"
+               for c in [*calls[pick - 2:pick], *calls[pick + 1:pick + 3],
+                         *calls[place - 2:place], *calls[place + 1:place + 3]])
+    leases = {}
+    for call in calls[:place + 3]:
+        params = call["params"]
+        if call["action"] == "reserve":
+            leases[params["resource"]] = params["device"]
+        elif call["action"] == "release":
+            leases.pop(params["resource"])
+        if call["action"] in ("pick", "place", "moveJoints"):
+            assert leases[layout["bodies"]["Mother"]] == "/World/Lab/Robot/fr3_link0"
+            assert leases["/World/Lab/Sites/IncubatorMother"] == "/World/Lab/Robot/fr3_link0"
+            assert leases["/World/Lab/Sites/Imager"] == "/World/Lab/Robot/fr3_link0"
+
+
+def test_incubator_single_transit_remains_before_and_after_pick():
+    layout, teaching, binding, geometry = recipe_inputs()
+    layout["incubatorTransitLocations"] = {"IncubatorMother": "IncubatorEntry"}
+    teaching["locations"].append({"name": "IncubatorEntry", "site": "/World/Lab/Sites/Entry",
+                                  "railPositionM": 0, "requires": [], "body": None, "valid": True})
+    recipe = compile_recipe(layout, teaching, binding, geometry,
+                            owner="auto", epoch=0, round_id="transit", max_steps=None)
+    calls = [s["do"] for s in recipe["plans"][0]["document"]["steps"] if "do" in s]
+    pick = next(i for i, c in enumerate(calls) if c["action"] == "pick")
+    for call in (calls[pick - 1], calls[pick + 1]):
+        assert call["action"] == "moveTo"
+        assert call["params"]["location"] == "IncubatorEntry"
+        assert call["params"]["pose"] == "approach"
+    assert any(c["action"] == "reserve" and c["params"]["resource"] == "/World/Lab/Sites/Entry"
+               for c in calls[:pick])
+    assert any(c["action"] == "release" and c["params"]["resource"] == "/World/Lab/Sites/Entry"
+               for c in calls[pick + 1:])
+
+
+@pytest.mark.parametrize("points", [None, {}, [1], [[0] * 6], [[0] * 8],
+                                      [[True] * 7], [[float("nan")] * 7], [[float("inf")] * 7],
+                                      [["0"] * 7]])
+def test_transport_waypoints_reject_malformed_joint_vectors(points):
+    layout, teaching, binding, geometry = recipe_inputs()
+    layout["transportWaypoints"] = {"Imager": points}
+    with pytest.raises(ValueError, match="seven finite, nonboolean"):
+        compile_recipe(layout, teaching, binding, geometry, owner="auto", epoch=0, round_id="invalid")
+
+
+def test_transport_waypoints_reject_duplicate_incubator_route_configuration():
+    layout, teaching, binding, geometry = recipe_inputs()
+    layout["transportWaypoints"] = {"IncubatorMother": [[0] * 7]}
+    layout["incubatorTransitLocations"] = {"IncubatorMother": "IncubatorEntry"}
+    with pytest.raises(ValueError, match="overlap an incubator transit"):
+        compile_recipe(layout, teaching, binding, geometry, owner="auto", epoch=0, round_id="overlap")
+
+
+def test_optional_centrifuge_lid_self_check_follows_retraction_and_both_closed_doors():
+    layout, teaching, binding, geometry = recipe_inputs()
+    layout["centrifugeLidSelfCheck"] = True
+    recipe = compile_recipe(layout, teaching, binding, geometry,
+                            owner="auto", epoch=0, round_id="self-check", max_steps=None)
+    calls = [s["do"] for s in recipe["plans"][0]["document"]["steps"] if "do" in s]
+    assert [(c["entity"], c["action"]) for c in calls[-6:]] == [
+        ("/World/Lab/Robot/fr3_link0", "home"), ("/World/Lab/RailCarriage", "move"),
+        ("/World/Lab/Incubator/InnerDoor", "close"), ("/World/Lab/Incubator/OuterDoor", "close"),
+        ("/World/Lab/Centrifuge", "openLid"), ("/World/Lab/Centrifuge", "closeLid"),
+    ]
+    assert calls[-5]["params"]["position"] == .4
+    leases = {}
+    for call in calls:
+        params = call["params"]
+        if call["action"] == "reserve":
+            leases[params["resource"]] = params["device"]
+        elif call["action"] == "release":
+            leases.pop(params["resource"])
+        if call["entity"] == "/World/Lab/Centrifuge" and call["action"] in ("openLid", "closeLid"):
+            assert leases["/World/Lab/Centrifuge"] == "/World/Lab/Centrifuge"
+
+
+def test_absent_and_explicitly_disabled_optional_layout_fields_keep_identical_recipe():
+    layout, teaching, binding, geometry = recipe_inputs()
+    baseline = compile_recipe(layout, teaching, binding, geometry,
+                              owner="auto", epoch=0, round_id="unchanged")
+    layout.update(transportWaypoints={}, centrifugeLidSelfCheck=False)
+    assert compile_recipe(layout, teaching, binding, geometry,
+                          owner="auto", epoch=0, round_id="unchanged") == baseline

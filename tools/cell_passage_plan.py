@@ -32,6 +32,22 @@ class _Recipe:
             raise ValueError("Workcell disposal binding does not match the authored discard Site")
         self.vessels = {row["id"]: row for row in self.config["vessels"]}
         self.locations = teaching["locations"]
+        self.transport_waypoints = layout.get("transportWaypoints", {})
+        if not isinstance(self.transport_waypoints, dict):
+            raise ValueError("transportWaypoints must map taught locations to joint-vector lists")
+        location_names = {row["name"] for row in self.locations}
+        for name, points in self.transport_waypoints.items():
+            if name not in location_names:
+                raise ValueError(f"Unknown transport waypoint location: {name}")
+            if name in layout.get("incubatorTransitLocations", {}):
+                raise ValueError(f"Transport waypoints overlap an incubator transit location: {name}")
+            if not isinstance(points, list) or any(
+                not isinstance(point, list) or len(point) != 7 or any(
+                    isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                    for value in point
+                ) for point in points
+            ):
+                raise ValueError("Transport waypoints require lists of seven finite, nonboolean joint values")
         self.stations = dict(layout["initialStations"])
         self.leases = {}
         self.owner, self.epoch, self.round_id = owner, epoch, round_id
@@ -125,23 +141,26 @@ class _Recipe:
             self.reserve(resource, ROBOT)
         transit = self.layout.get("incubatorTransitLocations", {})
 
-        def enter_or_leave(location):
+        def enter_or_leave(location, *, leaving=False):
             name = transit.get(location["name"])
             if name:
                 descriptor = next(row for row in self.locations if row["name"] == name)
                 self.reserve(descriptor["site"], ROBOT)
                 self.do(ROBOT, "moveTo", {"location": name, "pose": "approach"})
+            points = self.transport_waypoints.get(location["name"], [])
+            for positions in reversed(points) if leaving else points:
+                self.do(ROBOT, "moveJoints", {"positions": positions})
 
         self.rail_to(pickup)
         enter_or_leave(pickup)
         self.do(ROBOT, "pick", {"location": pickup["name"]},
                 expect={"entity": ROBOT, "property": "holding", "equals": body})
-        enter_or_leave(pickup)
+        enter_or_leave(pickup, leaving=True)
         self.rail_to(placement)
         enter_or_leave(placement)
         self.do(ROBOT, "place", {"location": placement["name"]},
                 expect={"entity": ROBOT, "property": "holding", "isNull": True})
-        enter_or_leave(placement)
+        enter_or_leave(placement, leaving=True)
         self.check(body, "station", "equals", target)
         self.check(body, "settled", "equals", True)
         self.stations[body] = target
@@ -271,6 +290,9 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.clear_incubator()
     recipe.do(LAB + "/Incubator/InnerDoor", "close")
     recipe.do(LAB + "/Incubator/OuterDoor", "close")
+    if layout.get("centrifugeLidSelfCheck") is True:
+        recipe.do(CENTRIFUGE, "openLid")
+        recipe.do(CENTRIFUGE, "closeLid")
 
     recipe.stage(2)
     if recipe.environment:
