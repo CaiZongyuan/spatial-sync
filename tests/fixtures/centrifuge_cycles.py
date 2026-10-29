@@ -24,6 +24,7 @@ class RotorPort:
         self.body = np.array([[10, 0, 0, 0, 0, 0, 1]] * len(self.keys), dtype=float)
         self.body[0, :3] = self.body[9, :3] = 0
         self.q, self.qd, self.velocity = 0.0, 0.0, 0.0
+        self.lid_q, self.lid_qd, self.lid_target = 0.0, 0.0, None
         self.frozen = False
         self.welded = set()
         self.set_batch(0)
@@ -55,10 +56,16 @@ class RotorPort:
         return np.zeros((4, 3))
 
     def joint_q(self, joint):
-        return np.array([self.q if joint.key == "spindle" else 0.0])
+        return np.array([self.q if joint.key == "spindle" else self.lid_q])
 
     def joint_qd(self, joint):
-        return np.array([self.qd if joint.key == "spindle" else 0.0])
+        return np.array([self.qd if joint.key == "spindle" else self.lid_qd])
+
+    def joint_limits(self, joint):
+        return np.array([0.0]), np.array([1.4])
+
+    def set_joint_target(self, joint, value):
+        self.lid_target = float(value[0])
 
     def set_joint_target_velocity(self, joint, value):
         self.velocity = float(value[0])

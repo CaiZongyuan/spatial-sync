@@ -30,8 +30,19 @@ def modeled_slot_masses(slots, vessels, tare, density):
 class PassageCentrifugeProgram(CentrifugeProgram):
     id, type = "cell_passage.centrifuge", "passage-centrifuge/v1"
 
+    def _open_lid_target(self, port):
+        lower, upper = (np.asarray(value) for value in port.joint_limits(self.lid))
+        if (lower.shape != (1,) or upper.shape != (1,)
+                or lower.dtype.kind not in "fiu" or upper.dtype.kind not in "fiu"
+                or not np.isfinite(lower).all() or not np.isfinite(upper).all()
+                or not lower[0] <= 0 < upper[0]):
+            raise ValueError(
+                "Passage lid requires one finite joint range containing zero and a positive upper"
+            )
+        return float(upper[0])
+
     def _lid_open(self, port):
-        return bool(abs(float(port.joint_q(self.lid)[0]) - 1.4) < 0.02
+        return bool(abs(float(port.joint_q(self.lid)[0]) - self.lid_open_target) < 0.02
                     and abs(port.joint_qd(self.lid)[0]) < 0.02)
 
     def _lid_closed(self, port):

@@ -13,6 +13,9 @@ from .virtual import balanced
 class CentrifugeProgram:
     id, type, tick_priority = "centrifuge.newton", "centrifuge/v1", 30
 
+    def _open_lid_target(self, port):
+        return 1.4
+
     def _lid_open(self, port):
         return bool(port.joint_q(self.lid)[0] > .1)
 
@@ -31,6 +34,7 @@ class CentrifugeProgram:
             port.bind_joint(ctx.config.spindleJoint),
             port.bind_joint(ctx.config.lidJoint),
         )
+        self.lid_open_target = self._open_lid_target(port)
         self.sites = port.bind_sites(ctx.config.slotSites)
         self.slot_bodies = [site.body for site in self.sites]
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
@@ -95,7 +99,7 @@ class CentrifugeProgram:
         self.elapsed, self.running = 0.0, 0.0
         port = ctx.physics
         if inv.action in ("openLid", "closeLid"):
-            port.set_joint_target(self.lid, [1.4 if inv.action == "openLid" else 0])
+            port.set_joint_target(self.lid, [self.lid_open_target if inv.action == "openLid" else 0])
         else:
             for slot, tube in zip(self.slot_bodies, self._loading(ctx)[0], strict=True):
                 if tube:
@@ -121,11 +125,12 @@ class CentrifugeProgram:
             return
         self.elapsed += dt
         if inv.action in ("openLid", "closeLid"):
+            target = self.lid_open_target if inv.action == "openLid" else 0
             if self.stopping:
                 port.set_joint_target(self.lid, port.joint_q(self.lid))
                 inv.cancelled()
                 self.handle = None
-            elif abs(port.joint_q(self.lid)[0] - (1.4 if inv.action == "openLid" else 0)) < 0.02:
+            elif abs(port.joint_q(self.lid)[0] - target) < 0.02:
                 inv.succeed()
                 self.handle = None
             return
