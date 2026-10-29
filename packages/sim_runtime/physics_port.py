@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from itertools import product
 from time import monotonic
+from types import SimpleNamespace
 
 import numpy as np
 import warp as wp
@@ -64,6 +65,13 @@ class PhysicsPort:
         self._site_groups = {}
         self._site_motion_history = {}
         self._collision_bounds = {}
+        self._contact_binding = (
+            model, simulation.solver, getattr(simulation.solver, "mj_model", None),
+            getattr(simulation.solver, "mjc_geom_to_newton_shape", None),
+            getattr(simulation.solver, "mjc_body_to_newton", None),
+        )
+        self._contact_data = self._contact_state = None
+        self._contact_cache = self._contact_error = None
         self._targets = tuple(
             wp.clone(array, device="cpu", pinned=model.device.is_cuda)
             for array in (simulation.control.joint_target_q, simulation.control.joint_target_qd)
@@ -87,35 +95,107 @@ class PhysicsPort:
         return self.bodies[key]
 
     def collision_contacts(self, *, max_distance=0.0):
-        """Actual CPU MuJoCo contacts, mapped through Newton's shape identity.
+        """Captured-pose CPU contacts, mapped through Newton's shape identity.
 
         MuJoCo sanitizes body names and includes separated pairs inside contact
         margins. Neither is a physical contact oracle. Unknown backends fail
-        closed rather than returning an apparently empty contact list.
+        closed rather than returning an apparently empty contact list. One
+        private position-stage query is shared by all reads of this capture.
         """
         solver = self.sim.solver
         if self.sim.solver_kind != "mujoco" or not self.sim.model.device.is_cpu:
             raise ValueError("Physical contact queries require the CPU MuJoCo backend")
         if not np.isfinite(max_distance):
             raise ValueError("Contact distance bound must be finite")
-        if solver.mjc_geom_to_newton_shape is None:
+        binding = (self.sim.model, solver, getattr(solver, "mj_model", None),
+                   getattr(solver, "mjc_geom_to_newton_shape", None),
+                   getattr(solver, "mjc_body_to_newton", None))
+        if any(current is not captured
+               for current, captured in zip(binding, self._contact_binding, strict=True)):
+            raise ValueError("Contact model identity changed; a new PhysicsPort is required")
+        if solver.mjc_geom_to_newton_shape is None or solver.mjc_body_to_newton is None:
             raise ValueError("Solver contact identity mapping is unavailable")
-        mapping = solver.mjc_geom_to_newton_shape.numpy()[0]
-        shape_bodies = self.sim.model.shape_body.numpy()
+        if self._contact_error is not None:
+            raise ValueError(self._contact_error)
+        if self._contact_cache is None:
+            try:
+                self._contact_cache = self._current_contacts()
+            except (AttributeError, AssertionError, RuntimeError, TypeError, ValueError) as error:
+                self._contact_error = f"Captured-pose contact facts are unavailable: {error}"
+                raise ValueError(self._contact_error) from error
+        return [row for row in self._contact_cache if row.distance_m <= max_distance]
+
+    def _current_contacts(self):
+        import mujoco
+
+        solver, model = self.sim.solver, self.sim.model
+        native = solver.mj_model
+        if model.world_count != 1 or native.nflex or native.nplugin:
+            raise ValueError("Contact snapshots require one rigid CPU world without plugins")
+        geometry_map = solver.mjc_geom_to_newton_shape.numpy()
+        if geometry_map.shape != (1, native.ngeom):
+            raise ValueError("Solver contact geometry mapping is unavailable")
+        body_map = solver.mjc_body_to_newton.numpy()
+        if (body_map.shape != (1, native.nbody) or np.any(body_map < -1)
+                or np.any(body_map >= len(self.frame_body))):
+            raise ValueError("Solver contact body mapping is unavailable")
+        if (not np.isfinite(self.frame_body).all() or not np.isfinite(self.q).all()
+                or not np.isfinite(self.qd).all() or not np.isfinite(self.last_time)):
+            raise ValueError("Captured pose, coordinates and time must be finite")
+        if self._contact_data is None:
+            self._contact_data = mujoco.MjData(native)
+            self._contact_state = SimpleNamespace(
+                joint_q=wp.array(self.q, dtype=wp.float32, device=model.device),
+                joint_qd=wp.array(self.qd, dtype=wp.float32, device=model.device),
+            )
+        else:
+            self._contact_state.joint_q.assign(self.q)
+            self._contact_state.joint_qd.assign(self.qd)
+        query = self._contact_data
+        query.time = self.last_time
+        # Pinned Newton's existing coordinate/COM conversion writes only this
+        # private MjData on CPU. In particular reset need not have synced LIVE
+        # qpos yet, so copying the solver's current qpos would be incorrect.
+        solver._update_mjc_data(query, model, self._contact_state)
+        body_map = body_map[0]
+        for body_id in np.flatnonzero(native.body_mocapid >= 0):
+            body = int(body_map[body_id])
+            if body < 0:
+                raise ValueError("Mocap body has no captured Newton identity")
+            mocap = int(native.body_mocapid[body_id])
+            pose = self.frame_body[body]
+            query.mocap_pos[mocap] = pose[:3]
+            query.mocap_quat[mocap] = pose[[6, 3, 4, 5]]
+        # Supported position stage includes geometry/BVH/constraint setup, but
+        # no integration, control callback or dynamics solve. All output is
+        # private, never the live solver's contacts/warmstart/targets.
+        mujoco.mj_fwdPosition(native, query)
+        mapped = np.flatnonzero(body_map >= 0)
+        expected = self.frame_body[body_map[mapped]]
+        actual_q = query.xquat[mapped][:, [1, 2, 3, 0]]
+        quaternion_error = np.minimum(np.abs(actual_q - expected[:, 3:]).max(axis=1),
+                                      np.abs(actual_q + expected[:, 3:]).max(axis=1))
+        # A float32 FK representation check, not a physical contact allowance.
+        roundoff = 32 * np.finfo(np.float32).eps
+        if (not np.allclose(query.xpos[mapped], expected[:, :3], rtol=0, atol=roundoff)
+                or np.any(quaternion_error > roundoff)):
+            raise ValueError("Query pose does not match the captured Newton frame")
+        mapping = geometry_map[0]
+        shape_bodies = model.shape_body.numpy()
         result = []
-        distances = np.asarray(solver.mj_data.contact.dist[:solver.mj_data.ncon])
+        distances = np.asarray(query.contact.dist[:query.ncon])
         if not np.isfinite(distances).all():
             raise ValueError("Solver contact distance is unknown")
-        for index in np.flatnonzero(distances <= max_distance):
-            contact = solver.mj_data.contact[int(index)]
+        for index in range(query.ncon):
+            contact = query.contact[index]
             shapes = tuple(int(mapping[int(geom)]) for geom in contact.geom)
-            if any(shape < 0 or shape >= self.sim.model.shape_count for shape in shapes):
+            if any(shape < 0 or shape >= model.shape_count for shape in shapes):
                 raise ValueError("Solver contact has no Newton shape identity")
             result.append(PhysicalContact(
                 tuple(int(shape_bodies[shape]) for shape in shapes),
-                tuple(self.sim.model.shape_label[shape] for shape in shapes), float(contact.dist),
+                tuple(model.shape_label[shape] for shape in shapes), float(contact.dist),
             ))
-        return result
+        return tuple(result)
 
     def preview_snapshot(self):
         from .kinematic_snapshot import KinematicSnapshot
@@ -170,9 +250,10 @@ class PhysicsPort:
         return self._collision_bounds[body]
 
     def capture(self):
-        # These are the only state transfers programs consume. On CPU .numpy()
-        # is a view; the previous positions alone are retained for linear speed.
+        # Own the actual capture: the CPU solver reuses its two state buffers.
+        # Neither a later physics step nor LIVE mj_data may change this frame.
         previous = getattr(self, "previous_positions", None)
+        old_body, old_q, old_qd = (getattr(self, key, None) for key in ("frame_body", "q", "qd"))
         arrays = self.sim.state.body_q, self.sim.state.joint_q, self.sim.state.joint_qd
         if self._staging:
             with wp.ScopedDevice(self.sim.model.device):
@@ -180,11 +261,17 @@ class PhysicsPort:
                     wp.copy(target, source)
                 wp.synchronize_device(self.sim.model.device)
             arrays = self._staging
-        self.body, self.q, self.qd = (array.numpy() for array in arrays)
+        self.body, self.q, self.qd = (array.numpy().copy() for array in arrays)
         self.frame_body = self.body.copy()
         self.sample_time_ms = monotonic()*1000
         dt = self.sim.sim_time - self.last_time if self.last_time is not None else 0
         same_frame = previous is not None and self.last_time == self.sim.sim_time
+        epoch = getattr(self.sim, "epoch", None)
+        if (not same_frame or getattr(self, "_contact_epoch", None) != epoch
+                or not np.array_equal(old_body, self.frame_body) or not np.array_equal(old_q, self.q)
+                or not np.array_equal(old_qd, self.qd)):
+            self._contact_cache = self._contact_error = None
+        self._contact_epoch = epoch
         self.velocity = (
             (self.body[:, :3] - previous) / dt
             if previous is not None and dt > 0
