@@ -107,6 +107,9 @@ class WorkcellProgram:
         pumpJoint: str = Field(json_schema_extra={"spatialReference": "joint"})
         tipSite: str = Field(json_schema_extra={"spatialReference": "site"})
         pipetteBody: str = Field(json_schema_extra={"spatialReference": "body"})
+        movingBodyKeys: list[str] = Field(
+            default_factory=list, json_schema_extra={"spatialReference": "body"}
+        )
         vessels: list[Vessel]
         tips: list[Tip]
         tipGeometry: TipGeometry | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -151,9 +154,14 @@ class WorkcellProgram:
         self.last_good_q = {joint: ctx.physics.joint_q(joint).copy() for joint in [*self.axes, self.pump]}
         self.tip_site = ctx.physics.bind_site(ctx.config.tipSite)
         self.pipette_body = ctx.physics.bind_body(ctx.config.pipetteBody)
+        self.moving_bodies = {ctx.physics.bind_body(key) for key in ctx.config.movingBodyKeys}
+        self.contact_blocked = True
+        self.contact_hit = False
         self.tip_bodies = {row.id: ctx.physics.bind_body(row.bodyKey) for row in ctx.config.tips}
         self.configs = {row.id: row for row in ctx.config.vessels}
         self.sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.vessels}
+        self.content_site_groups = {row.id: ctx.physics.bind_sites([row.site]) for row in ctx.config.vessels}
+        self.waste_sites = ctx.physics.bind_sites([ctx.config.wasteSite]) if ctx.config.wasteSite else None
         self.tip_sites = {row.id: ctx.physics.bind_site(row.site) for row in ctx.config.tips}
         self.tip_docks = {row.id: ctx.physics.bind_sites([row.site]) for row in ctx.config.tips}
         self.handle, self.stroke, self.pending = None, None, None
@@ -241,7 +249,13 @@ class WorkcellProgram:
             lastResolutionResidualUl=0.0,
             lastUntransferredUl=0.0,
             lastQuantityOutcome="not_applicable",
+            contactFactsAvailable=False,
+            unsafeContactCount=0,
+            lastContactShapes=[],
+            lastContactDepthM=0.0,
         )
+        self._contact_failure(ctx)
+        ctx.set(controlSafe=not self.contact_blocked and self._stationary(ctx))
 
     def _publish(self, ctx):
         self.state["revision"] += 1
@@ -294,13 +308,35 @@ class WorkcellProgram:
     def _vessel(self, name):
         return next((row for row in self.state["vessels"] if row["id"] == name), None)
 
-    def _aligned(self, ctx, site):
-        return (
-            np.linalg.norm(
-                np.array(ctx.physics.site_pose(self.tip_site)[0]) - np.array(ctx.physics.site_pose(site)[0])
+    def _aligned(self, ctx, site, sites=None):
+        try:
+            tip = self.state["tip"]["id"]
+            if tip:
+                # Same-source tip Root is its fluid endpoint; the compliant
+                # carried body can differ from the nominal head Site.
+                body = self.tip_bodies[tip]
+                position, quaternion = (np.asarray(x) for x in ctx.physics.body_pose(body))
+                velocity = np.asarray(ctx.physics.relative_site_velocity(body, sites))
+                if (
+                    velocity.shape != (1, 3)
+                    or not np.isfinite(velocity).all()
+                    or np.linalg.norm(velocity[0]) > ctx.config.holdSpeedTolerance
+                ):
+                    return False
+            else:
+                position, quaternion = (np.asarray(x) for x in ctx.physics.site_pose(self.tip_site))
+            target = np.asarray(ctx.physics.site_pose(site)[0])
+            return (
+                position.shape == target.shape == (3,)
+                and quaternion.shape == (4,)
+                and np.isfinite(position).all()
+                and np.isfinite(target).all()
+                and np.isfinite(quaternion).all()
+                and abs(np.linalg.norm(quaternion) - 1) <= 1e-3
+                and np.linalg.norm(position - target) <= ctx.config.alignmentToleranceM
             )
-            <= ctx.config.alignmentToleranceM
-        )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return False
 
     def _vessel_conditions(self, ctx, name):
         config = self.configs[name]
@@ -316,8 +352,45 @@ class WorkcellProgram:
         failed = self._vessel_conditions(ctx, name)
         if failed:
             return failed
-        if not self._aligned(ctx, self.sites[name]):
+        if not self._aligned(ctx, self.sites[name], self.content_site_groups[name]):
             return Reject(code="not_aligned", message="Actual pipette tip is not aligned with the vessel")
+
+    def _contact_failure(self, ctx):
+        was_hit = self.contact_hit
+        try:
+            if not self.moving_bodies:
+                raise ValueError("Moving body ownership was not declared")
+            active = self.moving_bodies.copy()
+            if self.state["tip"]["id"]:
+                active.add(self.tip_bodies[self.state["tip"]["id"]])
+            contacts = ctx.physics.collision_contacts(max_distance=-0.001)
+            hit = None
+            for row in contacts:
+                if (
+                    len(row.bodies) != 2
+                    or len(row.shapes) != 2
+                    or not all(isinstance(shape, str) and shape for shape in row.shapes)
+                    or not np.isfinite(row.distance_m)
+                ):
+                    raise ValueError("Unknown contact identity or distance")
+                if row.distance_m < -0.001 and any(body in active for body in row.bodies):
+                    hit = row
+                    break
+        except (AttributeError, KeyError, TypeError, ValueError):
+            self.contact_blocked = True
+            self.contact_hit = False
+            ctx.set(contactFactsAvailable=False, controlSafe=False)
+            return Reject(code="contact_unavailable", message="Actual Flex/payload contacts are unavailable")
+        ctx.set(contactFactsAvailable=True)
+        self.contact_blocked = hit is not None
+        self.contact_hit = hit is not None
+        if hit is not None:
+            shapes, depth = list(hit.shapes), -float(hit.distance_m)
+            ctx.set(lastContactShapes=shapes, lastContactDepthM=depth, controlSafe=False)
+            if not was_hit:
+                ctx.set(unsafeContactCount=ctx.get("unsafeContactCount") + 1)
+                ctx.emit("unsafeContact", shapes=shapes, depthM=depth)
+            return Reject(code="unsafe_contact", message="Actual Flex or held tip penetration exceeded 1 mm")
 
     def _reject(self, code, message):
         return Reject(code=code, message=message)
@@ -471,6 +544,9 @@ class WorkcellProgram:
         rejection = guard(ctx, ctx.key, p)
         if rejection:
             return rejection
+        failed = self._contact_failure(ctx)
+        if failed:
+            return failed
         if self.stopping:
             return self._reject(
                 "not_safe", "Wait for the previous operation to settle and finish material accounting"
@@ -532,7 +608,7 @@ class WorkcellProgram:
             if not self.state["tip"]["id"]:
                 return self._reject("tip_unavailable", "No tip is installed")
             if not ctx.config.wasteSite or not self._aligned(
-                ctx, ctx.physics.bind_site(ctx.config.wasteSite)
+                ctx, ctx.physics.bind_site(ctx.config.wasteSite), self.waste_sites
             ):
                 return self._reject("not_aligned", "Move to the solid waste position before discarding")
             waste = self._vessel(p["waste"])
@@ -664,6 +740,9 @@ class WorkcellProgram:
         if p["epoch"] != ctx.get("controlEpoch") or p["owner"] != ctx.get("controlOwner"):
             return self._reject("stale_control", "Control request belongs to an older owner or epoch")
         if inv.action == "confirmControl":
+            failed = self._contact_failure(ctx)
+            if failed:
+                return failed
             if (
                 ctx.get("controlMode") != "holding"
                 or ctx.get("controlSafe") is not True
@@ -675,6 +754,7 @@ class WorkcellProgram:
         elif ctx.get("controlMode") == "holding":
             return self._reject("handoff_pending", "Confirm the current handoff before requesting another")
         if inv.action == "requestControl":
+            self._contact_failure(ctx)
             self.control_generation += 1
             ctx.set(controlEpoch=self.control_generation, controlMode="holding", controlSafe=False)
             self.pending = {"owner": p["nextOwner"], "mode": p["mode"]}
@@ -750,7 +830,7 @@ class WorkcellProgram:
                     "Actual pump progress cannot be reconciled with requested liquid transfer",
                 )
                 self._finish(ctx, "failed")
-        safe = self._stationary(ctx)
+        safe = not self.contact_blocked and self._stationary(ctx)
         if self.handle is None and safe:
             self.stopping, self.hold_targets = False, None
         ctx.set(controlSafe=safe, phase="idle" if completed_success else "holding")
@@ -1078,7 +1158,9 @@ class WorkcellProgram:
         self.completing = False
         self.cancelled_at_tick = None
         ctx.set(
-            lastQuantityOutcome=operation["quantityOutcome"], controlSafe=self._stationary(ctx), phase="idle"
+            lastQuantityOutcome=operation["quantityOutcome"],
+            controlSafe=not self.contact_blocked and self._stationary(ctx),
+            phase="idle",
         )
         self._publish(ctx)
 
@@ -1100,11 +1182,16 @@ class WorkcellProgram:
             if np.isfinite(measured).all():
                 self.last_good_q[joint] = measured.copy()
         inv = self.handle
+        contact_failure = self._contact_failure(ctx)
+        if contact_failure:
+            self.completing = False
+            self._hold(ctx, (contact_failure.code, contact_failure.message) if inv else None)
+            return
         if inv is None:
             if self.stopping:
                 self._hold(ctx)
             else:
-                ctx.set(controlSafe=self._stationary(ctx))
+                ctx.set(controlSafe=not self.contact_blocked and self._stationary(ctx))
             return
         if self.stopping and not self.completing:
             self._hold(ctx)

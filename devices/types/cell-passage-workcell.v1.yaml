@@ -3,6 +3,20 @@ title: Cell Passage material and Flex workcell
 description: Single-writer symbolic material driven by measured Flex pump strokes;
   teaching waits are not biological conditions.
 properties:
+  contactFactsAvailable:
+    schema: {type: boolean}
+    description: Actual CPU collision identities and signed distances are available for declared Flex bodies.
+  unsafeContactCount:
+    schema: {type: integer, minimum: 0}
+    description: Observed Flex or held-tip contact fault episodes deeper than 1 mm.
+  lastContactShapes:
+    schema:
+      type: array
+      items: {type: string}
+      maxItems: 2
+  lastContactDepthM:
+    schema: {type: number, minimum: 0}
+    unit: m
   materialSnapshot:
     schema:
       type: object
@@ -695,6 +709,13 @@ actions:
       physical limits. Safe native target quantization leaves explicitly recorded
       residue; retries need a new reviewed remaining intent.
 events:
+  unsafeContact:
+    schema:
+      type: object
+      properties:
+        shapes: {type: array, items: {type: string}, minItems: 2, maxItems: 2}
+        depthM: {type: number, minimum: 0}
+      required: [shapes, depthM]
   operationCompleted:
     schema:
       type: object

@@ -23,6 +23,13 @@ class StrokePort:
         self.body_quaternions = {}
         self.body_velocities = {}
         self.limits = {"pump": (np.array([0], dtype=np.float32), np.array([0.01], dtype=np.float32))}
+        self.contacts = []
+        self.contact_error = None
+
+    def collision_contacts(self, *, max_distance=0.0):
+        if self.contact_error:
+            raise ValueError(self.contact_error)
+        return [row for row in self.contacts if row.distance_m <= max_distance]
 
     def bind_body(self, key):
         return key
@@ -154,6 +161,7 @@ def build_workcell_host(
                 "pumpJoint": "pump",
                 "tipSite": "tip",
                 "pipetteBody": "/pipette",
+                "movingBodyKeys": ["/pipette"],
                 "cabinetEntity": "/cabinet",
                 "tipGeometry": {
                     "tipMatingOffsetLocalM": [0, 0, 0.05],

@@ -91,6 +91,7 @@ def workcell_binding(layout):
         )
     config = {name: layout[name] for name in ("axisJoints", "pumpJoint", "tipSite", "pipetteBody", "tips")}
     config.update(
+        movingBodyKeys=layout.get("movingBodyKeys", []),
         contentSites=sorted({row["site"] for row in vessels}),
         tipRackSites=sorted({row["site"] for row in layout["tips"]}),
         vessels=vessels,
