@@ -99,6 +99,10 @@ def teach(library, *, reuse_locations=None):
         if layout.get("demonstration") and descriptor.get("body") in cap_bodies:
             descriptor["preInsertionTarget"] = (np.array(descriptor["target"]) + [0, 0, .011]).tolist()
             poses.insert(1, ("preInsertion", "preInsertionTarget"))
+        elif (layout.get("demonstration")
+              and descriptor["name"] in layout.get("incubatorTransitLocations", {})):
+            descriptor["preInsertionTarget"] = (np.array(descriptor["target"]) + [0, 0, .025]).tolist()
+            poses.insert(1, ("preInsertion", "preInsertionTarget"))
         for pose_name, target_name in poses:
             target = np.asarray(descriptor[target_name])
 

@@ -65,7 +65,10 @@ def locations(layout):
 
     for key, point in stations.items():
         name = key.rsplit("/", 1)[1]
-        if name.startswith(("Rack", "FlexTube")):
+        if name.endswith("Transit"):
+            add(name + ".transit", key, point, [0, 0, 0], yaw=yaws.get(key, 0))
+            result[-1]["approachTarget"] = list(point)
+        elif name.startswith(("Rack", "FlexTube")):
             add(name + ".tube", key, point, [0.035, 0, 0.038])
         elif name.startswith("Lid"):
             number = int(name[3:])
