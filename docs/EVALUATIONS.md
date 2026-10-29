@@ -84,6 +84,14 @@ including actions, cancellation, approval, lifecycle commands and native viewer
 startup, are refused. Their workspace displays the live state as read-only.
 Opening or closing Web observers does not pause evaluation.
 
+An explicit `requestId` always uses durable admission and returns HTTP 202,
+including when the gateway is idle. Observe or cancel that same identity through
+`/api/v1/session-requests/{requestId}`; a lost acknowledgement must not cause a
+second launch. An idle launch without an identity keeps its HTTP 201 response.
+The Cell Passage helper uses one bounded startup wall budget (600 seconds by
+default) for its owned Newton Source and launch observation. This does not alter
+the action intake deadline or device simulation deadlines.
+
 During evaluation, a scene launch returns HTTP 202 with a `requestId` and a
 `Location` pointing to `/api/v1/session-requests/{id}`. This is an explicit queued
 launch, and does not contain a session ID until startup succeeds. The scene page
