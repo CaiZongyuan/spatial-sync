@@ -349,7 +349,7 @@ def populate(stage):
         moving_bodies.append(str(targets[0]))
     if len(set(moving_bodies)) != len(moving_bodies):
         raise ValueError("Controlled Flex joint bodies must be distinct")
-    return {
+    layout = {
         "schema": "lw.cell-passage-layout/1",
         "mechanicallyQualified": False,
         "movingBodyKeys": moving_bodies,
@@ -431,3 +431,7 @@ def populate(stage):
             "focusLocalM": {name: list(point) for name, point in WELLS.items()},
         },
     }
+    from factory.cell_passage_safety import joint_safety
+
+    layout["jointSafety"], layout["jointSafetySources"] = joint_safety(stage, layout)
+    return layout

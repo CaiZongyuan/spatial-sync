@@ -7,6 +7,7 @@ from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation
 from packages.programs.robot_arm.newton import RobotArmProgram
 
+from .contacts import contacts_for_bodies
 from .facts import seated_station
 from .grasp import physical_grasp
 
@@ -224,12 +225,12 @@ class LabwareMotionProgram(RobotArmProgram):
             if key in self.tubes:
                 active.add(self.tubes[key])
         try:
-            contacts = ctx.physics.collision_contacts(max_distance=-0.001)
+            contacts = contacts_for_bodies(ctx.physics, active)
         except ValueError:
             self._hold(ctx)
             self._end(ctx, ("contact_unavailable", "Actual motion contact facts are unavailable"))
             return False
-        hit = next((row for row in contacts if any(body in active for body in row.bodies)), None)
+        hit = contacts[0] if contacts else None
         if hit is not None:
             self._hold(ctx)
             shapes, depth = list(hit.shapes), -hit.distance_m

@@ -319,3 +319,28 @@ requires the vessel's actual station. This FK-only context never relocates a
 runtime body or Site. It qualifies reach only; contact, seating and continuous
 transport still require their separate physical checks. No wire or recording
 format changes are introduced.
+
+## Rail and incubator motion safety
+
+`passage-joint/v1` declares `movingBodyKeys`, `clearanceBodyKeys`, `armEntity`
+and `attachedLids`. The rail scope comes from its actual USD joint child and
+all rigid bodies in the retained robot chain. Every motion observes the actual
+held payload and retains any closed lid observed with that payload until the
+motion has stopped. This applies when the arm itself has no active invocation,
+including concurrent changes to its hold.
+
+Each incubator door also declares `sweepAnchorBody`, `sweepLowerLocalM` and
+`sweepUpperLocalM`. The factory derives the conservative sweep from the actual
+door collision shapes, joint hinge position/rotation and supported angular
+range, expressed in the actual joint parent body's frame. Runtime clearance
+uses current rigid-body poses and collider bounds, not a robot zone label.
+An idle arm, payload or retained carried lid inside that sweep blocks motion.
+Existing peer-door interlocks also apply to raw `move` calls.
+
+Acceptance, start and every active/braking tick recheck ownership and physical
+safety. Measured penetration deeper than 1 mm, unavailable contact observations
+or unknown clearance holds the joint and fails closed; welds are retained.
+Stop remains available to the current owner. Reports distinguish actual
+contacts from conservative sweep blockers. Missing declarations never mean an
+empty safe scene. Built-in older joint/door types and wire/recording formats
+keep their existing behavior.
