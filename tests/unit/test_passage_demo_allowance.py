@@ -2,6 +2,9 @@
 
 from types import SimpleNamespace
 
+import yaml
+
+from packages.library.metadata import scene_metadata
 from packages.programs.labware.contacts import contacts_for_bodies
 from packages.programs.labware.grasp import physical_grasp
 from packages.programs.labware.motion import LabwareMotionProgram
@@ -41,3 +44,17 @@ def test_place_executes_taught_pre_insertion_before_grasp_and_release():
     assert moves == [[0.] * 7, pre, [0.] * 7, [0.] * 7]
     assert posture_problems({"locations": {"target": {
         "approach": [0.] * 7, "grasp": [0.] * 7, "preInsertion": [2.] * 7}}}, [(-1, 1)] * 7)
+
+
+def test_scene_import_accepts_and_retains_optional_pre_insertion(tmp_path):
+    location = {"site": "/World/Lab/Sites/target", "approach": [0.] * 7,
+                "grasp": [0.] * 7, "preInsertion": [.1] * 7}
+    documents = {
+        "scene.yaml": {"name": "demo", "title": "Demo", "sources": ["newton"], "stage": "stage.usda"},
+        "devices.yaml": {"scene": "demo", "entities": []},
+        "locations.yaml": {"locations": {"target": location}},
+    }
+    (tmp_path / "stage.usda").write_text("#usda 1.0\n")
+    for name, value in documents.items():
+        (tmp_path / name).write_text(yaml.safe_dump(value))
+    assert scene_metadata(tmp_path)[2]["locations"]["target"]["preInsertion"] == [.1] * 7
