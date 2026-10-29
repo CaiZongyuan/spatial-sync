@@ -203,7 +203,8 @@ class EvaluationService:
     async def create_session(self, scene_id, source, options, *, scene_version=None, request_id=None):
         async with self._admission:
             if (
-                self._active_evaluation
+                request_id is not None
+                or self._active_evaluation
                 or self._starting_request
                 or self._queue
                 or self._blocked

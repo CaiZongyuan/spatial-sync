@@ -239,12 +239,75 @@ async def _claim(client, workcell, owner):
     return expected_epoch if values is not None else None
 
 
+async def _start_session(client, identifier, output, *, startup_timeout_seconds=600, request_id=None):
+    """Submit one known launch identity, then observe that request to readiness."""
+    if (isinstance(startup_timeout_seconds, bool)
+            or not math.isfinite(startup_timeout_seconds) or not 0 < startup_timeout_seconds <= 1800):
+        raise ValueError("Startup timeout must be finite and in (0, 1800] seconds")
+    request_id = request_id or "request-" + uuid.uuid4().hex
+    if not re.fullmatch(r"request-[A-Za-z0-9_-]{1,72}", request_id):
+        raise ValueError("A bounded request- launch identity is required")
+    body = {"requestId": request_id, "sceneVersion": identifier, "source": "newton", "seed": 42,
+            "continueWithoutObservers": True}
+    record = {"status": "submitting", "request": body, "startupTimeoutSeconds": startup_timeout_seconds}
+    started = time.monotonic()
+    _write(output / "launch-request.json", record)
+    try:
+        async with asyncio.timeout(startup_timeout_seconds):
+            try:
+                value = await client.request("POST", "/api/v1/sessions", json=body,
+                                             timeout=startup_timeout_seconds)
+            except GatewayError as error:
+                record["postError"] = error.document()
+                _write(output / "launch-request.json", record)
+                if error.status_code is not None:
+                    raise
+                value = {"requestId": request_id, "status": "unconfirmed"}
+            while True:
+                record.update(status="observing", response=value)
+                record["elapsedWallSeconds"] = time.monotonic() - started
+                _write(output / "launch-request.json", record)
+                if value.get("requestId", request_id) != request_id:
+                    raise ValueError("Gateway returned another launch request identity")
+                if value.get("error") or value.get("status") in ("failed", "cancelled", "expired"):
+                    raise ValueError("Owned launch did not complete; inspect launch-request.json")
+                if value.get("sessionId"):
+                    session = await client.request("GET", "/api/v1/sessions/" + value["sessionId"])
+                    record["session"] = session
+                    _write(output / "launch-request.json", record)
+                    if session["state"] in ("RUNNING", "PAUSED"):
+                        if session["sceneVersion"] != identifier:
+                            raise ValueError("Owned launch returned another scene version")
+                        record["status"] = "ready"
+                        record["elapsedWallSeconds"] = time.monotonic() - started
+                        _write(output / "launch-request.json", record)
+                        return session
+                    if session["state"] != "LOADING":
+                        raise ValueError("Owned Source did not become ready")
+                await asyncio.sleep(0.25)
+                try:
+                    value = await client.session_request_show(request_id)
+                except GatewayError as error:
+                    if error.status_code != 404:
+                        raise
+                    # A lost response is never permission to submit a new ID.
+                    record["requestNotObserved"] = True
+                    _write(output / "launch-request.json", record)
+    except BaseException as error:
+        record.update(status="interrupted", exceptionType=type(error).__name__)
+        record["elapsedWallSeconds"] = time.monotonic() - started
+        _write(output / "launch-request.json", record)
+        raise
+
+
 async def _prepare(args, inputs, bootstrap, identifier, round_id, output):
     url = f"http://127.0.0.1:{args.api_port}"
+    bootstrap.update(sessionRequestId="request-" + uuid.uuid4().hex, status="starting_source")
+    _write(args.out / "bootstrap.json", bootstrap)
     async with GatewayClient(url=url) as client:
-        session = await client.scene_launch(identifier, source="newton", seed=42)
-    if "sessionId" not in session:
-        raise ValueError("Owned fresh scene did not launch immediately; inspect its session request")
+        session = await _start_session(client, identifier, output,
+                                       startup_timeout_seconds=getattr(args, "startup_timeout_seconds", 600),
+                                       request_id=bootstrap["sessionRequestId"])
     bootstrap.update(session=session, sceneVersion=identifier, status="launched", sessionClosed=False)
     _write(args.out / "bootstrap.json", bootstrap)
     if session["sceneVersion"] != identifier or session.get("sceneContentHash") is None:
@@ -359,6 +422,26 @@ def _close_owned_session(url, nonce, session_id):
     httpx.delete(url + "/api/v1/sessions/" + session_id, timeout=30, trust_env=False).raise_for_status()
 
 
+def _cancel_owned_launch(url, nonce, request_id):
+    response = httpx.get(url + "/api/v1/health", timeout=2, trust_env=False)
+    response.raise_for_status()
+    if response.headers.get("X-Passage-Owner") != nonce:
+        raise ValueError("Owned API identity changed; refusing launch cleanup")
+    response = httpx.get(url + "/api/v1/session-requests/" + request_id, timeout=5, trust_env=False)
+    if response.status_code == 404:
+        return {"status": "not_observed"}
+    response.raise_for_status()
+    value = response.json()
+    if value["status"] in ("queued", "starting", "cancelling"):
+        response = httpx.delete(url + "/api/v1/session-requests/" + request_id, timeout=30, trust_env=False)
+        response.raise_for_status()
+        value = response.json()
+    if value.get("sessionId"):
+        _close_owned_session(url, nonce, value["sessionId"])
+        value = value | {"sessionClosed": True}
+    return value
+
+
 def _audit_closed_recording(root, output, session_id, record):
     directory = (root / "runtime/recordings" / session_id).resolve()
     metadata = json.loads((directory / "recording.json").read_text(encoding="utf8"))
@@ -380,6 +463,10 @@ def demo(args):
         raise ValueError("Ports must be in 1..65535")
     if not args.no_web and args.api_port == args.web_port:
         raise ValueError("API and viewer need different owned ports")
+    startup_budget = getattr(args, "startup_timeout_seconds", 600)
+    if (isinstance(startup_budget, bool) or not math.isfinite(startup_budget)
+            or not 0 < startup_budget <= 1800):
+        raise ValueError("Startup timeout must be finite and in (0, 1800] seconds")
     if not 1 <= args.repeats <= 20 or args.repeats > 1 and (len(args.round) > 60 or args.prepare_only):
         raise ValueError("Repeated automatic runs need 1..20 repeats and a <=60-character identity")
     _available(args.api_port)
@@ -402,6 +489,7 @@ def demo(args):
         "SPATIAL_ALLOWED_ORIGINS": f"http://127.0.0.1:{args.web_port}",
         "SPATIAL_API_URL": url, "SPATIAL_NEWTON_DEVICE": "cpu", "SPATIAL_RECORDINGS_ENABLED": "1",
         "SPATIAL_NODE_TRAINER": "[]",
+        "SPATIAL_NEWTON_STARTUP_TIMEOUT_SECONDS": str(startup_budget),
     }
     try:
         if args.source:
@@ -496,6 +584,13 @@ def demo(args):
         _write(args.out / "bootstrap.json", bootstrap)
         raise
     finally:
+        if bootstrap.get("sessionRequestId") and not bootstrap.get("sessionClosed"):
+            try:
+                bootstrap["launchCleanup"] = _cancel_owned_launch(url, nonce, bootstrap["sessionRequestId"])
+                if bootstrap["launchCleanup"].get("sessionClosed"):
+                    bootstrap["sessionClosed"] = True
+            except (httpx.HTTPError, ValueError):
+                bootstrap["cleanup"] = "launch_cancel_unconfirmed"
         if bootstrap.get("session") and not bootstrap.get("sessionClosed"):
             try:
                 _close_owned_session(url, nonce, bootstrap["session"]["sessionId"])
@@ -525,6 +620,8 @@ def main():
     parser.add_argument("--repeats", type=int, default=1, help="Fresh sessions sharing one imported scene")
     parser.add_argument("--api-port", type=int, default=8023)
     parser.add_argument("--web-port", type=int, default=5223)
+    parser.add_argument("--startup-timeout-seconds", type=float, default=600,
+                        help="Owned Source/launch wall budget; device simulation deadlines stay fixed")
     parser.add_argument("--no-web", action="store_true")
     parser.add_argument("--prepare-only", action="store_true", help="Publish Plans for the browser client")
     parser.add_argument("--exit-after-run", action="store_true", help="Close owned services after the run")
