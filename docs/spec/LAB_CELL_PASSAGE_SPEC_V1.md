@@ -8,6 +8,8 @@
 
 用户明确更新：“有一点误差没事，我要尽快把流程跑通，然后录制一个视频。”首个交付改为一次完整演示运行及其视频，采用以下边界：
 
+PM 实施选择（2026-10-30）：对 Scene 明确声明的八组“收集管底—对应管架槽底”形状对，首份演示允许最多 5 mm 的支撑接触近似。其他形状对继续使用下述 2 mm 演示接触上限，双指实际抓取资格也保持 2 mm；旧场景默认值保持不变。例外默认关闭，必须以精确形状对显式配置，实际深度与限值写入正常录制事件。这个选择落实用户允许少量误差、优先完成视频的要求；之前超过 2 mm 而停止的运行保留失败原记录，不追认为通过，也不作为严格精度资格。
+
 - 机械演示允许约 1–2 mm 的局部位置、接触近似和轻微晃动。演示配置显式使用 2 mm 接触上限，并统一传入实际夹持资格与各运动接触守卫；旧默认 1 mm 保留。实际数值、模式和原始接触记录随运行保存，演示完成不等同原严格精度资格。
 - 保留真实双指接触后约束、实际持物、正确装载、放稳/闭盖、连续运动、关节界限和未知事实拒绝。明显穿过设备、未夹住便搬运或未就位便宣告完成仍不接受。
 - 额外为精密配盖原型增加的 0.2 mm 对准、50 µm 预留净空与近零相对速度，不再作为首版演示前置。优先复用已有可运行夹具、离线示教和短预插入路径，停止不影响演示的微观优化。
@@ -293,8 +295,12 @@ Web 展示当前阶段/步骤、六个母孔到十二个子孔的关系、所选
 An explicit factory/client `--demonstration` mode selects a single approximate
 run for recording: 2 mm contact allowance shared by grasp qualification and the
 arm, rail/door and held-tip guards; 1 mm Flex alignment; and an offline taught
-11 mm pre-insertion waypoint for tube caps. The wider 65 mm rack is a new asset;
-older assets and the default 1 mm contact limit remain unchanged. Actual bilateral
+11 mm pre-insertion waypoint for tube caps. The wider 65 mm rack is a new asset.
+the first-video configuration may additionally declare the eight exact tube-floor
+and matching rack-floor shape pairs with a separate 5 mm seating allowance.
+All other contact pairs and bilateral grasp qualification retain their existing
+limits. Accepted seating contacts retain their measured depths in recording events.
+Older assets and the default 1 mm contact limit remain unchanged. Actual bilateral
 pad contact, held-object facts, release/seating feedback, joint bounds and unknown
 contact rejection still apply. Receipts label this mode and never claim formal
 precision qualification. Runtime placement uses the normal actuator trajectory;
