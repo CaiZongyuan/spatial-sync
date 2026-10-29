@@ -1,0 +1,465 @@
+"""Build, import, launch and run an owned Cell Passage demonstration candidate.
+
+This external client never writes poses or material, and its result is not a
+substitute for the required three Newton runs and independent acceptance.
+"""
+
+import argparse
+import asyncio
+import json
+import os
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+
+import httpx
+import yaml
+
+from apps.cli.lw.client import GatewayClient
+from packages.library.common import content_hash
+from tools.cell_passage_audit import audit_recording, audit_spatial_state, audit_tip_destinations
+from tools.cell_passage_plan import compile_recipe, load_inputs
+from tools.cell_passage_result import audit_material_result
+from tools.cell_passage_session import execute_round, prepare_round
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def gateway_app():
+    """A normal gateway with owned roots and an instance identity for safe startup."""
+    from apps.api.app.main import create_app
+    from apps.api.app.settings import Settings
+
+    root = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]).resolve() / "runtime"
+    nonce = os.environ["SPATIAL_PASSAGE_OWNER_NONCE"]
+    os.environ["LW_LIBRARY"] = str(root / "library")
+    settings = Settings(
+        state_root=root / "state", recordings_root=root / "recordings", scene_previews_root=root / "previews",
+        allowed_origins=tuple(os.environ["SPATIAL_ALLOWED_ORIGINS"].split(",")), node_trainer=(),
+        live_bindings=None, node_token=None, node_capabilities=None,
+    )
+    app = create_app(settings)
+
+    @app.middleware("http")
+    async def instance_identity(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Passage-Owner"] = nonce
+        return response
+
+    return app
+
+
+def _write(path, value):
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf8")
+
+
+def _available(port):
+    with socket.socket() as connection:
+        # Match the server's reuse policy: a closed owned server may leave
+        # TIME_WAIT connections, while a live listener must still reject bind.
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        connection.bind(("127.0.0.1", port))
+
+
+def _asset_order(library):
+    packages = {path.parent.relative_to(library / "assets").as_posix(): path.parent
+                for path in sorted((library / "assets").rglob("asset.yaml"))}
+    result, active, visited = [], set(), set()
+
+    def visit(identity):
+        if identity in visited:
+            return
+        if identity in active:
+            raise ValueError("Generated asset dependency cycle: " + identity)
+        active.add(identity)
+        for path in packages[identity].rglob("*.usda"):
+            for parts in re.findall(r"@library:assets/([^/@]+)/([^/@]+)/([1-9][0-9]*)/", path.read_text()):
+                dependency = "/".join(parts)
+                if dependency in packages and dependency != identity:
+                    visit(dependency)
+        active.remove(identity)
+        visited.add(identity)
+        result.append(packages[identity])
+
+    for identity in packages:
+        visit(identity)
+    return result
+
+
+async def _install(client, library, output, expected_upload_hash):
+    receipts = []
+    for package in _asset_order(library):
+        metadata = yaml.safe_load((package / "asset.yaml").read_text(encoding="utf8"))
+        expected = metadata["id"] + "@" + package.name
+        # The import service owns deduplication, including its original upload
+        # hash. A published hash also includes generated validation metadata.
+        receipt = await client.library_import(package)
+        receipts.append(receipt)
+        _write(output / "imports.json", receipts)
+        if receipt["assetVersion"] != expected:
+            raise ValueError("Fresh owned library assigned an unexpected dependency revision")
+        if any(check["status"] == "fail" for check in receipt["validation"]["checks"]):
+            raise ValueError("Generated dependency failed validation: " + expected)
+    scene = library / "scenes/cell-passage/1"
+    if content_hash(scene) != expected_upload_hash:
+        raise ValueError("Generated scene changed after its recipe inputs were frozen")
+    receipt = await client.library_import(scene)
+    if receipt["validation"].get("importContentHash") != expected_upload_hash:
+        raise ValueError("Imported scene does not match the frozen recipe inputs")
+    receipts.append(receipt)
+    _write(output / "imports.json", receipts)
+    report = await client.library_validate(receipt["sceneVersion"])
+    _write(output / "validation.json", report)
+    return receipt["sceneVersion"]
+
+
+async def _claim(client, workcell, owner):
+    config = (await client.catalog())["entities"][workcell]["config"]
+    managed = config.get("managedDevices", [])
+    values = (await client.get_state([workcell]))["entities"][workcell]["values"]
+    previous_owner, expected_epoch = values["controlOwner"], values["controlEpoch"] + 1
+    operation_id = "claim-" + uuid.uuid4().hex
+    accepted = await client.invoke_action(workcell, "requestControl", {
+        "owner": values["controlOwner"], "epoch": values["controlEpoch"],
+        "operationId": operation_id, "nextOwner": owner, "mode": "auto",
+    }, wait=False, actor="cli:cell-passage")
+    if accepted["status"] not in ("accepted", "running", "succeeded"):
+        return None
+    for _ in range(600):
+        state = (await client.get_state([workcell, *managed]))["entities"]
+        values = state[workcell]["values"]
+        if (values["controlOwner"] != previous_owner or values["controlEpoch"] != expected_epoch
+                or values["controlMode"] != "holding"):
+            return None
+        own_request = next((row for row in values["materialSnapshot"]["controlRequests"]
+                            if row["operationId"] == operation_id), None)
+        if own_request is None or own_request["epoch"] != expected_epoch:
+            return None
+        if values["controlSafe"] and all(state[key]["values"].get("controlSafe") is True for key in managed):
+            break
+        await asyncio.sleep(0.1)
+    else:
+        return None
+    await client.invoke_action(workcell, "confirmControl", {
+        "owner": values["controlOwner"], "epoch": values["controlEpoch"],
+        "operationId": "confirm-" + uuid.uuid4().hex,
+    }, wait=False, actor="cli:cell-passage")
+    values = (await client.get_state([workcell]))["entities"][workcell]["values"]
+    if (values["controlOwner"] != owner or values["controlMode"] != "auto"
+            or values["controlEpoch"] != expected_epoch):
+        return None
+    return values["controlEpoch"]
+
+
+async def _prepare(args, inputs, bootstrap, identifier, round_id, output):
+    url = f"http://127.0.0.1:{args.api_port}"
+    async with GatewayClient(url=url) as client:
+        session = await client.scene_launch(identifier, source="newton", seed=42)
+    if "sessionId" not in session:
+        raise ValueError("Owned fresh scene did not launch immediately; inspect its session request")
+    bootstrap.update(session=session, sceneVersion=identifier, status="launched", sessionClosed=False)
+    _write(args.out / "bootstrap.json", bootstrap)
+    if session["sceneVersion"] != identifier or session.get("sceneContentHash") is None:
+        raise ValueError("Launched session lacks the exact immutable scene identity")
+    if bootstrap.get("sceneContentHash") not in (None, session["sceneContentHash"]):
+        raise ValueError("Repeated sessions do not share one immutable scene hash")
+    bootstrap["sceneContentHash"] = session["sceneContentHash"]
+    async with GatewayClient(url=url, session=session["sessionId"]) as client:
+        owner = "runner-" + round_id
+        epoch = await _claim(client, "/World/Lab/LiquidHandler", owner)
+        if epoch is None:
+            return {"status": "dispatch_stopped", "reason": "control_not_confirmed", "plans": []}
+        recipe = compile_recipe(*inputs, owner=owner, epoch=epoch, round_id=round_id)
+        if not recipe["environmentChecksAvailable"]:
+            raise ValueError("The generated package lacks the required environment checks")
+        _write(output / "recipe.json", recipe)
+        record = await prepare_round(client, recipe, output / "round")
+        if not args.prepare_only:
+            record = await execute_round(client, record, output / "round")
+            if record["status"] == "plans_completed":
+                audit = await capture_final_state(client, inputs[0], recipe, record, output)
+                if audit["status"] != "final_state_valid":
+                    record["status"] = "final_state_invalid"
+        return record
+
+
+async def capture_final_state(client, layout, recipe, record, output):
+    """Read public final quantities, actual poses, waste geometry and modeled environment."""
+    route = await client.route()
+    manifest = await client.request("GET", route + "/scene")
+    before = await client.request("GET", route + "/snapshot")
+    after = before
+    for _ in range(300):
+        if after["simTime"] - before["simTime"] >= 0.1:
+            break
+        await asyncio.sleep(0.05)
+        after = await client.request("GET", route + "/snapshot")
+    state = await client.get_state([])
+    session = await client.status()
+    _write(output / "final-observations.json", {
+        "manifest": manifest, "before": before, "after": after, "state": state, "session": session,
+    })
+    values = {key: value["values"] for key, value in state["entities"].items()}
+    workcell = values[record["workcell"]]
+    mapping = [{"mother": f"Mother/{well}", "sample": f"Counting/{well}",
+                "daughters": [f"DaughterA/{well}", f"DaughterB/{well}"]}
+               for well in ("A1", "A2", "A3", "B1", "B2", "B3")]
+    material = audit_material_result(record["initialMaterialSnapshot"], workcell["materialSnapshot"], mapping)
+    goals = {"Mother": "WasteMother", "Counting": "WasteCounting", "DaughterA": "IncubatorA",
+             "DaughterB": "IncubatorB", **{f"S{i}": f"RackS{i}" for i in range(1, 7)},
+             "B5": "RackB5", "B6": "RackB6"}
+    expected = {layout["bodies"][name]: "/World/Lab/Sites/" + site for name, site in goals.items()}
+    expected.update({lid: body + "/LidSeat" for body, lid in layout["lids"].items()})
+    spatial = audit_spatial_state(manifest, before, after, expected)
+    tips = audit_tip_destinations(manifest, after, layout, workcell["materialSnapshot"])
+    errors = []
+    if any(session[name] != expected_value for name, expected_value in record["target"].items()):
+        errors.append("Session/scene/epoch changed during final capture")
+    if (workcell["controlOwner"] != record["controlOwner"]
+            or workcell["controlEpoch"] != record["controlEpoch"] or workcell["controlMode"] != "auto"):
+        errors.append("Control changed during final capture")
+    if not spatial.get("nativeSource"):
+        errors.append("Complete-run evidence requires an actual Newton Source")
+    for name in goals:
+        body = layout["bodies"][name]
+        fact = values.get(body, {})
+        if (fact.get("station") != expected[body] or fact.get("settled") is not True
+                or fact.get("lidClosed") is not True):
+            errors.append("Missing final actual station/lid/settling facts: " + name)
+    incubator, cabinet = values.get(layout["incubatorEntity"], {}), values.get(layout["cabinetEntity"], {})
+    if (incubator.get("environmentReady") is not True or incubator.get("doorKnown") is not True
+            or incubator.get("doorOpen") is not False or cabinet.get("cabinetReady") is not True
+            or incubator.get("signalSource") != "modeled" or cabinet.get("signalSource") != "modeled"):
+        errors.append("Actual doors or modeled environmental readiness is not established")
+    for key, (lower, upper) in layout["environmentLimits"].items():
+        current = (cabinet if key in ("inflowMs", "sashHeightCm") else incubator).get(key)
+        if not isinstance(current, (int, float)) or not lower <= current <= upper:
+            errors.append("Environmental value outside the frozen teaching range: " + key)
+    robot, centrifuge = values.get("/World/Lab/Robot/fr3_link0", {}), values.get("/World/Lab/Centrifuge", {})
+    if robot.get("holding") is not None or robot.get("controlSafe") is not True:
+        errors.append("Robot hold/safe state is not clear")
+    if (centrifuge.get("phase") != "idle" or centrifuge.get("controlSafe") is not True
+            or centrifuge.get("lidOpen") is not False or centrifuge.get("loadedEntities") != [None] * 4):
+        errors.append("Centrifuge is not stopped, closed and empty")
+    for stage, names in ((3, ("S1", "S2", "S3", "S4")), (4, ("S5", "S6", "B5", "B6"))):
+        facts = record["stageResults"][str(stage)]["state"]["entities"]["/World/Lab/Centrifuge"]["values"]
+        cycle = next(step["do"]["params"]["operationId"] for part in recipe["plans"] if part["stage"] == stage
+                     for step in part["document"]["steps"]
+                     if step.get("do", {}).get("entity") == "/World/Lab/Centrifuge"
+                     and step["do"]["action"] == "start")
+        if (set(facts["completedLoad"]) != {layout["bodies"][name] for name in names}
+                or facts["cycleRunSeconds"] < 2 or facts["actualRotorTurns"] <= 0
+                or facts["completedCycle"] != cycle):
+            errors.append("Missing actual completed centrifuge batch evidence: " + str(stage))
+    if len(tips.get("discardedTips", [])) != recipe["tipsRequired"]:
+        errors.append("Actual discarded tip inventory differs from this nominal recipe")
+    valid = (not errors and material["status"] == "material_valid"
+             and spatial["status"] == "spatial_state_valid" and tips["status"] == "tip_destinations_valid")
+    report = {"status": "final_state_valid" if valid else "invalid", "errors": errors,
+              "material": material, "spatial": spatial, "tipDestinations": tips, "experimentQualified": False}
+    _write(output / "final-audit.json", report)
+    return report
+
+
+async def _install_once(args, library, expected_upload_hash):
+    async with GatewayClient(url=f"http://127.0.0.1:{args.api_port}") as client:
+        return await _install(client, library, args.out, expected_upload_hash)
+
+
+def _close_owned_session(url, nonce, session_id):
+    response = httpx.get(url + "/api/v1/health", timeout=2, trust_env=False)
+    response.raise_for_status()
+    if response.headers.get("X-Passage-Owner") != nonce:
+        raise ValueError("Owned API identity changed; refusing session cleanup on a different server")
+    httpx.delete(url + "/api/v1/sessions/" + session_id, timeout=30, trust_env=False).raise_for_status()
+
+
+def _audit_closed_recording(root, output, session_id, record):
+    directory = (root / "runtime/recordings" / session_id).resolve()
+    metadata = json.loads((directory / "recording.json").read_text(encoding="utf8"))
+    files = {}
+    for segment in metadata["segments"]:
+        path = (directory / segment["file"]).resolve()
+        if not path.is_relative_to(directory):
+            raise ValueError("Recording segment escapes its owned directory")
+        files[segment["file"]] = path.read_bytes()
+    report = audit_recording(metadata, files, record["target"], record["completedParts"])
+    _write(output / "recording-audit.json", report)
+    return report
+
+
+def demo(args):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", args.round):
+        raise ValueError("A bounded round identity is required")
+    if not 1 <= args.api_port <= 65535 or not 1 <= args.web_port <= 65535:
+        raise ValueError("Ports must be in 1..65535")
+    if not args.no_web and args.api_port == args.web_port:
+        raise ValueError("API and viewer need different owned ports")
+    if not 1 <= args.repeats <= 20 or args.repeats > 1 and (len(args.round) > 60 or args.prepare_only):
+        raise ValueError("Repeated automatic runs need 1..20 repeats and a <=60-character identity")
+    _available(args.api_port)
+    if not args.no_web:
+        _available(args.web_port)
+    args.out = args.out.resolve()
+    args.out.mkdir(parents=True, exist_ok=False)
+    library = args.generated.resolve() if args.generated else args.out / "generated"
+    bootstrap = {"status": "building", "roundId": args.round, "experimentQualified": False}
+    _write(args.out / "bootstrap.json", bootstrap)
+    processes, logs = [], []
+    nonce = uuid.uuid4().hex
+    url = f"http://127.0.0.1:{args.api_port}"
+    env = os.environ | {
+        "SPATIAL_PASSAGE_RUN_ROOT": str(args.out), "SPATIAL_PASSAGE_OWNER_NONCE": nonce,
+        "LW_LIBRARY": str(args.out / "runtime/library"),
+        "SPATIAL_STATE_ROOT": str(args.out / "runtime/state"),
+        "SPATIAL_RECORDINGS_ROOT": str(args.out / "runtime/recordings"),
+        "SPATIAL_SCENE_PREVIEWS_ROOT": str(args.out / "runtime/previews"),
+        "SPATIAL_ALLOWED_ORIGINS": f"http://127.0.0.1:{args.web_port}",
+        "SPATIAL_API_URL": url, "SPATIAL_NEWTON_DEVICE": "cpu", "SPATIAL_RECORDINGS_ENABLED": "1",
+        "SPATIAL_NODE_TRAINER": "[]",
+    }
+    try:
+        if args.source:
+            for command in (
+                [sys.executable, "-m", "factory.cell_passage", "--source", str(args.source.resolve()),
+                 "--out", str(library), "--with-workcell"],
+                [sys.executable, "-m", "factory.cell_passage_teach", "--library", str(library)],
+            ):
+                subprocess.run(command, cwd=ROOT, env=env, check=True)
+        inputs = load_inputs(library)
+        scene_import_hash = content_hash(library / "scenes/cell-passage/1")
+        _write(args.out / "source-inputs.json", {
+            "layout": inputs[0], "teaching": inputs[1], "workcellBinding": inputs[2], "geometry": inputs[3],
+            "sceneImportHash": scene_import_hash,
+        })
+        candidate = compile_recipe(*inputs, owner="auto", epoch=0, round_id=args.round)
+        if not candidate["environmentChecksAvailable"]:
+            raise ValueError("Generated scene is missing the environment/managed-device configuration")
+        _available(args.api_port)
+        commands = [([sys.executable, "-m", "uvicorn", "--factory", "tools.cell_passage:gateway_app",
+                     "--host", "127.0.0.1", "--port", str(args.api_port)], "api")]
+        if not args.no_web:
+            _available(args.web_port)
+            node = shutil.which("node")
+            if node is None:
+                raise ValueError("Node is required for the owned viewer; use --no-web for a CLI-only run")
+            commands.append(([
+                node, str(ROOT / "apps/web/node_modules/vite/bin/vite.js"),
+                str(ROOT / "apps/web"), "--host", "127.0.0.1", "--port", str(args.web_port),
+            ], "web"))
+        for command, name in commands:
+            log = (args.out / f"{name}.log").open("w", encoding="utf8")
+            logs.append(log)
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            processes.append(subprocess.Popen(command, cwd=ROOT, env=env, stdout=log,
+                                               stderr=subprocess.STDOUT, creationflags=flags))
+        for _ in range(240):
+            if any(process.poll() is not None for process in processes):
+                raise ValueError("An owned service exited; inspect this run's logs")
+            try:
+                response = httpx.get(url + "/api/v1/health", timeout=1, trust_env=False)
+                response.raise_for_status()
+                if response.headers.get("X-Passage-Owner") == nonce:
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.25)
+        else:
+            raise ValueError("Owned API readiness/identity could not be confirmed")
+        bootstrap["status"] = "preparing"
+        _write(args.out / "bootstrap.json", bootstrap)
+        identifier = asyncio.run(_install_once(args, library, scene_import_hash))
+        bootstrap["runs"] = []
+        for index in range(1, args.repeats + 1):
+            round_id = args.round if args.repeats == 1 else f"{args.round}-r{index}"
+            output = args.out if args.repeats == 1 else args.out / "runs" / str(index)
+            output.mkdir(parents=True, exist_ok=True)
+            result = asyncio.run(_prepare(args, inputs, bootstrap, identifier, round_id, output))
+            bootstrap["runs"].append({"roundId": round_id, "status": result["status"],
+                                      "session": bootstrap["session"], "output": str(output)})
+            _write(args.out / "bootstrap.json", bootstrap)
+            if result["status"] != "plans_completed":
+                break
+            if index < args.repeats or args.exit_after_run:
+                _close_owned_session(url, nonce, bootstrap["session"]["sessionId"])
+                bootstrap["sessionClosed"] = True
+                recording = _audit_closed_recording(
+                    args.out, output, bootstrap["session"]["sessionId"], result
+                )
+                bootstrap["runs"][-1]["recording"] = recording
+                if recording["status"] != "recording_valid":
+                    result["status"] = "recording_invalid"
+                    break
+        bootstrap.update(status=result["status"], experimentQualified=False)
+        _write(args.out / "bootstrap.json", bootstrap)
+        print(json.dumps({"status": result["status"], "session": bootstrap["session"]["sessionId"],
+                          "viewer": f"http://127.0.0.1:{args.web_port}/sessions/{bootstrap['session']['sessionId']}",
+                          "evidence": str(args.out), "experimentQualified": False}), flush=True)
+        if not args.exit_after_run:
+            while all(process.poll() is None for process in processes):
+                time.sleep(0.5)
+        return 0 if result["status"] in ("plans_completed", "prepared") else 3
+    except KeyboardInterrupt:
+        if bootstrap["status"] == "plans_completed":
+            bootstrap["viewerClosed"] = True
+            return 0
+        bootstrap["status"] = "interrupted"
+        _write(args.out / "bootstrap.json", bootstrap)
+        raise
+    except BaseException:
+        bootstrap["status"] = "interrupted"
+        _write(args.out / "bootstrap.json", bootstrap)
+        raise
+    finally:
+        if bootstrap.get("session") and not bootstrap.get("sessionClosed"):
+            try:
+                _close_owned_session(url, nonce, bootstrap["session"]["sessionId"])
+                bootstrap["sessionClosed"] = True
+            except (httpx.HTTPError, ValueError):
+                bootstrap["cleanup"] = "session_close_unconfirmed"
+        for process in reversed(processes):
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+        for log in logs:
+            log.close()
+        _write(args.out / "bootstrap.json", bootstrap)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--source", type=Path, help="Read-only assets02 platform_packages source")
+    source.add_argument("--generated", type=Path, help="Already built/taught package root")
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--round", default=uuid.uuid4().hex[:12])
+    parser.add_argument("--repeats", type=int, default=1, help="Fresh sessions sharing one imported scene")
+    parser.add_argument("--api-port", type=int, default=8023)
+    parser.add_argument("--web-port", type=int, default=5223)
+    parser.add_argument("--no-web", action="store_true")
+    parser.add_argument("--prepare-only", action="store_true", help="Publish Plans for the browser client")
+    parser.add_argument("--exit-after-run", action="store_true", help="Close owned services after the run")
+    args = parser.parse_args()
+
+    def interrupt(signum, frame):
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGTERM, interrupt)
+    try:
+        raise SystemExit(demo(args))
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+if __name__ == "__main__":
+    main()
