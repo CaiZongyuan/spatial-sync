@@ -61,6 +61,9 @@ def _write(path, value):
 
 def _available(port):
     with socket.socket() as connection:
+        # Match the server's reuse policy: a closed owned server may leave
+        # TIME_WAIT connections, while a live listener must still reject bind.
+        connection.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         connection.bind(("127.0.0.1", port))
 
 
