@@ -129,10 +129,14 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
     import warp as wp
     from pxr import UsdGeom
 
+    from packages.library.posture import context_references
+
     requested = set()
     for binding in payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []):
         config = binding["config"]
-        for name, role in payload["programs"][binding["program"]]["fields"].items():
+        fields = payload["programs"][binding["program"]]["fields"]
+        requested.update(path for role, path in context_references(fields, config) if role == "site")
+        for name, role in fields.items():
             value = config.get(name)
             if role.get("spatialReference") == "site":
                 requested.update([value] if isinstance(value, str) else value or [])

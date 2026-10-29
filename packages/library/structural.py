@@ -22,6 +22,7 @@ from packages.info.declarations import EntityBindingDeclaration
 from packages.library.common import content_hash, document
 from packages.library.grasp_calibration import grasp_checks
 from packages.library.metadata import Locations
+from packages.library.posture import context_references
 from packages.library.python_stages import resources as python_resources
 from packages.library.reports import parse_report
 from packages.library.templates import TemplateError, instantiate, references, require_spatial_domain
@@ -428,6 +429,9 @@ def validate(payload):
                 config = checked_config(program, config, kind)
                 if kind == "scene" and not python_stage:
                     require_spatial_domain(config, program["fields"], "/World/Lab")
+                for role, path in context_references(program["fields"], config):
+                    if resources is not None and path not in resource_roles[role]:
+                        reference_problems.append(f"Posture context references a missing {role}: {path}")
             except ValueError as exc:
                 reference_problems.append(str(exc))
             posture_paths = None

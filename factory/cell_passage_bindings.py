@@ -1,6 +1,7 @@
 """Mechanical bindings only; material and control configuration is supplied externally."""
 
 from factory.cell_passage import LAB, site
+from factory.cell_passage_locations import locations
 
 
 def bindings(stage, layout):
@@ -27,6 +28,7 @@ def bindings(stage, layout):
             "program": "labware.motion",
             "config": {
                 "locations": "locations.yaml",
+                "postureContexts": {row["name"]: row["postureContext"] for row in locations(layout)},
                 "controlEntity": LAB + "/LiquidHandler",
                 "tubes": movable,
                 "graspOffsets": layout["graspOffsets"],
