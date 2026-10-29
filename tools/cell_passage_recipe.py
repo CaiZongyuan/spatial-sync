@@ -84,6 +84,18 @@ def revise_round_remaining(plans, *, owner, epoch, material_revision, expected_m
                 if old_id in changed and changed[old_id] != new_id:
                     raise ValueError("Conflicting replacement for one domain operation identity")
                 changed[old_id] = new_id
+
+    def references(condition):
+        children = condition.get("all")
+        if isinstance(children, list):
+            for child in children:
+                if isinstance(child, dict):
+                    references(child)
+        if condition.get("property") in ("completedCycle", "lastOperationId"):
+            value = condition.get("equals")
+            if isinstance(value, str) and value in changed:
+                condition["equals"] = changed[value]
+
     for plan in plans:
         if plan["id"] not in documents:
             continue
@@ -95,9 +107,5 @@ def revise_round_remaining(plans, *, owner, epoch, material_revision, expected_m
                 params = call["params"]
                 params["cycle"] = changed.get(params["cycle"], params["cycle"])
             for name in ("check", "expect", "wait"):
-                condition = step.get(name, {})
-                if condition.get("property") in ("completedCycle", "lastOperationId"):
-                    value = condition.get("equals")
-                    if value in changed:
-                        condition["equals"] = changed[value]
+                references(step.get(name, {}))
     return documents
