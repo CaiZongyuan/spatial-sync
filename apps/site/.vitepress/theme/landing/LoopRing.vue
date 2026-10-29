@@ -16,7 +16,7 @@ const gate = nodes[4]
 <template>
   <div class="lr pl-panel">
     <div class="pl-panel-head"><span>RSI 闭环</span><span>两处人工关口</span></div>
-    <svg :viewBox="`0 0 ${C * 2} ${C * 2}`" :style="{ maxWidth: size + 'px' }" role="img" aria-label="闭环：目标、规划、执行、发现、进化、结果，再回到目标">
+    <svg :viewBox="`0 0 ${C * 2} ${C * 2}`" :style="{ maxWidth: size + 'px' }" role="img" aria-label="RSI 闭环：构建、规划、执行、发现、进化，再回到构建">
       <circle class="track" :cx="C" :cy="C" :r="R" />
       <circle class="arc" :cx="C" :cy="C" :r="R" :stroke-dasharray="`${circ * prog} ${circ}`" :transform="`rotate(-90 ${C} ${C})`" />
       <g v-for="n in nodes" :key="n.label" :class="{ on: prog >= n.at - 0.001 }">
@@ -24,10 +24,10 @@ const gate = nodes[4]
         <text :x="n.lx" :y="n.ly + 4" text-anchor="middle">{{ n.label }}</text>
       </g>
       <g class="gate" :style="{ opacity: prog > 0.66 ? 1 : 0 }">
-        <rect :x="gate.x - 28" :y="gate.y - 26" width="22" height="16" rx="4" />
-        <text :x="gate.x - 17" :y="gate.y - 14.5" text-anchor="middle">人</text>
-        <rect :x="gate.x - 28" :y="gate.y + 10" width="22" height="16" rx="4" />
-        <text :x="gate.x - 17" :y="gate.y + 21.5" text-anchor="middle">人</text>
+        <rect :x="gate.x + 10" :y="gate.y - 22" width="22" height="16" rx="4" />
+        <text :x="gate.x + 21" :y="gate.y - 10.5" text-anchor="middle">人</text>
+        <rect :x="gate.x + 10" :y="gate.y + 6" width="22" height="16" rx="4" />
+        <text :x="gate.x + 21" :y="gate.y + 17.5" text-anchor="middle">人</text>
       </g>
       <text class="core" :x="C" :y="C - 2" text-anchor="middle">RSI</text>
       <text class="core-sub" :x="C" :y="C + 16" text-anchor="middle">第 {{ prog >= 0.999 ? 2 : 1 }} 轮</text>

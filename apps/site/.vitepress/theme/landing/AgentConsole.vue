@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { consoleAt, clamp } from './story'
+import { BUILT, consoleAt, clamp, labT } from './story'
 
 const props = withDefaults(defineProps<{ t: number; limit?: number }>(), { limit: 7 })
 const lines = computed(() => consoleAt(props.t, props.limit))
-const working = computed(() => props.t > 3.6 && props.t < 52)
+const lab = computed(() => labT(props.t))
+const working = computed(() => (props.t > 0.4 && props.t < BUILT) || (lab.value > 3.6 && lab.value < 52))
 const glyph: Record<string, string> = { human: '人', agent: '◆', cmd: '$', out: '→', alert: '!', gate: '✓', good: '✓' }
 </script>
 
@@ -12,7 +13,7 @@ const glyph: Record<string, string> = { human: '人', agent: '◆', cmd: '$', ou
   <div class="pc pl-panel">
     <div class="pl-panel-head">
       <span class="pc-who"><i :class="{ on: working }" />agent · lab-operator</span>
-      <span>{{ working ? '工作中' : t < 3.6 ? '等待目标' : '空闲' }}</span>
+      <span>{{ t < BUILT ? (working ? '构建世界' : '待命') : working ? '工作中' : lab < 3.6 ? '等待目标' : '空闲' }}</span>
     </div>
     <ol class="pc-lines">
       <li v-for="l in lines" :key="l.t" :class="l.kind" :style="{ opacity: clamp(0.35 + l.age * 2.5) }">

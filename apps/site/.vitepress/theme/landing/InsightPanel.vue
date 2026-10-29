@@ -1,7 +1,9 @@
 <script setup lang="ts">
-// The panel that explains what the current chapter is showing.
+// The panel that explains what the current chapter is showing. It reads the film
+// clock; the lab story's panels read the lab clock.
 import { computed } from 'vue'
-import { chapterAt, CONSOLE, clamp } from './story'
+import { chapterAt, GOAL, clamp, labT } from './story'
+import WorldPanel from './WorldPanel.vue'
 import Inventory from './Inventory.vue'
 import PlanPanel from './PlanPanel.vue'
 import AttemptGrid from './AttemptGrid.vue'
@@ -13,29 +15,30 @@ import ScaleStats from './ScaleStats.vue'
 
 const props = defineProps<{ t: number }>()
 const id = computed(() => chapterAt(props.t).id)
-const goal = CONSOLE[0]
-const typed = computed(() => goal.text.slice(0, Math.floor(clamp((props.t - goal.t) / (goal.type ?? 1)) * goal.text.length)))
+const lab = computed(() => labT(props.t))
+const typed = computed(() => GOAL.text.slice(0, Math.floor(clamp((props.t - GOAL.t) / (GOAL.type ?? 1)) * GOAL.text.length)))
 </script>
 
 <template>
   <div class="ip">
-    <div v-if="id === 'goal'" class="pl-panel goal">
+    <WorldPanel v-if="id === 'build'" :t="t" />
+    <div v-else-if="id === 'goal'" class="pl-panel goal">
       <div class="pl-panel-head"><span>目标 · 人唯一一次输入</span></div>
-      <p class="pl-panel-body q">「{{ typed }}<i class="caret" v-if="typed.length < goal.text.length" />{{ typed.length >= goal.text.length ? '」' : '' }}</p>
+      <p class="pl-panel-body q">「{{ typed }}<i class="caret" v-if="typed.length < GOAL.text.length" />{{ typed.length >= GOAL.text.length ? '」' : '' }}</p>
     </div>
-    <Inventory v-else-if="id === 'sense'" :t="t" />
-    <PlanPanel v-else-if="id === 'plan' || id === 'run'" :t="t" />
-    <AttemptGrid v-else-if="id === 'find'" :t="t" />
+    <Inventory v-else-if="id === 'sense'" :t="lab" />
+    <PlanPanel v-else-if="id === 'plan' || id === 'run'" :t="lab" />
+    <AttemptGrid v-else-if="id === 'find'" :t="lab" />
     <template v-else-if="id === 'evolve'">
-      <TrainChart :t="t" />
-      <Library v-if="t > 40.4" :t="t" />
+      <TrainChart :t="lab" />
+      <Library v-if="lab > 40.4" :t="lab" />
     </template>
     <template v-else-if="id === 'result'">
-      <ResultChart :t="t" />
-      <Library :t="t" />
+      <ResultChart :t="lab" />
+      <Library :t="lab" />
     </template>
-    <LoopRing v-else-if="id === 'loop'" :t="t" :size="220" />
-    <ScaleStats v-else-if="id === 'scale'" :t="t" />
+    <LoopRing v-else-if="id === 'loop'" :t="lab" :size="220" />
+    <ScaleStats v-else-if="id === 'scale'" :t="lab" />
   </div>
 </template>
 

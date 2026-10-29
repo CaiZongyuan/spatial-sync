@@ -1,8 +1,10 @@
 <script setup lang="ts">
 // The home page. A sticky 3D lab plays the storyboard as the reader scrolls, or
-// by itself on autoplay; one click skips it. Long-form sections follow: why now,
-// the bottleneck, how the loop turns, a real run, use cases and scale, then every
-// chapter as a still, the real delivery status, the blog and how to start.
+// by itself on autoplay; one click skips it. Long-form sections follow the
+// investor narrative: the frontier and why now, what Physical AI is, Lab World's
+// three parts and one section for each, one workcell, what runs today, the first
+// market, the ecosystem, compounding and the roadmap, then every chapter as a
+// still, the blog and the long-term vision.
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import StageCanvas from './StageCanvas.vue'
 import AgentConsole from './AgentConsole.vue'
@@ -10,18 +12,23 @@ import InsightPanel from './InsightPanel.vue'
 import HudStrip from './HudStrip.vue'
 import GateToast from './GateToast.vue'
 import StatusChip from './StatusChip.vue'
-import WhyNow from './WhyNow.vue'
-import Compare from './Compare.vue'
-import HowLoop from './HowLoop.vue'
-import PlatformParts from './PlatformParts.vue'
+import Frontier from './Frontier.vue'
+import PhysicalAI from './PhysicalAI.vue'
+import Platform from './Platform.vue'
+import WorldBuilding from './WorldBuilding.vue'
+import AgenticBrain from './AgenticBrain.vue'
+import RsiEvolution from './RsiEvolution.vue'
+import Workcell from './Workcell.vue'
 import RealRun from './RealRun.vue'
-import Scenarios from './Scenarios.vue'
-import ScaleVision from './ScaleVision.vue'
-import ChapterIndex from './ChapterIndex.vue'
 import StatusLedger from './StatusLedger.vue'
+import Market from './Market.vue'
+import Ecosystem from './Ecosystem.vue'
+import Compounding from './Compounding.vue'
+import Roadmap from './Roadmap.vue'
+import ChapterIndex from './ChapterIndex.vue'
 import BlogLatest from './BlogLatest.vue'
-import StartBlock from './StartBlock.vue'
-import { CHAPTERS, DURATION, HERO, chapterAt, chapterIndex, clamp, lerp, smooth } from './story'
+import Vision from './Vision.vue'
+import { CHAPTERS, DURATION, HERO, PARTS, PART_LABEL, chapterAt, chapterIndex, clamp, labT, lerp, smooth } from './story'
 import './landing.css'
 
 // Scroll budget, in viewport heights: the hero, then each film second, then a hold.
@@ -59,10 +66,13 @@ let mo: MutationObserver | null = null
 const trackH = computed(() => vh.value * (1 + HERO_SCREENS + DURATION * PER_SECOND + END_SCREENS))
 const chapter = computed(() => chapterAt(t.value))
 const ci = computed(() => chapterIndex(t.value))
+const lab = computed(() => labT(t.value))
+// The rail groups its chapters under the three parts of Lab World.
+const railParts = PARTS.map((p) => ({ ...p, span: CHAPTERS.filter((c) => c.part === p.id).reduce((a, c) => a + c.end - c.start, 0) }))
 const heroO = computed(() => 1 - smooth(heroP.value))
 const narrow = computed(() => vw.value < 900)
 const offsetX = computed(() => (narrow.value ? 0 : lerp(0.07, 0.22, heroO.value)))
-const offsetY = computed(() => (narrow.value ? lerp(-0.02, -0.16, heroO.value) : 0))
+const offsetY = computed(() => (narrow.value ? lerp(-0.02, -0.24, heroO.value) : 0))
 const local = computed(() => clamp((t.value - chapter.value.start) / (chapter.value.end - chapter.value.start)))
 const ended = computed(() => t.value >= DURATION - 0.05)
 
@@ -116,10 +126,19 @@ function toggle() {
 
 function skip() {
   playing.value = false
-  const el = document.getElementById('why-now')
+  const el = document.getElementById('frontier')
   if (!el) return
   window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: reduced.value ? 'auto' : 'smooth' })
   el.focus({ preventScroll: true })
+}
+
+// The closing call to action plays the film again from its first chapter.
+function replay() {
+  if (!track.value) return
+  playT = 0
+  playing.value = true
+  focusControls = true
+  window.scrollTo(0, scrollFor(0))
 }
 
 // Any scroll input from the reader takes the film back from autoplay.
@@ -211,8 +230,12 @@ onBeforeUnmount(() => {
 
         <header class="hero" :inert="heroO <= 0.5 || undefined" :style="{ opacity: heroO, transform: `translateY(${-28 * (1 - heroO)}px)`, pointerEvents: heroO > 0.5 ? 'auto' : 'none' }">
           <p class="pl-eyebrow">{{ HERO.eyebrow }}</p>
-          <h1><span class="nb">会自我改进的</span><span class="nb">实验室</span></h1>
+          <h1><span class="nb" lang="en">Lab World</span><span class="nb">迈向物理 AI</span></h1>
+          <p class="tagline" lang="en">{{ HERO.tagline }}</p>
           <p class="lede">{{ HERO.lede }}</p>
+          <ul class="parts" aria-label="Lab World 的三个核心构成">
+            <li v-for="p in PARTS" :key="p.id"><a :href="p.href"><b>{{ p.name }}</b><span>{{ p.line }}</span></a></li>
+          </ul>
           <div class="actions" data-film-control>
             <button class="pl-btn pl-btn--primary" @click="play"><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg>自动播放</button>
             <button class="pl-btn" @click="skip">跳过动画<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
@@ -223,6 +246,7 @@ onBeforeUnmount(() => {
         <div class="copy" :style="{ opacity: 1 - heroO }">
           <Transition name="swap" mode="out-in">
             <div :key="chapter.id">
+              <p class="part mono">{{ PART_LABEL[chapter.part] }}</p>
               <p class="kicker"><span class="mono">{{ chapter.n }}</span><span>{{ chapter.kicker }}</span><StatusChip :status="chapter.status" /></p>
               <h2>{{ chapter.title }}</h2>
               <p class="body">{{ chapter.body }}</p>
@@ -236,19 +260,24 @@ onBeforeUnmount(() => {
           <InsightPanel v-if="!narrow" :t="t" />
         </aside>
 
-        <div class="gate"><GateToast :t="t" /></div>
+        <div class="gate"><GateToast :t="lab" /></div>
 
-        <HudStrip v-if="!narrow" class="hud" :t="t" :style="{ opacity: 1 - heroO }" />
+        <HudStrip v-if="!narrow" class="hud" :t="lab" :style="{ opacity: 1 - heroO }" />
 
         <div class="controls" data-film-control :inert="heroO >= 0.5 || undefined" :style="{ opacity: 1 - heroO, pointerEvents: heroO < 0.5 ? 'auto' : 'none' }">
           <button ref="ctl" class="ctl" :aria-label="playing ? '暂停' : '自动播放'" :aria-pressed="playing" @click="toggle">
             <template v-if="playing"><svg viewBox="0 0 16 16"><path d="M5 3.5v9M11 3.5v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></template><template v-else><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg></template>
           </button>
+          <div class="rail-wrap">
+          <div class="rail-parts" aria-hidden="true">
+            <span v-for="p in railParts" :key="p.id" :class="{ on: chapter.part === p.id }" :style="{ flexGrow: p.span }">{{ p.name }}</span>
+          </div>
           <nav class="rail" aria-label="章节">
             <button v-for="(c, i) in CHAPTERS" :key="c.id" :class="{ on: i === ci, past: i < ci }" :style="{ flexGrow: c.end - c.start }" :aria-label="`第 ${c.n} 章：${c.kicker}`" :aria-current="i === ci ? 'step' : undefined" @click="jump(i)">
               <i /><span>{{ c.kicker }}</span>
             </button>
           </nav>
+          </div>
           <button class="skip" @click="skip">{{ ended ? '继续阅读' : '跳过动画' }}<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
         </div>
 
@@ -256,17 +285,22 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <WhyNow />
-    <Compare />
-    <HowLoop />
-    <PlatformParts />
+    <Frontier />
+    <PhysicalAI />
+    <Platform />
+    <WorldBuilding />
+    <AgenticBrain />
+    <RsiEvolution />
+    <Workcell />
     <RealRun />
-    <Scenarios />
-    <ScaleVision />
-    <ChapterIndex ref="index" :stills="stills" @play="jump" />
     <StatusLedger />
+    <Market />
+    <Ecosystem />
+    <Compounding />
+    <Roadmap />
+    <ChapterIndex ref="index" :stills="stills" @play="jump" />
     <BlogLatest />
-    <StartBlock />
+    <Vision @replay="replay" />
   </div>
 </template>
 
@@ -281,11 +315,18 @@ onBeforeUnmount(() => {
 
 .hero { position: absolute; left: max(32px, 6vw); top: 50%; translate: 0 -50%; max-width: 600px; }
 .hero h1 { margin-top: 18px; font-size: clamp(44px, 6.2vw, 84px); line-height: 1.08; }
+.tagline { margin-top: 14px; font-family: var(--font-display); font-style: italic; font-size: 19px; line-height: 1.5; color: var(--muted); }
 .lede { margin-top: 22px; font-size: 17px; line-height: 1.75; color: var(--ink-2); max-width: 520px; }
+.parts { list-style: none; margin: 22px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; max-width: 560px; }
+.parts a { display: flex; flex-direction: column; gap: 2px; padding: 9px 13px; border-radius: 10px; border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: border-color .2s var(--ease); }
+.parts a:hover { border-color: var(--accent); }
+.parts b { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--ink); }
+.parts span { font-size: 11.5px; color: var(--muted); }
 .actions { margin-top: 30px; display: flex; gap: 10px; flex-wrap: wrap; }
 .note { margin-top: 18px; font-size: 12.5px; color: var(--faint); }
 
 .copy { position: absolute; left: max(32px, 5vw); top: 50%; translate: 0 -50%; width: min(380px, 30vw); }
+.part { margin-bottom: 10px; font-size: 11px; letter-spacing: .08em; color: var(--accent-ink); text-transform: uppercase; }
 .kicker { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .kicker .mono { color: var(--faint); font-size: 12px; }
 .copy h2 { margin-top: 14px; font-size: clamp(28px, 3vw, 40px); line-height: 1.22; }
@@ -306,7 +347,11 @@ onBeforeUnmount(() => {
 .skip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--ink-2); font: inherit; font-size: 12.5px; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: border-color .2s var(--ease), color .2s var(--ease); }
 .skip:hover { border-color: var(--ghost); color: var(--ink); }
 .skip svg { width: 13px; height: 13px; }
-.rail { flex: 1; min-width: 0; display: flex; gap: 4px; }
+.rail-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rail-parts { display: flex; gap: 4px; }
+.rail-parts span { flex-basis: 0; min-width: 0; padding-left: 6px; border-left: 1px solid var(--line-2); font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .3s var(--ease), border-color .3s var(--ease); }
+.rail-parts span.on { color: var(--accent-ink); border-left-color: var(--accent); }
+.rail { display: flex; gap: 4px; }
 .rail button { flex-basis: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 6px 0; background: none; border: 0; cursor: pointer; text-align: left; }
 .rail i { display: block; height: 2px; border-radius: 1px; background: var(--line-2); transition: background .3s var(--ease); }
 .rail span { font-size: 11px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .3s var(--ease); }
@@ -325,8 +370,14 @@ onBeforeUnmount(() => {
   .veil { background: linear-gradient(180deg, color-mix(in srgb, var(--ground) 92%, transparent) 0%, color-mix(in srgb, var(--ground) 40%, transparent) 34%, transparent 52%, transparent 66%, color-mix(in srgb, var(--ground) 92%, transparent) 88%); }
   .hero { left: 16px; right: 16px; top: 92px; translate: none; }
   .hero h1 { font-size: 40px; }
+  .tagline { font-size: 15px; margin-top: 10px; }
   .lede { font-size: 15px; margin-top: 14px; }
+  .parts { margin-top: 14px; gap: 6px; }
+  .parts a { padding: 6px 10px; }
+  .parts b { font-size: 13px; }
+  .parts span { display: none; }
   .actions { margin-top: 20px; }
+  .note { display: none; }
   .copy { left: 16px; right: 16px; top: 76px; translate: none; width: auto; }
   .copy h2 { font-size: 24px; margin-top: 10px; }
   .body { font-size: 13.5px; line-height: 1.7; margin-top: 8px; }
@@ -335,7 +386,7 @@ onBeforeUnmount(() => {
   .gate { top: auto; bottom: 176px; }
   .controls { left: 16px; right: 16px; bottom: 12px; gap: 10px; }
   .ctl { width: 32px; height: 32px; }
-  .rail span { display: none; }
+  .rail span, .rail-parts { display: none; }
   .rail button { padding: 4px 0; }
   .cue { display: none; }
 }

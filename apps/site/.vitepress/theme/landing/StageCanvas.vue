@@ -2,7 +2,7 @@
 // Mounts one LabStage and renders it from the `t` prop while it is on screen.
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import type { LabStage } from './stage'
-import { labelsAt, ramp, type LabelSpec } from './story'
+import { labT, labelsAt, ramp, type LabelSpec } from './story'
 
 const props = withDefaults(defineProps<{
   t: number
@@ -43,7 +43,7 @@ function frame() {
   stage.update(props.t, performance.now() / 1000)
   stage.render()
   // The scale chapter dissolves the frame edge so the city reads as endless.
-  const m = ramp(props.t, 52.6, 56)
+  const m = ramp(labT(props.t), 52.6, 56)
   mask.value = m > 0.001 ? `radial-gradient(ellipse 72% 70% at ${50 + props.offsetX * 100}% ${50 - props.offsetY * 100}%, #000 ${140 - 96 * m}%, transparent ${160 - 62 * m}%)` : ''
   const out: (LabelSpec & { x: number; y: number })[] = []
   const narrow = (host.value?.clientWidth ?? 1000) < 600
