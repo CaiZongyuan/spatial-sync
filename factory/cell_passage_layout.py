@@ -327,9 +327,18 @@ def populate(stage):
     )
     translate(value, (-0.53, -0.65, 0.96))
     slot_keys = [root + f"/Rotor/Slot{i}" for i in range(1, 5)]
+    moving_bodies = []
+    for name in ("FlexY", "FlexX", "FlexZ", "FlexPump"):
+        targets = UsdPhysics.Joint(stage.GetPrimAtPath(LAB + "/Joints/" + name)).GetBody1Rel().GetTargets()
+        if len(targets) != 1 or not stage.GetPrimAtPath(targets[0]).HasAPI(UsdPhysics.RigidBodyAPI):
+            raise ValueError("Controlled joint must identify one actual moving rigid body: " + name)
+        moving_bodies.append(str(targets[0]))
+    if len(set(moving_bodies)) != len(moving_bodies):
+        raise ValueError("Controlled Flex joint bodies must be distinct")
     return {
         "schema": "lw.cell-passage-layout/1",
         "mechanicallyQualified": False,
+        "movingBodyKeys": moving_bodies,
         "stations": {LAB + "/Sites/" + key: list(value) for key, value in stations.items()},
         "bodies": bodies,
         "lids": lids,

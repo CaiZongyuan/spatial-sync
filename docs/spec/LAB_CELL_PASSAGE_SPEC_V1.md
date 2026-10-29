@@ -277,3 +277,35 @@ Web 展示当前阶段/步骤、六个母孔到十二个子孔的关系、所选
 - 既有源码：`apps/cli/lw/client.py`、`packages/info/plans.py`、`packages/info/program.py`、`packages/programs/robot_arm/newton.py`、`devices/types/`、`apps/web/src/components/PlanChecklist.tsx`。
 - [平台 PRD](LAB_RSI_PLATFORM_PRD_V1.md)、[信息平面](LAB_INFORMATION_FOUNDATION_SPEC_V1.md)、[操作计划](LAB_LIVE_OPERATIONS_SPEC_V1.md)、[素材与场景](LAB_ASSETS_AND_SCENES_SPEC_V1.md)、[Scene Factory](LAB_SCENE_FACTORY_SPEC_V1.md)、[验证要求](../VERIFICATION.md)。
 - [ADR-0001](../adr/0001-usd-canonical-scene-format.md)、[ADR-0002](../adr/0002-tube-grasp-point-and-physical-tcp.md)、[ADR-0004](../adr/0004-scene-authoring-through-external-factories.md)。
+## P6 posture contexts
+
+The carrier arm keeps the original physical TCP and its existing endpoint
+calibration. Its Config explicitly marks one `postureContexts` mapping with
+`postureContext: true`. Every taught location has one context:
+
+```yaml
+postureContexts:
+  IncubatorMother.plate:
+    site: /World/Lab/Sites/IncubatorMother
+    offsetM: [0.070, 0, 0.075]
+    joints:
+      - joint: /World/Lab/Joints/RailCarriage
+        position: -0.45
+```
+
+P6 applies the context's additional actual scalar joints before FK, checks their
+real model bounds, and rejects duplicates or overlap with the arm posture. The
+target is the actual context Site pose composed with `offsetM`; the Site's
+quaternion rotates this local offset. Contexts must cover the taught locations
+exactly. Missing, unknown or malformed context roles fail admission. Programs
+without this explicit role retain the existing zero-Site/world-Z-height behavior
+and pinned physical-TCP checks; a context cannot replace that endpoint or combine
+with a nonzero legacy grasp height.
+
+For a lid taught over a prospective vessel station, the context names that
+station's actual Site and adds the measured lid-seat height to the lid's local
+grip offset. The action location continues to name the live vessel `LidSeat` and
+requires the vessel's actual station. This FK-only context never relocates a
+runtime body or Site. It qualifies reach only; contact, seating and continuous
+transport still require their separate physical checks. No wire or recording
+format changes are introduced.

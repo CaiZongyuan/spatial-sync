@@ -15,7 +15,8 @@ from pxr import Sdf, Usd, UsdGeom
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
-from factory.cell_passage import HANDLE, LAB
+from factory.cell_passage import LAB
+from factory.cell_passage_locations import locations
 from packages.sim_runtime.loaders import import_usd
 
 ROBOT = LAB + "/Robot"
@@ -31,99 +32,6 @@ def composed_stage(library):
     layer = Sdf.Layer.CreateAnonymous("cell-passage-local.usda")
     layer.ImportFromString(text)
     return Usd.Stage.Open(layer)
-
-
-def locations(layout):
-    stations, result = layout["stations"], []
-    yaws = layout.get("stationYawRad", {})
-
-    def add(name, site, point, offset, *, yaw=0.0, requires=(), body=None, zone=None):
-        leaf = name.split(".", 1)[0]
-        rail = (
-            -0.45
-            if leaf.startswith("Incubator")
-            else 0.4
-            if leaf.startswith("Flex")
-            else float(np.clip(point[0] - 0.2, -0.5, 0.45))
-        )
-        if "/Centrifuge/" in site:
-            rail = -0.45
-        rules = [
-            {"entity": LAB + "/RailCarriage", "property": "position", "gte": rail - 0.001},
-            {"entity": LAB + "/RailCarriage", "property": "position", "lte": rail + 0.001},
-        ]
-        if leaf.startswith("Incubator"):
-            rules.extend(
-                {"entity": LAB + "/Incubator/" + door, "property": "opened", "equals": True}
-                for door in ("OuterDoor", "InnerDoor")
-            )
-        if "/Centrifuge/" in site:
-            rules.extend(
-                [
-                    {"entity": LAB + "/Centrifuge", "property": "lidOpen", "equals": True},
-                    {"entity": LAB + "/Centrifuge", "property": "phase", "equals": "idle"},
-                ]
-            )
-        rules.extend(requires)
-        offset_world = Rotation.from_euler("z", yaw).apply(offset)
-        target = np.asarray(point) + offset_world
-        approach = target + [0, 0, 0.14]
-        if leaf.startswith("Incubator"):
-            approach[1] = -0.05
-        result.append(
-            {
-                "name": name,
-                "site": site,
-                "target": target.tolist(),
-                "approachTarget": approach.tolist(),
-                "yawRad": yaw,
-                "railPositionM": rail,
-                "requires": rules,
-                "body": body,
-                "zone": zone or ("centrifuge" if "/Centrifuge/" in site else leaf),
-            }
-        )
-
-    for key, point in stations.items():
-        name = key.rsplit("/", 1)[1]
-        if name.startswith(("Rack", "FlexTube")):
-            add(name + ".tube", key, point, [0.035, 0, 0.038])
-        elif name.startswith("Lid"):
-            number = int(name[3:])
-            offset = [-HANDLE[0], 0, HANDLE[2]] if number <= 4 else [-0.035, 0, 0.022]
-            add(name + (".plateLid" if number <= 4 else ".cap"), key, point, offset)
-        else:
-            add(name + ".plate", key, point, HANDLE, yaw=yaws.get(key, 0))
-    for number, key in enumerate(layout["slotSites"], 1):
-        offset = ((0.12, 0), (0, 0.12), (-0.12, 0), (0, -0.12))[number - 1]
-        add(
-            f"CentrifugeSlot{number}.tube",
-            key,
-            [-0.53 + offset[0], -0.65 + offset[1], 0.999],
-            [0.035, 0, 0.038],
-        )
-    for name, body in layout["bodies"].items():
-        if body not in layout["lids"]:
-            continue
-        if name in ("Mother", "DaughterA", "DaughterB", "Counting"):
-            candidates = [("FlexPlate", 0.018)]
-            offset = [-HANDLE[0], 0, HANDLE[2]]
-        else:
-            index = [f"S{i}" for i in range(1, 7)] + ["B5", "B6"]
-            candidates = [("Rack" + name, 0.05), (f"FlexTube{index.index(name) + 1}", 0.05)]
-            offset = [-0.035, 0, 0.022]
-        for station, height in candidates:
-            key = LAB + "/Sites/" + station
-            point = np.asarray(stations[key]) + [0, 0, height]
-            add(
-                station + "." + name + "Lid",
-                body + "/LidSeat",
-                point,
-                offset,
-                requires=[{"entity": body, "property": "station", "equals": key}],
-                body=layout["lids"][body],
-            )
-    return result
 
 
 def teach(library):

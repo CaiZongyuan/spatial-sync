@@ -1,7 +1,7 @@
 """Carrier/tube handling over the original calibrated FR3 physical hand."""
 
 import numpy as np
-from pydantic import Field, model_validator
+from pydantic import Field, FiniteFloat, model_validator
 
 from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation
@@ -11,6 +11,17 @@ from .facts import seated_station
 from .grasp import physical_grasp
 
 
+class PostureJointConfig(ProgramConfig):
+    joint: str = Field(json_schema_extra={"spatialReference": "joint"})
+    position: FiniteFloat
+
+
+class PostureContextConfig(ProgramConfig):
+    site: str = Field(json_schema_extra={"spatialReference": "site"})
+    offsetM: tuple[FiniteFloat, FiniteFloat, FiniteFloat]
+    joints: list[PostureJointConfig]
+
+
 class LabwareMotionProgram(RobotArmProgram):
     id, type = "labware.motion", "labware-motion/v1"
     gripper_speed_mps = 0.04
@@ -18,6 +29,9 @@ class LabwareMotionProgram(RobotArmProgram):
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
+        postureContexts: dict[str, PostureContextConfig] = Field(
+            default_factory=dict, json_schema_extra={"postureContext": True}
+        )
         tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
         speedScale: float = Field(default=0.3, gt=0, le=1)
         graspMode: str = Field(default="weld", pattern="^weld$")
