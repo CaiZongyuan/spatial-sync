@@ -35,9 +35,12 @@ def grasp_geometry(body_pose, tcp_pose, offset, diameter, opening):
 
 
 def physical_grasp(
-    body_pose, tcp_pose, offset, diameter, opening, contacts, *, body, fingers, pad_shapes, shape_prefix
+    body_pose, tcp_pose, offset, diameter, opening, contacts, *, body, fingers, pad_shapes, shape_prefix,
+    contact_allowance_m=.001,
 ):
-    """Require two physical pads on the intended surface, within 1 mm penetration."""
+    """Require two actual pads on the intended surface within the scene allowance."""
+    if not np.isfinite(contact_allowance_m) or not 0 < contact_allowance_m <= .002:
+        return False
     if not grasp_geometry(body_pose, tcp_pose, offset, diameter, opening):
         return False
     touching = set()
@@ -52,7 +55,7 @@ def physical_grasp(
             shape = contact.shapes[index]
             if other not in fingers or not (shape == shape_prefix or shape.startswith(shape_prefix + "/")):
                 continue
-            if not np.isfinite(contact.distance_m) or contact.distance_m < -0.001:
+            if not np.isfinite(contact.distance_m) or contact.distance_m < -contact_allowance_m:
                 return False
             if contact.distance_m <= 0:
                 if contact.shapes[1 - index] != pad_shapes[other]:

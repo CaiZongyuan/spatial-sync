@@ -21,6 +21,7 @@ class RobotArmProgram:
     gripper_speed_mps = .4
     gripper_timeout_s = 2
     gripper_open_width_m = .08
+    joint_acceleration = 2.
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
@@ -279,6 +280,7 @@ class RobotArmProgram:
                     VELOCITY_LIMITS,
                     speed_scale=ctx.config.speedScale,
                     speed=inv.params.get("speed", 1),
+                    acceleration=self.joint_acceleration,
                 )
             elif kind == "place" or kind == "gripper" and target > self._width(port) + 0.0005:
                 if kind == "place" and self.pick_tube:

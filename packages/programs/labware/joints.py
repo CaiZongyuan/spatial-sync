@@ -24,6 +24,7 @@ class PassageJointProgram:
         maxSpeed: float = Field(gt=0, allow_inf_nan=False)
         tolerance: float = Field(default=0.001, gt=0, allow_inf_nan=False)
         velocityTolerance: float = Field(default=0.01, gt=0, allow_inf_nan=False)
+        contactAllowanceM: float = Field(default=.001, gt=0, le=.002, allow_inf_nan=False)
         role: Literal["axis", "outer", "inner"] = "axis"
         peerDoor: str | None = None
         movingBodyKeys: list[str] = Field(
@@ -126,7 +127,8 @@ class PassageJointProgram:
             keys = [*ctx.config.movingBodyKeys, *sorted(watched)]
             for key in keys:
                 self._pose(ctx, key)
-            contacts = contacts_for_bodies(ctx.physics, {self._body(ctx, key) for key in keys})
+            contacts = contacts_for_bodies(ctx.physics, {self._body(ctx, key) for key in keys},
+                                          limit_m=ctx.config.contactAllowanceM)
             if self.handle is not None:
                 self.retained_payloads.update(payloads)
         except (AttributeError, KeyError, TypeError, ValueError):
@@ -139,7 +141,7 @@ class PassageJointProgram:
             ctx.set(unsafeContactCount=ctx.get("unsafeContactCount") + len(contacts),
                     lastContactShapes=shapes, lastContactDepthM=depth)
             ctx.emit("unsafeContact", shapes=shapes, depthM=depth)
-            return Reject(code="unsafe_contact", message="Actual moving-body penetration exceeded 1 mm",
+            return Reject(code="unsafe_contact", message="Moving-body contact exceeded scene allowance",
                           details={"shapes": shapes, "depthM": depth})
         if ctx.config.role == "axis":
             ctx.set(clearanceKnown=True, clearanceBlockedBy=[])

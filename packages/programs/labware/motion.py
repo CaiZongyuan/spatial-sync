@@ -37,6 +37,8 @@ class LabwareMotionProgram(RobotArmProgram):
         speedScale: float = Field(default=0.3, gt=0, le=1)
         automaticOpenWidthM: float = Field(default=.08, gt=0, le=.08, allow_inf_nan=False)
         gripperSpeedMPerS: float = Field(default=.04, gt=0, le=.04, allow_inf_nan=False)
+        contactAllowanceM: float = Field(default=.001, gt=0, le=.002, allow_inf_nan=False)
+        jointAccelerationRadPerS2: float = Field(default=2., gt=0, le=2., allow_inf_nan=False)
         graspMode: str = Field(default="weld", pattern="^weld$")
         jointKeys: list[str] = Field(
             min_length=7, max_length=7, json_schema_extra={"spatialReference": "joint", "posture": True}
@@ -80,6 +82,8 @@ class LabwareMotionProgram(RobotArmProgram):
     def init(self, ctx):
         self.gripper_open_width_m = ctx.config.automaticOpenWidthM
         self.gripper_speed_mps = ctx.config.gripperSpeedMPerS
+        self.contact_allowance_m = ctx.config.contactAllowanceM
+        self.joint_acceleration = ctx.config.jointAccelerationRadPerS2
         self.body_grips = {
             ctx.physics.bind_body(key): (ctx.config.graspOffsets[key], ctx.config.gripDiameters[key])
             for key in ctx.config.tubes
@@ -124,6 +128,7 @@ class LabwareMotionProgram(RobotArmProgram):
             fingers={finger.child for finger in self.fingers},
             pad_shapes=self.pad_shapes,
             shape_prefix=self.grip_prefixes[body],
+            contact_allowance_m=self.contact_allowance_m,
         )
         if qualified:
             self.grip_hold_width = opening
@@ -221,6 +226,16 @@ class LabwareMotionProgram(RobotArmProgram):
             return
         ctx.set(controlSafe=False)
         super().start(inv, ctx)
+        if inv.action in ("place", "pickPlace"):
+            staged = []
+            for index, segment in enumerate(self.plan):
+                kind, _, name = segment
+                if (kind == "move" and name and index + 1 < len(self.plan)
+                        and self.plan[index + 1][0] == "place"
+                        and "preInsertion" in self.locations[name]):
+                    staged.append(("move", self.locations[name]["preInsertion"], name))
+                staged.append(segment)
+            self.plan, self.total = staged, len(staged)
         if inv.action != "stop":
             ctx.set(unsafeContactCount=0, lastContactShapes=[], lastContactDepthM=0.0)
         body = (
@@ -239,7 +254,7 @@ class LabwareMotionProgram(RobotArmProgram):
             if key in self.tubes:
                 active.add(self.tubes[key])
         try:
-            contacts = contacts_for_bodies(ctx.physics, active)
+            contacts = contacts_for_bodies(ctx.physics, active, limit_m=self.contact_allowance_m)
         except ValueError:
             self._hold(ctx)
             self._end(ctx, ("contact_unavailable", "Actual motion contact facts are unavailable"))
@@ -256,7 +271,7 @@ class LabwareMotionProgram(RobotArmProgram):
             ctx.emit("unsafeContact", shapes=shapes, depthM=depth)
             self._end(
                 ctx,
-                ("unsafe_contact", "Actual arm or payload penetration exceeded 1 mm"),
+                ("unsafe_contact", "Actual arm or payload contact exceeded scene allowance"),
                 shapes=shapes,
                 depthM=depth,
             )

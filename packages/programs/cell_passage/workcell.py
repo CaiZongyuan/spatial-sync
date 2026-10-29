@@ -103,6 +103,7 @@ class WorkcellProgram:
     id, type, tick_priority = "cell_passage.workcell", "cell-passage-workcell/v1", 5
 
     class Config(MaterialConfig):
+        contactAllowanceM: float = Field(default=.001, gt=0, le=.002)
         axisJoints: list[str] = Field(
             min_length=3, max_length=3, json_schema_extra={"spatialReference": "joint"}
         )
@@ -377,7 +378,7 @@ class WorkcellProgram:
             active = self.moving_bodies.copy()
             if self.state["tip"]["id"]:
                 active.add(self.tip_bodies[self.state["tip"]["id"]])
-            contacts = ctx.physics.collision_contacts(max_distance=-0.001)
+            contacts = ctx.physics.collision_contacts(max_distance=-ctx.config.contactAllowanceM)
             hit = None
             for row in contacts:
                 if (
@@ -387,7 +388,8 @@ class WorkcellProgram:
                     or not np.isfinite(row.distance_m)
                 ):
                     raise ValueError("Unknown contact identity or distance")
-                if row.distance_m < -0.001 and any(body in active for body in row.bodies):
+                if (row.distance_m < -ctx.config.contactAllowanceM
+                        and any(body in active for body in row.bodies)):
                     hit = row
                     break
         except (AttributeError, KeyError, TypeError, ValueError):
@@ -404,7 +406,7 @@ class WorkcellProgram:
             if not was_hit:
                 ctx.set(unsafeContactCount=ctx.get("unsafeContactCount") + 1)
                 ctx.emit("unsafeContact", shapes=shapes, depthM=depth)
-            return Reject(code="unsafe_contact", message="Actual Flex or held tip penetration exceeded 1 mm")
+            return Reject(code="unsafe_contact", message="Actual Flex or held tip exceeded scene allowance")
 
     def _reject(self, code, message):
         return Reject(code=code, message=message)
