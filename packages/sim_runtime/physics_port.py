@@ -184,16 +184,18 @@ class PhysicsPort:
         self.frame_body = self.body.copy()
         self.sample_time_ms = monotonic()*1000
         dt = self.sim.sim_time - self.last_time if self.last_time is not None else 0
+        same_frame = previous is not None and self.last_time == self.sim.sim_time
         self.velocity = (
             (self.body[:, :3] - previous) / dt
             if previous is not None and dt > 0
-            else np.zeros((len(self.body), 3))
+            else self.velocity if same_frame else np.zeros((len(self.body), 3))
         )
         self.previous_positions = self.body[:, :3].copy()
         self.last_time = self.sim.sim_time
         self._site_cache = {}
         self._site_pose_groups = {}
-        self._site_velocity_groups = {}
+        if not same_frame:
+            self._site_velocity_groups = {}
 
     def joint_q(self, key):
         return self.q[(self.joints[key] if isinstance(key, str) else key).q]

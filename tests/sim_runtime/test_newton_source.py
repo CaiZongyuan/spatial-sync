@@ -9,7 +9,7 @@ pytest.importorskip("newton")
 pytestmark = pytest.mark.newton
 
 from apps.api.app.sources.newton_source import NewtonSource
-from packages.protocol.schema import Command, SessionOptions, SessionState
+from packages.protocol.schema import Command, InvokeRequest, SessionOptions, SessionState
 
 
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)])
@@ -20,6 +20,13 @@ async def test_spawned_source_preserves_command_frames_reset_seq_and_cleanup(dev
         assert catalog.sceneRevision == manifest.sceneRevision and not catalog.entities
         initial = source.latest_frame()
         assert manifest.sessionId == "source-test"
+        # Exercise actual private admission leases through the production
+        # spawned Runner, even though this tiny scene has no device entities.
+        denied = await source.invoke(InvokeRequest(
+            invocationId="unknown-device", requestId="unknown-device", entityKey="/missing",
+            action="work", epoch=0, createdSimTime=0, createdAtMs=0,
+        ))
+        assert denied.status == "rejected" and denied.error.code == "unknown_entity"
         assert source.stats()["runnerPID"] != os.getpid()
         bodies = [node for node in manifest.nodes if node.kind == "body"]
         ids = {node.streamId for node in bodies}
