@@ -524,7 +524,7 @@ def demo(args):
         "SPATIAL_NEWTON_STARTUP_TIMEOUT_SECONDS": str(startup_budget),
         "SPATIAL_LIBRARY_PHYSICS_TIMEOUT_SECONDS": str(startup_budget),
     }
-    if getattr(args, "demonstration", False):
+    if getattr(args, "demonstration", False) and env.get("SPATIAL_PASSAGE_CONTACT_TRACE_DIR"):
         env["SPATIAL_PASSAGE_CONTACT_TRACE_DIR"] = str(args.out / "raw-contacts")
         env["PYTHONPATH"] = os.pathsep.join((str(ROOT / "tools/passage_observer"),
                                            str(ROOT), str(ROOT / "apps/cli"), env.get("PYTHONPATH", "")))
