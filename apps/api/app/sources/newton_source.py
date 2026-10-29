@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import math
 import multiprocessing as mp
 import threading
 import time
@@ -30,7 +31,11 @@ from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
 
 class NewtonSource:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, *, startup_timeout_seconds: float = 180):
+        if (isinstance(startup_timeout_seconds, bool) or not math.isfinite(startup_timeout_seconds)
+                or not 0 < startup_timeout_seconds <= 1800):
+            raise ValueError("Newton startup timeout must be finite, positive and at most 1800 seconds")
+        self.startup_timeout_seconds = float(startup_timeout_seconds)
         self.session_id = session_id
         self.scene_package = None
         self.policy_subject = None
@@ -97,6 +102,7 @@ class NewtonSource:
         if ((self.simulation_subject is not None or self.deployment_permit is not None)
                 and self.execution_state_root is None):
             raise ValueError("Approved script/deployment execution requires an explicit state root")
+        startup_started = time.monotonic()
         self._loop = asyncio.get_running_loop()
         self._ready = self._loop.create_future()
         self.options = options.model_copy()
@@ -127,10 +133,18 @@ class NewtonSource:
             thread.start()
         self._watch_task = asyncio.create_task(self._watch(), name=f"newton-watch-{self.session_id}")
         try:
-            result = await asyncio.wait_for(self._ready, timeout=180)
+            remaining = max(0, self.startup_timeout_seconds - (time.monotonic() - startup_started))
+            result = await asyncio.wait_for(self._ready, timeout=remaining)
             self._starting = False
             self._loop.call_soon(self._drain_frame)
             return result
+        except TimeoutError as exc:
+            elapsed = time.monotonic() - startup_started
+            await self.close()
+            raise TimeoutError(
+                "Newton source startup TimeoutError: phase=await_ready; "
+                f"budget={self.startup_timeout_seconds:g}s; elapsed={elapsed:.3f}s"
+            ) from exc
         except BaseException:
             await self.close()
             raise
@@ -183,6 +197,8 @@ class NewtonSource:
     def _on_control(self, packet):
         try:
             kind = packet["kind"]
+            if kind == "ready" and (self._closing or self._closed or self._ready.cancelled()):
+                return  # A timed-out or cancelled candidate can never become ready again.
             if "stats" in packet:
                 self._metrics.update(packet["stats"])
                 self._runner_heartbeat.observe(packet["stats"])
