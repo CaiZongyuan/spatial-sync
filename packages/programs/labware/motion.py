@@ -34,6 +34,7 @@ class LabwareMotionProgram(RobotArmProgram):
         )
         tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
         speedScale: float = Field(default=0.3, gt=0, le=1)
+        automaticOpenWidthM: float = Field(default=.08, gt=0, le=.08, allow_inf_nan=False)
         graspMode: str = Field(default="weld", pattern="^weld$")
         jointKeys: list[str] = Field(
             min_length=7, max_length=7, json_schema_extra={"spatialReference": "joint", "posture": True}
@@ -73,6 +74,7 @@ class LabwareMotionProgram(RobotArmProgram):
             return self
 
     def init(self, ctx):
+        self.gripper_open_width_m = ctx.config.automaticOpenWidthM
         self.body_grips = {
             ctx.physics.bind_body(key): (ctx.config.graspOffsets[key], ctx.config.gripDiameters[key])
             for key in ctx.config.tubes

@@ -20,6 +20,7 @@ class RobotArmProgram:
     id, type, tick_priority = "robot_arm.newton", "robot-arm/v1", 10
     gripper_speed_mps = .4
     gripper_timeout_s = 2
+    gripper_open_width_m = .08
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
@@ -172,7 +173,7 @@ class RobotArmProgram:
                     self.pick_height = float(ctx.physics.body[self.tubes[self.pick_tube], 2])
                 self.plan.append(("move", approach, name))
                 if operation == "pick":
-                    self.plan.append(("gripper", 0.08, None))
+                    self.plan.append(("gripper", self.gripper_open_width_m, None))
                 self.plan.extend(
                     [
                         ("check", None, name),
@@ -217,7 +218,7 @@ class RobotArmProgram:
         for body in self.tubes.values():
             if port.welds.active(self.hand, body):
                 self.pending_release.add(body)
-        self.gripper_goal = 0.08
+        self.gripper_goal = self.gripper_open_width_m
 
     def _drive_gripper(self, ctx, dt):
         # URDF finger speed is .2m/s each. A position step from80mm to0
@@ -300,7 +301,7 @@ class RobotArmProgram:
             if done and name:
                 ctx.set(atLocation=name)
         elif kind in ("gripper", "pick", "place"):
-            width = 0 if kind == "pick" else 0.08 if kind == "place" else target
+            width = 0 if kind == "pick" else self.gripper_open_width_m if kind == "place" else target
             self.gripper_goal = width
             self._drive_gripper(ctx, dt)
             actual = self._width(port)
