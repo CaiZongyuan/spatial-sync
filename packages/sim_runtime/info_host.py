@@ -119,21 +119,31 @@ class NewtonInfoHost:
     def flush(self):
         self.emit(self.host.drain_events())
 
-    def invoke(self, request):
-        result = self.host.invoke(request)
+    def _intake(self, callback, argument, *, admit=None):
+        if self.port:
+            self.port.capture()
+        if admit is not None and not admit():
+            raise TimeoutError("Runner intake lease expired before Host admission")
+        try:
+            result = callback(argument)
+        finally:
+            # accept/cancel can establish holding targets while PAUSED. These
+            # must reach the solver before even the first resumed physics step.
+            if self.port:
+                self.port.commit()
         self.flush()
+        return result
+
+    def invoke(self, request, *, admit=None):
+        result = self._intake(self.host.invoke, request, admit=admit)
         self.emit([result])
         return result
 
-    def cancel(self, invocation_id):
-        result = self.host.cancel(invocation_id)
-        self.flush()
-        return result
+    def cancel(self, invocation_id, *, admit=None):
+        return self._intake(self.host.cancel, invocation_id, admit=admit)
 
-    def revoke_before_start(self, invocation_id):
-        result = self.host.revoke_before_start(invocation_id)
-        self.flush()
-        return result
+    def revoke_before_start(self, invocation_id, *, admit=None):
+        return self._intake(self.host.revoke_before_start, invocation_id, admit=admit)
 
     def reset(self):
         self.timings.clear()

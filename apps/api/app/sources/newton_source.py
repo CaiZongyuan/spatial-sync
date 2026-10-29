@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import multiprocessing as mp
 import threading
+import time
 import uuid
 from collections import OrderedDict
 
@@ -23,6 +24,7 @@ from packages.protocol.schema import (
     SessionState,
     TransformFrame,
 )
+from packages.sim_runtime.runner import RpcFence
 from packages.transport import FrameCodec, PipeWriter, create_transport
 from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
@@ -49,6 +51,7 @@ class NewtonSource:
         self._command_lock = asyncio.Lock()
         self._runner_heartbeat = RunnerHeartbeat()
         self._pending = {}
+        self._rpc_fence = RpcFence()
         self._events = asyncio.Queue()
         self._metrics = {}
         self._failed = False
@@ -103,7 +106,7 @@ class NewtonSource:
         arguments = (child, self.session_id, scene_id, options.model_dump(), self.scene_package)
         if self.policy_subject is not None:
             arguments += (self.policy_subject,)
-        worker_context = {}
+        worker_context = {"rpc_fence": self._rpc_fence}
         if self.simulation_subject is not None:
             worker_context["simulation_subject"] = self.simulation_subject
         if self.deployment_permit is not None:
@@ -228,6 +231,10 @@ class NewtonSource:
                 pass
             else:
                 future = self._pending.get(packet.get("token"))
+                if kind == "rpc_expired":
+                    if future is not None and not future.done():
+                        future.set_exception(TimeoutError("Runner intake expired before Host admission"))
+                    return
                 if kind == "result":
                     result = CommandResult.model_validate(packet["result"])
                     if result.frame:
@@ -264,9 +271,9 @@ class NewtonSource:
                     if future is not None and not future.done():
                         future.set_exception(RuntimeError(packet["message"]))
                     return
-                elif kind == "unknown_entity":
+                elif kind in ("unknown_entity", "unknown_invocation"):
                     if future is not None and not future.done():
-                        future.set_exception(KeyError(packet["key"]))
+                        future.set_exception(KeyError(packet.get("key", packet.get("invocationId"))))
                     return
                 elif kind == "closed":
                     value = None
@@ -318,10 +325,17 @@ class NewtonSource:
         token = uuid.uuid4().hex
         future = self._loop.create_future()
         self._pending[token] = future
+        expires_at = time.monotonic() + timeout
+        lease = None
         try:
-            self._writer.offer({"kind": kind, "token": token, **payload})
-            return await asyncio.wait_for(future, timeout=timeout)
+            if kind in ("invoke", "cancel", "revoke_before_start"):
+                lease = self._rpc_fence.reserve()
+            self._writer.offer({"kind": kind, "token": token, "expiresAt": expires_at,
+                                "admission": lease, **payload})
+            return await asyncio.wait_for(future, timeout=max(0, expires_at - time.monotonic()))
         finally:
+            if lease is not None:
+                self._rpc_fence.retire(lease)
             self._pending.pop(token, None)
 
     def latest_frame(self) -> TransformFrame | None:
