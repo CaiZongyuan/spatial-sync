@@ -91,6 +91,7 @@ def bindings(stage, layout):
                     "tolerance": 0.005,
                     "role": role,
                     "peerDoor": LAB + "/Incubator/" + peer,
+                    **layout["jointSafety"][LAB + "/Incubator/" + name],
                 },
             }
         )
@@ -106,6 +107,7 @@ def bindings(stage, layout):
                 "upper": 0.45,
                 "maxSpeed": 0.08,
                 "role": "axis",
+                **layout["jointSafety"][LAB + "/RailCarriage"],
             },
         }
     )

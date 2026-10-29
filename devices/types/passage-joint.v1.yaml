@@ -2,6 +2,19 @@ type: passage-joint/v1
 title: Passage rail or door joint
 description: Position and completion use physical feedback; stops retain current targets.
 properties:
+  contactFactsAvailable:
+    schema: {type: boolean}
+  unsafeContactCount:
+    schema: {type: integer, minimum: 0}
+  lastContactShapes:
+    schema: {type: array, items: {type: string}, maxItems: 2}
+  lastContactDepthM:
+    schema: {type: number, minimum: 0}
+    unit: m
+  clearanceKnown:
+    schema: {type: boolean}
+  clearanceBlockedBy:
+    schema: {type: array, items: {type: string}}
   position:
     schema: {type: number}
   velocity:
@@ -39,4 +52,11 @@ actions:
     required: *required
     concurrent: true
     longRunning: true
-events: {}
+events:
+  unsafeContact:
+    schema:
+      type: object
+      properties:
+        shapes: {type: array, items: {type: string}, minItems: 2, maxItems: 2}
+        depthM: {type: number, minimum: 0}
+      required: [shapes, depthM]
