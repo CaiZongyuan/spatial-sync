@@ -41,6 +41,9 @@ export class PassageController {
   private cancellationRequests = new Set<string>();
   private stopped = true;
   private stopGeneration = 0;
+  private handoff?: { sessionEpoch: number; sceneRevision: string; owner: string; epoch: number; baselineMode: JsonValue;
+    mode: 'auto' | 'manual'; requestId: string; params: Record<string, JsonValue>; invocationId?: string;
+    confirm?: { requestId: string; params: Record<string, JsonValue>; invocationId?: string } };
   constructor(readonly sessionId: string, readonly workcell: string, private http: Transport = request) {}
   private route = () => `/sessions/${encodeURIComponent(this.sessionId)}`;
   stop() { this.stopped = true; this.stopGeneration++; }
@@ -142,19 +145,27 @@ export class PassageController {
     const checkpoint = await this.inspect(flow.planId); const values = this.valid(checkpoint);
     if (flow !== this.flow) return '控制意图已更新，先前流程已停止派发';
     if (checkpoint.session.simTime - flow.beganSimTime > 120) { this.block(); return '停稳与交接超出仿真时间预算，保留现场后重新核对'; }
+    if (this.handoff) {
+      const state = this.handoffState(checkpoint);
+      if (state === 'waiting') return '正在等待同一次控制交接的源侧回执与状态传播；不会重发';
+      if (state === 'confirmed') this.handoff = undefined;
+      else {
+        await this.cancelActive(flow.planId);
+        if (flow !== this.flow) return '控制意图已更新';
+        if (values.controlSafe !== true || (await this.pendingControlled()).length) {
+          if (checkpoint.session.state === 'PAUSED') flow.phase = 'paused-hold';
+          return '正在观察物理停稳与在途调用终态；暂停时请继续推进物理制动';
+        }
+        await this.confirmControl(flow.planId);
+        return '正在等待同一次确认交接的源侧回执';
+      }
+    }
     if (values.controlOwner !== this.owner || values.controlMode !== flow.mode) {
       if (values.controlMode !== 'holding') {
         await this.requestControl(flow.planId, flow.mode);
         return '正在停止先前控制并建立保持目标；尚未确认停稳';
       }
-      await this.cancelActive(flow.planId);
-      if (flow !== this.flow) return '控制意图已更新，先前流程已停止派发';
-      if (values.controlSafe !== true || (await this.pendingControlled()).length) {
-        if (checkpoint.session.state === 'PAUSED') { flow.phase = 'paused-hold'; return '仿真暂停中，保持请求已生效；点击继续推进物理制动，自动派发仍停止'; }
-        return '正在观察物理停稳与在途调用终态；保留持物及液体';
-      }
-      await this.confirmControl(flow.planId);
-      return '源侧已确认交接，正在核对当前现场';
+      this.block(); failure('当前保持请求身份未知；不能确认或重发交接');
     }
     if (values.controlSafe !== true) return '正在等待源侧实测停稳';
     if (flow.mode === 'manual' && !flow.single) { flow.phase = 'manual'; return '人工接管已完成；自动派发已停止'; }
@@ -251,14 +262,44 @@ export class PassageController {
   }
   async requestControl(planId: string, mode: 'manual' | 'auto') {
     this.stop();
+    if (this.handoff) return;
     const checkpoint = await this.inspect(planId);
     const values = this.valid(checkpoint);
     if (typeof values.controlOwner !== 'string' || !Number.isInteger(values.controlEpoch)) failure('控制状态未知');
     if (values.controlMode === 'holding') failure('已有交接请求，先核对并确认');
+    return this.requestHandoff(checkpoint.session, values, mode);
+  }
+  private async requestHandoff(session: Session, values: EntityValues['values'], mode: 'manual' | 'auto') {
+    if (this.handoff) return;
     // Source accept fences the old epoch even when the simulation is paused.
-    return this.http<Invocation>(`${this.route()}/actions`, post({ requestId: crypto.randomUUID(), entityKey: this.workcell,
-      action: 'requestControl', params: { owner: values.controlOwner, epoch: values.controlEpoch,
-        operationId: crypto.randomUUID(), nextOwner: this.owner, mode } }));
+    const handoff = this.handoff = { sessionEpoch: session.epoch, sceneRevision: session.sceneRevision,
+      owner: String(values.controlOwner), epoch: Number(values.controlEpoch), baselineMode: values.controlMode, mode,
+      requestId: crypto.randomUUID(), params: { owner: values.controlOwner, epoch: values.controlEpoch,
+        operationId: crypto.randomUUID(), nextOwner: this.owner, mode }, invocationId: undefined as string | undefined };
+    try {
+      const invocation = await this.http<Invocation>(`${this.route()}/actions`, post({ requestId: handoff.requestId,
+        entityKey: this.workcell, action: 'requestControl', params: handoff.params }));
+      handoff.invocationId = invocation.invocationId;
+      return invocation;
+    } catch { return; } // Admission is unknown. Observe the original identity, never repost.
+  }
+  private handoffState(checkpoint: Checkpoint): 'waiting' | 'holding' | 'confirmed' {
+    const h = this.handoff!; const v = checkpoint.entity.values;
+    const conflict = () => { this.block(); return failure('控制交接上下文已变化；保留现场并停止'); };
+    if (checkpoint.session.epoch !== h.sessionEpoch || checkpoint.session.sceneRevision !== h.sceneRevision) return conflict();
+    const requests = rows(object(v.materialSnapshot)?.controlRequests);
+    const matches = (action: string, params: Record<string, JsonValue>, owner: string, mode: string) => requests.some(receipt => {
+      if (receipt.operationId !== params.operationId || receipt.action !== action || receipt.epoch !== h.epoch + 1 || receipt.owner !== owner || receipt.mode !== mode) return false;
+      try { const actual = object(JSON.parse(String(receipt.paramsJson))); return actual && Object.keys(actual).length === Object.keys(params).length && Object.entries(params).every(([key, value]) => actual[key] === value); } catch { return false; }
+    });
+    if (v.controlEpoch === h.epoch && v.controlOwner === h.owner && v.controlMode === h.baselineMode && !h.confirm) return 'waiting';
+    if (v.controlEpoch !== h.epoch + 1) return conflict();
+    const holding = v.controlOwner === h.owner && v.controlMode === 'holding';
+    const completed = v.controlOwner === this.owner && v.controlMode === h.mode;
+    if (!holding && !(h.confirm && completed)) return conflict();
+    if (!matches('requestControl', h.params, h.owner, 'holding')) return 'waiting';
+    if (h.confirm) return completed && matches('confirmControl', h.confirm.params, this.owner, h.mode) ? 'confirmed' : 'waiting';
+    return 'holding';
   }
   private async pendingControlled() {
     const lists = await Promise.all(['pending_approval', 'accepted', 'running'].map(status =>
@@ -272,6 +313,17 @@ export class PassageController {
     const values = this.valid(checkpoint);
     if (values.controlMode !== 'holding' || values.controlSafe !== true) failure('设备尚未实测停稳；保持现场并等待');
     if ((await this.pendingControlled()).length) failure('仍有已受理或运行调用；先取消并观察终态，再确认交接');
+    if (this.handoff) {
+      const h = this.handoff;
+      if (h.confirm || this.handoffState(checkpoint) !== 'holding') return;
+      const confirm = h.confirm = { requestId: crypto.randomUUID(), params: { owner: values.controlOwner,
+        epoch: values.controlEpoch, operationId: crypto.randomUUID() }, invocationId: undefined as string | undefined };
+      try {
+        const invocation = await this.http<Invocation>(`${this.route()}/actions`, post({ requestId: confirm.requestId,
+          entityKey: this.workcell, action: 'confirmControl', params: confirm.params }));
+        confirm.invocationId = invocation.invocationId; return invocation;
+      } catch { return; }
+    }
     const requests = object(values.materialSnapshot)?.controlRequests;
     const last = Array.isArray(requests) ? object(requests.at(-1)) : undefined;
     const params = typeof last?.paramsJson === 'string' ? JSON.parse(last.paramsJson) as Record<string, unknown> : undefined;
@@ -424,8 +476,7 @@ export class PassageController {
     const state = await this.http<{ entities: Record<string, EntityValues> }>(`${this.route()}/state?keys=${encodeURIComponent(this.workcell)}`);
     const values = state.entities[this.workcell]?.values;
     if (values?.controlMode !== 'holding' && typeof values?.controlOwner === 'string' && Number.isInteger(values.controlEpoch))
-      await this.http(`${this.route()}/actions`, post({ requestId: crypto.randomUUID(), entityKey: this.workcell, action: 'requestControl',
-        params: { owner: values.controlOwner, epoch: values.controlEpoch, operationId: crypto.randomUUID(), nextOwner: this.owner, mode: this.flow?.mode ?? 'manual' } }));
+      await this.requestHandoff(await this.http<Session>(this.route()), values, this.flow?.mode ?? 'manual');
     return result;
   }
   async resume() {

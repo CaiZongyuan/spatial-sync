@@ -37,12 +37,15 @@ function roundFixture() {
       if (body.action === 'requestControl') {
         controls.push(body.action); entity.values.controlEpoch = Number(entity.values.controlEpoch) + 1; entity.values.controlMode = 'holding'; entity.values.controlSafe = behavior.holdSafe;
         next = { owner: body.params.nextOwner, mode: body.params.mode };
-        (object(entity.values.materialSnapshot)!.controlRequests as JsonValue[]).push({ action: 'requestControl', paramsJson: JSON.stringify(body.params) });
+        (object(entity.values.materialSnapshot)!.controlRequests as JsonValue[]).push({ action: 'requestControl', operationId: body.params.operationId,
+          epoch: entity.values.controlEpoch, owner: entity.values.controlOwner, mode: entity.values.controlMode, paramsJson: JSON.stringify(body.params) });
         return { invocationId: 'request', status: 'accepted' };
       }
       if (body.action === 'confirmControl') {
         if (entity.values.controlSafe !== true) throw new Error('fixture rejects unsafe confirmation');
         controls.push(body.action); entity.values.controlOwner = next.owner; entity.values.controlMode = next.mode;
+        (object(entity.values.materialSnapshot)!.controlRequests as JsonValue[]).push({ action: 'confirmControl', operationId: body.params.operationId,
+          epoch: entity.values.controlEpoch, owner: entity.values.controlOwner, mode: entity.values.controlMode, paramsJson: JSON.stringify(body.params) });
         return { invocationId: 'confirm', status: 'accepted' };
       }
       const active = plans.find(plan => plan.id === body.planId)!;

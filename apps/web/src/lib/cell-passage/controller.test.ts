@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createServer } from 'node:http';
 import { PassageController } from './controller';
 import type { Catalog } from '../protocol';
 import type { PlanDocument } from '../plans/model';
@@ -35,6 +36,108 @@ const catalog = { sceneRevision: 'r', entities: { '/w': { type: 'cell-passage-wo
 async function arm(f: ReturnType<typeof fixture>) { const review = await f.controller.review('p', catalog); await f.controller.prepareRemaining('p', review); await f.controller.arm('p'); }
 const actionCalls = (f: ReturnType<typeof fixture>) => f.http.mock.calls.filter(([path]) => path.endsWith('/actions'));
 describe('passage browser scheduling through existing HTTP/Plan API', () => {
+  it('does not repost across a real HTTP ACK followed by delayed state publication', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    const server = createServer(async (req, res) => {
+      let body = ''; for await (const chunk of req) body += chunk;
+      try { const result = await f.http(req.url!, body ? { method: req.method, body } : undefined);
+        res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(result));
+      } catch { res.statusCode = 500; res.end('{}'); }
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('HTTP fixture unavailable');
+    const actualTransport = async <T,>(path: string, options?: RequestInit): Promise<T> => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() as Promise<T>;
+    };
+    const controller = new PassageController('s', '/w', actualTransport);
+    try {
+      await controller.begin('p', catalog, 'manual');
+      for (let n = 0; n < 4; n++) await controller.progress();
+      expect(actionCalls(f)).toHaveLength(1); expect(controller.flow?.phase).toBe('acquiring');
+      const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+      f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+      f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl',
+        epoch: 4, owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+      await controller.progress();
+      for (let n = 0; n < 4; n++) await controller.progress();
+      expect(actionCalls(f)).toHaveLength(2);
+    } finally { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+  });
+  it.each(['owner', 'epoch', 'scene', 'session'] as const)('stops an outstanding handoff when %s conflicts', async change => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    await f.controller.begin('p', catalog, 'manual');
+    if (change === 'owner') f.values.controlOwner = 'competitor';
+    if (change === 'epoch') f.values.controlEpoch = 5;
+    if (change === 'scene') f.session.sceneRevision = 'changed';
+    if (change === 'session') f.session.epoch = 1;
+    await expect(f.controller.progress()).rejects.toThrow();
+    expect(actionCalls(f)).toHaveLength(1); expect(f.controller.dispatching).toBe(false);
+  });
+  it('never retries an unknown admission and only GETs while the baseline remains cached', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous'; f.lose();
+    await f.controller.begin('p', catalog, 'manual');
+    for (let n = 0; n < 5; n++) await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(1); expect(f.controller.flow?.phase).toBe('acquiring');
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    for (let n = 0; n < 3; n++) await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(1); // Missing receipt is not our handoff.
+  });
+  it('keeps a paused physical hold and pending calls ahead of confirmation', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    await f.controller.begin('p', catalog, 'manual');
+    const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding'; f.values.controlSafe = false; f.session.state = 'PAUSED';
+    f.values.materialSnapshot.controlRequests.push({ action: 'requestControl', operationId: body.params.operationId,
+      epoch: 4, owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+    await f.controller.progress(); expect(f.controller.flow?.phase).toBe('paused-hold');
+    expect(actionCalls(f)).toHaveLength(1);
+    const original = f.http.getMockImplementation()!;
+    f.http.mockImplementation(async (path, options) => path.endsWith('/commands') ? {} : original(path, options));
+    await f.controller.continueFlow(); expect(f.controller.flow?.phase).toBe('acquiring');
+    expect(actionCalls(f)).toHaveLength(1); expect(f.controller.dispatching).toBe(false);
+  });
+  it('observes delayed handoff and confirmation witnesses without repeating either POST', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    await f.controller.begin('p', catalog, 'manual');
+    for (let n = 0; n < 4; n++) await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(1);
+    const request = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    await f.controller.progress(); // Epoch alone does not establish our request.
+    expect(actionCalls(f)).toHaveLength(1);
+    f.values.materialSnapshot.controlRequests.push({ operationId: request.params.operationId, action: 'requestControl',
+      epoch: 4, owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(request.params) });
+    await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(2);
+    for (let n = 0; n < 4; n++) await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(2);
+    f.values.controlOwner = f.controller.owner; f.values.controlMode = 'manual';
+    await f.controller.progress();
+    expect(f.controller.flow?.phase).toBe('acquiring');
+    const confirm = JSON.parse(String(actionCalls(f)[1][1]?.body));
+    f.values.materialSnapshot.controlRequests.push({ operationId: confirm.params.operationId, action: 'confirmControl',
+      epoch: 4, owner: f.controller.owner, mode: 'manual', paramsJson: JSON.stringify(confirm.params) });
+    await f.controller.progress();
+    expect(f.controller.flow?.phase).toBe('manual'); expect(actionCalls(f)).toHaveLength(2);
+  });
+  it('observes a lost confirmation response without repeating it or accepting owner alone', async () => {
+    const f = fixture(); f.values.controlOwner = 'previous';
+    await f.controller.begin('p', catalog, 'manual');
+    const body = JSON.parse(String(actionCalls(f)[0][1]?.body));
+    f.values.controlEpoch = 4; f.values.controlMode = 'holding';
+    f.values.materialSnapshot.controlRequests.push({ operationId: body.params.operationId, action: 'requestControl',
+      epoch: 4, owner: 'previous', mode: 'holding', paramsJson: JSON.stringify(body.params) });
+    f.lose(); await f.controller.progress();
+    for (let n = 0; n < 3; n++) await f.controller.progress();
+    f.values.controlOwner = f.controller.owner; f.values.controlMode = 'manual';
+    for (let n = 0; n < 3; n++) await f.controller.progress();
+    expect(actionCalls(f)).toHaveLength(2); expect(f.controller.flow?.phase).toBe('acquiring');
+    const confirm = JSON.parse(String(actionCalls(f)[1][1]?.body));
+    f.values.materialSnapshot.controlRequests.push({ operationId: confirm.params.operationId, action: 'confirmControl',
+      epoch: 4, owner: f.controller.owner, mode: 'manual', paramsJson: JSON.stringify(confirm.params) });
+    await f.controller.progress(); expect(f.controller.flow?.phase).toBe('manual');
+  });
   it('binds configuration expectations during a mid-run first read without relabelling it as a fresh observed initial state', async () => {
     const f = fixture(), c = structuredClone(catalog);
     c.entities['/w'].config.tips = [{ id: 'T1', site: '/T1', bodyKey: '/tip' }];
