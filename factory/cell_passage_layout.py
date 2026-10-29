@@ -5,8 +5,6 @@ from pxr import Gf, Sdf, UsdGeom, UsdPhysics
 from factory.cell_passage import (
     HANDLE,
     LAB,
-    TIP_BORE_BOTTOM_RADIUS_M,
-    TIP_BORE_TOP_RADIUS_M,
     TIP_HEIGHT_M,
     TIP_MATING_Z_M,
     TIP_SOCKET_INNER_RADIUS_M,
@@ -18,6 +16,7 @@ from factory.cell_passage import (
     site,
     translate,
 )
+from factory.cell_passage_tip import ASSET_NAME, bore_volume_ul
 
 
 def relocate(stage, root, fixed_joint, delta):
@@ -273,7 +272,7 @@ def populate(stage):
             name = f"Tip{row * 12 + col + 1:03d}"
             point = (0.655 + col * 0.013, 0.512 + row * 0.013, 1.044)
             key = LAB + "/Labware/" + name
-            reference(stage, key, "passage-tip-1000", point)
+            reference(stage, key, ASSET_NAME, point)
             site(stage, LAB + "/Labware/TipRack/" + name, point)
             cylinder(
                 stage,
@@ -300,6 +299,9 @@ def populate(stage):
     local = cache.GetLocalToWorldTransform(carriage).GetInverse().Transform(Gf.Vec3d(0.7, 0.4, 1.034))
     site(stage, tip_site, local)
     pump = rigid(stage, LAB + "/LiquidHandler/PumpPiston", 0.025)
+    # Teaching motor gravity compensation also contributes through ancestor
+    # FlexZ coordinates. This is a simulation controller, not an OEM claim.
+    pump.GetPrim().CreateAttribute("mjc:gravcomp", Sdf.ValueTypeNames.Float).Set(1.0)
     parent = pump.GetPrim().GetParent()
     local_pump = cache.GetLocalToWorldTransform(parent).GetInverse().Transform(Gf.Vec3d(0.72, 0.4, 1.25))
     translate(pump, local_pump)
@@ -314,10 +316,11 @@ def populate(stage):
     joint.CreateLowerLimitAttr(0)
     joint.CreateUpperLimitAttr(0.01)
     joint.CreateCollisionEnabledAttr(False)  # Parent piston guide interface only.
+    joint.GetPrim().CreateAttribute("mjc:actuatorgravcomp", Sdf.ValueTypeNames.Bool).Set(True)
     drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "linear")
     drive.CreateTypeAttr("force")
     drive.CreateStiffnessAttr(20000)
-    drive.CreateDampingAttr(100)
+    drive.CreateDampingAttr(1000)
     drive.CreateMaxForceAttr(100)
     drive.CreateTargetPositionAttr(0)
     root = LAB + "/Centrifuge"
@@ -339,6 +342,17 @@ def populate(stage):
         "schema": "lw.cell-passage-layout/1",
         "mechanicallyQualified": False,
         "movingBodyKeys": moving_bodies,
+        "motionLimits": {"xySpeedMPerS": 0.2, "zSpeedMPerS": 0.05, "axisAccelerationMPerS2": 0.25},
+        "pumpCompensation": {
+            "signalSource": "modeled",
+            "body": str(pump.GetPath()),
+            "bodyGravityCompensation": 1.0,
+            "jointActuatorGravityCompensation": True,
+            "stiffnessNPerM": 20000,
+            "dampingNsPerM": 1000,
+            "maximumForceN": 100,
+            "scope": "Teaching controller; gravity compensation affects ancestor FlexZ as well",
+        },
         "stations": {LAB + "/Sites/" + key: list(value) for key, value in stations.items()},
         "bodies": bodies,
         "lids": lids,
@@ -354,13 +368,7 @@ def populate(stage):
             "socketMinimumInnerDiameterM": 2 * TIP_SOCKET_INNER_RADIUS_M,
             "nozzleMaximumOuterDiameterM": 0.010,
             "insertionLengthM": TIP_HEIGHT_M - TIP_MATING_Z_M,
-            "boreBelowMatingVolumeUl": TIP_MATING_Z_M
-            * (
-                TIP_BORE_BOTTOM_RADIUS_M**2
-                + TIP_BORE_BOTTOM_RADIUS_M * TIP_BORE_TOP_RADIUS_M
-                + TIP_BORE_TOP_RADIUS_M**2
-            )
-            * 1e9,
+            "boreBelowMatingVolumeUl": bore_volume_ul(),
         },
         "axisJoints": [LAB + "/Joints/Flex" + name for name in "XYZ"],
         "pumpJoint": LAB + "/Joints/FlexPump",

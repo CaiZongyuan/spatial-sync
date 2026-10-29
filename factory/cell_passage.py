@@ -279,8 +279,11 @@ def package(output, name, author, *, kind="labware"):
 
 
 def build_labware(output):
+    from factory.cell_passage_tip import ASSET_NAME, PROFILE, PROTOTYPE_SHA256, relief
+    from packages.library.common import content_hash
+
     output = Path(output)
-    return [
+    packages = [
         package(output, name, author)
         for name, author in (
             ("passage-six-well-carrier", plate),
@@ -293,6 +296,18 @@ def build_labware(output):
             ("passage-tip-1000", tip),
         )
     ]
+    variant = package(output, ASSET_NAME, relief)
+    provenance_path = variant / "provenance.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["derivedFrom"] = {
+        "asset": "labware/passage-tip-1000@1",
+        "contentHash": content_hash(output / "assets/labware/passage-tip-1000/1"),
+        "prototypeSha256": PROTOTYPE_SHA256,
+        "profileZInnerVertexRadiusOuterVertexRadiusM": PROFILE,
+        "scope": "Self-authored geometry variant; original nozzle, TCP and tip Root are unchanged",
+    }
+    provenance_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+    return [*packages, variant]
 
 
 def build(source, output, *, bindings_overlay=None, with_workcell=False):
@@ -329,7 +344,9 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
     shutil.copyfile(source_stage, scene / "stage.usda")
     stage = Usd.Stage.Open(str(scene / "stage.usda"))
     layout = populate(stage)
-    for name, asset in (("tipGeometry", "passage-tip-1000"), ("solidWasteRegion", "passage-tip-waste")):
+    from factory.cell_passage_tip import ASSET_NAME
+
+    for name, asset in (("tipGeometry", ASSET_NAME), ("solidWasteRegion", "passage-tip-waste")):
         path = output / "assets/labware" / asset / "1"
         authored = Usd.Stage.Open(str(path / "asset.usda"))
         bounds = (
@@ -366,7 +383,9 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False):
 
         if bindings_overlay:
             raise ValueError("Select either the workcell generator or an external binding overlay")
-        mechanical["entities"].append(workcell_binding(layout))
+        workcell = workcell_binding(layout)
+        workcell["config"].update(layout["motionLimits"])
+        mechanical["entities"].append(workcell)
     if bindings_overlay:
         extra = yaml.safe_load(Path(bindings_overlay).read_text(encoding="utf-8"))
         extra = extra.get("entities", [extra])
