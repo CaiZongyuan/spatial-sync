@@ -7,6 +7,7 @@ import { liquidAction, operationReceipt, revisePlans } from './recovery';
 import { passageRound, roundIdentity } from './round';
 import { auditConservation, auditFinal, type FinalAudit } from './audit';
 import { compareFreshInitial, configurationInitial, type ConfigurationInitial } from './configuration';
+import { collectCycleEvidence } from './cycles';
 
 type Session = { sessionId: string; sceneRevision: string; epoch: number; state: string; simTime: number; sceneVersion?: string; sceneContentHash?: string };
 type Transport = <T>(path: string, options?: RequestInit) => Promise<T>;
@@ -64,14 +65,15 @@ export class PassageController {
       const detail = await this.http<{ root: string; sceneId: string; rev: number; contentHash: string }>(`/library/scenes/${encodeURIComponent(version)}`);
       if (checkpoint.session.sceneContentHash && detail.contentHash !== checkpoint.session.sceneContentHash) failure('运行场景与索引素材哈希不一致');
       const layout = await this.http(`/library/files/${encodeURIComponent(detail.root)}/scenes/${encodeURIComponent(detail.sceneId)}/${detail.rev}/mechanical-layout.json`);
+      const cycles = await collectCycleEvidence(path => this.http(path), this.route(), plans, object(object(layout)?.bodies) ?? {}, checkpoint.session, this.stageStates);
       const manifest = await this.http<SceneManifest>(`${this.route()}/scene`);
       const state = await this.http<{ entities: Record<string, EntityValues> }>(`${this.route()}/state?keys=`);
       const final = await this.inspect(checkpoint.plan.id);
       if (this.checkpointToken(final) !== this.checkpointToken(checkpoint)) failure('末态采样期间控制、计划或物料发生变化');
-      this.finalAudit = auditFinal(this.expectedInitial.material, final.entity.values.materialSnapshot, layout, manifest, this.auditBefore, frame, state.entities, plans, this.stageStates);
+      this.finalAudit = auditFinal(this.expectedInitial.material, final.entity.values.materialSnapshot, layout, manifest, this.auditBefore, frame, state.entities, cycles);
       if (this.initialComparison?.length) { this.finalAudit.errors.push(...this.initialComparison); this.finalAudit.material = false; this.finalAudit.status = 'invalid'; }
     } catch (error) {
-      this.finalAudit = { status: 'unavailable', material: false, spatial: false, environment: false, experimentQualified: false,
+      this.finalAudit = { status: 'unavailable', material: false, spatial: false, environment: false, cycles: false, experimentQualified: false,
         errors: [error instanceof Error ? error.message : String(error)] };
     }
     this.stop();

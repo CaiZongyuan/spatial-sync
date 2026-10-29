@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityValues, SceneManifest, Snapshot } from '../protocol';
-import type { PlanDocument } from '../plans/model';
 import { auditFinal, auditMaterial } from './audit';
+import type { CycleEvidence } from './cycles';
 
 // Independent arithmetic/geometry fixtures, not a Newton run or mechanical qualification.
 function worked() {
@@ -52,15 +52,13 @@ function geometric() {
   put('/cab', { cabinetReady: true, signalSource: 'modeled', inflowMs: .8, sashHeightCm: 20 });
   put('/World/Lab/Robot/fr3_link0', { holding: null, controlSafe: true });
   put('/World/Lab/Centrifuge', { phase: 'idle', controlSafe: true, lidOpen: false, loadedEntities: [null, null, null, null] });
-  const plans = [3, 4].map(stage => ({ steps: [{ id: stage * 100000 + 1, do: { entity: '/World/Lab/Centrifuge', action: 'start', params: { operationId: `cycle-${stage}` } } }] })) as unknown as PlanDocument[];
-  const stageStates = new Map([3, 4].map(stage => [stage, { '/World/Lab/Centrifuge': { values: { completedCycle: `cycle-${stage}`, cycleRunSeconds: 2, actualRotorTurns: 1,
-    completedLoad: (stage === 3 ? ['S1', 'S2', 'S3', 'S4'] : ['S5', 'S6', 'B5', 'B6']).map(name => bodies[name]) } } as unknown as EntityValues }]));
+  const cycles: CycleEvidence = { status: 'cycle_evidence_valid', batches: [3, 4].map(stage => ({ stage, status: 'cycle_receipt_valid', errors: [], stageSnapshotAvailable: true })) };
   const layout = { bodies, lids: {}, tips: [{ id: 'T1', bodyKey: '/tip' }], tipGeometry: { lowerLocal: [-.01, -.01, -.01], upperLocal: [.01, .01, .01] },
     solidWasteRegion: { bodyKey: '/waste', lowerLocal: [-.1, -.1, -.1], upperLocal: [.1, .1, .1], contactAllowanceM: 0 }, incubatorEntity: '/inc', cabinetEntity: '/cab',
     environmentLimits: { temperatureC: [36.5, 37.5], co2Percent: [4.5, 5.5], humidityPercent: [90, 100], inflowMs: [.4, 2], sashHeightCm: [18, 22] } };
-  return { ...f, bodies, manifest, before, after, entities, layout, plans, stageStates };
+  return { ...f, bodies, manifest, before, after, entities, layout, cycles };
 }
-const audit = (f: ReturnType<typeof geometric>) => auditFinal(f.initial, f.final, f.layout, f.manifest, f.before, f.after, f.entities, f.plans, f.stageStates);
+const audit = (f: ReturnType<typeof geometric>) => auditFinal(f.initial, f.final, f.layout, f.manifest, f.before, f.after, f.entities, f.cycles);
 describe('end-observation gate remains independent of Plan completion', () => {
   it('checks poses, cells, cycles and teaching environmental ranges but never grants experiment qualification', () => {
     const result = audit(geometric()); expect(result.errors).toEqual([]); expect(result.status).toBe('observations_valid'); expect(result.experimentQualified).toBe(false);
@@ -75,5 +73,9 @@ describe('end-observation gate remains independent of Plan completion', () => {
     const f = geometric(); f.entities['/inc'].values.humidityPercent = 60;
     expect(audit(f).environment).toBe(false); expect(audit(f).errors).toContain('教学环境超出固定范围：humidityPercent');
     f.entities['/inc'].values.humidityPercent = 95; f.manifest.source.kind = 'synthetic'; expect(audit(f).spatial).toBe(false);
+  });
+  it('does not grant end observations from a completed Plan without both cycle receipts', () => {
+    const f = geometric(); f.cycles = { status: 'unavailable', batches: [] };
+    expect(audit(f).status).toBe('unavailable'); expect(audit(f).cycles).toBe(false);
   });
 });

@@ -1,10 +1,10 @@
 import { Quaternion, Vector3 } from 'three';
 import type { EntityValues, JsonValue, Pose, SceneManifest, Snapshot } from '../protocol';
-import type { PlanDocument } from '../plans/model';
 import { multiplyPose } from '../scene/pose';
 import { object, passageContract, rows } from './model';
+import type { CycleEvidence } from './cycles';
 
-export interface FinalAudit { status: 'observations_valid' | 'invalid' | 'unavailable'; material: boolean; spatial: boolean; environment: boolean; errors: string[]; experimentQualified: false }
+export interface FinalAudit { status: 'observations_valid' | 'invalid' | 'unavailable'; material: boolean; spatial: boolean; environment: boolean; cycles: boolean; errors: string[]; experimentQualified: false }
 const cellFields = ['attachedLive', 'attachedDead', 'suspendedLive', 'suspendedDead', 'pelletLive', 'pelletDead'];
 const liveFields = ['attachedLive', 'suspendedLive', 'pelletLive'];
 function number(value: unknown): number { if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('末态数量或位姿未知'); return value; }
@@ -93,8 +93,9 @@ function poses(manifest: SceneManifest, frame: Snapshot) {
 
 /** Public read models establish end observations, not collision/transport or recording qualification. */
 export function auditFinal(initial: unknown, final: unknown, layoutValue: unknown, manifest: SceneManifest, before: Snapshot, after: Snapshot,
-  entities: Record<string, EntityValues>, plans: PlanDocument[], stageStates: Map<number, Record<string, EntityValues>>): FinalAudit {
-  const result: FinalAudit = { status: 'invalid', material: false, spatial: false, environment: false, errors: [], experimentQualified: false };
+  entities: Record<string, EntityValues>, cycles?: CycleEvidence): FinalAudit {
+  const cycleValid = cycles?.status === 'cycle_evidence_valid' && cycles.batches.length === 2 && passageContract.centrifugeCycleReceipt.stages.every(stage => cycles.batches.filter(batch => batch.stage === stage && batch.status === 'cycle_receipt_valid').length === 1);
+  const result: FinalAudit = { status: 'invalid', material: false, spatial: false, environment: false, cycles: cycleValid, errors: [], experimentQualified: false };
   try {
     result.errors.push(...auditMaterial(initial, final)); result.material = result.errors.length === 0;
     const layout = record(layoutValue), bodies = record(layout.bodies), lids = record(layout.lids);
@@ -152,14 +153,8 @@ export function auditFinal(initial: unknown, final: unknown, layoutValue: unknow
     const robot = entities['/World/Lab/Robot/fr3_link0']?.values, centrifuge = entities['/World/Lab/Centrifuge']?.values;
     if (robot?.holding !== null || robot.controlSafe !== true || centrifuge?.phase !== 'idle' || centrifuge.controlSafe !== true || centrifuge.lidOpen !== false ||
         !Array.isArray(centrifuge.loadedEntities) || centrifuge.loadedEntities.length !== 4 || centrifuge.loadedEntities.some(value => value !== null)) result.errors.push('末态机器人持物或离心机未清空/停稳');
-    for (const stage of [3, 4]) {
-      const facts = stageStates.get(stage)?.['/World/Lab/Centrifuge']?.values;
-      const cycle = plans.flatMap(plan => plan.steps).find(step => Math.floor(step.id / 100000) === stage && 'do' in step && step.do.action === 'start' && step.do.entity === '/World/Lab/Centrifuge');
-      const names = stage === 3 ? ['S1', 'S2', 'S3', 'S4'] : ['S5', 'S6', 'B5', 'B6'];
-      if (!cycle || !('do' in cycle) || facts?.completedCycle !== cycle.do.params.operationId || number(facts?.cycleRunSeconds) < 2 || number(facts?.actualRotorTurns) <= 0 ||
-          !Array.isArray(facts?.completedLoad) || names.some(name => !(facts.completedLoad as JsonValue[]).includes(bodies[name]))) result.errors.push(`缺少第 ${stage} 阶段实际离心周期证据`);
-    }
-    result.status = result.errors.length ? 'invalid' : 'observations_valid';
+    if (!result.cycles) result.errors.push(...(cycles?.batches.flatMap(batch => batch.errors.map(error => `第 ${batch.stage} 阶段：${error}`)) ?? []), '缺少两个一致的 Plan 绑定实际离心完成 receipt');
+    result.status = !cycles || cycles.status === 'unavailable' ? 'unavailable' : result.errors.length ? 'invalid' : 'observations_valid';
   } catch (error) { result.status = 'unavailable'; result.errors.push(error instanceof Error ? error.message : String(error)); }
   return result;
 }
