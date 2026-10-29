@@ -11,10 +11,9 @@ import time
 import uuid
 from pathlib import Path
 
-import yaml
-
 from apps.cli.lw.client import GatewayClient
 from packages.library.common import content_hash
+from tools.cell_passage import _install
 
 
 async def launch(library, url, output):
@@ -31,26 +30,9 @@ async def launch(library, url, output):
         save("health-before", health)
         if health["sessionCount"]:
             raise ValueError("The selected gateway already owns a session")
-        imports = []
-        for file in sorted((library / "assets").rglob("asset.yaml")):
-            metadata = yaml.safe_load(file.read_text(encoding="utf-8"))
-            expected = metadata["id"] + "@1"
-            receipt = await client.library_import(file.parent)
-            save(metadata["id"].replace("/", "-") + "-import", receipt)
-            if receipt.get("assetVersion") != expected:
-                raise ValueError("Gateway assigned another asset version: " + str(receipt))
-            detail = await client.library_describe(expected)
-            if detail["contentHash"] != content_hash(file.parent):
-                raise ValueError("Imported bytes differ from the factory: " + expected)
-            imports.append({"id": expected, "contentHash": detail["contentHash"]})
-            print("imported", expected, flush=True)
-        save("imported-assets", imports)
         scene = library / "scenes/cell-passage/1"
-        receipt = await client.library_import(scene)
-        save("scene-import", receipt)
-        selected = receipt["sceneVersion"]
-        report = await client.library_validate(selected)
-        save("scene-validation", report)
+        selected = await _install(client, library, output, content_hash(scene))
+        report = json.loads((output / "validation.json").read_text(encoding="utf-8"))
         if any(row["status"] == "fail" for row in report.get("checks", [])):
             raise ValueError("Public scene validation reported a blocking failure")
         started = await client.request(
