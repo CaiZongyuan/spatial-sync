@@ -382,3 +382,26 @@ Stop remains available to the current owner. Reports distinguish actual
 contacts from conservative sweep blockers. Missing declarations never mean an
 empty safe scene. Built-in older joint/door types and wire/recording formats
 keep their existing behavior.
+
+### Explicit demonstration rack seating approximation
+
+The demonstration may declare `seatingContactPairs` and `seatingContactAllowanceM`
+on its labware-motion and rail programs. Declarations contain at most eight exact,
+unordered shape pairs: `Labware/{S1..S6,B5,B6}/Floor` and the corresponding
+`Labware/CollectionRack/Frame/{name}Floor`. Each pair must share its scene prefix.
+The finite allowance is positive and at most 0.005 m. Empty declarations preserve
+existing behavior; invalid, mismatched or duplicate declarations fail closed.
+This is not a body-wide, floor-wide or robot contact exemption.
+
+The programs query real contacts first and apply the extra band only to declared
+pairs. Ordinary contact limits remain at most 0.002 m, and bilateral physical
+grasp qualification keeps its independent existing limit. Accepted seating
+contacts deeper than the ordinary limit emit `seatingContact` on each contact query,
+with the actual shape keys, deepest actual `depthM` per pair and configured
+`limitM`. Raw depths are never clamped. Above-band or undeclared contacts retain
+the ordinary unsafe-contact behavior and evidence.
+
+This explicit demo approximation does not establish formal precision. Earlier
+runs stopped under the 2 mm boundary remain failed runs; they are not reclassified
+as successful after introducing a 5 mm seating band. Scene demonstration metadata
+must identify the exact pairs and allowance and retain `formalPrecisionQualified=false`.

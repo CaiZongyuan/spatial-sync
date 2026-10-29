@@ -53,6 +53,14 @@ actions:
     concurrent: true
     longRunning: true
 events:
+  seatingContact:
+    schema:
+      type: object
+      properties:
+        shapes: {type: array, items: {type: string}, minItems: 2, maxItems: 2}
+        depthM: {type: number, minimum: 0}
+        limitM: {type: number, exclusiveMinimum: 0, maximum: 0.005}
+      required: [shapes, depthM, limitM]
   unsafeContact:
     schema:
       type: object

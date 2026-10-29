@@ -7,7 +7,7 @@ from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation
 from packages.programs.robot_arm.newton import RobotArmProgram
 
-from .contacts import contacts_for_bodies
+from .contacts import contacts_for_bodies, validate_seating_contacts
 from .facts import seated_station
 from .grasp import physical_grasp
 
@@ -38,6 +38,8 @@ class LabwareMotionProgram(RobotArmProgram):
         automaticOpenWidthM: float = Field(default=.08, gt=0, le=.08, allow_inf_nan=False)
         gripperSpeedMPerS: float = Field(default=.04, gt=0, le=.04, allow_inf_nan=False)
         contactAllowanceM: float = Field(default=.001, gt=0, le=.002, allow_inf_nan=False)
+        seatingContactPairs: list[tuple[str, str]] = Field(default_factory=list, max_length=8)
+        seatingContactAllowanceM: float = Field(default=.002, gt=0, le=.005, allow_inf_nan=False)
         jointAccelerationRadPerS2: float = Field(default=2., gt=0, le=2., allow_inf_nan=False)
         graspMode: str = Field(default="weld", pattern="^weld$")
         jointKeys: list[str] = Field(
@@ -61,6 +63,7 @@ class LabwareMotionProgram(RobotArmProgram):
             from packages.programs.robot_arm.taught import require_postures
 
             require_postures(self.locations, [(None, None)] * 7)
+            validate_seating_contacts(self.seatingContactPairs, self.seatingContactAllowanceM)
             for name in self.symmetricPreInsertionLocations:
                 if "preInsertion" not in self.locations["locations"].get(name, {}):
                     raise ValueError("Symmetric insertion requires a taught preInsertion posture")
@@ -279,7 +282,13 @@ class LabwareMotionProgram(RobotArmProgram):
             if key in self.tubes:
                 active.add(self.tubes[key])
         try:
-            contacts = contacts_for_bodies(ctx.physics, active, limit_m=self.contact_allowance_m)
+            contacts = contacts_for_bodies(
+                ctx.physics, active, limit_m=self.contact_allowance_m,
+                seating_pairs=ctx.config.seatingContactPairs,
+                seating_limit_m=ctx.config.seatingContactAllowanceM,
+                on_seating_contact=(lambda **data: ctx.emit("seatingContact", **data))
+                if ctx.config.seatingContactPairs else None,
+            )
         except ValueError:
             self._hold(ctx)
             self._end(ctx, ("contact_unavailable", "Actual motion contact facts are unavailable"))

@@ -93,13 +93,15 @@ class JointPort:
         return value, np.array([0, 0, 0, 1])
 
 
-def build_joint_host(tmp_path, *, door=False, holding="/cap", lid_closed=False, bounds_error=False):
+def build_joint_host(tmp_path, *, door=False, holding="/cap", lid_closed=False, bounds_error=False,
+                     safety_config=None):
     port = JointPort(door)
     port.bounds_error = bounds_error
     config = {"controlEntity": "/control", "jointKey": "/hinge", "lower": 0, "upper": 1,
               "maxSpeed": 0.1, "role": "inner" if door else "axis", "peerDoor": "/armbody",
               "armEntity": "/armbody", "movingBodyKeys": [port.child],
               "attachedLids": {"/cap": "/lid"}}
+    config.update(safety_config or {})
     if door:
         config.update(clearanceBodyKeys=["/armbody"], sweepAnchorBody="/anchor",
                       sweepLowerLocalM=[-0.5, -0.5, 0], sweepUpperLocalM=[0.5, 0.5, 2])

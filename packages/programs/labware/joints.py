@@ -8,7 +8,7 @@ from pydantic import Field, FiniteFloat, model_validator
 from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation, transformed_bounds
 
-from .contacts import CONTACT_LIMIT_M, contacts_for_bodies
+from .contacts import CONTACT_LIMIT_M, contacts_for_bodies, validate_seating_contacts
 
 Vector = tuple[FiniteFloat, FiniteFloat, FiniteFloat]
 
@@ -25,6 +25,8 @@ class PassageJointProgram:
         tolerance: float = Field(default=0.001, gt=0, allow_inf_nan=False)
         velocityTolerance: float = Field(default=0.01, gt=0, allow_inf_nan=False)
         contactAllowanceM: float = Field(default=.001, gt=0, le=.002, allow_inf_nan=False)
+        seatingContactPairs: list[tuple[str, str]] = Field(default_factory=list, max_length=8)
+        seatingContactAllowanceM: float = Field(default=.002, gt=0, le=.005, allow_inf_nan=False)
         role: Literal["axis", "outer", "inner"] = "axis"
         peerDoor: str | None = None
         movingBodyKeys: list[str] = Field(
@@ -47,6 +49,7 @@ class PassageJointProgram:
 
         @model_validator(mode="after")
         def limits_and_peer(self):
+            validate_seating_contacts(self.seatingContactPairs, self.seatingContactAllowanceM)
             if self.lower >= self.upper or self.role != "axis" and not self.peerDoor:
                 raise ValueError("Ordered limits and door peers are required")
             for values in (self.movingBodyKeys, self.clearanceBodyKeys):
@@ -127,8 +130,13 @@ class PassageJointProgram:
             keys = [*ctx.config.movingBodyKeys, *sorted(watched)]
             for key in keys:
                 self._pose(ctx, key)
-            contacts = contacts_for_bodies(ctx.physics, {self._body(ctx, key) for key in keys},
-                                          limit_m=ctx.config.contactAllowanceM)
+            contacts = contacts_for_bodies(
+                ctx.physics, {self._body(ctx, key) for key in keys}, limit_m=ctx.config.contactAllowanceM,
+                seating_pairs=ctx.config.seatingContactPairs,
+                seating_limit_m=ctx.config.seatingContactAllowanceM,
+                on_seating_contact=(lambda **data: ctx.emit("seatingContact", **data))
+                if ctx.config.seatingContactPairs else None,
+            )
             if self.handle is not None:
                 self.retained_payloads.update(payloads)
         except (AttributeError, KeyError, TypeError, ValueError):
