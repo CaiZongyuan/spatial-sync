@@ -34,9 +34,10 @@ def composed_stage(library):
     return Usd.Stage.Open(layer)
 
 
-def teach(library):
+def teach(library, *, reuse_locations=None):
     library = Path(library).resolve()
     scene = library / "scenes/cell-passage/1"
+    reusable = (yaml.safe_load(Path(reuse_locations).read_text())["locations"] if reuse_locations else {})
     layout = json.loads((scene / "mechanical-layout.json").read_text())
     stage = composed_stage(library)
     with wp.ScopedDevice("cpu"):
@@ -117,7 +118,18 @@ def teach(library):
                 )
 
             best = None
-            for trial in (seed, home, np.asarray([seed[0], -0.8, 0.5, -2.3, -0.5, 1.7, 0.8])):
+            cached = reusable.get(descriptor["name"], {}).get(pose_name)
+            if cached is not None and len(cached) == 7 and np.isfinite(cached).all():
+                if np.all(np.asarray(cached) >= lower) and np.all(np.asarray(cached) <= upper):
+                    point, rotation = forward(cached)
+                    error = float(np.linalg.norm(point - target))
+                    angle = float((target_rotation.inv() * rotation).magnitude())
+                    if error < .001 and angle < .01:
+                        best = {"positions": cached, "positionErrorM": error, "angleErrorRad": angle,
+                                "reusedAfterActualFK": True}
+            trials = () if best is not None else (
+                seed, home, np.asarray([seed[0], -0.8, 0.5, -2.3, -0.5, 1.7, 0.8]))
+            for trial in trials:
                 value = least_squares(
                     residual,
                     np.clip(trial, lower, upper),
@@ -189,4 +201,8 @@ def teach(library):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--library", required=True, type=Path)
-    print(teach(parser.parse_args().library))
+    parser.add_argument(
+        "--reuse-locations", type=Path, help="Reuse only candidates verified by current actual FK"
+    )
+    args = parser.parse_args()
+    print(teach(args.library, reuse_locations=args.reuse_locations))
