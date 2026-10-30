@@ -77,11 +77,13 @@ def test_missing_initial_state_stays_an_explicit_gap():
     assert row["verification"] == "pending-geometry"
 
 
-def test_unknown_released_tip_does_not_mask_a_different_foreign_body():
+def test_unknown_released_tip_does_not_mask_a_different_foreign_body(monkeypatch):
+    import sys
     from types import SimpleNamespace
 
     from tools.cell_passage_sweep_geometry import GeometrySweep
 
+    monkeypatch.setitem(sys.modules, "mujoco", SimpleNamespace())
     released = SimpleNamespace(shapes=("tip/shell", "robot/pad"), bodies=(7, 1), distance_m=-0.005)
     foreign = SimpleNamespace(shapes=("vessel/wall", "robot/pad"), bodies=(8, 1), distance_m=-0.006)
     sweep = GeometrySweep.__new__(GeometrySweep)
@@ -100,6 +102,7 @@ def test_sampled_bounds_include_rotation_and_world_translation():
 
     import numpy as np
 
+    pytest.importorskip("scipy")
     from tools.cell_passage_sweep_geometry import GeometrySweep
 
     sweep = GeometrySweep.__new__(GeometrySweep)
