@@ -1,9 +1,12 @@
 """Spawn entrypoint. Importing this module does not import the simulation engine."""
 
 import contextlib
+import json
+import multiprocessing as mp
 import os
 import time
 import uuid
+from pathlib import Path
 
 from packages.info.preview import PreviewRequest, SourcePreview
 from packages.protocol.internal import CommandResult, JointState, SessionOptions
@@ -19,6 +22,42 @@ from packages.protocol.schema import (
 from packages.transport import FrameCodec, PipeWriter
 
 
+class RpcFence:
+    """Bounded new-invoke IPC leases, revocable without waiting for slow physics.
+
+    Only the gateway reserves/retires leases. The Runner claims a live lease
+    immediately before the synchronous Host callback, never on its reader thread.
+    Generations prevent a delayed packet from claiming a reused slot.
+    """
+
+    def __init__(self, capacity=256):
+        self.slots = mp.get_context("spawn").Array("q", capacity)
+        self.generation = 0
+
+    def reserve(self):
+        with self.slots.get_lock():
+            for index, value in enumerate(self.slots):
+                if value == 0:
+                    self.generation += 1
+                    self.slots[index] = self.generation
+                    return index, self.generation
+        raise RuntimeError("Runner admission capacity is exhausted")
+
+    def retire(self, lease):
+        index, generation = lease
+        with self.slots.get_lock():
+            if abs(self.slots[index]) == generation:
+                self.slots[index] = 0
+
+    def claim(self, lease):
+        index, generation = lease
+        with self.slots.get_lock():
+            if self.slots[index] != generation:
+                return False
+            self.slots[index] = -generation
+            return True
+
+
 def _body_targets(manifest):
     """Map complete model snapshots to stable Manifest identities."""
     bodies = sorted((node for node in manifest.nodes if node.kind == "body"), key=lambda node: node.entityKey)
@@ -27,7 +66,7 @@ def _body_targets(manifest):
 
 class _Runner:
     def __init__(self, transport, session_id, scene_id, options, scene_package=None, policy_subject=None,
-                 *, simulation_subject=None, deployment_permit=None, state_root=None):
+                 *, simulation_subject=None, deployment_permit=None, state_root=None, rpc_fence=None):
         # Only the spawned process reaches these imports or owns a Newton State.
         import newton
         import warp as wp
@@ -39,6 +78,8 @@ class _Runner:
 
         self.wp, self.newton = wp, newton
         self.transport, self.session_id, self.options = transport, session_id, options
+        self.rpc_fence = rpc_fence
+        self._deferred_control = None
         simulation = scene_package.metadata.get("simulation", {}) if scene_package else {}
         config = None
         if scene_package and not scene_package.metadata["stage"].startswith("python:"):
@@ -109,6 +150,28 @@ class _Runner:
         )
         self.viewer = None
         self._viewer_error = None
+        sleep_requested = os.getenv("SPATIAL_NEWTON_CPU_SLEEPING") == "1"
+        contact_requested = os.getenv("SPATIAL_NEWTON_CONTACT_COLLISION_ONLY") == "1"
+        scoped_requested = os.getenv("SPATIAL_NEWTON_CONTACT_SCOPED") == "1"
+        if (sleep_requested or contact_requested or scoped_requested) and os.getenv(
+            "SPATIAL_PASSAGE_RUN_ROOT"
+        ):
+            # An owned-demo receipt, not a protocol/recording-format extension.
+            directory = Path(os.environ["SPATIAL_PASSAGE_RUN_ROOT"]) / "runtime" / "native-options"
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"cpu-sleeping-{os.getpid()}.json").write_text(json.dumps({
+                "sessionId": session_id, "runnerPID": os.getpid(), "cpuSleepingRequested": sleep_requested,
+                "nativeCpuSleepingEnabled": self.sim.native_cpu_sleeping,
+                "contactCollisionOnlyRequested": contact_requested,
+                "contactScopedRequested": scoped_requested,
+                "contactScopedFallback": "full-query when scope encoding or backend is unsupported",
+                "contactCollisionOnlyEnabled": bool(
+                    contact_requested and self.sim.solver_kind == "mujoco" and self.sim.model.device.is_cpu
+                    and self.sim.model.world_count == 1 and not self.sim.solver.mj_model.nflex
+                    and not self.sim.solver.mj_model.nplugin
+                ),
+                "device": str(self.sim.model.device), "solver": self.sim.solver_kind,
+            }, indent=2), encoding="utf-8")
         if self.info.port:
             self.extractor.readback_mode = "control-snapshot-reuse"
 
@@ -278,8 +341,10 @@ class _Runner:
             self.sim.reset()
             frame = self._frame("stream.snapshot", reliable=True)
         elif kind == "step":
-            self.sim.step(args.count)
-            self._steps += args.count
+            for _ in range(args.count):
+                self.sim.step(1)
+                self._steps += 1
+                self._intake_between_steps()
             frame = self._frame(reliable=True)
         elif kind == "set_realtime_factor":
             self.options.realtimeFactor = args.value
@@ -327,11 +392,29 @@ class _Runner:
                 }
             )
         elif kind in ("invoke", "cancel", "revoke_before_start"):
-            result = (
-                self.info.invoke(InvokeRequest.model_validate(packet["request"]))
-                if kind == "invoke"
-                else getattr(self.info, kind)(packet["invocationId"])
-            )
+            def admit():
+                if time.monotonic() >= packet.get("expiresAt", float("inf")):
+                    return False
+                lease = packet.get("admission")
+                return lease is None or (self.rpc_fence is not None and self.rpc_fence.claim(lease))
+
+            try:
+                result = (
+                    self.info.invoke(InvokeRequest.model_validate(packet["request"]), admit=admit)
+                    if kind == "invoke"
+                    # A timeout cannot withdraw an already sent safety intent
+                    # against an old invocation. Only creating new work expires.
+                    else getattr(self.info, kind)(packet["invocationId"])
+                )
+            except TimeoutError:
+                self.control.offer({"kind": "rpc_expired", "token": token})
+                return True
+            except KeyError:
+                if kind == "invoke":
+                    raise
+                self.control.offer({"kind": "unknown_invocation", "token": token,
+                                    "invocationId": packet["invocationId"]})
+                return True
             self.control.offer(
                 {"kind": "invocation_result", "token": token, "update": result.model_dump(mode="json")}
             )
@@ -413,6 +496,17 @@ class _Runner:
             raise ValueError(f"Unknown runner control operation: {kind}")
         return True
 
+    def _intake_between_steps(self):
+        # A manual step command still owns its exact requested step count.
+        # Service intake at safe boundaries, but do not reorder it past an
+        # earlier reset/resume/other control command on the reliable pipe.
+        while self._deferred_control is None and self.transport.control.poll():
+            packet = self.transport.control.recv()
+            if packet["kind"] not in ("invoke", "cancel", "revoke_before_start"):
+                self._deferred_control = packet
+                break
+            self._handle(packet)
+
     def run(self):
         snapshot = self._frame("stream.snapshot", reliable=True)
         self.control.offer(
@@ -433,8 +527,12 @@ class _Runner:
         while True:
             if self.control.stopped.is_set() or self.frames.stopped.is_set() or self.extractor.error:
                 raise RuntimeError(self.extractor.error or "Runner pipe disconnected")
-            if self.transport.control.poll():
-                if not self._handle(self.transport.control.recv()):
+            packet = getattr(self, "_deferred_control", None)
+            self._deferred_control = None
+            if packet is None and self.transport.control.poll():
+                packet = self.transport.control.recv()
+            if packet is not None:
+                if not self._handle(packet):
                     break
                 continue
             now = time.monotonic()
@@ -442,8 +540,17 @@ class _Runner:
             if not self.sim.paused:
                 count = self.pacer.steps_due(now)
                 if count:
-                    self.sim.step(count)
-                    self._steps += count
+                    executed = 0
+                    for _ in range(count):
+                        if self.transport.control.poll():
+                            break
+                        self.sim.step(1)
+                        self._steps += 1
+                        executed += 1
+                    self.pacer.return_steps(count - executed)
+                    count = executed
+                    if self.transport.control.poll():
+                        continue
                 if now >= next_publish:
                     self._frame()
                     next_publish = now + 1 / self.options.basePublishHz
@@ -484,13 +591,14 @@ class _Runner:
 
 def run_runner(transport, session_id: str, scene_id: str, options: dict,
                scene_package=None, policy_subject=None, *, simulation_subject=None,
-               deployment_permit=None, state_root=None):
+               deployment_permit=None, state_root=None, rpc_fence=None):
     runner = None
     try:
         runner = _Runner(
             transport, session_id, scene_id, SessionOptions.model_validate(options),
             scene_package, policy_subject,
             simulation_subject=simulation_subject, deployment_permit=deployment_permit, state_root=state_root,
+            rpc_fence=rpc_fence,
         )
         runner.run()
     except BaseException as exc:

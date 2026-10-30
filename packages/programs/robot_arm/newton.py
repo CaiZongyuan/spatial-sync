@@ -18,6 +18,10 @@ VELOCITY_LIMITS = (2.62, 2.62, 2.62, 2.62, 5.26, 4.18, 5.26)
 
 class RobotArmProgram:
     id, type, tick_priority = "robot_arm.newton", "robot-arm/v1", 10
+    gripper_speed_mps = 0.4
+    gripper_timeout_s = 2
+    gripper_open_width_m = 0.08
+    joint_acceleration = 2.0
 
     class Config(ProgramConfig):
         locations: dict = Field(json_schema_extra={"documentSchema": "locations"})
@@ -28,8 +32,12 @@ class RobotArmProgram:
         jointKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint", "posture": True})
         fingerKeys: list[str] = Field(json_schema_extra={"spatialReference": "joint"})
         handBody: str = Field(json_schema_extra={"spatialReference": "body"})
-        tcpSite: str = Field(json_schema_extra={"spatialReference": "site", "postureEndpoint": {
-            "offsetField": "graspHeightM", "offsetAxis": "worldZ"}})
+        tcpSite: str = Field(
+            json_schema_extra={
+                "spatialReference": "site",
+                "postureEndpoint": {"offsetField": "graspHeightM", "offsetAxis": "worldZ"},
+            }
+        )
 
         @model_validator(mode="after")
         def taught_poses(self):
@@ -43,7 +51,7 @@ class RobotArmProgram:
         self.hand, self.tcp = port.bind_body(ctx.config.handBody), port.bind_site(ctx.config.tcpSite)
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
         self.locations = ctx.config.locations["locations"]
-        self.grasp_height = ctx.config.graspHeightM
+        self.grasp_height = getattr(ctx.config, "graspHeightM", 0.0)
         self.handle, self.segment, self.plan = None, None, []
         self.transport, self.cancel_requested, self.released = False, False, None
         self.pick_tube = None
@@ -51,6 +59,7 @@ class RobotArmProgram:
         self.pending_release = set()
         self.place_since = None
         self.gripper_target = self.gripper_goal = self._width(port)
+        self.gripper_start_width = self.gripper_target
         ctx.set(phase="idle", holding=None, atLocation=None, zone=None)
         self._facts(ctx)
 
@@ -67,6 +76,23 @@ class RobotArmProgram:
     def _in_fingers(self, port, tube):
         local = self._finger_position(port, tube)
         return abs(local[0]) < 0.016 and abs(local[1]) < 0.02 and abs(local[2]) < 0.025
+
+    def _release_opening(self, port, body):
+        return 0.017 + 2 * abs(self._finger_position(port, body)[1])
+
+    def _grasp_ready(self, port, body, opening):
+        return opening <= self._release_opening(port, body) and self._in_fingers(port, body)
+
+    def _attach_grasp(self, ctx, body):
+        ctx.physics.weld(self.hand, body)
+
+    def _placement(self, port, body, sites, key):
+        return (
+            tube_location(
+                port.body[body], port.relative_site_velocity(body, sites), port.site_poses(sites), [key]
+            )
+            == key
+        )
 
     def _facts(self, ctx):
         port = ctx.physics
@@ -105,8 +131,11 @@ class RobotArmProgram:
             if not any(ctx.read(tube, "location") == self.locations[name]["site"] for tube in self.tubes):
                 return Reject(code="location_empty", message=f"No tube at {name}")
 
+    def _preview_targets(self, action, params):
+        return joint_targets(action, params, self.locations, HOME)
+
     def preview(self, action, params, ctx):
-        targets = joint_targets(action, params, self.locations, HOME)
+        targets = self._preview_targets(action, params)
         if targets is None:
             return None
         snapshot = ctx.kinematics
@@ -115,12 +144,20 @@ class RobotArmProgram:
         snapshot.validate_targets(keys, targets)
 
         def build():
-            value = path_preview(start, targets, VELOCITY_LIMITS,
-                                 lambda joints: snapshot.forward(keys, joints, ctx.config.tcpSite),
-                                 speed_scale=ctx.config.speedScale, speed=params.get("speed", 1))
-            return PathPreview.model_validate(value.model_dump(mode="json") | {
-                "targetBodyPoses": snapshot.target_body_poses(keys),
-            })
+            value = path_preview(
+                start,
+                targets,
+                VELOCITY_LIMITS,
+                lambda joints: snapshot.forward(keys, joints, ctx.config.tcpSite),
+                speed_scale=ctx.config.speedScale,
+                speed=params.get("speed", 1),
+            )
+            return PathPreview.model_validate(
+                value.model_dump(mode="json")
+                | {
+                    "targetBodyPoses": snapshot.target_body_poses(keys),
+                }
+            )
 
         return ctx.cached((tuple(start), snapshot.fingerprint), build)
 
@@ -160,7 +197,7 @@ class RobotArmProgram:
                     self.pick_height = float(ctx.physics.body[self.tubes[self.pick_tube], 2])
                 self.plan.append(("move", approach, name))
                 if operation == "pick":
-                    self.plan.append(("gripper", 0.08, None))
+                    self.plan.append(("gripper", self.gripper_open_width_m, None))
                 self.plan.extend(
                     [
                         ("check", None, name),
@@ -205,20 +242,32 @@ class RobotArmProgram:
         for body in self.tubes.values():
             if port.welds.active(self.hand, body):
                 self.pending_release.add(body)
-        self.gripper_goal = 0.08
+        self.gripper_goal = self.gripper_open_width_m
+
+    def _prepare_place(self, ctx, name):
+        return True
+
+    def _move_ready(self, ctx, name):
+        return True
 
     def _drive_gripper(self, ctx, dt):
         # URDF finger speed is .2m/s each. A position step from80mm to0
         # otherwise crosses the contact interval between control snapshots.
-        self.gripper_target += float(np.clip(self.gripper_goal - self.gripper_target, -0.4 * dt, 0.4 * dt))
+        distance = self.gripper_speed_mps * dt
+        self.gripper_target += float(np.clip(self.gripper_goal - self.gripper_target, -distance, distance))
         for joint in self.fingers:
             ctx.physics.set_joint_target(joint, [self.gripper_target / 2])
         actual = self._width(ctx.physics)
         for body in tuple(self.pending_release):
-            local = self._finger_position(ctx.physics, body)
-            if actual >= 0.017 + 2 * abs(local[1]):
+            if actual >= self._release_opening(ctx.physics, body):
                 ctx.physics.unweld(self.hand, body)
                 self.pending_release.remove(body)
+
+    def _gripper_settled(self, ctx, kind, actual, dt):
+        return abs(actual - self.last_width) < 0.0005
+
+    def _gripper_budget(self, start, goal):
+        return self.gripper_timeout_s
 
     def tick(self, ctx, dt):
         port = ctx.physics
@@ -247,6 +296,7 @@ class RobotArmProgram:
             self.segment = self.plan.pop(0)
             kind, target, name = self.segment
             self.elapsed, self.stable, self.last_width = 0.0, 0.0, self._width(port)
+            self.gripper_start_width = self.last_width
             self.place_since = None
             if name:
                 ctx.set(zone=self.locations[name]["zone"])
@@ -258,8 +308,11 @@ class RobotArmProgram:
                     VELOCITY_LIMITS,
                     speed_scale=ctx.config.speedScale,
                     speed=inv.params.get("speed", 1),
+                    acceleration=self.joint_acceleration,
                 )
             elif kind == "place" or kind == "gripper" and target > self._width(port) + 0.0005:
+                if kind == "place" and not self._prepare_place(ctx, name):
+                    return
                 if kind == "place" and self.pick_tube:
                     self.released = self.pick_tube
                     port.releasing.add(self.pick_tube)
@@ -278,6 +331,7 @@ class RobotArmProgram:
                 self.elapsed >= self.motion.duration
                 and np.max(np.abs(self._positions(port) - target)) < 0.01
                 and max(abs(port.joint_qd(j)[0]) for j in self.joints) < 0.05
+                and self._move_ready(ctx, name)
             )
             if self.elapsed > 2 * self.motion.duration + 1:
                 self._hold(ctx)
@@ -288,23 +342,22 @@ class RobotArmProgram:
             if done and name:
                 ctx.set(atLocation=name)
         elif kind in ("gripper", "pick", "place"):
-            width = 0 if kind == "pick" else 0.08 if kind == "place" else target
+            width = 0 if kind == "pick" else self.gripper_open_width_m if kind == "place" else target
             self.gripper_goal = width
             self._drive_gripper(ctx, dt)
             actual = self._width(port)
             if kind == "pick" and ctx.config.graspMode == "weld":
                 body = self.tubes[self.pick_tube]
-                local = self._finger_position(port, body)
                 # Capture at first pad contact, including measured centering
                 # error; nominal opening alone can push an offset tube away.
-                if actual <= 0.017 + 2 * abs(local[1]) and self._in_fingers(port, body):
-                    port.weld(self.hand, body)
-            self.stable = self.stable + dt if abs(actual - self.last_width) < 0.0005 else 0
+                if self._grasp_ready(port, body, actual):
+                    self._attach_grasp(ctx, body)
+            self.stable = self.stable + dt if self._gripper_settled(ctx, kind, actual, dt) else 0
             self.last_width = actual
             done = (
                 self.elapsed >= 0.2 and self.stable >= 0.2 and (kind != "place" or not self.pending_release)
             )
-            if self.elapsed > 2:
+            if self.elapsed > self._gripper_budget(self.gripper_start_width, width):
                 if kind == "pick":
                     self._recover_pick(ctx, name)
                 else:
@@ -318,7 +371,8 @@ class RobotArmProgram:
                 self._end(
                     ctx,
                     ("precondition_failed", "Taught location became unavailable before descent"),
-                    failed=failed, location=name,
+                    failed=failed,
+                    location=name,
                 )
                 return
             done = True
@@ -347,18 +401,17 @@ class RobotArmProgram:
             site = self.locations[name]["site"]
             sites = port.bind_sites([site])
             try:
-                actual = tube_location(port.body[self.tubes[self.pick_tube]],
-                                       port.relative_site_velocity(self.tubes[self.pick_tube], sites),
-                                       port.site_poses(sites), [site])
                 sampled_at = float(port.last_time)
-                valid = actual == site and np.isfinite(sampled_at)
+                valid = self._placement(port, self.tubes[self.pick_tube], sites, site) and np.isfinite(
+                    sampled_at
+                )
             except (ValueError, TypeError):
                 valid, sampled_at = False, 0
             if not valid:
                 self.place_since = None
             elif self.place_since is None or sampled_at < self.place_since:
                 self.place_since = sampled_at
-            done = self.place_since is not None and sampled_at-self.place_since+1e-9 >= 1
+            done = self.place_since is not None and sampled_at - self.place_since + 1e-9 >= 1
             if not done and self.elapsed > 3:
                 self._end(ctx, ("place_failed", "Tube did not settle at the destination Site"))
                 return

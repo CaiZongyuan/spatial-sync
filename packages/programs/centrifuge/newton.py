@@ -13,6 +13,19 @@ from .virtual import balanced
 class CentrifugeProgram:
     id, type, tick_priority = "centrifuge.newton", "centrifuge/v1", 30
 
+    def _open_lid_target(self, port):
+        return 1.4
+
+    def _attach_slot(self, port, parent, body):
+        port.weld(parent, body)
+
+    def _release_slots(self, port):
+        for parent, body in self.welded:
+            port.unweld(parent, body)
+
+    def _lid_open(self, port):
+        return bool(port.joint_q(self.lid)[0] > 0.1)
+
     class Config(ProgramConfig):
         slotSites: list[str] = Field(
             min_length=4, max_length=4, json_schema_extra={"spatialReference": "site"}
@@ -28,16 +41,17 @@ class CentrifugeProgram:
             port.bind_joint(ctx.config.spindleJoint),
             port.bind_joint(ctx.config.lidJoint),
         )
+        self.lid_open_target = self._open_lid_target(port)
         self.sites = port.bind_sites(ctx.config.slotSites)
         self.slot_bodies = [site.body for site in self.sites]
         self.tubes = {key: port.bind_body(key) for key in ctx.config.tubes}
         self.bounds = None
-        self.rotor = (self.slot_bodies[0] if len(set(self.slot_bodies)) == 1
-                      else self.spindle.child)
+        self.rotor = self.slot_bodies[0] if len(set(self.slot_bodies)) == 1 else self.spindle.child
         if self.rotor >= 0:
             try:
-                self.bounds = {body: port.collision_bounds(body)
-                               for body in {self.rotor, *self.tubes.values()}}
+                self.bounds = {
+                    body: port.collision_bounds(body) for body in {self.rotor, *self.tubes.values()}
+                }
             except ValueError:
                 pass  # Missing collision geometry is unconfirmed, never an empty rotor.
         self.handle, self.stopping, self.stop_angle = None, False, None
@@ -46,7 +60,7 @@ class CentrifugeProgram:
         self.welded = []
         ctx.set(
             phase="idle",
-            lidOpen=bool(port.joint_q(self.lid)[0] > 0.1),
+            lidOpen=self._lid_open(port),
             rpm=0,
             remainingSeconds=0,
             slots=self._slots(ctx),
@@ -64,8 +78,11 @@ class CentrifugeProgram:
             return
         slots, issues = self._loading(ctx)
         if issues:
-            return Reject(code="unsafe_load", message="Rotor loading is unsafe or unconfirmed",
-                          details={"slots": slots, "tubes": issues})
+            return Reject(
+                code="unsafe_load",
+                message="Rotor loading is unsafe or unconfirmed",
+                details={"slots": slots, "tubes": issues},
+            )
         if not balanced(slots):
             return Reject(
                 code="imbalanced",
@@ -74,9 +91,15 @@ class CentrifugeProgram:
             )
 
     def _loading(self, ctx):
-        return physical_loading(ctx.physics, self.tubes, self.sites, ctx.config.slotSites,
-                                self.rotor, self.bounds,
-                                held={key for key in self.tubes if ctx.read(key, "location") == "held"})
+        return physical_loading(
+            ctx.physics,
+            self.tubes,
+            self.sites,
+            ctx.config.slotSites,
+            self.rotor,
+            self.bounds,
+            held={key for key in self.tubes if ctx.read(key, "location") == "held"},
+        )
 
     def start(self, inv, ctx):
         if inv.action == "stop":
@@ -92,11 +115,11 @@ class CentrifugeProgram:
         self.elapsed, self.running = 0.0, 0.0
         port = ctx.physics
         if inv.action in ("openLid", "closeLid"):
-            port.set_joint_target(self.lid, [1.4 if inv.action == "openLid" else 0])
+            port.set_joint_target(self.lid, [self.lid_open_target if inv.action == "openLid" else 0])
         else:
             for slot, tube in zip(self.slot_bodies, self._loading(ctx)[0], strict=True):
                 if tube:
-                    port.weld(slot, self.tubes[tube])
+                    self._attach_slot(port, slot, self.tubes[tube])
                     self.welded.append((slot, self.tubes[tube]))
             ctx.set(phase="accelerating", remainingSeconds=inv.params["durationSeconds"])
 
@@ -104,9 +127,13 @@ class CentrifugeProgram:
         self.handle = self.handle or inv
         self.stopping = True
 
+    def _completion_result(self, inv, ctx):
+        """Optional derived evidence, or Reject, before the unique success update."""
+        return None
+
     def tick(self, ctx, dt):
         port = ctx.physics
-        ctx.set(lidOpen=bool(port.joint_q(self.lid)[0] > 0.1))
+        ctx.set(lidOpen=self._lid_open(port))
         if ctx.fact_due:
             ctx.set(slots=self._slots(ctx), loadSafe=not self._loading(ctx)[1])
         inv = self.handle
@@ -114,11 +141,12 @@ class CentrifugeProgram:
             return
         self.elapsed += dt
         if inv.action in ("openLid", "closeLid"):
+            target = self.lid_open_target if inv.action == "openLid" else 0
             if self.stopping:
                 port.set_joint_target(self.lid, port.joint_q(self.lid))
                 inv.cancelled()
                 self.handle = None
-            elif abs(port.joint_q(self.lid)[0] - (1.4 if inv.action == "openLid" else 0)) < 0.02:
+            elif abs(port.joint_q(self.lid)[0] - target) < 0.02:
                 inv.succeed()
                 self.handle = None
             return
@@ -158,13 +186,16 @@ class CentrifugeProgram:
         ctx.set(phase=phase, rpm=rpm, remainingSeconds=max(0, duration - self.running))
         inv.progress(min(0.999, self.elapsed / (2 * target / 1000 + duration + 1)))
         if phase == "idle":
-            for slot, tube in self.welded:
-                port.unweld(slot, tube)
+            self._release_slots(port)
             self.welded.clear()
             ctx.set(remainingSeconds=0)
             if self.stopping:
                 inv.cancelled()
             else:
-                ctx.emit("runCompleted", rpm=target, durationSeconds=duration)
-                inv.succeed()
+                result = self._completion_result(inv, ctx)
+                if isinstance(result, Reject):
+                    inv.fail(result.code, result.message, **result.details)
+                else:
+                    ctx.emit("runCompleted", rpm=target, durationSeconds=duration)
+                    inv.succeed(result)
             self.handle = None

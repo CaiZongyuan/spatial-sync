@@ -26,9 +26,10 @@ from packages.transport import FrameCodec
 KEY = "/World/Lab/Centrifuge"
 
 
-def catalog_rpc_runner(transport, session_id, scene_id, options, scene_package):
+def catalog_rpc_runner(transport, session_id, scene_id, options, scene_package, *, rpc_fence=None):
     """Speak the real internal protocol without loading Newton or starting a solver."""
     try:
+        assert rpc_fence is not None  # The real Source still supplies its private admission fence.
         manifest = SceneManifest.model_validate_json((scene_package.path / "rpc-manifest.json").read_bytes())
         manifest.sessionId = session_id
         catalog = load_info_catalog(manifest, scene_id, scene_package=scene_package)

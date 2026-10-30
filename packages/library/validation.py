@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -16,11 +17,15 @@ from packages.library.reports import latest_physics_evidence, merge_physics, par
 
 
 class StructuralValidator:
-    def __init__(self, state_root, programs=None, *, timeout=20, physics_timeout=180):
+    def __init__(self, state_root, programs=None, *, timeout=20, physics_timeout=None):
         self.state_root = Path(state_root).resolve()
         self.programs = programs
         self.timeout = timeout
-        self.physics_timeout = physics_timeout
+        budget = (float(os.environ.get("SPATIAL_LIBRARY_PHYSICS_TIMEOUT_SECONDS", "180"))
+                  if physics_timeout is None else physics_timeout)
+        if isinstance(budget, bool) or not math.isfinite(budget) or not 0 < budget <= 1800:
+            raise ValueError("Physics validation wall budget must be finite and in (0, 1800] seconds")
+        self.physics_timeout = budget
 
     @staticmethod
     def scope(path, *, identifier="package", metadata=None, digest=None):

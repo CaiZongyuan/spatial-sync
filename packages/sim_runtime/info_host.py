@@ -97,6 +97,11 @@ class NewtonInfoHost:
         except BaseException:
             self.close()
             raise
+        if self.port:
+            # Initial qualified anchors must reach the solver before its first
+            # physics step. Keep Host events queued for the ordinary reliable
+            # Source channel; Session starts its event consumer after recording.
+            self.port.welds.flush()
         self.timings = deque(maxlen=6000)
         self.tick_ms = 0.0
         simulation.install_program_loop(options.controlHz, self.tick, self.reset)
@@ -119,28 +124,41 @@ class NewtonInfoHost:
     def flush(self):
         self.emit(self.host.drain_events())
 
-    def invoke(self, request):
-        result = self.host.invoke(request)
+    def _intake(self, callback, argument, *, admit=None):
+        if self.port:
+            self.port.capture()
+        if admit is not None and not admit():
+            raise TimeoutError("Runner intake lease expired before Host admission")
+        try:
+            result = callback(argument)
+        finally:
+            # accept/cancel can establish holding targets while PAUSED. These
+            # must reach the solver before even the first resumed physics step.
+            if self.port:
+                self.port.commit()
         self.flush()
+        return result
+
+    def invoke(self, request, *, admit=None):
+        result = self._intake(self.host.invoke, request, admit=admit)
         self.emit([result])
         return result
 
     def cancel(self, invocation_id):
-        result = self.host.cancel(invocation_id)
-        self.flush()
-        return result
+        return self._intake(self.host.cancel, invocation_id)
 
     def revoke_before_start(self, invocation_id):
-        result = self.host.revoke_before_start(invocation_id)
-        self.flush()
-        return result
+        return self._intake(self.host.revoke_before_start, invocation_id)
 
     def reset(self):
         self.timings.clear()
         self.tick_ms = 0.0
         if self.port:
             self.port.reset()
-        self.emit(self.host.reset(self.sim.epoch, self.sim.sim_time))
+        events = self.host.reset(self.sim.epoch, self.sim.sim_time)
+        if self.port:
+            self.port.welds.flush()
+        self.emit(events)
 
     def snapshot(self):
         return self.host.snapshot()
