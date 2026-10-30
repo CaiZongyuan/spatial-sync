@@ -1,0 +1,223 @@
+{
+  "sourceCommit": "6e471e1f299011b477a19464a8c2edc622b949b0",
+  "productTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+  "prNumber": 89,
+  "mediaCommit": "9f3f16522b6f7463b1668ff9be420dcadc8f20ba",
+  "previousMediaCommit": "c6c7de05f2ac9ed3f19289e9ed1dd2a4d53e6a61",
+  "screenshotProducer": {
+    "head": "6e471e1f299011b477a19464a8c2edc622b949b0",
+    "tree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+    "bindingKind": "same-head"
+  },
+  "bytes": 37726932,
+  "sha256": "f2e24c7a3c68a4ced6a8cbb9c166a0c251b1f62513dddd946f4777d8ab67b395",
+  "type": "video",
+  "path": "pr-89/workbench-ui-abc-zh.mp4",
+  "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+  "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+  "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/workbench-ui-abc-zh.mp4",
+  "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/workbench-ui-abc-zh.mp4",
+  "assets": [
+    {
+      "type": "video",
+      "path": "pr-89/workbench-ui-abc-zh.mp4",
+      "sha256": "f2e24c7a3c68a4ced6a8cbb9c166a0c251b1f62513dddd946f4777d8ab67b395",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 37726932,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/workbench-ui-abc-zh.mp4",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/workbench-ui-abc-zh.mp4"
+    },
+    {
+      "type": "image",
+      "name": "workbench-light-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/workbench-light-1440.png",
+      "sha256": "d7fa784604f9da09c73077ea0499892a30afec99b59d60f207200c69a09d1525",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 982606,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/workbench-light-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/workbench-light-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "workbench-dark-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/workbench-dark-1440.png",
+      "sha256": "b510b485e8f25888f73a439cc442a71a5046b4620cca320f23d0867351008bdd",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 838907,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/workbench-dark-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/workbench-dark-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "overview-light-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/overview-light-1440.png",
+      "sha256": "fb5db56c821712d1c9c904bc5f63d3cd0c57f2b797417f2f61a2d13a9feda679",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 1302937,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/overview-light-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/overview-light-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "overview-dark-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/overview-dark-1440.png",
+      "sha256": "77260b46f8e8f6fcd197254a212f6a69a92f0b6bd33cf7beef794d5bce74c080",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 802460,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/overview-dark-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/overview-dark-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "scenes-light-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/scenes-light-1440.png",
+      "sha256": "ffe79fb89d5bae627f574ca8633ac506ca3f944a1ac410c913a725e4051566d6",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 1342791,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/scenes-light-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/scenes-light-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "scenes-dark-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/scenes-dark-1440.png",
+      "sha256": "85d6e9ee99f892439bfa53aff5d2765e22c4472f6c91b6deb7722c7ba06e1695",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 780116,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/scenes-dark-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/scenes-dark-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "recordings-light-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/recordings-light-1440.png",
+      "sha256": "768991d8047752509d2ecd77b516564bf8a149f7a30228c18bf911c1722ee0b3",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 1518581,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/recordings-light-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/recordings-light-1440.png"
+    },
+    {
+      "type": "image",
+      "name": "recordings-dark-1440.png",
+      "path": "pr-89/screenshots/6e471e1f/recordings-dark-1440.png",
+      "sha256": "66bef292f15e568aa7c7c8d39aab164b957565bcea161f09935cfccd9326672a",
+      "producerHead": "6e471e1f299011b477a19464a8c2edc622b949b0",
+      "producerTree": "39f80958da11c9f88b59b6a958a48f1034e7f2f8",
+      "bytes": 300937,
+      "viewUrl": "https://github.com/CaiZongyuan/spatial-sync/blob/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/recordings-dark-1440.png",
+      "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/recordings-dark-1440.png"
+    }
+  ],
+  "previousMediaUnchanged": true,
+  "remoteVerification": {
+    "checkedAt": "2026-10-21T00:07:07.261Z",
+    "status": 200,
+    "bytes": 37726932,
+    "sha256": "f2e24c7a3c68a4ced6a8cbb9c166a0c251b1f62513dddd946f4777d8ab67b395",
+    "matchesReviewedBytes": true,
+    "receiptPath": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-86\\media\\remote-verification-1792541213320.json"
+  },
+  "rangeVerification": {
+    "status": 206,
+    "contentRange": "bytes 6000000-6001023/37726932",
+    "start": 6000000,
+    "end": 6001023,
+    "bytes": 1024,
+    "passed": true
+  },
+  "remoteImageVerification": {
+    "result": "passed",
+    "assets": [
+      {
+        "path": "pr-89/screenshots/6e471e1f/workbench-light-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/workbench-light-1440.png",
+        "status": 200,
+        "bytes": 982606,
+        "sha256": "d7fa784604f9da09c73077ea0499892a30afec99b59d60f207200c69a09d1525",
+        "expectedSha256": "d7fa784604f9da09c73077ea0499892a30afec99b59d60f207200c69a09d1525",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/workbench-dark-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/workbench-dark-1440.png",
+        "status": 200,
+        "bytes": 838907,
+        "sha256": "b510b485e8f25888f73a439cc442a71a5046b4620cca320f23d0867351008bdd",
+        "expectedSha256": "b510b485e8f25888f73a439cc442a71a5046b4620cca320f23d0867351008bdd",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/overview-light-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/overview-light-1440.png",
+        "status": 200,
+        "bytes": 1302937,
+        "sha256": "fb5db56c821712d1c9c904bc5f63d3cd0c57f2b797417f2f61a2d13a9feda679",
+        "expectedSha256": "fb5db56c821712d1c9c904bc5f63d3cd0c57f2b797417f2f61a2d13a9feda679",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/overview-dark-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/overview-dark-1440.png",
+        "status": 200,
+        "bytes": 802460,
+        "sha256": "77260b46f8e8f6fcd197254a212f6a69a92f0b6bd33cf7beef794d5bce74c080",
+        "expectedSha256": "77260b46f8e8f6fcd197254a212f6a69a92f0b6bd33cf7beef794d5bce74c080",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/scenes-light-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/scenes-light-1440.png",
+        "status": 200,
+        "bytes": 1342791,
+        "sha256": "ffe79fb89d5bae627f574ca8633ac506ca3f944a1ac410c913a725e4051566d6",
+        "expectedSha256": "ffe79fb89d5bae627f574ca8633ac506ca3f944a1ac410c913a725e4051566d6",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/scenes-dark-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/scenes-dark-1440.png",
+        "status": 200,
+        "bytes": 780116,
+        "sha256": "85d6e9ee99f892439bfa53aff5d2765e22c4472f6c91b6deb7722c7ba06e1695",
+        "expectedSha256": "85d6e9ee99f892439bfa53aff5d2765e22c4472f6c91b6deb7722c7ba06e1695",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/recordings-light-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/recordings-light-1440.png",
+        "status": 200,
+        "bytes": 1518581,
+        "sha256": "768991d8047752509d2ecd77b516564bf8a149f7a30228c18bf911c1722ee0b3",
+        "expectedSha256": "768991d8047752509d2ecd77b516564bf8a149f7a30228c18bf911c1722ee0b3",
+        "contentType": "image/png",
+        "passed": true
+      },
+      {
+        "path": "pr-89/screenshots/6e471e1f/recordings-dark-1440.png",
+        "rawUrl": "https://raw.githubusercontent.com/CaiZongyuan/spatial-sync/9f3f16522b6f7463b1668ff9be420dcadc8f20ba/pr-89/screenshots/6e471e1f/recordings-dark-1440.png",
+        "status": 200,
+        "bytes": 300937,
+        "sha256": "66bef292f15e568aa7c7c8d39aab164b957565bcea161f09935cfccd9326672a",
+        "expectedSha256": "66bef292f15e568aa7c7c8d39aab164b957565bcea161f09935cfccd9326672a",
+        "contentType": "image/png",
+        "passed": true
+      }
+    ],
+    "receiptPath": "D:\\Projects\\Robots\\spatial-sync\\.scratch\\rsi-platform\\issue-86\\media\\remote-verification-1792541213320.json"
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "head": "d59303b9dc608a75a113f927a4283ea91dccf13b",
+  "tree": "dde110417b9464287104de49837189e4b5a75a31",
+  "supervisorSha256": "f0f72d5294965f223af43711fb50695fdce74618cc004e5061531c88428c9fb8",
+  "testFilesSha256": {
+    "workbench.spec.ts": "57b4570313bd174ab347512d0dce79d41dc1979fc1e8e330f1de843f24a11d43"
+  },
+  "configSha256": "2b80bb9fcb8f2eb5bd49de2fa65f50693ce0635806046e8bf01a612345111734",
+  "actualCommand": [
+    "/tmp/spatial-sync-issue86-linux-abba-20261020-192421/toolchain/node-v22.23.3-linux-x64/bin/node",
+    "/tmp/spatial-sync-issue86-linux-abba-20261020-192421/source/node_modules/@playwright/test/cli.js",
+    "test",
+    "workbench.spec.ts",
+    "--grep",
+    "real SyntheticSource observers share pause, heartbeat, Step, Reset and Resume",
+    "--config",
+    "/tmp/spatial-sync-issue86-linux-abba-20261020-192421/source/apps/web/playwright.config.ts",
+    "--workers=1",
+    "--retries=0",
+    "--reporter=line,json",
+    "--output",
+    "/tmp/spatial-sync-issue86-linux-abba-20261020-192421/runs/workbench-B-native-ws-linux-d59303b-20261021T005540Z/results"
+  ],
+  "evidence": "/mnt/d/Projects/Robots/spatial-sync/.scratch/rsi-platform/issue-86/workbench-B-native-ws-linux-d59303b-20261021T005540Z",
+  "linuxEvidence": "/tmp/spatial-sync-issue86-linux-abba-20261020-192421/runs/workbench-B-native-ws-linux-d59303b-20261021T005540Z",
+  "actualRuntimeWindows": 1,
+  "actualPlatform": "linux",
+  "actualAttempts": 1,
+  "affinity": "default inherited",
+  "oneOriginalBCaseOnly": true,
+  "allOtherBBytesAndAssertsPreserved": true,
+  "ACUnchangedAndNotRun": true,
+  "verdict": "Local original B acceptance PASS on d593; separate from CI",
+  "retries": 0,
+  "exitCode": 0,
+  "stats": {
+    "startTime": "2026-10-21T00:55:42.692Z",
+    "duration": 20171.296,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "tests": [
+    {
+      "file": "workbench.spec.ts",
+      "line": 205,
+      "title": "real SyntheticSource observers share pause, heartbeat, Step, Reset and Resume",
+      "timeoutMs": 45000,
+      "expectedStatus": "passed",
+      "status": "passed",
+      "durationMs": 19651,
+      "retry": 0,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "video",
+          "contentType": "video/webm",
+          "path": "/tmp/spatial-sync-issue86-linux-abba-20261020-192421/runs/workbench-B-native-ws-linux-d59303b-20261021T005540Z/results/workbench-real-SyntheticSo-7d956-tbeat-Step-Reset-and-Resume/video.webm"
+        }
+      ]
+    }
+  ],
+  "runtimeSeconds": 22.33303223999974,
+  "cleanupSeconds": 0.17964320199098438,
+  "ownedIdentityCount": 17,
+  "currentIdentityObservations": [
+    {
+      "pid": 65799,
+      "creationTime": 1792544140.71,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65800,
+      "creationTime": 1792544140.71,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65856,
+      "creationTime": 1792544142.07,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65868,
+      "creationTime": 1792544142.65,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65880,
+      "creationTime": 1792544142.99,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65956,
+      "creationTime": 1792544143.05,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65882,
+      "creationTime": 1792544143.0,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65883,
+      "creationTime": 1792544143.0,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65911,
+      "creationTime": 1792544143.01,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65948,
+      "creationTime": 1792544143.04,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65910,
+      "creationTime": 1792544143.01,
+      "observedState": "gone"
+    },
+    {
+      "pid": 65988,
+      "creationTime": 1792544145.93,
+      "observedState": "gone"
+    },
+    {
+      "pid": 66012,
+      "creationTime": 1792544147.46,
+      "observedState": "gone"
+    },
+    {
+      "pid": 66032,
+      "creationTime": 1792544147.93,
+      "observedState": "gone"
+    },
+    {
+      "pid": 66043,
+      "creationTime": 1792544151.93,
+      "observedState": "gone"
+    },
+    {
+      "pid": 66050,
+      "creationTime": 1792544157.93,
+      "observedState": "gone"
+    },
+    {
+      "pid": 66052,
+      "creationTime": 1792544159.93,
+      "observedState": "gone"
+    }
+  ],
+  "remainingTaskConsumers": [],
+  "remainingTaskListeners": [],
+  "unknownObservations": [],
+  "cleanupErrors": [],
+  "copiedFiles": 532,
+  "copiedBytes": 6889537,
+  "copyByteEqualityVerified": true,
+  "pngCount": 0,
+  "videoCount": 1,
+  "failureTraceCount": 0,
+  "artifacts": [
+    {
+      "path": "results/workbench-real-SyntheticSo-7d956-tbeat-Step-Reset-and-Resume/video.webm",
+      "bytes": 2274950,
+      "sha256": "48131016ea70b183bfc4b033e90740ebec3e1d717146b2bfcc3b7f7cbf3c3360"
+    },
+    {
+      "path": "playwright.json",
+      "bytes": 5130,
+      "sha256": "26badbb1ef2182f09fde5ced4a8535a88f55d18b541107954dafa81683d9dc14"
+    },
+    {
+      "path": "result.json",
+      "bytes": 19637,
+      "sha256": "f3191fbadee6c68622a8eef03b8714dd7bcf833e19cf8738bbb10afbac9d0a25"
+    }
+  ],
+  "snapshotRawHashesVerified": 885,
+  "snapshotNormalizedHashesVerified": 886,
+  "trackedSymlinksVerified": 35,
+  "activeSessionCount": 0,
+  "terminalOwnedSessions": [
+    {
+      "sessionId": "session-5c9016668275",
+      "state": "STOPPED",
+      "source": "synthetic"
+    }
+  ],
+  "onlySourceDifference": {
+    "rawChanged": [
+      "apps/web/src/routeTree.gen.ts"
+    ],
+    "normalizedSha256": "d645af7cb26be6a892ed7a0e6c6ce442374b3c09930ffcec3390fbf61590c81e"
+  },
+  "normalizedLockSha256": {
+    "uv.lock": "6302cd9f75e205d878b5061307056892fed00b1fa3bc10cded0ba5c132f83984",
+    "pnpm-lock.yaml": "529bac2ccb798260c4676eee5c0707a16f657461ca01fc6d56f6ef64cac6a728"
+  },
+  "release": "all task consumers and listeners gone; existing environment preserved; no rerun or new runtime started",
+  "timestampUnix": 1792544344.6238317
+}

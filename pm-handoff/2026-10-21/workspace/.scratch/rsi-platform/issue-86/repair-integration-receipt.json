@@ -1,0 +1,26 @@
+{
+  "pullRequest": {
+    "mergeCommit": {
+      "oid": "500d9ed8ff9bf37df385e7bde83c679dd1270baa"
+    },
+    "mergedAt": "2026-10-21T01:02:17Z",
+    "state": "MERGED",
+    "url": "https://github.com/CaiZongyuan/spatial-sync/pull/90"
+  },
+  "candidateHead": "d59303b9dc608a75a113f927a4283ea91dccf13b",
+  "integratedTree": "dde110417b9464287104de49837189e4b5a75a31",
+  "treeMatchesReviewedCandidate": true,
+  "primaryFastForwarded": true,
+  "protectedHashesUnchanged": true,
+  "stagedIndexUnchanged": true,
+  "primaryStatus": "M apps/web/src/routeTree.gen.ts\nA  \"docs/ui/Lab Platform Redesign.html\"",
+  "mainRuns": [
+    {
+      "conclusion": "",
+      "databaseId": 39524938791,
+      "headSha": "500d9ed8ff9bf37df385e7bde83c679dd1270baa",
+      "status": "in_progress",
+      "url": "https://github.com/CaiZongyuan/spatial-sync/actions/runs/39524938791"
+    }
+  ]
+}

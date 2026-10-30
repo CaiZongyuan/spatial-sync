@@ -1,0 +1,456 @@
+[
+  {
+    "number": 18,
+    "title": "[A3] fr3-lab 导入与演示",
+    "state": "open",
+    "labels": [
+      "status:in-progress"
+    ],
+    "blockedBy": [
+      {
+        "number": 16,
+        "title": "[A2] 物理检查 P1–P6",
+        "state": "closed"
+      },
+      {
+        "number": 17,
+        "title": "[A3] USD 场景加载与布景",
+        "state": "closed"
+      }
+    ]
+  },
+  {
+    "number": 26,
+    "title": "[L2] 计划页与会话页计划面板",
+    "state": "open",
+    "labels": [
+      "status:in-progress"
+    ],
+    "blockedBy": [
+      {
+        "number": 5,
+        "title": "[W0] 视口等距相机、叠加浮标与图优先概览页",
+        "state": "closed"
+      },
+      {
+        "number": 25,
+        "title": "[L2] 机械臂路径预览",
+        "state": "closed"
+      }
+    ]
+  },
+  {
+    "number": 27,
+    "title": "[L3] Device Host 与 MQTT 实况宿主",
+    "state": "open",
+    "labels": [
+      "status:in-progress"
+    ],
+    "blockedBy": [
+      {
+        "number": 20,
+        "title": "[L1] 告警引擎与协议 2.1 entity.alert",
+        "state": "closed"
+      }
+    ]
+  },
+  {
+    "number": 28,
+    "title": "[L3] 实况录制、实况历史与真机审批",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 21,
+        "title": "[L1] 历史查询",
+        "state": "closed"
+      },
+      {
+        "number": 22,
+        "title": "[L1] agent 收件箱",
+        "state": "closed"
+      },
+      {
+        "number": 23,
+        "title": "[L1] 实况页（仿真设备阶段）与告警展示",
+        "state": "closed"
+      },
+      {
+        "number": 27,
+        "title": "[L3] Device Host 与 MQTT 实况宿主",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 29,
+    "title": "[T0] FR3 接触抓取技术验证（平台外）",
+    "state": "open",
+    "labels": [
+      "status:in-progress"
+    ],
+    "blockedBy": []
+  },
+  {
+    "number": 30,
+    "title": "[T1] Task 版本与训练计划",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 11,
+        "title": "[A2] 素材包导入与内置 robot/fr3@1",
+        "state": "closed"
+      },
+      {
+        "number": 24,
+        "title": "[L2] 操作计划与步骤关联",
+        "state": "closed"
+      },
+      {
+        "number": 18,
+        "title": "[A3] fr3-lab 导入与演示",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 31,
+    "title": "[T1] 作业编排、GPU 租约与本机节点",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 30,
+        "title": "[T1] Task 版本与训练计划",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 32,
+    "title": "[T1] 训练视图与作业详情",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 5,
+        "title": "[W0] 视口等距相机、叠加浮标与图优先概览页",
+        "state": "closed"
+      },
+      {
+        "number": 31,
+        "title": "[T1] 作业编排、GPU 租约与本机节点",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 33,
+    "title": "[T1] 训练页（具身层）与资源 · 算力",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 6,
+        "title": "[prep] 审批对象泛化与待审批页",
+        "state": "closed"
+      },
+      {
+        "number": 31,
+        "title": "[T1] 作业编排、GPU 租约与本机节点",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 34,
+    "title": "[T2] 具身评估集与评估器",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 8,
+        "title": "[A1] 录制格式 v2",
+        "state": "closed"
+      },
+      {
+        "number": 11,
+        "title": "[A2] 素材包导入与内置 robot/fr3@1",
+        "state": "closed"
+      }
+    ]
+  },
+  {
+    "number": 35,
+    "title": "[T2] 策略版本与 robot_arm.policy",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 31,
+        "title": "[T1] 作业编排、GPU 租约与本机节点",
+        "state": "open"
+      },
+      {
+        "number": 34,
+        "title": "[T2] 具身评估集与评估器",
+        "state": "open"
+      },
+      {
+        "number": 29,
+        "title": "[T0] FR3 接触抓取技术验证（平台外）",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 36,
+    "title": "[T2] 提升流程与 Controller 版本",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 6,
+        "title": "[prep] 审批对象泛化与待审批页",
+        "state": "closed"
+      },
+      {
+        "number": 35,
+        "title": "[T2] 策略版本与 robot_arm.policy",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 37,
+    "title": "[T2] 实验记录、RSI 看板与闭环预算（具身层）",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 30,
+        "title": "[T1] Task 版本与训练计划",
+        "state": "open"
+      },
+      {
+        "number": 33,
+        "title": "[T1] 训练页（具身层）与资源 · 算力",
+        "state": "open"
+      },
+      {
+        "number": 34,
+        "title": "[T2] 具身评估集与评估器",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 38,
+    "title": "[T3] agent 编写的脚本程序",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 36,
+        "title": "[T2] 提升流程与 Controller 版本",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 39,
+    "title": "[T3] 示范",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 31,
+        "title": "[T1] 作业编排、GPU 租约与本机节点",
+        "state": "open"
+      },
+      {
+        "number": 34,
+        "title": "[T2] 具身评估集与评估器",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 40,
+    "title": "[R1] 评估中心页",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 3,
+        "title": "[W0] 新框架：设计令牌、主题、可折叠侧栏与现有页面迁移",
+        "state": "closed"
+      },
+      {
+        "number": 34,
+        "title": "[T2] 具身评估集与评估器",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 41,
+    "title": "[R1] 成本账本与成本中心（GPU 先行）",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 3,
+        "title": "[W0] 新框架：设计令牌、主题、可折叠侧栏与现有页面迁移",
+        "state": "closed"
+      },
+      {
+        "number": 31,
+        "title": "[T1] 作业编排、GPU 租约与本机节点",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 42,
+    "title": "[R2] Vault、模型表与资源 · 模型",
+    "state": "open",
+    "labels": [
+      "status:on-hold"
+    ],
+    "blockedBy": [
+      {
+        "number": 3,
+        "title": "[W0] 新框架：设计令牌、主题、可折叠侧栏与现有页面迁移",
+        "state": "closed"
+      },
+      {
+        "number": 4,
+        "title": "[prep] 用一张命令表同时驱动 lw CLI 与 MCP 工具",
+        "state": "closed"
+      }
+    ]
+  },
+  {
+    "number": 43,
+    "title": "[R2] Agent 与 Harness 版本、Agent 评估集",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 10,
+        "title": "[A1] 平台 skill 体系与 lab / lab-operate",
+        "state": "closed"
+      },
+      {
+        "number": 24,
+        "title": "[L2] 操作计划与步骤关联",
+        "state": "closed"
+      },
+      {
+        "number": 34,
+        "title": "[T2] 具身评估集与评估器",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 44,
+    "title": "[R2] Agent 运行器（Claude Agent SDK）与 LLM 成本",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 31,
+        "title": "[T1] 作业编排、GPU 租约与本机节点",
+        "state": "open"
+      },
+      {
+        "number": 41,
+        "title": "[R1] 成本账本与成本中心（GPU 先行）",
+        "state": "open"
+      },
+      {
+        "number": 42,
+        "title": "[R2] Vault、模型表与资源 · 模型",
+        "state": "open"
+      },
+      {
+        "number": 43,
+        "title": "[R2] Agent 与 Harness 版本、Agent 评估集",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 45,
+    "title": "[R3] Agent 层一圈 RSI",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 37,
+        "title": "[T2] 实验记录、RSI 看板与闭环预算（具身层）",
+        "state": "open"
+      },
+      {
+        "number": 44,
+        "title": "[R2] Agent 运行器（Claude Agent SDK）与 LLM 成本",
+        "state": "open"
+      }
+    ]
+  },
+  {
+    "number": 46,
+    "title": "[R4] Embodiment、Controller 与 Robot Model 资源",
+    "state": "open",
+    "labels": [
+      "ready-for-agent"
+    ],
+    "blockedBy": [
+      {
+        "number": 36,
+        "title": "[T2] 提升流程与 Controller 版本",
+        "state": "open"
+      },
+      {
+        "number": 42,
+        "title": "[R2] Vault、模型表与资源 · 模型",
+        "state": "open"
+      }
+    ]
+  }
+]

@@ -1,0 +1,56 @@
+[
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-18",
+    "HEAD": "f7a480f6a588de2a3186fe166214954112083194",
+    "branch": "refs/heads/feat/issue-18-fr3-lab-import",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-18-grasp-height",
+    "HEAD": "f6b2e765ac8734d8464a66f8e6f00a8e524e4f92",
+    "branch": "refs/heads/feat/issue-18-grasp-height",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-26",
+    "HEAD": "26c6e8f998d4c0d316ce73b4fc4992709c303fd9",
+    "branch": "refs/heads/feat/issue-26-plan-ui",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-27",
+    "HEAD": "266d7b337bcccf333603636158521611d53350b3",
+    "branch": "refs/heads/feat/issue-27-device-host",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-29",
+    "HEAD": "1abcd49084a2491d7654a2a699fc98926e9467dc",
+    "branch": "refs/heads/spike/issue-29-fr3-contact",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-29-report",
+    "HEAD": "ab59d2432a5fd24d948140c25959e0f67a06524d",
+    "branch": "refs/heads/docs/issue-29-t0-results",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-29-round2",
+    "HEAD": "29938219e7554419c73f905493dcde8d6cf76f4a",
+    "branch": "refs/heads/spike/issue-29-round2",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-42",
+    "HEAD": "013c665529bc5138894f4437dc378a1762b3fab2",
+    "branch": "refs/heads/feat/issue-42-model-vault",
+    "status": ""
+  },
+  {
+    "worktree": "D:/Projects/Robots/spatial-sync/.worktrees/issue-85",
+    "HEAD": "9b41f23989d5689e8abd6e03e066f682739a37b8",
+    "branch": "refs/heads/fix/issue-85-ci-margin",
+    "status": ""
+  }
+]
