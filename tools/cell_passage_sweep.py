@@ -5,6 +5,7 @@ geometry never produces a passing L0 result.
 """
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -384,8 +385,39 @@ def main():
         print(json.dumps({"event": "complete-model-ready", **geometry.signature}), flush=True)
     rows = inventory(args.library, initial=geometry.initial() if geometry else None)
     evaluated = 0
+    bounds_records = 0
     if geometry:
-        with (args.out / "sweep.jsonl").open("x", encoding="utf-8") as stream:
+        bounds_dtype = np.dtype(
+            [("stepId", "<i8"), ("sample", "<i4"), ("body", "<i4"), ("bounds", "<f4", (2, 3))]
+        )
+        (args.out / "aabb-index.json").write_text(
+            json.dumps(
+                {
+                    "file": "sweep-aabbs.bin.gz",
+                    "dtype": bounds_dtype.descr,
+                    "bodyKeys": list(geometry.model.body_label),
+                    "convention": "Z-up metres, world lower/upper; float32 rounded outward",
+                    "coverage": "sampled moving/current candidate or held assembly; see row blockers",
+                    "inputHashes": inputs,
+                },
+                indent=2,
+            )
+        )
+        with (
+            (args.out / "sweep.jsonl").open("x", encoding="utf-8") as stream,
+            gzip.open(args.out / "sweep-aabbs.bin.gz", "xb", compresslevel=1) as bounds_stream,
+        ):
+
+            def record_bounds(step_id, sample, bodies, bounds):
+                nonlocal bounds_records
+                records = np.empty(len(bodies), dtype=bounds_dtype)
+                records["stepId"], records["sample"], records["body"] = step_id, sample, bodies
+                records["bounds"][:, 0] = np.nextafter(bounds[:, 0].astype(np.float32), -np.inf)
+                records["bounds"][:, 1] = np.nextafter(bounds[:, 1].astype(np.float32), np.inf)
+                bounds_stream.write(records.tobytes())
+                bounds_records += len(records)
+
+            geometry.sample_sink = record_bounds
             for row in rows:
                 if args.max_motion is not None and evaluated >= args.max_motion:
                     break
@@ -440,6 +472,7 @@ def main():
         "blockingCounts": dict(
             Counter(blocker["code"] for row in rows for blocker in row.get("blockers", []))
         ),
+        "sampledBodyBoundsRecords": bounds_records,
         "inputHashes": inputs,
         "sampling": {
             "controlHz": 60,

@@ -75,3 +75,41 @@ def test_missing_initial_state_stays_an_explicit_gap():
     row = action(model, 1, "pick", "rack")
     assert "model_initial_arm_required" in row["gaps"]
     assert row["verification"] == "pending-geometry"
+
+
+def test_unknown_released_tip_does_not_mask_a_different_foreign_body():
+    from types import SimpleNamespace
+
+    from tools.cell_passage_sweep_geometry import GeometrySweep
+
+    released = SimpleNamespace(shapes=("tip/shell", "robot/pad"), bodies=(7, 1), distance_m=-0.005)
+    foreign = SimpleNamespace(shapes=("vessel/wall", "robot/pad"), bodies=(8, 1), distance_m=-0.006)
+    sweep = GeometrySweep.__new__(GeometrySweep)
+    sweep.port = SimpleNamespace(collision_contacts=lambda **kwargs: [released, foreign], _contact_data=None)
+    sweep.sim = SimpleNamespace(solver=SimpleNamespace(mj_data=None))
+    sweep.expected, sweep.fingers = {}, set()
+    sweep.loose_disposal_ids, sweep.unresolved_passive = {7}, {}
+    expected, bad = sweep.contacts({1})
+    assert expected == []
+    assert bad == [{"shapes": list(foreign.shapes), "depthM": 0.006}]
+    assert sweep.unresolved_passive == {tuple(sorted(released.shapes)): 0.005}
+
+
+def test_sampled_bounds_include_rotation_and_world_translation():
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from tools.cell_passage_sweep_geometry import GeometrySweep
+
+    sweep = GeometrySweep.__new__(GeometrySweep)
+    seen = []
+    sweep.sample_sink = lambda *values: seen.append(values)
+    sweep._sweep_bounds = {1: np.array([[-1, -2, -3], [1, 2, 3]])}
+    sweep.port = SimpleNamespace(
+        frame_body=np.array([[0, 0, 0, 0, 0, 0, 1], [10, 20, 30, 0, 0, 2**-0.5, 2**-0.5]])
+    )
+    sweep.capture_bounds(42, 3, {1, 100})
+    step, sample, bodies, bounds = seen[0]
+    assert (step, sample, bodies) == (42, 3, [1])
+    assert bounds[0] == pytest.approx(np.array([[8, 19, 27], [12, 21, 33]]))
