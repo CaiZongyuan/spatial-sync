@@ -685,7 +685,11 @@ class HostCore:
             self._states[key].reset()
             self._contexts[key].rng.seed(self._contexts[key]._random_seed)
             method = "reset" if hasattr(self._programs[key], "reset") else "init"
-            self._call(key, method, self._contexts[key])
+            result = self._call(key, method, self._contexts[key])
+            if isinstance(result, Reject) and getattr(self._programs[key], "initialization_required", False):
+                raise ValueError(
+                    f"Required program {self._states[key].key} initialization failed: {result.message}"
+                )
         self._prime_diff()
         return [*failed, self.snapshot(), *self._diagnostics]
 

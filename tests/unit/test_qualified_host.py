@@ -103,3 +103,20 @@ def test_required_initial_anchor_failure_aborts_host_startup(tmp_path, monkeypat
         ValueError, match="Required program /arm initialization failed.*initial actual penetration"
     ):
         build_qualified_host(tmp_path)
+
+
+def test_required_anchor_failure_also_aborts_reset(tmp_path, monkeypatch):
+    import pytest
+
+    from packages.programs.labware.placement import QualifiedPlacements
+
+    host, _ = build_qualified_host(tmp_path)
+
+    def fail(self, ctx):
+        raise ValueError("reset actual penetration")
+
+    monkeypatch.setattr(QualifiedPlacements, "initialize", fail)
+    with pytest.raises(
+        ValueError, match="Required program /arm initialization failed.*reset actual penetration"
+    ):
+        host.reset(1)

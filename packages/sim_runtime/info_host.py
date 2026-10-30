@@ -155,7 +155,10 @@ class NewtonInfoHost:
         self.tick_ms = 0.0
         if self.port:
             self.port.reset()
-        self.emit(self.host.reset(self.sim.epoch, self.sim.sim_time))
+        events = self.host.reset(self.sim.epoch, self.sim.sim_time)
+        if self.port:
+            self.port.welds.flush()
+        self.emit(events)
 
     def snapshot(self):
         return self.host.snapshot()
