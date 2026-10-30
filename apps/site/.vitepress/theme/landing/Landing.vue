@@ -28,6 +28,7 @@ import Roadmap from './Roadmap.vue'
 import ChapterIndex from './ChapterIndex.vue'
 import BlogLatest from './BlogLatest.vue'
 import Vision from './Vision.vue'
+import PlatformFilm from './PlatformFilm.vue'
 import { CHAPTERS, DURATION, HERO, PARTS, PART_LABEL, chapterAt, chapterIndex, clamp, labT, lerp, smooth } from './story'
 import './landing.css'
 
@@ -129,6 +130,14 @@ function skip() {
   const el = document.getElementById('frontier')
   if (!el) return
   window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: reduced.value ? 'auto' : 'smooth' })
+  el.focus({ preventScroll: true })
+}
+
+function watchFilm() {
+  playing.value = false
+  const el = document.getElementById('platform-film')
+  if (!el) return
+  el.scrollIntoView({ behavior: reduced.value ? 'auto' : 'smooth' })
   el.focus({ preventScroll: true })
 }
 
@@ -239,6 +248,7 @@ onBeforeUnmount(() => {
           <div class="actions" data-film-control>
             <button class="pl-btn pl-btn--primary" @click="play"><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg>自动播放</button>
             <button class="pl-btn" @click="skip">跳过动画<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
+            <a class="pl-btn" href="#platform-film" @click.prevent="watchFilm">观看介绍视频 · 1:42</a>
           </div>
           <p class="note">也可以向下滚动，按自己的节奏看。</p>
         </header>
@@ -285,6 +295,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <PlatformFilm />
     <Frontier />
     <PhysicalAI />
     <Platform />
