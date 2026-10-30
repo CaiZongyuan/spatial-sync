@@ -5,6 +5,7 @@ geometry never produces a passing L0 result.
 """
 
 import argparse
+import hashlib
 import json
 import os
 from collections import Counter
@@ -14,7 +15,7 @@ from types import SimpleNamespace
 import numpy as np
 import yaml
 
-from packages.programs.cell_passage.workcell import base_action
+from packages.programs.cell_passage.workcell import WorkcellProgram, base_action
 from packages.programs.labware.assembly import attached_bodies
 from packages.programs.labware.motion import LabwareMotionProgram
 from packages.programs.robot_arm.newton import VELOCITY_LIMITS
@@ -38,7 +39,17 @@ def interpolation(segment, elapsed):
         )
         return trajectory.sample(elapsed)[0].tolist()
     if segment["interpolation"] == "flex-quintic":
-        u = u**3 * (10 + u * (-15 + 6 * u))
+        values = {}
+        context = SimpleNamespace(
+            sim_time=elapsed,
+            physics=SimpleNamespace(
+                set_joint_target=lambda joint, value: values.update({joint: value[0]}),
+                set_joint_target_velocity=lambda *args: None,
+            ),
+        )
+        owner = SimpleNamespace(motion=(start, end, duration), started=0, axes=range(len(start)))
+        WorkcellProgram._move_target(owner, context)
+        return [values[joint] for joint in owner.axes]
     return (start + (end - start) * u).tolist()
 
 
@@ -314,7 +325,23 @@ def main():
     parser.add_argument("--expected-contacts", type=Path)
     parser.add_argument("--qualified", action="store_true")
     args = parser.parse_args()
+    if args.max_motion is not None and args.max_motion <= 0:
+        parser.error("--max-motion must be positive")
     args.out.mkdir(parents=True, exist_ok=False)
+    rows = inventory(args.library)
+    (args.out / "steps.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    scene = args.library / "scenes/cell-passage/1"
+    inputs = {
+        name: hashlib.sha256((scene / name).read_bytes()).hexdigest()
+        for name in (
+            "stage.usda",
+            "devices.yaml",
+            "locations.yaml",
+            "mechanical-layout.json",
+            "teaching.json",
+        )
+    }
+    (args.out / "input-hashes.json").write_text(json.dumps(inputs, indent=2))
     geometry = None
     if args.check:
         from tools.cell_passage_sweep_geometry import GeometrySweep
@@ -335,9 +362,24 @@ def main():
             ),
             flush=True,
         )
-        geometry = GeometrySweep(
-            args.library, expected_pairs=policy, config_overlay=overlay, qualified=args.qualified
-        )
+        try:
+            geometry = GeometrySweep(
+                args.library, expected_pairs=policy, config_overlay=overlay, qualified=args.qualified
+            )
+        except Exception as error:
+            failure = {
+                "status": "blocked",
+                "allPass": False,
+                "evaluatedMotionCoverage": 0,
+                "steps": len(rows),
+                "motions": sum(row["motion"] for row in rows),
+                "blocking": [
+                    {"code": "model_initialization", "type": type(error).__name__, "message": str(error)}
+                ],
+            }
+            (args.out / "summary.json").write_text(json.dumps(failure, indent=2))
+            print(json.dumps(failure), flush=True)
+            return 2
         (args.out / "geometry-signature.json").write_text(json.dumps(geometry.signature, indent=2))
         print(json.dumps({"event": "complete-model-ready", **geometry.signature}), flush=True)
     rows = inventory(args.library, initial=geometry.initial() if geometry else None)
@@ -347,7 +389,22 @@ def main():
             for row in rows:
                 if args.max_motion is not None and evaluated >= args.max_motion:
                     break
-                result = geometry.run_row(row)
+                try:
+                    result = geometry.run_row(row)
+                except Exception as error:
+                    result = {
+                        "verification": "blocked",
+                        "samples": 0,
+                        "blockers": [
+                            {
+                                "code": "unavailable_geometry_state",
+                                "type": type(error).__name__,
+                                "message": str(error),
+                            }
+                        ],
+                    }
+                    if not geometry.provisional:
+                        geometry.provisional.append(row["stepId"])
                 row.update(result)
                 if row["motion"]:
                     evaluated += 1
@@ -380,6 +437,16 @@ def main():
         "verifiedMotionCoverage": clear / len(motions),
         "allPass": bool(geometry and geometry.declarations_available and clear == len(motions)),
         "gapCounts": dict(Counter(gap for row in rows for gap in row["gaps"])),
+        "blockingCounts": dict(
+            Counter(blocker["code"] for row in rows for blocker in row.get("blockers", []))
+        ),
+        "inputHashes": inputs,
+        "sampling": {
+            "controlHz": 60,
+            "rotorStepRad": 0.02,
+            "pumpStepM": 0.0005,
+            "interpolation": "runtime command profiles; closed endpoints",
+        },
         "blocking": (["geometry backend not run"] if not geometry else [])
         + (
             ["shared expected-contact declarations unavailable"]
@@ -389,7 +456,8 @@ def main():
     }
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary))
+    return 0 if args.inventory_only or summary["allPass"] else 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
