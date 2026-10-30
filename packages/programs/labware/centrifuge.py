@@ -9,6 +9,8 @@ from packages.info.program import Reject
 from packages.programs.centrifuge.loading import transformed_bounds
 from packages.programs.centrifuge.newton import CentrifugeProgram
 
+from .contacts import contacts_for_bodies, validate_expected_contacts
+
 
 def modeled_slot_masses(slots, vessels, tare, density):
     result = []
@@ -30,25 +32,49 @@ def modeled_slot_masses(slots, vessels, tare, density):
 class PassageCentrifugeProgram(CentrifugeProgram):
     id, type = "cell_passage.centrifuge", "passage-centrifuge/v1"
 
+    def _attach_slot(self, port, parent, body):
+        if self.qualified_placement:
+            if not port.welds.active(parent, body):
+                raise ValueError("Qualified centrifuge loads must already have a measured slot constraint")
+        else:
+            super()._attach_slot(port, parent, body)
+
+    def _release_slots(self, port):
+        if not self.qualified_placement:
+            super()._release_slots(port)
+
     def _open_lid_target(self, port):
         lower, upper = (np.asarray(value) for value in port.joint_limits(self.lid))
-        if (lower.shape != (1,) or upper.shape != (1,)
-                or lower.dtype.kind not in "fiu" or upper.dtype.kind not in "fiu"
-                or not np.isfinite(lower).all() or not np.isfinite(upper).all()
-                or not lower[0] <= 0 < upper[0]):
+        if (
+            lower.shape != (1,)
+            or upper.shape != (1,)
+            or lower.dtype.kind not in "fiu"
+            or upper.dtype.kind not in "fiu"
+            or not np.isfinite(lower).all()
+            or not np.isfinite(upper).all()
+            or not lower[0] <= 0 < upper[0]
+        ):
             raise ValueError(
                 "Passage lid requires one finite joint range containing zero and a positive upper"
             )
         return float(upper[0])
 
     def _lid_open(self, port):
-        return bool(abs(float(port.joint_q(self.lid)[0]) - self.lid_open_target) < 0.02
-                    and abs(port.joint_qd(self.lid)[0]) < 0.02)
+        return bool(
+            abs(float(port.joint_q(self.lid)[0]) - self.lid_open_target) < 0.02
+            and abs(port.joint_qd(self.lid)[0]) < 0.02
+        )
 
     def _lid_closed(self, port):
         return bool(abs(float(port.joint_q(self.lid)[0])) < 0.02 and abs(port.joint_qd(self.lid)[0]) < 0.02)
 
     class Config(CentrifugeProgram.Config):
+        qualifiedPlacement: bool = False
+        expectedContactPairs: list[tuple[str, str]] = Field(default_factory=list)
+        fingerBodyKeys: list[str] = Field(
+            default_factory=list, json_schema_extra={"spatialReference": "body"}
+        )
+        contactAllowanceM: float = Field(default=0.001, gt=0, le=0.002, allow_inf_nan=False)
         controlEntity: str
         armBodies: list[str] = Field(
             min_length=11, max_length=11, json_schema_extra={"spatialReference": "body"}
@@ -60,6 +86,9 @@ class PassageCentrifugeProgram(CentrifugeProgram):
 
         @model_validator(mode="after")
         def known_tare(self):
+            validate_expected_contacts(self.expectedContactPairs)
+            if self.expectedContactPairs and not self.qualifiedPlacement:
+                raise ValueError("Expected centrifuge contacts require qualifiedPlacement opt-in")
             if set(self.tareKg) != set(self.tubes) or any(
                 not math.isfinite(v) or v <= 0 for v in self.tareKg.values()
             ):
@@ -67,6 +96,8 @@ class PassageCentrifugeProgram(CentrifugeProgram):
             return self
 
     def init(self, ctx):
+        self.expected_contacts = validate_expected_contacts(getattr(ctx.config, "expectedContactPairs", []))
+        self.qualified_placement = getattr(ctx.config, "qualifiedPlacement", False)
         super().init(ctx)
         self.cycle_turns = 0.0
         self.previous_angle = float(ctx.physics.joint_q(self.spindle)[0])
@@ -134,6 +165,12 @@ class PassageCentrifugeProgram(CentrifugeProgram):
         if failed or inv.action != "start":
             return failed
         slots, _ = self._loading(ctx)
+        if self.qualified_placement and any(
+            not ctx.physics.welds.active(parent, self.tubes[key])
+            for parent, key in zip(self.slot_bodies, slots, strict=True)
+            if key
+        ):
+            return Reject(code="unsafe_load", message="Every load needs its measured slot constraint")
         if not any(slots):
             return Reject(code="empty_load", message="A processing cycle requires actual loaded tubes")
         if any(ctx.read(key, "lidClosed") is not True for key in slots if key):
@@ -177,6 +214,31 @@ class PassageCentrifugeProgram(CentrifugeProgram):
 
     def tick(self, ctx, dt):
         inv = self.handle
+        if inv is not None and self.qualified_placement:
+            try:
+                scope = ctx.physics.welds.attached_bodies({self.rotor, self.lid.child})
+                contacts = contacts_for_bodies(
+                    ctx.physics,
+                    scope,
+                    limit_m=ctx.config.contactAllowanceM,
+                    expected_pairs=self.expected_contacts,
+                    finger_bodies={ctx.physics.bind_body(key) for key in ctx.config.fingerBodyKeys},
+                    on_expected_contact=lambda **data: ctx.emit("expectedContact", **data),
+                )
+                failed = None
+                if contacts:
+                    hit = min(contacts, key=lambda row: row.distance_m)
+                    data = {"shapes": list(hit.shapes), "depthM": float(-hit.distance_m)}
+                    ctx.emit("unsafeContact", **data)
+                    failed = ("unsafe_contact", "Unexpected centrifuge contact", data)
+            except (AttributeError, KeyError, TypeError, ValueError):
+                failed = ("contact_unavailable", "Actual centrifuge contacts are unknown", {})
+            if failed:
+                ctx.physics.set_joint_target_velocity(self.spindle, [0.0])
+                ctx.physics.set_joint_target(self.lid, ctx.physics.joint_q(self.lid))
+                inv.fail(failed[0], failed[1], **failed[2])
+                self.handle = None
+                ctx.set(phase="idle", rpm=0)
         if inv is not None and self._guard(inv, ctx):
             self.stopping = True
             # Replace the old lid drive immediately; the rotor follows the
@@ -205,20 +267,40 @@ class PassageCentrifugeProgram(CentrifugeProgram):
     def _completion_result(self, inv, ctx):
         slots, issues = self._loading(ctx)
         speed = abs(float(ctx.physics.joint_qd(self.spindle)[0]))
-        if (issues or slots != self.cycle_load or not any(slots)
-                or not math.isfinite(self.cycle_turns) or self.cycle_turns <= 0
-                or not math.isfinite(self.running) or self.running + 1e-9 < inv.params["durationSeconds"]
-                or not math.isfinite(speed) or speed >= .05 or not self._lid_closed(ctx.physics)):
-            return Reject(code="cycle_evidence_unavailable",
-                          message="Actual completed cycle evidence is unconfirmed")
-        ctx.set(completedCycle=inv.params["operationId"], completedLoad=slots,
-                cycleRunSeconds=self.running, actualRotorTurns=self.cycle_turns)
+        if (
+            issues
+            or slots != self.cycle_load
+            or not any(slots)
+            or not math.isfinite(self.cycle_turns)
+            or self.cycle_turns <= 0
+            or not math.isfinite(self.running)
+            or self.running + 1e-9 < inv.params["durationSeconds"]
+            or not math.isfinite(speed)
+            or speed >= 0.05
+            or not self._lid_closed(ctx.physics)
+        ):
+            return Reject(
+                code="cycle_evidence_unavailable", message="Actual completed cycle evidence is unconfirmed"
+            )
+        ctx.set(
+            completedCycle=inv.params["operationId"],
+            completedLoad=slots,
+            cycleRunSeconds=self.running,
+            actualRotorTurns=self.cycle_turns,
+        )
         return {
-            "schema": "lw.centrifuge-cycle-receipt/1", "entityKey": ctx.key, "invocationId": inv.id,
+            "schema": "lw.centrifuge-cycle-receipt/1",
+            "entityKey": ctx.key,
+            "invocationId": inv.id,
             "operationId": inv.params["operationId"],
-            "owner": inv.params["owner"], "epoch": inv.params["epoch"],
-            "completedCycle": inv.params["operationId"], "completedLoad": list(slots),
-            "cycleRunSeconds": self.running, "actualRotorTurns": self.cycle_turns,
-            "actualRpm": speed * 60 / (2 * math.pi), "rotorStopped": True, "lidClosed": True,
+            "owner": inv.params["owner"],
+            "epoch": inv.params["epoch"],
+            "completedCycle": inv.params["operationId"],
+            "completedLoad": list(slots),
+            "cycleRunSeconds": self.running,
+            "actualRotorTurns": self.cycle_turns,
+            "actualRpm": speed * 60 / (2 * math.pi),
+            "rotorStopped": True,
+            "lidClosed": True,
             "completedSimTime": ctx.sim_time,
         }

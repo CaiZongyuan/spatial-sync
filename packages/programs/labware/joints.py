@@ -8,7 +8,12 @@ from pydantic import Field, FiniteFloat, model_validator
 from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation, transformed_bounds
 
-from .contacts import CONTACT_LIMIT_M, contacts_for_bodies, validate_seating_contacts
+from .contacts import (
+    CONTACT_LIMIT_M,
+    contacts_for_bodies,
+    validate_expected_contacts,
+    validate_seating_contacts,
+)
 
 Vector = tuple[FiniteFloat, FiniteFloat, FiniteFloat]
 
@@ -24,9 +29,14 @@ class PassageJointProgram:
         maxSpeed: float = Field(gt=0, allow_inf_nan=False)
         tolerance: float = Field(default=0.001, gt=0, allow_inf_nan=False)
         velocityTolerance: float = Field(default=0.01, gt=0, allow_inf_nan=False)
-        contactAllowanceM: float = Field(default=.001, gt=0, le=.002, allow_inf_nan=False)
+        contactAllowanceM: float = Field(default=0.001, gt=0, le=0.002, allow_inf_nan=False)
         seatingContactPairs: list[tuple[str, str]] = Field(default_factory=list, max_length=8)
-        seatingContactAllowanceM: float = Field(default=.002, gt=0, le=.005, allow_inf_nan=False)
+        seatingContactAllowanceM: float = Field(default=0.002, gt=0, le=0.005, allow_inf_nan=False)
+        qualifiedPlacement: bool = False
+        expectedContactPairs: list[tuple[str, str]] = Field(default_factory=list)
+        fingerBodyKeys: list[str] = Field(
+            default_factory=list, json_schema_extra={"spatialReference": "body"}
+        )
         role: Literal["axis", "outer", "inner"] = "axis"
         peerDoor: str | None = None
         movingBodyKeys: list[str] = Field(
@@ -36,12 +46,14 @@ class PassageJointProgram:
             default_factory=list, json_schema_extra={"spatialReference": "body"}
         )
         armEntity: str | None = Field(
-            default=None, exclude_if=lambda value: value is None,
+            default=None,
+            exclude_if=lambda value: value is None,
             json_schema_extra={"spatialReference": "body"},
         )
         attachedLids: dict[str, str] = Field(default_factory=dict)
         sweepAnchorBody: str | None = Field(
-            default=None, exclude_if=lambda value: value is None,
+            default=None,
+            exclude_if=lambda value: value is None,
             json_schema_extra={"spatialReference": "body"},
         )
         sweepLowerLocalM: Vector | None = None
@@ -50,6 +62,14 @@ class PassageJointProgram:
         @model_validator(mode="after")
         def limits_and_peer(self):
             validate_seating_contacts(self.seatingContactPairs, self.seatingContactAllowanceM)
+            validate_expected_contacts(self.expectedContactPairs)
+            if self.qualifiedPlacement:
+                if self.seatingContactPairs or len(self.fingerBodyKeys) != 2:
+                    raise ValueError(
+                        "Qualified joint safety needs two finger bodies and no legacy exceptions"
+                    )
+            elif self.expectedContactPairs or self.fingerBodyKeys:
+                raise ValueError("Expected joint contacts require the explicit qualifiedPlacement opt-in")
             if self.lower >= self.upper or self.role != "axis" and not self.peerDoor:
                 raise ValueError("Ordered limits and door peers are required")
             for values in (self.movingBodyKeys, self.clearanceBodyKeys):
@@ -61,21 +81,32 @@ class PassageJointProgram:
             return self
 
     def init(self, ctx):
+        self.expected_contacts = validate_expected_contacts(ctx.config.expectedContactPairs)
         self.joint = ctx.physics.bind_joint(ctx.config.jointKey)
         self.handle, self.cancel_pending, self.failure = None, False, None
         self.body_ids, self.bounds, self.retained_payloads = {}, {}, set()
         self.bounds_error = None
         if ctx.config.role != "axis":
             # Immutable collider bounds can be prepared before the intake SLA.
-            keys = {*ctx.config.clearanceBodyKeys, *ctx.config.movingBodyKeys,
-                    *ctx.config.attachedLids, *ctx.config.attachedLids.values()}
+            keys = {
+                *ctx.config.clearanceBodyKeys,
+                *ctx.config.movingBodyKeys,
+                *ctx.config.attachedLids,
+                *ctx.config.attachedLids.values(),
+            }
             try:
                 for key in keys:
                     self._bounds(ctx, key)
             except (AttributeError, KeyError, TypeError, ValueError) as error:
                 self.bounds_error = str(error)
-        ctx.set(contactFactsAvailable=False, unsafeContactCount=0, lastContactShapes=[],
-                lastContactDepthM=0.0, clearanceKnown=False, clearanceBlockedBy=[])
+        ctx.set(
+            contactFactsAvailable=False,
+            unsafeContactCount=0,
+            lastContactShapes=[],
+            lastContactDepthM=0.0,
+            clearanceKnown=False,
+            clearanceBlockedBy=[],
+        )
         self.target = self.commanded = float(ctx.physics.joint_q(self.joint)[0])
         self.stable = self.elapsed = 0.0
         self._publish(ctx)
@@ -96,7 +127,7 @@ class PassageJointProgram:
     def _bounds(self, ctx, key):
         if key not in self.bounds:
             bounds = np.asarray(ctx.physics.collision_bounds(self._body(ctx, key)), dtype=float)
-            if (bounds.shape != (2, 3) or not np.isfinite(bounds).all() or np.any(bounds[1] < bounds[0])):
+            if bounds.shape != (2, 3) or not np.isfinite(bounds).all() or np.any(bounds[1] < bounds[0]):
                 raise ValueError("Actual collider bounds are unknown")
             self.bounds[key] = bounds
         return self.bounds[key]
@@ -125,17 +156,37 @@ class PassageJointProgram:
         try:
             if not ctx.config.movingBodyKeys:
                 raise ValueError("Actual moving bodies are undeclared")
-            payloads = self._payloads(ctx)
+            if ctx.config.qualifiedPlacement:
+                roots = {self._body(ctx, key) for key in ctx.config.movingBodyKeys}
+                payloads = {
+                    ctx.physics.body_key(body) for body in ctx.physics.welds.attached_bodies(roots) - roots
+                }
+            else:
+                payloads = self._payloads(ctx)
             watched = self.retained_payloads | payloads
             keys = [*ctx.config.movingBodyKeys, *sorted(watched)]
             for key in keys:
                 self._pose(ctx, key)
+            bodies = {self._body(ctx, key) for key in keys}
+            grasp = set()
+            if ctx.config.qualifiedPlacement:
+                bodies = ctx.physics.welds.attached_bodies(bodies)
+                grasp = ctx.physics.welds.attached_bodies({self._body(ctx, k) for k in payloads})
+                # The physical hand may have attached before holding facts publish.
+                grasp |= bodies - {self._body(ctx, k) for k in ctx.config.movingBodyKeys}
             contacts = contacts_for_bodies(
-                ctx.physics, {self._body(ctx, key) for key in keys}, limit_m=ctx.config.contactAllowanceM,
+                ctx.physics,
+                bodies,
+                limit_m=ctx.config.contactAllowanceM,
                 seating_pairs=ctx.config.seatingContactPairs,
                 seating_limit_m=ctx.config.seatingContactAllowanceM,
                 on_seating_contact=(lambda **data: ctx.emit("seatingContact", **data))
-                if ctx.config.seatingContactPairs else None,
+                if ctx.config.seatingContactPairs
+                else None,
+                expected_pairs=self.expected_contacts,
+                finger_bodies={self._body(ctx, k) for k in ctx.config.fingerBodyKeys},
+                grasp_bodies=grasp,
+                on_expected_contact=lambda **data: ctx.emit("expectedContact", **data),
             )
             if self.handle is not None:
                 self.retained_payloads.update(payloads)
@@ -146,28 +197,41 @@ class PassageJointProgram:
         if contacts:
             worst = min(contacts, key=lambda row: row.distance_m)
             shapes, depth = list(worst.shapes), float(-worst.distance_m)
-            ctx.set(unsafeContactCount=ctx.get("unsafeContactCount") + len(contacts),
-                    lastContactShapes=shapes, lastContactDepthM=depth)
+            ctx.set(
+                unsafeContactCount=ctx.get("unsafeContactCount") + len(contacts),
+                lastContactShapes=shapes,
+                lastContactDepthM=depth,
+            )
             ctx.emit("unsafeContact", shapes=shapes, depthM=depth)
-            return Reject(code="unsafe_contact", message="Moving-body contact exceeded scene allowance",
-                          details={"shapes": shapes, "depthM": depth})
+            return Reject(
+                code="unsafe_contact",
+                message="Moving-body contact exceeded scene allowance",
+                details={"shapes": shapes, "depthM": depth},
+            )
         if ctx.config.role == "axis":
             ctx.set(clearanceKnown=True, clearanceBlockedBy=[])
             return None
         try:
-            if (not ctx.config.sweepAnchorBody or ctx.config.sweepLowerLocalM is None
-                    or ctx.config.sweepUpperLocalM is None or not ctx.config.clearanceBodyKeys):
+            if (
+                not ctx.config.sweepAnchorBody
+                or ctx.config.sweepLowerLocalM is None
+                or ctx.config.sweepUpperLocalM is None
+                or not ctx.config.clearanceBodyKeys
+            ):
                 raise ValueError("Physical swept clearance is undeclared")
             if self.bounds_error:
                 raise ValueError(self.bounds_error)
             keys = sorted(set(ctx.config.clearanceBodyKeys) | watched)
             frame = self._pose(ctx, ctx.config.sweepAnchorBody)
-            actual = transformed_bounds(np.array([self._bounds(ctx, key) for key in keys]),
-                                        np.array([self._pose(ctx, key) for key in keys]),
-                                        frame)
+            actual = transformed_bounds(
+                np.array([self._bounds(ctx, key) for key in keys]),
+                np.array([self._pose(ctx, key) for key in keys]),
+                frame,
+            )
             current_door = transformed_bounds(
                 np.array([self._bounds(ctx, key) for key in ctx.config.movingBodyKeys]),
-                np.array([self._pose(ctx, key) for key in ctx.config.movingBodyKeys]), frame,
+                np.array([self._pose(ctx, key) for key in ctx.config.movingBodyKeys]),
+                frame,
             )
             if not np.isfinite(actual).all():
                 raise ValueError("Actual swept clearance is unknown")
@@ -180,8 +244,11 @@ class PassageJointProgram:
             return Reject(code="unknown_clearance", message="Actual door swept clearance is unknown")
         ctx.set(clearanceKnown=True, clearanceBlockedBy=blocked)
         if blocked:
-            return Reject(code="arm_in_door_sweep", message="Retract actual arm/payload from the door sweep",
-                          details={"bodies": blocked})
+            return Reject(
+                code="arm_in_door_sweep",
+                message="Retract actual arm/payload from the door sweep",
+                details={"bodies": blocked},
+            )
 
     def _publish(self, ctx):
         q = float(ctx.physics.joint_q(self.joint)[0])
@@ -259,7 +326,13 @@ class PassageJointProgram:
             self._hold(ctx)
         self.handle, self.cancel_pending, self.failure = inv, False, None
         if inv.action != "stop":
-            self.retained_payloads = self._payloads(ctx)
+            if ctx.config.qualifiedPlacement:
+                roots = {self._body(ctx, key) for key in ctx.config.movingBodyKeys}
+                self.retained_payloads = {
+                    ctx.physics.body_key(body) for body in ctx.physics.welds.attached_bodies(roots) - roots
+                }
+            else:
+                self.retained_payloads = self._payloads(ctx)
             ctx.set(unsafeContactCount=0, lastContactShapes=[], lastContactDepthM=0.0)
         self.elapsed = self.stable = 0.0
         if inv.action != "stop":

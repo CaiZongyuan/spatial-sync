@@ -58,8 +58,11 @@ class PhysicsPort:
         self.sim = simulation
         model = simulation.model
         self.bodies = {"/" + label.strip("/"): i for i, label in enumerate(model.body_label)}
-        self.body_keys = {int(node.debug["newtonBodyIndex"]): node.entityKey
-                          for node in manifest.nodes if node.kind == "body"}
+        self.body_keys = {
+            int(node.debug["newtonBodyIndex"]): node.entityKey
+            for node in manifest.nodes
+            if node.kind == "body"
+        }
         q, qd = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
         targets = model.joint_target_q_start.numpy()
         children = model.joint_child.numpy()
@@ -84,7 +87,9 @@ class PhysicsPort:
         self._site_motion_history = {}
         self._collision_bounds = {}
         self._contact_binding = (
-            model, simulation.solver, getattr(simulation.solver, "mj_model", None),
+            model,
+            simulation.solver,
+            getattr(simulation.solver, "mj_model", None),
             getattr(simulation.solver, "mjc_geom_to_newton_shape", None),
             getattr(simulation.solver, "mjc_body_to_newton", None),
         )
@@ -114,6 +119,9 @@ class PhysicsPort:
     def bind_body(self, key):
         return self.bodies[key]
 
+    def body_key(self, body):
+        return self.body_keys[body]
+
     def collision_contacts(self, *, max_distance=0.0, bodies=None):
         """Captured-pose CPU contacts, mapped through Newton's shape identity.
 
@@ -127,18 +135,27 @@ class PhysicsPort:
             raise ValueError("Physical contact queries require the CPU MuJoCo backend")
         if not np.isfinite(max_distance):
             raise ValueError("Contact distance bound must be finite")
-        binding = (self.sim.model, solver, getattr(solver, "mj_model", None),
-                   getattr(solver, "mjc_geom_to_newton_shape", None),
-                   getattr(solver, "mjc_body_to_newton", None))
-        if any(current is not captured
-               for current, captured in zip(binding, self._contact_binding, strict=True)):
+        binding = (
+            self.sim.model,
+            solver,
+            getattr(solver, "mj_model", None),
+            getattr(solver, "mjc_geom_to_newton_shape", None),
+            getattr(solver, "mjc_body_to_newton", None),
+        )
+        if any(
+            current is not captured for current, captured in zip(binding, self._contact_binding, strict=True)
+        ):
             raise ValueError("Contact model identity changed; a new PhysicsPort is required")
         if solver.mjc_geom_to_newton_shape is None or solver.mjc_body_to_newton is None:
             raise ValueError("Solver contact identity mapping is unavailable")
         scope = None
         if bodies is not None:
-            if (not bodies or any(isinstance(body, bool) or not isinstance(body, Integral)
-                                  or not -1 <= body < len(self.frame_body) for body in bodies)):
+            if not bodies or any(
+                isinstance(body, bool)
+                or not isinstance(body, Integral)
+                or not -1 <= body < len(self.frame_body)
+                for body in bodies
+            ):
                 raise ValueError("Contact body scope is unknown")
             scope = tuple(sorted(set(int(body) for body in bodies)))
         scoped = scope is not None and os.getenv("SPATIAL_NEWTON_CONTACT_SCOPED") == "1"
@@ -182,8 +199,11 @@ class PhysicsPort:
         if native.nflex or native.nplugin or mujoco.get_mjcb_contactfilter() is not None:
             return None
         mapping = self.sim.solver.mjc_geom_to_newton_shape.numpy()
-        if (mapping.shape != (1, native.ngeom) or np.any(mapping < 0)
-                or np.any(mapping >= self.sim.model.shape_count)):
+        if (
+            mapping.shape != (1, native.ngeom)
+            or np.any(mapping < 0)
+            or np.any(mapping >= self.sim.model.shape_count)
+        ):
             return None
         owners = self.sim.model.shape_body.numpy()[mapping[0]]
         masks = _scope_masks(native.geom_contype, native.geom_conaffinity, np.isin(owners, bodies))
@@ -229,11 +249,18 @@ class PhysicsPort:
         if geometry_map.shape != (1, native.ngeom):
             raise ValueError("Solver contact geometry mapping is unavailable")
         body_map = solver.mjc_body_to_newton.numpy()
-        if (body_map.shape != (1, native.nbody) or np.any(body_map < -1)
-                or np.any(body_map >= len(self.frame_body))):
+        if (
+            body_map.shape != (1, native.nbody)
+            or np.any(body_map < -1)
+            or np.any(body_map >= len(self.frame_body))
+        ):
             raise ValueError("Solver contact body mapping is unavailable")
-        if (not np.isfinite(self.frame_body).all() or not np.isfinite(self.q).all()
-                or not np.isfinite(self.qd).all() or not np.isfinite(self.last_time)):
+        if (
+            not np.isfinite(self.frame_body).all()
+            or not np.isfinite(self.q).all()
+            or not np.isfinite(self.qd).all()
+            or not np.isfinite(self.last_time)
+        ):
             raise ValueError("Captured pose, coordinates and time must be finite")
         if self._contact_data is None:
             self._contact_data = mujoco.MjData(solver.mj_model)
@@ -271,28 +298,37 @@ class PhysicsPort:
         mapped = np.flatnonzero(body_map >= 0)
         expected = self.frame_body[body_map[mapped]]
         actual_q = query.xquat[mapped][:, [1, 2, 3, 0]]
-        quaternion_error = np.minimum(np.abs(actual_q - expected[:, 3:]).max(axis=1),
-                                      np.abs(actual_q + expected[:, 3:]).max(axis=1))
+        quaternion_error = np.minimum(
+            np.abs(actual_q - expected[:, 3:]).max(axis=1), np.abs(actual_q + expected[:, 3:]).max(axis=1)
+        )
         # A float32 FK representation check, not a physical contact allowance.
         roundoff = 32 * np.finfo(np.float32).eps
-        if (not np.allclose(query.xpos[mapped], expected[:, :3], rtol=0, atol=roundoff)
-                or np.any(quaternion_error > roundoff)):
+        if not np.allclose(query.xpos[mapped], expected[:, :3], rtol=0, atol=roundoff) or np.any(
+            quaternion_error > roundoff
+        ):
             raise ValueError("Query pose does not match the captured Newton frame")
         mapping = geometry_map[0]
         shape_bodies = model.shape_body.numpy()
-        distances = np.array(query.contact.dist[:query.ncon], copy=True)
+        distances = np.array(query.contact.dist[: query.ncon], copy=True)
         if not np.isfinite(distances).all():
             raise ValueError("Solver contact distance is unknown")
-        geometries = np.array(query.contact.geom[:query.ncon], copy=True)
-        if (geometries.shape != (query.ncon, 2) or np.any(geometries < 0)
-                or np.any(geometries >= len(mapping))):
+        geometries = np.array(query.contact.geom[: query.ncon], copy=True)
+        if (
+            geometries.shape != (query.ncon, 2)
+            or np.any(geometries < 0)
+            or np.any(geometries >= len(mapping))
+        ):
             raise ValueError("Solver contact geometry identity is unknown")
         shapes = mapping[geometries]
         if np.any(shapes < 0) or np.any(shapes >= model.shape_count):
             raise ValueError("Solver contact has no Newton shape identity")
         return SimpleNamespace(
-            distances=distances, geometries=geometries, mapping=mapping.copy(),
-            shape_bodies=shape_bodies.copy(), shape_labels=tuple(model.shape_label), decoded={},
+            distances=distances,
+            geometries=geometries,
+            mapping=mapping.copy(),
+            shape_bodies=shape_bodies.copy(),
+            shape_labels=tuple(model.shape_label),
+            decoded={},
         )
 
     def preview_snapshot(self):
@@ -338,8 +374,10 @@ class PhysicsPort:
                 if not int(flags[index]) & int(newton.ShapeFlags.COLLIDE_SHAPES):
                     continue
                 transform = wp.transform(transforms[index, :3], transforms[index, 3:])
-                points.extend(wp.transform_point(transform, wp.vec3(*point)) for point in product(
-                    *zip(lower[index], upper[index], strict=True)))
+                points.extend(
+                    wp.transform_point(transform, wp.vec3(*point))
+                    for point in product(*zip(lower[index], upper[index], strict=True))
+                )
             if not points or not np.isfinite(points).all():
                 raise ValueError("Body collision bounds are unavailable or nonfinite")
             bounds = np.array([np.min(points, axis=0), np.max(points, axis=0)], dtype=float)
@@ -361,20 +399,26 @@ class PhysicsPort:
             arrays = self._staging
         self.body, self.q, self.qd = (array.numpy().copy() for array in arrays)
         self.frame_body = self.body.copy()
-        self.sample_time_ms = monotonic()*1000
+        self.sample_time_ms = monotonic() * 1000
         dt = self.sim.sim_time - self.last_time if self.last_time is not None else 0
         same_frame = previous is not None and self.last_time == self.sim.sim_time
         epoch = getattr(self.sim, "epoch", None)
-        if (not same_frame or getattr(self, "_contact_epoch", None) != epoch
-                or not np.array_equal(old_body, self.frame_body) or not np.array_equal(old_q, self.q)
-                or not np.array_equal(old_qd, self.qd)):
+        if (
+            not same_frame
+            or getattr(self, "_contact_epoch", None) != epoch
+            or not np.array_equal(old_body, self.frame_body)
+            or not np.array_equal(old_q, self.q)
+            or not np.array_equal(old_qd, self.qd)
+        ):
             self._contact_cache = self._contact_error = None
             self._contact_scope_cache, self._contact_scope_errors = {}, {}
         self._contact_epoch = epoch
         self.velocity = (
             (self.body[:, :3] - previous) / dt
             if previous is not None and dt > 0
-            else self.velocity if same_frame else np.zeros((len(self.body), 3))
+            else self.velocity
+            if same_frame
+            else np.zeros((len(self.body), 3))
         )
         self.previous_positions = self.body[:, :3].copy()
         self.last_time = self.sim.sim_time

@@ -221,6 +221,28 @@ actions:
     - operationId
     concurrent: true
 events:
+  expectedContact:
+    schema:
+      type: object
+      properties:
+        shapes: {type: array, items: {type: string}, minItems: 2, maxItems: 2}
+        depthM: {type: number, minimum: 0}
+      required: [shapes, depthM]
+  constraintChanged:
+    schema:
+      type: object
+      properties:
+        operation: {enum: [initialize, attach, detach, handAttach, handDetach]}
+        object: {type: string}
+        station: {type: string}
+        positionErrorM: {type: number, minimum: 0}
+        angleErrorRad: {type: number, minimum: 0}
+        relativeSpeedMps: {type: number, minimum: 0}
+        positionLimitM: {type: number, minimum: 0}
+        angleLimitRad: {type: number, minimum: 0}
+        speedLimitMps: {type: number, minimum: 0}
+      required: [operation, object, station, positionErrorM, angleErrorRad, relativeSpeedMps,
+                 positionLimitM, angleLimitRad, speedLimitMps]
   seatingContact:
     schema:
       type: object

@@ -97,6 +97,11 @@ class NewtonInfoHost:
         except BaseException:
             self.close()
             raise
+        if self.port:
+            # Initial qualified anchors must reach the solver before its first
+            # physics step. Keep Host events queued for the ordinary reliable
+            # Source channel; Session starts its event consumer after recording.
+            self.port.welds.flush()
         self.timings = deque(maxlen=6000)
         self.tick_ms = 0.0
         simulation.install_program_loop(options.controlHz, self.tick, self.reset)
