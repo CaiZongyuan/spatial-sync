@@ -256,6 +256,8 @@ class _Recipe:
     def batch(self, samples, load):
         self.do(CENTRIFUGE, "openLid")
         for name, slot in load:
+            if name in samples:
+                self.lid(name, False)
             self.transport(self.layout["bodies"][name], self.layout["slotSites"][slot - 1])
             self.reserve(self.layout["bodies"][name], CENTRIFUGE)
         self.do(ROBOT, "home")
@@ -269,10 +271,14 @@ class _Recipe:
         self.check(CENTRIFUGE, "actualRotorTurns", "gt", 0)
         self.do(WORKCELL, "pellet", {"centrifuge": CENTRIFUGE, "cycle": cycle, "vessels": samples})
         self.do(CENTRIFUGE, "openLid")
+        if self.environment:
+            self.check(self.layout["cabinetEntity"], "cabinetReady", "equals", True)
         for name, _ in load:
             index = int(name[1:]) if name.startswith("S") else None
             target = LAB + (f"/Sites/FlexTube{index}" if index else "/Sites/Rack" + name)
             self.transport(self.layout["bodies"][name], target)
+            if name in samples:
+                self.lid(name, True)
 
 
 def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_id, max_steps=128):
@@ -316,8 +322,6 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
         recipe.transfer(mother, f"S{index}", action="aspirateAvailable")
     recipe.lid("Mother", False)
     recipe.transport(body["Mother"], LAB + "/Sites/WasteMother")
-    for index in range(1, 7):
-        recipe.lid(f"S{index}", False)
 
     recipe.stage(3)
     recipe.batch(["S1", "S2", "S3", "S4"], [("S1", 1), ("S2", 3), ("S3", 2), ("S4", 4)])
@@ -331,7 +335,7 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
     recipe.lid("Counting", True)
     for index, well in enumerate(WELLS, 1):
         sample = f"S{index}"
-        recipe.lid(sample, True)
+        recipe.check(body[sample], "lidClosed", "equals", False)
         recipe.transfer(sample, "WasteLiquid", action="aspirateAvailable", reserveUl=50)
         recipe.transfer("ReservoirMedium", sample, action="aspirateTopUp",
                         targetVessel=sample, targetVolumeUl=1000)
