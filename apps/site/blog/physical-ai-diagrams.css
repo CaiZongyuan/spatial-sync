@@ -1,0 +1,121 @@
+/* Article diagrams share the site's typography and light/dark design tokens.
+   Keep every selector under pai-diagram so other posts are unaffected. */
+.vp-doc .pai-diagram {
+  margin: 32px 0;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.pai-diagram .pai-diagram-body {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--bevel);
+}
+
+.vp-doc .pai-diagram p { margin: 0; line-height: inherit; }
+.vp-doc .pai-diagram strong { color: var(--ink); font-weight: 600; }
+.vp-doc .pai-diagram .pai-eyebrow {
+  margin-bottom: 20px;
+  color: var(--faint);
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.pai-diagram .pai-roles { margin: 0; }
+.pai-diagram .pai-roles > div {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  gap: 20px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.pai-diagram .pai-roles > div:last-child { padding-bottom: 0; }
+.pai-diagram .pai-roles dt { font-weight: 500; color: var(--muted); }
+.pai-diagram .pai-roles dd { margin: 0; }
+.pai-diagram .pai-roles dd span { display: block; margin-top: 4px; color: var(--muted); }
+.pai-diagram .pai-focus dt { color: var(--accent-ink); }
+
+.vp-doc .pai-diagram .pai-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vp-doc .pai-diagram .pai-steps li {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+.pai-diagram .pai-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--ground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.pai-diagram .pai-steps li:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  top: 2px;
+  left: 44px;
+  right: -10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: right;
+}
+.pai-diagram .pai-steps li:last-child .pai-step-number { border-color: var(--accent); color: var(--accent-ink); }
+.vp-doc .pai-diagram .pai-steps p { margin-top: 6px; color: var(--muted); font-size: 13px; }
+.vp-doc .pai-diagram .pai-feedback {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line-2);
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+.pai-diagram .pai-feedback span { margin-right: 6px; }
+
+.pai-diagram .pai-perspectives { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pai-diagram .pai-perspectives > div { padding-right: 24px; }
+.pai-diagram .pai-perspectives > div + div { padding: 0 0 0 24px; border-left: 1px solid var(--line); }
+.vp-doc .pai-diagram .pai-term { margin-bottom: 12px; font-size: 19px; font-weight: 600; }
+.vp-doc .pai-diagram .pai-perspectives strong + p { margin-top: 8px; color: var(--ink-2); }
+.vp-doc .pai-diagram .pai-detail { margin-top: 12px; color: var(--muted); font-size: 13px; }
+.vp-doc .pai-diagram .pai-overlap {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.pai-diagram .pai-overlap span { display: block; margin-bottom: 4px; color: var(--accent-ink); font-size: 12px; }
+.vp-doc .pai-diagram .pai-note { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.pai-diagram figcaption { margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+
+@media (max-width: 639px) {
+  .pai-diagram .pai-diagram-body { padding: 20px; }
+  .pai-diagram .pai-roles > div { grid-template-columns: 1fr; gap: 6px; padding: 16px 0; }
+  .vp-doc .pai-diagram .pai-steps { grid-template-columns: 1fr; gap: 24px; }
+  .vp-doc .pai-diagram .pai-steps li { padding-left: 48px; }
+  .pai-diagram .pai-step-number { position: absolute; top: 0; left: 0; margin: 0; }
+  .pai-diagram .pai-steps li:not(:last-child)::after { content: ''; top: 38px; bottom: -16px; left: 15px; right: auto; border-bottom: 0; border-left: 1px solid var(--line); }
+  .pai-diagram .pai-steps br { display: none; }
+  .pai-diagram .pai-perspectives { grid-template-columns: 1fr; gap: 20px; }
+  .pai-diagram .pai-perspectives > div { padding: 0; }
+  .pai-diagram .pai-perspectives > div + div { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+}
