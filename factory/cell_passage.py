@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import shutil
 from pathlib import Path
 
@@ -308,6 +309,39 @@ def build_labware(output):
     return [*packages, variant]
 
 
+def qualified_demo_bindings(output, layout, mechanical):
+    """Resolve authored dependencies before generating exact demo contact declarations."""
+    from factory.cell_passage_qualified import qualified_placement_config
+    from packages.programs.labware.facts import (
+        SEATED_ANGLE_LIMIT_RAD,
+        SEATED_POSITION_LIMIT_M,
+        SEATED_SPEED_LIMIT_MPS,
+    )
+
+    scene = output / "scenes/cell-passage/1"
+    text = re.sub(
+        r"@library:assets/([^@]+)@",
+        lambda match: "@" + (output / "assets" / match[1]).resolve().as_posix() + "@",
+        (scene / "stage.usda").read_text(encoding="utf-8"),
+    )
+    layer = Sdf.Layer.CreateAnonymous("qualified-demo-declarations.usda")
+    if not layer.ImportFromString(text):
+        raise ValueError("Cannot compose authored geometry for demo declarations")
+    composed = Usd.Stage.Open(layer)
+    overlay = qualified_placement_config(composed, layout, mechanical["entities"], enabled=True)
+    for binding in mechanical["entities"]:
+        binding["config"].update(overlay.get(binding["key"], {}))
+    policy = json.dumps(overlay, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    layout["demonstration"].update(
+        qualifiedPlacement=True,
+        expectedContactPolicy="declared exact pairs; record depth without a stop limit",
+        placementPositionLimitM=SEATED_POSITION_LIMIT_M,
+        placementAngleLimitDeg=math.degrees(SEATED_ANGLE_LIMIT_RAD),
+        placementSpeedLimitMps=SEATED_SPEED_LIMIT_MPS,
+        contactPolicySha256=hashlib.sha256(policy).hexdigest(),
+    )
+
+
 def build(source, output, *, bindings_overlay=None, with_workcell=False, demonstration=False):
     from packages.library.common import content_hash
 
@@ -348,12 +382,17 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
         layout["demonstration"] = {"enabled": True, "contactAllowanceM": .002,
                                    "alignmentToleranceM": .001, "preInsertionHeightM": .011,
                                    "formalPrecisionQualified": False}
-        layout["demonstration"]["rackSeatingContactAllowanceM"] = .005
-        layout["demonstration"]["rackSeatingContactPairs"] = [
-            [LAB + "/Labware/" + name + "/Floor",
-             LAB + "/Labware/CollectionRack/Frame/" + name + "Floor"]
-            for name in [f"S{i}" for i in range(1, 7)] + ["B5", "B6"]
-        ]
+        # Eight float32 ULPs around one metre: an authored positive gap avoids
+        # the measured 26 nm S1/support overlap without a runtime tolerance or projection.
+        clearance = 2.0 ** -20
+        body = layout["bodies"]["S1"]
+        initial_offsets = {}
+        for key in (body, layout["lids"][body]):
+            translation = stage.GetPrimAtPath(key).GetAttribute("xformOp:translate")
+            position = translation.Get()
+            translation.Set(Gf.Vec3d(position[0], position[1], position[2] + clearance))
+            initial_offsets[key] = [0, 0, clearance]
+        layout["demonstration"]["authoredInitialOffsetsM"] = initial_offsets
         layout["pipetteCalibration"]["alignmentToleranceM"] = .001
     from factory.cell_passage_tip import ASSET_NAME
 
@@ -408,14 +447,6 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
         for binding in mechanical["entities"]:
             if binding["program"] in ("labware.motion", "cell_passage.joint", "cell_passage.workcell"):
                 binding["config"]["contactAllowanceM"] = .002
-            if (binding["program"] == "labware.motion"
-                    or binding["key"] == LAB + "/RailCarriage"):
-                binding["config"]["seatingContactPairs"] = layout["demonstration"][
-                    "rackSeatingContactPairs"
-                ]
-                binding["config"]["seatingContactAllowanceM"] = layout["demonstration"][
-                    "rackSeatingContactAllowanceM"
-                ]
             if binding["program"] == "labware.motion":
                 binding["config"]["jointAccelerationRadPerS2"] = .5
                 binding["config"]["symmetricPreInsertionLocations"] = list(
@@ -424,13 +455,16 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
             if binding["program"] == "cell_passage.workcell":
                 binding["config"]["axisToleranceM"] = .001
     stage.GetRootLayer().Save()
+    if demonstration:
+        qualified_demo_bindings(output, layout, mechanical)
     (scene / "mechanical-layout.json").write_text(json.dumps(layout, indent=2) + "\n", encoding="utf-8")
     for name, content in {
         "scene.yaml": {
             "name": "cell-passage",
             "title": "Cell Passage workcell",
-            "description": ("Approximate demonstration: 2 mm contacts, with 5 mm only for eight exact "
-                            "tube-floor/rack-floor seating pairs; not formal precision qualification."
+            "description": ("Demonstration with qualified placement constraints and declared expected "
+                            "contacts; unexpected contacts stop at 2 mm. "
+                            "Not formal precision or contact-controller qualification."
                             if demonstration else "Physical workcell; qualification receipts are separate."),
             "sources": ["newton"],
             "stage": "stage.usda",
@@ -487,7 +521,8 @@ if __name__ == "__main__":
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--bindings-overlay", type=Path)
-    parser.add_argument("--demonstration", action="store_true", help="Explicit approximate demonstration")
+    parser.add_argument("--demonstration", action="store_true",
+                        help="Explicit qualified-placement demonstration; old defaults remain unchanged")
     parser.add_argument(
         "--with-workcell", action="store_true", help="Assemble the P2-owned workcell generator output"
     )
