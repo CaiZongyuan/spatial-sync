@@ -51,6 +51,7 @@ class GeometrySweep:
         from packages.sim_runtime.simulation import NewtonSimulation
 
         self.newton, self.wp = newton, wp
+        self.sample_sink = None
         self.library = Path(library)
         self.stage = composed_stage(self.library)
         self.control_hz = control_hz
@@ -206,6 +207,8 @@ class GeometrySweep:
         self.held = None
         self.tip = None
         self.loose_disposals = []
+        self.loose_disposal_ids = set()
+        self.unresolved_passive = {}
         self.provisional = []
         self.width = float(sum(self.q[i] for i in self.finger_indices))
         if project_initial:
@@ -319,11 +322,47 @@ class GeometrySweep:
                 grasp_bodies=set(grasp),
             )
             value = {"shapes": list(contact.shapes), "depthM": -contact.distance_m}
+            if self.loose_disposal_ids.intersection(contact.bodies):
+                # Its last FK projection is not a known obstacle pose or a rest-state proof.
+                # Retain the complete model and the unknown; join real L1 envelopes later.
+                key = tuple(sorted(contact.shapes))
+                self.unresolved_passive[key] = max(
+                    self.unresolved_passive.get(key, 0), value["depthM"]
+                )
+                continue
             if accepted:
                 expected.append(value)
             elif contact.distance_m < -0.002:
                 unexpected.append(value)
         return expected, unexpected
+
+    def capture_bounds(self, step_id, sample, scope):
+        """Record actual sampled collider AABBs for later observed-tip envelope joins."""
+        if self.sample_sink is None:
+            return
+        from scipy.spatial.transform import Rotation
+
+        if not hasattr(self, "_sweep_bounds"):
+            owners, flags = self.model.shape_body.numpy(), self.model.shape_flags.numpy()
+            bodies = {
+                int(owner)
+                for owner, flag in zip(owners, flags, strict=True)
+                if owner >= 0 and int(flag) & int(self.newton.ShapeFlags.COLLIDE_SHAPES)
+            }
+            self._sweep_bounds = {body: self.port.collision_bounds(body) for body in bodies}
+        bodies = sorted(set(scope) & self._sweep_bounds.keys())
+        if not bodies:
+            return
+        local = np.asarray([self._sweep_bounds[body] for body in bodies])
+        corners = np.asarray([[x, y, z] for x in (0, 1) for y in (0, 1) for z in (0, 1)])
+        points = local[:, :1, :] + (local[:, 1:2, :] - local[:, :1, :]) * corners[None, :, :]
+        poses = self.port.frame_body[bodies]
+        points = np.einsum("nij,nkj->nki", Rotation.from_quat(poses[:, 3:]).as_matrix(), points)
+        points += poses[:, None, :3]
+        bounds = np.stack([points.min(axis=1), points.max(axis=1)], axis=1)
+        if not np.isfinite(bounds).all():
+            raise ValueError("Nonfinite sampled collision bounds")
+        self.sample_sink(step_id, sample, bodies, bounds)
 
     def gripper_path(self, target, *, body_key=None):
         from packages.programs.labware.grasp import physical_grasp
@@ -368,6 +407,7 @@ class GeometrySweep:
         from packages.programs.labware.facts import seated_station
 
         blockers, expected_max, samples = [], {}, 0
+        self.unresolved_passive = {}
         conditional = list(self.provisional)
         pickup_z = None
         moving = row["do"]["entity"] if row.get("do") else None
@@ -398,6 +438,7 @@ class GeometrySweep:
                     eligible |= qualified
                     expected, bad = self.contacts(scope_now, grasp, entity=moving)
                     samples += 1
+                    self.capture_bounds(row["stepId"], samples, scope_now)
                     for value in expected:
                         key = tuple(sorted(value["shapes"]))
                         expected_max[key] = max(expected_max.get(key, 0), value["depthM"])
@@ -450,6 +491,7 @@ class GeometrySweep:
                 self.sync()
                 expected, bad = self.contacts(scope_now, grasp, entity=moving)
                 samples += 1
+                self.capture_bounds(row["stepId"], samples, scope_now)
                 for value in expected:
                     key = tuple(sorted(value["shapes"]))
                     expected_max[key] = max(expected_max.get(key, 0), value["depthM"])
@@ -518,8 +560,10 @@ class GeometrySweep:
                 self.edges[child] = "body", parent, relative(self.pose(parent), self.pose(child))
                 self.tip = tip["bodyKey"]
             elif kind == "tip-release" and self.tip:
-                self.edges.pop(self.body[self.tip], None)
+                released = self.body[self.tip]
+                self.edges.pop(released, None)
                 self.loose_disposals.append(self.tip)
+                self.loose_disposal_ids.add(released)
                 self.tip = None
         if row["motion"] and not samples:
             self.sync()
@@ -528,6 +572,7 @@ class GeometrySweep:
             )
             _, bad = self.contacts(active, entity=moving)
             samples += 1
+            self.capture_bounds(row["stepId"], samples, active)
             if bad:
                 blockers.append({"code": "unexpected_contact", "contacts": bad})
         if self.loose_disposals:
@@ -539,5 +584,10 @@ class GeometrySweep:
             "blockers": blockers,
             "expectedContacts": [{"shapes": list(k), "maxDepthM": v} for k, v in expected_max.items()],
             "conditionalOnSteps": conditional,
+            "dynamicUnknownBodies": list(self.loose_disposals),
+            "unresolvedPassiveProjectionContacts": [
+                {"shapes": list(key), "maxDepthM": value}
+                for key, value in self.unresolved_passive.items()
+            ],
             "verification": "blocked" if blockers else "conditional" if conditional else "clear",
         }
