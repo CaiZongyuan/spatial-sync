@@ -49,7 +49,7 @@ function onPlaying() {
   <section id="platform-film" class="platform-film pl-section" tabindex="-1" aria-labelledby="platform-film-title">
     <p class="pl-eyebrow pl-rule"><span>Lab World · Platform Film</span><span class="duration">01:42 / 中文</span></p>
     <div class="pl-section-head">
-      <h2 id="platform-film-title">看见 Lab World 如何运转</h2>
+      <h2 id="platform-film-title"><span class="nb">看见 Lab World</span><span class="nb">如何运转</span></h2>
       <p class="pl-section-lede">从可计算的世界，到智能体的行动与反馈。用一段视频，看看 Lab World 如何把它们连接起来。</p>
     </div>
     <figure class="film-figure">
