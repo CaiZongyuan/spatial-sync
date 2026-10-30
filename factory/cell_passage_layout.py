@@ -141,10 +141,11 @@ def populate(stage, *, demonstration=False):
     robot_bench.GetAttribute("xformOp:scale").Set(Gf.Vec3f(1.58, 0.520, 0.06))
     robot_bench.GetAttribute("xformOp:translate").Set(Gf.Vec3d(0, -0.335, 0.83))
     reference(stage, LAB + "/Imager", "passage-open-imager", (-0.05, -0.68, 1.232), "device")
-    rack_pitch = .065 if demonstration else .055
+    rack_pitch = .075 if demonstration else .055
+    rack_row_pitch = .065 if demonstration else rack_pitch
     rack_y = -.97 if demonstration else -.58
-    rack_origin = (-.265 + 1.5 * rack_pitch, rack_y + .5 * rack_pitch, .86)
-    rack_asset = "passage-tube-rack-wide" if demonstration else "passage-tube-rack"
+    rack_origin = (-.265 + 1.5 * rack_pitch, rack_y + .5 * rack_row_pitch, .86)
+    rack_asset = "passage-tube-rack-qualified" if demonstration else "passage-tube-rack"
     reference(stage, LAB + "/Labware/CollectionRack", rack_asset, rack_origin)
 
     stations = {
@@ -166,7 +167,7 @@ def populate(stage, *, demonstration=False):
         stations["IncubatorTransit"] = (-0.35, -0.20, 1.45)
         stations["IncubatorATransit"] = (-0.35, -0.20, 1.45)
     for i, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
-        stations["Rack" + name] = (-0.265 + (i % 4) * rack_pitch, rack_y + (i // 4) * rack_pitch, 1.032)
+        stations["Rack" + name] = (-0.265 + (i % 4) * rack_pitch, rack_y + (i // 4) * rack_row_pitch, 1.032)
         stations[f"FlexTube{i + 1}"] = (0.535 + (i % 4) * 0.060, 0.385 + (i // 4) * 0.060, 1.042)
     for i in range(4):
         stations[f"Lid{i + 1}"] = (
