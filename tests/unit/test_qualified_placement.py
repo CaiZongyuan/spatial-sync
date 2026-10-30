@@ -136,7 +136,7 @@ def test_unqualified_placement_never_establishes_station_constraint(failure):
 
 def test_initial_penetration_fails_before_any_constraint_is_enabled():
     ctx, events = context()
-    ctx.physics.contacts = [SimpleNamespace(distance_m=-0.00001)]
+    ctx.physics.contacts = [SimpleNamespace(distance_m=-0.00001, shapes=("/tube/Shape", "/source/Shape"))]
     placements = QualifiedPlacements(ctx)
     with pytest.raises(ValueError, match="penetration"):
         placements.initialize(ctx)

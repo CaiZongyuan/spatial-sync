@@ -71,8 +71,13 @@ class QualifiedPlacements:
                 raise ValueError("Initial placement does not satisfy the existing seated_station limits")
             self._unoccupied(ctx, key, site)
             contacts = ctx.physics.collision_contacts(max_distance=0.0, bodies={ctx.physics.bind_body(key)})
-            if any(c.distance_m < 0 for c in contacts):
-                raise ValueError("Initial placement has actual penetration")
+            penetrating = [c for c in contacts if c.distance_m < 0]
+            if penetrating:
+                worst = min(penetrating, key=lambda c: c.distance_m)
+                raise ValueError(
+                    f"Initial placement has actual penetration: {key} at {site}, "
+                    f"shapes={worst.shapes}, depthM={-worst.distance_m}"
+                )
             evidence.append((key, site, measured))
         for key, site, measured in evidence:
             ctx.physics.weld(ctx.physics.bind_site(site).body, ctx.physics.bind_body(key))
