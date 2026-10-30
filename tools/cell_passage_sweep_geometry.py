@@ -28,7 +28,16 @@ def relative(a, b):
 
 
 class GeometrySweep:
-    def __init__(self, library, *, expected_pairs=None, config_overlay=None, qualified=False, control_hz=60):
+    def __init__(
+        self,
+        library,
+        *,
+        expected_pairs=None,
+        config_overlay=None,
+        qualified=False,
+        control_hz=60,
+        project_initial=True,
+    ):
         import newton
         import warp as wp
         from newton.solvers import SolverMuJoCo
@@ -60,6 +69,13 @@ class GeometrySweep:
         for key, delta in (config_overlay or {}).items():
             self.bindings[key]["config"].update(delta)
         self.config_overlay = config_overlay or {}
+        if expected_pairs is None and any(
+            binding["config"].get("qualifiedPlacement", False) for binding in self.bindings.values()
+        ):
+            expected_pairs = {
+                key: binding["config"].get("expectedContactPairs", [])
+                for key, binding in self.bindings.items()
+            }
         self.robot_cfg = self.bindings[ROBOT]["config"]
         self.flex_cfg = self.bindings[WORKCELL]["config"]
         self.declarations_available = expected_pairs is not None
@@ -161,7 +177,10 @@ class GeometrySweep:
         cache = UsdGeom.XformCache()
         self.edges = {}
         self.current_sites = dict(self.layout["initialStations"])
-        self._fk()
+        if project_initial:
+            self._fk()
+        else:
+            self.base = self.sim.state.body_q.numpy().copy()
         for site in (
             set(self.current_sites.values())
             | set(self.layout["stations"])
@@ -189,7 +208,11 @@ class GeometrySweep:
         self.loose_disposals = []
         self.provisional = []
         self.width = float(sum(self.q[i] for i in self.finger_indices))
-        self.sync()
+        if project_initial:
+            self.sync()
+        else:
+            self.port.capture()
+        self.signature["initialProjection"] = project_initial
         from tools.cell_passage_sweep_quantities import QuantityProjection
 
         self.quantity_sites = dict(self.current_sites)
