@@ -53,6 +53,13 @@ actions:
     concurrent: true
     longRunning: true
 events:
+  expectedContact:
+    schema:
+      type: object
+      properties:
+        shapes: {type: array, items: {type: string}, minItems: 2, maxItems: 2}
+        depthM: {type: number, minimum: 0}
+      required: [shapes, depthM]
   seatingContact:
     schema:
       type: object

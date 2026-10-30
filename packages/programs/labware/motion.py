@@ -7,7 +7,7 @@ from packages.info.program import ProgramConfig, Reject
 from packages.programs.centrifuge.loading import rotation
 from packages.programs.robot_arm.newton import RobotArmProgram
 
-from .contacts import contacts_for_bodies, validate_seating_contacts
+from .contacts import contacts_for_bodies, validate_expected_contacts, validate_seating_contacts
 from .facts import seated_station
 from .grasp import physical_grasp
 
@@ -35,12 +35,16 @@ class LabwareMotionProgram(RobotArmProgram):
         )
         tubes: list[str] = Field(json_schema_extra={"spatialReference": "body"})
         speedScale: float = Field(default=0.3, gt=0, le=1)
-        automaticOpenWidthM: float = Field(default=.08, gt=0, le=.08, allow_inf_nan=False)
-        gripperSpeedMPerS: float = Field(default=.04, gt=0, le=.04, allow_inf_nan=False)
-        contactAllowanceM: float = Field(default=.001, gt=0, le=.002, allow_inf_nan=False)
+        automaticOpenWidthM: float = Field(default=0.08, gt=0, le=0.08, allow_inf_nan=False)
+        gripperSpeedMPerS: float = Field(default=0.04, gt=0, le=0.04, allow_inf_nan=False)
+        contactAllowanceM: float = Field(default=0.001, gt=0, le=0.002, allow_inf_nan=False)
         seatingContactPairs: list[tuple[str, str]] = Field(default_factory=list, max_length=8)
-        seatingContactAllowanceM: float = Field(default=.002, gt=0, le=.005, allow_inf_nan=False)
-        jointAccelerationRadPerS2: float = Field(default=2., gt=0, le=2., allow_inf_nan=False)
+        seatingContactAllowanceM: float = Field(default=0.002, gt=0, le=0.005, allow_inf_nan=False)
+        qualifiedPlacement: bool = False
+        placementStations: dict[str, list[str]] = Field(default_factory=dict)
+        initialPlacements: dict[str, str] = Field(default_factory=dict)
+        expectedContactPairs: list[tuple[str, str]] = Field(default_factory=list)
+        jointAccelerationRadPerS2: float = Field(default=2.0, gt=0, le=2.0, allow_inf_nan=False)
         graspMode: str = Field(default="weld", pattern="^weld$")
         jointKeys: list[str] = Field(
             min_length=7, max_length=7, json_schema_extra={"spatialReference": "joint", "posture": True}
@@ -64,6 +68,17 @@ class LabwareMotionProgram(RobotArmProgram):
 
             require_postures(self.locations, [(None, None)] * 7)
             validate_seating_contacts(self.seatingContactPairs, self.seatingContactAllowanceM)
+            validate_expected_contacts(self.expectedContactPairs)
+            if self.qualifiedPlacement:
+                if not self.placementStations or self.seatingContactPairs:
+                    raise ValueError("Qualified placement needs station declarations, not legacy exceptions")
+                if set(self.placementStations) != set(self.tubes):
+                    raise ValueError("Qualified placement must declare every handled object's stations")
+                for key, site in self.initialPlacements.items():
+                    if site not in self.placementStations.get(key, []):
+                        raise ValueError("Initial placement must belong to the object's declared stations")
+            elif self.expectedContactPairs or self.placementStations or self.initialPlacements:
+                raise ValueError("Placement declarations require the explicit qualifiedPlacement opt-in")
             for name in self.symmetricPreInsertionLocations:
                 if "preInsertion" not in self.locations["locations"].get(name, {}):
                     raise ValueError("Symmetric insertion requires a taught preInsertion posture")
@@ -87,6 +102,7 @@ class LabwareMotionProgram(RobotArmProgram):
             return self
 
     def init(self, ctx):
+        self.expected_contacts = validate_expected_contacts(ctx.config.expectedContactPairs)
         self.gripper_open_width_m = ctx.config.automaticOpenWidthM
         self.gripper_speed_mps = ctx.config.gripperSpeedMPerS
         self.contact_allowance_m = ctx.config.contactAllowanceM
@@ -100,6 +116,9 @@ class LabwareMotionProgram(RobotArmProgram):
         self.carrying_lid = None
         self.motion_payload = None
         self.grip_hold_width = None
+        self.last_finger_positions = np.array(
+            [ctx.physics.joint_q(ctx.physics.bind_joint(key))[0] for key in ctx.config.fingerKeys]
+        )
         self.pad_shapes = {
             ctx.physics.bind_joint(key).child: shape
             for key, shape in zip(ctx.config.fingerKeys, ctx.config.fingerPadShapes, strict=True)
@@ -108,6 +127,12 @@ class LabwareMotionProgram(RobotArmProgram):
             ctx.physics.bind_body(key): ctx.config.gripShapePrefixes[key] for key in ctx.config.tubes
         }
         super().init(ctx)
+        self.placements = None
+        if ctx.config.qualifiedPlacement:
+            from .placement import QualifiedPlacements
+
+            self.placements = QualifiedPlacements(ctx)
+            self.placements.initialize(ctx)
         ctx.set(unsafeContactCount=0, lastContactShapes=[], lastContactDepthM=0.0)
 
     def _finger_position(self, port, body):
@@ -143,6 +168,11 @@ class LabwareMotionProgram(RobotArmProgram):
         return qualified
 
     def _drive_gripper(self, ctx, dt):
+        before = {
+            key
+            for key, body in self.tubes.items()
+            if self.placements and ctx.physics.welds.active(self.hand, body)
+        }
         if (
             self.grip_hold_width is not None
             and self.gripper_goal < self.grip_hold_width
@@ -150,19 +180,58 @@ class LabwareMotionProgram(RobotArmProgram):
         ):
             self.gripper_goal = self.gripper_target = self.grip_hold_width
         super()._drive_gripper(ctx, dt)
+        for key in before:
+            if not ctx.physics.welds.active(self.hand, self.tubes[key]):
+                site = self.placements.anchors.get(key)
+                if site:
+                    _, evidence = self.placements.measurements(ctx, key, site)
+                    self.placements._emit(ctx, "handDetach", evidence)
+
+    def _attach_grasp(self, ctx, body):
+        before = ctx.physics.welds.active(self.hand, body)
+        super()._attach_grasp(ctx, body)
+        if self.placements and not before:
+            site = self.placements.anchors.get(self.pick_tube)
+            if site:
+                _, evidence = self.placements.measurements(ctx, self.pick_tube, site)
+                self.placements._emit(ctx, "handAttach", evidence)
 
     def _release_opening(self, port, body):
         return self.body_grips[body][1] + 2 * abs(self._finger_position(port, body)[1]) + 0.003
 
     def _gripper_settled(self, ctx, kind, actual, dt):
-        stationary = dt > 0 and abs(actual - self.last_width) <= min(.002, self.gripper_speed_mps * .1) * dt
+        stationary = dt > 0 and abs(actual - self.last_width) <= min(0.002, self.gripper_speed_mps * 0.1) * dt
+        if self.placements:
+            positions = np.array([ctx.physics.joint_q(f)[0] for f in self.fingers])
+            speeds = np.array([ctx.physics.joint_qd(f)[0] for f in self.fingers])
+            tolerance = min(0.002, self.gripper_speed_mps * 0.1)
+            stationary = bool(
+                stationary
+                and np.isfinite(np.r_[positions, speeds]).all()
+                and np.all(np.abs(positions - self.last_finger_positions) <= tolerance * dt)
+                and np.all(np.abs(speeds) <= tolerance)
+            )
+            self.last_finger_positions = positions.copy()
         if kind == "pick":
-            return (stationary and self.pick_tube in self.tubes
-                    and ctx.physics.welds.active(self.hand, self.tubes[self.pick_tube]))
-        return stationary and abs(actual - self.gripper_goal) < .001
+            qualified = (
+                stationary
+                and self.pick_tube in self.tubes
+                and ctx.physics.welds.active(self.hand, self.tubes[self.pick_tube])
+            )
+            if qualified and self.placements and self.stable + dt >= 0.2:
+                self.placements.release_after_grasp(ctx, self.pick_tube, self.hand)
+            return qualified
+        if kind == "place" and self.placements and self.pick_tube in self.tubes:
+            return (
+                stationary
+                and abs(actual - self.gripper_goal) < 0.001
+                and actual >= self._release_opening(ctx.physics, self.tubes[self.pick_tube])
+                and self.placements.fixed_and_clear(ctx, self.pick_tube, {f.child for f in self.fingers})
+            )
+        return stationary and abs(actual - self.gripper_goal) < 0.001
 
     def _gripper_budget(self, start, goal):
-        return max(self.gripper_timeout_s, abs(goal - start) / self.gripper_speed_mps + .5)
+        return max(self.gripper_timeout_s, abs(goal - start) / self.gripper_speed_mps + 0.5)
 
     def _facts(self, ctx):
         super()._facts(ctx)
@@ -238,10 +307,17 @@ class LabwareMotionProgram(RobotArmProgram):
             staged = []
             for index, segment in enumerate(self.plan):
                 kind, _, name = segment
-                if (kind == "move" and name and index + 1 < len(self.plan)
-                        and (self.plan[index + 1][0] == "place"
-                             or self.plan[index + 1][0] == "pick" and name in self.symmetric_pre_insertion)
-                        and "preInsertion" in self.locations[name]):
+                if (
+                    kind == "move"
+                    and name
+                    and index + 1 < len(self.plan)
+                    and (
+                        self.plan[index + 1][0] == "place"
+                        or self.plan[index + 1][0] == "pick"
+                        and name in self.symmetric_pre_insertion
+                    )
+                    and "preInsertion" in self.locations[name]
+                ):
                     staged.append(("move", self.locations[name]["preInsertion"], name))
                 staged.append(segment)
                 if kind in ("pick", "place") and name in self.symmetric_pre_insertion:
@@ -262,8 +338,11 @@ class LabwareMotionProgram(RobotArmProgram):
     def _preview_targets(self, action, params):
         if action not in ("pick", "place", "pickPlace"):
             return super()._preview_targets(action, params)
-        operations = (("pick", params["from"]), ("place", params["to"])) if action == "pickPlace" else (
-            (action, params["location"]),)
+        operations = (
+            (("pick", params["from"]), ("place", params["to"]))
+            if action == "pickPlace"
+            else ((action, params["location"]),)
+        )
         targets = []
         for operation, name in operations:
             location = self.locations[name]
@@ -271,23 +350,34 @@ class LabwareMotionProgram(RobotArmProgram):
             symmetric = name in self.symmetric_pre_insertion
             incoming = middle if operation == "place" or symmetric else []
             outgoing = middle if symmetric else []
-            targets.extend([
-                location["approach"], *incoming, location["grasp"], *outgoing, location["approach"],
-            ])
+            targets.extend(
+                [
+                    location["approach"],
+                    *incoming,
+                    location["grasp"],
+                    *outgoing,
+                    location["approach"],
+                ]
+            )
         return targets
 
     def _contact_guard(self, ctx):
-        active = {joint.child for joint in [*self.joints, *self.fingers] if joint.child >= 0} | {self.hand}
-        for key in (ctx.get("holding"), self.motion_payload, self.released, self.carrying_lid):
-            if key in self.tubes:
-                active.add(self.tubes[key])
+        fingers = {joint.child for joint in self.fingers}
         try:
+            active, grasp_bodies = self._contact_scope(ctx)
             contacts = contacts_for_bodies(
-                ctx.physics, active, limit_m=self.contact_allowance_m,
+                ctx.physics,
+                active,
+                limit_m=self.contact_allowance_m,
                 seating_pairs=ctx.config.seatingContactPairs,
                 seating_limit_m=ctx.config.seatingContactAllowanceM,
                 on_seating_contact=(lambda **data: ctx.emit("seatingContact", **data))
-                if ctx.config.seatingContactPairs else None,
+                if ctx.config.seatingContactPairs
+                else None,
+                expected_pairs=self.expected_contacts,
+                on_expected_contact=lambda **data: ctx.emit("expectedContact", **data),
+                finger_bodies=fingers,
+                grasp_bodies=grasp_bodies,
             )
         except ValueError:
             self._hold(ctx)
@@ -310,6 +400,59 @@ class LabwareMotionProgram(RobotArmProgram):
                 depthM=depth,
             )
             return False
+        return True
+
+    def _contact_scope(self, ctx):
+        active = {joint.child for joint in [*self.joints, *self.fingers] if joint.child >= 0} | {self.hand}
+        for key in (ctx.get("holding"), self.motion_payload, self.released, self.carrying_lid):
+            if key in self.tubes:
+                active.add(self.tubes[key])
+        grasp = set()
+        if self.placements:
+            active = ctx.physics.welds.attached_bodies(active)
+            grasp = ctx.physics.welds.attached_bodies({self.hand}) - {self.hand}
+            if self.handle and self.handle.action in ("pick", "place", "pickPlace"):
+                if self.pick_tube in self.tubes:
+                    body = self.tubes[self.pick_tube]
+                    if self.handle.action in ("pick", "pickPlace") or self._width(
+                        ctx.physics
+                    ) < self._release_opening(ctx.physics, body):
+                        grasp |= ctx.physics.welds.attached_bodies({body})
+        return active, grasp
+
+    def _prepare_place(self, ctx, name):
+        if self.placements is None:
+            return True
+        try:
+            if self.pick_tube not in self.tubes or not ctx.physics.welds.active(
+                self.hand, self.tubes[self.pick_tube]
+            ):
+                raise ValueError("Actual hand hold is required before station attachment")
+            active, grasp = self._contact_scope(ctx)
+            evidence = self.placements.fix_before_open(
+                ctx,
+                self.pick_tube,
+                self.locations[name]["site"],
+                active,
+                {f.child for f in self.fingers},
+                grasp,
+            )
+            # Station constraint is now active before the hand constraint leaves.
+            ctx.physics.unweld(self.hand, self.tubes[self.pick_tube])
+            self.placements._emit(ctx, "handDetach", evidence)
+            return True
+        except (ValueError, KeyError, AttributeError) as error:
+            self._hold(ctx)
+            self._end(ctx, ("place_failed", str(error)))
+            return False
+
+    def _move_ready(self, ctx, name):
+        if self.placements and self.plan and self.plan[0][0] == "place":
+            try:
+                valid, _ = self.placements.measurements(ctx, self.pick_tube, self.locations[name]["site"])
+                return valid
+            except (KeyError, TypeError, ValueError):
+                return False
         return True
 
     def tick(self, ctx, dt):
