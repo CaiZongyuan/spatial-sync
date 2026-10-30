@@ -100,6 +100,16 @@ def configured_weld_pairs(bindings, bodies, sites):
             if program in ("robot_arm.newton", "labware.motion"):
                 # Contact-mode opening also queries the disabled hand/tube weld.
                 parents = [bodies[config["handBody"]]]
+                if program == "labware.motion" and config.get("qualifiedPlacement", False):
+                    for key, stations in config.get("placementStations", {}).items():
+                        child = bodies[key]
+                        for station in stations:
+                            parent = sites[station]
+                            if parent < -1 or child < 0 or parent == child:
+                                raise ValueError(
+                                    "Placement weld endpoints must be world/body and a distinct body"
+                                )
+                            pairs.add((parent, child))
             elif program in ("centrifuge.newton", "cell_passage.centrifuge"):
                 parents = [sites[key] for key in config["slotSites"]]
             elif program == "cell_passage.workcell":
