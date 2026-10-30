@@ -77,7 +77,8 @@ def inverted_imager(stage, root):
         site(stage, frame + "/Focus" + well, (x, y, z))
 
 
-def tube_rack(stage, root, *, pitch=0.055, deck_size=(0.22, 0.10)):
+def tube_rack(stage, root, *, pitch=0.055, row_pitch=None, deck_size=(0.22, 0.10)):
+    row_pitch = pitch if row_pitch is None else row_pitch
     frame = mounted(stage, root, 0.35)
     box(stage, frame + "/Base", (0, 0, 0.004), (*deck_size, 0.008))
     box(stage, frame + "/Deck", (0, 0, 0.154), (*deck_size, 0.012))
@@ -85,7 +86,7 @@ def tube_rack(stage, root, *, pitch=0.055, deck_size=(0.22, 0.10)):
         for y in (-(deck_size[1] / 2 - .010), deck_size[1] / 2 - .010):
             box(stage, frame + f"/Post{int(x > 0)}{int(y > 0)}", (x, y, 0.084), (0.012, 0.012, 0.152))
     for index, name in enumerate([f"S{i}" for i in range(1, 7)] + ["B5", "B6"]):
-        x, y = (index % 4 - 1.5) * pitch, (index // 4 - 0.5) * pitch
+        x, y = (index % 4 - 1.5) * pitch, (index // 4 - 0.5) * row_pitch
         box(stage, frame + "/" + name + "Floor", (x, y, 0.166), (0.025, 0.025, 0.012))
         ring(stage, frame + "/" + name + "Guide", (x, y, 0.178), 0.010, 0.012, 0.001, 16)
         for sign in (-1, 1):
@@ -101,3 +102,8 @@ def tube_rack(stage, root, *, pitch=0.055, deck_size=(0.22, 0.10)):
 def wide_tube_rack(stage, root):
     """Versioned demonstration fixture; the original 55 mm rack stays unchanged."""
     return tube_rack(stage, root, pitch=.065, deck_size=(.25, .12))
+
+
+def qualified_tube_rack(stage, root):
+    """Demo-only 75 mm columns; retain the existing 65 mm row support geometry."""
+    return tube_rack(stage, root, pitch=.075, row_pitch=.065, deck_size=(.28, .12))

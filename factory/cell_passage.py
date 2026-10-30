@@ -361,7 +361,13 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
             {"id": metadata["id"] + "@1", "source": original.name, "contentHash": content_hash(original)}
         )
     build_labware(output)
-    from factory.cell_passage_fixtures import bench, inverted_imager, tube_rack, wide_tube_rack
+    from factory.cell_passage_fixtures import (
+        bench,
+        inverted_imager,
+        qualified_tube_rack,
+        tube_rack,
+        wide_tube_rack,
+    )
     from factory.cell_passage_incubator import build as build_incubator
     from factory.cell_passage_layout import centrifuge, populate
 
@@ -371,6 +377,7 @@ def build(source, output, *, bindings_overlay=None, with_workcell=False, demonst
     package(output, "passage-tube-rack", tube_rack)
     if demonstration:
         package(output, "passage-tube-rack-wide", wide_tube_rack)
+        package(output, "passage-tube-rack-qualified", qualified_tube_rack)
     package(output, "passage-preparation-bench", bench, kind="environment")
     package(output, "passage-back-bench", lambda s, p: bench(s, p, 2.4, 0.9, 0.82), kind="environment")
     scene = output / "scenes/cell-passage/1"
