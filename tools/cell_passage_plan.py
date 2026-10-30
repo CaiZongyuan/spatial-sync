@@ -363,6 +363,7 @@ def compile_recipe(layout, teaching, binding, geometry, *, owner, epoch, round_i
         recipe.transport(body[f"S{index}"], LAB + f"/Sites/RackS{index}")
 
     recipe.stage(7)
+    recipe.clear_incubator()
     recipe.do(LAB + "/Incubator/OuterDoor", "open")
     recipe.do(LAB + "/Incubator/InnerDoor", "open")
     recipe.transport(body["DaughterA"], LAB + "/Sites/IncubatorA")
