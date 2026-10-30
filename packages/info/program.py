@@ -291,7 +291,11 @@ class HostCore:
             key=lambda index: (getattr(self._programs[index], "tick_priority", 100), self._states[index].key),
         )
         for key in self._order:
-            self._call(key, "init", self._contexts[key])
+            result = self._call(key, "init", self._contexts[key])
+            if isinstance(result, Reject) and getattr(self._programs[key], "initialization_required", False):
+                raise ValueError(
+                    f"Required program {self._states[key].key} initialization failed: {result.message}"
+                )
         self._prime_diff()
 
     def values(self):
