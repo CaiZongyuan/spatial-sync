@@ -102,6 +102,7 @@ class LabwareMotionProgram(RobotArmProgram):
             return self
 
     def init(self, ctx):
+        self.initialization_required = ctx.config.qualifiedPlacement
         self.expected_contacts = validate_expected_contacts(ctx.config.expectedContactPairs)
         self.gripper_open_width_m = ctx.config.automaticOpenWidthM
         self.gripper_speed_mps = ctx.config.gripperSpeedMPerS
@@ -187,6 +188,35 @@ class LabwareMotionProgram(RobotArmProgram):
                     _, evidence = self.placements.measurements(ctx, key, site)
                     self.placements._emit(ctx, "handDetach", evidence)
 
+    def _unanchored_hand_payloads(self, ctx):
+        if not self.placements:
+            return []
+        return [
+            key
+            for key, body in self.tubes.items()
+            if ctx.physics.welds.active(self.hand, body)
+            and (
+                key not in self.placements.anchors
+                or not ctx.physics.welds.active(
+                    ctx.physics.bind_site(self.placements.anchors[key]).body, body
+                )
+            )
+        ]
+
+    def _open(self, ctx):
+        if self._unanchored_hand_payloads(ctx):
+            # Recovery must preserve a payload already transferred into the hand.
+            self._hold(ctx)
+            return
+        super()._open(ctx)
+
+    def _recover_pick(self, ctx, name):
+        if self._unanchored_hand_payloads(ctx):
+            self._hold(ctx)
+            self._end(ctx, ("grasp_failed", "Gripper did not settle; actual hand constraint retained"))
+            return
+        super()._recover_pick(ctx, name)
+
     def _attach_grasp(self, ctx, body):
         before = ctx.physics.welds.active(self.hand, body)
         super()._attach_grasp(ctx, body)
@@ -271,6 +301,14 @@ class LabwareMotionProgram(RobotArmProgram):
         return guard(ctx, self.control_entity, params, self._resources(ctx, params))
 
     def accept(self, inv, ctx):
+        if (
+            inv.action == "setGripper"
+            and self._unanchored_hand_payloads(ctx)
+            and inv.params.get("width", 0) > self._width(ctx.physics)
+        ):
+            return Reject(
+                code="placement_required", message="Anchor the held object before opening the fingers"
+            )
         failed = self._guard(ctx, inv.params) or super().accept(inv, ctx)
         if failed or inv.action not in ("place", "pickPlace"):
             return failed

@@ -157,7 +157,10 @@ class PassageJointProgram:
             if not ctx.config.movingBodyKeys:
                 raise ValueError("Actual moving bodies are undeclared")
             if ctx.config.qualifiedPlacement:
-                roots = {self._body(ctx, key) for key in ctx.config.movingBodyKeys}
+                roots = {
+                    self._body(ctx, key)
+                    for key in (*ctx.config.movingBodyKeys, *ctx.config.clearanceBodyKeys)
+                }
                 payloads = {
                     ctx.physics.body_key(body) for body in ctx.physics.welds.attached_bodies(roots) - roots
                 }
@@ -327,7 +330,10 @@ class PassageJointProgram:
         self.handle, self.cancel_pending, self.failure = inv, False, None
         if inv.action != "stop":
             if ctx.config.qualifiedPlacement:
-                roots = {self._body(ctx, key) for key in ctx.config.movingBodyKeys}
+                roots = {
+                    self._body(ctx, key)
+                    for key in (*ctx.config.movingBodyKeys, *ctx.config.clearanceBodyKeys)
+                }
                 self.retained_payloads = {
                     ctx.physics.body_key(body) for body in ctx.physics.welds.attached_bodies(roots) - roots
                 }
