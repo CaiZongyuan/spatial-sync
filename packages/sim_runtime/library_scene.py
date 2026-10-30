@@ -11,8 +11,9 @@ def prepare_scene_config(payload, *, include_visuals=False):
 
     if payload["kind"] == "scene":
         for binding in payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []):
-            require_spatial_domain(binding["config"], payload["programs"][binding["program"]]["fields"],
-                                   "/World/Lab")
+            require_spatial_domain(
+                binding["config"], payload["programs"][binding["program"]]["fields"], "/World/Lab"
+            )
     # Only the worker/Runner calls this function; importing the module is SDK-free.
     import newton
     import warp as wp
@@ -36,17 +37,23 @@ def prepare_scene_config(payload, *, include_visuals=False):
         from packages.library.grasp_calibration import grasp_checks
 
         problems, calibrations = grasp_checks(
-            stage, payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []),
-            payload["programs"], payload.get("bindings", {"entities": []}), graph,
+            stage,
+            payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []),
+            payload["programs"],
+            payload.get("bindings", {"entities": []}),
+            graph,
         )
         if problems:
             raise ValueError("Physical grasp calibration failed: " + "; ".join(problems))
-    offset = 0.
+    offset = 0.0
     if asset:
         cache = UsdGeom.BBoxCache(0, ["default", "render", "proxy"])
-        bottoms = [float(cache.ComputeWorldBound(prim).ComputeAlignedRange().GetMin()[2])
-                   for prim in stage.Traverse() if prim.HasAPI(UsdPhysics.CollisionAPI)
-                   and UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False]
+        bottoms = [
+            float(cache.ComputeWorldBound(prim).ComputeAlignedRange().GetMin()[2])
+            for prim in stage.Traverse()
+            if prim.HasAPI(UsdPhysics.CollisionAPI)
+            and UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False
+        ]
         if bottoms:
             offset = -min(bottoms)
             if not math.isfinite(offset):
@@ -59,16 +66,25 @@ def prepare_scene_config(payload, *, include_visuals=False):
 
             SolverMuJoCo.register_custom_attributes(result)
         result.spatial_dependency_files = tuple(graph.clones)
-        paths = import_usd(result, stage, root_path=root, hide_collision_shapes=False,
-                           xform=wp.transform((0, 0, offset), wp.quat_identity()))
+        paths = import_usd(
+            result,
+            stage,
+            root_path=root,
+            hide_collision_shapes=False,
+            xform=wp.transform((0, 0, offset), wp.quat_identity()),
+        )
         if not asset:
             add_taught_sites(result, stage, paths, payload, calibrations=calibrations)
             result.spatial_grasp_calibrations = calibrations
             bindings = payload.get("structure", {}).get("effectiveBindings", {}).get("newton", [])
             pairs = configured_weld_pairs(
-                bindings, {str(path): index for path, index in paths["path_body_map"].items()},
-                {label: result.shape_body[index] for index, label in enumerate(result.shape_label)
-                 if int(result.shape_flags[index]) & int(newton.ShapeFlags.SITE)},
+                bindings,
+                {str(path): index for path, index in paths["path_body_map"].items()},
+                {
+                    label: result.shape_body[index]
+                    for index, label in enumerate(result.shape_label)
+                    if int(result.shape_flags[index]) & int(newton.ShapeFlags.SITE)
+                },
             )
             if pairs:
                 if (metadata.get("simulation") or {}).get("solver") != "mujoco":
@@ -83,8 +99,9 @@ def prepare_scene_config(payload, *, include_visuals=False):
         return result
 
     simulation = metadata.get("simulation") or {}
-    return SceneConfig(builder, solver=simulation.get("solver") or "xpbd",
-                       warmup_steps=simulation.get("warmupSteps") or 1)
+    return SceneConfig(
+        builder, solver=simulation.get("solver") or "xpbd", warmup_steps=simulation.get("warmupSteps") or 1
+    )
 
 
 def configured_weld_pairs(bindings, bodies, sites):
@@ -144,6 +161,10 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
     requested = set()
     for binding in payload.get("structure", {}).get("effectiveBindings", {}).get("newton", []):
         config = binding["config"]
+        if binding["program"] == "labware.motion" and config.get("qualifiedPlacement", False):
+            for stations in config.get("placementStations", {}).values():
+                requested.update(stations)
+            requested.update(config.get("initialPlacements", {}).values())
         fields = payload["programs"][binding["program"]]["fields"]
         requested.update(path for role, path in context_references(fields, config) if role == "site")
         for name, role in fields.items():
@@ -151,8 +172,9 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
             if role.get("spatialReference") == "site":
                 requested.update([value] if isinstance(value, str) else value or [])
             if role.get("documentSchema") == "locations" and isinstance(value, dict):
-                requested.update(location["site"] for location in value["locations"].values()
-                                 if location.get("site"))
+                requested.update(
+                    location["site"] for location in value["locations"].values() if location.get("site")
+                )
     expanded = set()
     available = None
     for pattern in requested:
@@ -169,12 +191,14 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
         expanded.update(matches)
     requested = expanded
     shape_paths = {str(path): index for path, index in paths["path_shape_map"].items()}
-    sites = {path for path, index in shape_paths.items()
-             if int(builder.shape_flags[index]) & int(newton.ShapeFlags.SITE)}
+    sites = {
+        path
+        for path, index in shape_paths.items()
+        if int(builder.shape_flags[index]) & int(newton.ShapeFlags.SITE)
+    }
     bodies = {str(path): index for path, index in paths["path_body_map"].items()}
     cache = UsdGeom.XformCache()
-    physical_tcp = {row["expected"]["tcpSite"]: row["expected"]
-                    for row in (calibrations or {}).values()}
+    physical_tcp = {row["expected"]["tcpSite"]: row["expected"] for row in (calibrations or {}).values()}
     added = {}
     for key in sorted(requested - sites):
         prim = stage.GetPrimAtPath(key)
@@ -182,8 +206,9 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
             raise ValueError("Configured Site is not an authored USD transform: " + key)
         world = cache.GetLocalToWorldTransform(prim)
         quaternion = world.ExtractRotationQuat()
-        pose = wp.transform(tuple(world.ExtractTranslation()),
-                            wp.quat(*quaternion.GetImaginary(), quaternion.GetReal()))
+        pose = wp.transform(
+            tuple(world.ExtractTranslation()), wp.quat(*quaternion.GetImaginary(), quaternion.GetReal())
+        )
         owners = [path for path in bodies if key.startswith(path + "/")]
         body = bodies[max(owners, key=len)] if owners else -1
         if key in physical_tcp:
@@ -196,8 +221,9 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
             if reset:
                 raise ValueError("Physical TCP resets its calibrated owner transform")
             rotation = local.ExtractRotationQuat()
-            pose = wp.transform(tuple(local.ExtractTranslation()),
-                                wp.quat(*rotation.GetImaginary(), rotation.GetReal()))
+            pose = wp.transform(
+                tuple(local.ExtractTranslation()), wp.quat(*rotation.GetImaginary(), rotation.GetReal())
+            )
         elif body >= 0:
             pose = wp.transform_multiply(wp.transform_inverse(builder.body_q[body]), pose)
         site = builder.add_site(body, xform=pose, label=key)
@@ -215,9 +241,12 @@ def attach_visuals(builder, stage, graph, paths):
 
     from packages.library.scenes import visual_url
 
-    layers = {graph.clones[str(path)].identifier: asset
-              for asset in graph.assets.values() for filename, path in asset["files"].items()
-              if filename == asset["metadata"]["stage"] and str(path) in graph.clones}
+    layers = {
+        graph.clones[str(path)].identifier: asset
+        for asset in graph.assets.values()
+        for filename, path in asset["files"].items()
+        if filename == asset["metadata"]["stage"] and str(path) in graph.clones
+    }
     cache = UsdGeom.XformCache()
     bodies = {str(path): index for path, index in paths["path_body_map"].items()}
     shape_paths = {str(path): index for path, index in paths["path_shape_map"].items()}
@@ -228,10 +257,15 @@ def attach_visuals(builder, stage, graph, paths):
         key = str(prim.GetPath())
         if not (key.startswith("/World/Lab/") or key.startswith("/World/Dressing/")):
             continue
-        owners = [layers[spec.layer.identifier] for spec in prim.GetPrimStack()
-                  if spec.layer.identifier in layers and str(spec.path) == "/Asset"]
+        owners = [
+            layers[spec.layer.identifier]
+            for spec in prim.GetPrimStack()
+            if spec.layer.identifier in layers and str(spec.path) == "/Asset"
+        ]
         cube = (
-            not owners and key.startswith("/World/Dressing/") and prim.IsA(UsdGeom.Cube)
+            not owners
+            and key.startswith("/World/Dressing/")
+            and prim.IsA(UsdGeom.Cube)
             and UsdGeom.Imageable(prim).ComputeVisibility() != UsdGeom.Tokens.invisible
             and not any(prefix in dressing_assets for prefix in prim.GetPath().GetPrefixes())
         )
@@ -239,44 +273,80 @@ def attach_visuals(builder, stage, graph, paths):
             continue
         transform = Gf.Transform(cache.GetLocalToWorldTransform(prim))
         rotation = transform.GetRotation().GetQuat()
-        world = wp.transform(tuple(transform.GetTranslation()),
-                             wp.quat(*rotation.GetImaginary(), rotation.GetReal()))
+        world = wp.transform(
+            tuple(transform.GetTranslation()), wp.quat(*rotation.GetImaginary(), rotation.GetReal())
+        )
         scale = list(map(float, transform.GetScale()))
         if cube:
             size = float(UsdGeom.Cube(prim).GetSizeAttr().Get())
-            dressing.append({
-                "entityKey": key, "kind": "static", "name": prim.GetName(),
-                "initialPose": {"p": list(map(float, world[:3])), "q": list(map(float, world[3:]))},
-                "visuals": [{"kind": "primitive", "geometry": {
-                    "type": "box", "halfExtents": [abs(value) * size / 2 for value in scale],
-                }}], "colliders": [],
-            })
+            dressing.append(
+                {
+                    "entityKey": key,
+                    "kind": "static",
+                    "name": prim.GetName(),
+                    "initialPose": {"p": list(map(float, world[:3])), "q": list(map(float, world[3:]))},
+                    "visuals": [
+                        {
+                            "kind": "primitive",
+                            "geometry": {
+                                "type": "box",
+                                "halfExtents": [abs(value) * size / 2 for value in scale],
+                            },
+                        }
+                    ],
+                    "colliders": [],
+                }
+            )
             continue
         # The strongest asset root describes this composed placement.
         asset = owners[0]
         filename = asset["metadata"].get("visual")
         if not filename:
-            warnings.append({"code": "asset_fallback", "entityKey": key,
-                             "message": "Referenced asset has no provided PBR GLB: " + asset["id"]})
-        visual = {"kind": "glb", "url": visual_url(asset, filename), "assetUpAxis": "Z",
-                  "scale": scale, "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 1]}} if filename else None
+            warnings.append(
+                {
+                    "code": "asset_fallback",
+                    "entityKey": key,
+                    "message": "Referenced asset has no provided PBR GLB: " + asset["id"],
+                }
+            )
+        visual = (
+            {
+                "kind": "glb",
+                "url": visual_url(asset, filename),
+                "assetUpAxis": "Z",
+                "scale": scale,
+                "localPose": {"p": [0, 0, 0], "q": [0, 0, 0, 1]},
+            }
+            if filename
+            else None
+        )
         if key.startswith("/World/Dressing/"):
             dressing_assets.add(prim.GetPath())
-            dressing.append({"entityKey": key, "kind": "static", "name": prim.GetName(),
-                             "initialPose": {"p": list(map(float, world[:3])),
-                                             "q": list(map(float, world[3:]))},
-                             "visuals": [visual] if visual else [], "colliders": []})
+            dressing.append(
+                {
+                    "entityKey": key,
+                    "kind": "static",
+                    "name": prim.GetName(),
+                    "initialPose": {"p": list(map(float, world[:3])), "q": list(map(float, world[3:]))},
+                    "visuals": [visual] if visual else [],
+                    "colliders": [],
+                }
+            )
         elif visual:
             if key not in bodies:
                 shape = shape_paths.get(key)
                 if shape is not None and builder.shape_body[shape] == -1:
                     local = wp.transform_multiply(wp.transform_inverse(builder.shape_transform[shape]), world)
-                    visual["localPose"] = {"p": list(map(float, local[:3])),
-                                           "q": list(map(float, local[3:]))}
+                    visual["localPose"] = {"p": list(map(float, local[:3])), "q": list(map(float, local[3:]))}
                     static_visuals[key] = [visual]
                 else:
-                    warnings.append({"code": "asset_fallback", "entityKey": key,
-                                     "message": "Ambiguous GLB owner; retaining native visuals"})
+                    warnings.append(
+                        {
+                            "code": "asset_fallback",
+                            "entityKey": key,
+                            "message": "Ambiguous GLB owner; retaining native visuals",
+                        }
+                    )
                 continue
             body = bodies[key]
             local = wp.transform_multiply(wp.transform_inverse(builder.body_q[body]), world)

@@ -6,6 +6,10 @@ from pydantic import Field
 from packages.info.program import ProgramConfig
 from packages.programs.centrifuge.loading import rotation
 
+SEATED_POSITION_LIMIT_M = 0.005
+SEATED_ANGLE_LIMIT_RAD = np.deg2rad(5)
+SEATED_SPEED_LIMIT_MPS = 0.01
+
 
 def seated_station(pose, velocities, stations, keys, *, held=False):
     if held:
@@ -23,8 +27,12 @@ def seated_station(pose, velocities, stations, keys, *, held=False):
         body_rotation = rotation(pose[3:])
         for key, station, velocity in zip(keys, stations, velocities, strict=True):
             orientation = rotation(station[3:]).T @ body_rotation
-            aligned = (np.trace(orientation) - 1) / 2 >= np.cos(np.deg2rad(5))
-            if np.linalg.norm(pose[:3] - station[:3]) < 0.005 and np.linalg.norm(velocity) < 0.01 and aligned:
+            aligned = (np.trace(orientation) - 1) / 2 >= np.cos(SEATED_ANGLE_LIMIT_RAD)
+            if (
+                np.linalg.norm(pose[:3] - station[:3]) < SEATED_POSITION_LIMIT_M
+                and np.linalg.norm(velocity) < SEATED_SPEED_LIMIT_MPS
+                and aligned
+            ):
                 return key
     except (ValueError, TypeError, IndexError):
         pass
