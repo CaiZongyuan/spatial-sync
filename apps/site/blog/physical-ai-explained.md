@@ -6,6 +6,10 @@ author: Lab World 团队
 cover: /images/blog/physical-ai-workbench.webp
 ---
 
+<script setup>
+import './physical-ai-diagrams.css'
+</script>
+
 # Physical AI：让 AI 在实验室里做事
 
 ![机械臂夹着试管，准备放进离心机，摄像头观察着实验台](/images/blog/physical-ai-workbench.webp)
@@ -34,9 +38,26 @@ cover: /images/blog/physical-ai-workbench.webp
 
 **Physical AI**进一步关心操作：这批样品该怎么处理？设备现在能不能用？机器人要先拿哪支试管？操作没有成功，下一步怎么办？
 
-[![信息管理系统帮助管清信息，数字孪生帮助看懂现场，Physical AI 利用现场信息决定并执行操作，再检查结果](/images/blog/physical-ai-explained/three-roles.svg)](/images/blog/physical-ai-explained/three-roles.svg)
-
-*图 2 · 三种常见的工作重点。它们可以出现在同一套软件里。图解可点击放大。*
+<figure class="pai-diagram" aria-labelledby="pai-roles-caption">
+  <div class="pai-diagram-body">
+    <p class="pai-eyebrow">同一间实验室 · 三种工作重点</p>
+    <dl class="pai-roles">
+      <div>
+        <dt>信息管理系统</dt>
+        <dd><strong>把信息管清楚</strong><span>有哪些样品？谁预约了设备？</span></dd>
+      </div>
+      <div>
+        <dt>数字孪生</dt>
+        <dd><strong>帮助观察与分析</strong><span>现场现在怎样？接下来会怎样？</span></dd>
+      </div>
+      <div class="pai-focus">
+        <dt>Physical AI</dt>
+        <dd><strong>操作，再检查结果</strong><span>接下来怎么做？事情做成了吗？</span></dd>
+      </div>
+    </dl>
+  </div>
+  <figcaption id="pai-roles-caption">图 2 · 三种常见的工作重点。它们可以出现在同一套软件里。</figcaption>
+</figure>
 
 这里没有一条绝对的分界线。信息管理系统也能下发指令，数字孪生也能参与预测和控制。
 
@@ -52,9 +73,19 @@ cover: /images/blog/physical-ai-workbench.webp
 
 因此，一次操作要走完这样一个过程：
 
-[![AI 先看现场，再决定下一步，让机器人或设备执行，然后检查实际结果；没有达到目标时，调整后继续](/images/blog/physical-ai-explained/simple-loop.svg)](/images/blog/physical-ai-explained/simple-loop.svg)
-
-*图 3 · 不只发出命令，还要检查事情有没有做成。*
+<figure class="pai-diagram" aria-labelledby="pai-loop-caption">
+  <div class="pai-diagram-body">
+    <p class="pai-eyebrow">一次操作 · 从观察到反馈</p>
+    <ol class="pai-steps">
+      <li><span class="pai-step-number" aria-hidden="true">01</span><strong>看现场</strong><p>样品在哪里？<br>设备能不能用？</p></li>
+      <li><span class="pai-step-number" aria-hidden="true">02</span><strong>决定下一步</strong><p>先做什么？<br>现在需要等待吗？</p></li>
+      <li><span class="pai-step-number" aria-hidden="true">03</span><strong>执行操作</strong><p>让机器人和设备<br>拿起、移动、放入。</p></li>
+      <li><span class="pai-step-number" aria-hidden="true">04</span><strong>检查结果</strong><p>真的放好了吗？<br>要不要调整？</p></li>
+    </ol>
+    <p class="pai-feedback"><span aria-hidden="true">←</span> 没有达到目标，就带着新情况回到观察，再判断。</p>
+  </div>
+  <figcaption id="pai-loop-caption">图 3 · 不只发出命令，还要检查事情有没有做成。</figcaption>
+</figure>
 
 这里的“根据结果再做调整”，通常叫作反馈。自动化早就有反馈，也能完成许多固定流程。Physical AI 希望进一步提高的是：当物体位置、设备安排或任务要求发生变化时，系统仍能理解情况，作出合适的调整。
 
@@ -70,9 +101,27 @@ AI 有了机械臂、轮子或腿，就要学会通过这个身体与环境打�
 
 把视线拉远一点：机械臂拿起试管之后，还要与样品架、离心机和其他设备配合，把整项任务完成。这就很适合从 Physical AI 的角度来理解。
 
-[![具身智能关注 AI 如何通过身体与环境交互；Physical AI 关注 AI 如何通过机器人和设备完成物理任务；真实环境中的智能机器人同时涉及两者](/images/blog/physical-ai-explained/embodied-and-physical.svg)](/images/blog/physical-ai-explained/embodied-and-physical.svg)
-
-*图 4 · 两种看问题的角度，有很大的重叠。这里用例子帮助理解，不是在划定严格的学科边界。*
+<figure class="pai-diagram" aria-labelledby="pai-perspectives-caption">
+  <div class="pai-diagram-body">
+    <p class="pai-eyebrow">具身智能 × Physical AI</p>
+    <div class="pai-perspectives">
+      <div>
+        <p class="pai-term">具身智能</p>
+        <strong>通过身体与环境交互</strong>
+        <p>机械臂怎样把试管拿稳？</p>
+        <p class="pai-detail">关注身体怎样感知和操作环境；这个身体也可以在仿真中。</p>
+      </div>
+      <div>
+        <p class="pai-term">Physical AI</p>
+        <strong>把物理任务做成</strong>
+        <p>机器人和仪器怎样配合，完成一批样品的处理？</p>
+        <p class="pai-detail">关注任务的执行与结果；也可以通过一组固定设备工作。</p>
+      </div>
+    </div>
+    <p class="pai-overlap"><span>共同之处</span>真实环境中的智能机器人，通常同时涉及两者。</p>
+  </div>
+  <figcaption id="pai-perspectives-caption">图 4 · 两种看问题的角度，有很大的重叠。这里用例子帮助理解，不是在划定严格的学科边界。</figcaption>
+</figure>
 
 **具身智能是实现 Physical AI 的一条重要路径。** 同一台在真实环境中工作的智能机器人，往往会同时涉及这两个概念。
 
@@ -88,9 +137,19 @@ Physical AI 也可以通过一组固定设备工作。例如，AI 根据温室�
 
 在这里，AI 需要看懂有哪些设备、当前是什么状态；能够发出设备支持的操作；操作之后，能知道成功还是失败；失败了，还能回看当时发生了什么。
 
-[![Lab World 把准备实验环境、让 AI 尝试操作、检查实际结果和反复改进连接起来；三维视图帮助人观察整个过程](/images/blog/physical-ai-explained/project-route.svg)](/images/blog/physical-ai-explained/project-route.svg)
-
-*图 6 · 我们正在搭建的路线：让 AI 有地方练习，也有依据判断自己做得怎样。*
+<figure class="pai-diagram" aria-labelledby="pai-route-caption">
+  <div class="pai-diagram-body">
+    <p class="pai-eyebrow">Lab World · 正在搭建的路线</p>
+    <ol class="pai-steps">
+      <li><span class="pai-step-number" aria-hidden="true">01</span><strong>准备环境</strong><p>先在仿真里搭好<br>设备和场景。</p></li>
+      <li><span class="pai-step-number" aria-hidden="true">02</span><strong>尝试操作</strong><p>让 AI 读取状态，<br>发出设备操作。</p></li>
+      <li><span class="pai-step-number" aria-hidden="true">03</span><strong>检查结果</strong><p>保存成功与失败，<br>看清有没有做成。</p></li>
+      <li><span class="pai-step-number" aria-hidden="true">04</span><strong>练习与比较</strong><p>尝试改进，验证<br>是否真的变好。</p></li>
+    </ol>
+    <p class="pai-note">三维界面帮助人观察整个过程。仿真里的能力，仍需在真实设备上验证。</p>
+  </div>
+  <figcaption id="pai-route-caption">图 6 · 我们正在搭建的路线：让 AI 有地方练习，也有依据判断自己做得怎样。</figcaption>
+</figure>
 
 这样再看界面上的功能，就容易理解它们为什么存在：
 
