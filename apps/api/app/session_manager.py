@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -69,7 +70,10 @@ def default_source_factory(kind: str, session_id: str) -> SpatialSource:
             raise HTTPException(
                 503, {"code": "source_unavailable", "message": "Newton adapter is not installed"}
             ) from exc
-        return NewtonSource(session_id)
+        return NewtonSource(
+            session_id,
+            startup_timeout_seconds=float(os.getenv("SPATIAL_NEWTON_STARTUP_TIMEOUT_SECONDS", "180")),
+        )
     raise HTTPException(422, {"code": "unknown_source"})
 
 

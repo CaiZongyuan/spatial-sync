@@ -11,7 +11,7 @@ def posture_problems(document, limits):
         if not isinstance(location, dict):
             problems.append((name, f"{name} must be a taught location mapping"))
             continue
-        for pose in ("approach", "grasp"):
+        for pose in ("approach", "grasp", *(("preInsertion",) if "preInsertion" in location else ())):
             values = location.get(pose)
             if not isinstance(values, list):
                 problems.append((name, f"{name}.{pose} is required and must be a joint-coordinate array"))

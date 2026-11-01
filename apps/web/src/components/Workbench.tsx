@@ -19,6 +19,7 @@ import { Diagnostics } from './Diagnostics';
 import { NewtonViewerButton } from './NewtonViewerButton';
 import { Icon } from './Icon';
 import { connectionLabel, sessionLabel } from '../lib/ui-labels';
+import { passageContract } from '../lib/cell-passage/model';
 import '../workbench.css';
 import { SessionPlans, useSessionPlan } from './SessionPlans';
 import { SessionTelemetry } from './SessionTelemetry';
@@ -167,9 +168,13 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
     !['RUNNING', 'PAUSED'].includes(state.sessionState);
   const paused = state.sessionState === 'PAUSED';
   const active = paused || state.sessionState === 'RUNNING';
+  const passageControls = Object.values(info.catalog?.entities ?? {}).some(binding => binding.type === passageContract.workcellType);
+  const physicalControlReason = passageControls ? '本实验请使用右侧细胞传代操控；重开轮次请关闭后新开会话' :
+    !info.catalog && active ? '正在同步设备类型，暂不开放底层物理控制' : undefined;
   const warningCount = (manifest?.warnings.length ?? 0) + warnings.length;
   const age = Math.max(0, performance.now() - client.buffer.receivedAt);
   const lifecycle = async (action: 'reload' | 'restart') => {
+    if (physicalControlReason) return;
     setOperationPending(true);
     setLoadError(undefined);
     try {
@@ -240,29 +245,33 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
             {sessionLabel(state.sessionState)}
           </span>
           <button
-            disabled={!canControl || pending || !active}
-            onClick={() => client.command(paused ? 'resume' : 'pause')}
+            disabled={!canControl || pending || !active || !!physicalControlReason}
+            onClick={() => { if (!physicalControlReason) client.command(paused ? 'resume' : 'pause'); }}
+            title={physicalControlReason}
             aria-label={paused ? 'Resume simulation' : 'Pause simulation'}
           >
-            <Icon name={paused ? 'play' : 'pause'} />{paused ? '继续' : '暂停'}
+            <Icon name={paused ? 'play' : 'pause'} />{passageControls && '物理'}{paused ? '继续' : '暂停'}
           </button>
           <button
-            disabled={!canControl || pending || !paused}
-            onClick={() => client.command('step', { count: 1 })}
+            disabled={!canControl || pending || !paused || !!physicalControlReason}
+            onClick={() => { if (!physicalControlReason) client.command('step', { count: 1 }); }}
+            title={physicalControlReason}
             aria-label="Step simulation"
           >
-            <Icon name="step" />单步
+            <Icon name="step" />{passageControls && '物理'}单步
           </button>
           <button
-            disabled={!canControl || pending || !active}
-            onClick={() => client.command('reset')}
+            disabled={!canControl || pending || !active || !!physicalControlReason}
+            onClick={() => { if (!physicalControlReason) client.command('reset'); }}
+            title={physicalControlReason}
             aria-label="Reset simulation"
           >
             <Icon name="reset" />重置
           </button>
           <button
             aria-label="Reload scene"
-            disabled={Boolean(state.evaluationId) || pending || !active || state.role !== 'operator'}
+            disabled={Boolean(state.evaluationId) || pending || !active || state.role !== 'operator' || !!physicalControlReason}
+            title={physicalControlReason}
             onClick={() => void lifecycle('reload')}
           >
             <Icon name="reload" />重新载入场景
@@ -270,12 +279,14 @@ export function Workbench({ sessionId, source, controls, renderContinuously = tr
           {state.sessionState === 'FAILED' && (
             <button
               aria-label="Restart source"
-              disabled={Boolean(state.evaluationId) || pending || state.role !== 'operator'}
+              disabled={Boolean(state.evaluationId) || pending || state.role !== 'operator' || !!physicalControlReason}
+              title={physicalControlReason}
               onClick={() => void lifecycle('restart')}
             >
               <Icon name="reload" />重启物理源
             </button>
           )}
+          {passageControls && <span className="muted">请使用右侧细胞传代操控</span>}
         </div>
         <div className="timing-control">
           <span className="muted">simTime</span>

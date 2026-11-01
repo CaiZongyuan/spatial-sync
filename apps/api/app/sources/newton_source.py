@@ -2,8 +2,10 @@
 
 import asyncio
 import contextlib
+import math
 import multiprocessing as mp
 import threading
+import time
 import uuid
 from collections import OrderedDict
 
@@ -23,12 +25,17 @@ from packages.protocol.schema import (
     SessionState,
     TransformFrame,
 )
+from packages.sim_runtime.runner import RpcFence
 from packages.transport import FrameCodec, PipeWriter, create_transport
 from packages.transport.source_state import RunnerHeartbeat, SourceFrames
 
 
 class NewtonSource:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, *, startup_timeout_seconds: float = 180):
+        if (isinstance(startup_timeout_seconds, bool) or not math.isfinite(startup_timeout_seconds)
+                or not 0 < startup_timeout_seconds <= 1800):
+            raise ValueError("Newton startup timeout must be finite, positive and at most 1800 seconds")
+        self.startup_timeout_seconds = float(startup_timeout_seconds)
         self.session_id = session_id
         self.scene_package = None
         self.policy_subject = None
@@ -49,6 +56,7 @@ class NewtonSource:
         self._command_lock = asyncio.Lock()
         self._runner_heartbeat = RunnerHeartbeat()
         self._pending = {}
+        self._rpc_fence = RpcFence()
         self._events = asyncio.Queue()
         self._metrics = {}
         self._failed = False
@@ -94,6 +102,7 @@ class NewtonSource:
         if ((self.simulation_subject is not None or self.deployment_permit is not None)
                 and self.execution_state_root is None):
             raise ValueError("Approved script/deployment execution requires an explicit state root")
+        startup_started = time.monotonic()
         self._loop = asyncio.get_running_loop()
         self._ready = self._loop.create_future()
         self.options = options.model_copy()
@@ -103,7 +112,7 @@ class NewtonSource:
         arguments = (child, self.session_id, scene_id, options.model_dump(), self.scene_package)
         if self.policy_subject is not None:
             arguments += (self.policy_subject,)
-        worker_context = {}
+        worker_context = {"rpc_fence": self._rpc_fence}
         if self.simulation_subject is not None:
             worker_context["simulation_subject"] = self.simulation_subject
         if self.deployment_permit is not None:
@@ -124,10 +133,18 @@ class NewtonSource:
             thread.start()
         self._watch_task = asyncio.create_task(self._watch(), name=f"newton-watch-{self.session_id}")
         try:
-            result = await asyncio.wait_for(self._ready, timeout=180)
+            remaining = max(0, self.startup_timeout_seconds - (time.monotonic() - startup_started))
+            result = await asyncio.wait_for(self._ready, timeout=remaining)
             self._starting = False
             self._loop.call_soon(self._drain_frame)
             return result
+        except TimeoutError as exc:
+            elapsed = time.monotonic() - startup_started
+            await self.close()
+            raise TimeoutError(
+                "Newton source startup TimeoutError: phase=await_ready; "
+                f"budget={self.startup_timeout_seconds:g}s; elapsed={elapsed:.3f}s"
+            ) from exc
         except BaseException:
             await self.close()
             raise
@@ -180,6 +197,8 @@ class NewtonSource:
     def _on_control(self, packet):
         try:
             kind = packet["kind"]
+            if kind == "ready" and (self._closing or self._closed or self._ready.cancelled()):
+                return  # A timed-out or cancelled candidate can never become ready again.
             if "stats" in packet:
                 self._metrics.update(packet["stats"])
                 self._runner_heartbeat.observe(packet["stats"])
@@ -228,6 +247,10 @@ class NewtonSource:
                 pass
             else:
                 future = self._pending.get(packet.get("token"))
+                if kind == "rpc_expired":
+                    if future is not None and not future.done():
+                        future.set_exception(TimeoutError("Runner intake expired before Host admission"))
+                    return
                 if kind == "result":
                     result = CommandResult.model_validate(packet["result"])
                     if result.frame:
@@ -264,9 +287,9 @@ class NewtonSource:
                     if future is not None and not future.done():
                         future.set_exception(RuntimeError(packet["message"]))
                     return
-                elif kind == "unknown_entity":
+                elif kind in ("unknown_entity", "unknown_invocation"):
                     if future is not None and not future.done():
-                        future.set_exception(KeyError(packet["key"]))
+                        future.set_exception(KeyError(packet.get("key", packet.get("invocationId"))))
                     return
                 elif kind == "closed":
                     value = None
@@ -318,10 +341,19 @@ class NewtonSource:
         token = uuid.uuid4().hex
         future = self._loop.create_future()
         self._pending[token] = future
+        expires_at = time.monotonic() + timeout
+        lease = None
         try:
-            self._writer.offer({"kind": kind, "token": token, **payload})
-            return await asyncio.wait_for(future, timeout=timeout)
+            if kind == "invoke":
+                lease = self._rpc_fence.reserve()
+            packet = {"kind": kind, "token": token, **payload}
+            if lease is not None:
+                packet.update(expiresAt=expires_at, admission=lease)
+            self._writer.offer(packet)
+            return await asyncio.wait_for(future, timeout=max(0, expires_at - time.monotonic()))
         finally:
+            if lease is not None:
+                self._rpc_fence.retire(lease)
             self._pending.pop(token, None)
 
     def latest_frame(self) -> TransformFrame | None:

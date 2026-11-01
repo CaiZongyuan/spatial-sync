@@ -154,6 +154,11 @@ def config_description(program):
 
 def require_spatial_domain(config, fields, root):
     """A scene's configured physics identities stay in its imported USD subtree."""
+    from packages.library.posture import context_references
+
+    for role, path in context_references(fields, config):
+        if not (path == root or path.startswith(root + "/")):
+            raise TemplateError(f"Posture context references {path} outside {root}")
     for name, information in fields.items():
         value = config.get(name)
         if information.get("spatialReference") and value is not None:

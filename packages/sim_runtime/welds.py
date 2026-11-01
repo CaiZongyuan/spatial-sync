@@ -44,12 +44,23 @@ class Welds:
     def counts(self):
         return len(self.pairs), int(np.count_nonzero(self.enabled))
 
+    def active_pairs(self):
+        return tuple(pair for pair, index in self.pairs.items() if self.enabled[index])
+
+    def attached_bodies(self, roots):
+        from packages.programs.labware.assembly import attached_bodies
+
+        return attached_bodies(roots, self.active_pairs())
+
     def set(self, parent, tube, enabled, poses):
         index = self.pairs[parent, tube]
         if bool(self.enabled[index]) == enabled:
             return
         if enabled:
-            a = wp.transform(tuple(poses[parent][:3]), tuple(poses[parent][3:]))
+            # -1 is world, never Python's last body. Keep the measured pose;
+            # enabling a constraint must not project either endpoint onto a target.
+            a = (wp.transform_identity() if parent == -1
+                 else wp.transform(tuple(poses[parent][:3]), tuple(poses[parent][3:])))
             b = wp.transform(tuple(poses[tube][:3]), tuple(poses[tube][3:]))
             self.relpose[index] = np.asarray(wp.transform_multiply(wp.transform_inverse(a), b))
         self.enabled[index] = enabled

@@ -18,7 +18,7 @@ from packages.library.physics_checks import (
     penetration,
     settling,
 )
-from packages.library.posture import posture_check, resolve_endpoint
+from packages.library.posture import posture_check, resolve_contexts, resolve_endpoint
 from packages.protocol.math import compose_pose, normalize_entity_key
 from packages.sim_runtime.library_scene import add_taught_sites as add_taught_sites
 
@@ -215,7 +215,7 @@ def taught_checks(sim, payload):
     lower, upper = model.joint_limit_lower.numpy(), model.joint_limit_upper.numpy()
     parents, transforms = model.shape_body.numpy(), model.shape_transform.numpy()
 
-    def site_world(key, state):
+    def site_pose(key, state):
         matches = sites[key]
         if len(matches) != 1:
             raise ValueError("Configured Site identity is ambiguous in the model")
@@ -223,9 +223,23 @@ def taught_checks(sim, payload):
         local = {"p": transforms[index, :3], "q": transforms[index, 3:]}
         parent = int(parents[index])
         if parent == -1:
-            return local["p"]
+            return local
         pose = state.body_q.numpy()[parent]
-        return compose_pose({"p": pose[:3], "q": pose[3:]}, local)["p"]
+        return compose_pose({"p": pose[:3], "q": pose[3:]}, local)
+
+    def set_joint(q, key, value):
+        matches = joints[key]
+        if len(matches) != 1:
+            raise ValueError("Configured joint identity is ambiguous in the model")
+        joint = matches[0]
+        if not 0 <= int(articulations[joint]) < model.articulation_count:
+            raise ValueError("Configured joint is outside Newton forward kinematics: " + key)
+        if starts[joint + 1] - starts[joint] != 1 or dstarts[joint + 1] - dstarts[joint] != 1:
+            raise ValueError("Grasp requires scalar configured joints")
+        dof = int(dstarts[joint])
+        if not math.isfinite(value) or not lower[dof] <= value <= upper[dof]:
+            raise ValueError("Grasp is outside actual model joint limits")
+        q[int(starts[joint])] = value
 
     rows = []
     for binding, program in configured:
@@ -239,6 +253,9 @@ def taught_checks(sim, payload):
         config = binding["config"]
         try:
             endpoint = resolve_endpoint(fields, config, program.get("configSchema", {}))
+            contexts = resolve_contexts(fields, config, config[documents[0]]["locations"])
+            if contexts is not None and endpoint.height:
+                raise ValueError("Posture context cannot replace a nonzero calibrated endpoint height")
             expected, observed = None, None
             if endpoint.height:
                 receipts = getattr(getattr(sim, "builder", None), "spatial_grasp_calibrations", {})
@@ -263,37 +280,47 @@ def taught_checks(sim, payload):
                                   entity=entity, location=name))
             continue
         for name, location in config[documents[0]]["locations"].items():
+            context = contexts[name] if contexts is not None else None
+            declared = ({"site": context.site, "offsetM": list(context.offset),
+                         "joints": [{"joint": key, "position": value} for key, value in context.joints]}
+                        if context is not None else None)
             try:
                 values, keys = location["grasp"], config[postures[0]]
                 if len(keys) != len(values):
                     raise ValueError("Grasp joint count differs from Config")
                 state = sim.model.state()
                 q = state.joint_q.numpy().copy()
+                if context is not None:
+                    if set(keys) & {key for key, _ in context.joints}:
+                        raise ValueError("Posture context cannot override the arm posture")
+                    for key, value in context.joints:
+                        set_joint(q, key, value)
                 for key, value in zip(keys, values, strict=True):
-                    matches = joints[key]
-                    if len(matches) != 1:
-                        raise ValueError("Configured joint identity is ambiguous in the model")
-                    joint = matches[0]
-                    if not 0 <= int(articulations[joint]) < model.articulation_count:
-                        raise ValueError("Configured joint is outside Newton forward kinematics: " + key)
-                    if starts[joint + 1] - starts[joint] != 1 or dstarts[joint + 1] - dstarts[joint] != 1:
-                        raise ValueError("Grasp requires scalar configured joints")
-                    dof = int(dstarts[joint])
-                    if not lower[dof] <= value <= upper[dof]:
-                        raise ValueError("Grasp is outside actual model joint limits")
-                    q[int(starts[joint])] = value
+                    set_joint(q, key, value)
                 state.joint_q.assign(q)
                 newton.eval_fk(sim.model, state.joint_q, state.joint_qd, state)
-                rows.append(posture_check(
-                    entity, name, list(map(float, site_world(endpoint.site, state))),
-                    list(map(float, site_world(location["site"], state))), endpoint,
+                frame = site_pose(context.site if context is not None else location["site"], state)
+                target = (compose_pose(frame, {"p": context.offset, "q": [0, 0, 0, 1]})["p"]
+                          if context is not None else frame["p"])
+                row = posture_check(
+                    entity, name, list(map(float, site_pose(endpoint.site, state)["p"])),
+                    list(map(float, target)), endpoint,
                     expected_calibration=expected, observed_calibration=observed,
                     pose_storage=("float32" if endpoint.height
                                   and transforms.dtype.name == "float32" else None),
-                ))
+                )
+                if context is not None:
+                    row.setdefault("measurements", {}).update(
+                        physicalTcpWorld=list(map(float, site_pose(endpoint.site, state)["p"])),
+                        graspTargetWorld=list(map(float, target)),
+                        targetDefinition="site-local-offset/1",
+                        postureContext=declared,
+                    )
+                rows.append(row)
             except (ValueError, KeyError, TypeError) as exc:
                 rows.append(check("P6", "fail", "Taught grasp cannot be measured: " + str(exc),
-                                  entity=entity, location=name))
+                                  entity=entity, location=name,
+                                  **({"measurements": {"postureContext": declared}} if declared else {})))
     return rows or [not_applicable("P6", "Scene has no configured taught arm locations")]
 
 

@@ -7,9 +7,16 @@ from packages.sim_runtime.library_scene import configured_weld_pairs
 
 @pytest.mark.parametrize("mode", ["contact", "weld"])
 def test_arm_opening_has_disabled_weld_pairs_for_either_grasp_mode(mode):
-    bindings = [{"program": "robot_arm.newton", "config": {
-        "handBody": "/hand", "tubes": ["/tube"], "graspMode": mode,
-    }}]
+    bindings = [
+        {
+            "program": "robot_arm.newton",
+            "config": {
+                "handBody": "/hand",
+                "tubes": ["/tube"],
+                "graspMode": mode,
+            },
+        }
+    ]
     assert configured_weld_pairs(bindings, {"/hand": 8, "/tube": 11}, {}) == [(8, 11)]
 
 
@@ -17,8 +24,10 @@ def test_pairs_preserve_each_binding_and_deduplicate_slots_on_one_rotor():
     bindings = [
         {"program": "robot_arm.newton", "config": {"handBody": "/hand-a", "tubes": ["/tube-a"]}},
         {"program": "robot_arm.newton", "config": {"handBody": "/hand-b", "tubes": ["/tube-b"]}},
-        {"program": "centrifuge.newton", "config": {"slotSites": ["/s1", "/s2", "/s3", "/s4"],
-                                                    "tubes": ["/tube-a"]}},
+        {
+            "program": "centrifuge.newton",
+            "config": {"slotSites": ["/s1", "/s2", "/s3", "/s4"], "tubes": ["/tube-a"]},
+        },
         {"program": "tube.newton", "config": {"locationSites": ["/s1"]}},
     ]
     bodies = {"/hand-a": 8, "/hand-b": 9, "/tube-a": 11, "/tube-b": 12}
@@ -41,3 +50,45 @@ def test_weld_rejects_missing_imported_reference():
 
 def test_no_operating_programs_need_no_welds():
     assert configured_weld_pairs([], {}, {}) == []
+
+
+def test_qualified_world_station_and_centrifuge_reuse_one_pair():
+    bindings = [
+        {
+            "program": "labware.motion",
+            "config": {
+                "handBody": "/hand",
+                "tubes": ["/tube"],
+                "qualifiedPlacement": True,
+                "placementStations": {"/tube": ["/world-seat", "/slot-a", "/slot-b"]},
+            },
+        },
+        {
+            "program": "cell_passage.centrifuge",
+            "config": {
+                "slotSites": ["/slot-a", "/slot-b"],
+                "tubes": ["/tube"],
+            },
+        },
+    ]
+    assert configured_weld_pairs(
+        bindings, {"/hand": 8, "/tube": 11}, {"/world-seat": -1, "/slot-a": 20, "/slot-b": 20}
+    ) == [
+        (-1, 11),
+        (8, 11),
+        (20, 11),
+    ]
+
+
+def test_qualified_unknown_station_fails_before_model_finalization():
+    binding = {
+        "program": "labware.motion",
+        "config": {
+            "handBody": "/hand",
+            "tubes": ["/tube"],
+            "qualifiedPlacement": True,
+            "placementStations": {"/tube": ["/unknown-seat"]},
+        },
+    }
+    with pytest.raises(ValueError, match="not imported.*unknown-seat"):
+        configured_weld_pairs([binding], {"/hand": 8, "/tube": 11}, {})

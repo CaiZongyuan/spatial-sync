@@ -10,6 +10,38 @@ from packages.protocol.schema import TransformFrame
 from packages.transport import FrameCodec, LatestSlot, PipeWriter
 
 
+def _claim_leases(fence, pipe):
+    for _ in range(2):
+        pipe.send(fence.claim(pipe.recv()))
+    pipe.close()
+
+
+def test_revoked_rpc_lease_and_reused_slot_are_fenced_across_spawn():
+    from packages.sim_runtime.runner import RpcFence
+
+    fence = RpcFence(capacity=1)
+    expired = fence.reserve()
+    fence.retire(expired)
+    current = fence.reserve()
+    parent, child = mp.get_context("spawn").Pipe()
+    process = mp.get_context("spawn").Process(target=_claim_leases, args=(fence, child))
+    process.start()
+    child.close()
+    try:
+        parent.send(expired)
+        assert parent.poll(5) and parent.recv() is False
+        parent.send(current)
+        assert parent.poll(5) and parent.recv() is True
+        process.join(5)
+        assert process.exitcode == 0
+    finally:
+        parent.close()
+        if process.is_alive():
+            process.terminate()
+            process.join(2)
+        fence.retire(current)
+
+
 def test_compact_pipe_frame_preserves_uint64_seq_and_float32_pose():
     codec = FrameCodec("session", "rev", 7)
     frame = TransformFrame(

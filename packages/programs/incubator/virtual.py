@@ -9,6 +9,9 @@ from packages.programs.signals import lag, noisy
 class IncubatorProgram:
     id, type, tick_priority = "incubator.virtual", "incubator/v1", 100
 
+    def _targets(self, ctx):
+        return ctx.get("setpointC"), 5, 60
+
     class Config(ProgramConfig):
         initialTemperatureC: FiniteFloat = Field(default=22, ge=0, le=80)
         initialCo2Percent: FiniteFloat = Field(default=0.04, ge=0, le=20)
@@ -37,9 +40,10 @@ class IncubatorProgram:
     def tick(self, ctx, dt):
         opened = ctx.get("doorOpen")
         tau = ctx.config.doorTimeConstantSeconds if opened else ctx.config.timeConstantSeconds
-        self.temperature = lag(self.temperature, 22 if opened else ctx.get("setpointC"), dt, tau)
-        self.co2 = lag(self.co2, 0.04 if opened else 5, dt, tau)
-        self.humidity = lag(self.humidity, 45 if opened else 60, dt, tau)
+        temperature, co2, humidity = self._targets(ctx)
+        self.temperature = lag(self.temperature, 22 if opened else temperature, dt, tau)
+        self.co2 = lag(self.co2, 0.04 if opened else co2, dt, tau)
+        self.humidity = lag(self.humidity, 45 if opened else humidity, dt, tau)
         if ctx.fact_due:
             ctx.set(
                 temperatureC=noisy(ctx, self.temperature, 0.03, 0, 80),

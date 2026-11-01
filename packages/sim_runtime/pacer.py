@@ -36,3 +36,8 @@ class Pacer:
         count = min(self.max_batch, int((self._budget + 1e-12) / self.physics_dt))
         self._budget -= count * self.physics_dt
         return count
+
+    def return_steps(self, count):
+        """Return reserved but unexecuted steps when control interrupts a batch."""
+        if self.realtime_factor is not None:
+            self._budget += count * self.physics_dt

@@ -18,6 +18,68 @@ class PostureEndpoint:
     explicit: bool
 
 
+@dataclass(frozen=True)
+class PostureContext:
+    site: str
+    offset: tuple[float, float, float]
+    joints: tuple[tuple[str, float], ...]
+
+
+def resolve_contexts(fields, config, locations):
+    """Opt-in target frames are separate from the physical endpoint contract."""
+    marked = [name for name, role in fields.items() if "postureContext" in role]
+    if not marked:
+        return None
+    if len(marked) != 1 or fields[marked[0]]["postureContext"] is not True:
+        raise ValueError("Posture requires exactly one recognized postureContext role")
+    values = config.get(marked[0])
+    if (not isinstance(locations, dict) or not isinstance(values, dict)
+            or set(values) != set(locations)):
+        raise ValueError("Posture contexts must cover the taught locations exactly")
+    result = {}
+    for name, value in values.items():
+        if not isinstance(value, dict) or set(value) != {"site", "offsetM", "joints"}:
+            raise ValueError("Posture context requires only site, offsetM and joints")
+        site, offset, joints = value["site"], value["offsetM"], value["joints"]
+        if not isinstance(site, str) or not site.startswith("/"):
+            raise ValueError("Posture context requires an actual Site path")
+        if (not isinstance(offset, (list, tuple)) or len(offset) != 3
+                or any(type(x) not in (int, float) or not math.isfinite(x) for x in offset)):
+            raise ValueError("Posture context offset must be a finite local vector")
+        if not isinstance(joints, list):
+            raise ValueError("Posture context joints must be an explicit list")
+        positions = []
+        for joint in joints:
+            if not isinstance(joint, dict) or set(joint) != {"joint", "position"}:
+                raise ValueError("Posture context joint requires joint and position")
+            key, position = joint["joint"], joint["position"]
+            if (not isinstance(key, str) or not key.startswith("/")
+                    or type(position) not in (int, float) or not math.isfinite(position)):
+                raise ValueError("Posture context joint requires an actual path and finite position")
+            positions.append((key, float(position)))
+        if len({key for key, _ in positions}) != len(positions):
+            raise ValueError("Posture context contains duplicate joints")
+        result[name] = PostureContext(site, tuple(map(float, offset)), tuple(positions))
+    return result
+
+
+def context_references(fields, config):
+    if not any("postureContext" in role for role in fields.values()):
+        return []
+    documents = [name for name, role in fields.items() if role.get("documentSchema") == "locations"]
+    if len(documents) != 1:
+        raise ValueError("Posture context requires exactly one locations document")
+    document = config.get(documents[0])
+    if not isinstance(document, dict) or not isinstance(document.get("locations"), dict):
+        raise ValueError("Posture context requires a resolved locations mapping")
+    contexts = resolve_contexts(fields, config, document["locations"])
+    result = []
+    for context in contexts.values():
+        result.append(("site", context.site))
+        result.extend(("joint", key) for key, _ in context.joints)
+    return result
+
+
 def resolve_endpoint(fields, config, config_schema):
     """An explicit role wins; pre-height programs retain a unique zero Site."""
     marked = [name for name, role in fields.items() if "postureEndpoint" in role]

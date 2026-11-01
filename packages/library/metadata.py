@@ -154,6 +154,7 @@ class Location(Schema):
     p: list[float] | None = Field(default=None, min_length=3, max_length=3)
     approach: list[float] | None = None
     grasp: list[float] | None = None
+    preInsertion: list[float] | None = None
     requires: list[dict[str, JsonValue]] = Field(default_factory=list)
 
 
