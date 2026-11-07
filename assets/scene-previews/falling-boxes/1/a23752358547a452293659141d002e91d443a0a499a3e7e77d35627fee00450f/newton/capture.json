@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-07T14:15:04.745297+00:00",
+  "capturedAt": "2026-11-07T21:05:45.947012+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -128,8 +128,28 @@
       "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
+      "path": "packages/programs/joint_drive.py",
+      "sha256": "622aba6e8b3c7bd260cd6c582a7832f6547728367ba062ac9e3089147024f829"
+    },
+    {
+      "path": "packages/programs/linear_axis.py",
+      "sha256": "ae099f6488dbf2026780d57d497c1f0f9fd0c760cc312586f2a6ac8a40fc0987"
+    },
+    {
       "path": "packages/programs/metadata.py",
       "sha256": "56d8c4482d99a831759314183dc26c1aa87bc0436dfc9e31c913dd7343faedb9"
+    },
+    {
+      "path": "packages/programs/motorized_incubator.py",
+      "sha256": "9d10776a97a4bdcf4ebfcd5927919ae5c2807a42496f3a2d17d23297d10b0982"
+    },
+    {
+      "path": "packages/programs/panda_wide.py",
+      "sha256": "72faa0552b049185c336de23c32112a34390c31033626718b6970075c3a771a8"
+    },
+    {
+      "path": "packages/programs/plate_imager.py",
+      "sha256": "10d89a88dc5724966c7fc64624a41c9d594a8f0e24e9a470f5037b2a688eb046"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -197,7 +217,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "21d6b1dcd3a8857ab68948ede0304320451b2adb560ffcfecfc1163910d13a09"
+      "sha256": "bbcd193cc3f9161c652ccfa747b9144da14b3585196854e7814e272d0e3aafeb"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -221,7 +241,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "5b001190fd70465bd6fdabc49f667ea0312dd38e15dbbf9c36bda4a49574b94b"
+      "sha256": "980df56ec9348271b02caca5024a6d4316cfa9017709e5ecfbcb1a05b4d8f9e7"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -275,10 +295,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "a91b6137b079a2c49338e8d490f3103b48913a503dd73eb67f5cd48cdd2dba04",
-    "catalog.json": "69e19b75d00af2971fbe8f2956845d9131be3455302f8fdf00579b3070aaceda",
-    "state.json": "dc82eb06aec78bcb3a0a241c316a33f53c646a8d6e9ee7f3f4b6059720c7ae49",
-    "snapshot.bin": "8a393d0439b202e11fa5d02e902ca2b1f708f66df484687eacff3646c5a16716"
+    "manifest.json": "39ea3a1d693d0b505029b46662ff03378729806e1a61eaee6c5bbb4365f49a36",
+    "catalog.json": "d9585206be18505af7545c6413d4fa73ab507995344d037684923292129899d1",
+    "state.json": "01e30950ab2a110ee4a56da1eedf1346d1179a70153a5341d24914e961454ab4",
+    "snapshot.bin": "b21cd5498cb914ab91b260d025361b218eaba7ee0fc0591fcd2e46729b3e4231"
   },
   "counts": {
     "physicalEntities": 3,

@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-07T14:17:23.811513+00:00",
+  "capturedAt": "2026-11-07T21:07:26.489410+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -140,8 +140,28 @@
       "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
+      "path": "packages/programs/joint_drive.py",
+      "sha256": "622aba6e8b3c7bd260cd6c582a7832f6547728367ba062ac9e3089147024f829"
+    },
+    {
+      "path": "packages/programs/linear_axis.py",
+      "sha256": "ae099f6488dbf2026780d57d497c1f0f9fd0c760cc312586f2a6ac8a40fc0987"
+    },
+    {
       "path": "packages/programs/metadata.py",
       "sha256": "56d8c4482d99a831759314183dc26c1aa87bc0436dfc9e31c913dd7343faedb9"
+    },
+    {
+      "path": "packages/programs/motorized_incubator.py",
+      "sha256": "9d10776a97a4bdcf4ebfcd5927919ae5c2807a42496f3a2d17d23297d10b0982"
+    },
+    {
+      "path": "packages/programs/panda_wide.py",
+      "sha256": "72faa0552b049185c336de23c32112a34390c31033626718b6970075c3a771a8"
+    },
+    {
+      "path": "packages/programs/plate_imager.py",
+      "sha256": "10d89a88dc5724966c7fc64624a41c9d594a8f0e24e9a470f5037b2a688eb046"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -209,7 +229,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "21d6b1dcd3a8857ab68948ede0304320451b2adb560ffcfecfc1163910d13a09"
+      "sha256": "bbcd193cc3f9161c652ccfa747b9144da14b3585196854e7814e272d0e3aafeb"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -221,7 +241,7 @@
     },
     {
       "path": "packages/sim_runtime/loaders.py",
-      "sha256": "abfe7e2ae46e214fbdf0b486f93a9c9cebd61b300d391d46a4e5b485382163e0"
+      "sha256": "aa34047bf315f6a4759703a7751b423c5eb50ff374cad2780e650d42ebb90f62"
     },
     {
       "path": "packages/sim_runtime/manifest_export.py",
@@ -237,7 +257,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "5b001190fd70465bd6fdabc49f667ea0312dd38e15dbbf9c36bda4a49574b94b"
+      "sha256": "980df56ec9348271b02caca5024a6d4316cfa9017709e5ecfbcb1a05b4d8f9e7"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -262,6 +282,10 @@
     {
       "path": "packages/sim_runtime/transform_extractor.py",
       "sha256": "44d2e51ee72be19bf9df8fc92e4bdb74c8451ee8488c153f16353a6a5fcdebe1"
+    },
+    {
+      "path": "packages/sim_runtime/usd_articulations.py",
+      "sha256": "76f2a07200e6accb344a310708bececa60b843b8532f38240b31e1f32b543f52"
     },
     {
       "path": "packages/sim_runtime/usd_scene.py",
@@ -295,10 +319,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "bfe25e4fc5ce008212f3c461bbd6ddcad59107e4a95ee998c263b7e312727f1c",
-    "catalog.json": "3d525e1132be8ca9f6ed0426b0a04a8f20a0b7e835f56f8017f8e4a42318f58e",
-    "state.json": "d92dbc5722f46f71b16ce275437a3152d3c9911840ecdf89b765750ce703a7c2",
-    "snapshot.bin": "2f71140e6dfdd2d1b601ca3e921d2544af467e08752e1976c570f2fbeaea35e4",
+    "manifest.json": "2cf0b016f82ddd5cd08ca1dc6d5d4878e63e92ef97ad8a3fbb75dd915fde4e26",
+    "catalog.json": "5d6b08d7bb81b908492aaf642e2bb1a25bddcd1782759471aab6009049259ebd",
+    "state.json": "c43bda501dffc266b63b7e3d533ae877c2b00c7134de306f130b86affbe4199f",
+    "snapshot.bin": "4abf9f165eb32d1d33b257be91421355eacfcc7e653f75ee274fcd530d87ad3a",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
