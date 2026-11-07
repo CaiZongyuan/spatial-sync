@@ -22,6 +22,8 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
     import newton
     from pxr import Usd, UsdGeom, UsdPhysics
 
+    from .usd_articulations import root_import
+
     if builder.up_axis != newton.Axis.Z:
         raise ValueError("USD protocol imports require a Z-up builder")
     if isinstance(path, (str, Path)):
@@ -37,7 +39,8 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         # True adopts the stage's axis in Newton 1.7; False rotates into our Z-up builder.
-        paths = builder.add_usd(stage, **arguments)
+        with root_import(builder, stage, root_path) as articulations:
+            paths = builder.add_usd(stage, **arguments)
     compatibility = list(getattr(builder, "spatial_warnings", ()))
     for warning in captured:
         compatibility.append({"code": "unsupported_usd_schema", "message": str(warning.message)})
@@ -45,6 +48,11 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
         labels = getattr(builder, f"{kind}_label")
         for prim_path, index in paths[f"path_{kind}_map"].items():
             labels[index] = str(prim_path)
+    compatibility.extend(
+        {"code": "usd_articulation_root_compatibility", "entityKey": row["label"],
+         "message": "Recovered explicit single-body articulation membership omitted by the pinned USD reader"}
+        for row in articulations.recovered
+    )
     imported_bodies = {str(key) for key in paths["path_body_map"]}
     imported_shapes = {str(key) for key in paths["path_shape_map"]}
     prims = stage.Traverse() if root_path == "/" else Usd.PrimRange(stage.GetPrimAtPath(root_path))

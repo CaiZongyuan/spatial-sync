@@ -78,6 +78,15 @@ the same `solver`, `physicsDt` and `warmupSteps` fields as Scenes. For example,
 selects MuJoCo. Omission retains XPBD; authored `mjc:*` attributes alone do not
 select a solver. A composed Scene uses its own declared simulation settings.
 
+For a single rigid body connected directly to the world by one hinge or slide,
+apply USD `ArticulationRootAPI` to that body. The loader completes the explicitly
+authored articulation when the pinned reader omits its one link, so joint
+coordinates and streamed body poses use the same forward kinematics. The
+Manifest records `usd_articulation_root_compatibility` when this repair applies.
+Excluded joints, connected mechanisms and existing articulations retain their
+authored topology.
+Recovery refuses opaque or articulation-index custom values it cannot preserve.
+
 The CLI packages files from its own filesystem and uploads bytes. The HTTP
 endpoint `POST /api/v1/library/imports` accepts an **uncompressed tar body** with
 `Content-Type: application/x-tar`; it never accepts a gateway host path. Archives
