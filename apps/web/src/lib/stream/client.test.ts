@@ -41,7 +41,7 @@ class Socket {
       view.setUint32(0, 0x4e59534e, true);
       view.setUint16(4, 1, true);
       view.setUint16(6, message.type === 'stream.snapshot' ? 2 : 1, true);
-      view.setUint32(8, message.sceneRevision === 'rev-replaced' ? 2 : 1, true);
+      view.setUint32(8, message.sceneRevision === 'rev-replaced' ? 2 : message.sceneRevision === 'rev-latest' ? 3 : 1, true);
       view.setUint32(12, message.epoch, true);
       view.setBigUint64(16, BigInt(message.seq), true);
       view.setFloat64(24, message.simTime, true);
@@ -387,6 +387,108 @@ describe('WebSocket lifecycle and authoritative control', () => {
     expect(client.buffer.lastSeq).toBe(5);
     expect(client.buffer.awaitingSnapshot).toBe(false);
   });
+
+  it('recovers a new socket while the replaced socket still awaits its manifest', async () => {
+    const oldSocket = Socket.instances[0];
+    oldSocket.emit({ ...snapshot, epoch: 1, seq: 6, simTime: 0, sampleTimeMs: 200 });
+    await flush();
+    const nextManifest = { ...fixture, sceneRevision: 'rev-replaced', revisionNumericId: 2, epoch: 0,
+      nodes: fixture.nodes.map(node => node.entityKey === '/World/Arm' ? { ...node, streamId: 9 } : node) };
+    let release!: (response: Response) => void;
+    const delayed = new Promise<Response>(resolve => { release = resolve; });
+    let sceneRequests = 0;
+    vi.mocked(fetch).mockImplementation(async url => {
+      if (String(url).endsWith('/scene'))
+        return ++sceneRequests === 1 ? delayed : new Response(JSON.stringify(nextManifest));
+      return new Response(JSON.stringify(String(url).endsWith('/catalog') ? {
+        sceneRevision: nextManifest.sceneRevision, types: {}, entities: {},
+      } : {}));
+    });
+    try {
+      oldSocket.emit({ type: 'scene.replaced', sessionId: fixture.sessionId,
+        sceneRevision: nextManifest.sceneRevision, revisionNumericId: 2, epoch: 0 });
+      await flush();
+      expect(client.getSnapshot().manifest).toBeUndefined();
+      oldSocket.close();
+      await vi.advanceTimersByTimeAsync(500);
+      const current = Socket.instances.at(-1)!;
+      current.open();
+      current.emit({ ...ready, sceneRevision: nextManifest.sceneRevision, revisionNumericId: 2, epoch: 0 });
+      await flush(); await flush();
+      expect(current.sent.at(-1)).toMatchObject({ type: 'client.subscribe', sceneRevision: nextManifest.sceneRevision });
+      acknowledge(current);
+      current.emit({ ...snapshot, sceneRevision: nextManifest.sceneRevision, epoch: 0, seq: 7,
+        sampleTimeMs: 300, poses: [[9, 4, 5, 6, 0, 0, 0, 1]] });
+      await flush();
+      expect(client.buffer.readLatest('/World/Arm')?.p).toEqual([4, 5, 6]);
+      const sent = current.sent.length;
+      release(new Response(JSON.stringify(nextManifest)));
+      await flush(); await flush();
+      expect(client.getSnapshot().manifest?.sceneRevision).toBe(nextManifest.sceneRevision);
+      expect(client.buffer.latestSample).toMatchObject({ seq: 7, epoch: 0 });
+      expect(client.buffer.readLatest('/World/Arm')?.p).toEqual([4, 5, 6]);
+      expect(current.sent).toHaveLength(sent);
+    } finally {
+      release(new Response(JSON.stringify(nextManifest)));
+      await flush();
+    }
+  });
+
+  it.each(['reply', 'error'] as const)('keeps the current mapping after an earlier socket manifest %s', async completion => {
+    const oldSocket = Socket.instances[0];
+    const earlier = { ...fixture, sceneRevision: 'rev-replaced', revisionNumericId: 2, epoch: 0 };
+    const latest = { ...fixture, sceneRevision: 'rev-latest', revisionNumericId: 3, epoch: 0,
+      nodes: fixture.nodes.map(node => node.entityKey === '/World/Arm' ? { ...node, streamId: 11 } : node) };
+    let release!: (response: Response) => void;
+    let reject!: (error: Error) => void;
+    const delayed = new Promise<Response>((resolve, fail) => { release = resolve; reject = fail; });
+    let sceneRequests = 0;
+    vi.mocked(fetch).mockImplementation(async url => {
+      if (String(url).endsWith('/scene'))
+        return ++sceneRequests === 1 ? delayed : new Response(JSON.stringify(latest));
+      return new Response(JSON.stringify(String(url).endsWith('/catalog') ? {
+        sceneRevision: latest.sceneRevision, types: {}, entities: {},
+      } : {}));
+    });
+    try {
+      oldSocket.emit({ type: 'scene.replaced', sessionId: fixture.sessionId,
+        sceneRevision: earlier.sceneRevision, revisionNumericId: 2, epoch: 0 });
+      await flush();
+      oldSocket.close();
+      await vi.advanceTimersByTimeAsync(500);
+      const current = Socket.instances.at(-1)!;
+      current.open();
+      current.emit({ ...ready, sceneRevision: latest.sceneRevision, revisionNumericId: 3, epoch: 0 });
+      await flush(); await flush();
+      acknowledge(current);
+      current.emit({ ...snapshot, sceneRevision: latest.sceneRevision, seq: 7,
+        sampleTimeMs: 300, poses: [[11, 7, 8, 9, 0, 0, 0, 1]] });
+      await flush();
+      expect(client.getSnapshot().manifest?.sceneRevision).toBe(latest.sceneRevision);
+      expect(client.buffer.readLatest('/World/Arm')?.p).toEqual([7, 8, 9]);
+      const sent = current.sent.length;
+      if (completion === 'reply') release(new Response(JSON.stringify(earlier)));
+      else reject(new Error('Earlier socket manifest failed'));
+      await flush(); await flush();
+      expect(client.getSnapshot().manifest?.sceneRevision).toBe(latest.sceneRevision);
+      expect(client.buffer.latestSample).toMatchObject({ seq: 7, epoch: 0 });
+      expect(client.buffer.readLatest('/World/Arm')?.p).toEqual([7, 8, 9]);
+      expect(current.sent).toHaveLength(sent);
+      expect(client.getSnapshot().error).toBeUndefined();
+      expect(current.readyState).toBe(Socket.OPEN);
+    } finally {
+      release(new Response(JSON.stringify(earlier)));
+      await flush();
+    }
+  });
+
+  it('reports a manifest failure owned by the current socket', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('Current manifest unavailable'));
+    Socket.instances[0].emit({ type: 'scene.replaced', sessionId: fixture.sessionId,
+      sceneRevision: 'rev-replaced', revisionNumericId: 2, epoch: 0 });
+    await flush();
+    expect(client.getSnapshot().error).toBe('Current manifest unavailable');
+  });
   it('uses the same information handler for snapshots and action outcomes with authorized identity', async () => {
     const ws = Socket.instances[0];
     ws.emit({
@@ -467,6 +569,35 @@ describe('WebSocket lifecycle and authoritative control', () => {
       { headers: { 'If-None-Match': '"catalog-a"' } },
     );
     expect(client.info.getMetadata().catalog).toEqual(catalog);
+  });
+
+  it('retains the current Catalog when an earlier socket Catalog request fails', async () => {
+    const catalog = { sceneRevision: fixture.sceneRevision, types: {}, entities: {} };
+    let reject!: (error: Error) => void;
+    const delayed = new Promise<Response>((_, fail) => { reject = fail; });
+    let catalogRequests = 0;
+    vi.mocked(fetch).mockImplementation(async url => {
+      if (String(url).endsWith('/catalog'))
+        return ++catalogRequests === 1 ? delayed : new Response(JSON.stringify(catalog));
+      return new Response(JSON.stringify(String(url).endsWith('/scene') ? fixture : {}));
+    });
+    Socket.instances[0].close();
+    await vi.advanceTimersByTimeAsync(500);
+    const earlier = Socket.instances.at(-1)!;
+    earlier.open();
+    await subscribeReady(earlier);
+    earlier.close();
+    await vi.advanceTimersByTimeAsync(500);
+    const current = Socket.instances.at(-1)!;
+    current.open();
+    await subscribeReady(current);
+    await flush();
+    expect(client.info.getMetadata().catalog).toEqual(catalog);
+    reject(new Error('Earlier socket Catalog failed'));
+    await flush();
+    expect(client.getSnapshot().infoError).toBeUndefined();
+    expect(client.info.getMetadata().catalog).toEqual(catalog);
+    expect(current.readyState).toBe(Socket.OPEN);
   });
 
   it('keeps viewer action requests read only even after synchronized state arrives', async () => {
