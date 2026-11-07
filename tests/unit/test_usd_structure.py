@@ -30,6 +30,33 @@ def payload(tmp_path, *, kind="scene"):
     return data, stage
 
 
+def test_conflicting_metadata_and_usd_physics_clocks_fail_structural_admission(tmp_path):
+    from pxr import Sdf
+
+    data, stage = payload(tmp_path)
+    data["metadata"]["simulation"] = {"solver": "mujoco", "physicsDt": .0005}
+    physics = UsdPhysics.Scene.Define(stage, "/World/Lab/Physics")
+    physics.GetPrim().CreateAttribute("mjc:option:timestep", Sdf.ValueTypeNames.Double).Set(1 / 240)
+    stage.GetRootLayer().Save()
+    report = validate(data)
+    clock = next(row for row in report["checks"] if row["id"] == "S2")
+    assert clock["status"] == "fail"
+    assert "physicsDt differs" in clock["message"]
+
+
+def test_authored_clock_is_recorded_only_as_structural_intent(tmp_path):
+    from pxr import Sdf
+
+    data, stage = payload(tmp_path)
+    physics = UsdPhysics.Scene.Define(stage, "/World/Lab/Physics")
+    physics.GetPrim().CreateAttribute("mjc:option:timestep", Sdf.ValueTypeNames.Double).Set(.0005)
+    stage.GetRootLayer().Save()
+    report = validate(data)
+    assert report["authoredPhysicsDt"] == .0005
+    assert "physics" not in report
+    assert not any(row["tier"] == "physics" and row["status"] == "pass" for row in report["checks"])
+
+
 @pytest.mark.parametrize(
     "path", ["/World/Outside", "/Other/Body", "/World/Dressing/Body", "/World/Lab/机器人"]
 )

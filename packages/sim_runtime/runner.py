@@ -1,6 +1,7 @@
 """Spawn entrypoint. Importing this module does not import the simulation engine."""
 
 import contextlib
+import math
 import os
 import time
 import uuid
@@ -45,6 +46,14 @@ class _Runner:
             from .library_scene import prepare_scene_config
 
             config = prepare_scene_config(scene_package.runtime_payload(), include_visuals=True)
+            if config.physics_dt is not None:
+                from packages.library.reports import measured_physics_dt
+
+                measured_dt = measured_physics_dt(scene_package.report())
+                if measured_dt is None or not all(math.isclose(
+                    value, config.physics_dt, rel_tol=1e-7, abs_tol=1e-12
+                ) for value in (measured_dt, options.physicsDt)):
+                    raise ValueError("Revalidate the authored USD physics clock before starting this Scene")
         self.sim = NewtonSimulation(
             scene_id, device=options.device, physics_dt=options.physicsDt,
             solver=simulation.get("solver"), config=config,

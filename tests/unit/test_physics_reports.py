@@ -35,6 +35,34 @@ def skipped():
             "checks": [{"id": "P6", "tier": "physics", "status": "warn", "message": "Not run"}]}
 
 
+def test_old_report_keeps_absent_clock_and_its_original_document():
+    value = reports.merge_physics(structure(), completed(status="pass"))
+    original = deepcopy(value)
+    assert reports.measured_physics_dt(value) is None
+    assert reports.parse_report(value) == original
+    assert "physicsDt" not in value["physics"]
+
+
+def test_skip_preserves_the_executed_clock_in_its_original_evidence():
+    outcome = completed(status="pass")
+    outcome["physics"]["physicsDt"] = .0005
+    measured = reports.merge_physics(structure(), outcome)
+    retained = reports.merge_physics(structure(), skipped(), measured)
+    assert reports.measured_physics_dt(retained) == .0005
+    assert retained["physics"]["retainedFrom"]["physicsDt"] == .0005
+    assert reports.measured_physics_dt(reports.merge_physics(structure(), skipped())) is None
+
+
+@pytest.mark.parametrize("dt", [0., -1., float("inf"), float("nan"), "0.0005"])
+def test_a_recorded_clock_cannot_bypass_finite_positive_numeric_validation(dt):
+    outcome = completed(status="pass")
+    outcome["physics"]["physicsDt"] = dt
+    with pytest.raises(ValueError):
+        reports.merge_physics(structure(), outcome)
+    with pytest.raises(ValueError):
+        reports.measured_physics_dt(outcome)
+
+
 def version(tmp_path):
     return SimpleNamespace(id="physics-fixture@1", content_hash="a" * 64,
                            validation=structure(), reports=reports.ReportStore(tmp_path))

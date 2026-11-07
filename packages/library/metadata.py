@@ -93,6 +93,7 @@ def asset_metadata(path):
 class Simulation(Schema):
     solver: Literal["xpbd", "mujoco", "featherstone"] | None = None
     warmupSteps: int | None = Field(default=None, gt=0)
+    physicsDt: float | None = Field(default=None, gt=0)
 
 
 class SceneMetadata(Schema):

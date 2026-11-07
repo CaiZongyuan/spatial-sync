@@ -52,6 +52,7 @@ def simulation(payload):
     metadata = payload["metadata"]
     if metadata["stage"].startswith("python:"):
         return NewtonSimulation(metadata["stage"].removeprefix("python:"), device="cpu",
+                                physics_dt=(metadata.get("simulation") or {}).get("physicsDt"),
                                 solver=(metadata.get("simulation") or {}).get("solver"))
     return NewtonSimulation("library-validation", device="cpu", config=prepare_scene_config(payload),
                             solver=(metadata.get("simulation") or {}).get("solver"))
@@ -343,8 +344,14 @@ def validate(payload):
     with sim:
         if not sim.model.device.is_cpu:
             raise RuntimeError("Physics validation requires the actual CPU device")
+        result["physics"]["physicsDt"] = sim.physics_dt
+        result["physics"]["solver"] = sim.solver_kind
         if sim.solver_kind == "mujoco":
             tools["mujoco"] = version("mujoco")
+            option = sim.solver.mj_model.opt
+            result["physics"]["solverOptions"] = {
+                key: int(getattr(option, key)) for key in
+                ("iterations", "ls_iterations", "noslip_iterations", "integrator", "cone")}
         rows.append(finite_state(model_state(sim.model, sim.state)))
         if rows[-1]["status"] == "fail":
             rows.extend(check(f"P{i}", "warn", "Not measured because initial model state is invalid")
@@ -362,9 +369,11 @@ def validate(payload):
                 if kind == newton.JointType.FREE]
         initial = sim.state.body_q.numpy().copy() if sim.model.body_count else None
         try:
-            sim.step(480)  # The reference is the initial state; no warmup or body exclusion.
-            if abs(sim.sim_time - 2.) > 1e-10:
-                raise ValueError("Settling did not measure exactly two simulation seconds")
+            # The reference remains the initial state, with no warmup/body
+            # exclusion. Cover two seconds using this package's real clock.
+            sim.step(math.ceil(2. / sim.physics_dt - 1e-10))
+            if sim.sim_time < 2. - 1e-10 or sim.sim_time >= 2. + sim.physics_dt + 1e-10:
+                raise ValueError("Settling did not cover two simulation seconds")
             final = sim.state.body_q.numpy() if sim.model.body_count else None
             rows.extend(settling(normalize_entity_key(sim.model.body_label[index]),
                                  initial[index, :3].tolist(), final[index, :3].tolist()) for index in free)

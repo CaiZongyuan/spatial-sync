@@ -145,6 +145,19 @@
           },
           "title": "Toolversions",
           "type": "object"
+        },
+        "physicsDt": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Physicsdt"
         }
       },
       "title": "PhysicsEvidence",
@@ -224,6 +237,19 @@
             }
           ],
           "default": null
+        },
+        "physicsDt": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Physicsdt"
         }
       },
       "required": [
@@ -349,6 +375,19 @@
         }
       ],
       "default": null
+    },
+    "authoredPhysicsDt": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authoredphysicsdt"
     }
   },
   "required": [

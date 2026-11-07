@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T14:48:43.158148+00:00",
+  "capturedAt": "2026-11-07T14:16:26.875980+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -197,7 +197,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "0270bcbc18f81f16cad23382143ae56cbd809cf521a322e377c9372c23121b58"
+      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
     },
     {
       "path": "packages/library/scenes.py",
@@ -353,15 +353,15 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "08c724a180e6d73dfcdfb308651767e9d173d55618ac9c00790bb3fa75438fa4"
+      "sha256": "7b48d54824c6eb598423ca3ed21d8faeccd5bf4813e229ed362d707355d78281"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
-      "sha256": "40c24e712fa9a1a660107d2ed43eac9efb81949feb57f884b5ac5e1b311b73fa"
+      "sha256": "1fec6500f9378fd59e435409bcb4088768142854bd09737d63535c93d34ac585"
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "57ab038fd95086e631caa60b21ec7d9c7961d7eb52781a399d5844c2fb9a63a0"
+      "sha256": "147e5d4903c34a3e8a134b5c61ac03c6a57aa58b26a3922b02654552b47fe124"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -399,10 +399,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "a62505af6b9e83336f08fa75c486866edafcf0caf784b532d3ddc66d63775525",
-    "catalog.json": "39d5ad486782292519df6c2b2007b6560b878d8ee36aa2b4f0762a5e8154b06b",
-    "state.json": "4ae8e9fcb9f04e6773431e5152f5a38f0243ce203f992c21aecd8895887befb3",
-    "snapshot.bin": "4b144130a84685f5e4aa5b5ebfa563a086d21bfb606fa388484d2959cc398308",
+    "manifest.json": "648261c77274f70887f455fca7482ad2ffce4e4e8eaffe67f82bd1a070cc3b81",
+    "catalog.json": "b8cb14713c449378678dfb93b5e253439180d5a569b9ec3640ec6f366121acd0",
+    "state.json": "471525139e5980de27f0776d027708a29a138965eec11dcb6f7883ccdde58cf8",
+    "snapshot.bin": "f66d950219dad2cf2a759532797e00d07863c1558df91ac0604bcc0843aa11bf",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

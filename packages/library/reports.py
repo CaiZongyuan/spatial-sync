@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import platform
 import re
 import tempfile
@@ -49,6 +50,7 @@ class PhysicsEvidence(BaseModel):
     reportId: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     ranAt: AwareDatetime | None = None
     toolVersions: dict[str, str] = Field(default_factory=dict)
+    physicsDt: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class PhysicsLayer(BaseModel):
@@ -62,6 +64,7 @@ class PhysicsLayer(BaseModel):
     ranAt: AwareDatetime | None = None
     toolVersions: dict[str, str] = Field(default_factory=dict)
     retainedFrom: PhysicsEvidence | None = None
+    physicsDt: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def execution_identity(self):
@@ -94,6 +97,7 @@ class ValidationReport(BaseModel):
     completeness: list[CompletenessItem] | None = None
     untypedEntities: list[str] = Field(default_factory=list)
     physics: PhysicsLayer | None = None
+    authoredPhysicsDt: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def measured_physics(self):
@@ -124,6 +128,20 @@ def launchable(report):
         and report["launchable"]
         and not any(check["status"] == "fail" for check in report["checks"])
     )
+
+
+def measured_physics_dt(report):
+    """Return a bound executed clock; a skip or old report does not invent one."""
+    layer = (report or {}).get("physics") or {}
+    if layer.get("status") == "completed":
+        value = layer.get("physicsDt")
+    elif layer.get("status") == "skipped":
+        value = (layer.get("retainedFrom") or {}).get("physicsDt")
+    else:
+        value = None
+    if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value <= 0):
+        raise ValueError("Recorded physics clock must be positive and finite")
+    return value
 
 
 def pinned_assets(version, kind):
@@ -242,6 +260,9 @@ def merge_physics(structure, result, retained=None):
             "ranAt": old_layer.get("ranAt", retained.get("ranAt")),
             "toolVersions": deepcopy(old_layer.get("toolVersions", retained.get("toolVersions", {}))),
         }
+        previous_dt = measured_physics_dt(retained)
+        if previous_dt is not None:
+            layer["retainedFrom"]["physicsDt"] = previous_dt
     if layer["status"] == "completed":
         report["toolVersions"] = report.get("toolVersions", {}) | layer.get("toolVersions", {})
     report["physics"] = layer

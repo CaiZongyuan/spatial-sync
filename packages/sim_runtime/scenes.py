@@ -21,6 +21,8 @@ class SceneConfig:
     solver: str = "xpbd"
     driver_factory: Callable[[Any], Any] | None = None
     warmup_steps: int = 1
+    physics_dt: float | None = None
+    mujoco_options: dict | None = None
 
 
 def falling_boxes_builder():

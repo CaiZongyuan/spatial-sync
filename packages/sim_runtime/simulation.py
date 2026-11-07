@@ -12,14 +12,14 @@ from .sites import add_joint_anchor_sites
 
 
 class NewtonSimulation:
-    def __init__(
-        self, scene_id="falling-boxes", *, device="cpu", physics_dt=1 / 240, solver=None, config=None
-    ):
+    def __init__(self, scene_id="falling-boxes", *, device="cpu", physics_dt=None, solver=None, config=None):
+        self.config = config if config is not None else get_scene_config(scene_id)
+        if physics_dt is None:
+            physics_dt = self.config.physics_dt or 1 / 240
         if physics_dt <= 0:
             raise ValueError("physics_dt must be positive")
         self.scene_id = scene_id
         self.physics_dt = physics_dt
-        self.config = config if config is not None else get_scene_config(scene_id)
         self.solver_kind = solver or self.config.solver
         if self.solver_kind not in ("xpbd", "mujoco", "featherstone"):
             raise ValueError(f"Unsupported scene solver: {self.solver_kind}")
@@ -33,12 +33,15 @@ class NewtonSimulation:
         self.control = self.model.control()
         with wp.ScopedDevice(self.model.device):
             if self.solver_kind == "mujoco":
+                settings = {"iterations": 20, "ls_iterations": 10} | (self.config.mujoco_options or {})
+                noslip = settings.pop("noslip_iterations", 0)
+                if noslip and not self.model.device.is_cpu:
+                    raise ValueError("Authored MuJoCo noslip_iterations requires the native CPU solver")
                 self.solver = SolverMuJoCo(
                     self.model,
                     use_mujoco_cpu=self.model.device.is_cpu,
                     use_mujoco_contacts=True,
-                    iterations=20,
-                    ls_iterations=10,
+                    **settings,
                     njmax=2048,
                     nconmax=2048,
                 )
@@ -46,6 +49,7 @@ class NewtonSimulation:
                     from .mujoco_bvh import normalize_body_bvh
 
                     normalize_body_bvh(self.solver.mj_model)
+                    self.solver.mj_model.opt.noslip_iterations = noslip
                 self.collision_pipeline, self.contacts = None, None
             else:
                 self.solver = (
