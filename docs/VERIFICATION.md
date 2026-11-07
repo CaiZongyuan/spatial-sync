@@ -556,6 +556,9 @@ input changes, regenerate the affected version/source, for example:
 `uv run --no-sync python tools/capture_scene_preview.py robot-and-tubes@2 --source newton --cache-root .scratch/scene-previews`.
 Copy the generated capture directory into `assets/scene-previews/`; keep published
 scene and asset package bytes unchanged.
+Captures that read device type definitions also require the complete current
+`devices/types/*.yaml` input set; additions or removals invalidate cached metadata
+and file reads. Captures without type-file inputs retain their existing scope.
 
 Launch each registered scene/source, select Body and Site, Pause, Step, Reset
 and Resume. Two browsers must share the authoritative sample and control results.
