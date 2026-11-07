@@ -5,6 +5,14 @@ validation and exact-version launch. Requirements and layout confirmation stay
 in the person's original Agent conversation. Blender and the checkout's
 `factory/` directory produce the packages outside the gateway.
 
+The supplied World Building cell-passaging laboratory has a separate
+[local visual intake](WORLD_BUILDING_INTAKE.md). It exports the complete final
+lookdev source at frame 0 as bounded, reusable Dressing Assets, imports through
+the existing public CLI and composes `panda-cell-passaging-reference` from the
+returned versions. Panda and the rail retain their source identities. This
+static reference has no device actions or 14-step workflow qualification;
+mixed-source binaries remain in the isolated local user library.
+
 ## Baked-material workbench experiment
 
 The supplied full laboratory is now retained as an editable source contribution
