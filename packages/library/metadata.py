@@ -31,6 +31,12 @@ class BindingTemplate(Schema):
     config: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class Simulation(Schema):
+    solver: Literal["xpbd", "mujoco", "featherstone"] | None = None
+    warmupSteps: int | None = Field(default=None, gt=0)
+    physicsDt: float | None = Field(default=None, gt=0)
+
+
 class AssetMetadata(Schema):
     id: str
     kind: str
@@ -40,6 +46,7 @@ class AssetMetadata(Schema):
     visual: str | None = None
     dimensionsM: list[float] | None = None
     physics: Physics | None = None
+    simulation: Simulation | None = None
     implements: list[BindingTemplate] = Field(default_factory=list)
     dressing: bool = False
 
@@ -88,12 +95,6 @@ def asset_metadata(path):
                 "Referenced file is missing or its path case does not match the package", path=field
             )
     return data
-
-
-class Simulation(Schema):
-    solver: Literal["xpbd", "mujoco", "featherstone"] | None = None
-    warmupSteps: int | None = Field(default=None, gt=0)
-    physicsDt: float | None = Field(default=None, gt=0)
 
 
 class SceneMetadata(Schema):
