@@ -70,6 +70,43 @@ def test_agent_removal_restore_idempotence_and_legacy_approval(tmp_path):
         assert client.get(ROOT + "/" + removed["id"]).json()["status"] == "restored"
 
 
+def test_committed_removal_views_resolve_legacy_status_before_its_audit_append(tmp_path, monkeypatch):
+    user_version(tmp_path / "user-library", 4)
+    app = create_app()
+    with TestClient(app) as client:
+        legacy = client.delete(TARGET).json()
+        service = app.state.manager.library_removals
+        retire = service._retire_approvals
+        entered, release = Event(), Event()
+
+        def delayed(record):
+            entered.set()
+            assert release.wait(5), "test did not release its owned removal worker"
+            return retire(record)
+
+        monkeypatch.setattr(service, "_retire_approvals", delayed)
+        response = client.post(ROOT, json=body(client), headers=AGENT)
+        assert response.status_code == 202, response.text
+        try:
+            assert entered.wait(5), "removal did not reach its committed journal"
+            removed = client.get(ROOT + "/" + response.json()["id"]).json()
+            assert removed["status"] == "committed"
+            assert app.state.manager.approvals.records[legacy["approvalId"]].status == "pending"
+            assert client.get("/api/v1/approvals/" + legacy["approvalId"]).json()["status"] == "unavailable"
+            for view in ("full", "summary", "page"):
+                result = client.get("/api/v1/approvals", params={"view": view, "status": "pending"})
+                assert result.status_code == 200, result.text
+                assert result.json()["pendingCount"] == 0, result.json()
+                assert result.json()["approvals"] == [], result.json()
+            processed = client.get("/api/v1/approvals", params={"view": "page", "status": "processed"})
+            rows = processed.json()["approvals"]
+            assert [record["approvalId"] for record in rows] == [legacy["approvalId"]]
+            assert rows[0]["status"] == "unavailable"
+            assert app.state.manager.approvals.records[legacy["approvalId"]].status == "pending"
+        finally:
+            release.set()
+
+
 def test_removal_keeps_active_session_reference_and_readonly_guards(tmp_path):
     user_version(tmp_path / "user-library", 4)
     with TestClient(create_app()) as client:
@@ -205,6 +242,9 @@ def test_old_approval_is_inapplicable_even_if_its_audit_append_failed(tmp_path, 
             removed = settled(client, client.post(ROOT, json=body(client)).json())
             assert removed["status"] == "committed"
             assert client.get("/api/v1/approvals/" + legacy["approvalId"]).json()["status"] == "unavailable"
+            assert client.get("/api/v1/approvals?view=summary").json()["pendingCount"] == 0
+            pending = client.get("/api/v1/approvals", params={"view": "page", "status": "pending"}).json()
+            assert pending["pendingCount"] == 0 and pending["approvals"] == []
         assert (
             client.post(
                 "/api/v1/approvals/" + legacy["approvalId"] + "/decision", json={"decision": "approve"}
@@ -218,6 +258,7 @@ def test_old_approval_is_inapplicable_even_if_its_audit_append_failed(tmp_path, 
         fresh = client.delete(TARGET).json()
         assert fresh["approvalId"] != legacy["approvalId"]
         assert client.get("/api/v1/approvals/" + fresh["approvalId"]).json()["status"] == "pending"
+        assert client.get("/api/v1/approvals?view=summary").json()["pendingCount"] == 1
 
 
 def test_waiting_for_journal_read_lock_does_not_block_health(tmp_path, monkeypatch):
