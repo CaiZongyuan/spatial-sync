@@ -233,6 +233,19 @@ def test_reset_holds_new_measured_state_and_old_epoch_cannot_resume(tmp_path):
     assert invoke(host, RAIL, "home", epoch=0).error.code == "session_reset"
 
 
+def test_repeated_cancel_keeps_the_original_hold_and_settling_window(tmp_path):
+    host, port, tick = make_host(tmp_path)
+    inv = invoke(host, RAIL, "moveTo", {"positionM": 2., "durationSeconds": 1})
+    tick(.1)
+    host.cancel(inv.invocationId)
+    tick(.05)
+    assert current(host, inv).status == "running"
+    host.cancel(inv.invocationId)
+    tick(.05)
+    assert current(host, inv).status == "cancelled"
+    assert port.targets[RAIL_JOINT] == [f32(1.2)]
+
+
 def test_timeout_fault_holds_measured_pose_and_stop_recovers(tmp_path):
     host, port, tick = make_host(tmp_path, config_changes={RAIL: {"settleTimeoutSeconds": .2}})
     inv = invoke(host, RAIL, "moveTo", {"positionM": 2., "durationSeconds": .1})

@@ -156,6 +156,8 @@ class JointMotion:
         self._stop(ctx)
 
     def _stop(self, ctx):
+        if self.phase == "stopping":
+            return
         self.hold(ctx)
         self.elapsed, self.stable, self.duration = 0., 0., 0.
         self.cancelling, self.phase = True, "stopping"
