@@ -1,0 +1,30 @@
+type: plate-imager/v1
+title: Plate imager drawer
+description: Measured 0–0.19m drawer drive only. Occupancy, physical transfer and
+  microscopy or biological observation are unqualified and have no actions or invented state here.
+properties:
+  phase: {schema: {enum: [idle, moving, stopping, fault]}}
+  extensionM: {schema: {type: number}, unit: m, deadband: 0.0001, maxRateHz: 10}
+  velocityMPerSecond: {schema: {type: number}, unit: m/s, deadband: 0.0001, maxRateHz: 10}
+  extended: {schema: {type: boolean}}
+  retracted: {schema: {type: boolean}}
+actions:
+  extend:
+    params: {durationSeconds: &duration {type: number, minimum: 0.05, maximum: 120}}
+    required: []
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  retract:
+    params: {durationSeconds: *duration}
+    required: []
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  stop:
+    params: {}
+    required: []
+    concurrent: true
+    longRunning: true
+    timeoutSeconds: 40
+events: {}

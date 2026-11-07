@@ -1,0 +1,51 @@
+type: panda-wide-arm/v1
+title: Panda with offset wide fingers
+description: Seven angular joint drives and measured offset-jaw opening. Basic motor
+  positioning provides no qualified grasp, holding, Cartesian path or collision clearance.
+properties:
+  phase: {schema: {enum: [idle, moving, stopping, fault]}}
+  jointPositions:
+    schema: &joints {type: array, items: {type: number}, minItems: 7, maxItems: 7}
+    unit: rad
+    deadband: 0.0001
+    maxRateHz: 10
+  jointVelocities:
+    schema: *joints
+    unit: rad/s
+    deadband: 0.0001
+    maxRateHz: 10
+  openingM:
+    schema: {type: number}
+    unit: m
+    deadband: 0.00001
+    maxRateHz: 10
+actions:
+  moveJoints:
+    params:
+      positions: *joints
+      durationSeconds: &duration {type: number, minimum: 0.05, maximum: 120}
+    required: [positions, durationSeconds]
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  home:
+    params: {durationSeconds: *duration}
+    required: []
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  setGripper:
+    params:
+      openingM: {type: number, minimum: 0.11, maximum: 0.19}
+      durationSeconds: *duration
+    required: [openingM]
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  stop:
+    params: {}
+    required: []
+    concurrent: true
+    longRunning: true
+    timeoutSeconds: 40
+events: {}

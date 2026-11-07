@@ -2,6 +2,10 @@
 
 from packages.info.catalog import Catalog, load_catalog
 from packages.programs.centrifuge.newton import CentrifugeProgram
+from packages.programs.linear_axis import LinearAxisProgram
+from packages.programs.motorized_incubator import MotorizedIncubatorProgram
+from packages.programs.panda_wide import PandaWideProgram
+from packages.programs.plate_imager import PlateImagerProgram
 from packages.programs.robot_arm.newton import RobotArmProgram
 from packages.programs.robot_arm.policy import PolicyProgram
 from packages.programs.robot_arm.script import ScriptProgram
@@ -9,7 +13,8 @@ from packages.programs.tube.newton import TubeProgram
 
 REGISTRY = {
     program.id: program
-    for program in (RobotArmProgram, PolicyProgram, ScriptProgram, TubeProgram, CentrifugeProgram)
+    for program in (RobotArmProgram, PolicyProgram, ScriptProgram, TubeProgram, CentrifugeProgram,
+                    PandaWideProgram, LinearAxisProgram, MotorizedIncubatorProgram, PlateImagerProgram)
 }
 
 
