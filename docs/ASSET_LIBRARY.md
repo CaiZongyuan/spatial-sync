@@ -72,6 +72,12 @@ can be omitted while preparing an incomplete asset; they remain explicit gaps.
 Malformed metadata and missing files named by `stage` or `visual` return
 `422 import_invalid` with a `problems` list.
 
+Standalone Asset physics validation accepts optional `simulation` settings with
+the same `solver`, `physicsDt` and `warmupSteps` fields as Scenes. For example,
+`simulation: {solver: mujoco, physicsDt: 0.0005, warmupSteps: 1}` explicitly
+selects MuJoCo. Omission retains XPBD; authored `mjc:*` attributes alone do not
+select a solver. A composed Scene uses its own declared simulation settings.
+
 The CLI packages files from its own filesystem and uploads bytes. The HTTP
 endpoint `POST /api/v1/library/imports` accepts an **uncompressed tar body** with
 `Content-Type: application/x-tar`; it never accepts a gateway host path. Archives
