@@ -83,8 +83,17 @@ def prepare_scene_config(payload, *, include_visuals=False):
         return result
 
     simulation = metadata.get("simulation") or {}
+    from .usd_settings import authored_settings
+
+    authored_dt, mujoco_options = authored_settings(stage)
+    declared_dt = simulation.get("physicsDt")
+    if declared_dt is not None and authored_dt is not None and not math.isclose(
+        declared_dt, authored_dt, rel_tol=1e-7, abs_tol=1e-12
+    ):
+        raise ValueError("Scene simulation physicsDt differs from its authored USD timestep")
     return SceneConfig(builder, solver=simulation.get("solver") or "xpbd",
-                       warmup_steps=simulation.get("warmupSteps") or 1)
+                       warmup_steps=simulation.get("warmupSteps") or 1,
+                       physics_dt=declared_dt or authored_dt, mujoco_options=mujoco_options)
 
 
 def configured_weld_pairs(bindings, bodies, sites):

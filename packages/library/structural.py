@@ -295,9 +295,22 @@ def validate(payload):
             declarations = instantiate(resolved, resources, payload["programs"])
         except TemplateError as exc:
             template_error = str(exc)
+    authored_dt = None
     if stage:
         correct = UsdGeom.GetStageUpAxis(stage) == "Z" and UsdGeom.GetStageMetersPerUnit(stage) == 1
-        checks["S2"] = check("S2", "pass" if correct else "fail", "Stage must use Z up and metersPerUnit=1")
+        message = "Stage must use Z up and metersPerUnit=1"
+        try:
+            from packages.sim_runtime.usd_settings import authored_settings
+
+            authored_dt, _ = authored_settings(stage)
+            declared_dt = (metadata.get("simulation") or {}).get("physicsDt")
+            if declared_dt is not None and authored_dt is not None and not math.isclose(
+                declared_dt, authored_dt, rel_tol=1e-7, abs_tol=1e-12
+            ):
+                raise ValueError("Scene simulation physicsDt differs from its authored USD timestep")
+        except ValueError as error:
+            correct, message = False, message + "; " + str(error)
+        checks["S2"] = check("S2", "pass" if correct else "fail", message)
     else:
         checks["S2"] = check(
             "S2",
@@ -665,6 +678,8 @@ def validate(payload):
     }
     if items:
         result["completeness"] = items
+    if authored_dt is not None:
+        result["authoredPhysicsDt"] = authored_dt  # Intent only; not a physics measurement.
     if grasp_calibrations:
         result["graspCalibrations"] = grasp_calibrations
     if kind == "scene" and scene_source is not None and checks["S5"]["status"] == "pass":
