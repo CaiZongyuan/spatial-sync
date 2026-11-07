@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-10-27T14:49:07.911454+00:00",
+  "capturedAt": "2026-11-07T14:17:23.811513+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -97,7 +97,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "0270bcbc18f81f16cad23382143ae56cbd809cf521a322e377c9372c23121b58"
+      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
     },
     {
       "path": "packages/library/scenes.py",
@@ -245,15 +245,15 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "08c724a180e6d73dfcdfb308651767e9d173d55618ac9c00790bb3fa75438fa4"
+      "sha256": "7b48d54824c6eb598423ca3ed21d8faeccd5bf4813e229ed362d707355d78281"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
-      "sha256": "40c24e712fa9a1a660107d2ed43eac9efb81949feb57f884b5ac5e1b311b73fa"
+      "sha256": "1fec6500f9378fd59e435409bcb4088768142854bd09737d63535c93d34ac585"
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "57ab038fd95086e631caa60b21ec7d9c7961d7eb52781a399d5844c2fb9a63a0"
+      "sha256": "147e5d4903c34a3e8a134b5c61ac03c6a57aa58b26a3922b02654552b47fe124"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -295,10 +295,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "6f0415a7b04e87cfb98978bf8b0a5e811643ffb2f5957114e391c998024c0c60",
-    "catalog.json": "d64323089beabff8d621eb00876f64f1ca012e0388dc964784d264e0f11c55b1",
-    "state.json": "4e29493da04f76d04c103f639fad6f3faa2ff0c93130f46a3d27abc9377c59e9",
-    "snapshot.bin": "412e35c0545c69622e42b8a29424fe4a94fa9af6cce7bdba43807c279fc34e2b",
+    "manifest.json": "bfe25e4fc5ce008212f3c461bbd6ddcad59107e4a95ee998c263b7e312727f1c",
+    "catalog.json": "3d525e1132be8ca9f6ed0426b0a04a8f20a0b7e835f56f8017f8e4a42318f58e",
+    "state.json": "d92dbc5722f46f71b16ce275437a3152d3c9911840ecdf89b765750ce703a7c2",
+    "snapshot.bin": "2f71140e6dfdd2d1b601ca3e921d2544af467e08752e1976c570f2fbeaea35e4",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
