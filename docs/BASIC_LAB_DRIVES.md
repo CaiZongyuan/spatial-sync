@@ -65,6 +65,17 @@ wait for physical settling. A stop cancels the previous motion only after that
 settling; a new stop while another stop is pending fails busy. Reset rebuilds
 goals from the new measured state and does not replay pre-reset targets.
 
+Each callback first obtains a complete finite position/velocity sample for all
+owned joints. Interlocks, interpolation and publication consume that same sample.
+Unavailable feedback fails active work with `feedback_unavailable`, clears its
+trajectory and latches `fault` before protective commands are written. Those
+commands use a finite current position where available, otherwise the last known
+finite position; they are never published as substitute observations. Without any
+finite position history, no position goal is invented. Velocity targets are zero
+commands, not a claim that actual velocity is zero. Later valid measurements may
+be published while the fault remains; fresh feedback and explicit stop or reset
+are needed to recover, and the failed motion never resumes automatically.
+
 Opening the inner door requires the outer door's actual open/settled feedback;
 closing the outer door requires the inner door's actual closed/settled feedback.
 These checks run at admission, again before writing targets, and during motion.

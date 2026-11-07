@@ -51,8 +51,8 @@ class MotorizedIncubatorProgram(JointDriveProgram):
 
     def at(self, ctx, key, goal):
         axis = self.motion.axes[key]
-        return (abs(axis.position(ctx.physics) - goal) <= axis.position_tolerance
-                and abs(axis.velocity(ctx.physics)) <= axis.velocity_tolerance)
+        return (abs(self.motion.position(key) - goal) <= axis.position_tolerance
+                and abs(self.motion.velocity(key)) <= axis.velocity_tolerance)
 
     def interlock(self, ctx, action):
         c = ctx.config
@@ -67,10 +67,11 @@ class MotorizedIncubatorProgram(JointDriveProgram):
         if self.motion is None:
             ctx.set(phase="fault")
             return
-        c, axes, p = ctx.config, self.motion.axes, ctx.physics
-        ctx.set(phase=self.phase(), outerAngle=axes[c.outerJoint].position(p),
-                innerAngle=axes[c.innerJoint].position(p), outerVelocity=axes[c.outerJoint].velocity(p),
-                innerVelocity=axes[c.innerJoint].velocity(p),
+        c = ctx.config
+        ctx.set(phase=self.phase(), outerAngle=self.motion.position(c.outerJoint),
+                innerAngle=self.motion.position(c.innerJoint),
+                outerVelocity=self.motion.velocity(c.outerJoint),
+                innerVelocity=self.motion.velocity(c.innerJoint),
                 outerOpen=bool(self.at(ctx, c.outerJoint, c.outerOpenAngle)),
                 outerClosed=bool(self.at(ctx, c.outerJoint, c.outerClosedAngle)),
                 innerOpen=bool(self.at(ctx, c.innerJoint, c.innerOpenAngle)),

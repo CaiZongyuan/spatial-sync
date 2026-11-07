@@ -44,8 +44,8 @@ class PlateImagerProgram(JointDriveProgram):
         if self.motion is None:
             ctx.set(phase="fault")
             return
-        c, axis, p = ctx.config, self.motion.axes[ctx.config.drawerJoint], ctx.physics
-        position, velocity = axis.position(p), axis.velocity(p)
+        c, axis = ctx.config, self.motion.axes[ctx.config.drawerJoint]
+        position, velocity = self.motion.position(c.drawerJoint), self.motion.velocity(c.drawerJoint)
         settled = abs(velocity) <= axis.velocity_tolerance
         ctx.set(phase=self.phase(), extensionM=position, velocityMPerSecond=velocity,
                 extended=bool(settled and abs(position - c.extendedPositionM) <= axis.position_tolerance),

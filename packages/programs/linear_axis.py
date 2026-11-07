@@ -53,6 +53,5 @@ class LinearAxisProgram(JointDriveProgram):
         if self.motion is None:
             ctx.set(phase="fault")
             return
-        axis = self.motion.axes[ctx.config.jointKey]
-        ctx.set(phase=self.phase(), positionM=axis.position(ctx.physics),
-                velocityMPerSecond=axis.velocity(ctx.physics))
+        ctx.set(phase=self.phase(), positionM=self.motion.position(ctx.config.jointKey),
+                velocityMPerSecond=self.motion.velocity(ctx.config.jointKey))

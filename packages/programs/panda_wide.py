@@ -53,8 +53,7 @@ class PandaWideProgram(JointDriveProgram):
         if self.motion is None:
             ctx.set(phase="fault")
             return
-        axes, port = self.motion.axes, ctx.physics
         ctx.set(phase=self.phase(),
-                jointPositions=[axes[key].position(port) for key in ctx.config.jointKeys],
-                jointVelocities=[axes[key].velocity(port) for key in ctx.config.jointKeys],
-                openingM=OPENING_OFFSET + sum(axes[key].position(port) for key in ctx.config.fingerKeys))
+                jointPositions=[self.motion.position(key) for key in ctx.config.jointKeys],
+                jointVelocities=[self.motion.velocity(key) for key in ctx.config.jointKeys],
+                openingM=OPENING_OFFSET + sum(self.motion.position(key) for key in ctx.config.fingerKeys))

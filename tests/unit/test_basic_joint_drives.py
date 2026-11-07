@@ -405,3 +405,140 @@ async def test_generic_action_pipeline_retains_actual_feedback_and_actor(tmp_pat
         assert store.values()[ARM]["openingM"] == pytest.approx(.19)
     finally:
         pipeline.close()
+
+
+@pytest.mark.parametrize("entity,field,joint", [(RAIL, "qd", RAIL_JOINT), (RAIL, "q", RAIL_JOINT),
+                                               (ARM, "q", FINGERS[0])])
+async def test_feedback_failure_faults_the_whole_callback_and_never_resumes_old_motion(
+    tmp_path, entity, field, joint,
+):
+    host, port, tick = make_host(tmp_path)
+    store = StateStore(host.catalog.sceneRevision)
+    store.apply(host.snapshot())
+
+    class LocalSource:
+        availability = host.availability
+
+        async def invoke(self, request):
+            return host.invoke(request)
+
+    target = SimpleNamespace(
+        state="RUNNING", session_id="feedback-pipeline", source=LocalSource(), sim_time=0., epoch=0,
+        supports_plans=False, options=SessionOptions(),
+        approvals=SimpleNamespace(for_invocation=lambda _: None),
+        plans=SimpleNamespace(invocation=lambda *_: None),
+    )
+    pipeline = ActionPipeline(target, host.catalog, store, lambda _: None)
+    errors = []
+
+    def forward(events):
+        target.sim_time = host.sim_time
+        for event in events:
+            if event.type == "invocation.update":
+                pipeline.update(event)
+            elif event.type in ("entity.snapshot", "entity.observations"):
+                store.apply(event)
+            elif event.type == "server.error":
+                errors.append(event)
+
+    params = {"positionM": 2., "durationSeconds": 1.} if entity == RAIL else {
+        "positions": [1.] * 7, "durationSeconds": 1.}
+    action = "moveTo" if entity == RAIL else "moveJoints"
+    command = ActionRequest(requestId="feedback-motion", entityKey=entity, action=action, params=params)
+    try:
+        inv = await pipeline.invoke(command, "operator", Actor(kind="agent", name="feedback-test"))
+        forward(tick(.1))
+        assert pipeline.table.get(inv.invocationId).status == "running"
+        if entity == RAIL and field == "qd":
+            port.q[RAIL_JOINT] = 1.25  # New finite position remains a useful protective command.
+        getattr(port, field)[joint] = float("nan")
+        forward(tick(.1))
+        assert host.values()[entity]["phase"] == "fault"
+        failed = pipeline.table.get(inv.invocationId)
+        assert failed.status == "failed" and failed.error.code == "feedback_unavailable"
+        if entity == RAIL and field == "qd":
+            assert store.values()[RAIL]["positionM"] == 1.2  # Hold commands are not fresh observations.
+        expected_hold = f32(1.25 if field == "qd" else 1.2) if entity == RAIL else 0.
+        key = RAIL_JOINT if entity == RAIL else ARM_JOINTS[0]
+        assert port.targets[key] == [expected_hold]
+        assert not errors
+        assert all(value == value and abs(value) < float("inf")
+                   for values in port.targets.values() for value in values)
+        refused_stop = await pipeline.invoke(
+            ActionRequest(requestId="stop-with-invalid-feedback", entityKey=entity, action="stop"),
+            "operator", Actor(kind="agent"))
+        assert refused_stop.status == "rejected" and refused_stop.error.code == "feedback_unavailable"
+        assert port.targets[key] == [expected_hold]
+        getattr(port, field)[joint] = 0. if field == "qd" or entity == ARM else 1.4
+        forward(tick(.1))
+        assert host.values()[entity]["phase"] == "fault" and port.targets[key] == [expected_hold]
+        assert pipeline.table.get(inv.invocationId).status == "failed"
+        blocked = await pipeline.invoke(command.model_copy(update={"requestId": "blocked-after-feedback"}),
+                                        "operator", Actor(kind="agent"))
+        assert blocked.status == "rejected"
+        stop = await pipeline.invoke(ActionRequest(requestId="recover-stop", entityKey=entity, action="stop"),
+                                     "operator", Actor(kind="agent"))
+        forward(tick(.1))
+        assert pipeline.table.get(stop.invocationId).status == "succeeded"
+        assert host.values()[entity]["phase"] == "idle"
+        assert pipeline.table.get(inv.invocationId).status == "failed"
+    finally:
+        pipeline.close()
+
+
+@pytest.mark.parametrize("boundary", ["accept", "start", "cancel"])
+def test_feedback_failure_at_action_boundaries_cannot_mask_failure_or_resume_targets(tmp_path, boundary):
+    host, port, tick = make_host(tmp_path)
+    params = {"positionM": 2., "durationSeconds": 1.}
+    if boundary == "accept":
+        port.q[RAIL_JOINT] = float("nan")
+        inv = invoke(host, RAIL, "moveTo", params)
+        assert inv.status == "rejected" and inv.error.code == "feedback_unavailable"
+    else:
+        inv = invoke(host, RAIL, "moveTo", params)
+        if boundary == "cancel":
+            tick(.1)
+        port.q[RAIL_JOINT] = float("nan")
+        if boundary == "cancel":
+            host.cancel(inv.invocationId)
+        else:
+            tick(.1)
+        assert current(host, inv).status == "failed"
+        assert current(host, inv).error.code == "feedback_unavailable"
+    assert host.values()[RAIL]["phase"] == "fault"
+    assert port.targets[RAIL_JOINT] == [f32(1.2)]
+    port.q[RAIL_JOINT] = 1.4
+    tick(.1)
+    assert host.values()[RAIL]["phase"] == "fault" and port.targets[RAIL_JOINT] == [f32(1.2)]
+
+
+def test_no_initial_finite_feedback_never_invents_hold_or_publishes_fake_measurements(tmp_path):
+    port = FakePort()
+    for key in [*ARM_JOINTS, *FINGERS]:
+        port.q[key] = port.qd[key] = float("nan")
+    host, port, tick = make_host(tmp_path, port=port)
+    assert host.values()[ARM] == {"phase": "fault"}
+    assert not set([*ARM_JOINTS, *FINGERS]) & port.targets.keys()
+    assert all(port.velocity_targets[key] == [0.] for key in [*ARM_JOINTS, *FINGERS])
+    assert invoke(host, ARM, "stop").error.code == "feedback_unavailable"
+    for key in [*ARM_JOINTS, *FINGERS]:
+        port.q[key] = port.qd[key] = 0.
+    tick(.1)
+    assert host.values()[ARM]["phase"] == "fault"
+    assert not set([*ARM_JOINTS, *FINGERS]) & port.targets.keys()
+    stop = invoke(host, ARM, "stop")
+    tick(.1)
+    assert current(host, stop).status == "succeeded" and host.values()[ARM]["phase"] == "idle"
+
+
+def test_native_float32_feedback_still_publishes_only_native_json_values(tmp_path):
+    import numpy as np
+
+    port = FakePort()
+    port.q = {key: np.float32(value) for key, value in port.q.items()}
+    port.qd = {key: np.float32(value) for key, value in port.qd.items()}
+    host, _, _ = make_host(tmp_path, port=port)
+    assert host.values()[RAIL]["phase"] == "idle"
+    assert type(host.values()[RAIL]["positionM"]) is float
+    assert all(type(value) is float for value in host.values()[ARM]["jointPositions"])
+    assert type(host.values()[DOORS]["outerClosed"]) is bool
