@@ -95,6 +95,13 @@ def install_approval_routes(app, manager, role_for):
         def page():
             records = [record for record in list(store.records.values())
                        if not record.sessionId or not private_recording(manager, record.sessionId)]
+            # A committed removal supersedes its legacy approval before the
+            # secondary audit append. Resolve that in-memory status for counts
+            # and filtering as well as the individual approval document.
+            for index, record in enumerate(records):
+                if (record.subject == "deletion" and record.status == "pending"
+                        and manager.library_deletions.normal_removal(record)):
+                    records[index] = manager.library_deletions.describe(record)
             result = {"approvals": [], "pendingCount": sum(record.status == "pending" for record in records),
                       "role": role_for(request.headers)}
             if view == "summary":
