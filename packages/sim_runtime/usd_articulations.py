@@ -10,7 +10,7 @@ class RootImport:
         self.api = newton
         self.builder, self.stage = builder, stage
         self.first_joint = builder.joint_count
-        prims = list(Usd.PrimRange(stage.GetPrimAtPath(root_path)))
+        prims = list(Usd.PrimRange(stage.GetPrimAtPath(root_path), Usd.TraverseInstanceProxies()))
         joints = [UsdPhysics.Joint(prim) for prim in prims if prim.IsA(UsdPhysics.Joint)]
         self.specs, self.recovered = {}, []
         for prim in prims:

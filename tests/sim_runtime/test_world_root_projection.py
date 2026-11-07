@@ -21,21 +21,23 @@ pytestmark = pytest.mark.newton
 
 @pytest.mark.parametrize("kind,target", [("slide", .02), ("hinge", .05)])
 @pytest.mark.parametrize("authored", [True, False])
-def test_world_root_coordinate_and_body_projection(tmp_path, kind, target, authored):
+def test_world_root_coordinate_and_body_projection(tmp_path, kind, target, authored, instanceable=False):
     stage = Usd.Stage.CreateInMemory()
     UsdGeom.SetStageUpAxis(stage, "Z")
     UsdGeom.SetStageMetersPerUnit(stage, 1.)
     UsdGeom.Xform.Define(stage, "/World")
     UsdGeom.Xform.Define(stage, "/World/Lab")
-    body = UsdGeom.Xform.Define(stage, "/World/Lab/Part")
+    scope = "/Template" if instanceable else "/World/Lab"
+    UsdGeom.Xform.Define(stage, scope)
+    body = UsdGeom.Xform.Define(stage, scope + "/Part")
     body.AddTranslateOp().Set(Gf.Vec3d(0, 0, 1))
     UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
     UsdPhysics.MassAPI.Apply(body.GetPrim()).CreateMassAttr(1.)
-    shape = UsdGeom.Cube.Define(stage, "/World/Lab/Part/Collider")
+    shape = UsdGeom.Cube.Define(stage, scope + "/Part/Collider")
     shape.CreateSizeAttr(.05)
     UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
     joint_type = UsdPhysics.PrismaticJoint if kind == "slide" else UsdPhysics.RevoluteJoint
-    joint = joint_type.Define(stage, "/World/Lab/Joint")
+    joint = joint_type.Define(stage, scope + "/Joint")
     joint.CreateBody1Rel().SetTargets([body.GetPath()])
     joint.CreateLocalPos0Attr(Gf.Vec3f(0, 0, 1))
     joint.CreateLocalPos1Attr(Gf.Vec3f(0))
@@ -51,6 +53,10 @@ def test_world_root_coordinate_and_body_projection(tmp_path, kind, target, autho
                                     Sdf.ValueTypeNames.Float, custom=True).Set(0.)
     if authored:
         UsdPhysics.ArticulationRootAPI.Apply(body.GetPrim())
+    if instanceable:
+        instance = UsdGeom.Xform.Define(stage, "/World/Lab/Instance").GetPrim()
+        instance.GetReferences().AddInternalReference(scope)
+        instance.SetInstanceable(True)
 
     def builder():
         result = newton.ModelBuilder(up_axis=newton.Axis.Z)
@@ -100,3 +106,7 @@ def test_world_root_coordinate_and_body_projection(tmp_path, kind, target, autho
             assert source_quaternion[2] == pytest.approx(math.sin(scalar / 2), abs=1e-6)
             assert body_pose[5] == pytest.approx(source_quaternion[2], abs=1e-6)
         np.testing.assert_allclose(body_pose[:3], source_position, atol=1e-6)
+
+
+def test_instance_proxy_root_keeps_actual_motor_and_body_configuration_coherent(tmp_path):
+    test_world_root_coordinate_and_body_projection(tmp_path, "slide", .02, True, instanceable=True)
