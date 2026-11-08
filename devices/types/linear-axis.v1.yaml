@@ -8,6 +8,13 @@ properties:
   velocityMPerSecond: {schema: {type: number}, unit: m/s, deadband: 0.0001, maxRateHz: 10}
 actions:
   moveTo:
+    description: >
+      Move the rail to positionM within configured travel and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
     params:
       positionM: {type: number, minimum: 0, maximum: 2.95}
       durationSeconds: &duration {type: number, minimum: 0.05, maximum: 120}
@@ -16,12 +23,26 @@ actions:
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}]
   home:
+    description: >
+      Move the rail to its configured home position and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
     params: {durationSeconds: *duration}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}]
   stop:
+    description: >
+      Hold every owned joint at its measured position and wait in stopping for measured
+      settling. Custom errors: feedback_unavailable when any owned joint lacks usable
+      finite position or velocity feedback; motion_timeout when measured settling
+      misses its configured deadline. Either latches fault. Restore valid feedback,
+      then explicitly retry stop and wait for settling, or reset the Source. Failed
+      or interrupted motion never resumes automatically.
     params: {}
     required: []
     concurrent: true

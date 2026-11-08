@@ -10,18 +10,39 @@ properties:
   retracted: {schema: {type: boolean}}
 actions:
   extend:
+    description: >
+      Move the drawer to its configured extended position and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
     params: {durationSeconds: &duration {type: number, minimum: 0.05, maximum: 120}}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}]
   retract:
+    description: >
+      Move the drawer to its configured retracted position and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
     params: {durationSeconds: *duration}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}]
   stop:
+    description: >
+      Hold every owned joint at its measured position and wait in stopping for measured
+      settling. Custom errors: feedback_unavailable when any owned joint lacks usable
+      finite position or velocity feedback; motion_timeout when measured settling
+      misses its configured deadline. Either latches fault. Restore valid feedback,
+      then explicitly retry stop and wait for settling, or reset the Source. Failed
+      or interrupted motion never resumes automatically.
     params: {}
     required: []
     concurrent: true

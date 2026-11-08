@@ -15,30 +15,67 @@ properties:
   innerClosed: {schema: {type: boolean}}
 actions:
   openOuter:
+    description: >
+      Move the outer door to its configured open angle and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
     params: {durationSeconds: &duration {type: number, minimum: 0.05, maximum: 120}}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}]
   openInner:
+    description: >
+      With the outer door physically open and settled, move the inner door to its
+      configured open angle and wait for measured settling. Custom errors:
+      feedback_unavailable when any owned joint lacks usable finite position or
+      velocity feedback; motion_timeout when measured settling misses its configured
+      deadline. Either latches fault. Restore valid feedback, then explicitly call
+      stop and wait for settling, or reset the Source. Failed motion never resumes
+      automatically.
     params: {durationSeconds: *duration}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}, {property: outerOpen, equals: true}]
   closeInner:
+    description: >
+      Move the inner door to its configured closed angle and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
     params: {durationSeconds: *duration}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}]
   closeOuter:
+    description: >
+      With the inner door physically closed and settled, move the outer door to its
+      configured closed angle and wait for measured settling. Custom errors:
+      feedback_unavailable when any owned joint lacks usable finite position or
+      velocity feedback; motion_timeout when measured settling misses its configured
+      deadline. Either latches fault. Restore valid feedback, then explicitly call
+      stop and wait for settling, or reset the Source. Failed motion never resumes
+      automatically.
     params: {durationSeconds: *duration}
     required: []
     longRunning: true
     timeoutSeconds: 180
     preconditions: [{property: phase, equals: idle}, {property: innerClosed, equals: true}]
   stop:
+    description: >
+      Hold every owned joint at its measured position and wait in stopping for measured
+      settling. Custom errors: feedback_unavailable when any owned joint lacks usable
+      finite position or velocity feedback; motion_timeout when measured settling
+      misses its configured deadline. Either latches fault. Restore valid feedback,
+      then explicitly retry stop and wait for settling, or reset the Source. Failed
+      or interrupted motion never resumes automatically.
     params: {}
     required: []
     concurrent: true
