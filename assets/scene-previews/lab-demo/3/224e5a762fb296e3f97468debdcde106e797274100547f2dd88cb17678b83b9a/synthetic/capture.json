@@ -30,7 +30,7 @@
   ],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-08T00:14:25.138163+00:00",
+  "capturedAt": "2026-11-08T01:04:45.725664+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -70,19 +70,19 @@
     },
     {
       "path": "devices/types/linear-axis.v1.yaml",
-      "sha256": "47b981ea9f04a3d5373f10269c4b7aa246f7b73b5005cd295c2eff7c0710207b"
+      "sha256": "3d2c57b8d417cb3868a0c6692f9f30509b8226146ea4ae8609f76d2b5ef8975e"
     },
     {
       "path": "devices/types/motorized-incubator.v1.yaml",
-      "sha256": "ee0ee35adc3cf6fbd9aa97eacefc2cc352ae75eef08280cff07b93d70f51e060"
+      "sha256": "63b6aa3104a1dcd727f7ccd4ba42e766b6ed20ed2c1d61d5e097f4fc6af80498"
     },
     {
       "path": "devices/types/panda-wide-arm.v1.yaml",
-      "sha256": "6d784b9f8933aa8590cc9e54d007072e31f87949904711d6fa2f6ebd1910000b"
+      "sha256": "2edb7e9bcc2eec04a8cb7b815be6a581af67e42140dd6ca8612c14d69495df2f"
     },
     {
       "path": "devices/types/plate-imager.v1.yaml",
-      "sha256": "8be20a1068847ab0800b2cc939b937cb2d916af729de771f8442c85b40b8189d"
+      "sha256": "a60801f6ea23c3eaa5deacd724943f50899de3e8f029c0bd81179dc72c678966"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -364,10 +364,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "eca8f0a97520817b184e42823e3b468236c94a6f6ce6f598b6dbbab392998f5b",
-    "catalog.json": "24593a98ce1d21b2a5ef5d670551fb660b1d2ce16ead22193922bfeb4de607b7",
-    "state.json": "d1e3b8dd0388b71f551c9b4ec2d35305f9ff819ae4e8417cceb376ae6f57f56a",
-    "snapshot.bin": "5428b11f8878c02a4c59e0067be667e428614cb6691972cf4411f834b54460d2"
+    "manifest.json": "884ccedb37867b5c0186c3ca4881431d4806931d036ceafc418fc5e516921089",
+    "catalog.json": "4487eca955ac4e61a4320b11d0262a0607f12f48139315d51d3fc269c40f0850",
+    "state.json": "cac773850b848c9d5f675c57e375d90507c515f8c82332a100409835d5437e97",
+    "snapshot.bin": "d35611ddbf917492003d8fa5e8ffbcc061414efd1504f19bc5862003639aa461"
   },
   "counts": {
     "physicalEntities": 33,
