@@ -9,7 +9,12 @@ Raw models and derived USD/GLB packages remain in the user's local workspace and
 library. The local contribution authorization covers the requested experiment
 and rendered tutorial/video evidence; it does not grant public raw-asset
 redistribution. Applicable Panda license, upstream identity and notices stay in
-the packages. Repository changes contain the producer/tests/docs only.
+the packages. Source license, notice, attribution, README and upstream records
+are copied verbatim under `upstream/` with their original relative paths,
+including records outside the geometry file list. Provenance records each
+source/output path, byte size and SHA256. These records stay distinct from the
+local contribution authorization at the package root. Repository changes
+contain the producer/tests/docs only.
 
 With the repository's frozen USD/geometry dependencies installed, use a fresh
 owned workspace outside all original inputs:

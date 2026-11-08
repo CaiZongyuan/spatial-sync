@@ -136,6 +136,7 @@ def derive_leaf(source, chunk, anchor, body_world0, output, source_file):
         raise ValueError("Use a fresh body output directory")
     if any(path.is_symlink() or path.is_junction() for path in (output, *output.parents)):
         raise ValueError("Body output must not contain symlinks or junctions")
+    owned_tree(source)
     output.mkdir(parents=True)
     owned_tree(output)
     for path in source.rglob("*"):
@@ -162,13 +163,25 @@ def derive_leaf(source, chunk, anchor, body_world0, output, source_file):
     (output / "LICENSE").write_text(LOCAL_AUTHORIZATION, encoding="utf-8")
     (output / "NOTICE").write_text(
         "Private source-derived appearance; no physics or workflow qualification.\n", encoding="utf-8")
-    if chunk["kind"] == "robot" and chunk["name"].startswith("panda"):
-        for name in ("LICENSE", "PANDA_README.md", "UPSTREAM_COMMIT.txt"):
-            if (source / name).is_file():
-                shutil.copyfile(source / name, output / ("PANDA_" + name))
+    notices = []
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        if not path.is_file() or not any(re.search(
+            r"(?:^|[_.-])(licen[cs]es?|notices?|readme|upstream|copying|copyright|authors?|"
+            r"attribution|contribution)(?:[_.-]|$)", part, re.IGNORECASE
+        ) for part in relative.parts):
+            continue
+        target = output / "upstream" / safe_relative(relative.as_posix())
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Preserve relative names/bytes separately from the local authorization.
+        with target.open("xb") as stream:
+            stream.write(path.read_bytes())
+        notices.append({"sourcePath": relative.as_posix(),
+                        "outputPath": target.relative_to(output).as_posix(), **fingerprint(target)})
     provenance = {"sourceFile": source_file, "frame": 0, "sourceBody": anchor["sourceBody"],
         "sourceRoot": anchor["visualRoot"], "bodyWorld0Column": body_world0,
         "sourceChunk": chunk["name"], "sourceChunkFiles": chunk["files"],
+        "sourceNotices": notices,
         "sourceMeshObjects": [row["name"] for row in rows], "shaderRenames": renames,
         "prototypeUnreachableGlbPayloadRetained": True,
         "files": {p.relative_to(output).as_posix(): fingerprint(p) for p in output.rglob("*") if p.is_file()}}

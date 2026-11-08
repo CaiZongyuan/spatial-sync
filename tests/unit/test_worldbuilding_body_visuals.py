@@ -11,7 +11,7 @@ from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade, Vt
 
 from factory.visual_geometry import surface_signature
 from tools.worldbuilding_body_visuals import compose, derive_leaf, rendered_meshes
-from tools.worldbuilding_intake import fingerprint
+from tools.worldbuilding_intake import LOCAL_AUTHORIZATION, fingerprint
 
 
 @pytest.fixture
@@ -87,6 +87,50 @@ def test_diagnostic_rest_pose_cannot_substitute_for_true_frame0_body(body_source
     wrong[0, 3] += .02
     with pytest.raises(ValueError, match="transform differs"):
         derive_leaf(source, chunk, anchor, wrong.tolist(), tmp_path / "wrong", {"sha256": "a" * 64})
+
+
+@pytest.mark.parametrize("chunk_name, kind", [("panda-1", "robot"), ("imager-1", "device"),
+                                            ("mother-plate-1", "labware"), ("mother-lid-1", "labware")])
+def test_leaf_preserves_source_notices_outside_geometry_list_without_name_collisions(
+    body_source, tmp_path, chunk_name, kind
+):
+    source, chunk, anchor, world = body_source
+    chunk |= {"name": chunk_name, "kind": kind}
+    notices = {"LICENSE": b"Original license\r\n", "SOURCE_NOTICE.md": b"OEM source; unverified use\n",
+               "PANDA_NOTICE": b"Original upstream notice\n", ".metadata/LICENSE": b"Attachment license\n",
+               "PANDA_README.md": b"Original readme\n", "UPSTREAM_COMMIT.txt": b"fixed-revision\n"}
+    for relative, content in notices.items():
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    assert not set(notices).intersection(chunk["files"])
+    output = tmp_path / "leaf"
+    derive_leaf(source, chunk, anchor, world.tolist(), output, {"sha256": "a" * 64})
+    for relative, content in notices.items():
+        assert (output / "upstream" / relative).read_bytes() == content
+        assert (source / relative).read_bytes() == content
+    assert (output / "LICENSE").read_text() == LOCAL_AUTHORIZATION
+    provenance = json.loads((output / "provenance.json").read_text())
+    retained = {row["sourcePath"]: row for row in provenance["sourceNotices"]}
+    assert set(retained) == set(notices)
+    for relative, row in retained.items():
+        assert row == {"sourcePath": relative, "outputPath": "upstream/" + relative,
+                       **fingerprint(source / relative)}
+        assert provenance["files"][row["outputPath"]] == fingerprint(source / relative)
+
+
+def test_redirected_source_notice_is_rejected_before_output_creation(body_source, tmp_path):
+    source, chunk, anchor, world = body_source
+    outside = tmp_path / "outside-notice"
+    outside.write_bytes(b"Unrelated source notice")
+    try:
+        (source / "SOURCE_NOTICE.md").symlink_to(outside)
+    except OSError as error:
+        pytest.skip(f"OS does not permit fixture symlinks: {error}")
+    output = tmp_path / "leaf"
+    with pytest.raises(ValueError, match="symlinks"):
+        derive_leaf(source, chunk, anchor, world.tolist(), output, {"sha256": "a" * 64})
+    assert not output.exists() and outside.read_bytes() == b"Unrelated source notice"
 
 
 def test_duplicate_default_scene_references_are_not_hidden_by_name_dictionary():
