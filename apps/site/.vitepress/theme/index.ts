@@ -4,6 +4,7 @@ import { h } from 'vue'
 import Landing from './landing/Landing.vue'
 import BlogIndex from './blog/BlogIndex.vue'
 import PostHeader from './blog/PostHeader.vue'
+import SiteVideo from './SiteVideo.vue'
 import './style.css'
 
 export default {
@@ -12,5 +13,6 @@ export default {
   enhanceApp({ app }) {
     app.component('Landing', Landing)
     app.component('BlogIndex', BlogIndex)
+    app.component('SiteVideo', SiteVideo)
   },
 } satisfies Theme

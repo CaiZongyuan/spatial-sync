@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
           <div class="actions" data-film-control>
             <button class="pl-btn pl-btn--primary" @click="play"><svg viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor" /></svg>自动播放</button>
             <button class="pl-btn" @click="skip">跳过动画<svg viewBox="0 0 16 16"><path d="M8 3v10m0 0 4-4m-4 4L4 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
-            <a class="pl-btn" href="#platform-film" @click.prevent="watchFilm">观看介绍视频 · 1:42</a>
+            <a class="pl-btn" href="#platform-film" @click.prevent="watchFilm">观看演示视频 · 3 支</a>
           </div>
           <p class="note">也可以向下滚动，按自己的节奏看。</p>
         </header>
