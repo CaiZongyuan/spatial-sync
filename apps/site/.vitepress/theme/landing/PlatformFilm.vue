@@ -1,91 +1,72 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { withBase } from 'vitepress'
+import { computed, ref } from 'vue'
+import { FILMS, type FilmId } from '../films'
+import SiteVideo from '../SiteVideo.vue'
 
-const primary = 'https://media.lumen-physical-ai.top/lab-world-promo-platform-update-zh.webm'
-const backup = 'https://pub-6d8f23b1806440e89d34541e9d6f10cb.r2.dev/lab-world-promo-platform-update-zh.webm'
-const video = ref<HTMLVideoElement>()
-const enhanced = ref(false)
-const showPlay = ref(true)
-const usingBackup = ref(false)
-const failed = ref(false)
-const source = computed(() => usingBackup.value ? backup : primary)
-
-onMounted(() => { enhanced.value = true })
-
-function play() {
-  const player = video.value
-  if (!player) return
-  showPlay.value = false
-  player.play().catch((error: DOMException) => {
-    if (error.name !== 'AbortError' && !player.error) showPlay.value = true
-  })
-}
-
-function start() {
-  video.value?.focus()
-  play()
-}
-
-async function recover() {
-  if (usingBackup.value) {
-    failed.value = true
-    showPlay.value = false
-    return
-  }
-  usingBackup.value = true
-  await nextTick()
-  video.value?.load()
-  play()
-}
-
-function onPlaying() {
-  showPlay.value = false
-  failed.value = false
-}
+const activeId = ref<FilmId>('promo')
+const activeFilm = computed(() => FILMS.find((f) => f.id === activeId.value) ?? FILMS[0])
 </script>
 
 <template>
   <section id="platform-film" class="platform-film pl-section" tabindex="-1" aria-labelledby="platform-film-title">
-    <p class="pl-eyebrow pl-rule"><span>Lab World · Platform Film</span><span class="duration">01:42 / 中文</span></p>
+    <p class="pl-eyebrow pl-rule"><span>Lab World · Platform Films</span><span class="duration">{{ activeFilm.tag }} · {{ activeFilm.duration }}</span></p>
     <div class="pl-section-head">
       <h2 id="platform-film-title"><span class="nb">看见 Lab World</span><span class="nb">如何运转</span></h2>
-      <p class="pl-section-lede">从可计算的世界，到智能体的行动与反馈。用一段视频，看看 Lab World 如何把它们连接起来。</p>
+      <p class="pl-section-lede">三支中文短片：从平台全貌，到 World Building 搭建细胞传代实验室并由 Agent 规划实操，再到 14 步完整轨迹预演。</p>
     </div>
-    <figure class="film-figure">
-      <div class="player">
-        <video ref="video" :src="source" :poster="withBase('/images/landing/platform-film.webp')" width="1920" height="1080" controls playsinline preload="none" aria-label="Lab World 中文平台介绍" @error="recover" @playing="onPlaying" @ended="showPlay = true">
-          当前浏览器无法播放此视频。<a :href="primary">直接打开视频</a>。
-        </video>
-        <button v-if="enhanced && showPlay" class="play" type="button" aria-label="播放 Lab World 平台介绍" @click="start"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 4.5v15l12-7.5z" /></svg></button>
-      </div>
-      <p v-if="failed" class="error" role="status">视频暂时无法播放，请通过下方链接直接打开。</p>
-      <figcaption>
-        <span>点击播放 · 支持全屏观看</span>
-        <span class="links"><a :href="primary" target="_blank" rel="noopener">直接打开</a><a :href="backup" target="_blank" rel="noopener">备用线路</a></span>
-      </figcaption>
-    </figure>
+
+    <div class="film-tabs" role="group" aria-label="选择演示视频">
+      <button
+        v-for="film in FILMS"
+        :key="film.id"
+        type="button"
+        class="film-tab"
+        :class="{ active: activeId === film.id }"
+        :aria-pressed="activeId === film.id"
+        @click="activeId = film.id"
+      >
+        <span class="tab-top">
+          <span class="tab-kicker"><span class="mono">{{ film.num }}</span><span>{{ film.tag }}</span></span>
+          <span class="tab-duration mono">{{ film.duration }}</span>
+        </span>
+        <strong class="tab-title">{{ film.title }}</strong>
+        <span class="tab-sub">{{ film.subtitle }}</span>
+      </button>
+    </div>
+
+    <SiteVideo
+      :key="activeFilm.id"
+      class="film-figure"
+      :film="activeFilm"
+      show-summary
+      show-post-link
+      caption="点击播放 · 支持全屏观看"
+    />
   </section>
 </template>
 
 <style scoped>
 .platform-film { scroll-margin-top: 88px; }
 .duration { order: 1; flex: none; letter-spacing: 0; }
-.film-figure { margin: 40px 0 0; }
-.player { position: relative; overflow: hidden; border: 1px solid var(--line-2); border-radius: 14px; background: #101010; box-shadow: var(--shadow-1); }
-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; }
-.play { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: grid; place-items: center; width: 76px; height: 76px; padding: 0; border: 1px solid rgba(255, 255, 255, .45); border-radius: 50%; color: #171716; background: #f2f0e9; box-shadow: 0 6px 28px rgba(0, 0, 0, .25); cursor: pointer; transition: background .2s var(--ease), scale .2s var(--ease); }
-.play:hover { background: #fff; scale: 1.04; }
-.play:focus-visible { outline: 2px solid #fff; outline-offset: 5px; }
-figcaption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; margin-top: 14px; font-size: 12.5px; line-height: 1.8; color: var(--muted); }
-.links { display: flex; flex-wrap: wrap; gap: 20px; }
-.links a { text-decoration: underline; text-underline-offset: 4px; }
-.links a:hover { color: var(--ink); }
-.links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 2px; }
-.pl .error { margin-top: 12px; color: var(--ink-2); font-size: 14px; line-height: 1.8; }
+.film-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 32px; }
+.film-tab { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 18px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); color: var(--ink-2); font: inherit; text-align: left; cursor: pointer; transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
+.film-tab:hover { border-color: var(--ghost); }
+.film-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.film-tab.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); box-shadow: var(--shadow-1); }
+.tab-top { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.tab-kicker { display: inline-flex; align-items: center; gap: 6px; }
+.tab-kicker .mono { color: var(--faint); }
+.film-tab.active .tab-kicker { color: var(--accent-ink); }
+.film-tab.active .tab-kicker .mono { color: var(--accent-ink); }
+.tab-duration { font-size: 11px; color: var(--faint); }
+.tab-title { font-family: var(--font-display); font-weight: 600; font-size: 17px; line-height: 1.35; color: var(--ink); }
+.tab-sub { font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.film-figure { margin: 18px 0 0; }
+@media (max-width: 900px) {
+  .film-tabs { grid-template-columns: 1fr; gap: 10px; margin-top: 24px; }
+  .film-tab { padding: 14px 16px; }
+}
 @media (max-width: 620px) {
-  .film-figure { margin-top: 28px; }
-  .play { width: 56px; height: 56px; }
-  .player { border-radius: 10px; }
+  .film-figure { margin-top: 14px; }
 }
 </style>
