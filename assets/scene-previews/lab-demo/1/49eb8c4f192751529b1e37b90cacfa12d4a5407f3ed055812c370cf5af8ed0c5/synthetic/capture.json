@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-07T14:15:37.571712+00:00",
+  "capturedAt": "2026-11-08T01:04:43.744378+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -42,6 +42,22 @@
     {
       "path": "devices/types/incubator.v1.yaml",
       "sha256": "0ab8ba44bc824750fe9a9ca992b3cad0298a3681001a9e78eaa62f4fdd9bee1c"
+    },
+    {
+      "path": "devices/types/linear-axis.v1.yaml",
+      "sha256": "3d2c57b8d417cb3868a0c6692f9f30509b8226146ea4ae8609f76d2b5ef8975e"
+    },
+    {
+      "path": "devices/types/motorized-incubator.v1.yaml",
+      "sha256": "63b6aa3104a1dcd727f7ccd4ba42e766b6ed20ed2c1d61d5e097f4fc6af80498"
+    },
+    {
+      "path": "devices/types/panda-wide-arm.v1.yaml",
+      "sha256": "2edb7e9bcc2eec04a8cb7b815be6a581af67e42140dd6ca8612c14d69495df2f"
+    },
+    {
+      "path": "devices/types/plate-imager.v1.yaml",
+      "sha256": "a60801f6ea23c3eaa5deacd724943f50899de3e8f029c0bd81179dc72c678966"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -105,7 +121,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "c8156cc7fc85a0f7ac46f9496e187e9e7f485d13b4e17904defca8e2cef1292d"
+      "sha256": "45bad42c4c77647efb7abd878a77b05c68aa806f9c42b20ee741459f710c5a52"
     },
     {
       "path": "packages/library/reports.py",
@@ -203,10 +219,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "2c5f34b8272df5da2cb821873a82540a8212879cb11a5d00ef64c724c01da8e6",
-    "catalog.json": "c838560b9dca18d2ff13ee34837baaa3987adea2826ef89f3a095cb21648d5f8",
-    "state.json": "fa68548dba439b20a020cfd1b469dc29542ee6ab5ecc24cff6beeaea61c05f8a",
-    "snapshot.bin": "5f9c364dd56359f8e67ac16a91be23fc5fb0eb11bea53a86d84c517901467973"
+    "manifest.json": "8fb14ff4254ba96f34b3f6deeb8cc9f9943ecba343a572d82ef80863f3b96090",
+    "catalog.json": "bb995fa01a74508032d6c61ca266131c9418fce317d6f2d9c3acc1ff31fd757f",
+    "state.json": "bda2a7acc2d3af68878ab04fb219c6618d3143cc267ae4a3b64054c910990a4b",
+    "snapshot.bin": "2e3609e1f6dc3f5e0772f702ff8be50821c8cd5d41bb2ecf86f2a4836c7aa197"
   },
   "counts": {
     "physicalEntities": 30,

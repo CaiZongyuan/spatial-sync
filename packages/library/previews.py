@@ -121,6 +121,21 @@ def dependency_path(dependency):
     return relative_file(REPO_ROOT, name)
 
 
+def type_inputs(dependencies):
+    return {item["path"] for item in dependencies
+            if PurePosixPath(item["path"]).parent == PurePosixPath("devices/types")
+            and Path(item["path"]).match("*.yaml")}
+
+
+def inputs_current(dependencies):
+    # load_catalog reads the whole glob whenever type files are capture inputs.
+    recorded = type_inputs(dependencies)
+    if recorded and recorded != {path.relative_to(REPO_ROOT).as_posix()
+                                 for path in (REPO_ROOT / "devices/types").glob("*.yaml")}:
+        return False
+    return all(input_hash(dependency_path(item)) == item["sha256"] for item in dependencies)
+
+
 class PreviewRepository:
     """Serve indexed capture bytes after validating package and actual inputs."""
 
@@ -142,6 +157,8 @@ class PreviewRepository:
             try:
                 capture = json.loads((directory / "capture.json").read_bytes())
                 paths.update(dependency_path(item) for item in capture["dependencies"])
+                if type_inputs(capture["dependencies"]):
+                    paths.add(REPO_ROOT / "devices/types")
             except (OSError, ValueError, KeyError, TypeError):
                 pass  # _inspect retains the precise validation error and source fallback.
         for snapshot in (*version.template_assets.values(), *version.runtime_assets.values()):
@@ -189,8 +206,7 @@ class PreviewRepository:
                 }:
                     raise ValueError("Preview USD asset dependencies are incomplete or differ; recapture")
                 dependencies = value["dependencies"]
-                if not dependencies or any(input_hash(dependency_path(item)) != item["sha256"]
-                                           for item in dependencies):
+                if not dependencies or not inputs_current(dependencies):
                     raise ValueError("预览的构建输入已变化，需要重新捕获")
                 files = value["files"]
                 if not isinstance(files, dict) or not files:
@@ -265,9 +281,7 @@ class PreviewRepository:
         # Cache metadata and decoding, never authorization to serve altered source/package bytes.
         version.template_dependencies()
         version.asset_dependencies()
-        if content_hash(version.path) != version.content_hash or any(
-            input_hash(dependency_path(item)) != item["sha256"] for item in capture["dependencies"]
-        ):
+        if content_hash(version.path) != version.content_hash or not inputs_current(capture["dependencies"]):
             raise ValueError("预览的构建输入已变化，需要重新捕获")
         if relative not in capture["files"]:
             raise ValueError("预览文件不在索引中")

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from itertools import product
 from time import monotonic
+from types import MappingProxyType
 
 import numpy as np
 import warp as wp
@@ -19,6 +20,9 @@ class JointRef:
     qd: slice
     target: slice
     child: int = -1
+    kind: str | None = None
+    lower: float | None = None
+    upper: float | None = None
 
 
 @dataclass(frozen=True)
@@ -37,12 +41,17 @@ class PhysicsPort:
         q, qd = model.joint_q_start.numpy(), model.joint_qd_start.numpy()
         targets = model.joint_target_q_start.numpy()
         children = model.joint_child.numpy()
+        kinds = {joint.entityKey: joint.type for joint in manifest.joints}
+        lower, upper = model.joint_limit_lower.numpy(), model.joint_limit_upper.numpy()
         self.joints = {
             "/" + label.strip("/"): JointRef(
                 slice(int(q[i]), int(q[i + 1])),
                 slice(int(qd[i]), int(qd[i + 1])),
                 slice(int(targets[i]), int(targets[i + 1])),
                 int(children[i]),
+                kinds.get("/" + label.strip("/")),
+                float(lower[int(qd[i])]) if int(qd[i + 1]) - int(qd[i]) == 1 else None,
+                float(upper[int(qd[i])]) if int(qd[i + 1]) - int(qd[i]) == 1 else None,
             )
             for i, label in enumerate(model.joint_label)
         }
@@ -84,6 +93,18 @@ class PhysicsPort:
 
     def bind_joint(self, key):
         return self.joints[key]
+
+    def joint_metadata(self, key):
+        """Immutable scalar-drive facts; world-root joints do not require FK."""
+        joint = self.joints[key] if isinstance(key, str) else key
+        return MappingProxyType({
+            "kind": joint.kind,
+            "qWidth": joint.q.stop - joint.q.start,
+            "qdWidth": joint.qd.stop - joint.qd.start,
+            "targetWidth": joint.target.stop - joint.target.start,
+            "lower": joint.lower, "upper": joint.upper,
+            "targetDtype": str(self.target_q.dtype),
+        })
 
     def bind_site(self, key):
         return self.sites[key]

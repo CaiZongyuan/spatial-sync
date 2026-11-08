@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-07T14:17:00.989540+00:00",
+  "capturedAt": "2026-11-08T01:05:16.131138+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -143,6 +143,22 @@
     {
       "path": "devices/types/incubator.v1.yaml",
       "sha256": "0ab8ba44bc824750fe9a9ca992b3cad0298a3681001a9e78eaa62f4fdd9bee1c"
+    },
+    {
+      "path": "devices/types/linear-axis.v1.yaml",
+      "sha256": "3d2c57b8d417cb3868a0c6692f9f30509b8226146ea4ae8609f76d2b5ef8975e"
+    },
+    {
+      "path": "devices/types/motorized-incubator.v1.yaml",
+      "sha256": "63b6aa3104a1dcd727f7ccd4ba42e766b6ed20ed2c1d61d5e097f4fc6af80498"
+    },
+    {
+      "path": "devices/types/panda-wide-arm.v1.yaml",
+      "sha256": "2edb7e9bcc2eec04a8cb7b815be6a581af67e42140dd6ca8612c14d69495df2f"
+    },
+    {
+      "path": "devices/types/plate-imager.v1.yaml",
+      "sha256": "a60801f6ea23c3eaa5deacd724943f50899de3e8f029c0bd81179dc72c678966"
     },
     {
       "path": "devices/types/robot-arm.v1.yaml",
@@ -306,7 +322,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "c8156cc7fc85a0f7ac46f9496e187e9e7f485d13b4e17904defca8e2cef1292d"
+      "sha256": "45bad42c4c77647efb7abd878a77b05c68aa806f9c42b20ee741459f710c5a52"
     },
     {
       "path": "packages/library/reports.py",
@@ -353,8 +369,28 @@
       "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
     },
     {
+      "path": "packages/programs/joint_drive.py",
+      "sha256": "622aba6e8b3c7bd260cd6c582a7832f6547728367ba062ac9e3089147024f829"
+    },
+    {
+      "path": "packages/programs/linear_axis.py",
+      "sha256": "ae099f6488dbf2026780d57d497c1f0f9fd0c760cc312586f2a6ac8a40fc0987"
+    },
+    {
       "path": "packages/programs/metadata.py",
       "sha256": "56d8c4482d99a831759314183dc26c1aa87bc0436dfc9e31c913dd7343faedb9"
+    },
+    {
+      "path": "packages/programs/motorized_incubator.py",
+      "sha256": "9d10776a97a4bdcf4ebfcd5927919ae5c2807a42496f3a2d17d23297d10b0982"
+    },
+    {
+      "path": "packages/programs/panda_wide.py",
+      "sha256": "72faa0552b049185c336de23c32112a34390c31033626718b6970075c3a771a8"
+    },
+    {
+      "path": "packages/programs/plate_imager.py",
+      "sha256": "10d89a88dc5724966c7fc64624a41c9d594a8f0e24e9a470f5037b2a688eb046"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -422,7 +458,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "21d6b1dcd3a8857ab68948ede0304320451b2adb560ffcfecfc1163910d13a09"
+      "sha256": "bbcd193cc3f9161c652ccfa747b9144da14b3585196854e7814e272d0e3aafeb"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -450,7 +486,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "5b001190fd70465bd6fdabc49f667ea0312dd38e15dbbf9c36bda4a49574b94b"
+      "sha256": "980df56ec9348271b02caca5024a6d4316cfa9017709e5ecfbcb1a05b4d8f9e7"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -512,10 +548,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "bc52a8371c9d940cb29d38de56343e89b297e923bab283d42a5ab7c71338fff0",
-    "catalog.json": "6c95508cb4066b33ba26aee14d3eaec96ad09630df8afff63f3c326e604b39fb",
-    "state.json": "d829a7b10ade0280261dc38d995fc80cce9a26974a2f3374d3ae0b4d0645217e",
-    "snapshot.bin": "62ff4d7999ef59313ddbcf7772af57d6f69e52432c1fa75252aa195975640edd",
+    "manifest.json": "652f6d9b3905177da6e460184210a1593b6ae37ee49d9aaf73352f3df355a6f7",
+    "catalog.json": "5e77ae8e50a8cb0bb73177b100f451cbfdd7df822375f0c0265af063fd4c636d",
+    "state.json": "15735fcfcdbaad35f92348baae275024b56718960069e66fe0ef21db93bf58a1",
+    "snapshot.bin": "3c607cbccafa78a940135b20a5d96fd6bd2ea228e0fe3ef8c5d2929687558cdd",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

@@ -126,7 +126,7 @@ export class SessionClient {
     const generation = ++this.generation;
     this.stopped = false;
     document.addEventListener('visibilitychange', this.onVisibility);
-    await this.loadManifest();
+    await this.loadManifest(generation);
     if (this.stopped || generation !== this.generation) return;
     await this.loadStats();
     if (this.stopped || generation !== this.generation) return;
@@ -172,19 +172,24 @@ export class SessionClient {
     }
   };
 
-  private async loadManifest(generation = this.generation) {
-    const manifest = validateManifest(
-      await request<unknown>(
-        `/sessions/${encodeURIComponent(this.sessionId)}/scene`,
-      ),
+  private isCurrent(generation: number, socket?: WebSocket) {
+    return !this.stopped && generation === this.generation &&
+      (!socket || this.ws === socket);
+  }
+
+  private async loadManifest(generation: number, socket?: WebSocket) {
+    const value = await request<unknown>(
+      `/sessions/${encodeURIComponent(this.sessionId)}/scene`,
     );
-    if (this.stopped || generation !== this.generation) return;
+    if (!this.isCurrent(generation, socket)) return;
+    const manifest = validateManifest(value);
     this.configureManifest(manifest);
   }
 
-  private async loadCatalog(generation = this.generation) {
+  private async loadCatalog(generation: number, socket: WebSocket) {
     const revision = this.state.manifest?.sceneRevision;
     if (!revision) return;
+    const current = () => this.isCurrent(generation, socket) && revision === this.state.manifest?.sceneRevision;
     try {
       const cached = this.catalogCache?.sceneRevision === revision;
       const response = await fetch(
@@ -196,18 +201,14 @@ export class SessionClient {
               : {},
         },
       );
+      if (!current()) return;
       if (!response.ok && response.status !== 304)
         throw new Error(`Catalog unavailable (${response.status})`);
       const catalog =
         response.status === 304
           ? this.catalogCache
           : ((await response.json()) as Catalog);
-      if (
-        this.stopped ||
-        generation !== this.generation ||
-        revision !== this.state.manifest?.sceneRevision
-      )
-        return;
+      if (!current()) return;
       if (!catalog || catalog.sceneRevision !== revision)
         throw new Error('Catalog scene revision does not match the workspace');
       this.catalogCache = catalog;
@@ -215,8 +216,7 @@ export class SessionClient {
       this.info.setCatalog(catalog);
       this.update({ infoError: undefined });
     } catch (error) {
-      if (!this.stopped && generation === this.generation)
-        this.update({ infoError: (error as Error).message });
+      if (current()) this.update({ infoError: (error as Error).message });
     }
   }
 
@@ -267,6 +267,7 @@ export class SessionClient {
     this.ws = ws;
     let messages = Promise.resolve();
     ws.onopen = () => {
+      if (!this.isCurrent(generation, ws)) return;
       this.lastMessageAt = performance.now();
     };
     ws.onmessage = (event) => {
@@ -277,7 +278,7 @@ export class SessionClient {
           : event.data.byteLength;
       messages = messages
         .then(async () => {
-          if (this.stopped || this.ws !== ws) return;
+          if (!this.isCurrent(generation, ws)) return;
           if (event.data instanceof ArrayBuffer) {
             if (
               !this.pendingSubscription &&
@@ -294,14 +295,17 @@ export class SessionClient {
           await this.receive(
             JSON.parse(event.data) as ServerMessage,
             generation,
+            ws,
           );
         })
-        .catch((error: Error) => this.update({ error: error.message }));
+        .catch((error: Error) => {
+          if (this.isCurrent(generation, ws)) this.update({ error: error.message });
+        });
     };
     ws.onerror = () => ws.close();
     ws.onclose = () => {
-      if (this.stopped || this.ws !== ws || generation !== this.generation)
-        return;
+      if (!this.isCurrent(generation, ws)) return;
+      this.ws = undefined;
       this.pendingSubscription = undefined;
       this.buffer.expectSnapshot();
       this.info.expectSnapshot();
@@ -336,13 +340,13 @@ export class SessionClient {
     );
   }
 
-  private async receive(message: ServerMessage, generation: number) {
+  private async receive(message: ServerMessage, generation: number, socket: WebSocket) {
     if (this.applyGlobalMessage(message)) return;
     switch (message.type) {
       case 'server.ready':
-        if (this.buffer.revision !== message.sceneRevision)
-          await this.loadManifest();
-        if (this.stopped || generation !== this.generation) return;
+        if (this.state.manifest?.sceneRevision !== message.sceneRevision)
+          await this.loadManifest(generation, socket);
+        if (!this.isCurrent(generation, socket)) return;
         this.heartbeatIntervalMs = message.heartbeatIntervalMs;
         this.buffer.paused = message.sessionState === 'PAUSED';
         this.update({
@@ -353,7 +357,7 @@ export class SessionClient {
           realtimeFactor: message.realtimeFactor,
         });
         this.reconnectDelay = 500;
-        void this.loadCatalog(generation);
+        void this.loadCatalog(generation, socket);
         this.subscribeStream();
         break;
       case 'subscription.ack':
@@ -372,15 +376,14 @@ export class SessionClient {
         break;
       case 'scene.replaced':
         this.pendingSubscription = undefined;
-        this.buffer.revision = message.sceneRevision;
         this.buffer.expectSnapshot();
         this.update({
           manifest: undefined,
           sessionState: 'LOADING',
         });
-        await this.loadManifest();
-        if (this.stopped || generation !== this.generation) return;
-        void this.loadCatalog(generation);
+        await this.loadManifest(generation, socket);
+        if (!this.isCurrent(generation, socket)) return;
+        void this.loadCatalog(generation, socket);
         this.subscribeStream();
         break;
       case 'command.ack': {

@@ -1,0 +1,51 @@
+type: plate-imager/v1
+title: Plate imager drawer
+description: Measured 0–0.19m drawer drive only. Occupancy, physical transfer and
+  microscopy or biological observation are unqualified and have no actions or invented state here.
+properties:
+  phase: {schema: {enum: [idle, moving, stopping, fault]}}
+  extensionM: {schema: {type: number}, unit: m, deadband: 0.0001, maxRateHz: 10}
+  velocityMPerSecond: {schema: {type: number}, unit: m/s, deadband: 0.0001, maxRateHz: 10}
+  extended: {schema: {type: boolean}}
+  retracted: {schema: {type: boolean}}
+actions:
+  extend:
+    description: >
+      Move the drawer to its configured extended position and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
+    params: {durationSeconds: &duration {type: number, minimum: 0.05, maximum: 120}}
+    required: []
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  retract:
+    description: >
+      Move the drawer to its configured retracted position and wait for measured settling.
+      Custom errors: feedback_unavailable when any owned joint lacks usable finite
+      position or velocity feedback; motion_timeout when measured settling misses
+      its configured deadline. Either latches fault. Restore valid feedback, then
+      explicitly call stop and wait for settling, or reset the Source. Failed motion
+      never resumes automatically.
+    params: {durationSeconds: *duration}
+    required: []
+    longRunning: true
+    timeoutSeconds: 180
+    preconditions: [{property: phase, equals: idle}]
+  stop:
+    description: >
+      Hold every owned joint at its measured position and wait in stopping for measured
+      settling. Custom errors: feedback_unavailable when any owned joint lacks usable
+      finite position or velocity feedback; motion_timeout when measured settling
+      misses its configured deadline. Either latches fault. Restore valid feedback,
+      then explicitly retry stop and wait for settling, or reset the Source. Failed
+      or interrupted motion never resumes automatically.
+    params: {}
+    required: []
+    concurrent: true
+    longRunning: true
+    timeoutSeconds: 40
+events: {}
