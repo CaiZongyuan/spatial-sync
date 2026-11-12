@@ -76,7 +76,7 @@ A scene object with physics and an `entityKey`, which may be bound to an EntityT
 _Avoid_: Object, prop (when it has physics)
 
 **Scene** (场景):
-A laid-out laboratory: its Entities, Dressing, device bindings and Teach Locations, together with the simulation settings it runs under.
+A laid-out laboratory or test space: its Entities, Dressing, device bindings, Teach Locations and Waypoints, together with the simulation settings it runs under.
 _Avoid_: World, level, environment (an Asset kind)
 
 **Scene Draft** (场景草稿):
@@ -96,8 +96,12 @@ The collection of every Scene Version the platform can show and launch, both bui
 _Avoid_: Scene list, scene registry
 
 **Teach Location** (示教位置):
-A named place in a Scene that a robot can reach, recorded as joint configurations; it belongs to the Scene because it depends on where the robot stands.
-_Avoid_: Waypoint, registered location
+A named place in a Scene that a fixed-base robot can reach, recorded as joint configurations; it belongs to the Scene because it depends on where the robot stands.
+_Avoid_: Waypoint (a ground target pose for mobile robots), registered location
+
+**Waypoint** (路点):
+A named ground target pose (position and heading) in a Scene that a mobile robot can travel to or station at, independent of any robot's joint configuration.
+_Avoid_: Teach Location (joint configurations), navigation node
 
 **Physical TCP** (物理工具中心框):
 The calibrated frame of a robot's actual hand used to describe tool motion and the region between its fingers.
@@ -178,7 +182,7 @@ A specific robot body, simulated or real, such as an FR3 with a Franka hand, tog
 _Avoid_: Robot model, device, Entity (an Embodiment appears in a Scene as one or more Entities)
 
 **Controller** (控制器):
-Everything that decides an Embodiment's motion: base Robot Model, Policy version, Device Program, action space, control rate and observation spec. Embodied-layer RSI changes the Controller.
+Everything that decides an Embodiment's motion: base Robot Model, Policy version or per-action Policy versions, Device Program, action spaces, control rates and observation specs. Embodied-layer RSI changes the Controller.
 _Avoid_: Brain, stack, policy (one part of a Controller)
 
 **Robot Model** (机器人模型):
@@ -202,8 +206,8 @@ A versioned collection of Demonstrations selected as one reproducible Task input
 _Avoid_: Recording (one captured session), Task (the consumer definition)
 
 **Policy** (策略):
-A versioned, trained controller produced by a training Job for one Task, which a device program can run in place of taught motions.
-_Avoid_: Model, checkpoint (a training-time snapshot), weights
+A versioned, learned motion policy produced by a training Job for one Task, which a Device Program can run to carry out an EntityType action.
+_Avoid_: Model, Controller (the complete composition), checkpoint (a training-time snapshot), weights
 
 **Evaluation** (评估):
 A recorded series of platform-owned cases: an embodied Evaluation runs a Policy or Device Program against its Task's success condition; an Agent Evaluation hands public cases to an external runtime and grades the platform's own observations. The platform's result is the one that counts.
