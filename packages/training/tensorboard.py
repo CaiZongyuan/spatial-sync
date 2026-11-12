@@ -36,7 +36,7 @@ class TensorBoardService:
         return directories
 
     def command(self, port, prefix):
-        trainer = self.manager.settings.node_trainer
+        trainer = self.manager.settings.node_trainer or self.manager.settings.node_mjlab_trainer
         if not trainer:
             raise PlanError(
                 "tensorboard_runtime_unavailable",

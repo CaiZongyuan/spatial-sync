@@ -1,6 +1,24 @@
 """Owned success-only environment clock, independent of view IPC and subscriptions."""
 
 
+def physics_dt(env):
+    sim = getattr(env, "sim", None)
+    if sim is not None and callable(getattr(sim, "get_physics_dt", None)):
+        return sim.get_physics_dt()
+    if hasattr(env, "physics_dt"):
+        return float(env.physics_dt)
+    raise AttributeError("Environment does not expose physics_dt")
+
+
+def physics_step_count(env):
+    sim = getattr(env, "sim", None)
+    if sim is not None and callable(getattr(sim, "get_physics_step_count", None)):
+        return sim.get_physics_step_count()
+    if hasattr(env, "_sim_step_counter"):
+        return int(env._sim_step_counter)
+    raise AttributeError("Environment does not expose physics step counter")
+
+
 class EnvironmentObserver:
     def __init__(self, runner):
         self.runner, self.env = runner, None
@@ -16,8 +34,8 @@ class EnvironmentObserver:
             if not self.selected:
                 raise ValueError("Native observation requires an actual environment")
             self.epochs = [0] * len(self.selected)
-            self.dt = self.env.sim.get_physics_dt()
-            self.physics_count = self.env.sim.get_physics_step_count()
+            self.dt = physics_dt(self.env)
+            self.physics_count = physics_step_count(self.env)
             self.sim_time = self.physics_count * self.dt
             for name in ("step", "reset"):
                 self.originals[name] = (name in vars(self.env), getattr(self.env, name))
@@ -45,7 +63,7 @@ class EnvironmentObserver:
                         self.epochs = [
                             epoch + int(reset) for epoch, reset in zip(self.epochs, resets, strict=True)
                         ]
-                    count = self.env.sim.get_physics_step_count()
+                    count = physics_step_count(self.env)
                     if count < self.physics_count:
                         raise ValueError("Actual physics step clock regressed")
                     self.sim_time += (count - self.physics_count) * self.dt

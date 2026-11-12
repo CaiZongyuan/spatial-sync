@@ -32,7 +32,7 @@ class LocalNodeSupervisor:
         return None
 
     def start(self):
-        if not self.settings.node_trainer:
+        if not self.settings.node_trainer and not self.settings.node_mjlab_trainer:
             return
         self.root.mkdir(parents=True, exist_ok=True)
         if self._owner() is not None:
@@ -48,6 +48,8 @@ class LocalNodeSupervisor:
             str(self.root),
             "--trainer",
             json.dumps(self.settings.node_trainer),
+            "--mjlab-trainer",
+            json.dumps(self.settings.node_mjlab_trainer),
             "--interval",
             str(self.settings.node_interval),
             "--timeout",

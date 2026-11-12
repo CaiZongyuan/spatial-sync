@@ -106,7 +106,7 @@ class NativeObservationCapture:
             step = self.observer.physics_count
             if (
                 self.observer.disabled
-                or self.observer.env.sim.get_physics_step_count() != step
+                or environment_observer.physics_step_count(self.observer.env) != step
                 or list(self.policy.obs_groups) != self.runtime["observationGroups"]
             ):
                 raise ValueError("Native actor/physics scope changed before capture")
@@ -114,7 +114,7 @@ class NativeObservationCapture:
                 raise ValueError("Native actor normalization boundary has an unsupported call shape")
             vectors = selected_rows(arguments[0], self.indices)
             states = self.provider(self.indices)
-            if self.observer.env.sim.get_physics_step_count() != step:
+            if environment_observer.physics_step_count(self.observer.env) != step:
                 raise ValueError("Native physics advanced while actor input was captured")
             if not isinstance(states, list) or len(states) != len(self.indices):
                 raise ValueError("Native state provider must map exactly the selected physical states")

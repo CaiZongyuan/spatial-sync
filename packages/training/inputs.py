@@ -101,9 +101,15 @@ def _store_artifacts(manager, job, stream):
                 or versions.get("demonstrationSets", []) != job.get("demonstrationSets", [])
             ):
                 raise ValueError("Artifact versions do not identify the approved inputs/device")
+            task_doc = manager.tasks.show(job["task"])["task"]
+            required_versions = (
+                ("mjlab", "mujoco", "mujoco_warp", "warp", "torch", "rsl_rl")
+                if task_doc.get("mjlab") is not None
+                else ("isaaclab", "newton", "warp", "torch", "rsl_rl")
+            )
             if any(
-                not isinstance(versions["versions"][name], str) or not versions["versions"][name]
-                for name in ("isaaclab", "newton", "warp", "torch", "rsl_rl")
+                not isinstance(versions["versions"].get(name), str) or not versions["versions"][name]
+                for name in required_versions
             ):
                 raise ValueError("Required runtime versions are missing")
             if job["executionDevice"] == "cpu" and versions["hardware"].get("gpu") is not None:

@@ -181,6 +181,9 @@ class TrainingViewBridge(EnvironmentObserver):
             if "error" in hint:
                 self.error(hint["error"]["message"], hint["error"]["code"])
                 return self
+            if self.inputs.get("task", {}).get("mjlab") is not None:
+                self.error("mjlab training backend does not publish Newton live view frames")
+                return self
             import warp as wp
             from isaaclab_newton.physics import NewtonManager
 
