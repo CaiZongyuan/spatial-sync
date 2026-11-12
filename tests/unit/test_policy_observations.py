@@ -202,7 +202,6 @@ def test_embodied_angular_velocity_projected_gravity_command_and_offset_action_s
                 "name": "gravity",
                 "source": "projected_gravity",
                 "key": "/World/Lab/Bot/Base",
-                "frame": "body",
                 "unit": "1",
                 "shape": [3],
                 "offset": [0.0, 0.0, 0.0],
@@ -216,6 +215,8 @@ def test_embodied_angular_velocity_projected_gravity_command_and_offset_action_s
                 "shape": [3],
                 "offset": [0.0, 0.0, 0.0],
                 "scale": [2.0, 2.0, 1.0],
+                "lower": [-0.3, -0.3, -1.0],
+                "upper": [0.3, 0.3, 1.0],
             },
         ],
         "action": {
@@ -258,11 +259,13 @@ def test_embodied_angular_velocity_projected_gravity_command_and_offset_action_s
     )
     np.testing.assert_allclose(assembled, expected, atol=1e-6)
 
-    # Missing or malformed command must fail assembly
+    # Missing, malformed, or out-of-bounds command must fail assembly
     with pytest.raises(ValueError, match="command"):
-        assemble(spec, state, previous_action=[0.0, 0.0])
+        spec.assemble(state, previous_action=[0.0, 0.0])
     with pytest.raises(ValueError):
-        assemble(spec, state, previous_action=[0.0, 0.0], command=[0.1, float("nan"), 0.0])
+        spec.assemble(state, previous_action=[0.0, 0.0], command=[0.1, float("nan"), 0.0])
+    with pytest.raises(ValueError, match="bounds"):
+        spec.assemble(state, previous_action=[0.0, 0.0], command=[0.45, 0.0, 0.0])
 
     # joint_position_offset targets = clip(defaultPosition + raw * scale, lower, upper)
     targets = joint_targets(spec, [0.7, -0.7], [1.0, -4.0])
@@ -293,10 +296,15 @@ def test_embodied_angular_velocity_projected_gravity_command_and_offset_action_s
         lambda d: d["action"].pop("defaultPosition"),
         lambda d: d["action"].update({"defaultPosition": [0.95, 0.0]}),
         lambda d: d["observations"][0].update({"unit": "m/s"}),
+        lambda d: d["observations"][0].update({"lower": [-1.0, -1.0, -1.0], "upper": [1.0, 1.0, 1.0]}),
         lambda d: d["observations"][2].update({"unit": "m"}),
+        lambda d: d["observations"][2].update({"frame": "world"}),
+        lambda d: d["observations"][2].update({"frame": "body"}),
         lambda d: d["observations"][2].update({"frame": "/World/Lab/OtherBody"}),
         lambda d: d["observations"][3].update({"key": "/World/Lab/Bot/Base"}),
         lambda d: d["observations"][3].update({"frame": "/World/Lab/Bot/Base"}),
+        lambda d: d["observations"][3].pop("lower"),
+        lambda d: d["observations"][3].update({"lower": [0.5, 0.0], "upper": [-0.5, 0.0]}),
     ],
 )
 def test_embodied_observation_and_offset_action_validation_rejects_invalid_contracts(mutator):
@@ -327,7 +335,7 @@ def test_embodied_observation_and_offset_action_validation_rejects_invalid_contr
                 "name": "gravity",
                 "source": "projected_gravity",
                 "key": "/World/Lab/Bot/Base",
-                "frame": "body",
+                "frame": "/World/Lab/Bot/Base",
                 "unit": "1",
                 "shape": [3],
                 "offset": [0.0, 0.0, 0.0],
@@ -341,6 +349,8 @@ def test_embodied_observation_and_offset_action_validation_rejects_invalid_contr
                 "shape": [2],
                 "offset": [0.0, 0.0],
                 "scale": [1.0, 1.0],
+                "lower": [-1.0, -1.0],
+                "upper": [1.0, 1.0],
             },
         ],
         "action": {

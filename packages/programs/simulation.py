@@ -94,6 +94,8 @@ def material_bindings(catalog):
 
 
 def validate_candidate_material(candidate, binding, roots, *, controller=None):
+    if candidate.get("kind") == "policy-bundle":
+        return policies.validate_policy_bundle_material(candidate, binding, roots, controller=controller)
     schema = {"policy": "lw.policy-subject/1", "program": "lw.script-subject/1"}.get(candidate.get("kind"))
     return _adapter({"schema": schema}).material(candidate, binding, roots, controller=controller)
 

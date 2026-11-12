@@ -1,7 +1,7 @@
 """Program definitions shared by the Runner and gateway; imports no engine."""
 
 from packages.info.catalog import Catalog, load_catalog
-from packages.library.common import user_entity_types
+from packages.library.common import extra_entity_types
 from packages.programs.centrifuge.newton import CentrifugeProgram
 from packages.programs.embodied import EmbodiedPolicyProgram, EmbodiedPostureProgram
 from packages.programs.linear_axis import LinearAxisProgram
@@ -38,12 +38,7 @@ def load_info_catalog(
         if not scene_package.bindings["entities"]:
             catalog = Catalog(sceneRevision=manifest.sceneRevision)
         else:
-            scene_lib_root = (
-                scene_package.path.parents[2]
-                if getattr(scene_package, "root", None) == "user"
-                else None
-            )
-            extra = user_entity_types(scene_lib_root)
+            extra = extra_entity_types()
             catalog = load_catalog(
                 manifest,
                 scene_package.name,

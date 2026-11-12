@@ -53,13 +53,12 @@ TILT_CART_TYPE = {
             "longRunning": True,
         },
         "drive": {
-            "description": "Drive along planar target with bounded velocity command",
+            "description": "Drive along bounded velocity and yaw-rate command",
             "params": {
-                "x": {"type": "number", "unit": "m"},
-                "y": {"type": "number", "unit": "m"},
-                "speed": {"type": "number", "unit": "m/s", "minimum": 0.05, "maximum": 2.0},
+                "vx": {"type": "number", "unit": "m/s", "minimum": -1.0, "maximum": 1.0},
+                "wz": {"type": "number", "unit": "rad/s", "minimum": -2.0, "maximum": 2.0},
             },
-            "required": ["x", "y"],
+            "required": ["vx", "wz"],
             "longRunning": True,
         },
         "stop": {
@@ -240,11 +239,6 @@ def _scene_tar(stage_dir) -> bytes:
                     {
                         "key": "/World/Lab/Bot",
                         "template": "robot/tilt-cart@1",
-                        "config": {
-                            "commandMode": "planar_target",
-                            "defaultSpeed": 0.35,
-                            "maxSeconds": 6.0,
-                        },
                     }
                 ],
             },
@@ -392,15 +386,17 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
     user_lib = tmp_path / "library"
     state_root = tmp_path / "state"
     rec_root = tmp_path / "recordings"
+    extra_types = tmp_path / "extra-types"
     monkeypatch.setenv("LW_LIBRARY", str(user_lib))
     monkeypatch.setenv("SPATIAL_STATE_ROOT", str(state_root))
     monkeypatch.setenv("SPATIAL_RECORDINGS_ROOT", str(rec_root))
 
-    # Isolated user-library custom EntityType (never touches repo devices/types/)
-    (user_lib / "types").mkdir(parents=True, exist_ok=True)
-    (user_lib / "types/tilt-cart.v1.yaml").write_text(
+    # Isolated explicit SPATIAL_EXTRA_DEVICE_TYPES_DIR (never touches repo devices/types/ or LW_LIBRARY/types)
+    extra_types.mkdir(parents=True, exist_ok=True)
+    (extra_types / "tilt-cart.v1.yaml").write_text(
         yaml.safe_dump(TILT_CART_TYPE, sort_keys=False), encoding="utf-8"
     )
+    monkeypatch.setenv("SPATIAL_EXTRA_DEVICE_TYPES_DIR", str(extra_types))
 
     settings = Settings(state_root=state_root, recordings_root=rec_root, node_token=TOKEN)
     app = create_app(settings, controller_promotion_qualification=controlled_qualification)
@@ -464,7 +460,6 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                         "name": "gravity",
                         "source": "projected_gravity",
                         "key": mast,
-                        "frame": "body",
                         "unit": "1",
                         "shape": [3],
                         "offset": [0.0, 0.0, 0.0],
@@ -563,7 +558,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
             scene_v2 = manager.library.resolve(scene_v2_id, launch=True, source="newton")
 
             # 3. Action 2 on promoted scene_v2: drive (command + projected_gravity + body_angular_velocity)
-            # Evaluates & promotes ONLY 'drive' while preserving 'stabilize' in policies!
+            # Evaluates & promotes ONLY 'drive' while preserving 'stabilize' in policies & ControllerVersion!
             drive_spec = {
                 "schema": "lw.obs-spec/1",
                 "observations": [
@@ -572,15 +567,16 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                         "source": "command",
                         "frame": "body",
                         "unit": "m/s",
-                        "shape": [3],
-                        "offset": [0.0, 0.0, 0.0],
-                        "scale": [1.0, 1.0, 1.0],
+                        "shape": [2],
+                        "offset": [0.0, 0.0],
+                        "scale": [1.0, 1.0],
+                        "lower": [-0.5, -1.0],
+                        "upper": [0.5, 1.0],
                     },
                     {
                         "name": "gravity",
                         "source": "projected_gravity",
                         "key": mast,
-                        "frame": "body",
                         "unit": "1",
                         "shape": [3],
                         "offset": [0.0, 0.0, 0.0],
@@ -614,9 +610,9 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 "robot": "/World/Lab/Bot",
                 "implements": "tilt-cart/v1.drive",
                 "episode": {
-                    "params": {"speed": 0.35},
-                    "paramBounds": {"x": [0.1, 0.6], "y": [-0.1, 0.1], "speed": [0.1, 0.4]},
-                    "commandEnvelope": [[-0.5, 0.5], [-0.5, 0.5], [-1.0, 1.0]],
+                    "params": {},
+                    "paramBounds": {"vx": [0.1, 0.45], "wz": [-0.5, 0.5]},
+                    "commandEnvelope": [[-0.45, 0.45], [-0.5, 0.5]],
                 },
                 "success": drive_goal,
                 "control": {"hz": 30.0, "action": "joint_position_offset"},
@@ -624,12 +620,12 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                     "scene": scene_v2_id,
                     "episodes": 1,
                     "seeds": [7],
-                    "params": {"x": [0.45], "y": [0.0], "speed": [0.35]},
+                    "params": {"vx": [0.35], "wz": [0.0]},
                 },
             }
-            w_drive = np.zeros((9, 2), dtype=np.float32)
+            w_drive = np.zeros((8, 2), dtype=np.float32)
             w_drive[0, 0] = 1.2   # vx command -> +X slide target
-            w_drive[7, 1] = -0.05  # wy damping -> pitch target
+            w_drive[6, 1] = -0.05  # wy damping -> pitch target
             pol_drive, plan_drive = await _upload_policy(
                 client,
                 tmp_path / "task-drive",
@@ -645,7 +641,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 scene=scene_v2,
                 implements="tilt-cart/v1.drive",
                 goal=drive_goal,
-                params={"x": 0.45, "y": 0.0, "speed": 0.35},
+                params={"vx": 0.35, "wz": 0.0},
             )
             manager.evaluations.suites.refresh()
 
@@ -679,6 +675,9 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
             emb = (await client.get("/api/v1/embodiments/tilt-cart-sim")).json()
             assert emb["currentController"]["version"] == 2
             assert emb["currentController"]["scene"] == scene_v3_id
+            assert set(emb["currentController"]["policies"]) == {"stabilize", "drive"}
+            assert emb["currentController"]["policies"]["stabilize"]["policy"] == pol_stab["id"]
+            assert emb["currentController"]["policies"]["drive"]["policy"] == pol_drive["id"]
 
             sess_resp = await client.post(
                 "/api/v1/sessions",
@@ -702,7 +701,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                         "requestId": "act-oob",
                         "entityKey": "/World/Lab/Bot",
                         "action": "drive",
-                        "params": {"x": 0.45, "y": 0.0, "speed": 0.9},
+                        "params": {"vx": 0.9, "wz": 0.0},
                         "wait": True,
                     },
                 )
@@ -732,7 +731,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                         "requestId": "act-drive",
                         "entityKey": "/World/Lab/Bot",
                         "action": "drive",
-                        "params": {"x": 0.45, "y": 0.0, "speed": 0.35},
+                        "params": {"vx": 0.35, "wz": 0.0},
                         "wait": True,
                         "timeoutSeconds": 10.0,
                     },

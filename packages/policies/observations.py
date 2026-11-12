@@ -30,11 +30,13 @@ class Observation(Schema):
     ]
     keys: list[str] = Field(default_factory=list, max_length=64)
     key: str | None = Field(default=None, min_length=1)
-    frame: str
+    frame: str | None = Field(default=None, exclude_if=lambda value: value is None)
     unit: Literal["rad", "rad/s", "m", "m/s", "xyzw", "1"]
     shape: list[int]
     offset: list[float]
     scale: list[float]
+    lower: list[float] | None = Field(default=None, exclude_if=lambda value: value is None)
+    upper: list[float] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def dimensions(self):
@@ -78,28 +80,40 @@ class Observation(Schema):
             aliases = {"$object"} if body_ref else {"$from", "$to"}
             if not self.key.startswith("/") and self.key not in aliases:
                 raise ValueError("Pose key must be canonical or a supported body/Site reference")
-        if not self.frame:
-            raise ValueError("Observation frame must be non-empty")
-        if joint or self.source in ("previous_action", "body_orientation", "site_orientation"):
-            if self.frame != "world":
-                raise ValueError("Observation source only supports the world frame")
-        elif self.source == "command":
-            if self.frame not in ("world", "body"):
-                raise ValueError("command frame must be 'world' or 'body'")
-        elif self.source == "projected_gravity":
-            if self.frame not in ("world", "body", self.key):
-                raise ValueError("projected_gravity frame must be 'body', 'world' or match key")
-        elif self.source == "body_angular_velocity":
+        if self.source == "command":
             if (
-                self.frame not in ("world", "body")
-                and not self.frame.startswith("/")
-                and self.frame != "$object"
+                self.lower is None
+                or self.upper is None
+                or len(self.lower) != size
+                or len(self.upper) != size
+                or any(lo > hi for lo, hi in zip(self.lower, self.upper, strict=True))
             ):
-                raise ValueError(
-                    "Angular velocity frame must be 'world', 'body', a canonical body or $object"
-                )
-        elif self.frame != "world" and not self.frame.startswith("/") and self.frame != "$object":
-            raise ValueError("Relative frame must identify a canonical body or $object")
+                raise ValueError("command observation requires ordered finite lower and upper bounds")
+        elif self.lower is not None or self.upper is not None:
+            raise ValueError("Only command observations declare lower and upper bounds")
+        if self.source == "projected_gravity":
+            if self.frame is not None and self.frame != self.key:
+                raise ValueError("projected_gravity frame must be omitted or match key")
+        else:
+            if not self.frame:
+                raise ValueError("Observation frame must be non-empty")
+            if joint or self.source in ("previous_action", "body_orientation", "site_orientation"):
+                if self.frame != "world":
+                    raise ValueError("Observation source only supports the world frame")
+            elif self.source == "command":
+                if self.frame not in ("world", "body"):
+                    raise ValueError("command frame must be 'world' or 'body'")
+            elif self.source == "body_angular_velocity":
+                if (
+                    self.frame not in ("world", "body")
+                    and not self.frame.startswith("/")
+                    and self.frame != "$object"
+                ):
+                    raise ValueError(
+                        "Angular velocity frame must be 'world', 'body', a canonical body or $object"
+                    )
+            elif self.frame != "world" and not self.frame.startswith("/") and self.frame != "$object":
+                raise ValueError("Relative frame must identify a canonical body or $object")
         return self
 
 
@@ -162,6 +176,15 @@ class ObservationSpec(Schema):
     def size(self):
         return sum(item.shape[0] for item in self.observations)
 
+    def assemble(self, state, *, previous_action, command=None, references=None):
+        return assemble(
+            self,
+            state,
+            previous_action=previous_action,
+            command=command,
+            references=references,
+        )
+
 
 def vector(value, size):
     result = np.asarray(value, dtype=np.float64)
@@ -193,6 +216,11 @@ def assemble(spec, state, *, previous_action, command=None, references=None):
             if command is None:
                 raise ValueError(f"{item.name} requires a command vector")
             raw = vector(command, item.shape[0])
+            if any(
+                not (lo <= float(val) <= hi)
+                for val, lo, hi in zip(raw, item.lower, item.upper, strict=True)
+            ):
+                raise ValueError(f"{item.name} command is outside declared [lower, upper] bounds")
         elif source.startswith("joint_"):
             field = "q" if source == "joint_position" else "qd"
             raw = vector([state["joints"][key(name)][field] for name in item.keys], len(item.keys))
@@ -207,11 +235,7 @@ def assemble(spec, state, *, previous_action, command=None, references=None):
             body_name = key(item.key)
             q = _unit_quaternion(state["bodies"][body_name]["q"], "Orientation")
             gravity = np.array([0.0, 0.0, -1.0], dtype=np.float64)
-            raw = (
-                gravity
-                if item.frame == "world"
-                else np.asarray(rotate_vector([-q[0], -q[1], -q[2], q[3]], gravity))
-            )
+            raw = np.asarray(rotate_vector([-q[0], -q[1], -q[2], q[3]], gravity))
         else:
             pose = state["bodies" if source.startswith("body_") else "sites"][key(item.key)]
             raw = vector(pose["q" if source.endswith("orientation") else "p"], item.shape[0])

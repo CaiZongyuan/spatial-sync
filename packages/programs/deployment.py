@@ -40,10 +40,13 @@ def verify_runtime_deployment(scene, catalog, permit, *, state_root):
         ):
             raise ValueError("Actual deployed target binding differs")
         materials = permit["materialIdentities"]
-        if (
-            set(materials) != set(material_bindings(catalog))
-            or materials.get(target) != permit["candidateIdentity"]
-        ):
+        target_material = materials.get(target)
+        expected_target_ok = (
+            target_material.get("policies", {}).get(permit["target"]["action"]) == permit["candidateIdentity"]
+            if isinstance(target_material, dict) and target_material.get("kind") == "policy-bundle"
+            else target_material == permit["candidateIdentity"]
+        )
+        if set(materials) != set(material_bindings(catalog)) or not expected_target_ok:
             raise ValueError("Actual material coverage differs from committed composition")
         controller = permit["controller"]
         document = controller["document"]

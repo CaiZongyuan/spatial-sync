@@ -1,10 +1,15 @@
 """Freeze policy identity separately from the fixed evaluation world and its bindings."""
 
+import math
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from packages.info.program import program_supports_type
 from packages.library.common import LibraryError, document
+from packages.library.python_stages import resources as python_resources
+from packages.library.structural import USDGraph, usd_resources
 from packages.programs.subjects import (
     BindingTarget,
     EvaluationScene,
@@ -18,7 +23,7 @@ from packages.programs.subjects import (
     validate_base_catalog as validate_simulation_base,
 )
 
-from .library import PolicyLibrary, read_json
+from .library import PolicyLibrary, digest, read_json
 from .observations import ObservationSpec
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
@@ -86,7 +91,7 @@ def policy_programs():
 
 def policy_program_for(interface: str, base_program: str | None = None):
     programs = policy_programs()
-    if base_program in programs and programs[base_program].type in (interface, None):
+    if base_program in programs and program_supports_type(programs[base_program], interface):
         return programs[base_program]
     exact = [cls for cls in programs.values() if cls.type == interface]
     if len(exact) == 1:
@@ -109,6 +114,76 @@ def fixed_bindings(scene, source):
         if exc.detail["code"] != "subject_binding_unavailable":
             raise
         raise _invalid("Verified evaluation bindings are unavailable", "policy_binding_unavailable") from exc
+
+
+def scene_joint_resources(scene) -> dict[str, dict]:
+    """Inspect physical joint kinds and finite limits from the Scene's stage."""
+    payload = scene.runtime_payload()
+    metadata = payload["metadata"]
+    if metadata["stage"].startswith("python:"):
+        resources = python_resources(metadata, payload["package"], payload["bindings"])
+        if "usdPath" in resources:
+            path = Path(resources["usdPath"])
+            scope = {
+                "path": str(path.parent),
+                "files": {p.name: str(p) for p in path.parent.iterdir() if p.is_file()},
+            }
+            resources = usd_resources(USDGraph(scope, []).compose(path.name))
+    else:
+        graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
+        stage = graph.compose(metadata["stage"])
+        if graph.errors:
+            raise ValueError("; ".join(graph.errors))
+        resources = usd_resources(stage)
+    return resources.get("joints", {})
+
+
+def _validate_scene_action_channels(scene, program_cls, config, spec):
+    configured = program_cls.policy_joints(config)
+    try:
+        stage_joints = scene_joint_resources(scene)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise _invalid(
+            "Scene physical joint resources are unavailable", "policy_binding_unavailable"
+        ) from exc
+    actual_units: dict[str, str] = {}
+    actual_limits: dict[str, tuple[float | None, float | None]] = {}
+    for key in configured:
+        info = stage_joints.get(key)
+        if info is None or info.get("kind") not in ("revolute", "prismatic"):
+            raise _invalid(
+                "Policy action channels do not match the fixed robot binding",
+                "policy_action_binding_mismatch",
+            )
+        actual_units[key] = "m" if info["kind"] == "prismatic" else "rad"
+        bounds = info.get("limits")
+        lo = float(bounds[0]) if bounds is not None and math.isfinite(bounds[0]) else None
+        hi = float(bounds[1]) if bounds is not None and math.isfinite(bounds[1]) else None
+        actual_limits[key] = (lo, hi)
+    prismatic_cfg = config.get("prismaticJointKeys")
+    if prismatic_cfg:
+        actual_prismatic = {key for key, unit in actual_units.items() if unit == "m"}
+        if set(prismatic_cfg) != actual_prismatic:
+            raise _invalid(
+                "prismaticJointKeys does not match actual physical joint kinds",
+                "policy_action_binding_mismatch",
+            )
+    units = [actual_units.get(key) for key in spec.action.jointKeys]
+    if not set(spec.action.jointKeys) <= set(actual_units) or spec.action.units != units:
+        raise _invalid(
+            "Policy action channels do not match the fixed robot binding", "policy_action_binding_mismatch"
+        )
+    for key, act_lo, act_hi in zip(
+        spec.action.jointKeys, spec.action.lower, spec.action.upper, strict=True
+    ):
+        phys_lo, phys_hi = actual_limits[key]
+        if (phys_lo is not None and act_lo < phys_lo - 1e-6) or (
+            phys_hi is not None and act_hi > phys_hi + 1e-6
+        ):
+            raise _invalid(
+                f"Policy action bounds exceed physical joint limits on {key}",
+                "policy_action_binding_mismatch",
+            )
 
 
 def _candidate(manager, requested):
@@ -153,12 +228,7 @@ def resolve_policy_subject(manager, requested, suite, scene):
     except (ValidationError, ValueError) as exc:
         raise _invalid("Policy binding configuration is invalid for target Program") from exc
     spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
-    allowed = program_cls.policy_joints(config)
-    units = [allowed.get(key) for key in spec.action.jointKeys]
-    if not set(spec.action.jointKeys) <= set(allowed) or spec.action.units != units:
-        raise _invalid(
-            "Policy action channels do not match the fixed robot binding", "policy_action_binding_mismatch"
-        )
+    _validate_scene_action_channels(scene, program_cls, config, spec)
     replacement = base | {"program": program_cls.id, "config": config}
     candidate = {name: policy[name] for name in CandidateIdentity.model_fields if name in policy}
     return PolicySubject(
@@ -195,8 +265,7 @@ def validate_base_catalog(catalog, subject):
         raise _invalid("Replacement is not the frozen policy target") from exc
     program_cls = policy_programs().get(subject.binding.get("program"))
     if (
-        program_cls is None
-        or program_cls.type not in (subject.target.interface, None)
+        not program_supports_type(program_cls, subject.target.interface)
         or subject.binding.get("key") != subject.target.entityKey
         or subject.binding.get("type") != subject.target.interface
         or program_cls.bound_policy_for_action(
@@ -260,7 +329,7 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
         ) from exc
 
 
-def validate_policy_material(candidate, binding, roots, *, controller=None):
+def validate_policy_material(candidate, binding, roots, *, controller=None, expected_action=None):
     identity = CandidateIdentity.model_validate(candidate)
     library = PolicyLibrary(roots)
     record, package = library.resolve(identity.id)
@@ -269,9 +338,11 @@ def validate_policy_material(candidate, binding, roots, *, controller=None):
     interface, action = task["implements"].rsplit(".", 1)
     config = binding.get("config", {})
     if (
-        program_cls is None
-        or program_cls.type not in (binding.get("type"), None)
+        not program_supports_type(program_cls, binding.get("type"))
+        or (expected_action is not None and action != expected_action)
         or program_cls.bound_policy_for_action(config, action) != identity.id
+        or digest(package / record["onnx"]) != identity.onnxSha256
+        or digest(package / "obs_spec.yaml") != identity.observationSha256
         or any(
             record.get(name) != getattr(identity, name)
             for name in CandidateIdentity.model_fields
@@ -281,14 +352,6 @@ def validate_policy_material(candidate, binding, roots, *, controller=None):
         raise _invalid("Deployed Policy material or binding differs", "policy_subject_changed")
     if task["robot"] != binding.get("key") or interface != binding.get("type"):
         raise _invalid("Deployed Policy Task target differs")
-    for sibling_action, sibling_id in (config.get("policies") or {}).items():
-        _, sibling_pkg = library.resolve(sibling_id)
-        sibling_task = read_json(sibling_pkg / "task.json")
-        if (
-            sibling_task["robot"] != binding.get("key")
-            or sibling_task["implements"] != f"{binding.get('type')}.{sibling_action}"
-        ):
-            raise _invalid("Deployed sibling Policy Task target differs", "policy_subject_changed")
     if controller is not None and (
         controller.get("program") != program_cls.id
         or controller.get("policy") != identity.id
@@ -296,3 +359,54 @@ def validate_policy_material(candidate, binding, roots, *, controller=None):
     ):
         raise _invalid("Deployed Controller/Policy material differs")
     return record
+
+
+def validate_policy_bundle_material(bundle, binding, roots, *, controller=None):
+    config = binding.get("config", {})
+    config_policies = config.get("policies")
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("kind") != "policy-bundle"
+        or not isinstance(bundle.get("policies"), dict)
+        or not bundle["policies"]
+        or not isinstance(config_policies, dict)
+        or set(bundle["policies"]) != set(config_policies)
+    ):
+        raise _invalid("Deployed multi-policy material bundle differs", "policy_subject_changed")
+    program_cls = policy_programs().get(binding.get("program"))
+    if not program_supports_type(program_cls, binding.get("type")):
+        raise _invalid("Deployed Policy Program does not support entity type", "policy_subject_changed")
+    library = PolicyLibrary(roots)
+    records = {}
+    for action, act_candidate in bundle["policies"].items():
+        records[action] = validate_policy_material(
+            act_candidate, binding, roots, expected_action=action
+        )
+    if controller is not None:
+        ctrl_policies = controller.get("policies")
+        if (
+            controller.get("program") != program_cls.id
+            or controller.get("programArtifact") is not None
+            or not isinstance(ctrl_policies, dict)
+            or set(ctrl_policies) != set(config_policies)
+            or controller.get("policy") not in set(config_policies.values())
+        ):
+            raise _invalid("Deployed multi-policy Controller composition differs", "policy_subject_changed")
+        for action, comp in ctrl_policies.items():
+            act_identity = CandidateIdentity.model_validate(bundle["policies"][action])
+            _, pkg = library.resolve(act_identity.id)
+            spec = ObservationSpec.model_validate(document(pkg / "obs_spec.yaml"))
+            task = read_json(pkg / "task.json")
+            act_doc = comp.get("action") or {}
+            if (
+                comp.get("policy") != act_identity.id
+                or comp.get("observation") != act_identity.observationSha256
+                or comp.get("task") != act_identity.task
+                or act_doc.get("space") != spec.action.space
+                or act_doc.get("hz") != task["control"]["hz"]
+            ):
+                raise _invalid(
+                    f"ControllerVersion.policies[{action}] differs from committed Policy material",
+                    "policy_subject_changed",
+                )
+    return records

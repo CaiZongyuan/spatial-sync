@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from copy import deepcopy
 from typing import Annotated
 
@@ -23,87 +24,62 @@ from packages.policies.observations import (
 
 POLICY_REF = r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$"
 ActionName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$")]
+ParamName = Annotated[str, Field(min_length=1)]
 PolicyRef = Annotated[str, Field(pattern=POLICY_REF)]
 SpatialPath = Annotated[str, Field(min_length=1)]
 
 
-class PolicySlot:
-    """Isolated runtime state and native CPU ONNX execution counters for one bound action."""
-
-    def __init__(self, action: str, policy_id: str, *, entity_key: str, interface: str, allowed_joints: dict):
-        self.action = action
-        self.record, self.package = runtime_library().resolve(policy_id)
-        self.task = read_json(self.package / "task.json")
-        self.spec = ObservationSpec.model_validate(document(self.package / "obs_spec.yaml"))
-        if self.task["robot"] != entity_key or self.task["implements"] != f"{interface}.{action}":
-            raise ValueError("Policy Task does not identify this robot entity and bound action")
-        if not set(self.spec.action.jointKeys) <= set(allowed_joints):
-            raise ValueError("Policy action targets must belong to the configured robot joints")
-        expected_units = [allowed_joints[key] for key in self.spec.action.jointKeys]
-        if self.spec.action.units != expected_units:
-            raise ValueError("Policy action units differ from the configured robot joint kinds")
-        export = read_json(self.package / "artifacts/export.json")
-        self.model = CpuPolicy(
-            self.package / self.record["onnx"],
-            self.spec,
-            root=self.package / "artifacts",
-            external=export["externalData"],
-        )
-        self.action_starts = 0
-        self.observation_digest = hashlib.sha256(b"lw.physics-policy-observations/1")
-        self.previous = np.zeros(len(self.spec.action.jointKeys), dtype=np.float64)
-
-    def evidence(self) -> dict:
-        return {
-            "kind": "policy",
-            "policy": self.record["id"],
-            "policyContentHash": self.record["contentHash"],
-            "onnxSha256": self.record["onnxSha256"],
-            "observationSha256": self.record["observationSha256"],
-            "providers": self.model.session.get_providers(),
-            "runtimeVersion": self.model.runtime_version,
-            "actionStarts": self.action_starts,
-            "inferenceCalls": self.model.inference_calls,
-            "validOutputs": self.model.valid_outputs,
-            "observationDigest": self.observation_digest.hexdigest(),
-        }
-
-
-class MultiPolicyConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    jointKeys: list[SpatialPath] = Field(min_length=1, json_schema_extra={"spatialReference": "joint"})
-    prismaticJointKeys: list[SpatialPath] = Field(
-        default_factory=list,
-        exclude_if=lambda value: not value,
-        json_schema_extra={"spatialReference": "joint"},
-    )
-    baseBody: SpatialPath | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-        json_schema_extra={"spatialReference": "body"},
-    )
-    policies: dict[ActionName, PolicyRef] = Field(
-        default_factory=dict,
-        exclude_if=lambda value: not value,
-    )
-    policy: PolicyRef | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-    )
-    maxSeconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
-
-    @model_validator(mode="after")
-    def validate_joints_and_policies(self):
-        if len(set(self.jointKeys)) != len(self.jointKeys):
-            raise ValueError("jointKeys must be distinct")
-        if len(set(self.prismaticJointKeys)) != len(self.prismaticJointKeys) or not (
-            set(self.prismaticJointKeys) <= set(self.jointKeys)
+def inspect_port_joints(
+    port,
+    joint_refs: dict[str, object],
+    *,
+    fallback_units: dict[str, str],
+    prismatic_keys: list[str] | None = None,
+) -> tuple[dict[str, str], dict[str, tuple[float | None, float | None]]]:
+    """Derive actual joint units and finite physical limits from PhysicsPort when available."""
+    if not hasattr(port, "joint_metadata"):
+        return dict(fallback_units), {key: (None, None) for key in joint_refs}
+    units: dict[str, str] = {}
+    limits: dict[str, tuple[float | None, float | None]] = {}
+    for key, ref in joint_refs.items():
+        meta = port.joint_metadata(ref)
+        kind = meta.get("kind")
+        if kind not in ("revolute", "prismatic") or any(
+            meta.get(width) != 1 for width in ("qWidth", "qdWidth", "targetWidth")
         ):
-            raise ValueError("prismaticJointKeys must be distinct members of jointKeys")
-        if bool(self.policies) == (self.policy is not None):
-            raise ValueError("Configure either policies (action -> policy) or a single policy")
-        return self
+            raise ValueError(f"Joint {key} must be a scalar revolute or prismatic drive")
+        units[key] = "m" if kind == "prismatic" else "rad"
+        raw_lo, raw_hi = meta.get("lower"), meta.get("upper")
+        lo = float(raw_lo) if isinstance(raw_lo, int | float) and math.isfinite(raw_lo) else None
+        hi = float(raw_hi) if isinstance(raw_hi, int | float) and math.isfinite(raw_hi) else None
+        if lo is not None and hi is not None and lo > hi:
+            raise ValueError(f"Joint {key} has invalid physical limits [{lo}, {hi}]")
+        limits[key] = (lo, hi)
+    if prismatic_keys:
+        actual_prismatic = {key for key, unit in units.items() if unit == "m"}
+        if set(prismatic_keys) != actual_prismatic:
+            raise ValueError("prismaticJointKeys does not match actual prismatic joints")
+    return units, limits
+
+
+def validate_action_against_joints(
+    action_spec,
+    units: dict[str, str],
+    limits: dict[str, tuple[float | None, float | None]],
+) -> None:
+    if not set(action_spec.jointKeys) <= set(units):
+        raise ValueError("Policy action targets must belong to the configured robot joints")
+    expected_units = [units[key] for key in action_spec.jointKeys]
+    if action_spec.units != expected_units:
+        raise ValueError("Policy action units differ from the physical robot joint kinds")
+    for key, act_lo, act_hi in zip(
+        action_spec.jointKeys, action_spec.lower, action_spec.upper, strict=True
+    ):
+        phys_lo, phys_hi = limits.get(key, (None, None))
+        if (phys_lo is not None and act_lo < phys_lo - 1e-6) or (
+            phys_hi is not None and act_hi > phys_hi + 1e-6
+        ):
+            raise ValueError(f"Policy action bounds exceed physical joint limits on {key}")
 
 
 def extract_observation_state(port, spec, references):
@@ -135,9 +111,143 @@ def extract_observation_state(port, spec, references):
             ensure_pose("bodies", item.key)
         elif source.startswith("site_"):
             ensure_pose("sites", item.key)
-        if item.frame not in ("world", "body") and source != "command":
+        if item.frame is not None and item.frame not in ("world", "body") and source != "command":
             ensure_pose("bodies", item.frame)
     return state
+
+
+def step_policy_inference(
+    port,
+    joints: dict[str, object],
+    spec: ObservationSpec,
+    model: CpuPolicy,
+    previous: np.ndarray,
+    observation_digest,
+    *,
+    references: dict[str, str] | None = None,
+    command: list[float] | None = None,
+    joint_limits: dict[str, tuple[float | None, float | None]] | None = None,
+) -> np.ndarray:
+    """Execute one CPU ONNX policy step, clamping targets to finite physical joint limits."""
+    refs = references or {}
+    observation = assemble(
+        spec,
+        extract_observation_state(port, spec, refs),
+        previous_action=previous,
+        command=command,
+        references=refs,
+    )
+    observation_digest.update(observation.tobytes())
+    output = model.infer(observation)
+    positions = [port.joint_q(joints[key])[0] for key in spec.action.jointKeys]
+    targets = joint_targets(spec, positions, output)
+    for key, raw_target in zip(spec.action.jointKeys, targets, strict=True):
+        value = float(raw_target)
+        if joint_limits is not None and key in joint_limits:
+            phys_lo, phys_hi = joint_limits[key]
+            if phys_lo is not None:
+                value = max(phys_lo, value)
+            if phys_hi is not None:
+                value = min(phys_hi, value)
+        port.set_joint_target(joints[key], [value])
+    # previous_action always means raw model output, before action scale/clipping.
+    return output.copy()
+
+
+def build_policy_evidence(record: dict, model: CpuPolicy, action_starts: int, observation_digest) -> dict:
+    """Read-only native receipt; all counts originate at the actual CPU runtime."""
+    return {
+        "kind": "policy",
+        "policy": record["id"],
+        "policyContentHash": record["contentHash"],
+        "onnxSha256": record["onnxSha256"],
+        "observationSha256": record["observationSha256"],
+        "providers": model.session.get_providers(),
+        "runtimeVersion": model.runtime_version,
+        "actionStarts": action_starts,
+        "inferenceCalls": model.inference_calls,
+        "validOutputs": model.valid_outputs,
+        "observationDigest": observation_digest.hexdigest(),
+    }
+
+
+class PolicySlot:
+    """Isolated runtime state and native CPU ONNX execution counters for one bound action."""
+
+    def __init__(
+        self,
+        action: str,
+        policy_id: str,
+        *,
+        entity_key: str,
+        interface: str,
+        joint_units: dict[str, str],
+        joint_limits: dict[str, tuple[float | None, float | None]],
+    ):
+        self.action = action
+        self.record, self.package = runtime_library().resolve(policy_id)
+        self.task = read_json(self.package / "task.json")
+        self.spec = ObservationSpec.model_validate(document(self.package / "obs_spec.yaml"))
+        if self.task["robot"] != entity_key or self.task["implements"] != f"{interface}.{action}":
+            raise ValueError("Policy Task does not identify this robot entity and bound action")
+        validate_action_against_joints(self.spec.action, joint_units, joint_limits)
+        export = read_json(self.package / "artifacts/export.json")
+        self.model = CpuPolicy(
+            self.package / self.record["onnx"],
+            self.spec,
+            root=self.package / "artifacts",
+            external=export["externalData"],
+        )
+        self.action_starts = 0
+        self.observation_digest = hashlib.sha256(b"lw.physics-policy-observations/1")
+        self.previous = np.zeros(len(self.spec.action.jointKeys), dtype=np.float64)
+
+    def evidence(self) -> dict:
+        return build_policy_evidence(self.record, self.model, self.action_starts, self.observation_digest)
+
+
+class MultiPolicyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jointKeys: list[SpatialPath] = Field(min_length=1, json_schema_extra={"spatialReference": "joint"})
+    prismaticJointKeys: list[SpatialPath] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+        json_schema_extra={"spatialReference": "joint"},
+    )
+    baseBody: SpatialPath | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        json_schema_extra={"spatialReference": "body"},
+    )
+    policies: dict[ActionName, PolicyRef] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    policy: PolicyRef | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    commandParams: dict[ActionName, list[ParamName]] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    maxSeconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_joints_and_policies(self):
+        if len(set(self.jointKeys)) != len(self.jointKeys):
+            raise ValueError("jointKeys must be distinct")
+        if len(set(self.prismaticJointKeys)) != len(self.prismaticJointKeys) or not (
+            set(self.prismaticJointKeys) <= set(self.jointKeys)
+        ):
+            raise ValueError("prismaticJointKeys must be distinct members of jointKeys")
+        if bool(self.policies) == (self.policy is not None):
+            raise ValueError("Configure either policies (action -> policy) or a single policy")
+        for action, params in self.commandParams.items():
+            if not params or len(set(params)) != len(params):
+                raise ValueError(f"commandParams[{action}] requires distinct parameter names")
+        return self
 
 
 class MultiPolicyProgram:
@@ -146,6 +256,10 @@ class MultiPolicyProgram:
     policy_program = True
     evaluation_implementation_role = "fixed-runtime"
     Config = MultiPolicyConfig
+
+    @classmethod
+    def supports_type(cls, entity_type: str) -> bool:
+        return cls.type is None or cls.type == entity_type
 
     stop_actions: tuple[str, ...] = ("stop",)
     state_property: str | None = "phase"
@@ -188,10 +302,16 @@ class MultiPolicyProgram:
     def init(self, ctx):
         if ctx.physics is None:
             raise ValueError(f"{self.id} requires the Newton PhysicsPort")
-        interface = self.type or ctx._host.catalog.entities[ctx.key]["type"]
+        interface = self.type or ctx.entity_type
         config_dict = ctx.config.model_dump(mode="json")
-        allowed = self.policy_joints(config_dict)
-        self.joints = {key: ctx.physics.bind_joint(key) for key in allowed}
+        fallback_units = self.policy_joints(config_dict)
+        self.joints = {key: ctx.physics.bind_joint(key) for key in fallback_units}
+        self.joint_units, self.joint_limits = inspect_port_joints(
+            ctx.physics,
+            self.joints,
+            fallback_units=fallback_units,
+            prismatic_keys=ctx.config.prismaticJointKeys,
+        )
         self.base_body = ctx.physics.bind_body(ctx.config.baseBody) if ctx.config.baseBody else None
         self.slots: dict[str, PolicySlot] = {}
         if ctx.config.policies:
@@ -201,7 +321,8 @@ class MultiPolicyProgram:
                     policy_id,
                     entity_key=ctx.key,
                     interface=interface,
-                    allowed_joints=allowed,
+                    joint_units=self.joint_units,
+                    joint_limits=self.joint_limits,
                 )
         else:
             _, package = runtime_library().resolve(ctx.config.policy)
@@ -212,8 +333,30 @@ class MultiPolicyProgram:
                 ctx.config.policy,
                 entity_key=ctx.key,
                 interface=interface,
-                allowed_joints=allowed,
+                joint_units=self.joint_units,
+                joint_limits=self.joint_limits,
             )
+        self._command_keys: dict[str, tuple[str, ...]] = {}
+        if type(self)._command is MultiPolicyProgram._command:
+            for action, slot in self.slots.items():
+                declared_params = ctx.action_params(action)
+                cmd_obs = [item for item in slot.spec.observations if item.source == "command"]
+                mapped = ctx.config.commandParams.get(action)
+                if mapped is not None and not set(mapped) <= set(declared_params):
+                    raise ValueError(f"commandParams[{action}] references undeclared action parameters")
+                if cmd_obs:
+                    chosen = tuple(mapped) if mapped is not None else declared_params
+                    if not chosen or any(len(chosen) != item.shape[0] for item in cmd_obs):
+                        raise ValueError(
+                            f"Action '{action}' requires commandParams matching its command observation width"
+                        )
+                    self._command_keys[action] = chosen
+                elif mapped is not None:
+                    if slot.task.get("episode", {}).get("commandEnvelope") is None:
+                        raise ValueError(
+                            f"commandParams configured for action '{action}' without command observation"
+                        )
+                    self._command_keys[action] = tuple(mapped)
         self.handle = None
         self.active_slot: PolicySlot | None = None
         self._last_slot: PolicySlot | None = next(iter(self.slots.values())) if len(self.slots) == 1 else None
@@ -234,7 +377,10 @@ class MultiPolicyProgram:
         return {}
 
     def _command(self, inv, ctx, slot: PolicySlot) -> list[float] | None:
-        return None
+        params = self._command_keys.get(inv.action)
+        if params is None:
+            return None
+        return [float(inv.params[name]) for name in params]
 
     def _accept_stop(self, inv, ctx) -> Reject | None:
         return None
@@ -362,20 +508,17 @@ class MultiPolicyProgram:
                 cmd_failure = command_envelope_failure(slot.task, cmd)
                 if cmd_failure:
                     raise ValueError(cmd_failure["message"])
-            observation = assemble(
+            slot.previous = step_policy_inference(
+                ctx.physics,
+                self.joints,
                 slot.spec,
-                extract_observation_state(ctx.physics, slot.spec, self.references),
-                previous_action=slot.previous,
-                command=cmd,
+                slot.model,
+                slot.previous,
+                slot.observation_digest,
                 references=self.references,
+                command=cmd,
+                joint_limits=self.joint_limits,
             )
-            slot.observation_digest.update(observation.tobytes())
-            output = slot.model.infer(observation)
-            positions = [ctx.physics.joint_q(self.joints[key])[0] for key in slot.spec.action.jointKeys]
-            targets = joint_targets(slot.spec, positions, output)
-            for key, value in zip(slot.spec.action.jointKeys, targets, strict=True):
-                ctx.physics.set_joint_target(self.joints[key], [value])
-            slot.previous = output.copy()
             self.next_inference += interval
         except (ValueError, KeyError, RuntimeError) as exc:
             self._hold(ctx)

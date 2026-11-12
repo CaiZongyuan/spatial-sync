@@ -10,8 +10,13 @@ from packages.info.program import Reject
 from packages.library.common import document
 from packages.policies.inference import CpuPolicy
 from packages.policies.library import read_json, runtime_library
-from packages.policies.observations import ObservationSpec, assemble, coverage_failure, joint_targets
-from packages.programs.policy_base import extract_observation_state
+from packages.policies.observations import ObservationSpec, coverage_failure
+from packages.programs.policy_base import (
+    build_policy_evidence,
+    inspect_port_joints,
+    step_policy_inference,
+    validate_action_against_joints,
+)
 
 from .physical import RobotArmPhysicsConfig, RobotArmPhysicsFacts
 
@@ -20,6 +25,10 @@ class PolicyProgram(RobotArmPhysicsFacts):
     id, type, tick_priority = "robot_arm.policy", "robot-arm/v1", 10
     policy_program = True
     evaluation_implementation_role = "fixed-runtime"
+
+    @classmethod
+    def supports_type(cls, entity_type: str) -> bool:
+        return cls.type is None or cls.type == entity_type
 
     class Config(RobotArmPhysicsConfig):
         policy: str = Field(pattern=r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")
@@ -55,10 +64,17 @@ class PolicyProgram(RobotArmPhysicsFacts):
         self.spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
         if self.task["robot"] != ctx.key or self.task["implements"].split(".")[0] != self.type:
             raise ValueError("Policy Task does not identify this robot/interface")
-        allowed = set(ctx.config.jointKeys + ctx.config.fingerKeys)
-        if not set(self.spec.action.jointKeys) <= allowed:
-            raise ValueError("Policy action targets must belong to the configured arm/fingers")
-        self.joints = {key: ctx.physics.bind_joint(key) for key in allowed}
+        fallback_units = {key: "rad" for key in ctx.config.jointKeys} | {
+            key: "m" for key in ctx.config.fingerKeys
+        }
+        self.joints = {key: ctx.physics.bind_joint(key) for key in fallback_units}
+        joint_units, self.joint_limits = inspect_port_joints(
+            ctx.physics,
+            self.joints,
+            fallback_units=fallback_units,
+            prismatic_keys=ctx.config.fingerKeys,
+        )
+        validate_action_against_joints(self.spec.action, joint_units, self.joint_limits)
         self.tubes = {key: ctx.physics.bind_body(key) for key in ctx.config.tubes}
         self.tcp = ctx.physics.bind_site(ctx.config.tcpSite)
         self.locations = ctx.config.locations["locations"]
@@ -140,9 +156,6 @@ class PolicyProgram(RobotArmPhysicsFacts):
         self.handle = None
         ctx.set(phase="idle")
 
-    def _state(self, port):
-        return extract_observation_state(port, self.spec, self.references)
-
     def tick(self, ctx, dt):
         if ctx.fact_due:
             self._facts(ctx)
@@ -167,17 +180,16 @@ class PolicyProgram(RobotArmPhysicsFacts):
         try:
             if dt > interval + 1e-10:
                 raise ValueError("Runner control frequency is below the Task policy frequency")
-            observation = assemble(
-                self.spec, self._state(ctx.physics), previous_action=self.previous, references=self.references
+            self.previous = step_policy_inference(
+                ctx.physics,
+                self.joints,
+                self.spec,
+                self.model,
+                self.previous,
+                self.observation_digest,
+                references=self.references,
+                joint_limits=getattr(self, "joint_limits", None),
             )
-            self.observation_digest.update(observation.tobytes())
-            output = self.model.infer(observation)
-            positions = [ctx.physics.joint_q(self.joints[key])[0] for key in self.spec.action.jointKeys]
-            targets = joint_targets(self.spec, positions, output)
-            for key, value in zip(self.spec.action.jointKeys, targets, strict=True):
-                ctx.physics.set_joint_target(self.joints[key], [value])
-            # previous_action always means raw model output, before action scale/clipping.
-            self.previous = output.copy()
             self.next_inference += interval
         except (ValueError, KeyError, RuntimeError) as exc:
             self._hold(ctx)
@@ -186,17 +198,4 @@ class PolicyProgram(RobotArmPhysicsFacts):
             ctx.set(phase="fault")
 
     def execution_evidence(self):
-        """Read-only native receipt; all counts originate at the actual CPU runtime."""
-        return {
-            "kind": "policy",
-            "policy": self.record["id"],
-            "policyContentHash": self.record["contentHash"],
-            "onnxSha256": self.record["onnxSha256"],
-            "observationSha256": self.record["observationSha256"],
-            "providers": self.model.session.get_providers(),
-            "runtimeVersion": self.model.runtime_version,
-            "actionStarts": self.action_starts,
-            "inferenceCalls": self.model.inference_calls,
-            "validOutputs": self.model.valid_outputs,
-            "observationDigest": self.observation_digest.hexdigest(),
-        }
+        return build_policy_evidence(self.record, self.model, self.action_starts, self.observation_digest)

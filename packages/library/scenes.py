@@ -521,7 +521,7 @@ class SceneLibrary:
             template_status = "failed"
         else:
             template_status = "resolved" if effective else "not_recorded"
-        definitions = load_entity_types(self.roots["user"])
+        definitions = load_entity_types()
         devices = [
             deepcopy(binding) | {"actions": definitions.get(binding.get("type"), {}).get("actions", {})}
             for binding in display_bindings

@@ -304,7 +304,7 @@ class AssetLibrary:
                 provenance = json.loads(provenance_file.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 provenance = {"error": "Provenance has not passed S4 validation"}
-        definitions = load_entity_types(self.roots["user"])
+        definitions = load_entity_types()
         report = version.report()
         return deepcopy(
             version.summary()

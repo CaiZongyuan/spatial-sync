@@ -9,8 +9,12 @@ from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.common import BUILTIN_ROOT, NAME, LibraryError, document
 from packages.library.scenes import SceneLibrary
-from packages.policies.library import PolicyLibrary, read_json
-from packages.policies.subjects import fixed_bindings, policy_programs
+from packages.policies.subjects import (
+    fixed_bindings,
+    policy_programs,
+    validate_policy_bundle_material,
+    validate_policy_material,
+)
 from packages.programs.subjects import fingerprint
 
 
@@ -113,7 +117,17 @@ def read_committed_permit(state_root, promotion_id, publication_hash=None):
             raise ValueError("Actual Controller snapshot differs from committed composition")
         candidate = subject["candidateIdentity"]
         materials = context["materialIdentities"]
-        if materials.get(subject["target"]["entityKey"]) != candidate:
+        target_key = subject["target"]["entityKey"]
+        target_action = subject["target"]["action"]
+        target_material = materials.get(target_key)
+        if subject["binding"].get("config", {}).get("policies"):
+            if (
+                not isinstance(target_material, dict)
+                or target_material.get("kind") != "policy-bundle"
+                or target_material.get("policies", {}).get(target_action) != candidate
+            ):
+                raise ValueError("Committed multi-policy target material identity differs")
+        elif target_material != candidate:
             raise ValueError("Committed target material identity differs")
         bindings = fixed_bindings(scene, source)
         policy_registry = policy_programs()
@@ -126,27 +140,29 @@ def read_committed_permit(state_root, promotion_id, publication_hash=None):
         if set(materials) != actual_material_keys:
             raise ValueError("Committed material identity coverage differs from the actual Scene")
         roots = {"builtin": BUILTIN_ROOT, "user": library}
-        policy_lib = PolicyLibrary(roots)
         for key, identity in materials.items():
             config = bindings[key]["config"]
-            if identity["kind"] == "policy":
-                program_cls = policy_registry.get(bindings[key]["program"])
-                if program_cls is None:
-                    raise ValueError("Unknown deployed policy Program")
-                material, pkg = policy_lib.resolve(identity["id"])
-                action = read_json(pkg / "task.json")["implements"].rsplit(".", 1)[1]
-                requested = program_cls.bound_policy_for_action(config, action)
-                for bound_id in program_cls.bound_policies(config):
-                    policy_lib.resolve(bound_id)
+            is_multi = bool(config.get("policies"))
+            ctrl_doc = controller if key == target_key else None
+            if identity.get("kind") == "policy-bundle":
+                if not is_multi:
+                    raise ValueError("Policy bundle material requires a multi-policy binding")
+                validate_policy_bundle_material(identity, bindings[key], roots, controller=ctrl_doc)
+            elif identity.get("kind") == "policy":
+                if is_multi:
+                    raise ValueError("Multi-policy binding requires a committed policy-bundle material")
+                validate_policy_material(identity, bindings[key], roots, controller=ctrl_doc)
             else:
                 from packages.programs.library import ProgramLibrary
 
+                if is_multi:
+                    raise ValueError("Script material cannot satisfy a multi-policy binding")
                 material, _ = ProgramLibrary(roots).resolve(identity["id"])
                 requested = (config.get("programArtifact") or {}).get("id")
                 if config.get("programArtifact") != {name: identity[name] for name in ("id", "contentHash")}:
                     raise ValueError("Actual script config differs from committed material")
-            if requested != identity["id"] or material["contentHash"] != identity["contentHash"]:
-                raise ValueError("Actual material changed under its committed immutable reference")
+                if requested != identity["id"] or material["contentHash"] != identity["contentHash"]:
+                    raise ValueError("Actual material changed under its committed immutable reference")
         if candidate["kind"] == "policy":
             target_cls = policy_registry.get(subject["binding"]["program"])
             if (

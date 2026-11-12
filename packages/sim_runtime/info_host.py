@@ -151,14 +151,12 @@ class NewtonInfoHost:
         return self.host.snapshot()
 
     def program_execution(self, entity_key):
-        if self._policy_target is not None and entity_key == self._policy_target[0]:
-            program = self.host._programs[self.host._entity_indices[entity_key]]
-            for_action = getattr(program, "execution_evidence_for_action", None)
-            if callable(for_action):
-                evidence = for_action(self._policy_target[1])
-                if evidence is not None:
-                    return evidence
-        return self.host.program_execution(entity_key)
+        action = (
+            self._policy_target[1]
+            if self._policy_target is not None and entity_key == self._policy_target[0]
+            else None
+        )
+        return self.host.program_execution(entity_key, action=action)
 
     def preview(self, request):
         return self.host.preview(request)

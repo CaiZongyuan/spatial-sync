@@ -14,6 +14,7 @@ from packages.info.catalog import compile_catalog
 from packages.info.program import HostCore
 from packages.library.common import content_hash
 from packages.library.transactions import durable_json
+from packages.programs.embodied import EmbodiedPolicyProgram
 from packages.programs.policy_base import MultiPolicyConfig, MultiPolicyProgram
 from packages.protocol.schema import Actor, InvokeRequest
 
@@ -88,10 +89,12 @@ def write_policy_package(user_root, *, name: str, rev: int, task: dict, spec: di
 
 
 class FakeEmbodiedPort:
-    def __init__(self, joints, bodies):
+    def __init__(self, joints, bodies, *, kinds=None, limits=None):
         self.q = {key: 0.0 for key in joints}
         self.qd = {key: 0.0 for key in joints}
         self.targets = {key: 0.0 for key in joints}
+        self.kinds = {key: (kinds or {}).get(key, "revolute") for key in joints}
+        self.limits = {key: (limits or {}).get(key, (-0.8, 0.8)) for key in joints}
         self.poses = {
             key: (np.array(val["p"], dtype=float), np.array(val["q"], dtype=float))
             for key, val in bodies.items()
@@ -103,6 +106,18 @@ class FakeEmbodiedPort:
     def bind_joint(self, key):
         assert key in self.q
         return key
+
+    def joint_metadata(self, key):
+        lo, hi = self.limits[key]
+        return {
+            "kind": self.kinds[key],
+            "qWidth": 1,
+            "qdWidth": 1,
+            "targetWidth": 1,
+            "lower": lo,
+            "upper": hi,
+            "targetDtype": "float32",
+        }
 
     def bind_body(self, key):
         assert key in self.poses
@@ -221,7 +236,6 @@ def test_multi_policy_runtime_dispatches_actions_injects_commands_and_isolates_e
                 "name": "gravity",
                 "source": "projected_gravity",
                 "key": base,
-                "frame": "body",
                 "unit": "1",
                 "shape": [3],
                 "offset": [0.0, 0.0, 0.0],
@@ -287,6 +301,8 @@ def test_multi_policy_runtime_dispatches_actions_injects_commands_and_isolates_e
                 "shape": [3],
                 "offset": [0.0, 0.0, 0.0],
                 "scale": [1.0, 1.0, 1.0],
+                "lower": [-0.3, -0.3, -0.6],
+                "upper": [0.3, 0.3, 0.6],
             },
             {
                 "name": "prev",
@@ -421,10 +437,205 @@ def test_multi_policy_runtime_dispatches_actions_injects_commands_and_isolates_e
     assert port.targets[joints[0]] == pytest.approx(0.12, abs=1e-6)
     assert port.targets[joints[1]] == pytest.approx(-0.08, abs=1e-6)
 
-    # 5. Per-action execution evidence stays strictly isolated
-    program = host._programs[host._entity_indices["/World/Lab/Bot"]]
-    bal_ev = program.execution_evidence_for_action("balance")
-    move_ev = program.execution_evidence_for_action("moveTo")
+    # 5. Per-action execution evidence stays strictly isolated via public HostCore API
+    bal_ev = host.program_execution("/World/Lab/Bot", action="balance")
+    move_ev = host.program_execution("/World/Lab/Bot", action="moveTo")
     assert bal_ev["policy"] == balance_id and bal_ev["actionStarts"] == 1 and bal_ev["inferenceCalls"] == 1
     assert move_ev["policy"] == move_id and move_ev["actionStarts"] == 1 and move_ev["inferenceCalls"] == 1
     assert bal_ev["observationDigest"] != move_ev["observationDigest"]
+
+
+def test_embodied_policy_per_action_command_params_and_physical_joint_limits(tmp_path, monkeypatch):
+    user_lib = tmp_path / "library"
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("LW_LIBRARY", str(user_lib))
+    monkeypatch.setenv("SPATIAL_STATE_ROOT", str(state_root))
+
+    joints = ["/World/Lab/Rig/pivot", "/World/Lab/Rig/slider"]
+    base = "/World/Lab/Rig/Base"
+
+    rig_type = {
+        "type": "slider-rig/v1",
+        "title": "Slider rig",
+        "description": "Mixed revolute/prismatic embodied fixture.",
+        "properties": {
+            "phase": {"schema": {"enum": ["idle", "active", "fault"]}},
+            "tiltDeg": {"schema": {"type": "number"}},
+        },
+        "actions": {
+            "stabilize": {"params": {}, "required": [], "longRunning": True},
+            "drive": {
+                "params": {"vx": {"type": "number"}, "wz": {"type": "number"}},
+                "required": ["vx", "wz"],
+                "longRunning": True,
+            },
+            "stop": {"params": {}, "required": [], "concurrent": True},
+        },
+        "events": {},
+    }
+
+    stabilize_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "gravity",
+                "source": "projected_gravity",
+                "key": base,
+                "unit": "1",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            }
+        ],
+        "action": {
+            "space": "joint_position_offset",
+            "jointKeys": joints,
+            "units": ["rad", "m"],
+            "defaultPosition": [0.0, 0.0],
+            "scale": [0.1, 0.05],
+            "lower": [-0.5, -0.15],
+            "upper": [0.5, 0.15],
+        },
+    }
+    stabilize_task = {
+        "name": "rig-stabilize",
+        "title": "Stabilize",
+        "scene": "rig-scene@1",
+        "robot": "/World/Lab/Rig",
+        "implements": "slider-rig/v1.stabilize",
+        "episode": {"params": {}},
+        "success": {"property": "tiltDeg", "lte": 1.0},
+        "control": {"hz": 20.0, "action": "joint_position_offset"},
+    }
+    stabilize_id = write_policy_package(
+        user_lib,
+        name="rig-stabilize",
+        rev=1,
+        task=stabilize_task,
+        spec=stabilize_spec,
+        onnx_bytes=linear_onnx_bytes(np.zeros((3, 2), dtype=np.float32), bias=np.array([1.0, -1.0])),
+    )
+
+    drive_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "cmd",
+                "source": "command",
+                "frame": "body",
+                "unit": "m/s",
+                "shape": [2],
+                "offset": [0.0, 0.0],
+                "scale": [1.0, 1.0],
+                "lower": [-0.4, -0.8],
+                "upper": [0.4, 0.8],
+            }
+        ],
+        "action": {
+            "space": "joint_position_offset",
+            "jointKeys": joints,
+            "units": ["rad", "m"],
+            "defaultPosition": [0.0, 0.0],
+            "scale": [1.0, 0.5],
+            "lower": [-0.5, -0.15],
+            "upper": [0.5, 0.15],
+        },
+    }
+    drive_task = {
+        "name": "rig-drive",
+        "title": "Drive",
+        "scene": "rig-scene@1",
+        "robot": "/World/Lab/Rig",
+        "implements": "slider-rig/v1.drive",
+        "episode": {
+            "params": {},
+            "paramBounds": {"vx": [-0.3, 0.3], "wz": [-0.6, 0.6]},
+            "commandEnvelope": [[-0.3, 0.3], [-0.6, 0.6]],
+        },
+        "success": {"property": "tiltDeg", "lte": 1.0},
+        "control": {"hz": 20.0, "action": "joint_position_offset"},
+    }
+    drive_id = write_policy_package(
+        user_lib,
+        name="rig-drive",
+        rev=1,
+        task=drive_task,
+        spec=drive_spec,
+        onnx_bytes=linear_onnx_bytes(np.eye(2, dtype=np.float32)),
+    )
+
+    tilt_rad = math.radians(10.0)
+    # Physical joint_metadata declares slider as prismatic with tight [-0.15, 0.15] m limits
+    port = FakeEmbodiedPort(
+        joints,
+        {
+            base: {
+                "p": [0.0, 0.0, 0.2],
+                "q": [math.sin(tilt_rad / 2), 0.0, 0.0, math.cos(tilt_rad / 2)],
+                "w": [0.0, 0.0, 0.0],
+            }
+        },
+        kinds={joints[0]: "revolute", joints[1]: "prismatic"},
+        limits={joints[0]: (-0.6, 0.6), joints[1]: (-0.15, 0.15)},
+    )
+
+    # Notice: no manual prismaticJointKeys needed — joint_metadata derives ["rad", "m"] directly!
+    cfg = {
+        "jointKeys": joints,
+        "baseBody": base,
+        "policies": {"stabilize": stabilize_id, "drive": drive_id},
+        "commandParams": {"drive": ["vx", "wz"]},
+    }
+    registry = {EmbodiedPolicyProgram.id: EmbodiedPolicyProgram}
+    catalog = compile_catalog(
+        "rev-rig",
+        {"slider-rig/v1": rig_type},
+        {
+            "/World/Lab/Rig": {
+                "key": "/World/Lab/Rig",
+                "type": "slider-rig/v1",
+                "program": EmbodiedPolicyProgram.id,
+                "config": cfg,
+            }
+        },
+        {"/World/Lab/Rig": EmbodiedPolicyProgram.Config.model_validate(cfg)},
+    )
+    host = HostCore(catalog, registry, physics=port, source="sim", fact_hz=20.0)
+    actor = Actor(kind="user", name="tester")
+
+    def req(inv_id, action, params=None):
+        return InvokeRequest(
+            invocationId=inv_id,
+            requestId="req-" + inv_id,
+            entityKey="/World/Lab/Rig",
+            action=action,
+            params=params or {},
+            actor=actor,
+            epoch=0,
+            createdSimTime=host.sim_time,
+            createdAtMs=1000.0,
+        )
+
+    # Invoking zero-param stabilize succeeds without colliding with drive's commandParams
+    assert host.invoke(req("s1", "stabilize")).status in ("accepted", "running")
+    host.tick(0.05, 0.05)
+    assert port.targets[joints[0]] == pytest.approx(0.1)
+    assert port.targets[joints[1]] == pytest.approx(-0.05)
+    host.invoke(req("stop1", "stop"))
+    host.tick(0.10, 0.05)
+
+    # Invoking drive maps vx, wz cleanly via commandParams
+    assert host.invoke(req("d1", "drive", {"vx": 0.2, "wz": -0.2})).status in ("accepted", "running")
+    host.tick(0.15, 0.05)
+    assert port.targets[joints[0]] == pytest.approx(0.2)
+    assert port.targets[joints[1]] == pytest.approx(-0.10)
+
+    # Tighter physical joint limits than spec.action.upper are rejected at init
+    tight_port = FakeEmbodiedPort(
+        joints,
+        {base: {"p": [0.0, 0.0, 0.2], "q": [0.0, 0.0, 0.0, 1.0]}},
+        kinds={joints[0]: "revolute", joints[1]: "prismatic"},
+        limits={joints[0]: (-0.6, 0.6), joints[1]: (-0.05, 0.05)},
+    )
+    bad_host = HostCore(catalog, registry, physics=tight_port, source="sim", fact_hz=20.0)
+    assert bad_host.invoke(req("s-bad", "stabilize")).status == "rejected"

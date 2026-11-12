@@ -65,7 +65,7 @@ class StructuralValidator:
                 )
                 for version in assets.versions.values()
             ],
-            "types": load_entity_types((getattr(assets, "roots", None) or {}).get("user")),
+            "types": load_entity_types(),
             "programs": self.programs() if self.programs else {},
             "expectedAssets": list(expected_assets),
         }
