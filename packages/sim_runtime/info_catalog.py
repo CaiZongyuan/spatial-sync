@@ -2,6 +2,7 @@
 
 from packages.info.catalog import Catalog, load_catalog
 from packages.library.common import extra_entity_types
+from packages.programs.biped import BipedPolicyProgram, BipedPostureProgram
 from packages.programs.centrifuge.newton import CentrifugeProgram
 from packages.programs.embodied import EmbodiedPolicyProgram, EmbodiedPostureProgram
 from packages.programs.linear_axis import LinearAxisProgram
@@ -21,6 +22,8 @@ REGISTRY = {
         ScriptProgram,
         EmbodiedPostureProgram,
         EmbodiedPolicyProgram,
+        BipedPostureProgram,
+        BipedPolicyProgram,
         TubeProgram,
         CentrifugeProgram,
         PandaWideProgram,

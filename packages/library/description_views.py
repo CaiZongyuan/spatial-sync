@@ -90,10 +90,12 @@ def _summary(detail, resource, digest):
                        "gapCount": detail.get("gapCount", len(gaps))},
         "counts": {"entities": detail.get("entityCount"), "devices": detail.get("deviceCount"),
                    "types": len(types), "locations": len(detail.get("locations", {})),
+                   "waypoints": len(detail.get("waypoints", {})),
                    "assets": len(detail.get("assets", [])), "files": len(detail.get("files", {}))},
         "typesPreview": [{"type": name, "actions": sorted((definition or {}).get("actions", {}))}
                          for name, definition in sorted(types.items())],
         "devicesPreview": [], "locationsPreview": sorted(detail.get("locations", {})),
+        "waypointsPreview": sorted(detail.get("waypoints", {})),
         "gapsPreview": gaps.copy(), "sections": sorted(detail), "previewTruncated": False,
         "details": {"view": "page", "id": detail["id"], "documentDigest": digest,
                     "section": None, "offset": 0},
@@ -114,7 +116,8 @@ def _summary(detail, resource, digest):
             summary["previewTruncated"] = True
     while serialized_size(summary) > MAX_BYTES:
         previews = [summary[field] for field in ("devicesPreview", "typesPreview", "locationsPreview",
-                                                "gapsPreview", "sections") if summary[field]]
+                                                "waypointsPreview", "gapsPreview", "sections")
+                    if summary[field]]
         if not previews:
             raise invalid_view("summary identity exceeds the description budget")
         max(previews, key=serialized_size).pop()

@@ -20,6 +20,7 @@ from packages.policies.observations import (
     command_envelope_failure,
     coverage_failure,
     joint_targets,
+    remap_observation_spec_entity,
 )
 
 POLICY_REF = r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$"
@@ -187,9 +188,15 @@ class PolicySlot:
         self.action = action
         self.record, self.package = runtime_library().resolve(policy_id)
         self.task = read_json(self.package / "task.json")
-        self.spec = ObservationSpec.model_validate(document(self.package / "obs_spec.yaml"))
-        if self.task["robot"] != entity_key or self.task["implements"] != f"{interface}.{action}":
+        raw_spec = ObservationSpec.model_validate(document(self.package / "obs_spec.yaml"))
+        if self.task["implements"] != f"{interface}.{action}":
             raise ValueError("Policy Task does not identify this robot entity and bound action")
+        task_robot = self.task["robot"]
+        if task_robot != entity_key and not all(
+            key.startswith(task_robot + "/") for key in raw_spec.action.jointKeys
+        ):
+            raise ValueError("Policy Task does not identify this robot entity and bound action")
+        self.spec = remap_observation_spec_entity(raw_spec, task_robot, entity_key)
         validate_action_against_joints(self.spec.action, joint_units, joint_limits)
         export = read_json(self.package / "artifacts/export.json")
         self.model = CpuPolicy(
@@ -385,6 +392,9 @@ class MultiPolicyProgram:
     def _accept_stop(self, inv, ctx) -> Reject | None:
         return None
 
+    def _parameter_coverage_failure(self, inv, ctx, slot: PolicySlot) -> dict | None:
+        return coverage_failure(slot.task, inv.action, inv.params)
+
     def _accept_action(self, inv, ctx, slot: PolicySlot) -> Reject | None:
         return None
 
@@ -393,6 +403,15 @@ class MultiPolicyProgram:
 
     def _fault_failure(self, inv, ctx, slot: PolicySlot) -> tuple[str, str] | None:
         return None
+
+    def _action_completed(self, inv, ctx, slot: PolicySlot) -> bool:
+        return not ctx.check([slot.task["success"]])
+
+    def _tick_robot(self, ctx, dt: float) -> None:
+        return None
+
+    def _step_active_action(self, inv, ctx, slot: PolicySlot, dt: float) -> bool:
+        return False
 
     def _set_idle_state(self, ctx):
         if self.state_property is not None:
@@ -408,6 +427,15 @@ class MultiPolicyProgram:
 
     def _on_action_start(self, inv, ctx, slot: PolicySlot):
         self._set_active_state(inv, ctx, slot)
+
+    def _on_action_complete(self, inv, ctx, slot: PolicySlot):
+        self._set_idle_state(ctx)
+
+    def _on_timeout(self, inv, ctx, slot: PolicySlot):
+        self._set_idle_state(ctx)
+
+    def _on_cancel(self, inv, ctx):
+        self._set_idle_state(ctx)
 
     def _on_stop(self, inv, ctx):
         self._set_idle_state(ctx)
@@ -426,7 +454,7 @@ class MultiPolicyProgram:
                 message=f"No Policy is bound for action '{inv.action}'",
                 details={"boundActions": sorted(self.slots)},
             )
-        failure = coverage_failure(slot.task, inv.action, inv.params)
+        failure = self._parameter_coverage_failure(inv, ctx, slot)
         if failure:
             return Reject(**failure)
         try:
@@ -466,9 +494,10 @@ class MultiPolicyProgram:
         inv.cancelled()
         self.handle = None
         self.active_slot = None
-        self._set_idle_state(ctx)
+        self._on_cancel(inv, ctx)
 
     def tick(self, ctx, dt):
+        self._tick_robot(ctx, dt)
         if ctx.fact_due:
             self._facts(ctx)
         inv, slot = self.handle, self.active_slot
@@ -483,19 +512,21 @@ class MultiPolicyProgram:
             self.active_slot = None
             self._set_fault_state(ctx, code, message)
             return
-        if not ctx.check([slot.task["success"]]):
+        if self._action_completed(inv, ctx, slot):
             self._hold(ctx)
-            inv.succeed()
             self.handle = None
             self.active_slot = None
-            self._set_idle_state(ctx)
+            self._on_action_complete(inv, ctx, slot)
+            inv.succeed()
             return
         if ctx.sim_time - self.started >= self._action_timeout(inv, ctx, slot):
             self._hold(ctx)
             inv.fail("motion_timeout", "Policy did not satisfy the pinned Task condition")
             self.handle = None
             self.active_slot = None
-            self._set_idle_state(ctx)
+            self._on_timeout(inv, ctx, slot)
+            return
+        if self._step_active_action(inv, ctx, slot, dt):
             return
         interval = 1.0 / float(slot.task["control"]["hz"])
         if ctx.sim_time + 1e-10 < self.next_inference:

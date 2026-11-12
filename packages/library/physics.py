@@ -263,7 +263,7 @@ def taught_checks(sim, payload):
                 rows.append(check("P6", "fail", "Taught grasp cannot be measured: " + str(exc),
                                   entity=entity, location=name))
             continue
-        for name, location in config[documents[0]]["locations"].items():
+        for name, location in config[documents[0]].get("locations", {}).items():
             try:
                 values, keys = location["grasp"], config[postures[0]]
                 if len(keys) != len(values):

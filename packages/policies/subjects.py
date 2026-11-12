@@ -329,7 +329,15 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
         ) from exc
 
 
-def validate_policy_material(candidate, binding, roots, *, controller=None, expected_action=None):
+def validate_policy_material(
+    candidate,
+    binding,
+    roots,
+    *,
+    controller=None,
+    expected_action=None,
+    allow_entity_remap: bool = False,
+):
     identity = CandidateIdentity.model_validate(candidate)
     library = PolicyLibrary(roots)
     record, package = library.resolve(identity.id)
@@ -350,8 +358,16 @@ def validate_policy_material(candidate, binding, roots, *, controller=None, expe
         )
     ):
         raise _invalid("Deployed Policy material or binding differs", "policy_subject_changed")
-    if task["robot"] != binding.get("key") or interface != binding.get("type"):
+    target_key = binding.get("key")
+    if interface != binding.get("type") or not isinstance(target_key, str) or not target_key.startswith("/"):
         raise _invalid("Deployed Policy Task target differs")
+    if task["robot"] != target_key:
+        if not allow_entity_remap:
+            raise _invalid("Deployed Policy Task target differs")
+        spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
+        src_prefix = task["robot"] + "/"
+        if any(key != task["robot"] and not key.startswith(src_prefix) for key in spec.action.jointKeys):
+            raise _invalid("Deployed Policy action channels cannot remap outside Task robot")
     if controller is not None and (
         controller.get("program") != program_cls.id
         or controller.get("policy") != identity.id
@@ -361,7 +377,14 @@ def validate_policy_material(candidate, binding, roots, *, controller=None, expe
     return record
 
 
-def validate_policy_bundle_material(bundle, binding, roots, *, controller=None):
+def validate_policy_bundle_material(
+    bundle,
+    binding,
+    roots,
+    *,
+    controller=None,
+    allow_entity_remap: bool = False,
+):
     config = binding.get("config", {})
     config_policies = config.get("policies")
     if (
@@ -380,7 +403,11 @@ def validate_policy_bundle_material(bundle, binding, roots, *, controller=None):
     records = {}
     for action, act_candidate in bundle["policies"].items():
         records[action] = validate_policy_material(
-            act_candidate, binding, roots, expected_action=action
+            act_candidate,
+            binding,
+            roots,
+            expected_action=action,
+            allow_entity_remap=allow_entity_remap,
         )
     if controller is not None:
         ctrl_policies = controller.get("policies")

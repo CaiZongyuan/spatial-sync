@@ -1,0 +1,136 @@
+type: biped/v1
+title: Bipedal robot
+description: General bipedal robot with hierarchical Waypoint velocity guidance,
+  tilt-based fall detection, stand-up recovery, and expressive posture actions.
+properties:
+  phase:
+    schema:
+      enum:
+      - idle
+      - walking
+      - standing_up
+      - bowing
+      - stopping
+      - fallen
+  activeAction:
+    schema:
+      type:
+      - string
+      - 'null'
+  lastCompletedAction:
+    schema:
+      type:
+      - string
+      - 'null'
+  fallen:
+    schema:
+      type: boolean
+  jointPositions:
+    schema:
+      type: array
+      items:
+        type: number
+      minItems: 1
+    unit: rad
+    deadband: 0.002
+    maxRateHz: 10
+  currentWaypoint:
+    schema:
+      type:
+      - string
+      - 'null'
+  targetWaypoint:
+    schema:
+      type:
+      - string
+      - 'null'
+  basePosition:
+    schema: &vec3
+      type: array
+      items:
+        type: number
+      minItems: 3
+      maxItems: 3
+    unit: m
+    deadband: 0.002
+    maxRateHz: 20
+  yawRad:
+    schema:
+      type: number
+    unit: rad
+    deadband: 0.005
+    maxRateHz: 20
+  tiltDeg:
+    schema:
+      type: number
+      minimum: 0
+      maximum: 180
+    unit: deg
+    deadband: 0.05
+    maxRateHz: 20
+  pitchDeg:
+    schema:
+      type: number
+      minimum: -180
+      maximum: 180
+    unit: deg
+    deadband: 0.05
+    maxRateHz: 20
+  bodyVelocity:
+    schema: *vec3
+    unit: m/s
+    deadband: 0.005
+    maxRateHz: 20
+actions:
+  walkTo:
+    description: Walk to a named ground Waypoint using outer body-velocity guidance;
+      unknown_waypoint, robot_fallen, or motion_timeout may be returned.
+    params:
+      waypoint:
+        type: string
+        minLength: 1
+      speed:
+        type: number
+        exclusiveMinimum: 0
+    required:
+    - waypoint
+    longRunning: true
+    timeoutSeconds: 60
+    preconditions:
+    - property: fallen
+      equals: false
+      message: Robot has fallen; invoke standUp before walking.
+  standUp:
+    description: Recover upright standing posture from a fallen state, or induce a
+      controlled fall from upright when fromFall is specified and then stand up.
+    params:
+      fromFall:
+        enum:
+        - front
+        - back
+        - left
+        - right
+    required: []
+    longRunning: true
+    timeoutSeconds: 30
+  bow:
+    description: Perform a forward bow and return to stable upright standing;
+      robot_fallen or motion_timeout may be returned.
+    params:
+      duration:
+        type: number
+        exclusiveMinimum: 0
+        maximum: 10
+    required: []
+    longRunning: true
+    timeoutSeconds: 30
+    preconditions:
+    - property: fallen
+      equals: false
+      message: Robot has fallen; invoke standUp before bowing.
+  stop:
+    description: Cancel active motion immediately and hold a safe standing or damped posture.
+    params: {}
+    required: []
+    concurrent: true
+events: {}

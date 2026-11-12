@@ -338,6 +338,32 @@ def joint_targets(spec, positions, output):
     return np.clip(target, spec.action.lower, spec.action.upper)
 
 
+def remap_observation_spec_entity(
+    spec: ObservationSpec, source_entity: str, target_entity: str
+) -> ObservationSpec:
+    """Deterministically rebase canonical robot paths in an ObservationSpec across Scenes."""
+    if source_entity == target_entity:
+        return spec
+
+    def remap(path: str) -> str:
+        if path == source_entity:
+            return target_entity
+        if path.startswith(source_entity + "/"):
+            return target_entity + path[len(source_entity) :]
+        return path
+
+    raw = spec.model_dump(mode="json", by_alias=True)
+    raw["action"]["jointKeys"] = [remap(key) for key in raw["action"]["jointKeys"]]
+    for obs in raw["observations"]:
+        if obs.get("keys"):
+            obs["keys"] = [remap(key) for key in obs["keys"]]
+        if obs.get("key") is not None:
+            obs["key"] = remap(obs["key"])
+        if obs.get("frame") is not None and obs["frame"].startswith("/"):
+            obs["frame"] = remap(obs["frame"])
+    return ObservationSpec.model_validate(raw)
+
+
 def sim_gap(train_success, platform_success):
     """Rates are fractions; strictly more than fifteen percentage points is a gap."""
     if train_success is None or platform_success is None:

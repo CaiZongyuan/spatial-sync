@@ -39,7 +39,7 @@ def validate_binding_semantics(key, binding, definition, property_schema, sites)
         if isinstance(value, dict):
             if "requires" in value:
                 validate_conditions(value["requires"], key, property_schema)
-            if "site" in value and value["site"] not in sites:
+            if "site" in value and value["site"] is not None and value["site"] not in sites:
                 raise ValueError(f"Config references an unknown Site: {value['site']}")
             for child in value.values():
                 validate_config(child)
