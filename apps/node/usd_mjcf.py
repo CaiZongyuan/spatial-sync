@@ -435,25 +435,46 @@ def _open_usd_stage(
         if pkg_dir.is_symlink():
             raise ValueError(f"USD asset package symlink is not allowed: {pkg_dir}")
 
+    candidate_roots: list[Path] = []
     env_scene_pkg = os.environ.get("LW_SCENE_PACKAGE", "").strip()
-    if env_scene_pkg and not Path(env_scene_pkg).is_symlink():
-        scene_pkg_resolved = Path(env_scene_pkg).resolve()
-        if resolved_source.is_relative_to(scene_pkg_resolved):
-            stage_owner = scene_pkg_resolved
-        else:
-            stage_owner = resolved_source.parent
-    else:
-        matching_pkg = next(
-            (
-                pkg.resolve()
-                for pkg in packages.values()
-                if pkg.exists() and resolved_source.is_relative_to(pkg.resolve())
-            ),
-            None,
-        )
-        stage_owner = matching_pkg if matching_pkg is not None else resolved_source.parent
+    if env_scene_pkg:
+        scene_pkg_path = Path(env_scene_pkg)
+        if scene_pkg_path.is_symlink() or not scene_pkg_path.is_dir():
+            raise ValueError(f"Invalid or symlinked LW_SCENE_PACKAGE: {scene_pkg_path}")
+        candidate_roots.append(scene_pkg_path)
+    for pkg_dir in packages.values():
+        if pkg_dir.exists():
+            if not pkg_dir.is_dir():
+                raise ValueError(f"Invalid USD asset package directory: {pkg_dir}")
+            candidate_roots.append(pkg_dir)
 
-    stage_rel = resolved_source.relative_to(stage_owner).as_posix()
+    lexical_source = Path(os.path.abspath(raw_path))
+    stage_owner: Path | None = None
+    stage_rel: str | None = None
+    for cand in sorted(
+        candidate_roots,
+        key=lambda p: len(Path(os.path.abspath(p)).parts),
+        reverse=True,
+    ):
+        cand_lex = Path(os.path.abspath(cand))
+        if lexical_source != cand_lex and lexical_source.is_relative_to(cand_lex):
+            stage_owner = cand.resolve()
+            stage_rel = lexical_source.relative_to(cand_lex).as_posix()
+            break
+    if stage_owner is None:
+        for cand in sorted(
+            candidate_roots,
+            key=lambda p: len(p.resolve().parts),
+            reverse=True,
+        ):
+            cand_res = cand.resolve()
+            if resolved_source != cand_res and resolved_source.is_relative_to(cand_res):
+                stage_owner = cand_res
+                stage_rel = resolved_source.relative_to(cand_res).as_posix()
+                break
+    if stage_owner is None or stage_rel is None:
+        stage_owner = resolved_source.parent
+        stage_rel = resolved_source.name
     clones: dict[str, Sdf.Layer] = {}
     rewrite_errors: list[str] = []
 
@@ -1248,7 +1269,6 @@ def derive_usd_mjcf(
         has_authored_com = False
         diag_val: Vec3 | None = None
         axes_quat: QuatWXYZ = (1.0, 0.0, 0.0, 0.0)
-        has_authored_axes = False
         if b_prim.HasAPI(UsdPhysics.MassAPI):
             m_api = UsdPhysics.MassAPI(b_prim)
             raw_m = m_api.GetMassAttr().Get()
@@ -1276,8 +1296,12 @@ def derive_usd_mjcf(
                 )
             raw_axes = m_api.GetPrincipalAxesAttr().Get()
             if m_api.GetPrincipalAxesAttr().HasAuthoredValue() and raw_axes is not None:
-                has_authored_axes = True
-                axes_quat = _gf_quat_to_wxyz(raw_axes)
+                imag = raw_axes.GetImaginary()
+                raw_q = (float(raw_axes.GetReal()), float(imag[0]), float(imag[1]), float(imag[2]))
+                if all(math.isfinite(c) for c in raw_q):
+                    q_norm = math.sqrt(sum(c * c for c in raw_q))
+                    if q_norm > 1e-12:
+                        axes_quat = _quat_normalize(raw_q)
 
         if is_root and not is_fixed_base and (joint_prim is None or not joint_prim.IsValid()):
             ET.SubElement(body_elem, "freejoint", {"name": "floating_base_joint"})
@@ -1336,12 +1360,11 @@ def derive_usd_mjcf(
         elif mass_val is not None and col_shapes:
             c_geom, computed_diag, computed_quat = _combine_shape_masses(col_shapes, mass_val)
             final_com = com_val if has_authored_com else c_geom
-            final_quat = axes_quat if has_authored_axes else computed_quat
             inertial_elem = ET.Element(
                 "inertial",
                 {
                     "pos": _fmt(final_com),
-                    "quat": _fmt(final_quat),
+                    "quat": _fmt(computed_quat),
                     "mass": _fmt_scalar(mass_val),
                     "diaginertia": _fmt(computed_diag),
                 },

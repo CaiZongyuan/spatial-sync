@@ -680,6 +680,72 @@ def test_usd_mjcf_compiles_in_mujoco_and_matches_newton_and_fr3(tmp_path: Path):
                 np.sort(m1.body_inertia[i1]), np.sort(m2.body_inertia[i2]), rtol=1e-5
             )
 
+        # Verify full 3x3 body-frame inertia tensor parity against Newton SolverMuJoCo when
+        # physics:mass + physics:principalAxes = (1,0,0,0) (and (0,0,0,0)) are authored WITHOUT
+        # diagonalInertia on a rotated capsule collider (Jacobi eigenpair must stay intact).
+        rot_caps = tmp_path / "rot_caps_axes" / "asset.usda"
+        rot_caps.parent.mkdir(parents=True, exist_ok=True)
+        rot_caps.write_text(
+            '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+            'def Xform "Asset" (prepend apiSchemas = ["PhysicsArticulationRootAPI"]) {\n'
+            '  def Xform "LinkA" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+            '    float physics:mass = 2.5\n'
+            '    quatf physics:principalAxes = (1, 0, 0, 0)\n'
+            '    def Capsule "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+            '      double radius = 0.04\n'
+            '      double height = 0.30\n'
+            '      quatf xformOp:orient = (0.8660254, 0.3535534, 0.3535534, 0)\n'
+            '      uniform token[] xformOpOrder = ["xformOp:orient"]\n'
+            '    }\n'
+            '  }\n'
+            '  def Xform "LinkB" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+            '    float physics:mass = 1.2\n'
+            '    quatf physics:principalAxes = (0, 0, 0, 0)\n'
+            '    def Capsule "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+            '      double radius = 0.03\n'
+            '      double height = 0.22\n'
+            '      quatf xformOp:orient = (0.7071068, 0.7071068, 0, 0)\n'
+            '      uniform token[] xformOpOrder = ["xformOp:orient"]\n'
+            '    }\n'
+            '  }\n'
+            '  def PhysicsRevoluteJoint "hinge" (prepend apiSchemas = ["PhysicsDriveAPI:angular"]) {\n'
+            '    rel physics:body0 = </Asset/LinkA>\n'
+            '    rel physics:body1 = </Asset/LinkB>\n'
+            '    uniform token physics:axis = "Z"\n'
+            '    float physics:lowerLimit = -90\n'
+            '    float physics:upperLimit = 90\n'
+            '    float drive:angular:physics:stiffness = 2.0\n'
+            '    float drive:angular:physics:damping = 0.2\n'
+            '  }\n'
+            '}\n',
+            encoding="utf-8",
+        )
+
+        def _body_inertia_tensor_3x3(model, body_idx: int) -> np.ndarray:
+            mat9 = np.zeros(9, dtype=np.float64)
+            mujoco.mju_quat2Mat(mat9, model.body_iquat[body_idx])
+            r_mat = mat9.reshape(3, 3)
+            return r_mat @ np.diag(model.body_inertia[body_idx]) @ r_mat.T
+
+        rc_m1 = derive_usd_mjcf(rot_caps).to_mjmodel()
+        rc_b = newton.ModelBuilder()
+        rc_b.add_usd(Usd.Stage.Open(str(rot_caps)))
+        rc_m2 = newton.solvers.SolverMuJoCo(rc_b.finalize(device="cpu"), use_mujoco_cpu=True).mj_model
+        for body_name in ("LinkA", "LinkB"):
+            i1 = mujoco.mj_name2id(rc_m1, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            i2 = next(
+                i for i in range(rc_m2.nbody)
+                if (mujoco.mj_id2name(rc_m2, mujoco.mjtObj.mjOBJ_BODY, i) or "").endswith(body_name)
+            )
+            np.testing.assert_allclose(rc_m1.body_mass[i1], rc_m2.body_mass[i2], rtol=1e-5)
+            np.testing.assert_allclose(rc_m1.body_ipos[i1], rc_m2.body_ipos[i2], atol=1e-5)
+            np.testing.assert_allclose(
+                _body_inertia_tensor_3x3(rc_m1, i1),
+                _body_inertia_tensor_3x3(rc_m2, i2),
+                rtol=1e-5,
+                atol=1e-6,
+            )
+
 
 def test_mjlab_trainer_arguments_maps_approved_hyperparameters_and_rejects_unknown_fields():
     from apps.node.mjlab_launcher import parse_mjlab_launcher_args
@@ -1282,7 +1348,9 @@ def test_verify_against_observation_spec_supports_passive_joints_subsets_and_cus
         verify_against_observation_spec(derived, dup_obs_spec, entity_key="/World/Lab/Bot")
 
 
-def test_open_usd_stage_confines_paths_rewrites_nested_layers_and_fails_closed(tmp_path: Path):
+def test_open_usd_stage_confines_paths_rewrites_nested_layers_and_fails_closed(
+    tmp_path: Path, monkeypatch
+):
     from apps.node.usd_mjcf import derive_usd_mjcf
 
     # Build a nested multi-layer asset:
@@ -1403,6 +1471,68 @@ def test_open_usd_stage_confines_paths_rewrites_nested_layers_and_fails_closed(t
     with pytest.raises(ValueError, match="composition"):
         derive_usd_mjcf(broken_prim_stage, prim_path="/World/Bot", asset_packages=pkgs)
 
+    # Symlinked LW_SCENE_PACKAGE fails closed immediately
+    sym_scene_root = tmp_path / "sym_scene_root"
+    sym_scene_root.symlink_to(scene_dir)
+    monkeypatch.setenv("LW_SCENE_PACKAGE", str(sym_scene_root))
+    with pytest.raises(ValueError, match="LW_SCENE_PACKAGE"):
+        derive_usd_mjcf(scene_file, prim_path="/World/Lab/Bot", asset_packages=pkgs)
+
+    # Intermediate directory symlink inside LW_SCENE_PACKAGE or asset package fails closed
+    outside_dir = tmp_path / "outside_dir"
+    outside_dir.mkdir()
+    _write_test_articulation_usd(outside_dir / "escaped.usda", fixed_base=True)
+    escape_scene_pkg = tmp_path / "escape_scene_pkg"
+    escape_scene_pkg.mkdir()
+    (escape_scene_pkg / "sub").symlink_to(outside_dir)
+    monkeypatch.setenv("LW_SCENE_PACKAGE", str(escape_scene_pkg))
+    with pytest.raises(ValueError, match="symlink"):
+        derive_usd_mjcf(escape_scene_pkg / "sub" / "escaped.usda", asset_packages=pkgs)
+
+    monkeypatch.setenv("LW_SCENE_PACKAGE", str(scene_dir))
+    escape_asset_pkg = tmp_path / "escape_asset_pkg"
+    escape_asset_pkg.mkdir()
+    (escape_asset_pkg / "sub").symlink_to(outside_dir)
+    with pytest.raises(ValueError, match="symlink"):
+        derive_usd_mjcf(
+            escape_asset_pkg / "sub" / "escaped.usda",
+            asset_packages={"robot/esc@1": escape_asset_pkg},
+        )
+
+    # Coexistence of LW_SCENE_PACKAGE + LW_ASSET_PACKAGES on a subdirectory asset stage
+    sub_asset_pkg = tmp_path / "sub_asset_pkg"
+    (sub_asset_pkg / "usd").mkdir(parents=True)
+    (sub_asset_pkg / "parts").mkdir(parents=True)
+    (sub_asset_pkg / "parts" / "child.usda").write_text(
+        '#usda 1.0\n(defaultPrim = "Child"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Child" {\n'
+        '  def Xform "ee_site" {}\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    (sub_asset_pkg / "usd" / "bot.usda").write_text(
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" (prepend apiSchemas = ["PhysicsArticulationRootAPI"]) {\n'
+        '  def Xform "base" (\n'
+        '    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]\n'
+        '    references = @../parts/child.usda@</Child>\n'
+        '  ) {\n'
+        '    float physics:mass = 1.0\n'
+        '    float3 physics:diagonalInertia = (0.01, 0.01, 0.01)\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LW_SCENE_PACKAGE", str(scene_dir))
+    monkeypatch.setenv(
+        "LW_ASSET_PACKAGES",
+        json.dumps({"robot/sub-bot@1": str(sub_asset_pkg)}),
+    )
+    coexist = derive_usd_mjcf(sub_asset_pkg / "usd" / "bot.usda")
+    assert "ee_site" in coexist.sites
+    monkeypatch.delenv("LW_SCENE_PACKAGE", raising=False)
+    monkeypatch.delenv("LW_ASSET_PACKAGES", raising=False)
+
 
 def test_usd_mjcf_physics_fidelity_mass_units_drives_multiroot_reflection_and_sites(tmp_path: Path):
     import xml.etree.ElementTree as ET
@@ -1456,6 +1586,44 @@ def test_usd_mjcf_physics_fidelity_mass_units_drives_multiroot_reflection_and_si
     assert [float(x) for x in mast_inertial.attrib["diaginertia"].split()] == pytest.approx(
         [0.02, 0.02, 0.02], rel=1e-5
     )
+
+    # 1b) Rotated capsule with authored principalAxes=(1,0,0,0) and NO diagonalInertia keeps
+    # Jacobi eigenbasis (quat != identity), while zero-norm principalAxes=(0,0,0,0) WITH
+    # diagonalInertia falls back to identity.
+    axes_edge_file = tmp_path / "axes_edge.usda"
+    axes_edge_file.write_text(
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" (prepend apiSchemas = ["PhysicsArticulationRootAPI"]) {\n'
+        '  def Xform "RotBody" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '    float physics:mass = 2.5\n'
+        '    quatf physics:principalAxes = (1, 0, 0, 0)\n'
+        '    def Capsule "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+        '      double radius = 0.04\n'
+        '      double height = 0.30\n'
+        '      quatf xformOp:orient = (0.8660254, 0.3535534, 0.3535534, 0)\n'
+        '      uniform token[] xformOpOrder = ["xformOp:orient"]\n'
+        '    }\n'
+        '  }\n'
+        '  def Xform "ZeroQuatBody" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '    float physics:mass = 1.0\n'
+        '    float3 physics:diagonalInertia = (0.01, 0.02, 0.03)\n'
+        '    quatf physics:principalAxes = (0, 0, 0, 0)\n'
+        '  }\n'
+        '  def PhysicsRevoluteJoint "j" {\n'
+        '    rel physics:body0 = </Asset/RotBody>\n'
+        '    rel physics:body1 = </Asset/ZeroQuatBody>\n'
+        '    uniform token physics:axis = "Z"\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    xml_axes = ET.fromstring(derive_usd_mjcf(axes_edge_file).mjcf_xml)
+    rot_in = xml_axes.find(".//body[@name='RotBody']/inertial")
+    zero_in = xml_axes.find(".//body[@name='ZeroQuatBody']/inertial")
+    assert rot_in is not None and zero_in is not None
+    rot_q = [float(x) for x in rot_in.attrib["quat"].split()]
+    assert rot_q != pytest.approx([1.0, 0.0, 0.0, 0.0], abs=1e-2)
+    assert [float(x) for x in zero_in.attrib["quat"].split()] == pytest.approx([1.0, 0.0, 0.0, 0.0])
 
     # 2) Reject non-canonical metersPerUnit, kilogramsPerUnit, and acceleration DriveAPI
     bad_mpu = tmp_path / "bad_mpu.usda"
