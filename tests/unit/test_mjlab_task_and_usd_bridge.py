@@ -61,7 +61,11 @@ def test_task_metadata_discriminates_isaaclab_xor_mjlab_and_checks_control_rate(
     dumped_mjlab = parsed_mjlab.model_dump(mode="json")
     assert "mjlab" in dumped_mjlab and "isaaclab" not in dumped_mjlab
     assert dumped_mjlab["mjlab"]["task_id"] == "Lab-Arm-Reach-Mjlab-v0"
-    assert dumped_mjlab["mjlab"]["presets"] == []
+    assert "presets" not in dumped_mjlab["mjlab"]
+
+    with_presets = _mjlab_task_document("mjlab-presets", presets=["flat"])
+    with pytest.raises(ValidationError):
+        TaskMetadata.model_validate(with_presets)
 
     neither = task_document("neither")
     neither.pop("isaaclab")
@@ -513,8 +517,20 @@ def test_usd_mjcf_derives_articulation_hierarchy_inertias_geoms_drives_and_groun
         "/World/Lab/TestArm/slider_joint",
         "/World/Lab/TestArm/shoulder_pitch",
     ]
-    with pytest.raises(ValueError, match="jointKeys"):
+    # Swapping jointKeys without swapping units/defaultPosition/bounds fails closed
+    with pytest.raises(ValueError, match="units"):
         verify_against_observation_spec(fixed, swapped_spec)
+    # Swapping jointKeys WITH matching units/defaultPosition/bounds/gains succeeds (preserve_order=True)
+    swapped_spec["action"]["units"] = ["m", "rad"]
+    swapped_spec["action"]["defaultPosition"] = [0.02, math.radians(15.0)]
+    swapped_spec["action"]["lower"] = [0.0, -math.pi / 2.0]
+    swapped_spec["action"]["upper"] = [0.04, math.pi / 2.0]
+    verify_against_observation_spec(
+        fixed,
+        swapped_spec,
+        expected_kp=[400.0, 2.0 * 180.0 / math.pi],
+        expected_kd=[25.0, 0.1 * 180.0 / math.pi],
+    )
 
     drifted_default = json.loads(json.dumps(valid_obs_spec))
     drifted_default["action"]["defaultPosition"] = [0.0, 0.02]
@@ -616,6 +632,54 @@ def test_usd_mjcf_compiles_in_mujoco_and_matches_newton_and_fr3(tmp_path: Path):
             )
             np.testing.assert_allclose(d1.xpos[b1], d2.xpos[b2], atol=1e-5)
 
+        # Also verify body_mass/body_ipos/body_inertia parity when physics:mass has no diagonalInertia
+        mass_no_diag = tmp_path / "mass_no_diag" / "asset.usda"
+        mass_no_diag.parent.mkdir(parents=True, exist_ok=True)
+        mass_no_diag.write_text(
+            '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+            'def Xform "Asset" (prepend apiSchemas = ["PhysicsArticulationRootAPI"]) {\n'
+            '  def Xform "Carriage" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+            '    float physics:mass = 2.0\n'
+            '    def Cube "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+            '      double size = 0.16\n'
+            '    }\n'
+            '  }\n'
+            '  def Xform "Mast" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+            '    float physics:mass = 0.5\n'
+            '    def Cube "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+            '      double size = 0.1\n'
+            '      double3 xformOp:translate = (0, 0, 0.12)\n'
+            '      uniform token[] xformOpOrder = ["xformOp:translate"]\n'
+            '    }\n'
+            '  }\n'
+            '  def PhysicsRevoluteJoint "pitch" (prepend apiSchemas = ["PhysicsDriveAPI:angular"]) {\n'
+            '    rel physics:body0 = </Asset/Carriage>\n'
+            '    rel physics:body1 = </Asset/Mast>\n'
+            '    uniform token physics:axis = "Y"\n'
+            '    float physics:lowerLimit = -45\n'
+            '    float physics:upperLimit = 45\n'
+            '    float drive:angular:physics:stiffness = 1.5\n'
+            '    float drive:angular:physics:damping = 0.3\n'
+            '  }\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        m1 = derive_usd_mjcf(mass_no_diag).to_mjmodel()
+        b_nd = newton.ModelBuilder()
+        b_nd.add_usd(Usd.Stage.Open(str(mass_no_diag)))
+        m2 = newton.solvers.SolverMuJoCo(b_nd.finalize(device="cpu"), use_mujoco_cpu=True).mj_model
+        for body_name in ("Carriage", "Mast"):
+            i1 = mujoco.mj_name2id(m1, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            i2 = next(
+                i for i in range(m2.nbody)
+                if (mujoco.mj_id2name(m2, mujoco.mjtObj.mjOBJ_BODY, i) or "").endswith(body_name)
+            )
+            np.testing.assert_allclose(m1.body_mass[i1], m2.body_mass[i2], rtol=1e-5)
+            np.testing.assert_allclose(m1.body_ipos[i1], m2.body_ipos[i2], atol=1e-5)
+            np.testing.assert_allclose(
+                np.sort(m1.body_inertia[i1]), np.sort(m2.body_inertia[i2]), rtol=1e-5
+            )
+
 
 def test_mjlab_trainer_arguments_maps_approved_hyperparameters_and_rejects_unknown_fields():
     from apps.node.mjlab_launcher import parse_mjlab_launcher_args
@@ -634,7 +698,7 @@ def test_mjlab_trainer_arguments_maps_approved_hyperparameters_and_rejects_unkno
             "save_interval": 5,
         },
     )
-    task = _mjlab_task_document("mjlab-args", physics_dt=0.005, decimation=4, presets=["flat"])
+    task = _mjlab_task_document("mjlab-args", physics_dt=0.005, decimation=4)
     args = mjlab_trainer_arguments(
         {
             "plan": plan,
@@ -659,6 +723,21 @@ def test_mjlab_trainer_arguments_maps_approved_hyperparameters_and_rejects_unkno
     assert json.loads(parsed.critic_hidden_dims) == [256, 128]
     assert parsed.activation == "elu"
     assert json.loads(parsed.obs_normalization) is True
+    assert not hasattr(parsed, "presets")
+
+    with pytest.raises(SystemExit):
+        parse_mjlab_launcher_args([*args, "--presets", "flat"])
+
+    presets_task = _mjlab_task_document("mjlab-presets-arg", presets=["flat"])
+    with pytest.raises(ValueError, match="Unsupported"):
+        mjlab_trainer_arguments(
+            {
+                "plan": plan,
+                "task": presets_task,
+                "job": {"seed": 7, "jobId": "job-mjlab-presets", "executionDevice": "cpu"},
+            },
+            "lw_training_bridge.install",
+        )
 
     bad_plan = training_plan(hyperparameters={"num_envs": 4, "max_iterations": 1, "unknown_knob": 99})
     with pytest.raises(ValueError, match="Unsupported"):
@@ -838,3 +917,796 @@ def test_environment_observer_and_native_capture_support_mjlab_step_clock(tmp_pa
             assert observer.sim_time > 0.0
 
 
+
+
+class _CommandNativeEnvironment:
+    def __init__(self):
+        self.state = {"joints": {"/World/Joint": {"q": 0.0, "qd": 0.0}}}
+        self.command: object = [0.4, -0.8]
+
+    def lw_policy_observation_state(self, indices):
+        return [{"state": self.state, "command": self.command} for _ in indices]
+
+
+def test_native_capture_with_command_source_passes_evidence_verifier_and_qualification(
+    tmp_path: Path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from apps.node import native_observation_capture as native_mod
+    from apps.node.observation_capture import code_hash
+    from packages.library.archive import extract_package
+    from packages.policies.native_evidence import NativeProfile
+    from packages.policies.qualification import NativeProfiles
+    from packages.training.inputs import pack_package
+    from tests.fixtures.policy import artifact_archive, model_bytes, observation_spec, policy_task
+    from tests.gateway.test_training_jobs import NODE, TOKEN
+    from tests.unit import test_native_observation_capture as controlled
+
+    registry = NativeProfiles([], allow_controlled=True)
+    app = create_app(Settings(node_token=TOKEN), observation_profiles=registry)
+    spec = observation_spec()
+    spec["observations"][0]["keys"] = spec["action"]["jointKeys"] = ["/World/Joint"]
+    spec["observations"].append(
+        {
+            "name": "velocity_command",
+            "source": "command",
+            "frame": "body",
+            "unit": "m/s",
+            "shape": [2],
+            "offset": [0.0, 0.0],
+            "scale": [1.0, 0.5],
+            "lower": [-1.0, -2.0],
+            "upper": [1.0, 2.0],
+        }
+    )
+
+    task_doc = task_document("command-native-probe")
+    task_doc["episode"]["commandEnvelope"] = [[-1.0, 1.0], [-2.0, 2.0]]
+    task_pkg_dir = tmp_path / "task_pkg"
+    task_pkg_dir.mkdir()
+    policy_task(task_pkg_dir, spec=spec, task=task_doc)
+    (task_pkg_dir / "native_provider.py").write_bytes(Path(__file__).read_bytes())
+    monkeypatch.setenv("LW_TASK_PACKAGE", str(task_pkg_dir))
+
+    # First verify malformed command payloads (bool, NaN, non-list) are rejected fail-closed
+    bad_runner = controlled.Runner()
+    bad_env = _CommandNativeEnvironment()
+    bad_obs = SimpleNamespace(env=bad_env, selected=[0], epochs=[0], physics_count=0, disabled=False)
+    bad_env.sim = SimpleNamespace(get_physics_step_count=lambda: bad_obs.physics_count)
+    bad_profile = {
+        "id": "bad-cmd-fixture",
+        "evidenceMode": "controlled",
+        "collectorSha256": code_hash(native_mod.__file__),
+        "observerSha256": code_hash(native_mod.environment_observer.__file__),
+        "runner": native_mod.source_identity(bad_runner),
+        "actor": native_mod.source_identity(bad_runner.alg.actor),
+        "act": native_mod.source_identity(bad_runner.alg.act),
+        "exporter": native_mod.source_identity(bad_runner.export_policy_to_onnx),
+        "stateProvider": native_mod.source_identity(bad_env.lw_policy_observation_state),
+        "observationGroups": ["policy"],
+        "environments": [0],
+        "boundary": "rsl-mlp-pre-normalizer",
+        "normalization": "inside-exported-graph",
+        "previousAction": "raw-native-algorithm-output",
+        "previousActionReset": "zero-on-environment-epoch",
+        "inputWidth": 3,
+        "actionWidth": 1,
+    }
+    bad_inputs = {
+        "job": {
+            "jobId": "job-bad-cmd",
+            "leaseId": "lease-bad-cmd",
+            "task": "task/command-native-probe@1",
+            "taskContentHash": "a" * 64,
+            "scene": "robot-and-tubes@2",
+            "sceneContentHash": "b" * 64,
+            "seed": 1,
+        },
+        "task": {"observation": "obs_spec.yaml"},
+    }
+    bad_env.command = [True, 0.1]
+    with native_mod.NativeObservationCapture(bad_runner, bad_obs, bad_profile, bad_inputs) as bad_cap:
+        bad_runner.alg.act(controlled.Tensor([[0.0, 0.0, 0.0]]))
+        bad_obs.physics_count = 1
+        bad_runner.alg.act(controlled.Tensor([[0.0, 0.0, 0.0]]))
+    assert bad_cap.error is not None and not bad_cap.samples
+
+    with TestClient(app) as client:
+        pushed_task = client.post(
+            "/api/v1/tasks",
+            content=pack_package(task_pkg_dir),
+            headers={"Content-Type": "application/x-tar"},
+        )
+        assert pushed_task.status_code == 201, pushed_task.text
+        task_record = pushed_task.json()
+
+        def make_artifacts(job):
+            out = tmp_path / "cmd_output"
+            out.mkdir()
+            extract_package(io.BytesIO(artifact_archive(job, model=model_bytes(size=3))), out)
+            versions = json.loads((out / "versions.json").read_bytes())
+            versions["versions"]["rsl_rl"] = "5.4.1"
+            (out / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
+            export = json.loads((out / "export.json").read_bytes())
+            runner = controlled.Runner()
+            env = _CommandNativeEnvironment()
+            observer = SimpleNamespace(env=env, selected=[0], epochs=[0], physics_count=0, disabled=False)
+            env.sim = SimpleNamespace(get_physics_step_count=lambda: observer.physics_count)
+            prof = NativeProfile(
+                id="command-native-input",
+                evidenceMode="controlled",
+                taskContentHash=job["taskContentHash"],
+                stateProviderFile="native_provider.py",
+                versions=versions["versions"],
+                inputWidth=3,
+                inputName="observations",
+                actionWidth=1,
+                collectorSha256=code_hash(native_mod.__file__),
+                observerSha256=code_hash(native_mod.environment_observer.__file__),
+                runner=native_mod.source_identity(runner),
+                actor=native_mod.source_identity(runner.alg.actor),
+                act=native_mod.source_identity(runner.alg.act),
+                exporter=native_mod.source_identity(runner.export_policy_to_onnx),
+                stateProvider=native_mod.source_identity(env.lw_policy_observation_state),
+                observationGroups=["policy"],
+                environments=[0],
+                boundary="rsl-mlp-pre-normalizer",
+                normalization="inside-exported-graph",
+                previousAction="raw-native-algorithm-output",
+                previousActionReset="zero-on-environment-epoch",
+            )
+            registry.profiles[prof.id] = prof
+            with native_mod.NativeObservationCapture(
+                runner,
+                observer,
+                prof.model_dump(mode="json"),
+                {"job": job, "task": {"observation": "obs_spec.yaml"}},
+            ) as cap:
+                runner.alg.act(controlled.Tensor([[0.0, 0.0, 0.0]]))
+                for idx in range(1, 257):
+                    observer.physics_count = idx
+                    q = idx / 25600.0
+                    cx = (idx % 32) / 64.0
+                    cy = -((idx % 16) / 16.0)
+                    env.state["joints"]["/World/Joint"]["q"] = q
+                    env.command = [cx, cy]
+                    # scale=[2.0] on q, scale=[1.0, 0.5] on command
+                    runner.alg.act(controlled.Tensor([[q * 2.0, cx * 1.0, cy * 0.5]]))
+            assert cap.error is None
+            receipt = cap.publish(out, export, versions)
+            assert receipt is not None
+            return pack_package(out)
+
+        from tests.gateway.test_training_jobs import heartbeat
+
+        plan_resp = client.post(
+            "/api/v1/plans",
+            json=training_plan(task_record["id"], budget={"gpuHours": 1}),
+        )
+        assert plan_resp.status_code == 201, plan_resp.text
+        plan_rec = plan_resp.json()
+        client.post(f"/api/v1/approvals/{plan_rec['approvalId']}/decision", json={"decision": "approve"})
+        assert (
+            client.post(
+                "/api/v1/nodes/local/heartbeat",
+                headers=NODE,
+                json=heartbeat(plan_rec, task_record),
+            ).status_code
+            == 200
+        )
+        job = client.post("/api/v1/jobs", json={"planId": plan_rec["id"], "seed": 42}).json()
+        tar_bytes = make_artifacts(job)
+        up = client.post(
+            f"/api/v1/jobs/{job['jobId']}/artifacts",
+            content=tar_bytes,
+            headers=NODE | {"X-Lease-Id": job["leaseId"], "Content-Type": "application/x-tar"},
+        )
+        assert up.status_code == 200, up.text
+        done_hb = heartbeat(
+            plan_rec,
+            task_record,
+            reports=[
+                {
+                    "jobId": job["jobId"],
+                    "leaseId": job["leaseId"],
+                    "status": "succeeded",
+                    "elapsedSeconds": 1.0,
+                    "logAfter": 0,
+                    "logs": [],
+                }
+            ],
+        )
+        assert client.post("/api/v1/nodes/local/heartbeat", headers=NODE, json=done_hb).status_code == 200
+        pol = client.post(
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+        )
+        assert pol.status_code == 201, pol.text
+        policy = pol.json()
+        route = "/api/v1/policies/command-native-probe/1/observation-checks"
+        chk = client.post(route, json={"artifact": "observations/native-samples.json"})
+        assert chk.status_code == 201, chk.text
+        check_id = chk.json()["id"]
+        assert chk.json()["result"]["numericalPass"] is True
+
+        ver = client.post(
+            f"{route}/{check_id}/verify-source",
+            json={"artifact": "observations/native-capture.json"},
+        )
+        assert ver.status_code == 200, ver.text
+        assert ver.json()["sourceVerification"]["status"] == "native_input_verified"
+        assert ver.json()["sourceVerification"]["qualified"] is True
+
+        qual = app.state.policy_evidence.qualification(policy["id"], check_id)
+        assert qual["qualified"] is True
+        assert qual["samples"] == 256
+
+
+def deepcopy_json(obj):
+    return json.loads(json.dumps(obj))
+
+
+def test_verify_against_observation_spec_supports_passive_joints_subsets_and_custom_order(tmp_path: Path):
+    import math
+
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf, verify_against_observation_spec
+
+    usd_file = tmp_path / "passive_and_subset.usda"
+    stage = Usd.Stage.CreateNew(str(usd_file))
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    root = UsdGeom.Xform.Define(stage, "/Asset").GetPrim()
+    stage.SetDefaultPrim(root)
+    for name in ("base", "link1", "passive_flap", "carriage"):
+        prim = UsdGeom.Xform.Define(stage, f"/Asset/{name}").GetPrim()
+        UsdPhysics.RigidBodyAPI.Apply(prim)
+        m = UsdPhysics.MassAPI.Apply(prim)
+        m.CreateMassAttr(1.0)
+        m.CreateDiagonalInertiaAttr(Gf.Vec3f(0.01, 0.01, 0.01))
+
+    j1 = UsdPhysics.RevoluteJoint.Define(stage, "/Asset/j_shoulder")
+    j1.CreateAxisAttr(UsdGeom.Tokens.y)
+    j1.CreateBody0Rel().SetTargets([Sdf.Path("/Asset/base")])
+    j1.CreateBody1Rel().SetTargets([Sdf.Path("/Asset/link1")])
+    j1.CreateLowerLimitAttr(-60.0)
+    j1.CreateUpperLimitAttr(60.0)
+    d1 = UsdPhysics.DriveAPI.Apply(j1.GetPrim(), "angular")
+    d1.CreateTypeAttr("force")
+    d1.CreateStiffnessAttr(1.0)
+    d1.CreateDampingAttr(0.1)
+    d1.CreateTargetPositionAttr(10.0)
+
+    # Passive / unactuated auxiliary joint (no DriveAPI)
+    jp = UsdPhysics.RevoluteJoint.Define(stage, "/Asset/j_passive")
+    jp.CreateAxisAttr(UsdGeom.Tokens.x)
+    jp.CreateBody0Rel().SetTargets([Sdf.Path("/Asset/link1")])
+    jp.CreateBody1Rel().SetTargets([Sdf.Path("/Asset/passive_flap")])
+    jp.CreateLowerLimitAttr(-30.0)
+    jp.CreateUpperLimitAttr(30.0)
+
+    j2 = UsdPhysics.PrismaticJoint.Define(stage, "/Asset/j_slider")
+    j2.CreateAxisAttr(UsdGeom.Tokens.z)
+    j2.CreateBody0Rel().SetTargets([Sdf.Path("/Asset/link1")])
+    j2.CreateBody1Rel().SetTargets([Sdf.Path("/Asset/carriage")])
+    j2.CreateLowerLimitAttr(-0.05)
+    j2.CreateUpperLimitAttr(0.05)
+    d2 = UsdPhysics.DriveAPI.Apply(j2.GetPrim(), "linear")
+    d2.CreateTypeAttr("force")
+    d2.CreateStiffnessAttr(250.0)
+    d2.CreateDampingAttr(15.0)
+    d2.CreateTargetPositionAttr(0.01)
+    stage.GetRootLayer().Save()
+
+    derived = derive_usd_mjcf(usd_file)
+    assert derived.joint_names == ("j_shoulder", "j_passive", "j_slider")
+    assert [j.actuated for j in derived.joints] == [True, False, True]
+
+    # 1) Custom non-USD order for actuated joints + passive joint in observations
+    custom_order_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "hinge_q_reversed",
+                "source": "joint_position",
+                "keys": ["/World/Lab/Bot/j_passive", "/World/Lab/Bot/j_shoulder"],
+                "frame": "world",
+                "unit": "rad",
+                "shape": [2],
+                "offset": [0.0, math.radians(10.0)],
+                "scale": [1.0, 1.0],
+            },
+            {
+                "name": "slide_qd",
+                "source": "joint_velocity",
+                "keys": ["/World/Lab/Bot/j_slider"],
+                "frame": "world",
+                "unit": "m/s",
+                "shape": [1],
+                "offset": [0.0],
+                "scale": [1.0],
+            },
+        ],
+        "action": {
+            "space": "joint_position_offset",
+            "jointKeys": ["/World/Lab/Bot/j_slider", "/World/Lab/Bot/j_shoulder"],
+            "units": ["m", "rad"],
+            "defaultPosition": [0.01, math.radians(10.0)],
+            "scale": [1.0, 1.0],
+            "lower": [-0.05, math.radians(-60.0)],
+            "upper": [0.05, math.radians(60.0)],
+        },
+    }
+    verify_against_observation_spec(
+        derived,
+        custom_order_spec,
+        entity_key="/World/Lab/Bot",
+        expected_kp={"j_shoulder": 180.0 / math.pi, "j_slider": 250.0},
+        expected_kd={"j_shoulder": 0.1 * 180.0 / math.pi, "j_slider": 15.0},
+        check_observation_offsets=True,
+    )
+
+    # 2) Controlled subset (only j_shoulder actuated by policy)
+    subset_spec = deepcopy_json(custom_order_spec)
+    subset_spec["action"] = {
+        "space": "joint_position_offset",
+        "jointKeys": ["/World/Lab/Bot/j_shoulder"],
+        "units": ["rad"],
+        "defaultPosition": [math.radians(10.0)],
+        "scale": [1.0],
+        "lower": [math.radians(-60.0)],
+        "upper": [math.radians(60.0)],
+    }
+    verify_against_observation_spec(
+        derived,
+        subset_spec,
+        entity_key="/World/Lab/Bot",
+        expected_kp=[180.0 / math.pi],
+        expected_kd=[0.1 * 180.0 / math.pi],
+    )
+
+    # 3) Passive joint in action.jointKeys is rejected
+    passive_act_spec = deepcopy_json(subset_spec)
+    passive_act_spec["action"]["jointKeys"] = ["/World/Lab/Bot/j_passive"]
+    passive_act_spec["action"]["defaultPosition"] = [0.0]
+    passive_act_spec["action"]["lower"] = [math.radians(-30.0)]
+    passive_act_spec["action"]["upper"] = [math.radians(30.0)]
+    with pytest.raises(ValueError, match="unactuated"):
+        verify_against_observation_spec(derived, passive_act_spec, entity_key="/World/Lab/Bot")
+
+    # 4) Duplicate keys in action or observations are rejected
+    dup_obs_spec = deepcopy_json(subset_spec)
+    dup_obs_spec["observations"][0]["keys"] = ["/World/Lab/Bot/j_shoulder", "/World/Lab/Bot/j_shoulder"]
+    with pytest.raises(ValueError, match="duplicate"):
+        verify_against_observation_spec(derived, dup_obs_spec, entity_key="/World/Lab/Bot")
+
+
+def test_open_usd_stage_confines_paths_rewrites_nested_layers_and_fails_closed(tmp_path: Path):
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    # Build a nested multi-layer asset:
+    # scene/stage.usda -> library:assets/robot/nested-bot/1/asset.usda
+    #                  -> ./parts/arm.usda -> library:assets/part/tip/1/asset.usda
+    tip_pkg = tmp_path / "tip_pkg"
+    tip_pkg.mkdir()
+    (tip_pkg / "asset.usda").write_text(
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" {\n'
+        '  def Xform "tip_site" {\n'
+        '    double3 xformOp:translate = (0, 0, 0.08)\n'
+        '    uniform token[] xformOpOrder = ["xformOp:translate"]\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    bot_pkg = tmp_path / "bot_pkg"
+    (bot_pkg / "parts").mkdir(parents=True)
+    arm_usda = (
+        '#usda 1.0\n(defaultPrim = "Arm"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Arm" {\n'
+        '  def Xform "upper" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '    float physics:mass = 1.0\n'
+        '    float3 physics:diagonalInertia = (0.01, 0.01, 0.01)\n'
+        '    def Xform "tip_ref" (references = @library:assets/part/tip/1/asset.usda@</Asset>) {}\n'
+        '  }\n'
+        '  def PhysicsRevoluteJoint "elbow" (prepend apiSchemas = ["PhysicsDriveAPI:angular"]) {\n'
+        '    rel physics:body0 = </Arm/base>\n'
+        '    rel physics:body1 = </Arm/upper>\n'
+        '    uniform token physics:axis = "Y"\n'
+        '    float physics:lowerLimit = -90\n'
+        '    float physics:upperLimit = 90\n'
+        '    float drive:angular:physics:stiffness = 1.0\n'
+        '    float drive:angular:physics:damping = 0.1\n'
+        '  }\n'
+        '}\n'
+    )
+    (bot_pkg / "parts" / "arm.usda").write_text(arm_usda, encoding="utf-8")
+    (bot_pkg / "asset.usda").write_text(
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" (references = @./parts/arm.usda@</Arm>) {\n'
+        '  def Xform "base" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '    float physics:mass = 2.0\n'
+        '    float3 physics:diagonalInertia = (0.02, 0.02, 0.02)\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    scene_dir = tmp_path / "scene_nested"
+    scene_dir.mkdir()
+    scene_file = scene_dir / "stage.usda"
+    scene_file.write_text(
+        '#usda 1.0\n(defaultPrim = "World"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "World" {\n'
+        '  def Xform "Lab" {\n'
+        '    def Xform "Bot" (references = @library:assets/robot/nested-bot/1/asset.usda@</Asset>) {}\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    pkgs = {"robot/nested-bot@1": bot_pkg, "part/tip@1": tip_pkg}
+    nested = derive_usd_mjcf(scene_file, prim_path="/World/Lab/Bot", asset_packages=pkgs)
+    assert nested.joint_names == ("elbow",)
+    assert "tip_site" in nested.sites
+
+    # Path traversal, external host paths, and symlinks fail closed
+    outside = tmp_path / "outside.usda"
+    _write_test_articulation_usd(outside, fixed_base=True)
+
+    for bad_ref in (
+        "../outside.usda",
+        str(outside.resolve()),
+        "library:assets/robot/nested-bot/1/../../outside.usda",
+        r"C:\outside.usda",
+    ):
+        bad_stage = tmp_path / f"bad_{ abs(hash(bad_ref)) }" / "stage.usda"
+        bad_stage.parent.mkdir(parents=True, exist_ok=True)
+        bad_stage.write_text(
+            '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+            f'def Xform "Asset" (references = @{bad_ref}@</Asset>) {{}}\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            derive_usd_mjcf(bad_stage, asset_packages=pkgs)
+
+    symlink_pkg = tmp_path / "symlink_pkg"
+    symlink_pkg.mkdir()
+    (symlink_pkg / "evil.usda").symlink_to(outside)
+    sym_scene = tmp_path / "sym_scene" / "stage.usda"
+    sym_scene.parent.mkdir()
+    sym_scene.write_text(
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" (references = @library:assets/robot/sym/1/evil.usda@</Asset>) {}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="symlink"):
+        derive_usd_mjcf(sym_scene, asset_packages={"robot/sym@1": symlink_pkg})
+
+    # Broken composition (missing file OR missing target prim) fails closed
+    broken_prim_stage = tmp_path / "broken_prim" / "stage.usda"
+    broken_prim_stage.parent.mkdir()
+    broken_prim_stage.write_text(
+        '#usda 1.0\n(defaultPrim = "World"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "World" {\n'
+        '  def Xform "Bot" (\n'
+        '    references = @library:assets/robot/nested-bot/1/asset.usda@</MissingPrim>\n'
+        '  ) {\n'
+        '    def Xform "Fallback" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '      float physics:mass = 1.0\n'
+        '      float3 physics:diagonalInertia = (0.01, 0.01, 0.01)\n'
+        '    }\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="composition"):
+        derive_usd_mjcf(broken_prim_stage, prim_path="/World/Bot", asset_packages=pkgs)
+
+
+def test_usd_mjcf_physics_fidelity_mass_units_drives_multiroot_reflection_and_sites(tmp_path: Path):
+    import xml.etree.ElementTree as ET
+
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    # 1) Authored physics:mass WITHOUT diagonalInertia on offset & multi-shape colliders
+    mass_only_usda = (
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" (prepend apiSchemas = ["PhysicsArticulationRootAPI"]) {\n'
+        '  def Xform "Carriage" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '    float physics:mass = 2.0\n'
+        '    def Cube "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+        '      double size = 0.16\n'
+        '    }\n'
+        '  }\n'
+        '  def Xform "Mast" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '    float physics:mass = 3.0\n'
+        '    def Cube "Geom" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {\n'
+        '      double size = 0.2\n'
+        '      double3 xformOp:translate = (0, 0, 0.15)\n'
+        '      uniform token[] xformOpOrder = ["xformOp:translate"]\n'
+        '    }\n'
+        '  }\n'
+        '  def PhysicsRevoluteJoint "pitch" (prepend apiSchemas = ["PhysicsDriveAPI:angular"]) {\n'
+        '    rel physics:body0 = </Asset/Carriage>\n'
+        '    rel physics:body1 = </Asset/Mast>\n'
+        '    uniform token physics:axis = "Y"\n'
+        '    float physics:lowerLimit = -45\n'
+        '    float physics:upperLimit = 45\n'
+        '    float drive:angular:physics:stiffness = 1.5\n'
+        '    float drive:angular:physics:damping = 0.3\n'
+        '  }\n'
+        '}\n'
+    )
+    mass_only_file = tmp_path / "mass_only.usda"
+    mass_only_file.write_text(mass_only_usda, encoding="utf-8")
+    derived_mass = derive_usd_mjcf(mass_only_file)
+    xml_mass = ET.fromstring(derived_mass.mjcf_xml)
+    carriage_inertial = xml_mass.find(".//body[@name='Carriage']/inertial")
+    mast_inertial = xml_mass.find(".//body[@name='Mast']/inertial")
+    assert carriage_inertial is not None and mast_inertial is not None
+    assert float(carriage_inertial.attrib["mass"]) == pytest.approx(2.0)
+    assert [float(x) for x in carriage_inertial.attrib["diaginertia"].split()] == pytest.approx(
+        [0.008533333, 0.008533333, 0.008533333], rel=1e-5
+    )
+    assert float(mast_inertial.attrib["mass"]) == pytest.approx(3.0)
+    assert [float(x) for x in mast_inertial.attrib["pos"].split()] == pytest.approx([0.0, 0.0, 0.15])
+    assert [float(x) for x in mast_inertial.attrib["diaginertia"].split()] == pytest.approx(
+        [0.02, 0.02, 0.02], rel=1e-5
+    )
+
+    # 2) Reject non-canonical metersPerUnit, kilogramsPerUnit, and acceleration DriveAPI
+    bad_mpu = tmp_path / "bad_mpu.usda"
+    bad_mpu.write_text(
+        mass_only_usda.replace("metersPerUnit = 1", "metersPerUnit = 0.01"), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="metersPerUnit"):
+        derive_usd_mjcf(bad_mpu)
+
+    bad_kpu = tmp_path / "bad_kpu.usda"
+    bad_kpu.write_text(
+        mass_only_usda.replace("metersPerUnit = 1", "metersPerUnit = 1\n kilogramsPerUnit = 0.001"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="kilogramsPerUnit"):
+        derive_usd_mjcf(bad_kpu)
+
+    bad_drive = tmp_path / "bad_drive.usda"
+    bad_drive.write_text(
+        mass_only_usda.replace(
+            "float drive:angular:physics:stiffness = 1.5",
+            'uniform token drive:angular:physics:type = "acceleration"\n'
+            "    float drive:angular:physics:stiffness = 1.5",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="force"):
+        derive_usd_mjcf(bad_drive)
+
+    # 3) Reject multiple disconnected articulation roots under scope
+    multi_root = tmp_path / "multi_root.usda"
+    multi_root.write_text(
+        '#usda 1.0\n(defaultPrim = "Asset"\n metersPerUnit = 1\n upAxis = "Z")\n'
+        'def Xform "Asset" {\n'
+        '  def Xform "BodyA" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {}\n'
+        '  def Xform "BodyB" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {}\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Multiple"):
+        derive_usd_mjcf(multi_root)
+
+    # 4) Negative-determinant mirrored mesh & guide/non-leaf Xform sites
+    mirror_file = tmp_path / "mirrored_and_sites.usda"
+    m_stage = Usd.Stage.CreateNew(str(mirror_file))
+    UsdGeom.SetStageUpAxis(m_stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(m_stage, 1.0)
+    m_root = UsdGeom.Xform.Define(m_stage, "/Asset").GetPrim()
+    m_stage.SetDefaultPrim(m_root)
+    link = UsdGeom.Xform.Define(m_stage, "/Asset/link").GetPrim()
+    UsdPhysics.RigidBodyAPI.Apply(link)
+    lm = UsdPhysics.MassAPI.Apply(link)
+    lm.CreateMassAttr(1.0)
+    lm.CreateDiagonalInertiaAttr(Gf.Vec3f(0.01, 0.01, 0.01))
+
+    mirrored_mesh = UsdGeom.Mesh.Define(m_stage, "/Asset/link/left_finger_mesh")
+    mirrored_mesh.AddScaleOp().Set(Gf.Vec3f(-1.0, 2.0, 1.0))
+    # Right-handed tetrahedron before reflection
+    mirrored_mesh.CreatePointsAttr(
+        [
+            Gf.Vec3f(0.0, 0.0, 0.0),
+            Gf.Vec3f(0.05, 0.0, 0.0),
+            Gf.Vec3f(0.0, 0.04, 0.0),
+            Gf.Vec3f(0.0, 0.0, 0.06),
+        ]
+    )
+    mirrored_mesh.CreateFaceVertexCountsAttr([3, 3, 3, 3])
+    mirrored_mesh.CreateFaceVertexIndicesAttr([0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3])
+    UsdPhysics.CollisionAPI.Apply(mirrored_mesh.GetPrim())
+
+    guide_sphere = UsdGeom.Sphere.Define(m_stage, "/Asset/link/grasp_guide")
+    guide_sphere.CreatePurposeAttr(UsdGeom.Tokens.guide)
+    guide_sphere.AddTranslateOp().Set(Gf.Vec3d(0.1, 0.0, 0.0))
+
+    cam_mount = UsdGeom.Xform.Define(m_stage, "/Asset/link/camera_mount")
+    cam_mount.AddTranslateOp().Set(Gf.Vec3d(0.0, 0.0, 0.2))
+    UsdGeom.Camera.Define(m_stage, "/Asset/link/camera_mount/rgb_cam")
+    m_stage.GetRootLayer().Save()
+
+    derived_mirror = derive_usd_mjcf(mirror_file)
+    assert "grasp_guide" in derived_mirror.sites
+    assert "camera_mount" in derived_mirror.sites
+    m_xml = ET.fromstring(derived_mirror.mjcf_xml)
+    mesh_el = m_xml.find(".//asset/mesh")
+    assert mesh_el is not None
+    nums = [float(x) for x in mesh_el.attrib["vertex"].split()]
+    verts = [(nums[i], nums[i + 1], nums[i + 2]) for i in range(0, len(nums), 3)]
+    f_nums = [int(x) for x in mesh_el.attrib["face"].split()]
+    faces = [(f_nums[i], f_nums[i + 1], f_nums[i + 2]) for i in range(0, len(f_nums), 3)]
+    # Signed volume of reflected + rewound tetrahedron MUST be positive (> 0)
+    signed_vol6 = 0.0
+    for i0, i1, i2 in faces:
+        a, b, c = verts[i0], verts[i1], verts[i2]
+        signed_vol6 += (
+            a[0] * (b[1] * c[2] - b[2] * c[1])
+            - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0])
+        )
+    assert signed_vol6 > 0.0
+
+
+def test_bridge_callback_enforces_static_onnx_and_subclass_learn_interception(
+    tmp_path: Path, monkeypatch
+):
+    import sys
+    from collections import deque
+    from types import ModuleType, SimpleNamespace
+
+    import numpy as np
+    from onnx import TensorProto, helper, numpy_helper
+
+    from apps.node import bridge_callback, mjlab_launcher
+
+    out_dir = tmp_path / "output"
+    work_dir = tmp_path / "work"
+    (work_dir / "logs" / "exp1").mkdir(parents=True)
+    monkeypatch.chdir(work_dir)
+
+    inputs_path = tmp_path / "inputs.json"
+    inputs_payload = {
+        "job": {
+            "jobId": "job-bridge-unit",
+            "task": "task/mjlab-unit@1",
+            "taskContentHash": "a" * 64,
+            "scene": "scene-a@1",
+            "sceneContentHash": "b" * 64,
+            "seed": 11,
+            "demonstrationSets": [],
+        },
+        "task": {"mjlab": {"task_id": "Lab-Unit-v0"}},
+        "plan": {"algorithm": {"library": "rsl_rl", "name": "PPO", "version": "5.0.1"}},
+        "hardware": {"device": "cpu", "gpu": None},
+    }
+    inputs_path.write_text(json.dumps(inputs_payload), encoding="utf-8")
+    monkeypatch.setenv("LW_NODE_OUTPUT", str(out_dir))
+    monkeypatch.setenv("LW_NODE_INPUTS", str(inputs_path))
+    monkeypatch.delenv("LW_NODE_VIEW_IPC", raising=False)
+
+    fake_versions = {
+        "mjlab": "1.3.0",
+        "mujoco": "4.0.1",
+        "mujoco-warp": "3.8.1",
+        "warp-lang": "1.12.0",
+        "torch": "2.9.1",
+        "rsl-rl-lib": "5.0.1",
+    }
+    monkeypatch.setattr(
+        bridge_callback.importlib.metadata,
+        "version",
+        lambda dist: fake_versions[dist],
+    )
+
+    onnx_export_calls: list[dict] = []
+
+    def fake_torch_onnx_export(*args, **kwargs):
+        onnx_export_calls.append(dict(kwargs))
+        # Write a single-file static ONNX graph at the target path (args[2] or kwargs["f"])
+        f_target = kwargs.get("f", args[2] if len(args) > 2 else out_dir / "policy.onnx")
+        w = numpy_helper.from_array(np.ones((2, 1), dtype=np.float32), "weight")
+        m = helper.make_model(
+            helper.make_graph(
+                [helper.make_node("MatMul", ["obs", "weight"], ["actions"])],
+                "static-onnx",
+                [helper.make_tensor_value_info("obs", TensorProto.FLOAT, [1, 2])],
+                [helper.make_tensor_value_info("actions", TensorProto.FLOAT, [1, 1])],
+                [w],
+            ),
+            opset_imports=[helper.make_opsetid("", 18)],
+        )
+        m.ir_version = 10
+        Path(f_target).write_bytes(m.SerializeToString())
+
+    fake_torch_mod = ModuleType("torch")
+    fake_torch_onnx_mod = ModuleType("torch.onnx")
+    fake_torch_onnx_mod.export = fake_torch_onnx_export
+    fake_torch_mod.onnx = fake_torch_onnx_mod
+    seed_events: list[tuple[str, int]] = []
+    fake_torch_mod.manual_seed = lambda s: seed_events.append(("torch", s))
+    fake_torch_mod.cuda = SimpleNamespace(is_available=lambda: False, manual_seed_all=lambda s: None)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch_mod)
+    monkeypatch.setitem(sys.modules, "torch.onnx", fake_torch_onnx_mod)
+
+    class FakeOnPolicyRunner:
+        def __init__(self, log_dir: Path):
+            self.current_learning_iteration = 0
+            self.env = None
+            self.logger = SimpleNamespace(
+                log_dir=str(log_dir),
+                rewbuffer=deque([1.5, 2.5]),
+                log=lambda *a, **kw: None,
+            )
+
+        def learn(self, num_learning_iterations=1, **_):
+            for it in range(num_learning_iterations):
+                self.current_learning_iteration = it
+                self.logger.log(it=it)
+            (Path(self.logger.log_dir) / f"model_{self.current_learning_iteration}.pt").write_bytes(
+                b"pt-ckpt"
+            )
+
+        def export_policy_to_onnx(self, path: str, filename: str = "policy.onnx"):
+            # Deliberately pass dynamo=True and dynamic_axes to prove bridge_callback overrides both!
+            fake_torch_onnx_mod.export(
+                None,
+                None,
+                str(Path(path) / filename),
+                dynamo=True,
+                dynamic_axes={"obs": {0: "batch"}, "actions": {0: "batch"}},
+            )
+
+    rsl_pkg = ModuleType("rsl_rl")
+    rsl_runners = ModuleType("rsl_rl.runners")
+    rsl_runners.OnPolicyRunner = FakeOnPolicyRunner
+    rsl_pkg.runners = rsl_runners
+    monkeypatch.setitem(sys.modules, "rsl_rl", rsl_pkg)
+    monkeypatch.setitem(sys.modules, "rsl_rl.runners", rsl_runners)
+
+    bridge_callback.install()
+    versions_doc = json.loads((out_dir / "versions.json").read_text(encoding="utf-8"))
+    assert versions_doc["versions"] == {
+        "mjlab": "1.3.0",
+        "mujoco": "4.0.1",
+        "mujoco_warp": "3.8.1",
+        "warp": "1.12.0",
+        "torch": "2.9.1",
+        "rsl_rl": "5.0.1",
+    }
+
+    # Subclass overriding learn WITHOUT calling super().learn is still intercepted once bridged
+    class CustomOverrideRunner(FakeOnPolicyRunner):
+        def learn(self, num_learning_iterations=1, **_):
+            self.current_learning_iteration = num_learning_iterations - 1
+            self.logger.log(it=self.current_learning_iteration)
+            (Path(self.logger.log_dir) / f"model_{self.current_learning_iteration}.pt").write_bytes(
+                b"custom-ckpt"
+            )
+            return "custom-done"
+
+    bridge_callback.ensure_runner_bridged(CustomOverrideRunner)
+    custom = CustomOverrideRunner(work_dir / "logs" / "exp1")
+    assert custom.learn(num_learning_iterations=2) == "custom-done"
+    assert len(onnx_export_calls) == 1
+    assert onnx_export_calls[0]["dynamo"] is False
+    assert onnx_export_calls[0]["dynamic_axes"] == {}
+    export_doc = json.loads((out_dir / "export.json").read_text(encoding="utf-8"))
+    assert export_doc["externalData"] == []
+    assert export_doc["afterLearn"] is True
+    assert export_doc["iteration"] == 1
+    metrics_lines = (out_dir / "metrics.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(metrics_lines) == 1
+
+    # Also verify RNG seeding order in mjlab_launcher._seed_everything
+    mjlab_launcher._seed_everything(99, "cpu")
+    assert ("torch", 99) in seed_events

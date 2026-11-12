@@ -29,7 +29,6 @@ def build_mjlab_launcher_parser() -> argparse.ArgumentParser:
     parser.add_argument("--external_callback", required=True)
     parser.add_argument("--physics_dt", type=float, default=None)
     parser.add_argument("--decimation", type=int, default=None)
-    parser.add_argument("--presets", default=None)
     parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--num_steps_per_env", type=int, default=None)
     parser.add_argument("--num_learning_epochs", type=int, default=None)
@@ -46,13 +45,27 @@ def parse_mjlab_launcher_args(argv: Sequence[str] | None = None) -> argparse.Nam
     return build_mjlab_launcher_parser().parse_args(list(argv) if argv is not None else None)
 
 
-def _invoke_callback(spec: str) -> None:
+def _invoke_callback(spec: str):
     module_name, sep, attr_name = spec.rpartition(".")
     if not sep or not module_name or not attr_name:
         raise ValueError(f"Invalid external_callback specification: {spec!r}")
     module = importlib.import_module(module_name)
     callback = getattr(module, attr_name)
     callback()
+    return module
+
+
+def _seed_everything(seed: int, device: str) -> None:
+    import random
+
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if device != "cpu" and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def _load_registered_mjlab_tasks(target_task: str) -> None:
@@ -76,7 +89,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         os.environ.setdefault("MUJOCO_GL", "egl")
         os.environ.setdefault("MUJOCO_EGL_DEVICE_ID", "0")
 
-    _invoke_callback(args.external_callback)
+    callback_module = _invoke_callback(args.external_callback)
+    _seed_everything(args.seed, device)
     _load_registered_mjlab_tasks(args.task)
 
     from mjlab.envs import ManagerBasedRlEnv
@@ -130,6 +144,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     )
     runner_cls = load_runner_cls(args.task) or MjlabOnPolicyRunner
+    ensure_bridged = getattr(callback_module, "ensure_runner_bridged", None)
+    if callable(ensure_bridged):
+        ensure_bridged(runner_cls)
     env_cls = getattr(env_cfg, "class_type", None) or ManagerBasedRlEnv
     env = env_cls(cfg=env_cfg, device=device, render_mode=None)
     vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)

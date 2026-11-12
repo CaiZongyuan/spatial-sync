@@ -117,6 +117,8 @@ def mjlab_trainer_arguments(inputs, callback):
         "num_mini_batches",
         "save_interval",
     }
+    if set(mjlab) - {"task_id", "sceneInput", "physics_dt", "decimation"}:
+        raise ValueError("Unsupported mjlab backend fields; no field may be silently ignored")
     if set(hyper) - known or set(plan["model"]) - {"actor", "critic", "activation", "obs_normalization"}:
         raise ValueError("Unsupported approved hyperparameter/model fields; no field may be silently ignored")
     command = [
@@ -141,8 +143,6 @@ def mjlab_trainer_arguments(inputs, callback):
         command.extend(["--physics_dt", str(mjlab["physics_dt"])])
     if mjlab.get("decimation") is not None:
         command.extend(["--decimation", str(mjlab["decimation"])])
-    if mjlab.get("presets"):
-        command.extend(["--presets", ",".join(mjlab["presets"])])
     for name in (
         "learning_rate",
         "num_steps_per_env",

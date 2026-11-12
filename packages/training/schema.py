@@ -58,7 +58,6 @@ class MjLab(Schema):
     sceneInput: Literal["usd", "scene-package"] = "usd"
     physics_dt: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     decimation: int | None = Field(default=None, ge=1, exclude_if=lambda value: value is None)
-    presets: list[Text] = Field(default_factory=list)
 
 
 NumericBound = Annotated[list[float | int], Field(min_length=2, max_length=2)]

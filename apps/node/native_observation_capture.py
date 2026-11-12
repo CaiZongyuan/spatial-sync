@@ -119,8 +119,19 @@ class NativeObservationCapture:
             if not isinstance(states, list) or len(states) != len(self.indices):
                 raise ValueError("Native state provider must map exactly the selected physical states")
             for slot, (index, vector, physical) in enumerate(zip(self.indices, vectors, states, strict=True)):
-                if not isinstance(physical, dict) or set(physical) - {"state", "references"}:
+                if not isinstance(physical, dict) or set(physical) - {"state", "references", "command"}:
                     raise ValueError("Native state provider cannot supply actor vectors or action history")
+                raw_command = physical.get("command")
+                command = None
+                if raw_command is not None:
+                    if not isinstance(raw_command, list) or any(
+                        isinstance(val, bool)
+                        or not isinstance(val, int | float)
+                        or not math.isfinite(val)
+                        for val in raw_command
+                    ):
+                        raise ValueError("Native command vector must be a list of finite numbers")
+                    command = [float(val) for val in raw_command]
                 if (
                     len(vector) != self.profile["inputWidth"]
                     or len(self.previous[slot]) != self.profile["actionWidth"]
@@ -140,9 +151,11 @@ class NativeObservationCapture:
                     "previousAction": previous,
                     "trainingObservation": vector,
                 }
-                state_hash = canonical_hash(
-                    {key: sample[key] for key in ("state", "references", "previousAction")}
-                )
+                state_for_hash = {key: sample[key] for key in ("state", "references", "previousAction")}
+                if command is not None:
+                    sample["command"] = command
+                    state_for_hash["command"] = command
+                state_hash = canonical_hash(state_for_hash)
                 if state_hash in self.unique:
                     continue
                 identity = f"env-{index}/epoch-{epoch}/step-{step}"
