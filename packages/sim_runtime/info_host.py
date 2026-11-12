@@ -37,6 +37,11 @@ class NewtonInfoHost:
         from packages.programs.simulation import select_subject
 
         subject = select_subject(simulation_subject=simulation_subject, policy_subject=policy_subject)
+        self._policy_target = (
+            (subject.target.entityKey, subject.target.action)
+            if subject is not None and subject.schema_version == "lw.policy-subject/1"
+            else None
+        )
         scripts = {
             key: binding
             for key, binding in self.catalog.entities.items()
@@ -146,7 +151,12 @@ class NewtonInfoHost:
         return self.host.snapshot()
 
     def program_execution(self, entity_key):
-        return self.host.program_execution(entity_key)
+        action = (
+            self._policy_target[1]
+            if self._policy_target is not None and entity_key == self._policy_target[0]
+            else None
+        )
+        return self.host.program_execution(entity_key, action=action)
 
     def preview(self, request):
         return self.host.preview(request)

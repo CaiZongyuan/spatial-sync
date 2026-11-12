@@ -9,7 +9,15 @@ from pydantic import ValidationError
 
 from packages.policies.consistency import compare_observations
 from packages.policies.inference import CpuPolicy
-from packages.policies.observations import ObservationSpec, assemble, coverage_failure, joint_targets, sim_gap
+from packages.policies.observations import (
+    ObservationSpec,
+    assemble,
+    command_envelope_failure,
+    coverage_failure,
+    joint_targets,
+    sim_gap,
+)
+from packages.training.schema import TaskMetadata
 from tests.fixtures.policy import model_bytes, observation_spec
 from tests.fixtures.training_task import task_document
 
@@ -163,3 +171,235 @@ def test_consistency_report_requires_256_independent_inputs_and_checks_maximum()
     samples[-1]["trainingObservation"] = [0.5002]
     result = compare_observations(spec, samples)
     assert not result["numericalPass"] and result["maxAbsoluteError"] == pytest.approx(0.0002)
+
+
+def test_embodied_angular_velocity_projected_gravity_command_and_offset_action_space():
+    half_sqrt2 = math.sqrt(0.5)
+    raw_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "ang_vel_body",
+                "source": "body_angular_velocity",
+                "key": "/World/Lab/Bot/Base",
+                "frame": "body",
+                "unit": "rad/s",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            },
+            {
+                "name": "ang_vel_world",
+                "source": "body_angular_velocity",
+                "key": "/World/Lab/Bot/Base",
+                "frame": "world",
+                "unit": "rad/s",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [0.5, 0.5, 0.5],
+            },
+            {
+                "name": "gravity",
+                "source": "projected_gravity",
+                "key": "/World/Lab/Bot/Base",
+                "unit": "1",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            },
+            {
+                "name": "cmd",
+                "source": "command",
+                "frame": "body",
+                "unit": "m/s",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [2.0, 2.0, 1.0],
+                "lower": [-0.3, -0.3, -1.0],
+                "upper": [0.3, 0.3, 1.0],
+            },
+        ],
+        "action": {
+            "space": "joint_position_offset",
+            "jointKeys": ["/World/Lab/Bot/hip_l", "/World/Lab/Bot/hip_r"],
+            "units": ["rad", "rad"],
+            "defaultPosition": [0.2, -0.2],
+            "scale": [0.25, 0.25],
+            "lower": [-0.8, -0.8],
+            "upper": [0.8, 0.8],
+        },
+    }
+    spec = ObservationSpec.model_validate(raw_spec)
+    assert spec.size == 12
+
+    # +90 deg pitch around Y: q = (0, sin(45), 0, cos(45)).
+    # Local +X points to world -Z, local +Z points to world +X.
+    # Therefore world gravity (0, 0, -1) in body frame is (+1, 0, 0)!
+    # World angular velocity (1, 2, 3) rotated by -90 deg about Y is (-3, 2, 1)!
+    state = {
+        "bodies": {
+            "/World/Lab/Bot/Base": {
+                "p": [0.0, 0.0, 0.3],
+                "q": [0.0, half_sqrt2, 0.0, half_sqrt2],
+                "w": [1.0, 2.0, 3.0],
+            }
+        },
+        "joints": {},
+        "sites": {},
+    }
+    assembled = assemble(spec, state, previous_action=[0.0, 0.0], command=[0.15, -0.05, 0.4])
+    expected = np.array(
+        [
+            -3.0, 2.0, 1.0,
+            0.5, 1.0, 1.5,
+            1.0, 0.0, 0.0,
+            0.3, -0.1, 0.4,
+        ],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(assembled, expected, atol=1e-6)
+
+    # Missing, malformed, or out-of-bounds command must fail assembly
+    with pytest.raises(ValueError, match="command"):
+        spec.assemble(state, previous_action=[0.0, 0.0])
+    with pytest.raises(ValueError):
+        spec.assemble(state, previous_action=[0.0, 0.0], command=[0.1, float("nan"), 0.0])
+    with pytest.raises(ValueError, match="bounds"):
+        spec.assemble(state, previous_action=[0.0, 0.0], command=[0.45, 0.0, 0.0])
+
+    # joint_position_offset targets = clip(defaultPosition + raw * scale, lower, upper)
+    targets = joint_targets(spec, [0.7, -0.7], [1.0, -4.0])
+    np.testing.assert_allclose(targets, [0.45, -0.8], atol=1e-7)
+
+    # Optional maxDelta on joint_position_offset also bounds per-step excursion from current positions
+    bounded_raw = deepcopy(raw_spec)
+    bounded_raw["action"]["maxDelta"] = [0.1, 0.1]
+    bounded_spec = ObservationSpec.model_validate(bounded_raw)
+    np.testing.assert_allclose(joint_targets(bounded_spec, [0.0, 0.0], [1.0, -4.0]), [0.1, -0.1], atol=1e-7)
+
+    # Consistency report passes command through when present
+    samples = [
+        {
+            "state": state,
+            "trainingObservation": expected.tolist(),
+            "previousAction": [0.0, 0.0],
+            "command": [0.15, -0.05, 0.4],
+        }
+        for _ in range(256)
+    ]
+    assert compare_observations(spec, samples)["numericalPass"]
+
+
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda d: d["action"].pop("defaultPosition"),
+        lambda d: d["action"].update({"defaultPosition": [0.95, 0.0]}),
+        lambda d: d["observations"][0].update({"unit": "m/s"}),
+        lambda d: d["observations"][0].update({"lower": [-1.0, -1.0, -1.0], "upper": [1.0, 1.0, 1.0]}),
+        lambda d: d["observations"][2].update({"unit": "m"}),
+        lambda d: d["observations"][2].update({"frame": "world"}),
+        lambda d: d["observations"][2].update({"frame": "body"}),
+        lambda d: d["observations"][2].update({"frame": "/World/Lab/OtherBody"}),
+        lambda d: d["observations"][3].update({"key": "/World/Lab/Bot/Base"}),
+        lambda d: d["observations"][3].update({"frame": "/World/Lab/Bot/Base"}),
+        lambda d: d["observations"][3].pop("lower"),
+        lambda d: d["observations"][3].update({"lower": [0.5, 0.0], "upper": [-0.5, 0.0]}),
+    ],
+)
+def test_embodied_observation_and_offset_action_validation_rejects_invalid_contracts(mutator):
+    raw_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "ang_vel",
+                "source": "body_angular_velocity",
+                "key": "/World/Lab/Bot/Base",
+                "frame": "body",
+                "unit": "rad/s",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            },
+            {
+                "name": "joint_q",
+                "source": "joint_position",
+                "keys": ["/World/Lab/Bot/hip_l", "/World/Lab/Bot/hip_r"],
+                "frame": "world",
+                "unit": "rad",
+                "shape": [2],
+                "offset": [0.0, 0.0],
+                "scale": [1.0, 1.0],
+            },
+            {
+                "name": "gravity",
+                "source": "projected_gravity",
+                "key": "/World/Lab/Bot/Base",
+                "frame": "/World/Lab/Bot/Base",
+                "unit": "1",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            },
+            {
+                "name": "cmd",
+                "source": "command",
+                "frame": "body",
+                "unit": "1",
+                "shape": [2],
+                "offset": [0.0, 0.0],
+                "scale": [1.0, 1.0],
+                "lower": [-1.0, -1.0],
+                "upper": [1.0, 1.0],
+            },
+        ],
+        "action": {
+            "space": "joint_position_offset",
+            "jointKeys": ["/World/Lab/Bot/hip_l", "/World/Lab/Bot/hip_r"],
+            "units": ["rad", "rad"],
+            "defaultPosition": [0.0, 0.0],
+            "scale": [0.2, 0.2],
+            "lower": [-0.5, -0.5],
+            "upper": [0.5, 0.5],
+        },
+    }
+    mutator(raw_spec)
+    with pytest.raises(ValidationError):
+        ObservationSpec.model_validate(raw_spec)
+
+
+def test_delta_action_still_requires_max_delta_and_forbids_default_position():
+    base = observation_spec()
+    missing_delta = deepcopy(base)
+    missing_delta["action"].pop("maxDelta")
+    with pytest.raises(ValidationError):
+        ObservationSpec.model_validate(missing_delta)
+
+    with_default = deepcopy(base)
+    with_default["action"]["defaultPosition"] = [0.0]
+    with pytest.raises(ValidationError):
+        ObservationSpec.model_validate(with_default)
+
+
+def test_continuous_param_bounds_and_command_envelope_coverage():
+    raw_task = task_document()
+    raw_task["implements"] = "balancer/v1.moveTo"
+    raw_task["episode"] = {
+        "params": {"speed": 0.12},
+        "paramBounds": {"x": [-1.5, 1.5], "y": [-1.0, 1.0], "speed": [0.05, 0.25]},
+        "commandEnvelope": [[-0.25, 0.25], [-0.15, 0.15], [-0.8, 0.8]],
+    }
+    parsed = TaskMetadata.model_validate(raw_task).model_dump(mode="json")
+
+    assert coverage_failure(parsed, "moveTo", {"x": 0.5, "y": -0.4}) is None
+    assert coverage_failure(parsed, "moveTo", {"x": -1.5, "y": 1.0, "speed": 0.2}) is None
+    assert coverage_failure(parsed, "moveTo", {"x": 2.0, "y": 0.0})["code"] == "precondition_failed"
+    assert coverage_failure(parsed, "moveTo", {"x": 0.5})["code"] == "precondition_failed"
+    assert coverage_failure(parsed, "moveTo", {"x": True, "y": 0.0})["code"] == "precondition_failed"
+    extra_params = {"x": 0.5, "y": 0.0, "extra": 1}
+    assert coverage_failure(parsed, "moveTo", extra_params)["code"] == "precondition_failed"
+
+    assert command_envelope_failure(parsed, [0.2, -0.1, 0.5]) is None
+    assert command_envelope_failure(parsed, [0.3, 0.0, 0.0])["code"] == "precondition_failed"
+    assert command_envelope_failure(parsed, [0.1, 0.0])["code"] == "precondition_failed"
+

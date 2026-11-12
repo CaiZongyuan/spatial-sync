@@ -39,15 +39,31 @@ class ProgramConfig(BaseModel):
 
 class Program(Protocol):
     id: ClassVar[str]
-    type: ClassVar[str]
+    type: ClassVar[str | None]
     Config: ClassVar[type[BaseModel]]
     tick_priority: ClassVar[int]
+
+    @classmethod
+    def supports_type(cls, entity_type: str) -> bool:
+        declared = getattr(cls, "type", None)
+        return declared is None or declared == entity_type
 
     def init(self, ctx): ...
     def accept(self, inv, ctx): ...
     def start(self, inv, ctx): ...
     def tick(self, ctx, dt): ...
     def cancel(self, inv, ctx): ...
+
+
+def program_supports_type(program, entity_type: str | None) -> bool:
+    """Check entity-type compatibility for Program classes or serialized program descriptors."""
+    if program is None or not isinstance(entity_type, str) or not entity_type:
+        return False
+    supports = getattr(program, "supports_type", None)
+    if callable(supports):
+        return bool(supports(entity_type))
+    declared = program["type"] if isinstance(program, dict) else program.type
+    return declared is None or declared == entity_type
 
 
 class PreviewProgram(Program, Protocol):
@@ -126,6 +142,17 @@ class Ctx:
     @property
     def key(self):
         return self._host._states[self._index].key
+
+    @property
+    def entity_type(self) -> str:
+        return self._host.catalog.entities[self.key]["type"]
+
+    @property
+    def property_names(self) -> tuple[str, ...]:
+        return self._host._states[self._index].names
+
+    def action_params(self, action: str) -> tuple[str, ...]:
+        return tuple(self._host.catalog.action(self.key, action)["params"])
 
     @property
     def sim_time(self):
@@ -297,8 +324,14 @@ class HostCore:
     def values(self):
         return {state.key: state.export_values() for state in self._states}
 
-    def program_execution(self, entity_key):
+    def program_execution(self, entity_key, *, action: str | None = None):
         program = self._programs[self._entity_indices[entity_key]]
+        if action is not None:
+            for_action = getattr(program, "execution_evidence_for_action", None)
+            if callable(for_action):
+                result = for_action(action)
+                if result is not None:
+                    return deepcopy(result)
         evidence = getattr(program, "execution_evidence", None)
         return deepcopy(evidence()) if evidence is not None else None
 

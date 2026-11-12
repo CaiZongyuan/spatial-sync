@@ -14,6 +14,7 @@ from packages.protocol.schema import Catalog as CatalogDocument
 from .binding_validation import compile_alert_rules, validate_binding_semantics
 from .conditions import validate_conditions
 from .declarations import EntityBindingDeclaration, EntityTypeDeclaration
+from .program import program_supports_type
 from .schema_subset import compile_schema
 
 DEVICE_ROOT = Path(__file__).resolve().parents[2] / "devices"
@@ -54,7 +55,7 @@ class Catalog(BaseModel):
     def replace_program(self, entity_key, program, config):
         """Replace one validated implementation while preserving its type and interlocks."""
         binding = self.entities[entity_key]
-        if binding["type"] != program.type:
+        if not program_supports_type(program, binding["type"]):
             raise ValueError("Replacement Program must implement the existing entity type")
         parsed = program.Config.model_validate(config)
         self.entities = self.entities | {
@@ -85,7 +86,9 @@ class Catalog(BaseModel):
         return deepcopy(adapter.validate_python(data)) if adapter else deepcopy(data)
 
 
-def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None, template_assets=None):
+def load_catalog(
+    manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=None, template_assets=None, extra_types=None
+):
     root = Path(root)
     scene_file = (
         Path(scene_file)
@@ -111,13 +114,17 @@ def load_catalog(manifest, scene_id, registry, *, root=DEVICE_ROOT, scene_file=N
         if definition["type"] in types:
             raise ValueError(f"Duplicate entity type: {definition['type']}")
         types[definition["type"]] = definition
+    for type_id, definition in (extra_types or {}).items():
+        if type_id in types:
+            raise ValueError(f"Duplicate entity type: {type_id}")
+        types[type_id] = deepcopy(definition)
     sites = {site.entityKey for site in manifest.sites}
     entities = {}
     configs = {}
     for binding in scene["entities"]:
         key = binding["key"]
         cls = registry.get(binding["program"])
-        if cls is None or cls.type != binding["type"]:
+        if not program_supports_type(cls, binding["type"]):
             raise ValueError(f"Unknown program or program/type mismatch: {binding['program']}")
         config = binding.get("config", {})
         for name, value in list(config.items()):

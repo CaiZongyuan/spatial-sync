@@ -19,9 +19,10 @@ from packages.library.archive import (
     package_files,
     relative_path,
 )
-from packages.library.common import NAME, TYPE_ROOT, LibraryError, content_hash, document
+from packages.library.common import NAME, LibraryError, content_hash, document, load_entity_types
 from packages.library.templates import resolve
 from packages.library.transactions import durable_json
+from packages.policies.observations import ObservationSpec
 from packages.training.inputs import pack_package
 from packages.training.schema import TaskMetadata
 
@@ -88,6 +89,33 @@ class TaskLibrary:
             observation = relative_path(task.observation).as_posix()
             if observation not in files:
                 raise ValueError("observation must name an existing package-local file")
+            obs_doc = document(package / observation)
+            if (
+                "schema" in obs_doc
+                or "observations" in obs_doc
+                or task.episode.commandEnvelope is not None
+            ):
+                spec = ObservationSpec.model_validate(obs_doc)
+                if spec.action.space != task.control.action:
+                    raise ValueError("obs_spec action space must match task.control.action")
+                command_obs = [item for item in spec.observations if item.source == "command"]
+                if command_obs:
+                    envelope = task.episode.commandEnvelope
+                    if envelope is None:
+                        raise ValueError("command observation requires task.episode.commandEnvelope")
+                    for item in command_obs:
+                        if len(envelope) != item.shape[0] or any(
+                            not (lo <= float(env_lo) <= float(env_hi) <= hi)
+                            for (env_lo, env_hi), lo, hi in zip(
+                                envelope, item.lower, item.upper, strict=True
+                            )
+                        ):
+                            raise ValueError(
+                                "task.episode.commandEnvelope must match command observation width "
+                                "and lie within [lower, upper]"
+                            )
+                elif task.episode.commandEnvelope is not None:
+                    raise ValueError("commandEnvelope requires a command observation in obs_spec")
             project = tomllib.loads((package / "pyproject.toml").read_text(encoding="utf-8"))
             entries = project.get("project", {}).get("entry-points", {}).get("isaaclab.tasks", {})
             if not entries or not isinstance(entries, dict) or any(
@@ -109,7 +137,7 @@ class TaskLibrary:
                     raise ValueError("Task condition entity must match exactly one scene binding")
                 return matched[0]
 
-            types = {item["type"]: item for item in (document(path) for path in TYPE_ROOT.glob("*.yaml"))}
+            types = load_entity_types()
             interface, action = task.implements.split(".")
             if entity_type(task.robot) != interface or action not in types[interface]["actions"]:
                 raise ValueError("implements must name an action of the selected robot type")

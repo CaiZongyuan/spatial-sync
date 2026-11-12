@@ -17,7 +17,7 @@ from urllib.parse import quote
 from packages.library.archive import MAX_UPLOAD_BYTES as MAX_UPLOAD_BYTES
 from packages.library.archive import indexed_file, package_files
 from packages.library.archive import invalid as invalid
-from packages.library.common import BUILTIN_ROOT, TYPE_ROOT, LibraryError, content_hash, document
+from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, load_entity_types
 from packages.library.metadata import AssetMetadata as AssetMetadata
 from packages.library.metadata import asset_metadata as metadata
 from packages.library.reports import (
@@ -304,9 +304,7 @@ class AssetLibrary:
                 provenance = json.loads(provenance_file.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 provenance = {"error": "Provenance has not passed S4 validation"}
-        definitions = {
-            value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
-        }
+        definitions = load_entity_types()
         report = version.report()
         return deepcopy(
             version.summary()

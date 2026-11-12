@@ -27,4 +27,5 @@ class Sample(Schema):
     state: dict
     trainingObservation: list[float]
     previousAction: list[float]
+    command: list[float] | None = Field(default=None, exclude_if=lambda value: value is None)
     references: dict[str, str] = Field(default_factory=dict)

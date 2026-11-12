@@ -18,6 +18,8 @@ from packages.library.common import NAME, LibraryError, document
 from packages.library.robot_resources import Embodiment, RobotModel
 from packages.library.transactions import durable_json
 from packages.policies.library import read_json
+from packages.policies.observations import ObservationSpec
+from packages.policies.subjects import CandidateIdentity
 from packages.programs.simulation import (
     admitted_subject,
     parse_subject,
@@ -258,6 +260,16 @@ class ControllerPromotions:
                 for binding in value["bindings"]
             )
         ]
+        if len(matches) != 1 and scene_requires_material_authorization(scene, "newton"):
+            permit = self.authorize_scene(scene)
+            if permit is not None and permit["target"]["entityKey"] == target:
+                emb_id = permit["controller"]["document"]["embodiment"]
+                matches = [
+                    value for value in self.resources._documents("embodiments", Embodiment).values()
+                    if value["kind"] == "sim"
+                    and value["id"] == emb_id
+                    and value["controller"] == permit["controller"]["id"]
+                ]
         if len(matches) != 1:
             raise PlanError("promotion_embodiment_unavailable", "Select one fixed simulated Embodiment")
         embodiment = matches[0]
@@ -265,20 +277,66 @@ class ControllerPromotions:
         controller.pop("versions")  # A prepared immutable version does not change the deployed current.
         return embodiment, controller
 
+    def _policy_identity(self, policy_id):
+        record, _ = self.manager.policies.resolve(policy_id)
+        fields = {name: record[name] for name in CandidateIdentity.model_fields if name in record}
+        return CandidateIdentity(**fields).model_dump(mode="json")
+
+    def _policy_composition(self, policy_id):
+        record, package = self.manager.policies.resolve(policy_id)
+        spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
+        runtime_task = read_json(package / "task.json")
+        return {
+            "policy": record["id"],
+            "action": {
+                "space": spec.action.space,
+                "hz": runtime_task["control"]["hz"],
+                "hzSource": record["id"] + "/task.json#/control/hz",
+            },
+            "observation": record["observationSha256"],
+            "task": record["task"],
+        }
+
     def _materials(self, scene, subject):
         permit = self.authorize_scene(scene)
         materials = deepcopy(permit["materialIdentities"]) if permit else {}
-        materials[subject.target.entityKey] = subject.document()["candidateIdentity"]
+        entity_key = subject.target.entityKey
+        candidate = subject.document()["candidateIdentity"]
+        config_policies = subject.binding.get("config", {}).get("policies")
+        if candidate.get("kind") == "policy" and config_policies:
+            prior_entry = materials.get(entity_key)
+            prior_policies = (
+                prior_entry.get("policies", {})
+                if isinstance(prior_entry, dict) and prior_entry.get("kind") == "policy-bundle"
+                else {}
+            )
+            bundle = {}
+            for action, pol_id in sorted(config_policies.items()):
+                if action == subject.target.action:
+                    bundle[action] = candidate
+                elif action in prior_policies and prior_policies[action].get("id") == pol_id:
+                    bundle[action] = deepcopy(prior_policies[action])
+                else:
+                    bundle[action] = self._policy_identity(pol_id)
+            materials[entity_key] = {"kind": "policy-bundle", "policies": bundle}
+        else:
+            materials[entity_key] = candidate
         return materials
 
     def _model(self, subject, embodiment, row):
         candidate = subject.document()["candidateIdentity"]
         policy = candidate["kind"] == "policy"
+        if policy:
+            _, package = self.manager.policies.resolve(candidate["id"])
+            spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
+            action_space = spec.action.space
+        else:
+            action_space = subject.target.interface
         facts = {
             "title": candidate["id"],
             "family": "rl-policy" if policy else "scripted", "source": candidate["id"],
             "license": None, "parameters": None, "embodiments": [embodiment["id"]],
-            "upstreamEmbodiments": [], "actionSpace": "joint_position_delta" if policy else "robot-arm/v1",
+            "upstreamEmbodiments": [], "actionSpace": action_space,
             "compute": {"inference": "local CPU"}, "runnable": True,
             "capability": {"program": subject.binding["program"], "sources": ["newton"],
                            "requirements": ["Exact committed human deployment proof"],
@@ -364,12 +422,30 @@ class ControllerPromotions:
             embodiment, controller = self._controller(scene, subject.target.entityKey)
             model = self._model(subject, embodiment, train.current_accepted)
             candidate = subject.document()["candidateIdentity"]
+            policies_composition = None
             if candidate["kind"] == "policy":
                 _, package = self.manager.policies.resolve(candidate["id"])
                 runtime_task = read_json(package / "task.json")
                 action = {"space": model["actionSpace"], "hz": runtime_task["control"]["hz"],
                           "hzSource": candidate["id"] + "/task.json#/control/hz"}
                 task_id = candidate["task"]
+                config_policies = subject.binding.get("config", {}).get("policies")
+                if config_policies:
+                    prior_current = controller.get("current") or {}
+                    prior_compositions = prior_current.get("policies") or {}
+                    policies_composition = {}
+                    for act, pol_id in sorted(config_policies.items()):
+                        fresh_comp = self._policy_composition(pol_id)
+                        if (
+                            act != subject.target.action
+                            and act in prior_compositions
+                            and prior_compositions[act].get("policy") == pol_id
+                        ):
+                            if prior_compositions[act] != fresh_comp:
+                                _refuse("promotion_context_changed")
+                            policies_composition[act] = deepcopy(prior_compositions[act])
+                        else:
+                            policies_composition[act] = fresh_comp
             else:
                 action = {"space": model["actionSpace"], "hz": None,
                           "hzUnknownReason": "Runner-owned script ticks have no declared material frequency"}
@@ -381,6 +457,7 @@ class ControllerPromotions:
                       if candidate["kind"] == "program" else None,
                       "action": action,
                       "observation": candidate.get("observationSha256"), "task": task_id,
+                      **({"policies": policies_composition} if policies_composition is not None else {}),
                       "evaluationId": train.current_accepted["evaluationId"]}
             identifier = "promotion-" + uuid.uuid4().hex
             context = {"baseScene": {"id": scene.id, "contentHash": scene.content_hash},

@@ -13,7 +13,7 @@ import yaml
 
 from packages.info.schema_subset import compile_schema
 from packages.library.archive import destination_parent, extract_package, import_lock, package_files
-from packages.library.common import NAME, TYPE_ROOT, LibraryError, document
+from packages.library.common import NAME, LibraryError, load_entity_types
 from packages.library.transactions import durable_json
 from packages.programs.metadata import ProgramMetadata
 from packages.programs.subjects import fingerprint
@@ -89,7 +89,10 @@ def inspect_package(path):
                 raise invalid("Program package exceeds 8 MiB")
         metadata = ProgramMetadata.model_validate(yaml.safe_load(material["program.yaml"]))
         interface, action = metadata.implements.rsplit(".", 1)
-        entity_type = document(TYPE_ROOT / (interface.replace("/", ".") + ".yaml"))
+        types = load_entity_types()
+        if interface not in types:
+            raise invalid("Unknown Program interface")
+        entity_type = types[interface]
         if action not in entity_type["actions"]:
             raise invalid("Program action is not declared by its interface")
         compile_schema(metadata.configSchema).validate_python(metadata.config)

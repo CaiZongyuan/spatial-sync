@@ -70,8 +70,12 @@ def admitted_subject(record):
     )
 
 
+def _authorized_program_ids():
+    return set(policies.policy_programs()) | {"robot_arm.script"}
+
+
 def scene_requires_material_authorization(scene, source):
-    programs = {policies.PolicyProgram.id, "robot_arm.script"}
+    programs = _authorized_program_ids()
     # Legacy valid builtin reports predate effectiveBindings. Inspect their resolved
     # declarations too, so neither a missing report key nor a template bypasses admission.
     bindings = scene.report().get("effectiveBindings", {}).get(source)
@@ -81,14 +85,17 @@ def scene_requires_material_authorization(scene, source):
 
 
 def material_bindings(catalog):
+    programs = _authorized_program_ids()
     return {
         key: binding
         for key, binding in catalog.entities.items()
-        if binding["program"] in (policies.PolicyProgram.id, "robot_arm.script")
+        if binding["program"] in programs
     }
 
 
 def validate_candidate_material(candidate, binding, roots, *, controller=None):
+    if candidate.get("kind") == "policy-bundle":
+        return policies.validate_policy_bundle_material(candidate, binding, roots, controller=controller)
     schema = {"policy": "lw.policy-subject/1", "program": "lw.script-subject/1"}.get(candidate.get("kind"))
     return _adapter({"schema": schema}).material(candidate, binding, roots, controller=controller)
 

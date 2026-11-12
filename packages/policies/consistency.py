@@ -16,6 +16,7 @@ def compare_observations(spec, samples):
             spec,
             sample["state"],
             previous_action=sample["previousAction"],
+            command=sample.get("command"),
             references=sample.get("references", {}),
         )
         error = np.abs(actual - expected)

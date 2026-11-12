@@ -69,10 +69,16 @@ class PhysicsPort:
             for array in (simulation.control.joint_target_q, simulation.control.joint_target_qd)
         )
         self.target_q, self.target_qd = (array.numpy() for array in self._targets)
+        self._body_com = model.body_com.numpy().astype(np.float64, copy=True)
         self._staging = (
             tuple(
                 wp.empty_like(array, device="cpu", pinned=True)
-                for array in (simulation.state.body_q, simulation.state.joint_q, simulation.state.joint_qd)
+                for array in (
+                    simulation.state.body_q,
+                    simulation.state.body_qd,
+                    simulation.state.joint_q,
+                    simulation.state.joint_qd,
+                )
             )
             if model.device.is_cuda
             else None
@@ -80,6 +86,7 @@ class PhysicsPort:
         self.welds = Welds(model, simulation.solver, getattr(simulation.builder, "spatial_weld_pairs", {}))
         self.last_time = None
         self.body = None
+        self.body_qd = None
         self.releasing = set()
         self.capture()
 
@@ -147,14 +154,19 @@ class PhysicsPort:
         # These are the only state transfers programs consume. On CPU .numpy()
         # is a view; the previous positions alone are retained for linear speed.
         previous = getattr(self, "previous_positions", None)
-        arrays = self.sim.state.body_q, self.sim.state.joint_q, self.sim.state.joint_qd
+        arrays = (
+            self.sim.state.body_q,
+            self.sim.state.body_qd,
+            self.sim.state.joint_q,
+            self.sim.state.joint_qd,
+        )
         if self._staging:
             with wp.ScopedDevice(self.sim.model.device):
                 for target, source in zip(self._staging, arrays, strict=True):
                     wp.copy(target, source)
                 wp.synchronize_device(self.sim.model.device)
             arrays = self._staging
-        self.body, self.q, self.qd = (array.numpy() for array in arrays)
+        self.body, self.body_qd, self.q, self.qd = (array.numpy() for array in arrays)
         self.frame_body = self.body.copy()
         self.sample_time_ms = monotonic()*1000
         dt = self.sim.sim_time - self.last_time if self.last_time is not None else 0
@@ -178,6 +190,28 @@ class PhysicsPort:
     def body_pose(self, key):
         pose = self.body[self.bodies[key] if isinstance(key, str) else key]
         return pose[:3], pose[3:]
+
+    def _rotate_to_frame(self, vector, body_index, frame):
+        if frame == "world":
+            return np.array(vector, dtype=np.float64, copy=True)
+        _, q = self.body_pose(body_index if frame == "body" else frame)
+        return np.array(rotate_vector([-q[0], -q[1], -q[2], q[3]], vector), dtype=np.float64)
+
+    def body_linear_velocity(self, key, *, frame="world", point="com"):
+        index = self.bodies[key] if isinstance(key, str) else key
+        linear = np.asarray(self.body_qd[index, :3], dtype=np.float64)
+        if point == "origin":
+            _, q = self.body_pose(index)
+            angular = np.asarray(self.body_qd[index, 3:6], dtype=np.float64)
+            linear = linear - np.cross(angular, rotate_vector(q, self._body_com[index]))
+        elif point != "com":
+            raise ValueError("point must be 'com' or 'origin'")
+        return self._rotate_to_frame(linear, index, frame)
+
+    def body_angular_velocity(self, key, *, frame="world"):
+        index = self.bodies[key] if isinstance(key, str) else key
+        angular = np.asarray(self.body_qd[index, 3:6], dtype=np.float64)
+        return self._rotate_to_frame(angular, index, frame)
 
     def site_pose(self, key):
         site = self.sites[key] if isinstance(key, str) else key
@@ -245,7 +279,7 @@ class PhysicsPort:
         self.welds.reset()
         self.target_q[:] = self.sim.control.joint_target_q.numpy()
         self.target_qd[:] = self.sim.control.joint_target_qd.numpy()
-        self.last_time, self.body = None, None
+        self.last_time, self.body, self.body_qd = None, None, None
         self.previous_positions = None
         self._site_motion_history.clear()
         self.releasing.clear()

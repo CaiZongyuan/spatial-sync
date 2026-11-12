@@ -14,6 +14,7 @@ from packages.library.templates import TemplateError
 from packages.library.templates import resolve as resolve_templates
 from packages.programs.metadata import ProgramIntent
 
+ActionKey = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$")]
 Name = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")]
 PinnedScene = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")]
 
@@ -59,6 +60,13 @@ class Action(Document):
                                       exclude_if=lambda value: value is None)
 
 
+class ActionPolicyComposition(Document):
+    policy: str = Field(pattern=r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")
+    action: Action
+    observation: str = Field(pattern=r"^[0-9a-f]{64}$")
+    task: str = Field(pattern=r"^task/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")
+
+
 class ControllerVersion(Document):
     controller: Name
     version: int = Field(ge=1)
@@ -70,6 +78,9 @@ class ControllerVersion(Document):
     action: Action
     observation: str | None
     task: str | None
+    policies: dict[ActionKey, ActionPolicyComposition] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     scene: PinnedScene
     evaluationId: str | None
 
@@ -77,8 +88,13 @@ class ControllerVersion(Document):
     def actual_script_material(self):
         if (self.program == "robot_arm.script") != (self.programArtifact is not None):
             raise ValueError("A script Controller requires its exact immutable Program artifact")
-        if self.programArtifact is not None and self.policy is not None:
+        if self.programArtifact is not None and (self.policy is not None or self.policies is not None):
             raise ValueError("Script and Policy material identities cannot be interchanged")
+        if self.policies is not None:
+            if not self.policies or self.policy is None or all(
+                item.policy != self.policy for item in self.policies.values()
+            ):
+                raise ValueError("Multi-action Controller policies must be non-empty and include policy")
         return self
 
 

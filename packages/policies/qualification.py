@@ -91,6 +91,8 @@ class NativeCaptureVerifier:
         unique, scopes = set(), {}
         for sample, witness in zip(envelope.samples, receipt.witnesses, strict=True):
             state = {key: getattr(sample, key) for key in ("state", "references", "previousAction")}
+            if sample.command is not None:
+                state["command"] = sample.command
             identity = f"env-{witness.environment}/epoch-{witness.epoch}/step-{witness.physicsStep}"
             scope = (witness.epoch, witness.physicsStep)
             if (

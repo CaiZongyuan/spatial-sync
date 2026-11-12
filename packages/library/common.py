@@ -1,7 +1,9 @@
 """Library identity and unchanged raw-file tree hashing shared by both package kinds."""
 
 import hashlib
+import os
 import re
+import stat
 from pathlib import Path
 
 import yaml
@@ -25,6 +27,48 @@ def document(path):
     if not isinstance(value, dict):
         raise ValueError(f"Expected a mapping: {path}")
     return value
+
+
+def extra_entity_types(extra_dir=None):
+    raw = extra_dir if extra_dir is not None else os.getenv("SPATIAL_EXTRA_DEVICE_TYPES_DIR")
+    if not raw:
+        return {}
+    path = Path(raw).expanduser()
+    if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
+        raise ValueError(f"Extra device types directory cannot be a link: {path}")
+    resolved = path.resolve()
+    if not resolved.is_dir():
+        raise ValueError(f"Extra device types directory does not exist: {path}")
+    types = {}
+    for file in sorted(resolved.glob("*.yaml")):
+        info = file.stat(follow_symlinks=False)
+        if (
+            file.is_symlink()
+            or (hasattr(file, "is_junction") and file.is_junction())
+            or not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or not file.resolve().is_relative_to(resolved)
+        ):
+            raise ValueError(f"Extra device type file must be a regular local file: {file}")
+        value = document(file)
+        if value["type"] in types:
+            raise ValueError(f"Duplicate entity type: {value['type']}")
+        types[value["type"]] = value
+    return types
+
+
+def load_entity_types(extra_dir=None):
+    types = {}
+    for file in sorted(TYPE_ROOT.glob("*.yaml")):
+        value = document(file)
+        if value["type"] in types:
+            raise ValueError(f"Duplicate entity type: {value['type']}")
+        types[value["type"]] = value
+    for type_id, value in extra_entity_types(extra_dir).items():
+        if type_id in types:
+            raise ValueError(f"Duplicate entity type: {type_id}")
+        types[type_id] = value
+    return types
 
 
 def content_hash(path):

@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-08T01:05:00.860111+00:00",
+  "capturedAt": "2026-11-12T17:33:45.482329+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -173,7 +173,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "d5381f5e85392f177b373cc2982ed01d4d4a374ca8601202080723721979d0bf"
+      "sha256": "96f31032addaa0901ace62097610d3ae62ff686ad5db855bdf4e0bea780a33fa"
     },
     {
       "path": "packages/info/conditions.py",
@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/info/program.py",
-      "sha256": "5ad4d11b8c606218b20cfd2e019122027eb76b3f3b5b1b457acb284b2010ab62"
+      "sha256": "c5e44dd7d2dd9ec2bd5e93c83af82d1f61e4adc5540a087a0dba8e72c8814a08"
     },
     {
       "path": "packages/info/schema_subset.py",
@@ -205,11 +205,27 @@
     },
     {
       "path": "packages/library/common.py",
-      "sha256": "e9ca8c20090c02b42000b587d8614a84280262e24832d5b976a46f41c9a45c37"
+      "sha256": "0a7a9779b7a1be341b94bb3c9da5e887f93c7c8e9f707ffc403692d31e2da405"
+    },
+    {
+      "path": "packages/library/grasp_calibration.py",
+      "sha256": "2f1d5f20e91eac29f7bbf1e52abc7d18544ce572b224c7e698d3e3d1b1aedbfd"
+    },
+    {
+      "path": "packages/library/physics_checks.py",
+      "sha256": "677a51826cf8575b7d04dea5cabb083cfdf82b92b51291a089c6a696a72e5b0d"
+    },
+    {
+      "path": "packages/library/posture.py",
+      "sha256": "8a32866440c8a3a3f456177f7e9940af5aa63431acfd4e692e130300605dc9f3"
     },
     {
       "path": "packages/library/previews.py",
       "sha256": "45bad42c4c77647efb7abd878a77b05c68aa806f9c42b20ee741459f710c5a52"
+    },
+    {
+      "path": "packages/library/python_stages.py",
+      "sha256": "0b12938421d212aba6fe683495a3a867513f58fcd7cc44d0fa5609146d2ee90b"
     },
     {
       "path": "packages/library/reports.py",
@@ -217,7 +233,11 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "805068260dbc1e09c6e631b4111c0c960905ec34231a0bd6f5945b625c28ad50"
+      "sha256": "c94b4289b070a128661a615c08ce1e04db0377038dd4dcb9d4a126f72717684c"
+    },
+    {
+      "path": "packages/library/structural.py",
+      "sha256": "fa5eebb0c73986e9d07e3d1fb7f3156042e14fdb0b08a58085e4cf8193318add"
     },
     {
       "path": "packages/library/templates.py",
@@ -226,6 +246,10 @@
     {
       "path": "packages/library/transactions.py",
       "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+    },
+    {
+      "path": "packages/library/visuals.py",
+      "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
       "path": "packages/policies/inference.py",
@@ -237,11 +261,11 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "906d4674db3c0dc66533b5d855b12f9594e8b9ad9fb74d7896989419d95d5ff5"
+      "sha256": "d6770c318ae285add4bed8d76313de7af4adcfbf83c07b53633e50b25e7bd038"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "5f3062058a2d1ac44fd9401650182e206d7a02e06d829f614dd005bef10210e6"
+      "sha256": "fdf11cf24c8f2671669ef68d7ed0f0db590c1655d33692546fc9a144091ed298"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -254,6 +278,10 @@
     {
       "path": "packages/programs/centrifuge/virtual.py",
       "sha256": "77faeb969c1b9c57fefc79b188a54973b502c1845a25c33d377bdf6e79dfa0da"
+    },
+    {
+      "path": "packages/programs/embodied.py",
+      "sha256": "e453e2de5f53dbe4ac07a1fd098042021b2cce659976f43819fbcc58f913fdcc"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -280,6 +308,10 @@
       "sha256": "10d89a88dc5724966c7fc64624a41c9d594a8f0e24e9a470f5037b2a688eb046"
     },
     {
+      "path": "packages/programs/policy_base.py",
+      "sha256": "64a547d4d42905f95ddc9caae4a0b87ffb6469378a7dd13c0c0acf6ba5c845af"
+    },
+    {
       "path": "packages/programs/robot_arm/grasp.py",
       "sha256": "de6f1642f223b6b5b99b179c5faa75734fe87faf45b0846d53ab3292b9b78076"
     },
@@ -293,7 +325,7 @@
     },
     {
       "path": "packages/programs/robot_arm/policy.py",
-      "sha256": "88fc42c6c7cf9deae5d4cfa79828c66d4b9a2b2a502e558ee5e4af2793cf3308"
+      "sha256": "7ae946db1f4445f15affa7c2f356aaab627e596869b339a3b7cd42491b116971"
     },
     {
       "path": "packages/programs/robot_arm/preview.py",
@@ -313,11 +345,11 @@
     },
     {
       "path": "packages/programs/simulation.py",
-      "sha256": "3725e9108d01a2c99452efef40d919303028c67664d080ca50b205a344d08e2d"
+      "sha256": "25e3206ec27d8c6db2bf36a493a5a4254fc279b28cee264042f3c92b9edf9f22"
     },
     {
       "path": "packages/programs/subjects.py",
-      "sha256": "6ceda10f646c83ed52e1b63c9084cb5ee1975b4a9c0ab10149779b26098d2f0f"
+      "sha256": "e94bf7abf1c5f26c7a4b3191acb8a5218264b5d41387f5443756a8e5cdb1ed6e"
     },
     {
       "path": "packages/programs/tube/facts.py",
@@ -345,11 +377,11 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "bbcd193cc3f9161c652ccfa747b9144da14b3585196854e7814e272d0e3aafeb"
+      "sha256": "f036927ea2d04feaf8a36cd398d91fe1b1123c8c002dd4a321b9ef45e2bef138"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
-      "sha256": "8ee402ef48076ab40830a8248a83906196c9074447a881b85cc2df40fe0414e1"
+      "sha256": "cf4c07c6b53d63147aaed277e189e9bdacddd4aaf5d96e49c56dbfda59ad5a82"
     },
     {
       "path": "packages/sim_runtime/labels.py",
@@ -373,7 +405,7 @@
     },
     {
       "path": "packages/sim_runtime/physics_port.py",
-      "sha256": "980df56ec9348271b02caca5024a6d4316cfa9017709e5ecfbcb1a05b4d8f9e7"
+      "sha256": "b409098df048a7b3bb68fb5641d5ea1fe8c197f337cfaaa19ec2672e5c64b511"
     },
     {
       "path": "packages/sim_runtime/pose_filter.py",
@@ -435,10 +467,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "2c9e80a54ec14f9473980cfc79082f479280f551890a17fddc41ff3113823b14",
-    "catalog.json": "9f3f2eb3b07eaed5c7019fb50e50764ab126bad3372c74a89ae0ea0f57035b0d",
-    "state.json": "80df85ec0cd6802a5edbc1b44d7b34e47c49c77bbd82828e4eef9216fa6596f9",
-    "snapshot.bin": "e632cdd92d41f075daa32b36a953ec6c6095cf50ab8d00b2ed9c6a909c217a8b",
+    "manifest.json": "8c0816abbeb46d8f949919ca3b660753cbea47194601d5476526bf6043949b9e",
+    "catalog.json": "a486b91e95feea4a3fc7e700e2c3c0b2a76e2c17b1eb70e89854f9a28cb4bfd3",
+    "state.json": "e56b5bff5e22f00a817fb714a50803fbfaa56a2642a0a69c3737fa3eaccbcc7c",
+    "snapshot.bin": "8fdf469d1be249420c3a13b436d2e6de0100499114732d6373dafa0abe0734fd",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
