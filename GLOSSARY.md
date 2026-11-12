@@ -182,7 +182,7 @@ A specific robot body, simulated or real, such as an FR3 with a Franka hand, tog
 _Avoid_: Robot model, device, Entity (an Embodiment appears in a Scene as one or more Entities)
 
 **Controller** (控制器):
-Everything that decides an Embodiment's motion: base Robot Model, Policy versions, Device Program, action space, control rate and observation spec. Embodied-layer RSI changes the Controller.
+Everything that decides an Embodiment's motion: base Robot Model, Policy version or per-action Policy versions, Device Program, action spaces, control rates and observation specs. Embodied-layer RSI changes the Controller.
 _Avoid_: Brain, stack, policy (one part of a Controller)
 
 **Robot Model** (机器人模型):
@@ -206,7 +206,7 @@ A versioned collection of Demonstrations selected as one reproducible Task input
 _Avoid_: Recording (one captured session), Task (the consumer definition)
 
 **Policy** (策略):
-A versioned neural network produced by a training Job for one Task, which a Device Program runs at control rate to carry out an EntityType action while an Agent or person directs high-level operations.
+A versioned, learned motion policy produced by a training Job for one Task, which a Device Program can run to carry out an EntityType action.
 _Avoid_: Model, Controller (the complete composition), checkpoint (a training-time snapshot), weights
 
 **Evaluation** (评估):
