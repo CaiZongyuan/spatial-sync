@@ -12,6 +12,16 @@ from pathlib import Path
 import psutil
 
 
+def write_json_atomic(path, payload):
+    staging = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        staging.write_text(json.dumps(payload), encoding="utf-8")
+        staging.replace(path)
+    except BaseException:
+        staging.unlink(missing_ok=True)
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("owner", "trainer", "leaf"))
@@ -20,8 +30,9 @@ def main():
     args = parser.parse_args()
     if args.mode == "leaf":
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        (args.root / "leaf.json").write_text(
-            json.dumps({"pid": os.getpid(), "createdAt": psutil.Process().create_time()}), encoding="utf-8"
+        write_json_atomic(
+            args.root / "leaf.json",
+            {"pid": os.getpid(), "createdAt": psutil.Process().create_time()},
         )
         deadline = time.monotonic() + 30
         while not (args.root / "stop").exists() and time.monotonic() < deadline:
@@ -45,8 +56,9 @@ def main():
             stdout=stdout,
             stderr=stderr,
         )
-        (args.root / "owner-ready.json").write_text(
-            json.dumps({"cleanup": str(owned.cleanup)}), encoding="utf-8"
+        write_json_atomic(
+            args.root / "owner-ready.json",
+            {"cleanup": str(owned.cleanup)},
         )
         try:
             owned.process.wait(timeout=30)
