@@ -1,6 +1,7 @@
 """Feed-forward CPU policy Program. Actuation and facts use only PhysicsPort."""
 
 import hashlib
+from copy import deepcopy
 
 import numpy as np
 from pydantic import Field
@@ -10,16 +11,41 @@ from packages.library.common import document
 from packages.policies.inference import CpuPolicy
 from packages.policies.library import read_json, runtime_library
 from packages.policies.observations import ObservationSpec, assemble, coverage_failure, joint_targets
+from packages.programs.policy_base import extract_observation_state
 
 from .physical import RobotArmPhysicsConfig, RobotArmPhysicsFacts
 
 
 class PolicyProgram(RobotArmPhysicsFacts):
     id, type, tick_priority = "robot_arm.policy", "robot-arm/v1", 10
+    policy_program = True
     evaluation_implementation_role = "fixed-runtime"
 
     class Config(RobotArmPhysicsConfig):
         policy: str = Field(pattern=r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$")
+
+    @classmethod
+    def policy_joints(cls, config: dict) -> dict[str, str]:
+        return {key: "rad" for key in config["jointKeys"]} | {key: "m" for key in config["fingerKeys"]}
+
+    @classmethod
+    def bound_policy_for_action(cls, config: dict, action: str) -> str | None:
+        return config.get("policy")
+
+    @classmethod
+    def bound_policies(cls, config: dict) -> set[str]:
+        return {config["policy"]} if config.get("policy") else set()
+
+    @classmethod
+    def apply_policy_override(cls, base_config: dict, action: str, policy_id: str) -> dict:
+        allowed_fields = set(cls.Config.model_fields)
+        raw = {
+            name: deepcopy(value)
+            for name, value in base_config.items()
+            if name in allowed_fields and name != "policy"
+        }
+        raw["policy"] = policy_id
+        return cls.Config.model_validate(raw).model_dump(mode="json")
 
     def init(self, ctx):
         if ctx.physics is None:
@@ -115,29 +141,7 @@ class PolicyProgram(RobotArmPhysicsFacts):
         ctx.set(phase="idle")
 
     def _state(self, port):
-        state = {"joints": {}, "bodies": {}, "sites": {}}
-
-        def key(value):
-            return self.references[value] if value.startswith("$") else value
-
-        def pose(group, value):
-            name = key(value)
-            p, q = port.body_pose(name) if group == "bodies" else port.site_pose(name)
-            state[group][name] = {"p": p, "q": q}
-
-        for item in self.spec.observations:
-            if item.source.startswith("joint_"):
-                for value in item.keys:
-                    name = key(value)
-                    state["joints"][name] = {
-                        "q": float(port.joint_q(name)[0]),
-                        "qd": float(port.joint_qd(name)[0]),
-                    }
-            elif item.source.startswith(("body_", "site_")):
-                pose("bodies" if item.source.startswith("body_") else "sites", item.key)
-            if item.frame != "world":
-                pose("bodies", item.frame)
-        return state
+        return extract_observation_state(port, self.spec, self.references)
 
     def tick(self, ctx, dt):
         if ctx.fact_due:

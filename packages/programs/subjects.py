@@ -75,7 +75,7 @@ def canonical_binding(binding, registry):
     """Match Catalog normalization without constructing any Program."""
     value = deepcopy(binding)
     program = registry[value["program"]]
-    if value["type"] != program.type:
+    if program.type is not None and value["type"] != program.type:
         raise ValueError("Declared Program/interface differ")
     value["config"] = program.Config.model_validate(value["config"]).model_dump(mode="json")
     return EntityBindingDeclaration.model_validate(value).model_dump(
@@ -141,7 +141,7 @@ def apply_binding(
         raise _invalid("subject_scene_mismatch", "Replacement belongs to another fixed Scene")
     validate_base_catalog(catalog, subject)
     program = registry.get(subject.binding["program"])
-    if program is None or program.type != subject.target.interface:
+    if program is None or (program.type is not None and program.type != subject.target.interface):
         raise _invalid("subject_changed", "Replacement implementation is not registered for the interface")
     normalized = program.Config.model_validate(subject.binding["config"]).model_dump(mode="json")
     if fingerprint(normalized) != fingerprint(subject.binding["config"]):

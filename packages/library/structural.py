@@ -418,7 +418,7 @@ def validate(payload):
         programs = binding.get("programs", {}) if kind == "asset" else {"declared": binding.get("program")}
         for program_id in programs.values():
             program = payload["programs"].get(program_id)
-            if program is None or program["type"] != binding.get("type"):
+            if program is None or (program["type"] is not None and program["type"] != binding.get("type")):
                 reference_problems.append("Unknown program or program/type mismatch: " + str(program_id))
                 continue
             source = program.get("source")

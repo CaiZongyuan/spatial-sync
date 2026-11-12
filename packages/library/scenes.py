@@ -13,7 +13,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from packages.library.archive import indexed_file, package_files
-from packages.library.common import BUILTIN_ROOT, NAME, TYPE_ROOT, LibraryError, content_hash, document
+from packages.library.common import (
+    BUILTIN_ROOT,
+    NAME,
+    LibraryError,
+    content_hash,
+    load_entity_types,
+)
 from packages.library.common import REPO_ROOT as REPO_ROOT
 from packages.library.metadata import scene_metadata
 from packages.library.read_cache import ReadCache, stamps, tree_paths
@@ -515,9 +521,7 @@ class SceneLibrary:
             template_status = "failed"
         else:
             template_status = "resolved" if effective else "not_recorded"
-        definitions = {
-            value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
-        }
+        definitions = load_entity_types(self.roots["user"])
         devices = [
             deepcopy(binding) | {"actions": definitions.get(binding.get("type"), {}).get("actions", {})}
             for binding in display_bindings

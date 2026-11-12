@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from packages.library.archive import destination_parent, import_lock, package_files
-from packages.library.common import REPO_ROOT, TYPE_ROOT, LibraryError, content_hash, document
+from packages.library.common import REPO_ROOT, LibraryError, content_hash, load_entity_types
 from packages.library.physics import availability as physics_availability
 from packages.library.reports import latest_physics_evidence, merge_physics, parse_report, pinned_assets
 
@@ -65,9 +65,7 @@ class StructuralValidator:
                 )
                 for version in assets.versions.values()
             ],
-            "types": {
-                value["type"]: value for file in sorted(TYPE_ROOT.glob("*.yaml")) if (value := document(file))
-            },
+            "types": load_entity_types((getattr(assets, "roots", None) or {}).get("user")),
             "programs": self.programs() if self.programs else {},
             "expectedAssets": list(expected_assets),
         }

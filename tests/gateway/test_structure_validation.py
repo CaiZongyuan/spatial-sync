@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from packages.library.common import BUILTIN_ROOT
+from packages.library.physics import skipped
 
 
 def scene_files(*, bad_posture=False):
@@ -233,7 +234,11 @@ def test_python_virtual_posture_count_is_checked_before_public_launch():
         assert refused.status_code == 409, refused.text
 
 
-def test_native_python_builtin_revalidation_uses_pinned_urdf_joint_limits():
+def test_native_python_builtin_revalidation_uses_pinned_urdf_joint_limits(monkeypatch):
+    monkeypatch.setattr(
+        "packages.library.validation.physics_availability",
+        lambda payload: (skipped("Engine disabled for structural validation test", ["newton"]), {}),
+    )
     with TestClient(create_app()) as client:
         response = client.post("/api/v1/library/scenes/robot-and-tubes/1/validate")
         assert response.status_code == 200, response.text

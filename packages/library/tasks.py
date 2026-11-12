@@ -19,7 +19,7 @@ from packages.library.archive import (
     package_files,
     relative_path,
 )
-from packages.library.common import NAME, TYPE_ROOT, LibraryError, content_hash, document
+from packages.library.common import NAME, LibraryError, content_hash, document, load_entity_types
 from packages.library.templates import resolve
 from packages.library.transactions import durable_json
 from packages.training.inputs import pack_package
@@ -109,7 +109,7 @@ class TaskLibrary:
                     raise ValueError("Task condition entity must match exactly one scene binding")
                 return matched[0]
 
-            types = {item["type"]: item for item in (document(path) for path in TYPE_ROOT.glob("*.yaml"))}
+            types = load_entity_types(self.user_root)
             interface, action = task.implements.split(".")
             if entity_type(task.robot) != interface or action not in types[interface]["actions"]:
                 raise ValueError("implements must name an action of the selected robot type")

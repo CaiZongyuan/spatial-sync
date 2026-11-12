@@ -18,6 +18,7 @@ from packages.library.common import NAME, LibraryError, document
 from packages.library.robot_resources import Embodiment, RobotModel
 from packages.library.transactions import durable_json
 from packages.policies.library import read_json
+from packages.policies.observations import ObservationSpec
 from packages.programs.simulation import (
     admitted_subject,
     parse_subject,
@@ -258,6 +259,16 @@ class ControllerPromotions:
                 for binding in value["bindings"]
             )
         ]
+        if len(matches) != 1 and scene_requires_material_authorization(scene, "newton"):
+            permit = self.authorize_scene(scene)
+            if permit is not None and permit["target"]["entityKey"] == target:
+                emb_id = permit["controller"]["document"]["embodiment"]
+                matches = [
+                    value for value in self.resources._documents("embodiments", Embodiment).values()
+                    if value["kind"] == "sim"
+                    and value["id"] == emb_id
+                    and value["controller"] == permit["controller"]["id"]
+                ]
         if len(matches) != 1:
             raise PlanError("promotion_embodiment_unavailable", "Select one fixed simulated Embodiment")
         embodiment = matches[0]
@@ -274,11 +285,17 @@ class ControllerPromotions:
     def _model(self, subject, embodiment, row):
         candidate = subject.document()["candidateIdentity"]
         policy = candidate["kind"] == "policy"
+        if policy:
+            _, package = self.manager.policies.resolve(candidate["id"])
+            spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
+            action_space = spec.action.space
+        else:
+            action_space = subject.target.interface
         facts = {
             "title": candidate["id"],
             "family": "rl-policy" if policy else "scripted", "source": candidate["id"],
             "license": None, "parameters": None, "embodiments": [embodiment["id"]],
-            "upstreamEmbodiments": [], "actionSpace": "joint_position_delta" if policy else "robot-arm/v1",
+            "upstreamEmbodiments": [], "actionSpace": action_space,
             "compute": {"inference": "local CPU"}, "runnable": True,
             "capability": {"program": subject.binding["program"], "sources": ["newton"],
                            "requirements": ["Exact committed human deployment proof"],

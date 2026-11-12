@@ -1241,7 +1241,7 @@ class SessionManager:
                         from packages.programs.simulation import scene_requires_material_authorization
 
                         issuer = getattr(self, "controller_promotions", None)
-                        if evaluation_id is None and issuer is not None:
+                        if issuer is not None:
                             deployment_permit = issuer.authorize_scene(selected)
                         if (deployment_permit is None
                                 and scene_requires_material_authorization(selected, selected_source)):

@@ -2,10 +2,9 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from packages.library.common import LibraryError, document
-from packages.programs.robot_arm.policy import PolicyProgram
 from packages.programs.subjects import (
     BindingTarget,
     EvaluationScene,
@@ -44,7 +43,7 @@ class CandidateIdentity(Schema):
 
 
 class Target(BindingTarget):
-    interface: Literal["robot-arm/v1"]
+    interface: str = Field(pattern=r"^[a-z0-9-]+/v[1-9][0-9]*$")
 
 
 class PolicySubject(Schema):
@@ -77,6 +76,27 @@ class PolicyExecution(Schema):
 
 def _invalid(message, code="policy_subject_mismatch"):
     return LibraryError(code, message, 409)
+
+
+def policy_programs():
+    from packages.sim_runtime.info_catalog import REGISTRY
+
+    return {name: cls for name, cls in REGISTRY.items() if getattr(cls, "policy_program", False)}
+
+
+def policy_program_for(interface: str, base_program: str | None = None):
+    programs = policy_programs()
+    if base_program in programs and programs[base_program].type in (interface, None):
+        return programs[base_program]
+    exact = [cls for cls in programs.values() if cls.type == interface]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise _invalid("Ambiguous policy runtime Programs for interface")
+    generic = [cls for cls in programs.values() if cls.type is None]
+    if len(generic) == 1:
+        return generic[0]
+    raise _invalid("No policy runtime Program is registered for interface")
 
 
 def fixed_bindings(scene, source):
@@ -121,28 +141,25 @@ def resolve_policy_subject(manager, requested, suite, scene):
         or task["scene"] != scene.id
         or task["robot"] != suite.task["robot"]
         or task["implements"] != suite.task["implements"]
-        or interface != PolicyProgram.type
     ):
         raise _invalid("Policy Task and fixed evaluation target differ")
     bindings = fixed_bindings(scene, "newton")
     base = bindings.get(task["robot"])
     if base is None or base["type"] != interface:
         raise _invalid("Policy target is absent or has a different interface")
-    config = {
-        name: value
-        for name, value in base["config"].items()
-        if name in PolicyProgram.Config.model_fields and name != "policy"
-    }
-    config["policy"] = policy["id"]
-    config = PolicyProgram.Config.model_validate(config).model_dump(mode="json")
+    program_cls = policy_program_for(interface, base.get("program"))
+    try:
+        config = program_cls.apply_policy_override(base["config"], action, policy["id"])
+    except (ValidationError, ValueError) as exc:
+        raise _invalid("Policy binding configuration is invalid for target Program") from exc
     spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
-    allowed = set(config["jointKeys"] + config["fingerKeys"])
-    units = ["m" if key in config["fingerKeys"] else "rad" for key in spec.action.jointKeys]
-    if not set(spec.action.jointKeys) <= allowed or spec.action.units != units:
+    allowed = program_cls.policy_joints(config)
+    units = [allowed.get(key) for key in spec.action.jointKeys]
+    if not set(spec.action.jointKeys) <= set(allowed) or spec.action.units != units:
         raise _invalid(
             "Policy action channels do not match the fixed robot binding", "policy_action_binding_mismatch"
         )
-    replacement = base | {"program": PolicyProgram.id, "config": config}
+    replacement = base | {"program": program_cls.id, "config": config}
     candidate = {name: policy[name] for name in CandidateIdentity.model_fields if name in policy}
     return PolicySubject(
         requestedSubject=requested,
@@ -176,11 +193,16 @@ def validate_base_catalog(catalog, subject):
         if fingerprint(subject.binding) != subject.bindingHash:
             raise _invalid("Frozen replacement binding changed", "policy_subject_changed") from exc
         raise _invalid("Replacement is not the frozen policy target") from exc
+    program_cls = policy_programs().get(subject.binding.get("program"))
     if (
-        subject.binding.get("program") != PolicyProgram.id
+        program_cls is None
+        or program_cls.type not in (subject.target.interface, None)
         or subject.binding.get("key") != subject.target.entityKey
         or subject.binding.get("type") != subject.target.interface
-        or subject.binding.get("config", {}).get("policy") != subject.candidateIdentity.id
+        or program_cls.bound_policy_for_action(
+            subject.binding.get("config", {}), subject.target.action
+        )
+        != subject.candidateIdentity.id
     ):
         raise _invalid("Replacement is not the frozen policy target")
 
@@ -200,7 +222,7 @@ def apply_policy_catalog(catalog, subject, scene):
     subject = PolicySubject.model_validate(subject) if isinstance(subject, dict) else subject
     validate_base_catalog(catalog, subject)
     try:
-        return apply_binding(catalog, subject, scene, {PolicyProgram.id: PolicyProgram})
+        return apply_binding(catalog, subject, scene, policy_programs())
     except LibraryError as exc:
         code = (
             "policy_subject_mismatch"
@@ -240,20 +262,35 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
 
 def validate_policy_material(candidate, binding, roots, *, controller=None):
     identity = CandidateIdentity.model_validate(candidate)
-    record, package = PolicyLibrary(roots).resolve(identity.id)
+    library = PolicyLibrary(roots)
+    record, package = library.resolve(identity.id)
+    program_cls = policy_programs().get(binding.get("program"))
+    task = read_json(package / "task.json")
+    interface, action = task["implements"].rsplit(".", 1)
+    config = binding.get("config", {})
     if (
-        binding.get("program") != PolicyProgram.id
-        or binding.get("type") != PolicyProgram.type
-        or binding.get("config", {}).get("policy") != identity.id
-        or any(record.get(name) != getattr(identity, name)
-               for name in CandidateIdentity.model_fields if name != "kind")
+        program_cls is None
+        or program_cls.type not in (binding.get("type"), None)
+        or program_cls.bound_policy_for_action(config, action) != identity.id
+        or any(
+            record.get(name) != getattr(identity, name)
+            for name in CandidateIdentity.model_fields
+            if name != "kind"
+        )
     ):
         raise _invalid("Deployed Policy material or binding differs", "policy_subject_changed")
-    task = read_json(package / "task.json")
-    if task["robot"] != binding.get("key") or task["implements"].rsplit(".", 1)[0] != PolicyProgram.type:
+    if task["robot"] != binding.get("key") or interface != binding.get("type"):
         raise _invalid("Deployed Policy Task target differs")
+    for sibling_action, sibling_id in (config.get("policies") or {}).items():
+        _, sibling_pkg = library.resolve(sibling_id)
+        sibling_task = read_json(sibling_pkg / "task.json")
+        if (
+            sibling_task["robot"] != binding.get("key")
+            or sibling_task["implements"] != f"{binding.get('type')}.{sibling_action}"
+        ):
+            raise _invalid("Deployed sibling Policy Task target differs", "policy_subject_changed")
     if controller is not None and (
-        controller.get("program") != PolicyProgram.id
+        controller.get("program") != program_cls.id
         or controller.get("policy") != identity.id
         or controller.get("programArtifact") is not None
     ):

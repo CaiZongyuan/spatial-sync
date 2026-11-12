@@ -53,8 +53,24 @@ class IsaacLab(Schema):
     sceneInput: Literal["usd", "scene-package"] = "usd"
 
 
+NumericBound = Annotated[list[float | int], Field(min_length=2, max_length=2)]
+
+
 class Episode(Schema):
     params: dict[str, JsonValue] = Field(default_factory=dict)
+    paramBounds: dict[str, NumericBound] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    commandEnvelope: list[NumericBound] | None = Field(
+        default=None, min_length=1, max_length=64, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def ordered_bounds(self):
+        for bounds in [*(self.paramBounds or {}).values(), *(self.commandEnvelope or [])]:
+            if any(isinstance(value, bool) for value in bounds) or float(bounds[0]) > float(bounds[1]):
+                raise ValueError("Bounds require finite ordered [lower, upper] numbers")
+        return self
 
 
 class DemonstrationUse(Schema):
@@ -105,9 +121,10 @@ class TaskMetadata(Schema):
     def evaluation_scene(self):
         if self.evaluation.scene != self.scene:
             raise ValueError("Task evaluation must pin the Task scene")
+        has_episode_params = bool(self.episode.params) or bool(self.episode.paramBounds)
         if (
             not self.evaluation.seeds
-            or not self.evaluation.params
+            or (has_episode_params and not self.evaluation.params)
             or any(not values for values in self.evaluation.params.values())
         ):
             raise ValueError("Task evaluation must declare fixed seeds and nonempty parameter coverage")

@@ -1,6 +1,7 @@
 """Library identity and unchanged raw-file tree hashing shared by both package kinds."""
 
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -25,6 +26,41 @@ def document(path):
     if not isinstance(value, dict):
         raise ValueError(f"Expected a mapping: {path}")
     return value
+
+
+def user_entity_types(*library_roots):
+    candidates = list(library_roots)
+    env_library = os.getenv("LW_LIBRARY")
+    if env_library:
+        candidates.append(Path(env_library).expanduser())
+    seen, types = set(), {}
+    for root in candidates:
+        if root is None:
+            continue
+        type_dir = (Path(root).expanduser().resolve() / "types")
+        if type_dir in seen or not type_dir.is_dir():
+            continue
+        seen.add(type_dir)
+        for file in sorted(type_dir.glob("*.yaml")):
+            value = document(file)
+            if value["type"] in types:
+                raise ValueError(f"Duplicate entity type: {value['type']}")
+            types[value["type"]] = value
+    return types
+
+
+def load_entity_types(*library_roots):
+    types = {}
+    for file in sorted(TYPE_ROOT.glob("*.yaml")):
+        value = document(file)
+        if value["type"] in types:
+            raise ValueError(f"Duplicate entity type: {value['type']}")
+        types[value["type"]] = value
+    for type_id, value in user_entity_types(*library_roots).items():
+        if type_id in types:
+            raise ValueError(f"Duplicate entity type: {type_id}")
+        types[type_id] = value
+    return types
 
 
 def content_hash(path):

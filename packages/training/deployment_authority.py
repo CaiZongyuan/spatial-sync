@@ -9,8 +9,8 @@ from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.common import BUILTIN_ROOT, NAME, LibraryError, document
 from packages.library.scenes import SceneLibrary
-from packages.policies.library import PolicyLibrary
-from packages.policies.subjects import fixed_bindings
+from packages.policies.library import PolicyLibrary, read_json
+from packages.policies.subjects import fixed_bindings, policy_programs
 from packages.programs.subjects import fingerprint
 
 
@@ -116,19 +116,28 @@ def read_committed_permit(state_root, promotion_id, publication_hash=None):
         if materials.get(subject["target"]["entityKey"]) != candidate:
             raise ValueError("Committed target material identity differs")
         bindings = fixed_bindings(scene, source)
+        policy_registry = policy_programs()
+        authorized_programs = set(policy_registry) | {"robot_arm.script"}
         actual_material_keys = {
             key
             for key, value in bindings.items()
-            if value["program"] in ("robot_arm.policy", "robot_arm.script")
+            if value["program"] in authorized_programs
         }
         if set(materials) != actual_material_keys:
             raise ValueError("Committed material identity coverage differs from the actual Scene")
         roots = {"builtin": BUILTIN_ROOT, "user": library}
+        policy_lib = PolicyLibrary(roots)
         for key, identity in materials.items():
             config = bindings[key]["config"]
             if identity["kind"] == "policy":
-                material, _ = PolicyLibrary(roots).resolve(identity["id"])
-                requested = config.get("policy")
+                program_cls = policy_registry.get(bindings[key]["program"])
+                if program_cls is None:
+                    raise ValueError("Unknown deployed policy Program")
+                material, pkg = policy_lib.resolve(identity["id"])
+                action = read_json(pkg / "task.json")["implements"].rsplit(".", 1)[1]
+                requested = program_cls.bound_policy_for_action(config, action)
+                for bound_id in program_cls.bound_policies(config):
+                    policy_lib.resolve(bound_id)
             else:
                 from packages.programs.library import ProgramLibrary
 
@@ -139,9 +148,14 @@ def read_committed_permit(state_root, promotion_id, publication_hash=None):
             if requested != identity["id"] or material["contentHash"] != identity["contentHash"]:
                 raise ValueError("Actual material changed under its committed immutable reference")
         if candidate["kind"] == "policy":
+            target_cls = policy_registry.get(subject["binding"]["program"])
             if (
-                controller["policy"] != candidate["id"]
-                or subject["binding"]["config"]["policy"] != candidate["id"]
+                target_cls is None
+                or controller["policy"] != candidate["id"]
+                or target_cls.bound_policy_for_action(
+                    subject["binding"]["config"], subject["target"]["action"]
+                )
+                != candidate["id"]
             ):
                 raise ValueError("Actual deployed Policy identity differs")
         else:

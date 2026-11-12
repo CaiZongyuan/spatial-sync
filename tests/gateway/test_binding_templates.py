@@ -10,6 +10,7 @@ from template_support import reference_files, scene_files, upload
 
 from apps.api.app.main import create_app
 from packages.library.common import BUILTIN_ROOT
+from packages.library.physics import skipped
 from packages.protocol.schema import SceneManifest
 from packages.sim_runtime.info_catalog import load_info_catalog
 
@@ -55,7 +56,13 @@ def test_one_template_has_the_same_effective_binding_in_worker_describe_and_synt
         assert after["metadata"] == before["metadata"]
 
 
-def test_the_same_pinned_context_survives_native_process_serialization_and_both_catalog_consumers():
+def test_the_same_pinned_context_survives_native_process_serialization_and_both_catalog_consumers(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "packages.library.validation.physics_availability",
+        lambda payload: (skipped("Engine disabled for template catalog test", ["newton"]), {}),
+    )
     path = BUILTIN_ROOT / "scenes/robot-and-tubes/1"
     files = {name: (path / name).read_bytes() for name in ("scene.yaml", "devices.yaml", "locations.yaml")}
     metadata = yaml.safe_load(files["scene.yaml"])
