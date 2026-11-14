@@ -1,0 +1,27 @@
+robot: /World/Lab/PatrolDuck
+locations: {}
+waypoints:
+  dock:
+    p: [-0.55, 0.35, 0.0]
+    yaw: -0.785398
+    site: /World/Lab/Waypoints/Dock
+  aisle_west:
+    p: [-0.55, -0.15, 0.0]
+    yaw: 0.0
+    site: /World/Lab/Waypoints/AisleWest
+  bench_north:
+    p: [-0.20, 0.32, 0.0]
+    yaw: 1.570796
+    site: /World/Lab/Waypoints/BenchNorth
+  centrifuge_bay:
+    p: [0.10, 0.30, 0.0]
+    yaw: 1.570796
+    site: /World/Lab/Waypoints/CentrifugeBay
+  corridor_east:
+    p: [0.50, -0.15, 0.0]
+    yaw: 1.570796
+    site: /World/Lab/Waypoints/CorridorEast
+  inspect_turn:
+    p: [-0.55, 0.35, 0.0]
+    yaw: 0.0
+    site: /World/Lab/Waypoints/InspectTurn

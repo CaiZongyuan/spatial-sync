@@ -1,0 +1,37 @@
+id: suite/microduck-walk-to
+title: Microduck multi-directional Waypoint locomotion
+layer: embodied
+scene: microduck-arena@1
+sceneContentHash: e1abe2e9d040e8d9b544f44233afa8f27883d40e383b6b19b1cf5680ddec02b4
+source: newton
+episodes:
+  - id: train-north
+    split: train
+    params: {waypoint: north}
+  - id: train-south
+    split: train
+    params: {waypoint: south}
+  - id: train-east
+    split: train
+    params: {waypoint: east}
+  - id: train-west
+    split: train
+    params: {waypoint: west}
+  - id: train-northeast
+    split: train
+    params: {waypoint: northeast}
+  - id: train-turn-left
+    split: train
+    params: {waypoint: turn_left}
+  - id: test-northwest
+    split: test
+    params: {waypoint: northwest}
+  - id: test-north
+    split: test
+    params: {waypoint: north}
+  - id: test-south
+    split: test
+    params: {waypoint: south}
+  - id: test-turn-right
+    split: test
+    params: {waypoint: turn_right}

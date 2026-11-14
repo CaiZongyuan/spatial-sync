@@ -1,0 +1,12 @@
+scene: microduck-lab-patrol
+entities:
+- key: /World/Lab/PatrolDuck
+  template: robot/microduck@1
+  config:
+    locations: locations.yaml
+- key: /World/Lab/Centrifuge
+  template: device/lab-centrifuge-reference@1
+  config:
+    tubes: []
+    spindleJoint: /World/Lab/Centrifuge/Spindle
+    lidJoint: /World/Lab/Centrifuge/LidHinge

@@ -1,0 +1,25 @@
+id: suite/microduck-bow
+title: Microduck forward bow and upright recovery
+layer: embodied
+scene: microduck-arena@1
+sceneContentHash: e1abe2e9d040e8d9b544f44233afa8f27883d40e383b6b19b1cf5680ddec02b4
+source: newton
+episodes:
+  - id: train-1
+    split: train
+    params: {}
+  - id: train-2
+    split: train
+    params: {}
+  - id: train-3
+    split: train
+    params: {}
+  - id: train-4
+    split: train
+    params: {}
+  - id: test-1
+    split: test
+    params: {}
+  - id: test-2
+    split: test
+    params: {}

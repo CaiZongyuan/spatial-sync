@@ -20,6 +20,7 @@ def import_robot(builder, path: Path, *, prefix: str):
 def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shapes=True):
     """Apply stage axis conversion once and make labels independent of importer naming."""
     import newton
+    from newton.usd import SchemaResolverMjc, SchemaResolverNewton, SchemaResolverPhysx
     from pxr import Usd, UsdGeom, UsdPhysics
 
     from .usd_articulations import root_import
@@ -32,8 +33,12 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
         stage = Usd.Stage.Open(str(path))
     else:
         stage = path
+    resolvers = [SchemaResolverNewton(), SchemaResolverPhysx()]
+    if any(attr.namespace == "mujoco" for attr in builder.custom_attributes.values()):
+        resolvers.append(SchemaResolverMjc())
     arguments = {"root_path": root_path, "apply_up_axis_from_stage": False,
-                 "hide_collision_shapes": hide_collision_shapes}
+                 "hide_collision_shapes": hide_collision_shapes,
+                 "schema_resolvers": resolvers}
     if xform is not None:
         arguments["xform"] = xform
     with warnings.catch_warnings(record=True) as captured:

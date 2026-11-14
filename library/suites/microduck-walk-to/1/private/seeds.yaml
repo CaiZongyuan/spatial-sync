@@ -1,0 +1,10 @@
+train-north: 5101
+train-south: 5102
+train-east: 5103
+train-west: 5104
+train-northeast: 5105
+train-turn-left: 5106
+test-northwest: 9101
+test-north: 9102
+test-south: 9103
+test-turn-right: 9104

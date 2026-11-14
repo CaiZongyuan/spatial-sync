@@ -1,0 +1,10 @@
+name: microduck-lab-patrol
+title: Microduck Laboratory Patrol & Equipment Inspection
+description: Multi-entity laboratory floor layout pairing Microduck at an offset patrol dock with a benchtop centrifuge and obstacle-free inspection Waypoints.
+sources:
+- newton
+stage: stage.usda
+simulation:
+  solver: mujoco
+  warmupSteps: 1
+  physicsDt: 0.002

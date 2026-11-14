@@ -17,7 +17,12 @@ def test_migrated_scene_dependencies_and_asset_reverse_references_agree_without_
         ):
             scenes = {
                 name: client.get(f"/api/v1/library/scenes/{name}/{rev}").json()
-                for name, rev in (("lab-demo", 3), ("robot-and-tubes", 2))
+                for name, rev in (
+                    ("lab-demo", 3),
+                    ("robot-and-tubes", 2),
+                    ("microduck-arena", 1),
+                    ("microduck-lab-patrol", 1),
+                )
             }
             expected = {}
             for scene in scenes.values():
@@ -26,7 +31,7 @@ def test_migrated_scene_dependencies_and_asset_reverse_references_agree_without_
                     expected.setdefault(dependency["id"], []).append(
                         (scene["sceneVersion"], dependency["contentHash"])
                     )
-            assert len(expected) == 9
+            assert len(expected) == 10
             for identifier, references in expected.items():
                 bare, revision = identifier.split("@")
                 response = client.get(f"/api/v1/library/assets/{bare}/{revision}")

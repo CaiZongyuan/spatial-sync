@@ -1,0 +1,6 @@
+scene: microduck-arena
+entities:
+- key: /World/Lab/Microduck
+  template: robot/microduck@1
+  config:
+    locations: locations.yaml
