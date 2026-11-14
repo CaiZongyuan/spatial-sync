@@ -783,7 +783,14 @@ class ControllerPromotions:
                 or not scene_requires_material_authorization(scene, "newton")):
             return None
         lineage = scene.metadata.get("derivedFrom") or {}
-        permit = read_committed_permit(self.manager.settings.state_root, lineage.get("promotion"))
+        if lineage.get("promotion") is None and getattr(scene, "root", None) == "builtin":
+            from packages.programs.deployment import authorize_builtin_policy_deployment
+
+            permit = authorize_builtin_policy_deployment(
+                scene, state_root=self.manager.settings.state_root
+            )
+        else:
+            permit = read_committed_permit(self.manager.settings.state_root, lineage.get("promotion"))
         if permit["scene"] != {"id": scene.id, "contentHash": scene.content_hash}:
             _refuse("deployment_authorization_required")
         return permit

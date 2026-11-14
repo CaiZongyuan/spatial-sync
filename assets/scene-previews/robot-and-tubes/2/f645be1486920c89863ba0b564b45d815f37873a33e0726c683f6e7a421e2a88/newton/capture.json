@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-12T20:00:17.794512+00:00",
+  "capturedAt": "2026-11-14T03:58:12.895565+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -378,11 +378,11 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "46dae1bdd00ed6f55bbf146c65913a9a8b05fa69de08050b34cc185dc413f84e"
+      "sha256": "901cda6a7f1fddf701cfe61399aa52670bef18facb1f7d715b733ce79654aecf"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "51437f8935d6e7f0e5c0afff0eab51fdfcb282e1a49f9fb5c406cee7180f0d0b"
+      "sha256": "d94dbb129551ce971ad753c834327fe79c06eb59e5662a0b5b52295f6ce13275"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -390,11 +390,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "d91de7c36237f89c6921b9bc7dfe3e92f13ad74f9f826fa57129d72361c4bde6"
+      "sha256": "e2ca2d7eaed888e4009c2ec6cb633f81dee6bad515ba82f5f38f9c31ea729438"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "28efb0e71aecf2d7ae5f6b106fd85cebdf13a241ea738418a40a446b51681498"
+      "sha256": "d67d597f308463f3dc267b3055a999e851dba487597dd7bd430cd41727260f83"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -438,7 +438,7 @@
     },
     {
       "path": "packages/programs/policy_base.py",
-      "sha256": "8b0b8b4fd66c40a2283cd806d7345299f65655c19aba4b0001200582ffdee848"
+      "sha256": "23a110c960bcd88bea3af196b52fd5e5a34e62c130816ca6da9c545a776894c9"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -596,10 +596,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "a30237e8b08f9d71f7cc0cb6a38be5eed1d6b51cd295ecbf11c526bb882d7f62",
-    "catalog.json": "6aeeb32424f761d6b659b0d6404fad83c3e03e171e5c756822685a3fc1c4bc62",
-    "state.json": "f23832fafa5bd41f093e0427d828febbe33772953c2486de13d3acae9e3a74b9",
-    "snapshot.bin": "d47d8bb61e57018da6424e24695129e382eee3f8d56d186971e24af7fb62eb66",
+    "manifest.json": "584acc8ecc855545936734320820beaad038e56e5ad06a75207dbb8825b69e1a",
+    "catalog.json": "01a2a07ecef12d8a1d223cd95773403eddd2bfcf32340d2c975e9b3c0a2e1504",
+    "state.json": "9b90cf98b0c42e2ad16ab5daf5cd0df4366bbd0ce6ec7f81ba7237e659bbd29d",
+    "snapshot.bin": "41e400c0c2e76797f54df5d62f0b703719937be8eaeb5c1ce3986c8fe270a3a1",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

@@ -21,6 +21,7 @@ from packages.policies.observations import (
     coverage_failure,
     joint_targets,
     remap_observation_spec_entity,
+    spec_within_robot_entity,
 )
 
 POLICY_REF = r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$"
@@ -172,6 +173,52 @@ def build_policy_evidence(record: dict, model: CpuPolicy, action_starts: int, ob
     }
 
 
+def validate_observations_against_port(spec: ObservationSpec, port) -> None:
+    """Verify every canonical joint, body, and site in spec.observations exists on PhysicsPort."""
+    for item in spec.observations:
+        source = item.source
+        if source.startswith("joint_"):
+            for key in item.keys:
+                if not key.startswith("/"):
+                    continue
+                try:
+                    ref = port.bind_joint(key)
+                except (KeyError, AssertionError, ValueError) as exc:
+                    raise ValueError(f"Observation joint {key} is unavailable on PhysicsPort") from exc
+                if hasattr(port, "joint_metadata"):
+                    meta = port.joint_metadata(ref)
+                    if meta.get("kind") not in ("revolute", "prismatic") or any(
+                        meta.get(width) != 1 for width in ("qWidth", "qdWidth")
+                    ):
+                        raise ValueError(
+                            f"Observation joint {key} must be a scalar revolute or prismatic joint"
+                        )
+        elif source == "projected_gravity" or source.startswith("body_"):
+            if item.key is not None and item.key.startswith("/"):
+                try:
+                    port.bind_body(item.key)
+                except (KeyError, AssertionError, ValueError) as exc:
+                    raise ValueError(f"Observation body {item.key} is unavailable on PhysicsPort") from exc
+        elif source.startswith("site_"):
+            if item.key is not None and item.key.startswith("/"):
+                try:
+                    if hasattr(port, "bind_site"):
+                        port.bind_site(item.key)
+                    elif hasattr(port, "site_pose"):
+                        port.site_pose(item.key)
+                    else:
+                        raise ValueError("PhysicsPort has no site bindings")
+                except (KeyError, AssertionError, ValueError) as exc:
+                    raise ValueError(f"Observation site {item.key} is unavailable on PhysicsPort") from exc
+        if item.frame is not None and item.frame.startswith("/") and source != "command":
+            try:
+                port.bind_body(item.frame)
+            except (KeyError, AssertionError, ValueError) as exc:
+                raise ValueError(
+                    f"Observation frame body {item.frame} is unavailable on PhysicsPort"
+                ) from exc
+
+
 class PolicySlot:
     """Isolated runtime state and native CPU ONNX execution counters for one bound action."""
 
@@ -184,6 +231,7 @@ class PolicySlot:
         interface: str,
         joint_units: dict[str, str],
         joint_limits: dict[str, tuple[float | None, float | None]],
+        physics=None,
     ):
         self.action = action
         self.record, self.package = runtime_library().resolve(policy_id)
@@ -192,12 +240,12 @@ class PolicySlot:
         if self.task["implements"] != f"{interface}.{action}":
             raise ValueError("Policy Task does not identify this robot entity and bound action")
         task_robot = self.task["robot"]
-        if task_robot != entity_key and not all(
-            key.startswith(task_robot + "/") for key in raw_spec.action.jointKeys
-        ):
+        if task_robot != entity_key and not spec_within_robot_entity(raw_spec, task_robot):
             raise ValueError("Policy Task does not identify this robot entity and bound action")
         self.spec = remap_observation_spec_entity(raw_spec, task_robot, entity_key)
         validate_action_against_joints(self.spec.action, joint_units, joint_limits)
+        if physics is not None:
+            validate_observations_against_port(self.spec, physics)
         export = read_json(self.package / "artifacts/export.json")
         self.model = CpuPolicy(
             self.package / self.record["onnx"],
@@ -330,6 +378,7 @@ class MultiPolicyProgram:
                     interface=interface,
                     joint_units=self.joint_units,
                     joint_limits=self.joint_limits,
+                    physics=ctx.physics,
                 )
         else:
             _, package = runtime_library().resolve(ctx.config.policy)
@@ -342,6 +391,7 @@ class MultiPolicyProgram:
                 interface=interface,
                 joint_units=self.joint_units,
                 joint_limits=self.joint_limits,
+                physics=ctx.physics,
             )
         self._command_keys: dict[str, tuple[str, ...]] = {}
         if type(self)._command is MultiPolicyProgram._command:
@@ -519,7 +569,7 @@ class MultiPolicyProgram:
             self._on_action_complete(inv, ctx, slot)
             inv.succeed()
             return
-        if ctx.sim_time - self.started >= self._action_timeout(inv, ctx, slot):
+        if ctx.sim_time - self.started + 1e-10 >= self._action_timeout(inv, ctx, slot):
             self._hold(ctx)
             inv.fail("motion_timeout", "Policy did not satisfy the pinned Task condition")
             self.handle = None

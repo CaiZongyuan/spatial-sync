@@ -338,12 +338,33 @@ def joint_targets(spec, positions, output):
     return np.clip(target, spec.action.lower, spec.action.upper)
 
 
+def spec_within_robot_entity(spec: ObservationSpec, robot_entity: str) -> bool:
+    """Return True iff every canonical (/...) path in action and observations belongs to robot_entity."""
+    prefix = robot_entity + "/"
+
+    def owned(path: str) -> bool:
+        return path == robot_entity or path.startswith(prefix)
+
+    if any(not owned(key) for key in spec.action.jointKeys):
+        return False
+    for obs in spec.observations:
+        if any(not owned(key) for key in obs.keys):
+            return False
+        if obs.key is not None and obs.key.startswith("/") and not owned(obs.key):
+            return False
+        if obs.frame is not None and obs.frame.startswith("/") and not owned(obs.frame):
+            return False
+    return True
+
+
 def remap_observation_spec_entity(
     spec: ObservationSpec, source_entity: str, target_entity: str
 ) -> ObservationSpec:
     """Deterministically rebase canonical robot paths in an ObservationSpec across Scenes."""
     if source_entity == target_entity:
         return spec
+    if not spec_within_robot_entity(spec, source_entity):
+        raise ValueError("ObservationSpec contains canonical paths outside source robot entity")
 
     def remap(path: str) -> str:
         if path == source_entity:

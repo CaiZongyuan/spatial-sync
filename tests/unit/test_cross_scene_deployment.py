@@ -2,6 +2,7 @@
 
 import hashlib
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -182,13 +183,21 @@ def _write_validated_scene(
     validator,
     *,
     name: str,
-    entity_prim: str,
+    rev: int = 1,
+    entity_prim: str = "PatrolBiped",
     devices_entities: list[dict],
     waypoints: dict,
+    scene_usda_text: str | None = None,
+    asset_id: str = "robot/test-biped@1",
+    asset_dir=None,
+    expected_assets: list[dict] | None = None,
 ):
-    scene_dir = user_lib / "scenes" / name / "1"
+    scene_dir = user_lib / "scenes" / name / str(rev)
     scene_dir.mkdir(parents=True, exist_ok=True)
-    (scene_dir / "scene.usda").write_text(_scene_usda(entity_prim), encoding="utf-8")
+    (scene_dir / "scene.usda").write_text(
+        scene_usda_text if scene_usda_text is not None else _scene_usda(entity_prim),
+        encoding="utf-8",
+    )
     scene_meta = {"name": name, "title": f"Scene {name}", "sources": ["newton"], "stage": "scene.usda"}
     (scene_dir / "scene.yaml").write_text(yaml.safe_dump(scene_meta, sort_keys=False), encoding="utf-8")
     scene_binds = {"scene": name, "entities": devices_entities}
@@ -196,18 +205,33 @@ def _write_validated_scene(
     loc_doc = {"waypoints": waypoints}
     (scene_dir / "locations.yaml").write_text(yaml.safe_dump(loc_doc, sort_keys=False), encoding="utf-8")
 
-    assets = AssetLibrary(state_root, user_root=user_lib)
+    from packages.library import common as library_common
+
+    resolved_builtin = Path(library_common.BUILTIN_ROOT).resolve()
+    resolved_target = Path(user_lib).resolve()
+    assets = AssetLibrary(
+        state_root,
+        builtin_root=resolved_builtin,
+        user_root=(
+            (resolved_target / "__no_user__") if resolved_target == resolved_builtin else resolved_target
+        ),
+    )
     assets.startup()
-    asset_dir = user_lib / "assets/robot/test-biped/1"
+    resolved_asset_dir = asset_dir if asset_dir is not None else (user_lib / "assets/robot/test-biped/1")
+    exp = (
+        expected_assets
+        if expected_assets is not None
+        else [{"id": asset_id, "contentHash": content_hash(resolved_asset_dir)}]
+    )
     report = validator.run(
         scene_dir,
         "scene",
-        f"scene:{name}@1",
+        f"scene:{name}@{rev}",
         scene_meta,
         assets,
         bindings=scene_binds,
         locations=loc_doc,
-        expected_assets=[{"id": "robot/test-biped@1", "contentHash": content_hash(asset_dir)}],
+        expected_assets=exp,
     )
     assert report["launchable"], report
     durable_json(scene_dir / "validation.json", report)
@@ -566,3 +590,800 @@ def test_cross_scene_policy_bundle_authorizes_only_exact_committed_controller_an
         )
         assert rogue_http.status_code == 409, rogue_http.text
         assert rogue_http.json()["detail"]["code"] == "deployment_authorization_required"
+
+        # 4. Cross-scene USD Subtree Integrity: inline USD prims, non-rigid scale, and physical `over`
+        # overrides (mass, joint limits, drive stiffness/maxForce) MUST all be rejected!
+        patrol_entity_bind = [
+            {
+                "key": "/World/Lab/PatrolBiped",
+                "type": "biped/v1",
+                "program": BipedPolicyProgram.id,
+                "config": {
+                    "jointKeys": [
+                        "/World/Lab/PatrolBiped/LeftHip",
+                        "/World/Lab/PatrolBiped/RightHip",
+                        "/World/Lab/PatrolBiped/LeftKnee",
+                        "/World/Lab/PatrolBiped/RightKnee",
+                    ],
+                    "baseBody": "/World/Lab/PatrolBiped/Trunk",
+                    "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+                    "locations": "locations.yaml",
+                    "policies": promoted_policies,
+                },
+            }
+        ]
+        inline_robot_body = BIPED_ASSET_USDA.split('def Xform "Asset"', 1)[1]
+        inline_scene_usda = f"""#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+def Xform "World"
+{{
+    def PhysicsScene "PhysicsScene"
+    {{
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 9.81
+    }}
+    def Xform "Lab"
+    {{
+        def Cube "Floor" (prepend apiSchemas = ["PhysicsCollisionAPI"])
+        {{
+            double size = 1.0
+            double3 xformOp:translate = (0, 0, -0.05)
+            float3 xformOp:scale = (6.0, 6.0, 0.1)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }}
+        def Xform "PatrolBiped"{inline_robot_body.replace("/Asset/", "/World/Lab/PatrolBiped/")}
+    }}
+}}
+"""
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-inline",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=inline_scene_usda,
+            expected_assets=[],
+        )
+
+        def _over_scene_usda(robot_block: str) -> str:
+            return f"""#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+def Xform "World"
+{{
+    def PhysicsScene "PhysicsScene"
+    {{
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 9.81
+    }}
+    def Xform "Lab"
+    {{
+        def Cube "Floor" (prepend apiSchemas = ["PhysicsCollisionAPI"])
+        {{
+            double size = 1.0
+            double3 xformOp:translate = (0, 0, -0.05)
+            float3 xformOp:scale = (6.0, 6.0, 0.1)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }}
+        def Xform "PatrolBiped" (
+            prepend references = @library:assets/robot/test-biped/1/asset.usda@
+        )
+        {{
+{robot_block}
+        }}
+    }}
+}}
+"""
+
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-scaled",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_over_scene_usda(
+                '            float3 xformOp:scale = (1.5, 1.0, 1.0)\n'
+                '            uniform token[] xformOpOrder = ["xformOp:scale"]'
+            ),
+        )
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-over-mass",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_over_scene_usda(
+                '            over "Trunk"\n'
+                "            {\n"
+                "                float physics:mass = 50.0\n"
+                "            }"
+            ),
+        )
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-over-drive",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_over_scene_usda(
+                '            over "LeftHip"\n'
+                "            {\n"
+                "                float drive:angular:physics:stiffness = 2500.0\n"
+                "                float drive:angular:physics:maxForce = 999.0\n"
+                "                float physics:lowerLimit = -120.0\n"
+                "            }"
+            ),
+        )
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-rigid-placed",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.5, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_over_scene_usda(
+                '            double3 xformOp:translate = (0.5, -0.2, 0.0)\n'
+                '            quatf xformOp:orient = (0.70710678, 0, 0, 0.70710678)\n'
+                '            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]'
+            ),
+        )
+
+        manager.library.refresh()
+        for tampered_name in ("biped-inline@1", "biped-scaled@1", "biped-over-mass@1", "biped-over-drive@1"):
+            tampered_scene = manager.library.resolve(tampered_name, launch=True, source="newton")
+            with pytest.raises(PlanError) as exc_tampered:
+                authorize_cross_scene_policy_deployment(tampered_scene, state_root=state_root)
+            assert exc_tampered.value.detail["code"] == "deployment_authorization_required", tampered_name
+
+        placed_scene = manager.library.resolve("biped-rigid-placed@1", launch=True, source="newton")
+        assert (
+            authorize_cross_scene_policy_deployment(placed_scene, state_root=state_root) == committed_permit
+        )
+
+
+def test_builtin_reference_policy_permit_rsi_rounds_and_fresh_user_cross_scene_reuse(
+    tmp_path, monkeypatch
+):
+    import asyncio
+
+    from apps.api.app.sources.base import SpatialSource
+    from packages.library import common as library_common
+    from packages.library.scenes import SceneLibrary
+    from packages.programs.deployment import authorize_builtin_policy_deployment
+    from packages.protocol.schema import (
+        BodyNode,
+        SceneManifest,
+        SourceInfo,
+        TransformFrame,
+    )
+    from packages.training import deployment_authority
+
+    builtin_lib = tmp_path / "builtin-library"
+    user_lib = tmp_path / "user-library"
+    state_root = tmp_path / "state"
+    builtin_lib.mkdir(parents=True)
+    user_lib.mkdir(parents=True)
+
+    monkeypatch.setenv("LW_LIBRARY", str(user_lib))
+    monkeypatch.setenv("SPATIAL_STATE_ROOT", str(state_root))
+    monkeypatch.setattr(library_common, "BUILTIN_ROOT", builtin_lib)
+    monkeypatch.setattr(deployment_authority, "BUILTIN_ROOT", builtin_lib)
+    monkeypatch.setattr(AssetLibrary.__init__, "__defaults__", (builtin_lib, None))
+    monkeypatch.setattr(SceneLibrary.__init__, "__defaults__", (builtin_lib, None, None))
+
+    validator = ControlledPublicationValidator(state_root / "val", program_schemas)
+
+    # 1. Author built-in robot/builtin-biped@1 USD asset
+    asset_dir = builtin_lib / "assets/robot/builtin-biped/1"
+    asset_dir.mkdir(parents=True)
+    raw_usda = BIPED_ASSET_USDA.encode("utf-8")
+    (asset_dir / "asset.usda").write_bytes(raw_usda)
+    (asset_dir / "LICENSE.txt").write_text("Apache-2.0\n", encoding="utf-8")
+    durable_json(
+        asset_dir / "provenance.json",
+        {
+            "source": "builtin-biped-fixture",
+            "files": {"asset.usda": {"sha256": hashlib.sha256(raw_usda).hexdigest(), "bytes": len(raw_usda)}},
+        },
+    )
+    (asset_dir / "asset.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "robot/builtin-biped",
+                "kind": "robot",
+                "title": "Built-in Reference Biped",
+                "stage": "asset.usda",
+                "physics": {"massKg": 2.4, "massSource": "measured", "collision": "authored"},
+                "implements": [
+                    {
+                        "type": "biped/v1",
+                        "programs": {"newton": BipedPostureProgram.id},
+                        "config": {
+                            "jointKeys": ["LeftHip", "RightHip", "LeftKnee", "RightKnee"],
+                            "baseBody": "Trunk",
+                            "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+                        },
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    boot_assets = AssetLibrary(state_root, builtin_root=builtin_lib, user_root=user_lib)
+    boot_assets.startup()
+    durable_json(
+        asset_dir / "validation.json",
+        validator.run(
+            asset_dir,
+            "asset",
+            "asset:robot/builtin-biped@1",
+            boot_assets.versions["robot/builtin-biped@1"].metadata,
+            boot_assets,
+        ),
+    )
+
+    def _builtin_scene_usda(prim_name: str) -> str:
+        return _scene_usda(prim_name).replace("robot/test-biped/1", "robot/builtin-biped/1")
+
+    # 2. Built-in Scene @1 (posture baseline)
+    _write_validated_scene(
+        state_root,
+        builtin_lib,
+        validator,
+        name="builtin-arena",
+        rev=1,
+        entity_prim="ArenaBiped",
+        devices_entities=[
+            {
+                "key": "/World/Lab/ArenaBiped",
+                "template": "robot/builtin-biped@1",
+                "config": {"locations": "locations.yaml"},
+            }
+        ],
+        waypoints={"arena_wp": {"p": [1.0, 0.0, 0.0], "yaw": 0.0}},
+        scene_usda_text=_builtin_scene_usda("ArenaBiped"),
+        asset_id="robot/builtin-biped@1",
+        asset_dir=asset_dir,
+    )
+    arena_v1_hash = content_hash(builtin_lib / "scenes/builtin-arena/1")
+
+    # 3. Built-in Reference policies (walkTo, standUp, bow)
+    builtin_policies = _make_biped_policies(
+        builtin_lib, robot="/World/Lab/ArenaBiped", scene="builtin-arena@1"
+    )
+    for pol_id in builtin_policies.values():
+        pol_name, pol_rev = pol_id.removeprefix("policy/").split("@")
+        _pin_policy_scene_hash(builtin_lib, pol_name, int(pol_rev), "builtin-arena@1", arena_v1_hash)
+
+    # 4. Built-in Scene @2 (Reference multi-policy scene) & built-in patrol Scene @1
+    arena_v2_entity = {
+        "key": "/World/Lab/ArenaBiped",
+        "type": "biped/v1",
+        "program": BipedPolicyProgram.id,
+        "config": {
+            "jointKeys": [
+                "/World/Lab/ArenaBiped/LeftHip",
+                "/World/Lab/ArenaBiped/RightHip",
+                "/World/Lab/ArenaBiped/LeftKnee",
+                "/World/Lab/ArenaBiped/RightKnee",
+            ],
+            "baseBody": "/World/Lab/ArenaBiped/Trunk",
+            "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+            "locations": "locations.yaml",
+            "policies": builtin_policies,
+        },
+    }
+    _write_validated_scene(
+        state_root,
+        builtin_lib,
+        validator,
+        name="builtin-arena",
+        rev=2,
+        entity_prim="ArenaBiped",
+        devices_entities=[arena_v2_entity],
+        waypoints={"arena_wp": {"p": [1.0, 0.0, 0.0], "yaw": 0.0}},
+        scene_usda_text=_builtin_scene_usda("ArenaBiped"),
+        asset_id="robot/builtin-biped@1",
+        asset_dir=asset_dir,
+    )
+    _write_validated_scene(
+        state_root,
+        builtin_lib,
+        validator,
+        name="builtin-patrol",
+        rev=1,
+        entity_prim="PatrolUnit",
+        devices_entities=[
+            {
+                "key": "/World/Lab/PatrolUnit",
+                "type": "biped/v1",
+                "program": BipedPolicyProgram.id,
+                "config": {
+                    "jointKeys": [
+                        "/World/Lab/PatrolUnit/LeftHip",
+                        "/World/Lab/PatrolUnit/RightHip",
+                        "/World/Lab/PatrolUnit/LeftKnee",
+                        "/World/Lab/PatrolUnit/RightKnee",
+                    ],
+                    "baseBody": "/World/Lab/PatrolUnit/Trunk",
+                    "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+                    "locations": "locations.yaml",
+                    "policies": builtin_policies,
+                },
+            }
+        ],
+        waypoints={"checkpoint_a": {"p": [0.8, 0.4, 0.0], "yaw": 0.5}},
+        scene_usda_text=_builtin_scene_usda("PatrolUnit"),
+        asset_id="robot/builtin-biped@1",
+        asset_dir=asset_dir,
+    )
+
+    # 5. Built-in Embodiment, RobotModel, and Controller v1
+    for subdir in ("embodiments", "robot-models", "controllers/builtin-biped-ctrl"):
+        (builtin_lib / subdir).mkdir(parents=True, exist_ok=True)
+    (builtin_lib / "embodiments/builtin-biped.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "builtin-biped",
+                "title": "Built-in Biped",
+                "kind": "sim",
+                "asset": "robot/builtin-biped@1",
+                "controller": "builtin-biped-ctrl",
+                "bindings": [
+                    {"scene": "builtin-arena@1", "entity": "/World/Lab/ArenaBiped", "source": "newton"}
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (builtin_lib / "robot-models/builtin-biped-ref.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "builtin-biped-ref",
+                "title": "Built-in Biped Reference RL Bundle",
+                "family": "rl-policy",
+                "source": builtin_policies["walkTo"],
+                "license": "Apache-2.0",
+                "parameters": 64,
+                "embodiments": ["builtin-biped"],
+                "upstreamEmbodiments": [],
+                "actionSpace": "joint_position_offset",
+                "compute": {"inference": "local CPU"},
+                "runnable": True,
+                "capability": {
+                    "program": BipedPolicyProgram.id,
+                    "sources": ["newton"],
+                    "requirements": ["Built-in Reference Controller"],
+                    "notes": "Reference multi-policy bundle",
+                },
+                "quality": {"status": "not-evaluated", "evaluationId": None},
+                "sources": [
+                    {
+                        "title": "Spatial Sync Reference",
+                        "url": "https://github.com/CaiZongyuan/spatial-sync/issues/279",
+                        "retrievedOn": "2026-11-12",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (builtin_lib / "controllers/builtin-biped-ctrl/controller.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "builtin-biped-ctrl",
+                "title": "Built-in Biped Controller",
+                "embodiment": "builtin-biped",
+                "currentVersion": 1,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    from packages.policies.library import PolicyLibrary
+
+    builtin_pol_lib = PolicyLibrary({"builtin": builtin_lib})
+    ctrl_policies_doc = {}
+    for act, pid in sorted(builtin_policies.items()):
+        rec, _ = builtin_pol_lib.resolve(pid)
+        ctrl_policies_doc[act] = {
+            "policy": pid,
+            "action": {
+                "space": "joint_position_offset",
+                "hz": 20.0,
+                "hzSource": pid + "/task.json#/control/hz",
+            },
+            "observation": rec["observationSha256"],
+            "task": rec["task"],
+        }
+    walk_rec, _ = builtin_pol_lib.resolve(builtin_policies["walkTo"])
+    (builtin_lib / "controllers/builtin-biped-ctrl/1.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "controller": "builtin-biped-ctrl",
+                "version": 1,
+                "embodiment": "builtin-biped",
+                "robotModel": "builtin-biped-ref",
+                "policy": builtin_policies["walkTo"],
+                "program": BipedPolicyProgram.id,
+                "programArtifact": None,
+                "action": ctrl_policies_doc["walkTo"]["action"],
+                "observation": walk_rec["observationSha256"],
+                "task": walk_rec["task"],
+                "policies": ctrl_policies_doc,
+                "scene": "builtin-arena@2",
+                "evaluationId": None,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    # Fresh empty state_root (simulating a fresh repo clone with ZERO local promotions!)
+    fresh_state = tmp_path / "fresh-state"
+    fresh_state.mkdir(parents=True)
+
+    scenes = SceneLibrary(builtin_root=builtin_lib, user_root=user_lib, state_root=fresh_state)
+    builtin_arena_2 = scenes.resolve("builtin-arena@2", launch=True, source="newton")
+    builtin_patrol_1 = scenes.resolve("builtin-patrol@1", launch=True, source="newton")
+
+    # A. Built-in permit issued and verified on BOTH base scene and built-in cross-scene patrol scene!
+    arena_permit = authorize_builtin_policy_deployment(builtin_arena_2, state_root=fresh_state)
+    assert arena_permit["schema"] == "lw.builtin-deployment-permit/1"
+    assert arena_permit["controller"]["id"] == "builtin-biped-ctrl"
+    assert arena_permit["controller"]["version"] == 1
+    assert arena_permit["scene"] == {"id": "builtin-arena@2", "contentHash": builtin_arena_2.content_hash}
+
+    patrol_permit = authorize_builtin_policy_deployment(builtin_patrol_1, state_root=fresh_state)
+    assert patrol_permit == arena_permit
+
+    for target_scene, entity_key in (
+        (builtin_arena_2, "/World/Lab/ArenaBiped"),
+        (builtin_patrol_1, "/World/Lab/PatrolUnit"),
+    ):
+        eff = target_scene.report()["effectiveBindings"]["newton"][0]
+        cat = compile_catalog(
+            "rev-b",
+            load_entity_types(),
+            {entity_key: eff},
+            {entity_key: BipedPolicyProgram.Config.model_validate(eff["config"])},
+        )
+        verified = verify_runtime_deployment(target_scene, cat, arena_permit, state_root=fresh_state)
+        assert verified.permit == arena_permit
+
+        # Tampering wire permit field MUST be rejected by Runner verification!
+        forged_permit = deepcopy(arena_permit)
+        forged_permit["target"]["action"] = "bow"
+        with pytest.raises(LibraryError):
+            verify_runtime_deployment(target_scene, cat, forged_permit, state_root=fresh_state)
+
+    # B. Fresh-clone zero-shot cross-scene reuse in a user-authored scene (empty state_root!)
+    _write_validated_scene(
+        fresh_state,
+        user_lib,
+        validator,
+        name="user-patrol",
+        rev=1,
+        entity_prim="UserBiped",
+        devices_entities=[
+            {
+                "key": "/World/Lab/UserBiped",
+                "type": "biped/v1",
+                "program": BipedPolicyProgram.id,
+                "config": {
+                    "jointKeys": [
+                        "/World/Lab/UserBiped/LeftHip",
+                        "/World/Lab/UserBiped/RightHip",
+                        "/World/Lab/UserBiped/LeftKnee",
+                        "/World/Lab/UserBiped/RightKnee",
+                    ],
+                    "baseBody": "/World/Lab/UserBiped/Trunk",
+                    "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+                    "locations": "locations.yaml",
+                    "policies": builtin_policies,
+                },
+            }
+        ],
+        waypoints={"user_wp": {"p": [0.6, -0.3, 0.0], "yaw": -0.4}},
+        scene_usda_text=_builtin_scene_usda("UserBiped"),
+        asset_id="robot/builtin-biped@1",
+        asset_dir=asset_dir,
+    )
+    scenes.refresh()
+    user_patrol_1 = scenes.resolve("user-patrol@1", launch=True, source="newton")
+    user_cross_permit = authorize_cross_scene_policy_deployment(user_patrol_1, state_root=fresh_state)
+    assert user_cross_permit == arena_permit
+    user_eff = user_patrol_1.report()["effectiveBindings"]["newton"][0]
+    user_cat = compile_catalog(
+        "rev-u",
+        load_entity_types(),
+        {"/World/Lab/UserBiped": user_eff},
+        {"/World/Lab/UserBiped": BipedPolicyProgram.Config.model_validate(user_eff["config"])},
+    )
+    assert (
+        verify_runtime_deployment(user_patrol_1, user_cat, user_cross_permit, state_root=fresh_state).permit
+        == arena_permit
+    )
+
+    # C. Gateway SessionManager + GET /api/v1/embodiments/{id} activeSessions + ControllerPromotions RSI round
+    class FakeNewtonRunnerSource(SpatialSource):
+        def __init__(self, session_id: str):
+            self.session_id = session_id
+            self.scene_version = None
+            self.state_root = None
+            self.deployment_permit = None
+            self._frame = None
+            self._closed = asyncio.Event()
+
+        def configure_scene(self, scene_version):
+            self.scene_version = scene_version
+
+        def configure_execution(self, *, state_root, deployment_permit=None):
+            self.state_root = state_root
+            self.deployment_permit = deepcopy(deployment_permit)
+
+        async def start(self, scene_id: str, options):
+            eff = self.scene_version.report()["effectiveBindings"]["newton"][0]
+            ekey = eff["key"]
+            catalog = compile_catalog(
+                "rev-session",
+                load_entity_types(),
+                {ekey: eff},
+                {ekey: BipedPolicyProgram.Config.model_validate(eff["config"])},
+            )
+            assert self.deployment_permit is not None
+            verify_runtime_deployment(
+                self.scene_version, catalog, self.deployment_permit, state_root=self.state_root
+            )
+            manifest = SceneManifest(
+                sessionId=self.session_id,
+                sceneRevision="rev-session",
+                revisionNumericId=1,
+                sceneName=self.scene_version.name,
+                source=SourceInfo(kind="newton", physicsDt=options.physicsDt),
+                nodes=[
+                    BodyNode(
+                        entityKey=f"{ekey}/Trunk",
+                        name="Trunk",
+                        streamId=1,
+                    )
+                ],
+                sites=[],
+                joints=[],
+            )
+            self._frame = TransformFrame(
+                sessionId=self.session_id,
+                sceneRevision="rev-session",
+                epoch=0,
+                seq=1,
+                simTime=0.0,
+                sampleTimeMs=1.0,
+                poses=[(1, 0.0, 0.0, 0.24, 0.0, 0.0, 0.0, 1.0)],
+            )
+            return manifest, catalog
+
+        def latest_frame(self):
+            return self._frame
+
+        async def snapshot(self):
+            return self._frame
+
+        async def events(self):
+            await self._closed.wait()
+            if False:
+                yield None
+
+        async def execute(self, command):
+            raise NotImplementedError
+
+        async def close(self):
+            self._closed.set()
+            return None
+
+    def fake_factory(kind: str, session_id: str):
+        assert kind == "newton"
+        return FakeNewtonRunnerSource(session_id)
+
+    settings = Settings(state_root=fresh_state, recordings_root=tmp_path / "rec", node_token=TOKEN)
+    app = create_app(settings, source_factory=fake_factory, controller_publication_validator=validator)
+    with TestClient(app) as client:
+        sess_res = client.post(
+            "/api/v1/sessions",
+            json={
+                "sceneVersion": "builtin-arena@2",
+                "source": "newton",
+                "continueWithoutObservers": True,
+            },
+        )
+        assert sess_res.status_code in (200, 201), sess_res.text
+        session_id = sess_res.json()["sessionId"]
+
+        emb_res = client.get("/api/v1/embodiments/builtin-biped")
+        assert emb_res.status_code == 200, emb_res.text
+        active = emb_res.json()["activeSessions"]
+        assert len(active) == 1
+        assert active[0]["sessionId"] == session_id
+        assert active[0]["scene"] == "builtin-arena@2"
+        assert active[0]["controller"]["id"] == "builtin-biped-ctrl"
+        assert active[0]["controller"]["version"] == 1
+
+        del_res = client.delete(f"/api/v1/sessions/{session_id}")
+        assert del_res.status_code in (200, 204), del_res.text
+
+        # Verify ControllerPromotions.authorize_scene, notebook_default, _controller, _materials, and RSI v2!
+        manager = client.app.state.manager
+        promotions = client.app.state.controller_promotions
+        resolved_b2 = manager.library.resolve("builtin-arena@2", launch=True, source="newton")
+        assert promotions.authorize_scene(resolved_b2) == arena_permit
+
+        nb_def = promotions.notebook_default(
+            ("builtin-arena@2", resolved_b2.content_hash, "newton", "/World/Lab/ArenaBiped")
+        )
+        assert nb_def is not None
+        assert nb_def["status"] == "committed"
+        assert nb_def["controller"]["id"] == "builtin-biped-ctrl"
+        assert nb_def["controller"]["version"] == 1
+
+        # Promote v2 on top of built-in Reference scene builtin-arena@2!
+        walk_pkg = builtin_lib / "policies/biped-walk/1/package"
+        user_walk_task = yaml.safe_load((walk_pkg / "task.json").read_text(encoding="utf-8")) | {
+            "name": "user-walk",
+            "scene": "builtin-arena@2",
+        }
+        user_walk_id = write_policy_package(
+            user_lib,
+            name="user-walk",
+            rev=1,
+            task=user_walk_task,
+            spec=yaml.safe_load((walk_pkg / "obs_spec.yaml").read_text(encoding="utf-8")),
+            onnx_bytes=(walk_pkg / "artifacts/policy.onnx").read_bytes(),
+        )
+        _pin_policy_scene_hash(user_lib, "user-walk", 1, "builtin-arena@2", resolved_b2.content_hash)
+
+        suite_dir = user_lib / "suites/builtin-walk-suite/1"
+        (suite_dir / "private").mkdir(parents=True, exist_ok=True)
+        (suite_dir / "task.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "builtin-walk-suite",
+                    "scene": "builtin-arena@2",
+                    "robot": "/World/Lab/ArenaBiped",
+                    "implements": "biped/v1.walkTo",
+                    "timeoutSeconds": 5.0,
+                    "success": {"entity": "/World/Lab/ArenaBiped", "property": "tiltDeg", "lte": 50.0},
+                    "milestones": [
+                        {
+                            "id": "goal",
+                            "when": {"entity": "/World/Lab/ArenaBiped", "property": "tiltDeg", "lte": 50.0},
+                        }
+                    ],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        (suite_dir / "private/seeds.yaml").write_text(
+            yaml.safe_dump({"train-1": 1, "test-1": 2}), encoding="utf-8"
+        )
+        (suite_dir / "suite.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "suite/builtin-walk-suite",
+                    "title": "Walk Suite",
+                    "layer": "embodied",
+                    "source": "newton",
+                    "scene": "builtin-arena@2",
+                    "sceneContentHash": resolved_b2.content_hash,
+                    "episodes": [
+                        {"id": "train-1", "split": "train", "params": {"waypoint": "arena_wp"}},
+                        {"id": "test-1", "split": "test", "params": {"waypoint": "arena_wp"}},
+                    ],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        suites = SuiteLibrary(manager.library_assets.roots)
+        suites.refresh()
+        suite = suites.resolve("suite/builtin-walk-suite@1")
+        subject = resolve_policy_subject(manager, user_walk_id, suite, resolved_b2)
+        emb, ctrl = promotions._controller(resolved_b2, "/World/Lab/ArenaBiped")
+        assert emb["id"] == "builtin-biped"
+        assert ctrl["id"] == "builtin-biped-ctrl"
+        assert ctrl["currentVersion"] == 1
+
+        materials = promotions._materials(resolved_b2, subject)
+        assert materials["/World/Lab/ArenaBiped"]["kind"] == "policy-bundle"
+        assert materials["/World/Lab/ArenaBiped"]["policies"]["walkTo"]["id"] == user_walk_id
+        assert materials["/World/Lab/ArenaBiped"]["policies"]["standUp"]["id"] == builtin_policies["standUp"]
+
+        model = promotions._model(
+            subject, emb, {"evaluationId": "eval-r2", "at": "2026-11-12T00:00:00Z"}
+        )
+        durable_json(user_lib / f"robot-models/{model['id']}.yaml", model)
+        v2_comp = deepcopy(ctrl_policies_doc) | {"walkTo": promotions._policy_composition(user_walk_id)}
+        committed_v2 = _publish_promotion(
+            manager=manager,
+            robot_resources=client.app.state.robot_resources,
+            validator=validator,
+            state_root=fresh_state,
+            user_lib=user_lib,
+            promotion_id="promotion-builtin-r2",
+            scene=resolved_b2,
+            subject=subject,
+            controller=ctrl,
+            version_fields={
+                "embodiment": emb["id"],
+                "robotModel": model["id"],
+                "policy": user_walk_id,
+                "program": BipedPolicyProgram.id,
+                "action": v2_comp["walkTo"]["action"],
+                "observation": subject.candidateIdentity.observationSha256,
+                "task": subject.candidateIdentity.task,
+                "policies": v2_comp,
+                "evaluationId": "eval-r2",
+            },
+            materials=materials,
+        )
+        assert committed_v2["scene"]["id"] == "builtin-arena@3"
+        assert committed_v2["controllerVersion"] == 2
+        assert committed_v2["controller"]["document"]["version"] == 2
+
+        # Once superseded in user/controllers (v2), stale v1 user-patrol@1 is no longer authorized,
+        # while user-patrol@2 binding the promoted v2 composition IS authorized!
+        manager.library.refresh()
+        stale_user_patrol = manager.library.resolve("user-patrol@1", launch=True, source="newton")
+        with pytest.raises(PlanError):
+            authorize_cross_scene_policy_deployment(stale_user_patrol, state_root=fresh_state)
+
+        _write_validated_scene(
+            fresh_state,
+            user_lib,
+            validator,
+            name="user-patrol",
+            rev=2,
+            entity_prim="UserBiped",
+            devices_entities=[
+                {
+                    "key": "/World/Lab/UserBiped",
+                    "type": "biped/v1",
+                    "program": BipedPolicyProgram.id,
+                    "config": {
+                        "jointKeys": [
+                            "/World/Lab/UserBiped/LeftHip",
+                            "/World/Lab/UserBiped/RightHip",
+                            "/World/Lab/UserBiped/LeftKnee",
+                            "/World/Lab/UserBiped/RightKnee",
+                        ],
+                        "baseBody": "/World/Lab/UserBiped/Trunk",
+                        "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+                        "locations": "locations.yaml",
+                        "policies": builtin_policies | {"walkTo": user_walk_id},
+                    },
+                }
+            ],
+            waypoints={"user_wp": {"p": [0.6, -0.3, 0.0], "yaw": -0.4}},
+            scene_usda_text=_builtin_scene_usda("UserBiped"),
+            asset_id="robot/builtin-biped@1",
+            asset_dir=asset_dir,
+        )
+        manager.library.refresh()
+        v2_user_patrol = manager.library.resolve("user-patrol@2", launch=True, source="newton")
+        v2_permit = authorize_cross_scene_policy_deployment(v2_user_patrol, state_root=fresh_state)
+        assert v2_permit["schema"] == "lw.deployment-permit/1"
+        assert v2_permit["controller"]["version"] == 2

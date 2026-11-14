@@ -1239,8 +1239,8 @@ class SessionManager:
                     deployment_permit = None
                     if simulation_subject is None:
                         from packages.programs.deployment import (
+                            authorize_builtin_policy_deployment,
                             authorize_cross_scene_policy_deployment,
-                            is_verified_builtin_policy_scene,
                         )
                         from packages.programs.simulation import scene_requires_material_authorization
 
@@ -1253,9 +1253,11 @@ class SessionManager:
                             selected_source == "newton"
                             and requires_auth
                             and not has_promotion_lineage
-                            and is_verified_builtin_policy_scene(selected)
+                            and getattr(selected, "root", None) == "builtin"
                         ):
-                            deployment_permit = None
+                            deployment_permit = authorize_builtin_policy_deployment(
+                                selected, state_root=self.settings.state_root
+                            )
                         elif (
                             selected_source == "newton"
                             and requires_auth

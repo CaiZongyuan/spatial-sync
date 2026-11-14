@@ -24,7 +24,7 @@ from packages.programs.subjects import (
 )
 
 from .library import PolicyLibrary, digest, read_json
-from .observations import ObservationSpec
+from .observations import ObservationSpec, spec_within_robot_entity
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Text = Annotated[str, Field(min_length=1)]
@@ -116,8 +116,8 @@ def fixed_bindings(scene, source):
         raise _invalid("Verified evaluation bindings are unavailable", "policy_binding_unavailable") from exc
 
 
-def scene_joint_resources(scene) -> dict[str, dict]:
-    """Inspect physical joint kinds and finite limits from the Scene's stage."""
+def scene_stage_resources(scene) -> dict:
+    """Inspect physical joint, body, and site resources from the Scene's stage."""
     payload = scene.runtime_payload()
     metadata = payload["metadata"]
     if metadata["stage"].startswith("python:"):
@@ -132,16 +132,24 @@ def scene_joint_resources(scene) -> dict[str, dict]:
     else:
         graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
         stage = graph.compose(metadata["stage"])
-        if graph.errors:
-            raise ValueError("; ".join(graph.errors))
+        if stage is None or graph.errors:
+            raise ValueError("; ".join(graph.errors) or "USD stage cannot be composed")
         resources = usd_resources(stage)
-    return resources.get("joints", {})
+    return resources
+
+
+def scene_joint_resources(scene) -> dict[str, dict]:
+    """Inspect physical joint kinds and finite limits from the Scene's stage."""
+    return scene_stage_resources(scene).get("joints", {})
 
 
 def _validate_scene_action_channels(scene, program_cls, config, spec):
     configured = program_cls.policy_joints(config)
     try:
-        stage_joints = scene_joint_resources(scene)
+        resources = scene_stage_resources(scene)
+        stage_joints = resources.get("joints", {})
+        stage_bodies = set(resources.get("bodies", ()))
+        stage_sites = set(resources.get("sites", ()))
     except (ValueError, OSError, KeyError, TypeError) as exc:
         raise _invalid(
             "Scene physical joint resources are unavailable", "policy_binding_unavailable"
@@ -183,6 +191,39 @@ def _validate_scene_action_channels(scene, program_cls, config, spec):
             raise _invalid(
                 f"Policy action bounds exceed physical joint limits on {key}",
                 "policy_action_binding_mismatch",
+            )
+    for item in spec.observations:
+        source = item.source
+        if source.startswith("joint_"):
+            for key in item.keys:
+                if key.startswith("/"):
+                    info = stage_joints.get(key)
+                    if info is None or info.get("kind") not in ("revolute", "prismatic"):
+                        raise _invalid(
+                            f"Policy observation joint {key} does not match target Scene joints",
+                            "policy_observation_binding_mismatch",
+                        )
+        elif source == "projected_gravity" or source.startswith("body_"):
+            if item.key is not None and item.key.startswith("/") and item.key not in stage_bodies:
+                raise _invalid(
+                    f"Policy observation body {item.key} does not exist in target Scene",
+                    "policy_observation_binding_mismatch",
+                )
+        elif source.startswith("site_"):
+            if item.key is not None and item.key.startswith("/") and item.key not in stage_sites:
+                raise _invalid(
+                    f"Policy observation site {item.key} does not exist in target Scene",
+                    "policy_observation_binding_mismatch",
+                )
+        if (
+            item.frame is not None
+            and item.frame.startswith("/")
+            and source != "command"
+            and item.frame not in stage_bodies
+        ):
+            raise _invalid(
+                f"Policy observation frame body {item.frame} does not exist in target Scene",
+                "policy_observation_binding_mismatch",
             )
 
 
@@ -365,9 +406,8 @@ def validate_policy_material(
         if not allow_entity_remap:
             raise _invalid("Deployed Policy Task target differs")
         spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
-        src_prefix = task["robot"] + "/"
-        if any(key != task["robot"] and not key.startswith(src_prefix) for key in spec.action.jointKeys):
-            raise _invalid("Deployed Policy action channels cannot remap outside Task robot")
+        if not spec_within_robot_entity(spec, task["robot"]):
+            raise _invalid("Deployed Policy channels cannot remap outside Task robot")
     if controller is not None and (
         controller.get("program") != program_cls.id
         or controller.get("policy") != identity.id

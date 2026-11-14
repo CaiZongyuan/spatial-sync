@@ -397,7 +397,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
             return
 
         if inv.action == "bow":
-            if ctx.config.bowMinPitchDeg == 0.0 or abs(pitch_deg) >= ctx.config.bowMinPitchDeg:
+            if ctx.config.bowMinPitchDeg == 0.0 or pitch_deg >= ctx.config.bowMinPitchDeg:
                 if not self._bow_peaked:
                     self._bow_peaked = True
                     self._facts(ctx)
@@ -467,6 +467,20 @@ class BipedPolicyProgram(MultiPolicyProgram):
             self.fallen = False
         self.last_completed_action = inv.action
         self._set_idle_state(ctx)
+
+    def _sync_interrupted_fall_state(self, ctx):
+        _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
+        self._latest_tilt_deg = tilt_deg
+        self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+        if self.fallen:
+            self.last_completed_action = None
+        self._set_idle_state(ctx)
+
+    def _on_cancel(self, inv, ctx):
+        self._sync_interrupted_fall_state(ctx)
+
+    def _on_stop(self, inv, ctx):
+        self._sync_interrupted_fall_state(ctx)
 
     def _on_timeout(self, inv, ctx, slot: PolicySlot):
         if inv.action == "standUp" and self._latest_tilt_deg > ctx.config.uprightTiltDeg:

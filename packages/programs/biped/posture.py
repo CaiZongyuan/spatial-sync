@@ -192,6 +192,10 @@ class BipedPostureProgram:
             if self.handle is not None:
                 self.handle.cancelled()
                 self.handle = None
+            _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
+            self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+            if self.fallen:
+                self.last_completed_action = None
             self.active_action = None
             self.target_waypoint = None
             self.phase = "fallen" if self.fallen else "idle"
@@ -227,6 +231,10 @@ class BipedPostureProgram:
         self._hold(ctx)
         inv.cancelled()
         self.handle = None
+        _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
+        self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+        if self.fallen:
+            self.last_completed_action = None
         self.active_action = None
         self.target_waypoint = None
         self.phase = "fallen" if self.fallen else "idle"
@@ -263,7 +271,7 @@ class BipedPostureProgram:
             self.fallen = True
             self.last_completed_action = None
         if inv.action == "bow" and (
-            ctx.config.bowMinPitchDeg == 0.0 or abs(pitch_deg) >= ctx.config.bowMinPitchDeg
+            ctx.config.bowMinPitchDeg == 0.0 or pitch_deg >= ctx.config.bowMinPitchDeg
         ):
             self._bow_peaked = True
 

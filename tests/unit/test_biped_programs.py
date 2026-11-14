@@ -532,21 +532,58 @@ def test_biped_policy_cross_entity_waypoint_guidance_fall_standup_bow_and_stop(t
     assert host.values()[entity]["fallen"] is False
     assert host.values()[entity]["phase"] == "idle"
 
-    # 7. bow() requires real pitch milestone + inferenceCalls > 0 + return to upright dwell
+    # 7. bow() requires SIGNED forward pitch >= bowMinPitchDeg + inferenceCalls > 0 + upright dwell
     b1 = host.invoke(req("b1", "bow"))
     assert b1.status in ("accepted", "running")
     step(1)  # Robot still at pitch=3.0 < bowMinPitchDeg=8.0 -> MUST NOT succeed on tick 0!
     assert invocations["b1"].status == "running"
     assert host.values()[entity]["phase"] == "bowing"
-    port.set_euler(pitch_deg=18.0)  # Reaches bow pitch milestone
-    step(5)
+    port.set_euler(pitch_deg=-18.0)  # Backward lean MUST NOT satisfy forward bow peak!
+    step(3)
+    port.set_euler(pitch_deg=2.0)
+    step(4)
+    assert invocations["b1"].status == "running"
+    port.set_euler(pitch_deg=18.0)  # Forward bow reaches bowMinPitchDeg
+    step(3)
     port.set_euler(pitch_deg=2.0)  # Returns upright and dwells
     step(4)
     assert invocations["b1"].status == "succeeded"
     assert host.program_execution(entity, action="bow")["inferenceCalls"] >= 2
     assert host.values()[entity]["phase"] == "idle"
 
-    # 8. motion_timeout resets activeAction/targetWaypoint and transitions back to idle
+    # 8. Stopping or cancelling standUp(fromFall=...) mid-lean (> uprightTiltDeg) marks fallen=True
+    su_mid = host.invoke(req("su-mid", "standUp", {"fromFall": "front"}))
+    assert su_mid.status in ("accepted", "running")
+    step(1)
+    port.set_euler(pitch_deg=28.0)  # Between uprightTiltDeg=15.0 and maxTiltDeg=50.0
+    stop_mid = host.invoke(req("stop-mid", "stop"))
+    assert stop_mid.status in ("accepted", "running")
+    step(1)
+    assert invocations["su-mid"].status == "cancelled"
+    assert invocations["stop-mid"].status == "succeeded"
+    vals = host.values()[entity]
+    assert vals["fallen"] is True
+    assert vals["phase"] == "fallen"
+    assert vals["lastCompletedAction"] is None
+    # Parameterless standUp({}) MUST now be accepted (not locked out!)
+    su_rec = host.invoke(req("su-rec", "standUp"))
+    assert su_rec.status in ("accepted", "running")
+    step(1)
+    # Also test direct pipeline cancel while still tilted at 28.0 deg
+    cancelled_rec = host.cancel("su-rec")
+    assert cancelled_rec.status == "cancelled"
+    assert host.values()[entity]["fallen"] is True
+    assert host.values()[entity]["phase"] == "fallen"
+    # Recover back to upright before timeout check
+    su_rec2 = host.invoke(req("su-rec2", "standUp"))
+    assert su_rec2.status in ("accepted", "running")
+    port.set_euler(pitch_deg=2.0)
+    step(4)
+    assert invocations["su-rec2"].status == "succeeded"
+    assert host.values()[entity]["fallen"] is False
+    assert host.values()[entity]["phase"] == "idle"
+
+    # 9. motion_timeout resets activeAction/targetWaypoint and transitions back to idle
     w_timeout = host.invoke(req("w-timeout", "walkTo", {"waypoint": "checkpoint_far"}))
     assert w_timeout.status in ("accepted", "running")
     step(601, dt=0.05)  # 30.05s >= maxSeconds=30.0
@@ -556,3 +593,135 @@ def test_biped_policy_cross_entity_waypoint_guidance_fall_standup_bow_and_stop(t
     assert vals["phase"] == "idle"
     assert vals["activeAction"] is None
     assert vals["targetWaypoint"] is None
+
+
+def test_policy_slot_rejects_external_obs_remap_and_missing_port_channels(tmp_path, monkeypatch):
+    user_lib = tmp_path / "user-lib"
+    monkeypatch.setenv("LW_LIBRARY", str(user_lib))
+    biped_type = _load_biped_type()
+    policy_cls = REGISTRY["biped.policy"]
+
+    base_policies = _make_biped_policies(user_lib, robot="/World/Lab/ArenaBiped", scene="arena@1")
+
+    # Policy 1: observes an external Scene-A body (/World/Lab/ExternalCrate) -> reject cross-entity remap!
+    ext_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "ext_body",
+                "source": "body_position",
+                "key": "/World/Lab/ExternalCrate",
+                "frame": "world",
+                "unit": "m",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            }
+        ],
+        "action": {
+            "space": "joint_position_offset",
+            "jointKeys": [
+                "/World/Lab/ArenaBiped/LeftHip",
+                "/World/Lab/ArenaBiped/RightHip",
+                "/World/Lab/ArenaBiped/LeftKnee",
+                "/World/Lab/ArenaBiped/RightKnee",
+            ],
+            "units": ["rad"] * 4,
+            "defaultPosition": [0.0] * 4,
+            "scale": [1.0] * 4,
+            "lower": [-1.0] * 4,
+            "upper": [1.0] * 4,
+        },
+    }
+    ext_pol = write_policy_package(
+        user_lib,
+        name="ext-bow",
+        rev=1,
+        task={
+            "name": "ext-bow",
+            "title": "External bow",
+            "scene": "arena@1",
+            "robot": "/World/Lab/ArenaBiped",
+            "implements": "biped/v1.bow",
+            "episode": {"params": {}},
+            "success": {"property": "phase", "equals": "idle"},
+            "control": {"hz": 20.0, "action": "joint_position_offset"},
+        },
+        spec=ext_spec,
+        onnx_bytes=linear_onnx_bytes(np.zeros((3, 4), dtype=np.float32)),
+    )
+
+    entity = "/World/Lab/PatrolBiped"
+    joints = [f"{entity}/LeftHip", f"{entity}/RightHip", f"{entity}/LeftKnee", f"{entity}/RightKnee"]
+    trunk = f"{entity}/Trunk"
+    port = KinematicBipedPort(joints, trunk)
+    port.poses["/World/Lab/ExternalCrate"] = (np.zeros(3), np.array([0.0, 0.0, 0.0, 1.0]))
+
+    bad_cfg_ext = {
+        "jointKeys": joints,
+        "baseBody": trunk,
+        "policies": base_policies | {"bow": ext_pol},
+        "locations": {"waypoints": {"home": {"p": [0.0, 0.0, 0.0], "yaw": 0.0}}},
+    }
+    cat_ext = compile_catalog(
+        "rev-ext",
+        {"biped/v1": biped_type},
+        {entity: {"key": entity, "type": "biped/v1", "program": policy_cls.id, "config": bad_cfg_ext}},
+        {entity: policy_cls.Config.model_validate(bad_cfg_ext)},
+    )
+    host_ext = HostCore(cat_ext, REGISTRY, physics=port, source="sim", fact_hz=20.0)
+    ext_events = host_ext.drain_events()
+    assert any(getattr(ev, "code", None) == "internal_error" and "robot" in ev.message for ev in ext_events)
+
+    # Policy 2: observes a robot child site (/World/Lab/ArenaBiped/MissingImuSite) absent from target port!
+    missing_site_spec = {
+        "schema": "lw.obs-spec/1",
+        "observations": [
+            {
+                "name": "imu_site",
+                "source": "site_position",
+                "key": "/World/Lab/ArenaBiped/MissingImuSite",
+                "frame": "world",
+                "unit": "m",
+                "shape": [3],
+                "offset": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0],
+            }
+        ],
+        "action": ext_spec["action"],
+    }
+    missing_site_pol = write_policy_package(
+        user_lib,
+        name="missing-site-bow",
+        rev=1,
+        task={
+            "name": "missing-site-bow",
+            "title": "Missing site bow",
+            "scene": "arena@1",
+            "robot": "/World/Lab/ArenaBiped",
+            "implements": "biped/v1.bow",
+            "episode": {"params": {}},
+            "success": {"property": "phase", "equals": "idle"},
+            "control": {"hz": 20.0, "action": "joint_position_offset"},
+        },
+        spec=missing_site_spec,
+        onnx_bytes=linear_onnx_bytes(np.zeros((3, 4), dtype=np.float32)),
+    )
+    bad_cfg_site = {
+        "jointKeys": joints,
+        "baseBody": trunk,
+        "policies": base_policies | {"bow": missing_site_pol},
+        "locations": {"waypoints": {"home": {"p": [0.0, 0.0, 0.0], "yaw": 0.0}}},
+    }
+    cat_site = compile_catalog(
+        "rev-site",
+        {"biped/v1": biped_type},
+        {entity: {"key": entity, "type": "biped/v1", "program": policy_cls.id, "config": bad_cfg_site}},
+        {entity: policy_cls.Config.model_validate(bad_cfg_site)},
+    )
+    host_site = HostCore(cat_site, REGISTRY, physics=port, source="sim", fact_hz=20.0)
+    site_events = host_site.drain_events()
+    assert any(
+        getattr(ev, "code", None) == "internal_error" and "MissingImuSite" in ev.message
+        for ev in site_events
+    )
