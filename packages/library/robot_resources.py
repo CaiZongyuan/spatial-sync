@@ -309,7 +309,15 @@ class RobotResources:
                 if match is None or not matches_asset:
                     raise LibraryError("robot_binding_mismatch", "Scene does not bind this robot asset", 409)
                 program = match.binding["program"]
-                model = next((item for item in models if item["capability"]["program"] == program), None)
+                model = next(
+                    (
+                        item
+                        for item in models
+                        if item["capability"]["program"] == program
+                        and value["id"] in item["embodiments"]
+                    ),
+                    None,
+                )
                 config = (match.template_config or {}) | match.binding.get("config", {})
                 bindings.append(binding | {"sceneContentHash": scene.content_hash, "program": program,
                                            "robotModel": model["id"] if model else None,

@@ -1,15 +1,11 @@
 {
   "schema": "lw.scene-preview/1",
-  "sceneVersion": "microduck-lab-patrol@1",
-  "sceneContentHash": "011cb97797c41ff4241a6387efb28f5af35e9744e892a46d5b7efaf977a97d88",
+  "sceneVersion": "microduck-lab-patrol@2",
+  "sceneContentHash": "e49d7aef36b38d999dbb7bb192715d18fa777772f38c742cdc19fbee018e839a",
   "templateAssets": [
     {
       "id": "device/lab-centrifuge-reference@1",
       "contentHash": "71664a732be700a4626f2deef4d54fcbcb5afa1bbc01df314fa60ce4ecc20894"
-    },
-    {
-      "id": "robot/microduck@1",
-      "contentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b"
     }
   ],
   "libraryAssets": [
@@ -23,7 +19,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-14T16:56:46.760103+00:00",
+  "capturedAt": "2026-11-14T20:06:28.619482+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -138,24 +134,108 @@
       "sha256": "59327c4277d29cab5a42caf7f46380cb5be8fa45eb3f6ad18a8c8b88a1f45fbc"
     },
     {
-      "path": "library/scenes/microduck-lab-patrol/1/devices.yaml",
-      "sha256": "f8fd211729205bf4871adf224aed53da9ba1f316a6ce25da246c1fb5aac0b769"
+      "path": "library/policies/microduck-bow/1/metadata.json",
+      "sha256": "4c8bfe5d3b42868f4fd26194e8a1d99c5ce9f57419a7d9300f401721acc323e8"
     },
     {
-      "path": "library/scenes/microduck-lab-patrol/1/locations.yaml",
+      "path": "library/policies/microduck-bow/1/package/artifacts/export.json",
+      "sha256": "63508d9ee879bdc267e3cc7e0212e4252a732c589de53c7a2418f71f1120a49d"
+    },
+    {
+      "path": "library/policies/microduck-bow/1/package/artifacts/policy.onnx",
+      "sha256": "4e499830dc8411bf83959e897bca5233ae8a92ec03905cd580c39ac51b9c45d8"
+    },
+    {
+      "path": "library/policies/microduck-bow/1/package/artifacts/versions.json",
+      "sha256": "f401eecaaa9b33d74bba4e04771e53640975b03f378eaa456ca742edcc33f0ce"
+    },
+    {
+      "path": "library/policies/microduck-bow/1/package/obs_spec.yaml",
+      "sha256": "309e9a7ca156ebc0017c464f2c5bf93ab5cc23af6f565fa1e31dca1d8b845f33"
+    },
+    {
+      "path": "library/policies/microduck-bow/1/package/policy.json",
+      "sha256": "a5ff9e971f01744398214df8ee4d44147e6757cc9bb5e171a367e53937e61b6d"
+    },
+    {
+      "path": "library/policies/microduck-bow/1/package/task.json",
+      "sha256": "ef47e35212b79b397ba27093023858f82952261c7032a676e3ea289d7b5a95cd"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/metadata.json",
+      "sha256": "61753101d8f44849452d4269280669233f7b5c7213084083fca59d14250036fa"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/package/artifacts/export.json",
+      "sha256": "c536969bf59cbbe39ddb931965bd13a0f53a50bfdd54369871fe0616c157acf2"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/package/artifacts/policy.onnx",
+      "sha256": "165fcaae93260e5e0bff9990930e85dc1a705300d9888ff1ae40b8ece83ae326"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/package/artifacts/versions.json",
+      "sha256": "a31d00706724c218fde53ee1c184ed3877b31104718de28b97a8d2cc95d95b6c"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/package/obs_spec.yaml",
+      "sha256": "2fe5d8b2f8ddb1e1107e65037356988df1609e4240e84962646bbcba739bdbf3"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/package/policy.json",
+      "sha256": "8a0de9394a60254900fe190bdb4548e407ab3e9840e01658073c7820f65df363"
+    },
+    {
+      "path": "library/policies/microduck-stand-up/1/package/task.json",
+      "sha256": "368a3fbb042ddceec329f6bbcdf8b40a65a35129f431026a15595dbc0c5746ab"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/metadata.json",
+      "sha256": "f07be4e7c7fabf6c65d5e289f9672c077864ce446b0225ed2def71e7c0bd7b35"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/package/artifacts/export.json",
+      "sha256": "6fd3576c8880113a7a9c1139e1201abf7cc757bb2b00a8db7b2de23561acd5f5"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/package/artifacts/policy.onnx",
+      "sha256": "0ec356838af3fa272c20a9653d4b505d1d08de1f8c972b5bbce2cd8860b3fbca"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/package/artifacts/versions.json",
+      "sha256": "5b59af3f3ead17244eaf6ff54648778c457a67f703022d0b57a35054a1c6b08e"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/package/obs_spec.yaml",
+      "sha256": "8994a9e999db6f01ce0728c45666ed0883ca7bb520c9bde0ed6299c064affe08"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/package/policy.json",
+      "sha256": "a74b1430fe9211ad38ed5125e440369b2563c50b930f8e2cdb815461d445e7dc"
+    },
+    {
+      "path": "library/policies/microduck-walk-to/1/package/task.json",
+      "sha256": "304ee4285d79690a9d7cca99abbcca730255f09def9bb954924edbb7e09c34a5"
+    },
+    {
+      "path": "library/scenes/microduck-lab-patrol/2/devices.yaml",
+      "sha256": "cdda93713b0dae9c7ebcf87976d032a020ecfe3c63b7c5516443b9f9810415f4"
+    },
+    {
+      "path": "library/scenes/microduck-lab-patrol/2/locations.yaml",
       "sha256": "9dde74fe74367ef52fb02172adfddca5171fce904bed39a4d621ec92836e421d"
     },
     {
-      "path": "library/scenes/microduck-lab-patrol/1/scene.yaml",
-      "sha256": "0f348c0ecb0f7f51cf9997ed68438764729f5d368d53d97d6f42f67e25c50a80"
+      "path": "library/scenes/microduck-lab-patrol/2/scene.yaml",
+      "sha256": "aa4cfe611c157d1ee54bca8b05ae9ca405383c575c6659af505ab5fd1cddbac5"
     },
     {
-      "path": "library/scenes/microduck-lab-patrol/1/stage.usda",
-      "sha256": "e29095f85b4aa44ebe2c445fd2e104b949653d8cbb5f73b603d7aececc660c2e"
+      "path": "library/scenes/microduck-lab-patrol/2/stage.usda",
+      "sha256": "da05b9405c23d861adba430af6fa5746a71c480801feabc3a3a8b92b845e74a6"
     },
     {
-      "path": "library/scenes/microduck-lab-patrol/1/validation.json",
-      "sha256": "e791146539c0e67e16ad37eceff57697606b9004192124cc7261dc2b803ac658"
+      "path": "library/scenes/microduck-lab-patrol/2/validation.json",
+      "sha256": "d712730c925d613882267561646e42ab643f2dff6753f39d6ce015f9c393502f"
     },
     {
       "path": "packages/assets/bindings.py",
@@ -200,6 +280,10 @@
     {
       "path": "packages/library/archive.py",
       "sha256": "a4fbe2023cb623821cd667d59154b3ff3031baf6497f22ca852fcdfc8a768dcf"
+    },
+    {
+      "path": "packages/library/assets.py",
+      "sha256": "7bd04a33e4b05eaa643b319f3a54275d3d51fac47a595e48109de2871e27a8c4"
     },
     {
       "path": "packages/library/common.py",
@@ -275,11 +359,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "49e754b37687b15fc6fd417ae76486b0db08781376fdae9732bf3ed42f9d554c"
+      "sha256": "827dda5657645c5c8bb35863712c296e8f737a0056ad79d068337f562664534d"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "792fcc2e033874e681b1ea4e40229eda49ed2aca984e46f5a10decf3fdc4cd79"
+      "sha256": "c103f13eb478536b42f825adb8b86a718652fb7008860d0264f04fe8b36728b8"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -485,10 +569,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "156974d81acdd9ccbedc52cfd090da11ca21ebf59e3b11d7e7e4f6b151ceff41",
-    "catalog.json": "98dbd2727f81693c791bf9ee7832f028f09541ab5bda4fa9ae6be11910b046f7",
-    "state.json": "605318e05c3e0a1669b61b22cc822279cbcfaf5ca36b09af393f693dd008f13d",
-    "snapshot.bin": "8b0561469962868978359c30e996b3c86ce945664da86083ca1e58b5c3fdf109",
+    "manifest.json": "3c8e092e29e8ccb441cf116f04e58aa4155c8a0e34024194fcc1f1569bcf8b97",
+    "catalog.json": "fed19fa6c584a88de6bdf2439b64d9dc0157945c5b8aa6fa4b52704cbf61eb70",
+    "state.json": "2efe9225cc826f3291ae5cb3a9d2a940b25258e0c5076a84800f477154fd79ce",
+    "snapshot.bin": "b4adab4a75b19439c84cbc4189d2c4694c21cadbb245c63a19b75b41f18d8fce",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",
@@ -569,9 +653,9 @@
     "assets/sha256-b17319e00bff6154ce172e4b5ea0e3548a9960f288d8281f8172224296771a1b.glb": "b17319e00bff6154ce172e4b5ea0e3548a9960f288d8281f8172224296771a1b"
   },
   "counts": {
-    "physicalEntities": 21,
+    "physicalEntities": 23,
     "bindings": 2,
-    "groups": 5
+    "groups": 6
   },
   "bounds": null,
   "thumbnail": {}

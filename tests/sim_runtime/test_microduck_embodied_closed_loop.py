@@ -272,3 +272,202 @@ async def test_microduck_default_v2_scenes_closed_loop_across_http_cli_and_mcp(
             server.should_exit = True
             await server_task
             sock.close()
+
+
+def test_microduck_v2_extended_idle_stability_beak_collapse_and_zero_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import warnings
+
+    from packages.info.store import StateStore
+    from packages.library.common import BUILTIN_ROOT
+    from packages.library.scenes import SceneLibrary
+    from packages.programs.deployment import authorize_builtin_policy_deployment
+    from packages.protocol.internal import SessionOptions
+    from packages.protocol.schema import Actor, EntityObservations, EntitySnapshot, InvokeRequest
+    from packages.sim_runtime.info_host import NewtonInfoHost
+    from packages.sim_runtime.library_scene import prepare_scene_config
+    from packages.sim_runtime.manifest_export import export_manifest
+    from packages.sim_runtime.simulation import NewtonSimulation
+
+    state_root = tmp_path / "state"
+    user_root = tmp_path / "library"
+    state_root.mkdir(parents=True, exist_ok=True)
+    user_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SPATIAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("LW_LIBRARY", str(user_root))
+
+    scenes = SceneLibrary(builtin_root=BUILTIN_ROOT, user_root=user_root, state_root=state_root)
+
+    def _boot(scene_id: str, tag: str, *, with_permit: bool = True):
+        scene = scenes.resolve(scene_id, launch=True, source="newton")
+        permit = (
+            authorize_builtin_policy_deployment(scene, state_root=state_root)
+            if with_permit
+            else None
+        )
+        cfg = prepare_scene_config(scene.runtime_payload(), include_visuals=False)
+        sim_meta = scene.metadata.get("simulation", {})
+        opts = SessionOptions(device="cpu", physicsDt=cfg.physics_dt or 0.002)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sim = NewtonSimulation(
+                scene.id,
+                device="cpu",
+                physics_dt=opts.physicsDt,
+                solver=sim_meta.get("solver"),
+                config=cfg,
+            )
+        mujoco_warns = [
+            str(w.message)
+            for w in caught
+            if "SolverMuJoCo" in str(w.message) or "standalone" in str(w.message)
+        ]
+        assert not mujoco_warns, (scene_id, mujoco_warns)
+
+        manifest = export_manifest(
+            sim,
+            session_id=f"s-{tag}",
+            scene_revision=f"rev-{tag}",
+            revision_numeric_id=1,
+            publish_hz=opts.basePublishHz,
+            realtime_factor=opts.realtimeFactor,
+            strict_labels=opts.strictLabels,
+        )
+        sim.step(sim_meta.get("warmupSteps", 1))
+        sim.reset(increment_epoch=False)
+        mirror = StateStore(manifest.sceneRevision, sim.epoch)
+
+        def _on_events(evs, _m=mirror):
+            for ev in evs:
+                if isinstance(ev, EntitySnapshot | EntityObservations):
+                    _m.apply(ev)
+
+        info = NewtonInfoHost(
+            sim,
+            manifest,
+            opts,
+            _on_events,
+            scene_package=scene,
+            deployment_permit=permit,
+            state_root=state_root,
+        )
+        mirror.apply(info.snapshot())
+        return sim, info, mirror, opts
+
+    def _run_to_terminal(sim, info, mirror, opts, robot_key: str, inv_id: str, action: str, params=None):
+        info.invoke(
+            InvokeRequest(
+                invocationId=inv_id,
+                requestId=f"req-{inv_id}",
+                entityKey=robot_key,
+                action=action,
+                params=params or {},
+                actor=Actor(kind="user", name="stability-test"),
+                epoch=sim.epoch,
+                createdSimTime=sim.sim_time,
+                createdAtMs=0.0,
+            )
+        )
+        cur = None
+        for _ in range(500):
+            sim.step(25)
+            info.flush()
+            snap = info.snapshot()
+            mirror.apply(snap)
+            cur = next((i for i in snap.invocations if i.invocationId == inv_id), None)
+            if cur is not None and cur.status in ("succeeded", "failed", "rejected", "cancelled"):
+                break
+        assert cur is not None and cur.status == "succeeded", (inv_id, action, params, cur)
+
+    def _assert_idle_15s(sim, info, mirror, opts, robot_key: str, label: str):
+        batches = int(round(15.0 / (25 * opts.physicsDt)))
+        for _ in range(batches):
+            sim.step(25)
+            info.flush()
+            mirror.apply(info.snapshot())
+            vals = mirror.values()[robot_key]
+            assert vals["fallen"] is False, (label, vals)
+            assert vals["tiltDeg"] <= 15.0, (label, vals)
+            assert vals["baseHeight"] >= 0.095, (label, vals)
+
+    # 1. Extended 15s post-walkTo, post-bow, mid-stride stop, post-standUp, and beak-propped collapse recovery
+    import newton
+
+    sim_a, info_a, mirror_a, opts_a = _boot("microduck-arena@2", "arena-extended")
+    try:
+        bot_a = "/World/Lab/Microduck"
+        _run_to_terminal(sim_a, info_a, mirror_a, opts_a, bot_a, "w1", "walkTo", {"waypoint": "north"})
+        _assert_idle_15s(sim_a, info_a, mirror_a, opts_a, bot_a, "arena:post-walkTo")
+
+        _run_to_terminal(sim_a, info_a, mirror_a, opts_a, bot_a, "b1", "bow")
+        _assert_idle_15s(sim_a, info_a, mirror_a, opts_a, bot_a, "arena:post-bow")
+
+        info_a.invoke(
+            InvokeRequest(
+                invocationId="w-mid",
+                requestId="req-w-mid",
+                entityKey=bot_a,
+                action="walkTo",
+                params={"waypoint": "south"},
+                actor=Actor(kind="user", name="stability-test"),
+                epoch=sim_a.epoch,
+                createdSimTime=sim_a.sim_time,
+                createdAtMs=0.0,
+            )
+        )
+        sim_a.step(300)  # 0.60s mid-stride
+        info_a.flush()
+        _run_to_terminal(sim_a, info_a, mirror_a, opts_a, bot_a, "stop-mid", "stop")
+        _assert_idle_15s(sim_a, info_a, mirror_a, opts_a, bot_a, "arena:post-stop")
+
+        _run_to_terminal(
+            sim_a, info_a, mirror_a, opts_a, bot_a, "su-front", "standUp", {"fromFall": "front"}
+        )
+        _assert_idle_15s(sim_a, info_a, mirror_a, opts_a, bot_a, "arena:post-standUp(front)")
+
+        # Beak-propped low-height collapse (z=0.065m, tilt=49 < 55 deg) -> fallen -> standUp() -> 15s idle
+        q_np = sim_a.state.joint_q.numpy().copy()
+        qd_np = sim_a.state.joint_qd.numpy().copy()
+        qd_np[:] = 0.0
+        half = math.radians(49.0) * 0.5
+        q_np[2] = 0.065
+        q_np[3], q_np[4], q_np[5], q_np[6] = 0.0, math.sin(half), 0.0, math.cos(half)
+        sim_a.state.joint_q.assign(q_np)
+        sim_a.state.joint_qd.assign(qd_np)
+        sim_a.next_state.joint_q.assign(q_np)
+        sim_a.next_state.joint_qd.assign(qd_np)
+        newton.eval_fk(sim_a.model, sim_a.state.joint_q, sim_a.state.joint_qd, sim_a.state)
+        newton.eval_fk(sim_a.model, sim_a.next_state.joint_q, sim_a.next_state.joint_qd, sim_a.next_state)
+        sim_a.step(15)
+        info_a.flush()
+        mirror_a.apply(info_a.snapshot())
+        vals_c = mirror_a.values()[bot_a]
+        assert vals_c["fallen"] is True and vals_c["phase"] == "fallen", vals_c
+        assert vals_c["tiltDeg"] < 55.0, vals_c
+
+        _run_to_terminal(sim_a, info_a, mirror_a, opts_a, bot_a, "su-beak", "standUp")
+        _assert_idle_15s(sim_a, info_a, mirror_a, opts_a, bot_a, "arena:beak-collapse-post-standUp")
+    finally:
+        info_a.close()
+
+    # 2. Cross-scene patrol extended 15s stability (including standUp(fromFall="back") + zero warnings on @1)
+    _sim_p1, info_p1, _, _ = _boot(
+        "microduck-lab-patrol@1", "patrol-v1-warn-check", with_permit=False
+    )
+    info_p1.close()
+
+    sim_p, info_p, mirror_p, opts_p = _boot("microduck-lab-patrol@2", "patrol-extended")
+    try:
+        bot_p = "/World/Lab/PatrolDuck"
+        _run_to_terminal(
+            sim_p, info_p, mirror_p, opts_p, bot_p, "pw1", "walkTo", {"waypoint": "aisle_west"}
+        )
+        _assert_idle_15s(sim_p, info_p, mirror_p, opts_p, bot_p, "patrol:post-walkTo")
+
+        _run_to_terminal(
+            sim_p, info_p, mirror_p, opts_p, bot_p, "psu-back", "standUp", {"fromFall": "back"}
+        )
+        _assert_idle_15s(sim_p, info_p, mirror_p, opts_p, bot_p, "patrol:post-standUp(back)")
+    finally:
+        info_p.close()

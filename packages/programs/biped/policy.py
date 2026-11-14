@@ -17,8 +17,12 @@ from packages.policies.observations import (
     observation_canonical_refs,
 )
 from packages.programs.biped.posture import (
+    advance_collapse_elapsed,
     compute_fall_posture,
+    is_collapsed_height,
+    is_interrupted_fallen,
     publish_biped_telemetry,
+    read_biped_calm_speeds,
     read_biped_kinematics,
     wrap_pi,
 )
@@ -45,6 +49,12 @@ class BipedPolicyConfig(MultiPolicyConfig):
     uprightTiltDeg: float = Field(default=20.0, gt=0.0, lt=90.0, allow_inf_nan=False)
     minStandHeight: float | None = Field(
         default=None, gt=0.0, allow_inf_nan=False, exclude_if=lambda value: value is None
+    )
+    standMaxLinearSpeed: float = Field(
+        default=0.06, gt=0.0, allow_inf_nan=False, exclude_if=lambda value: value == 0.06
+    )
+    standMaxAngularSpeed: float = Field(
+        default=0.50, gt=0.0, allow_inf_nan=False, exclude_if=lambda value: value == 0.50
     )
     fallMinTiltDeg: float | None = Field(
         default=None, gt=0.0, lt=180.0, allow_inf_nan=False, exclude_if=lambda value: value is None
@@ -122,13 +132,23 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._latest_tilt_deg = tilt_deg
         self._latest_pitch_deg = pitch_deg
         self._latest_yaw_rad = yaw_rad
-        self.fallen = tilt_deg > ctx.config.maxTiltDeg
+        min_h = ctx.config.minStandHeight
+        self.fallen = (
+            tilt_deg > ctx.config.maxTiltDeg
+            or is_collapsed_height(ctx, float(p[2]), tilt_deg)
+            or (
+                min_h is not None
+                and float(p[2]) < float(min_h)
+                and tilt_deg > ctx.config.uprightTiltDeg
+            )
+        )
         self.phase = "fallen" if self.fallen else "idle"
         self.active_action_name: str | None = None
         self.last_completed_action: str | None = None
         self.current_waypoint: str | None = None
         self.target_waypoint: str | None = None
         self._dwell_elapsed = 0.0
+        self._collapse_elapsed = 0.0
         self._bow_peaked = False
         self._pre_fall_direction: str | None = None
         self._fall_tilt_reached_at: float | None = None
@@ -137,8 +157,10 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._idle_slot: PolicySlot | None = None
         self._idle_previous: np.ndarray | None = None
         self._next_idle_inference = 0.0
-        if ctx.config.defaultPosition is not None and not self.fallen:
-            self._apply_posture(ctx, ctx.config.defaultPosition)
+        if not self.fallen:
+            if ctx.config.defaultPosition is not None:
+                self._apply_posture(ctx, ctx.config.defaultPosition)
+            self._arm_idle_balance(ctx)
 
     def _apply_posture(self, ctx, posture: list[float]):
         targets = _clamp_posture(ctx.config.jointKeys, posture, self.joint_limits)
@@ -317,7 +339,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
 
     def _select_idle_balance_slot(self) -> PolicySlot | None:
         ordered: list[PolicySlot] = []
-        for preferred in ("bow", "walkTo", "standUp"):
+        for preferred in ("walkTo", "standUp", "bow"):
             cand = self.slots.get(preferred)
             if cand is not None:
                 ordered.append(cand)
@@ -359,6 +381,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         else:
             self._idle_previous = np.zeros(len(slot.spec.action.jointKeys), dtype=np.float64)
         self._next_idle_inference = ctx.sim_time
+        self._step_idle_balance(ctx)
 
     def _step_idle_balance(self, ctx) -> None:
         slot = self._idle_slot
@@ -366,31 +389,36 @@ class BipedPolicyProgram(MultiPolicyProgram):
             return
         if ctx.sim_time + 1e-10 < self._next_idle_inference:
             return
-        bounds = _slot_command_bounds(slot)
-        cmd = [0.0] * len(bounds) if bounds is not None else None
-        obs = assemble(
-            slot.spec,
-            extract_observation_state(ctx.physics, slot.spec, {}),
-            previous_action=self._idle_previous,
-            command=cmd,
-        )
-        inputs = obs.astype(np.float32)[None, :]
-        if not np.isfinite(inputs).all():
+        try:
+            bounds = _slot_command_bounds(slot)
+            cmd = [0.0] * len(bounds) if bounds is not None else None
+            obs = assemble(
+                slot.spec,
+                extract_observation_state(ctx.physics, slot.spec, {}),
+                previous_action=self._idle_previous,
+                command=cmd,
+            )
+            inputs = obs.astype(np.float32)[None, :]
+            if not np.isfinite(inputs).all():
+                return
+            raw_out = slot.model.session.run([slot.model.output], {slot.model.input: inputs})[0]
+            output = np.asarray(raw_out[0], dtype=np.float64)
+            if output.shape != (slot.model.actions,) or not np.isfinite(output).all():
+                return
+            positions = [
+                ctx.physics.joint_q(self.joints[key])[0] for key in slot.spec.action.jointKeys
+            ]
+            targets = joint_targets(slot.spec, positions, output)
+            for key, raw_target in zip(slot.spec.action.jointKeys, targets, strict=True):
+                value = float(raw_target)
+                phys_lo, phys_hi = self.joint_limits.get(key, (None, None))
+                if phys_lo is not None:
+                    value = max(phys_lo, value)
+                if phys_hi is not None:
+                    value = min(phys_hi, value)
+                ctx.physics.set_joint_target(self.joints[key], [value])
+        except (ValueError, KeyError, RuntimeError):
             return
-        raw_out = slot.model.session.run([slot.model.output], {slot.model.input: inputs})[0]
-        output = np.asarray(raw_out[0], dtype=np.float64)
-        if output.shape != (slot.model.actions,) or not np.isfinite(output).all():
-            return
-        positions = [ctx.physics.joint_q(self.joints[key])[0] for key in slot.spec.action.jointKeys]
-        targets = joint_targets(slot.spec, positions, output)
-        for key, raw_target in zip(slot.spec.action.jointKeys, targets, strict=True):
-            value = float(raw_target)
-            phys_lo, phys_hi = self.joint_limits.get(key, (None, None))
-            if phys_lo is not None:
-                value = max(phys_lo, value)
-            if phys_hi is not None:
-                value = min(phys_hi, value)
-            ctx.physics.set_joint_target(self.joints[key], [value])
         self._idle_previous = output.copy()
         self._next_idle_inference = ctx.sim_time + 1.0 / float(slot.task["control"]["hz"])
 
@@ -400,6 +428,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self.active_action_name = inv.action
         self.last_completed_action = None
         self._dwell_elapsed = 0.0
+        self._collapse_elapsed = 0.0
         self._bow_peaked = False
         self._fall_tilt_reached_at = None
         self._smoothed_cmd = [0.0, 0.0, 0.0]
@@ -424,7 +453,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._facts(ctx)
 
     def _tick_robot(self, ctx, dt: float) -> None:
-        p, tilt_deg, pitch_deg, _, yaw_rad, _ = read_biped_kinematics(ctx, self.base_body)
+        p, tilt_deg, pitch_deg, _, yaw_rad, v_body = read_biped_kinematics(ctx, self.base_body)
         self._latest_pos = p
         self._latest_tilt_deg = tilt_deg
         self._latest_pitch_deg = pitch_deg
@@ -432,7 +461,11 @@ class BipedPolicyProgram(MultiPolicyProgram):
 
         inv = self.handle
         if inv is None:
-            if not self.fallen and tilt_deg > ctx.config.maxTiltDeg:
+            self._collapse_elapsed = advance_collapse_elapsed(
+                ctx, float(p[2]), tilt_deg, self._collapse_elapsed, dt
+            )
+            collapsed = is_collapsed_height(ctx, float(p[2]), tilt_deg, self._collapse_elapsed)
+            if not self.fallen and (tilt_deg > ctx.config.maxTiltDeg or collapsed):
                 self.fallen = True
                 self.last_completed_action = None
                 self.phase = "fallen"
@@ -444,6 +477,11 @@ class BipedPolicyProgram(MultiPolicyProgram):
             if not self.fallen:
                 self._step_idle_balance(ctx)
             return
+
+        if inv.action != "standUp":
+            self._collapse_elapsed = advance_collapse_elapsed(
+                ctx, float(p[2]), tilt_deg, self._collapse_elapsed, dt
+            )
 
         height_ok = (
             ctx.config.minStandHeight is None or float(p[2]) >= float(ctx.config.minStandHeight)
@@ -490,7 +528,12 @@ class BipedPolicyProgram(MultiPolicyProgram):
                     self.next_inference = ctx.sim_time
                     self._facts(ctx)
                 return
-            if tilt_deg <= ctx.config.uprightTiltDeg and height_ok:
+            lin_speed, ang_speed = read_biped_calm_speeds(ctx, self.base_body, v_body)
+            calm_ok = (
+                lin_speed <= ctx.config.standMaxLinearSpeed
+                and ang_speed <= ctx.config.standMaxAngularSpeed
+            )
+            if tilt_deg <= ctx.config.uprightTiltDeg and height_ok and calm_ok:
                 self._dwell_elapsed += dt
             else:
                 self._dwell_elapsed = 0.0
@@ -533,6 +576,15 @@ class BipedPolicyProgram(MultiPolicyProgram):
                 f"safety limit {ctx.config.maxTiltDeg:.1f} deg"
             )
             return ("robot_fallen", msg)
+        if is_collapsed_height(
+            ctx, float(self._latest_pos[2]), self._latest_tilt_deg, self._collapse_elapsed
+        ):
+            self.fallen = True
+            msg = (
+                f"Base height {float(self._latest_pos[2]):.3f} m collapsed below "
+                f"standing threshold {float(ctx.config.minStandHeight):.3f} m"
+            )
+            return ("robot_fallen", msg)
         return None
 
     def _action_completed(self, inv, ctx, slot: PolicySlot) -> bool:
@@ -571,14 +623,17 @@ class BipedPolicyProgram(MultiPolicyProgram):
             self.current_waypoint = self.target_waypoint
         elif inv.action == "standUp":
             self.fallen = False
+        self._collapse_elapsed = 0.0
         self.last_completed_action = inv.action
         self._set_idle_state(ctx)
         self._arm_idle_balance(ctx, previous_slot=slot)
 
     def _sync_interrupted_fall_state(self, ctx):
-        _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
+        p, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
+        self._latest_pos = p
         self._latest_tilt_deg = tilt_deg
-        self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+        self._collapse_elapsed = 0.0
+        self.fallen = is_interrupted_fallen(ctx, float(p[2]), tilt_deg)
         if self.fallen:
             self.last_completed_action = None
         self._set_idle_state(ctx)
@@ -591,7 +646,10 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._sync_interrupted_fall_state(ctx)
 
     def _on_timeout(self, inv, ctx, slot: PolicySlot):
-        if inv.action == "standUp" and self._latest_tilt_deg > ctx.config.uprightTiltDeg:
+        self._collapse_elapsed = 0.0
+        if inv.action == "standUp" and is_interrupted_fallen(
+            ctx, float(self._latest_pos[2]), self._latest_tilt_deg
+        ):
             self.fallen = True
             self.last_completed_action = None
         self._set_idle_state(ctx)

@@ -237,8 +237,8 @@ test('a stuck readonly capture still times out and cannot save a late image', as
 test('scene library filters and URL preferences navigate to the exact version', async ({ page, request }) => {
   const { errors, assertStatic } = await watchStaticScene(page, request);
   await page.goto('/scenes');
-  await expect(page.locator('.scene-card')).toHaveCount(5);
-  await expect(page.locator('.scene-result-count')).toHaveText('5 个场景');
+  await expect(page.locator('.scene-card')).toHaveCount(7);
+  await expect(page.locator('.scene-result-count')).toHaveText('7 个场景');
   await page.getByRole('button', { name: '列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
   await expect(page.locator('.scene-mini-thumbnail').first()).toHaveCSS('width', '72px');

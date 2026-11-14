@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "scene:microduck-lab-patrol@2",
-  "ranAt": "2026-11-14T17:36:33.975190+00:00",
+  "ranAt": "2026-11-14T19:22:31.684135+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",
@@ -343,24 +343,22 @@
     {
       "id": "P3",
       "tier": "physics",
-      "status": "pass",
-      "message": "Maximum measured penetration: 0.363 mm (limit 2 mm)",
+      "status": "warn",
+      "message": "Maximum measured penetration: 0.363 mm (limit 2 mm); Newton did not query 1 world-static shape pairs",
       "entityKey": "/World/Lab/Ground",
       "measurements": {
         "otherEntityKey": "/World/Lab/PatrolDuck/ankle_left/collision_0",
-        "contactCount": 217,
+        "contactCount": 213,
         "depthM": 0.00036339834332466125,
         "limitM": 0.002,
-        "worldStaticShapeCount": 1,
-        "excludedWorldStaticPairCount": 0,
+        "worldStaticShapeCount": 2,
+        "excludedWorldStaticPairCount": 1,
         "simTime": 2.0000000000000013
       }
     }
   ],
   "launchable": true,
-  "untypedEntities": [
-    "/World/Lab/BenchNorth"
-  ],
+  "untypedEntities": [],
   "referencedAssets": [
     {
       "id": "device/lab-centrifuge-reference@1",
@@ -589,12 +587,12 @@
       }
     ]
   },
-  "entityCount": 21,
+  "entityCount": 20,
   "bindingCount": 2,
   "physics": {
     "status": "completed",
     "device": "cpu",
-    "ranAt": "2026-11-14T17:36:25.431325+00:00",
+    "ranAt": "2026-11-14T19:22:32.830311+00:00",
     "toolVersions": {
       "newton": "1.7.0",
       "warp-lang": "1.18.0",

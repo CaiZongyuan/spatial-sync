@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-14T16:57:17.049179+00:00",
+  "capturedAt": "2026-11-14T20:07:14.505189+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -157,11 +157,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "49e754b37687b15fc6fd417ae76486b0db08781376fdae9732bf3ed42f9d554c"
+      "sha256": "827dda5657645c5c8bb35863712c296e8f737a0056ad79d068337f562664534d"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "792fcc2e033874e681b1ea4e40229eda49ed2aca984e46f5a10decf3fdc4cd79"
+      "sha256": "c103f13eb478536b42f825adb8b86a718652fb7008860d0264f04fe8b36728b8"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -363,10 +363,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "236e35fc3d123816d4e84f717fe347d5056541f1806dd59896046277899d8e14",
-    "catalog.json": "ec0956cb1a3221adec267dc1ac13f1a085e33a5ac7f2b97fc3a230df34adfb91",
-    "state.json": "c3335d11e9e1bf633f7ae7ac1b29fd5b58c6d74f87f5386c087f48dae680cd0a",
-    "snapshot.bin": "d4401884066d69c27b8f90c4f63a58192d2444515f29d1100957424a212b005d",
+    "manifest.json": "7de5d8ea629ea09cf148a81b8a800841ae016c9d2a70c345fa2ea7f4b02ae8fc",
+    "catalog.json": "b9e9bc8eccc9ca73599d3fa32108191a7b89f98cc75fd75055186c7e1f4d32f2",
+    "state.json": "41310e82e4338351e45b0fa2e93711bfc6de68b37ca7a4efedd307864ae4062f",
+    "snapshot.bin": "c2901a4b8db65fe43d3805d285cc6079f22eb7aae6d6b15843813fa38b542db7",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"

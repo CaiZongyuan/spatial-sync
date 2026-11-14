@@ -996,14 +996,14 @@ def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_pa
             createdAtMs=1000.0,
         )
 
-    # Crouching at z=0.060 (< minStandHeight=0.09) at waypoint "home" fails walkTo!
-    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_p.poses[trunk][1])
+    # Shallow crouch at z=0.080 (0.0765 <= z < minStandHeight=0.09) at waypoint "home" fails walkTo!
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.08]), port_p.poses[trunk][1])
     res_crouch = host_p.invoke(req_p("p-walk-crouch", "walkTo", {"waypoint": "home"}))
     assert res_crouch.status in ("accepted", "running")
     step_p(5)
     assert invs_p["p-walk-crouch"].status == "failed"
     assert invs_p["p-walk-crouch"].error.code == "motion_timeout"
-    assert host_p.values()[entity]["baseHeight"] == pytest.approx(0.06)
+    assert host_p.values()[entity]["baseHeight"] == pytest.approx(0.08)
 
     # Standing at z=0.12 (>= 0.09) at waypoint "home" succeeds walkTo
     port_p.poses[trunk] = (np.array([0.0, 0.0, 0.12]), port_p.poses[trunk][1])
@@ -1011,12 +1011,12 @@ def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_pa
     step_p(5)
     assert invs_p["p-walk-ok"].status == "succeeded"
 
-    # Crouching upright return after bow fails motion_timeout
+    # Shallow crouching upright return after bow fails motion_timeout
     assert host_p.invoke(req_p("p-bow-crouch", "bow")).status in ("accepted", "running")
     port_p.set_euler(pitch_deg=14.0)
     step_p(4)  # Reaches bow peak & switches to upright return
     port_p.set_euler(pitch_deg=2.0)
-    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_p.poses[trunk][1])
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.08]), port_p.poses[trunk][1])
     step_p(8)
     assert invs_p["p-bow-crouch"].status == "failed"
 
@@ -1104,8 +1104,8 @@ def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_pa
             createdAtMs=1000.0,
         )
 
-    # walkTo crouch at z=0.060 stays running until raised to z=0.11
-    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_m.poses[trunk][1])
+    # walkTo shallow crouch at z=0.080 stays running until raised to z=0.11
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.08]), port_m.poses[trunk][1])
     assert host_m.invoke(req_m("m-walk", "walkTo", {"waypoint": "home"})).status in ("accepted", "running")
     step_m(5)
     assert invs_m.get("m-walk") is None or invs_m["m-walk"].status == "running"
@@ -1113,12 +1113,12 @@ def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_pa
     step_m(4)
     assert invs_m["m-walk"].status == "succeeded"
 
-    # bow upright return crouch at z=0.060 stays running until raised to z=0.11
+    # bow upright return shallow crouch at z=0.080 stays running until raised to z=0.11
     assert host_m.invoke(req_m("m-bow", "bow")).status in ("accepted", "running")
     port_m.set_euler(pitch_deg=16.0)
     step_m(3)
     port_m.set_euler(pitch_deg=2.0)
-    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_m.poses[trunk][1])
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.08]), port_m.poses[trunk][1])
     step_m(5)
     assert invs_m.get("m-bow") is None or invs_m["m-bow"].status == "running"
     port_m.poses[trunk] = (np.array([0.0, 0.0, 0.11]), port_m.poses[trunk][1])
@@ -1143,12 +1143,58 @@ def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_pa
     assert host_m.program_execution(entity, action="standUp")["inferenceCalls"] == 1
     assert port_m.targets[joints[0]] == pytest.approx(0.05)
 
-    # Crouch at z=0.060 blocks standUp completion; raising to z=0.11 completes after dwellSeconds
+    # Crouch at z=0.060 blocks standUp completion; vaulting speed also blocks completion until calm!
     port_m.set_euler(pitch_deg=2.0)
     port_m.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_m.poses[trunk][1])
     step_m(5)
     assert invs_m.get("m-su") is None or invs_m["m-su"].status == "running"
     port_m.poses[trunk] = (np.array([0.0, 0.0, 0.11]), port_m.poses[trunk][1])
+    port_m.lin_vel[trunk] = np.array([0.10, 0.0, 0.0], dtype=float)  # > standMaxLinearSpeed=0.06
+    step_m(5)
+    assert invs_m.get("m-su") is None or invs_m["m-su"].status == "running"
+    port_m.lin_vel[trunk] = np.zeros(3, dtype=float)
+    port_m.ang_vel[trunk] = np.array([0.0, 0.70, 0.0], dtype=float)  # > standMaxAngularSpeed=0.50
+    step_m(5)
+    assert invs_m.get("m-su") is None or invs_m["m-su"].status == "running"
+    port_m.ang_vel[trunk] = np.zeros(3, dtype=float)
     step_m(4)
     assert invs_m["m-su"].status == "succeeded"
     assert host_m.values()[entity]["baseHeight"] == pytest.approx(0.11)
+
+    # 3. Idle balance slot prioritizes walkTo (0.0) over bow (0.35), stepping on transition tick
+    assert port_m.targets[joints[0]] == pytest.approx(0.0)
+    # Verify non-zero joint_q does NOT stay held at slack joint_q on stop: walkTo(cmd=[0,0,0]) sets 0.0!
+    port_m.q[joints[0]] = 0.42
+    w_stop = host_m.invoke(req_m("m-walk-stop", "walkTo", {"waypoint": "home"}))
+    assert w_stop.status in ("accepted", "running")
+    step_m(1)
+    assert host_m.invoke(req_m("m-stop-now", "stop")).status in ("accepted", "running")
+    step_m(1)
+    assert port_m.targets[joints[0]] == pytest.approx(0.0)
+
+    # 4. Beak-propped collapse (z=0.065 < 0.09*0.85, tilt=49 < maxTiltDeg=50) marks fallen & allows standUp()
+    port_m.q[joints[0]] = 0.0
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.065]), port_m.poses[trunk][1])
+    port_m.set_euler(pitch_deg=49.0)
+    step_m(1)
+    assert host_m.values()[entity]["fallen"] is True
+    assert host_m.values()[entity]["phase"] == "fallen"
+    assert host_m.invoke(req_m("m-su-beak", "standUp")).status in ("accepted", "running")
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.115]), port_m.poses[trunk][1])
+    port_m.set_euler(pitch_deg=2.0)
+    step_m(4)
+    assert invs_m["m-su-beak"].status == "succeeded"
+    assert host_m.values()[entity]["fallen"] is False
+
+    # Same beak-propped collapse check on BipedPostureProgram
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.065]), port_p.poses[trunk][1])
+    port_p.set_euler(pitch_deg=49.0)
+    step_p(1)
+    assert host_p.values()[entity]["fallen"] is True
+    assert host_p.values()[entity]["phase"] == "fallen"
+    assert host_p.invoke(req_p("p-su-beak", "standUp")).status in ("accepted", "running")
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.115]), port_p.poses[trunk][1])
+    port_p.set_euler(pitch_deg=2.0)
+    step_p(4)
+    assert invs_p["p-su-beak"].status == "succeeded"
+    assert host_p.values()[entity]["fallen"] is False

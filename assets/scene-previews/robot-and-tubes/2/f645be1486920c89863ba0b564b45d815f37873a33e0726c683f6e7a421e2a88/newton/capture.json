@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-14T16:57:05.511024+00:00",
+  "capturedAt": "2026-11-14T20:07:02.992904+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -390,11 +390,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "49e754b37687b15fc6fd417ae76486b0db08781376fdae9732bf3ed42f9d554c"
+      "sha256": "827dda5657645c5c8bb35863712c296e8f737a0056ad79d068337f562664534d"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "792fcc2e033874e681b1ea4e40229eda49ed2aca984e46f5a10decf3fdc4cd79"
+      "sha256": "c103f13eb478536b42f825adb8b86a718652fb7008860d0264f04fe8b36728b8"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -596,10 +596,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "76d88baa3ec63739685d43101f40ac275cdb79c87c66eaffbddaba8e92861fce",
-    "catalog.json": "9172b1d8353a669217a63ccc9650fb2691bbaab12cbe80f2c98541d55ea67304",
-    "state.json": "663cf71ae88a6262d0de48b8ed93a3b04499d6d7d78d6760fe271c4da9b11199",
-    "snapshot.bin": "c69bc7e846bf9b8f365ba323243c8153403bc03af1f9880e59fc83785a05ed4d",
+    "manifest.json": "878c8bc8165630e9d45127bf46a2a6826c0e23d33b9622be911a99c7cc92445e",
+    "catalog.json": "fc5db39cbac90d3b0a660ff7602fe6ac0eaf771578a3f2a79ce1fe5440b96bbe",
+    "state.json": "1a551cf8d143489df7c52b1dad9be0ed1286a3b376175bf3949573e2cd8a8da3",
+    "snapshot.bin": "70f7973c3fbd5082d0a3961ffa3937d2babf6f73ead43b570c8267831aef3d9c",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

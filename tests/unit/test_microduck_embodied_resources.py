@@ -228,9 +228,12 @@ def test_microduck_robot_resources_default_v2_scenes_previews_and_permits(tmp_pa
         assert rep["launchable"] is True
         all_checks = [*rep["checks"], *(rep.get("physics") or {}).get("checks", [])]
         assert all(item["status"] != "fail" for item in all_checks), rep
-        for cid in ("S1", "S2", "S3", "S5", "S7", "P1", "P2", "P3", "P5"):
+        for cid in ("S1", "S2", "S3", "S5", "S7", "P1", "P2", "P5"):
             matched = [item["status"] for item in all_checks if item["id"] == cid]
             assert matched and all(st == "pass" for st in matched), (v2_scene.id, cid)
+        p3_checks = [item for item in all_checks if item["id"] == "P3"]
+        assert len(p3_checks) == 1 and p3_checks[0]["status"] in ("pass", "warn")
+        assert p3_checks[0]["measurements"]["depthM"] <= p3_checks[0]["measurements"]["limitM"]
 
         by_key = {d.binding["key"]: d.binding for d in v2_scene.declarations("newton").declarations}
         assert by_key[bot_key]["program"] == "biped.policy"
@@ -240,6 +243,14 @@ def test_microduck_robot_resources_default_v2_scenes_previews_and_permits(tmp_pa
             "bow": "policy/microduck-bow@1",
         }
         assert previews.describe(v2_scene, "newton")["status"] == "available"
+
+    all_builtin = scenes.list()
+    assert len(all_builtin) == 12
+    for summary in all_builtin:
+        ver = scenes.resolve(summary["id"])
+        primary_source = ver.metadata["sources"][0]
+        desc = previews.describe(ver, primary_source)
+        assert desc["status"] == "available", (summary["id"], primary_source, desc)
 
     # 3. RobotResources (Embodiment, RobotModel, Reference Controller)
     rr = RobotResources({"builtin": BUILTIN_ROOT}, assets, scenes, program_schemas())

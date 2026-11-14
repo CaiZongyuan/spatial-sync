@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-14T09:55:26.399143+00:00",
+  "capturedAt": "2026-11-14T20:06:45.760525+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -277,11 +277,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "e9366eb6c30e4015a494a3d17b7560582fcb2e739ad748beeebc2b538d966c0f"
+      "sha256": "827dda5657645c5c8bb35863712c296e8f737a0056ad79d068337f562664534d"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "792fcc2e033874e681b1ea4e40229eda49ed2aca984e46f5a10decf3fdc4cd79"
+      "sha256": "c103f13eb478536b42f825adb8b86a718652fb7008860d0264f04fe8b36728b8"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -483,10 +483,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "33740cd74c78e7aa9d3b547fd6244292078a0614668ae15a93417390b6e28548",
-    "catalog.json": "e1d133f5d77c9f8bbe08ee002140f83197be4e5262b27f5951c6e645cfa1e516",
-    "state.json": "ade30174ded882bf8bea09b12ae908616fa4296f512f7ba8e702e4cf53e7f2c4",
-    "snapshot.bin": "3a1f01862c1713370edc59cfcc942ac804e3683765af37e56389d9e6d9bea52f",
+    "manifest.json": "ad3bbb91714b09b9ed46a2b9cba9842bd15adc7731584d8bfe34c0f523590646",
+    "catalog.json": "d3a7d1ebfd65f0eff031a7bdb067e04e83245f4b8308d97ec33cdf7da1483c16",
+    "state.json": "3c0a2ccee466ca00b782c579b2ad790f8173b495d3d16df320878f27541515bd",
+    "snapshot.bin": "e522f20d8da4fc628b44d7e0901caebcf97a3fdbdbf4c1ffc8efccd18f0b860a",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
