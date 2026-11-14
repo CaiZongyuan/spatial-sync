@@ -24,7 +24,11 @@ from packages.programs.subjects import (
 )
 
 from .library import PolicyLibrary, digest, read_json
-from .observations import ObservationSpec, spec_within_robot_entity
+from .observations import (
+    ObservationSpec,
+    observation_canonical_refs,
+    spec_within_robot_entity,
+)
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Text = Annotated[str, Field(min_length=1)]
@@ -193,36 +197,32 @@ def _validate_scene_action_channels(scene, program_cls, config, spec):
                 "policy_action_binding_mismatch",
             )
     for item in spec.observations:
-        source = item.source
-        if source.startswith("joint_"):
-            for key in item.keys:
-                if key.startswith("/"):
-                    info = stage_joints.get(key)
-                    if info is None or info.get("kind") not in ("revolute", "prismatic"):
-                        raise _invalid(
-                            f"Policy observation joint {key} does not match target Scene joints",
-                            "policy_observation_binding_mismatch",
-                        )
-        elif source == "projected_gravity" or source.startswith("body_"):
-            if item.key is not None and item.key.startswith("/") and item.key not in stage_bodies:
-                raise _invalid(
-                    f"Policy observation body {item.key} does not exist in target Scene",
-                    "policy_observation_binding_mismatch",
-                )
-        elif source.startswith("site_"):
-            if item.key is not None and item.key.startswith("/") and item.key not in stage_sites:
-                raise _invalid(
-                    f"Policy observation site {item.key} does not exist in target Scene",
-                    "policy_observation_binding_mismatch",
-                )
-        if (
-            item.frame is not None
-            and item.frame.startswith("/")
-            and source != "command"
-            and item.frame not in stage_bodies
-        ):
+        role, keys, frame_body = observation_canonical_refs(item)
+        if role == "joint":
+            for key in keys:
+                info = stage_joints.get(key)
+                if info is None or info.get("kind") not in ("revolute", "prismatic"):
+                    raise _invalid(
+                        f"Policy observation joint {key} does not match target Scene joints",
+                        "policy_observation_binding_mismatch",
+                    )
+        elif role == "body":
+            for key in keys:
+                if key not in stage_bodies:
+                    raise _invalid(
+                        f"Policy observation body {key} does not exist in target Scene",
+                        "policy_observation_binding_mismatch",
+                    )
+        elif role == "site":
+            for key in keys:
+                if key not in stage_sites:
+                    raise _invalid(
+                        f"Policy observation site {key} does not exist in target Scene",
+                        "policy_observation_binding_mismatch",
+                    )
+        if frame_body is not None and frame_body not in stage_bodies:
             raise _invalid(
-                f"Policy observation frame body {item.frame} does not exist in target Scene",
+                f"Policy observation frame body {frame_body} does not exist in target Scene",
                 "policy_observation_binding_mismatch",
             )
 

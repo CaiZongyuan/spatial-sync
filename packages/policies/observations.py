@@ -338,8 +338,32 @@ def joint_targets(spec, positions, output):
     return np.clip(target, spec.action.lower, spec.action.upper)
 
 
+def observation_canonical_refs(
+    item: Observation,
+) -> tuple[Literal["joint", "body", "site"] | None, tuple[str, ...], str | None]:
+    """Classify an Observation item's spatial resource role, canonical (/...) keys, and frame body."""
+    source = item.source
+    role: Literal["joint", "body", "site"] | None = None
+    keys: tuple[str, ...] = ()
+    if source.startswith("joint_"):
+        role = "joint"
+        keys = tuple(key for key in item.keys if key.startswith("/"))
+    elif source == "projected_gravity" or source.startswith("body_"):
+        role = "body"
+        keys = (item.key,) if item.key is not None and item.key.startswith("/") else ()
+    elif source.startswith("site_"):
+        role = "site"
+        keys = (item.key,) if item.key is not None and item.key.startswith("/") else ()
+    frame_body = (
+        item.frame
+        if item.frame is not None and item.frame.startswith("/") and source != "command"
+        else None
+    )
+    return role, keys, frame_body
+
+
 def spec_within_robot_entity(spec: ObservationSpec, robot_entity: str) -> bool:
-    """Return True iff every canonical (/...) path in action and observations belongs to robot_entity."""
+    """Return True iff all action and observation refs belong to robot_entity (no aliases/external paths)."""
     prefix = robot_entity + "/"
 
     def owned(path: str) -> bool:
@@ -350,9 +374,13 @@ def spec_within_robot_entity(spec: ObservationSpec, robot_entity: str) -> bool:
     for obs in spec.observations:
         if any(not owned(key) for key in obs.keys):
             return False
-        if obs.key is not None and obs.key.startswith("/") and not owned(obs.key):
+        if obs.key is not None and (not obs.key.startswith("/") or not owned(obs.key)):
             return False
-        if obs.frame is not None and obs.frame.startswith("/") and not owned(obs.frame):
+        if (
+            obs.frame is not None
+            and obs.frame not in ("world", "body")
+            and (not obs.frame.startswith("/") or not owned(obs.frame))
+        ):
             return False
     return True
 

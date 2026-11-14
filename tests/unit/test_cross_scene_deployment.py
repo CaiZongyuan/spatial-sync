@@ -467,7 +467,61 @@ def test_cross_scene_policy_bundle_authorizes_only_exact_committed_controller_an
             current_scene = manager.library.resolve(committed["scene"]["id"], launch=True, source="newton")
 
         assert current_scene.id == "biped-arena@4"
+        permit_v2 = read_committed_permit(state_root, "promotion-biped-2")
         committed_permit = read_committed_permit(state_root, "promotion-biped-3")
+
+        # Superseded Controller v2 policies MUST be rejected cross-scene once v3 is currentVersion!
+        v2_policies = deepcopy(permit_v2["binding"]["config"]["policies"])
+        assert v2_policies != promoted_policies
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-patrol-stale-v2",
+            entity_prim="PatrolBiped",
+            devices_entities=[
+                {
+                    "key": "/World/Lab/PatrolBiped",
+                    "type": "biped/v1",
+                    "program": BipedPolicyProgram.id,
+                    "config": {
+                        "jointKeys": [
+                            "/World/Lab/PatrolBiped/LeftHip",
+                            "/World/Lab/PatrolBiped/RightHip",
+                            "/World/Lab/PatrolBiped/LeftKnee",
+                            "/World/Lab/PatrolBiped/RightKnee",
+                        ],
+                        "baseBody": "/World/Lab/PatrolBiped/Trunk",
+                        "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+                        "locations": "locations.yaml",
+                        "policies": v2_policies,
+                    },
+                }
+            ],
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+        )
+        manager.library.refresh()
+        stale_v2_scene = manager.library.resolve("biped-patrol-stale-v2@1", launch=True, source="newton")
+        with pytest.raises(PlanError) as exc_stale_v2:
+            authorize_cross_scene_policy_deployment(stale_v2_scene, state_root=state_root)
+        assert exc_stale_v2.value.detail["code"] == "deployment_authorization_required"
+
+        stale_v2_binding = stale_v2_scene.report()["effectiveBindings"]["newton"][0]
+        stale_v2_catalog = compile_catalog(
+            "rev-stale-v2",
+            load_entity_types(),
+            {"/World/Lab/PatrolBiped": stale_v2_binding},
+            {
+                "/World/Lab/PatrolBiped": BipedPolicyProgram.Config.model_validate(
+                    stale_v2_binding["config"]
+                )
+            },
+        )
+        with pytest.raises(LibraryError) as exc_stale_v2_rt:
+            verify_runtime_deployment(
+                stale_v2_scene, stale_v2_catalog, permit_v2, state_root=state_root
+            )
+        assert exc_stale_v2_rt.value.detail["code"] == "simulation_deployment_changed"
 
         # 3. Write Scene B (biped-patrol@1) with robot at /World/Lab/PatrolBiped and DIFFERENT Waypoints!
         _write_validated_scene(
@@ -729,6 +783,35 @@ def Xform "World"
             state_root,
             user_lib,
             validator,
+            name="biped-over-mjc",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_over_scene_usda(
+                '            over "LeftHip"\n'
+                "            {\n"
+                "                custom float mjc:armature = 0.95\n"
+                "            }"
+            ),
+        )
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-over-mjc-actuator",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_over_scene_usda(
+                '            def MjcActuator "BypassActuator"\n'
+                "            {\n"
+                "                custom rel mjc:target = </World/Lab/PatrolBiped/LeftHip>\n"
+                "                custom float mjc:gear = 5.0\n"
+                "            }"
+            ),
+        )
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
             name="biped-rigid-placed",
             devices_entities=patrol_entity_bind,
             waypoints={"patrol_north": {"p": [0.5, 1.2, 0.0], "yaw": 1.57}},
@@ -740,7 +823,14 @@ def Xform "World"
         )
 
         manager.library.refresh()
-        for tampered_name in ("biped-inline@1", "biped-scaled@1", "biped-over-mass@1", "biped-over-drive@1"):
+        for tampered_name in (
+            "biped-inline@1",
+            "biped-scaled@1",
+            "biped-over-mass@1",
+            "biped-over-drive@1",
+            "biped-over-mjc@1",
+            "biped-over-mjc-actuator@1",
+        ):
             tampered_scene = manager.library.resolve(tampered_name, launch=True, source="newton")
             with pytest.raises(PlanError) as exc_tampered:
                 authorize_cross_scene_policy_deployment(tampered_scene, state_root=state_root)
@@ -750,6 +840,78 @@ def Xform "World"
         assert (
             authorize_cross_scene_policy_deployment(placed_scene, state_root=state_root) == committed_permit
         )
+
+        # 5. Post-promotion Embodiment YAML tampering (swapping asset to another robot) MUST fail closed!
+        other_asset_dir = user_lib / "assets/robot/other-biped/1"
+        other_asset_dir.mkdir(parents=True)
+        other_usda = BIPED_ASSET_USDA.replace("float physics:mass = 1.6", "float physics:mass = 9.6").encode(
+            "utf-8"
+        )
+        (other_asset_dir / "asset.usda").write_bytes(other_usda)
+        (other_asset_dir / "LICENSE.txt").write_text("Apache-2.0\n", encoding="utf-8")
+        durable_json(
+            other_asset_dir / "provenance.json",
+            {
+                "source": "other-biped-fixture",
+                "files": {
+                    "asset.usda": {
+                        "sha256": hashlib.sha256(other_usda).hexdigest(),
+                        "bytes": len(other_usda),
+                    }
+                },
+            },
+        )
+        (other_asset_dir / "asset.yaml").write_text(
+            (asset_dir / "asset.yaml").read_text(encoding="utf-8").replace("test-biped", "other-biped"),
+            encoding="utf-8",
+        )
+        other_assets = AssetLibrary(state_root, user_root=user_lib)
+        other_assets.startup()
+        durable_json(
+            other_asset_dir / "validation.json",
+            validator.run(
+                other_asset_dir,
+                "asset",
+                "asset:robot/other-biped@1",
+                other_assets.versions["robot/other-biped@1"].metadata,
+                other_assets,
+            ),
+        )
+        _write_validated_scene(
+            state_root,
+            user_lib,
+            validator,
+            name="biped-swapped-emb",
+            devices_entities=patrol_entity_bind,
+            waypoints={"patrol_north": {"p": [0.0, 1.2, 0.0], "yaw": 1.57}},
+            scene_usda_text=_scene_usda("PatrolBiped").replace("robot/test-biped/1", "robot/other-biped/1"),
+            asset_id="robot/other-biped@1",
+            asset_dir=other_asset_dir,
+        )
+        emb_path = user_lib / "embodiments/test-biped.yaml"
+        original_emb_yaml = emb_path.read_text(encoding="utf-8")
+        emb_path.write_text(
+            original_emb_yaml.replace("robot/test-biped@1", "robot/other-biped@1"), encoding="utf-8"
+        )
+        try:
+            manager.library.refresh()
+            swapped_scene = manager.library.resolve("biped-swapped-emb@1", launch=True, source="newton")
+            with pytest.raises(PlanError) as exc_swapped:
+                authorize_cross_scene_policy_deployment(swapped_scene, state_root=state_root)
+            assert exc_swapped.value.detail["code"] == "deployment_authorization_required"
+
+            swapped_eff = swapped_scene.report()["effectiveBindings"]["newton"][0]
+            swapped_cat = compile_catalog(
+                "rev-swapped",
+                load_entity_types(),
+                {"/World/Lab/PatrolBiped": swapped_eff},
+                {"/World/Lab/PatrolBiped": BipedPolicyProgram.Config.model_validate(swapped_eff["config"])},
+            )
+            with pytest.raises(LibraryError) as exc_swapped_rt:
+                verify_runtime_deployment(swapped_scene, swapped_cat, cross_permit, state_root=state_root)
+            assert exc_swapped_rt.value.detail["code"] == "simulation_deployment_changed"
+        finally:
+            emb_path.write_text(original_emb_yaml, encoding="utf-8")
 
 
 def test_builtin_reference_policy_permit_rsi_rounds_and_fresh_user_cross_scene_reuse(
@@ -1387,3 +1549,28 @@ def test_builtin_reference_policy_permit_rsi_rounds_and_fresh_user_cross_scene_r
         v2_permit = authorize_cross_scene_policy_deployment(v2_user_patrol, state_root=fresh_state)
         assert v2_permit["schema"] == "lw.deployment-permit/1"
         assert v2_permit["controller"]["version"] == 2
+
+        # Shadowing builtin-biped in user/embodiments after v2 promotion MUST also fail closed!
+        shadow_emb = user_lib / "embodiments/builtin-biped.yaml"
+        shadow_emb.parent.mkdir(parents=True, exist_ok=True)
+        shadow_emb.write_text(
+            (builtin_lib / "embodiments/builtin-biped.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        try:
+            with pytest.raises(PlanError) as exc_shadow:
+                authorize_cross_scene_policy_deployment(v2_user_patrol, state_root=fresh_state)
+            assert exc_shadow.value.detail["code"] == "deployment_authorization_required"
+
+            v2_eff = v2_user_patrol.report()["effectiveBindings"]["newton"][0]
+            v2_cat = compile_catalog(
+                "rev-v2-shadow",
+                load_entity_types(),
+                {"/World/Lab/UserBiped": v2_eff},
+                {"/World/Lab/UserBiped": BipedPolicyProgram.Config.model_validate(v2_eff["config"])},
+            )
+            with pytest.raises(LibraryError) as exc_shadow_rt:
+                verify_runtime_deployment(v2_user_patrol, v2_cat, v2_permit, state_root=fresh_state)
+            assert exc_shadow_rt.value.detail["code"] == "simulation_deployment_changed"
+        finally:
+            shadow_emb.unlink()

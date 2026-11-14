@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-14T03:57:25.156949+00:00",
+  "capturedAt": "2026-11-14T05:01:16.213237+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -133,11 +133,11 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "901cda6a7f1fddf701cfe61399aa52670bef18facb1f7d715b733ce79654aecf"
+      "sha256": "22b2d3b128d7990715eafb326c14986c3968dff043b5dc00dd0c24ce46318366"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "d94dbb129551ce971ad753c834327fe79c06eb59e5662a0b5b52295f6ce13275"
+      "sha256": "7ea8f92edd23570010374e285cc706caf51496c82efcd145bb0df36bd1764ec0"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -145,11 +145,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "e2ca2d7eaed888e4009c2ec6cb633f81dee6bad515ba82f5f38f9c31ea729438"
+      "sha256": "5a880b72b8a252f9550d0d747f6737f2e5e032d2fe359594b36f2ab0bc4ea360"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "d67d597f308463f3dc267b3055a999e851dba487597dd7bd430cd41727260f83"
+      "sha256": "7f5d023f77fc75cb09f4e71ef5a679cde3bc373cc35b134ef31e82cac29779a9"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -193,7 +193,7 @@
     },
     {
       "path": "packages/programs/policy_base.py",
-      "sha256": "23a110c960bcd88bea3af196b52fd5e5a34e62c130816ca6da9c545a776894c9"
+      "sha256": "862365fee30588891ed9d7f1a627cf4343950e35cb2bde436924faba91765a5c"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -339,10 +339,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "0e20b922186ee432d583a74874c86a56097260c0a007ce833083b3a2370644db",
-    "catalog.json": "221235b60ad470d2f32922d4f921010827ddea56c38f4f32b4b38fda72415e3a",
-    "state.json": "01829abc04bf39d56d07a1a707dea52880c6535c6796a47117c653dfcd89f16c",
-    "snapshot.bin": "abef3627d217a616b38ec45711a2909b2d533ad8b4ff25863ae686af2968479b"
+    "manifest.json": "8a4f13caac9b3ff7b796705cc6b41f9c2199660c2237f832e174ec47b1c1c08f",
+    "catalog.json": "9b0a2b3362757e0f4dcd65f58c754eff1051491ab54ba6002b8dc3e63569f5d1",
+    "state.json": "fc31a442fedf9f02cdf650baf8940a81c1adf6d6a19754507c9f9e6959bb7ffe",
+    "snapshot.bin": "2587cfeda77576438a47fb09ad8d500e4862ff0afdcd8115a81da3937762c8d1"
   },
   "counts": {
     "physicalEntities": 3,

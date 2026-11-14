@@ -20,6 +20,7 @@ from packages.policies.observations import (
     command_envelope_failure,
     coverage_failure,
     joint_targets,
+    observation_canonical_refs,
     remap_observation_spec_entity,
     spec_within_robot_entity,
 )
@@ -176,11 +177,9 @@ def build_policy_evidence(record: dict, model: CpuPolicy, action_starts: int, ob
 def validate_observations_against_port(spec: ObservationSpec, port) -> None:
     """Verify every canonical joint, body, and site in spec.observations exists on PhysicsPort."""
     for item in spec.observations:
-        source = item.source
-        if source.startswith("joint_"):
-            for key in item.keys:
-                if not key.startswith("/"):
-                    continue
+        role, keys, frame_body = observation_canonical_refs(item)
+        if role == "joint":
+            for key in keys:
                 try:
                     ref = port.bind_joint(key)
                 except (KeyError, AssertionError, ValueError) as exc:
@@ -193,29 +192,29 @@ def validate_observations_against_port(spec: ObservationSpec, port) -> None:
                         raise ValueError(
                             f"Observation joint {key} must be a scalar revolute or prismatic joint"
                         )
-        elif source == "projected_gravity" or source.startswith("body_"):
-            if item.key is not None and item.key.startswith("/"):
+        elif role == "body":
+            for key in keys:
                 try:
-                    port.bind_body(item.key)
+                    port.bind_body(key)
                 except (KeyError, AssertionError, ValueError) as exc:
-                    raise ValueError(f"Observation body {item.key} is unavailable on PhysicsPort") from exc
-        elif source.startswith("site_"):
-            if item.key is not None and item.key.startswith("/"):
+                    raise ValueError(f"Observation body {key} is unavailable on PhysicsPort") from exc
+        elif role == "site":
+            for key in keys:
                 try:
                     if hasattr(port, "bind_site"):
-                        port.bind_site(item.key)
+                        port.bind_site(key)
                     elif hasattr(port, "site_pose"):
-                        port.site_pose(item.key)
+                        port.site_pose(key)
                     else:
                         raise ValueError("PhysicsPort has no site bindings")
                 except (KeyError, AssertionError, ValueError) as exc:
-                    raise ValueError(f"Observation site {item.key} is unavailable on PhysicsPort") from exc
-        if item.frame is not None and item.frame.startswith("/") and source != "command":
+                    raise ValueError(f"Observation site {key} is unavailable on PhysicsPort") from exc
+        if frame_body is not None:
             try:
-                port.bind_body(item.frame)
+                port.bind_body(frame_body)
             except (KeyError, AssertionError, ValueError) as exc:
                 raise ValueError(
-                    f"Observation frame body {item.frame} is unavailable on PhysicsPort"
+                    f"Observation frame body {frame_body} is unavailable on PhysicsPort"
                 ) from exc
 
 

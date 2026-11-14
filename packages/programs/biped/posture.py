@@ -54,6 +54,41 @@ def publish_biped_telemetry(
     return p, tilt_deg, pitch_deg, yaw_rad
 
 
+def compute_fall_posture(
+    ctx,
+    joints: dict[str, object],
+    joint_limits: dict[str, tuple[float | None, float | None]],
+    direction: str,
+) -> list[float]:
+    configured = ctx.config.fallPostures.get(direction)
+    if configured is not None:
+        return configured
+    base = (
+        list(ctx.config.defaultPosition)
+        if ctx.config.defaultPosition is not None
+        else [float(ctx.physics.joint_q(ref)[0]) for ref in joints.values()]
+    )
+    prismatic = set(ctx.config.prismaticJointKeys)
+    targets = []
+    for idx, (key, q0) in enumerate(zip(ctx.config.jointKeys, base, strict=True)):
+        if key in prismatic:
+            targets.append(q0)
+            continue
+        lo, hi = joint_limits.get(key, (None, None))
+        span_hi = (hi - q0) if hi is not None else 0.7
+        span_lo = (q0 - lo) if lo is not None else 0.7
+        if direction == "front":
+            offset = 0.85 * span_hi
+        elif direction == "back":
+            offset = -0.85 * span_lo
+        elif direction == "left":
+            offset = 0.85 * span_hi if idx % 2 == 0 else -0.85 * span_lo
+        else:
+            offset = -0.85 * span_lo if idx % 2 == 0 else 0.85 * span_hi
+        targets.append(q0 + offset)
+    return targets
+
+
 class BipedPostureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -73,6 +108,8 @@ class BipedPostureConfig(BaseModel):
         default_factory=dict, exclude_if=lambda value: not value
     )
     actionDuration: float = Field(default=0.8, gt=0, allow_inf_nan=False)
+    dwellSeconds: float = Field(default=0.25, gt=0, allow_inf_nan=False)
+    fallTimeoutSeconds: float = Field(default=4.0, gt=0, allow_inf_nan=False)
     maxTiltDeg: float = Field(default=55.0, gt=0, lt=180.0, allow_inf_nan=False)
     uprightTiltDeg: float = Field(default=20.0, gt=0, lt=90.0, allow_inf_nan=False)
     bowMinPitchDeg: float = Field(default=8.0, ge=0, lt=90.0, allow_inf_nan=False)
@@ -132,11 +169,18 @@ class BipedPostureProgram:
         self.last_completed_action: str | None = None
         self.current_waypoint: str | None = None
         self.target_waypoint: str | None = None
+        self._pre_fall_direction: str | None = None
+        self._recovery_started = 0.0
+        self._returning_upright = False
+        self._return_started = 0.0
+        self._dwell_elapsed = 0.0
+        self._bow_peaked = False
+        self._saw_fall = False
         _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
         self.fallen = tilt_deg > ctx.config.maxTiltDeg
         if self.fallen:
             self.phase = "fallen"
-        if ctx.config.defaultPosition is not None:
+        if ctx.config.defaultPosition is not None and not self.fallen:
             self._apply_posture(ctx, ctx.config.defaultPosition)
         self._publish(ctx)
 
@@ -161,6 +205,19 @@ class BipedPostureProgram:
             current_waypoint=self.current_waypoint,
             target_waypoint=self.target_waypoint,
         )
+
+    def _sync_interrupted_fall_state(self, ctx):
+        _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
+        self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+        if self.fallen:
+            self.last_completed_action = None
+        self.active_action = None
+        self.target_waypoint = None
+        self._pre_fall_direction = None
+        self._returning_upright = False
+        self._dwell_elapsed = 0.0
+        self.phase = "fallen" if self.fallen else "idle"
+        self._publish(ctx)
 
     def accept(self, inv, ctx):
         if inv.action == "walkTo":
@@ -192,14 +249,7 @@ class BipedPostureProgram:
             if self.handle is not None:
                 self.handle.cancelled()
                 self.handle = None
-            _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
-            self.fallen = tilt_deg > ctx.config.uprightTiltDeg
-            if self.fallen:
-                self.last_completed_action = None
-            self.active_action = None
-            self.target_waypoint = None
-            self.phase = "fallen" if self.fallen else "idle"
-            self._publish(ctx)
+            self._sync_interrupted_fall_state(ctx)
             inv.succeed()
             return
         self.handle = inv
@@ -207,7 +257,12 @@ class BipedPostureProgram:
         self.active_action = inv.action
         self.last_completed_action = None
         self._bow_peaked = False
+        self._returning_upright = False
+        self._return_started = ctx.sim_time
+        self._dwell_elapsed = 0.0
         self._saw_fall = self.fallen
+        self._pre_fall_direction = None
+        self._recovery_started = ctx.sim_time
         if inv.action == "walkTo":
             self.target_waypoint = inv.params["waypoint"]
             self.current_waypoint = None
@@ -215,30 +270,30 @@ class BipedPostureProgram:
         elif inv.action == "standUp":
             self.target_waypoint = None
             self.phase = "standing_up"
+            self._pre_fall_direction = inv.params.get("fromFall") if not self.fallen else None
         elif inv.action == "bow":
             self.target_waypoint = None
             self.phase = "bowing"
         else:
             self.phase = "walking"
-        posture = ctx.config.actionTargets.get(inv.action) or ctx.config.defaultPosition
-        if posture is not None:
-            self._apply_posture(ctx, posture)
+        if inv.action == "standUp" and self._pre_fall_direction is not None:
+            self._apply_posture(
+                ctx,
+                compute_fall_posture(ctx, self.joints, self.joint_limits, self._pre_fall_direction),
+            )
         else:
-            self._hold(ctx)
+            posture = ctx.config.actionTargets.get(inv.action) or ctx.config.defaultPosition
+            if posture is not None:
+                self._apply_posture(ctx, posture)
+            else:
+                self._hold(ctx)
         self._publish(ctx)
 
     def cancel(self, inv, ctx):
         self._hold(ctx)
         inv.cancelled()
         self.handle = None
-        _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
-        self.fallen = tilt_deg > ctx.config.uprightTiltDeg
-        if self.fallen:
-            self.last_completed_action = None
-        self.active_action = None
-        self.target_waypoint = None
-        self.phase = "fallen" if self.fallen else "idle"
-        self._publish(ctx)
+        self._sync_interrupted_fall_state(ctx)
 
     def tick(self, ctx, dt):
         p, tilt_deg, pitch_deg, _, yaw_rad, _ = read_biped_kinematics(ctx, self.base_body)
@@ -260,26 +315,159 @@ class BipedPostureProgram:
             self.phase = "fallen"
             self.active_action = None
             self.target_waypoint = None
+            self._returning_upright = False
+            self._dwell_elapsed = 0.0
             self._hold(ctx)
             self._publish(ctx)
             self.handle = None
             inv.fail("robot_fallen", f"Torso tilt {tilt_deg:.1f} deg exceeded maxTiltDeg")
             return
 
-        if inv.action == "standUp" and tilt_deg >= ctx.config.maxTiltDeg:
-            self._saw_fall = True
-            self.fallen = True
-            self.last_completed_action = None
-        if inv.action == "bow" and (
-            ctx.config.bowMinPitchDeg == 0.0 or pitch_deg >= ctx.config.bowMinPitchDeg
-        ):
-            self._bow_peaked = True
+        duration = float(inv.params.get("duration", ctx.config.actionDuration))
+
+        if inv.action == "standUp":
+            if self._pre_fall_direction is not None:
+                if tilt_deg >= ctx.config.maxTiltDeg:
+                    self._saw_fall = True
+                    self.fallen = True
+                    self.last_completed_action = None
+                    self._pre_fall_direction = None
+                    self._dwell_elapsed = 0.0
+                    self._recovery_started = ctx.sim_time
+                    stand_posture = ctx.config.actionTargets.get("standUp") or ctx.config.defaultPosition
+                    if stand_posture is not None:
+                        self._apply_posture(ctx, stand_posture)
+                    else:
+                        self._hold(ctx)
+                    self._publish(ctx)
+                    return
+                if ctx.sim_time - self.started + 1e-10 >= ctx.config.fallTimeoutSeconds:
+                    self._hold(ctx)
+                    self.handle = None
+                    self.active_action = None
+                    self._pre_fall_direction = None
+                    self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+                    self.phase = "fallen" if self.fallen else "idle"
+                    self._publish(ctx)
+                    inv.fail(
+                        "fall_induction_timeout",
+                        "Controlled fall posture did not reach maxTiltDeg within fallTimeoutSeconds",
+                    )
+                    return
+                self._apply_posture(
+                    ctx,
+                    compute_fall_posture(ctx, self.joints, self.joint_limits, self._pre_fall_direction),
+                )
+                if ctx.fact_due:
+                    self._publish(ctx)
+                return
+
+            if tilt_deg >= ctx.config.maxTiltDeg:
+                self._saw_fall = True
+                self.fallen = True
+                self.last_completed_action = None
+            if tilt_deg <= ctx.config.uprightTiltDeg:
+                self._dwell_elapsed += dt
+            else:
+                self._dwell_elapsed = 0.0
+            fell_ok = inv.params.get("fromFall") is None or self._saw_fall
+            if fell_ok and self._dwell_elapsed + 1e-9 >= ctx.config.dwellSeconds:
+                stand_posture = ctx.config.actionTargets.get("standUp") or ctx.config.defaultPosition
+                if stand_posture is not None:
+                    self._apply_posture(ctx, stand_posture)
+                else:
+                    self._hold(ctx)
+                self.handle = None
+                self.active_action = None
+                self.fallen = False
+                self.last_completed_action = "standUp"
+                self.phase = "idle"
+                self._dwell_elapsed = 0.0
+                self._publish(ctx)
+                inv.succeed()
+                return
+            if ctx.sim_time - self._recovery_started + 1e-10 >= duration + ctx.config.dwellSeconds:
+                self._hold(ctx)
+                self.handle = None
+                self.active_action = None
+                self._dwell_elapsed = 0.0
+                self.fallen = tilt_deg > ctx.config.uprightTiltDeg
+                self.phase = "fallen" if self.fallen else "idle"
+                self._publish(ctx)
+                inv.fail("motion_timeout", "Open-loop posture did not complete fall recovery")
+                return
+            if ctx.fact_due:
+                self._publish(ctx)
+            return
+
+        if inv.action == "bow":
+            if not self._returning_upright:
+                if ctx.config.bowMinPitchDeg == 0.0 or pitch_deg >= ctx.config.bowMinPitchDeg:
+                    self._bow_peaked = True
+                if ctx.sim_time - self.started + 1e-10 < duration:
+                    if ctx.fact_due:
+                        self._publish(ctx)
+                    return
+                if not self._bow_peaked:
+                    if ctx.config.defaultPosition is not None:
+                        self._apply_posture(ctx, ctx.config.defaultPosition)
+                    else:
+                        self._hold(ctx)
+                    self.handle = None
+                    self.active_action = None
+                    self.phase = "idle"
+                    self._publish(ctx)
+                    inv.fail("motion_timeout", "Open-loop posture did not reach bow pitch threshold")
+                    return
+                self._returning_upright = True
+                self._return_started = ctx.sim_time
+                self._dwell_elapsed = 0.0
+                if ctx.config.defaultPosition is not None:
+                    self._apply_posture(ctx, ctx.config.defaultPosition)
+                else:
+                    self._hold(ctx)
+                self._publish(ctx)
+                return
+
+            returned_upright = tilt_deg <= ctx.config.uprightTiltDeg and (
+                ctx.config.bowMinPitchDeg == 0.0 or abs(pitch_deg) < ctx.config.bowMinPitchDeg * 0.75
+            )
+            if returned_upright:
+                self._dwell_elapsed += dt
+            else:
+                self._dwell_elapsed = 0.0
+            if self._dwell_elapsed + 1e-9 >= ctx.config.dwellSeconds:
+                if ctx.config.defaultPosition is not None:
+                    self._apply_posture(ctx, ctx.config.defaultPosition)
+                else:
+                    self._hold(ctx)
+                self.handle = None
+                self.active_action = None
+                self._returning_upright = False
+                self._dwell_elapsed = 0.0
+                self.phase = "idle"
+                self.last_completed_action = "bow"
+                self._publish(ctx)
+                inv.succeed()
+                return
+            if ctx.sim_time - self._return_started + 1e-10 >= duration + ctx.config.dwellSeconds:
+                self._hold(ctx)
+                self.handle = None
+                self.active_action = None
+                self._returning_upright = False
+                self._dwell_elapsed = 0.0
+                self.phase = "idle"
+                self._publish(ctx)
+                inv.fail("motion_timeout", "Open-loop posture did not return upright after bow")
+                return
+            if ctx.fact_due:
+                self._publish(ctx)
+            return
 
         if ctx.fact_due:
             self._publish(ctx)
 
-        duration = float(inv.params.get("duration", ctx.config.actionDuration))
-        if ctx.sim_time - self.started < duration:
+        if ctx.sim_time - self.started + 1e-10 < duration:
             return
 
         if inv.action == "walkTo":
@@ -304,33 +492,11 @@ class BipedPostureProgram:
                 inv.fail("motion_timeout", "Open-loop posture did not reach target Waypoint")
             return
 
-        if inv.action == "standUp":
-            self._hold(ctx)
-            self.handle = None
-            self.active_action = None
-            fell_ok = inv.params.get("fromFall") is None or self._saw_fall
-            if fell_ok and tilt_deg <= ctx.config.uprightTiltDeg:
-                self.fallen = False
-                self.last_completed_action = "standUp"
-                self.phase = "idle"
-                self._publish(ctx)
-                inv.succeed()
-            else:
-                self.fallen = tilt_deg > ctx.config.uprightTiltDeg
-                self.phase = "fallen" if self.fallen else "idle"
-                self._publish(ctx)
-                inv.fail("motion_timeout", "Open-loop posture did not complete fall recovery")
-            return
-
         if ctx.config.defaultPosition is not None:
             self._apply_posture(ctx, ctx.config.defaultPosition)
         self.handle = None
         self.active_action = None
         self.phase = "idle"
-        if inv.action == "bow" and not self._bow_peaked:
-            self._publish(ctx)
-            inv.fail("motion_timeout", "Open-loop posture did not reach bow pitch threshold")
-            return
         self.last_completed_action = inv.action
         self._publish(ctx)
         inv.succeed()

@@ -9,7 +9,11 @@ import yaml
 
 from packages.info.catalog import DEVICE_ROOT, compile_catalog
 from packages.info.program import HostCore
-from packages.policies.observations import ObservationSpec, remap_observation_spec_entity
+from packages.policies.observations import (
+    ObservationSpec,
+    remap_observation_spec_entity,
+    spec_within_robot_entity,
+)
 from packages.protocol.math import rotate_vector
 from packages.protocol.schema import Actor, InvokeRequest
 from packages.sim_runtime.info_catalog import REGISTRY
@@ -307,6 +311,185 @@ def test_remap_observation_spec_entity_remaps_joints_bodies_and_frames():
     assert remapped.observations[0].keys == ["/World/Lab/Patrol/RobotB/J1", "/World/Lab/Patrol/RobotB/J2"]
     assert remapped.observations[1].key == "/World/Lab/Patrol/RobotB/Foot"
     assert remapped.observations[1].frame == "/World/Lab/Patrol/RobotB/Trunk"
+
+
+@pytest.mark.parametrize(
+    ("source", "key", "frame"),
+    [
+        ("body_position", "$object", "world"),
+        ("site_position", "$from", "world"),
+        ("site_position", "$to", "world"),
+        ("body_position", "/World/Lab/RobotA/Foot", "$object"),
+        ("body_angular_velocity", "/World/Lab/RobotA/Trunk", "$object"),
+    ],
+)
+def test_spec_within_robot_entity_rejects_task_episode_aliases(source: str, key: str, frame: str):
+    spec = ObservationSpec.model_validate(
+        {
+            "schema": "lw.obs-spec/1",
+            "observations": [
+                {
+                    "name": "aliased",
+                    "source": source,
+                    "key": key,
+                    "frame": frame,
+                    "unit": "rad/s" if source == "body_angular_velocity" else "m",
+                    "shape": [3],
+                    "offset": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                }
+            ],
+            "action": {
+                "space": "joint_position_offset",
+                "jointKeys": ["/World/Lab/RobotA/J1"],
+                "units": ["rad"],
+                "defaultPosition": [0.0],
+                "scale": [1.0],
+                "lower": [-1.0],
+                "upper": [1.0],
+            },
+        }
+    )
+    assert spec_within_robot_entity(spec, "/World/Lab/RobotA") is False
+    with pytest.raises(ValueError, match="outside source robot entity"):
+        remap_observation_spec_entity(spec, "/World/Lab/RobotA", "/World/Lab/RobotB")
+
+
+def test_biped_posture_standup_from_fall_and_bow_upright_return():
+    biped_type = _load_biped_type()
+    posture_cls = REGISTRY["biped.posture"]
+    entity = "/World/Lab/Biped"
+    joints = [f"{entity}/J1", f"{entity}/J2"]
+    trunk = f"{entity}/Trunk"
+    port = KinematicBipedPort(joints, trunk)
+    cfg = {
+        "jointKeys": joints,
+        "baseBody": trunk,
+        "defaultPosition": [0.0, 0.0],
+        "actionTargets": {
+            "standUp": [0.08, -0.08],
+            "bow": [0.45, 0.45],
+        },
+        "fallPostures": {
+            "front": [0.85, -0.85],
+        },
+        "locations": {"waypoints": {"home": {"p": [0.0, 0.0, 0.0], "yaw": 0.0}}},
+        "actionDuration": 0.15,
+        "dwellSeconds": 0.15,
+        "maxTiltDeg": 50.0,
+        "uprightTiltDeg": 15.0,
+        "bowMinPitchDeg": 8.0,
+    }
+    catalog = compile_catalog(
+        "rev-posture-phases",
+        {"biped/v1": biped_type},
+        {entity: {"key": entity, "type": "biped/v1", "program": posture_cls.id, "config": cfg}},
+        {entity: posture_cls.Config.model_validate(cfg)},
+    )
+    sim_t = 0.0
+    host = HostCore(
+        catalog, REGISTRY, physics=port, source="sim", fact_hz=20.0, publication_clock=lambda: sim_t
+    )
+    actor = Actor(kind="user", name="op")
+    invocations = {}
+
+    def step(n=1, dt=0.05):
+        nonlocal sim_t
+        for _ in range(n):
+            sim_t = round(sim_t + dt, 6)
+            for ev in host.tick(sim_t, dt):
+                if hasattr(ev, "invocationId") and hasattr(ev, "status"):
+                    invocations[ev.invocationId] = ev
+
+    def req(inv_id, action, params=None):
+        return InvokeRequest(
+            invocationId=inv_id,
+            requestId="req-" + inv_id,
+            entityKey=entity,
+            action=action,
+            params=params or {},
+            actor=actor,
+            epoch=0,
+            createdSimTime=sim_t,
+            createdAtMs=1000.0,
+        )
+
+    # 1. standUp(fromFall="front") commands fallPostures["front"] first, waits for fall, then switches to
+    # standing target and succeeds only after upright dwellSeconds!
+    su = host.invoke(req("su-fall", "standUp", {"fromFall": "front"}))
+    assert su.status in ("accepted", "running")
+    step(1)
+    assert port.targets[joints[0]] == pytest.approx(0.85)
+    assert port.targets[joints[1]] == pytest.approx(-0.85)
+
+    # Even after actionDuration (0.20s > 0.15s) while still upright, must NOT succeed or switch!
+    step(3)
+    assert invocations.get("su-fall") is None or invocations["su-fall"].status == "running"
+    assert port.targets[joints[0]] == pytest.approx(0.85)
+
+    # Tip past maxTiltDeg=50.0 -> switches joint targets to actionTargets["standUp"] and marks fallen=True
+    port.set_euler(pitch_deg=55.0)
+    step(1)
+    assert host.values()[entity]["fallen"] is True
+    assert port.targets[joints[0]] == pytest.approx(0.08)
+    assert port.targets[joints[1]] == pytest.approx(-0.08)
+    assert invocations.get("su-fall") is None or invocations["su-fall"].status == "running"
+
+    # Return upright: 1 tick (0.05s < dwellSeconds=0.15s) is still running; 2 more ticks (0.15s) succeeds!
+    port.set_euler(pitch_deg=3.0)
+    step(1)
+    assert invocations.get("su-fall") is None or invocations["su-fall"].status == "running"
+    step(2)
+    assert invocations["su-fall"].status == "succeeded"
+    assert host.values()[entity]["fallen"] is False
+    assert host.values()[entity]["phase"] == "idle"
+    assert host.values()[entity]["lastCompletedAction"] == "standUp"
+
+    # 2. bow() commands bow target, then re-commands defaultPosition after bow hold, and succeeds ONLY after
+    # returning upright for dwellSeconds (NOT while still pitched forward)!
+    b1 = host.invoke(req("bow-1", "bow"))
+    assert b1.status in ("accepted", "running")
+    step(1)
+    assert port.targets[joints[0]] == pytest.approx(0.45)
+
+    # Reach forward bow pitch (12.0 deg >= bowMinPitchDeg=8.0, note 12.0 <= uprightTiltDeg=15.0!)
+    port.set_euler(pitch_deg=12.0)
+    step(3)  # elapsed >= 0.15s == actionDuration -> transitions to returning-upright & defaultPosition!
+    assert port.targets[joints[0]] == pytest.approx(0.0)
+    assert port.targets[joints[1]] == pytest.approx(0.0)
+    assert invocations.get("bow-1") is None or invocations["bow-1"].status == "running"
+
+    # Still pitched forward at 12.0 deg (>= bowMinPitchDeg * 0.75 = 6.0 deg) -> must stay running!
+    step(2)
+    assert invocations.get("bow-1") is None or invocations["bow-1"].status == "running"
+
+    # Return upright (2.0 deg): 1 tick (0.05s < 0.15s) still running, 2 more ticks (0.15s) succeeds!
+    port.set_euler(pitch_deg=2.0)
+    step(1)
+    assert invocations.get("bow-1") is None or invocations["bow-1"].status == "running"
+    step(2)
+    assert invocations["bow-1"].status == "succeeded"
+    assert host.values()[entity]["phase"] == "idle"
+    assert host.values()[entity]["lastCompletedAction"] == "bow"
+
+    # 3. stop and cancel mid-lean (> uprightTiltDeg) sync fallen=True cleanly
+    su_mid = host.invoke(req("su-mid", "standUp", {"fromFall": "front"}))
+    assert su_mid.status in ("accepted", "running")
+    step(1)
+    port.set_euler(pitch_deg=25.0)
+    stop_mid = host.invoke(req("stop-mid", "stop"))
+    assert stop_mid.status in ("accepted", "running")
+    step(1)
+    assert invocations["su-mid"].status == "cancelled"
+    assert invocations["stop-mid"].status == "succeeded"
+    assert host.values()[entity]["fallen"] is True
+    assert host.values()[entity]["phase"] == "fallen"
+    su_cancel = host.invoke(req("su-cancel", "standUp"))
+    assert su_cancel.status in ("accepted", "running")
+    step(1)
+    assert host.cancel("su-cancel").status == "cancelled"
+    assert host.values()[entity]["fallen"] is True
+    assert host.values()[entity]["phase"] == "fallen"
 
 
 def test_biped_posture_program_publishes_telemetry_and_validates_waypoints():

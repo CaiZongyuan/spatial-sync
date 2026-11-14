@@ -39,7 +39,7 @@ from packages.policies.subjects import (
 )
 from packages.programs.simulation import material_bindings, validate_candidate_material
 from packages.programs.subjects import fingerprint
-from packages.training.deployment_authority import read_committed_permit
+from packages.training.deployment_authority import _private_document, read_committed_permit
 
 
 @dataclass(frozen=True)
@@ -147,6 +147,15 @@ def _rigid_transform(matrix) -> None:
         raise ValueError("Target robot base placement transform must be rigid")
 
 
+def _has_mjc_opinions(prim) -> bool:
+    return (
+        prim.GetTypeName().startswith("Mjc")
+        or any(schema.startswith("Mjc") for schema in prim.GetAppliedSchemas())
+        or any(attr.GetName().startswith("mjc:") for attr in prim.GetAttributes())
+        or any(rel.GetName().startswith("mjc:") for rel in prim.GetRelationships())
+    )
+
+
 def _embodiment_usd_signature(stage, root: str) -> str:
     """Physical, drive, joint, collision, and site USD subtree digest relative to placement root."""
     root_prim = stage.GetPrimAtPath(root)
@@ -162,6 +171,7 @@ def _embodiment_usd_signature(stage, root: str) -> str:
         or prim.HasAPI(UsdPhysics.MaterialAPI)
         or prim.IsA(UsdPhysics.Joint)
         or prim.IsA(UsdGeom.Xformable)
+        or _has_mjc_opinions(prim)
     ]
     selected = {}
     for prim in interesting:
@@ -184,7 +194,7 @@ def _embodiment_usd_signature(stage, root: str) -> str:
             if attribute.ValueMightBeTimeVarying():
                 raise ValueError("Robot physical USD subtree cannot use animated attributes")
             if (
-                name.startswith(("physics:", "drive:", "newton:", "physx", "state:", "xformOp:"))
+                name.startswith(("physics:", "drive:", "newton:", "physx", "state:", "mjc:", "xformOp:"))
                 or name == "xformOpOrder"
                 or (
                     prim.HasAPI(UsdPhysics.CollisionAPI)
@@ -213,7 +223,7 @@ def _embodiment_usd_signature(stage, root: str) -> str:
                 "relations": {
                     relation.GetName(): [relative(target) for target in relation.GetTargets()]
                     for relation in prim.GetRelationships()
-                    if relation.GetName().startswith(("physics:", "newton:", "material:binding"))
+                    if relation.GetName().startswith(("physics:", "newton:", "mjc:", "material:binding"))
                 },
             }
         )
@@ -221,24 +231,37 @@ def _embodiment_usd_signature(stage, root: str) -> str:
 
 
 def _verify_embodiment_usd_subtree(
-    scene, target_key: str, controller_doc: dict, roots: dict[str, Path]
+    scene,
+    target_key: str,
+    controller_doc: dict,
+    roots: dict[str, Path],
+    *,
+    require_frozen_embodiment: bool = False,
+    frozen_embodiment: dict | None = None,
 ) -> None:
     emb_id = controller_doc["embodiment"]
-    RobotResources._name(emb_id)
-    embodiment = None
-    for root in roots.values():
-        resolved_root = Path(root).resolve()
-        candidate_file = destination_parent(resolved_root, ("embodiments",)) / f"{emb_id}.yaml"
-        if candidate_file.exists() or candidate_file.is_symlink():
-            embodiment = RobotResources._read(
-                resolved_root, Path("embodiments") / f"{emb_id}.yaml", Embodiment, emb_id
-            )
+    try:
+        RobotResources._name(emb_id)
+        embodiments = RobotResources(roots, assets=None, scenes=None, programs={})._documents(
+            "embodiments", Embodiment
+        )
+    except LibraryError as error:
+        raise ValueError("Committed Embodiment metadata is invalid") from error
+    embodiment = embodiments.get(emb_id)
     if (
         embodiment is None
         or embodiment["kind"] != "sim"
         or embodiment["controller"] != controller_doc["controller"]
     ):
         raise ValueError("Committed Embodiment metadata is unavailable or differs")
+    if require_frozen_embodiment:
+        if not isinstance(frozen_embodiment, dict):
+            raise ValueError("Committed promotion has no frozen Embodiment snapshot")
+        expected_fields = tuple(Embodiment.model_fields) + tuple(
+            extra for extra in ("contentHash", "root") if extra in frozen_embodiment
+        )
+        if any(embodiment.get(field) != frozen_embodiment.get(field) for field in expected_fields):
+            raise ValueError("Resolved Embodiment differs from frozen promotion snapshot")
     asset_id = embodiment["asset"]
     asset_snapshot = load_snapshots(roots, [asset_id])[asset_id]
     verify_snapshot(asset_snapshot)
@@ -310,6 +333,23 @@ def _verify_scene_policy_action_channels(
             else raw_spec
         )
         _validate_scene_action_channels(scene, program_cls, binding["config"], spec)
+
+
+def _active_user_controller_version(user_root: Path, controller_id: str) -> int:
+    resolved_user = Path(user_root).resolve()
+    try:
+        RobotResources._name(controller_id)
+        meta = RobotResources._read(
+            resolved_user,
+            Path("controllers") / controller_id / "controller.yaml",
+            Controller,
+            controller_id,
+        )
+    except LibraryError as error:
+        raise ValueError("User Controller metadata is unavailable or invalid") from error
+    if meta["currentVersion"] is None:
+        raise ValueError("User Controller has no active currentVersion")
+    return meta["currentVersion"]
 
 
 def _controller_superseded_in_user(
@@ -529,7 +569,13 @@ def is_verified_builtin_policy_scene(scene, *, state_root=None) -> bool:
 
 
 def _validate_cross_scene_binding_against_permit(
-    scene, target_key: str, binding: dict, permit: dict, roots: dict[str, Path]
+    scene,
+    target_key: str,
+    binding: dict,
+    permit: dict,
+    roots: dict[str, Path],
+    *,
+    frozen_embodiment: dict | None = None,
 ) -> None:
     if (scene.metadata.get("derivedFrom") or {}).get("promotion") is not None:
         raise ValueError("Promotion-derived Scene must match its exact committed Scene snapshot")
@@ -560,16 +606,20 @@ def _validate_cross_scene_binding_against_permit(
         or doc["scene"] != permit["scene"]["id"]
     ):
         raise ValueError("Controller document identity differs")
-    auth_roots = (
-        {"builtin": _builtin_root()}
-        if permit.get("schema") == "lw.builtin-deployment-permit/1"
-        else roots
-    )
+    is_builtin_permit = permit.get("schema") == "lw.builtin-deployment-permit/1"
+    auth_roots = {"builtin": _builtin_root()} if is_builtin_permit else roots
     validate_candidate_material(
         target_material, binding, auth_roots, controller=doc, allow_entity_remap=True
     )
     _verify_scene_policy_action_channels(scene, binding, auth_roots, require_robot_scope=True)
-    _verify_embodiment_usd_subtree(scene, target_key, doc, auth_roots)
+    _verify_embodiment_usd_subtree(
+        scene,
+        target_key,
+        doc,
+        auth_roots,
+        require_frozen_embodiment=not is_builtin_permit,
+        frozen_embodiment=frozen_embodiment,
+    )
 
 
 def authorize_cross_scene_policy_deployment(scene, *, state_root):
@@ -586,32 +636,35 @@ def authorize_cross_scene_policy_deployment(scene, *, state_root):
         target_key, binding = _single_policy_program_binding(bindings)
         roots = _roots_for_scene(scene, state_root)
         promo_root = destination_parent(Path(state_root), ("controller-promotions",))
-        matches = []
+        active_matches = []
         if promo_root.is_dir():
             for path in sorted(promo_root.glob("*.json")):
                 try:
-                    promo_doc = yaml_document(path)
+                    promo_doc = _private_document(path)
                     lib_root = Path(promo_doc["context"]["libraryRoot"]).resolve()
                     if lib_root != roots["user"]:
                         continue
                     permit = read_committed_permit(state_root, path.stem)
-                    _validate_cross_scene_binding_against_permit(scene, target_key, binding, permit, roots)
+                    if (
+                        _active_user_controller_version(roots["user"], permit["controller"]["id"])
+                        != permit["controller"]["version"]
+                    ):
+                        continue
+                    _validate_cross_scene_binding_against_permit(
+                        scene,
+                        target_key,
+                        binding,
+                        permit,
+                        roots,
+                        frozen_embodiment=promo_doc["context"].get("embodiment"),
+                    )
                 except (PlanError, LibraryError, ValueError, KeyError, TypeError, OSError):
                     continue
-                matches.append(permit)
-        if matches:
-            for permit in reversed(matches):
-                ctrl_head = roots["user"] / "controllers" / permit["controller"]["id"] / "controller.yaml"
-                if ctrl_head.is_file():
-                    try:
-                        if (
-                            yaml_document(ctrl_head).get("currentVersion")
-                            == permit["controller"]["version"]
-                        ):
-                            return deepcopy(permit)
-                    except (ValueError, OSError):
-                        pass
-            return deepcopy(matches[-1])
+                active_matches.append(permit)
+        if len(active_matches) == 1:
+            return deepcopy(active_matches[0])
+        if len(active_matches) > 1:
+            raise ValueError("Scene matches multiple active Controller promotions")
 
         b_root = _builtin_root()
         ctrl_dir = destination_parent(b_root, ("controllers",))
@@ -704,6 +757,7 @@ def verify_runtime_deployment(scene, catalog, permit, *, state_root):
                 )
         else:
             scene_root = getattr(scene, "root", None) if scene is not None else None
+            frozen_embodiment = None
             if scene_root == "builtin":
                 if schema != "lw.builtin-deployment-permit/1":
                     raise ValueError("Built-in cross-scene deployment requires a built-in permit")
@@ -713,12 +767,27 @@ def verify_runtime_deployment(scene, catalog, permit, *, state_root):
                 )
             elif scene_root == "user":
                 roots = _roots_for_scene(scene, state_root)
-                if schema == "lw.builtin-deployment-permit/1" and _controller_superseded_in_user(
-                    roots.get("user"),
-                    permit["controller"]["id"],
-                    permit["controller"]["version"],
-                ):
-                    raise ValueError("Built-in Reference Controller has been superseded in user library")
+                if schema == "lw.builtin-deployment-permit/1":
+                    if _controller_superseded_in_user(
+                        roots.get("user"),
+                        permit["controller"]["id"],
+                        permit["controller"]["version"],
+                    ):
+                        raise ValueError("Built-in Reference Controller has been superseded in user library")
+                else:
+                    if (
+                        _active_user_controller_version(roots["user"], permit["controller"]["id"])
+                        != permit["controller"]["version"]
+                    ):
+                        raise ValueError("Committed user Controller version has been superseded")
+                    promo_path = (
+                        destination_parent(Path(state_root), ("controller-promotions",))
+                        / f"{permit['promotionId']}.json"
+                    )
+                    promo_doc = _private_document(promo_path)
+                    if Path(promo_doc["context"]["libraryRoot"]).resolve() != roots["user"]:
+                        raise ValueError("Committed promotion library root differs from target Scene")
+                    frozen_embodiment = promo_doc["context"].get("embodiment")
                 resolved_scene = SceneLibrary(
                     builtin_root=b_root, user_root=roots["user"], state_root=state_root
                 ).resolve(scene.id, launch=True, source="newton")
@@ -736,7 +805,12 @@ def verify_runtime_deployment(scene, catalog, permit, *, state_root):
                 raise ValueError("Cross-scene deployment requires a single material binding")
             target_key, target_binding = next(iter(mat_map.items()))
             _validate_cross_scene_binding_against_permit(
-                resolved_scene, target_key, target_binding, permit, roots
+                resolved_scene,
+                target_key,
+                target_binding,
+                permit,
+                roots,
+                frozen_embodiment=frozen_embodiment,
             )
     except (KeyError, ValueError, TypeError, OSError) as error:
         raise LibraryError(

@@ -11,6 +11,7 @@ from packages.info.program import Reject
 from packages.library.metadata import Locations
 from packages.policies.observations import command_envelope_failure
 from packages.programs.biped.posture import (
+    compute_fall_posture,
     publish_biped_telemetry,
     read_biped_kinematics,
     wrap_pi,
@@ -126,33 +127,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
             ctx.physics.set_joint_target(self.joints[key], [value])
 
     def _pre_fall_posture(self, ctx, direction: str) -> list[float]:
-        configured = ctx.config.fallPostures.get(direction)
-        if configured is not None:
-            return configured
-        base = (
-            list(ctx.config.defaultPosition)
-            if ctx.config.defaultPosition is not None
-            else [float(ctx.physics.joint_q(ref)[0]) for ref in self.joints.values()]
-        )
-        prismatic = set(ctx.config.prismaticJointKeys)
-        targets = []
-        for idx, (key, q0) in enumerate(zip(ctx.config.jointKeys, base, strict=True)):
-            if key in prismatic:
-                targets.append(q0)
-                continue
-            lo, hi = self.joint_limits.get(key, (None, None))
-            span_hi = (hi - q0) if hi is not None else 0.7
-            span_lo = (q0 - lo) if lo is not None else 0.7
-            if direction == "front":
-                offset = 0.85 * span_hi
-            elif direction == "back":
-                offset = -0.85 * span_lo
-            elif direction == "left":
-                offset = 0.85 * span_hi if idx % 2 == 0 else -0.85 * span_lo
-            else:
-                offset = -0.85 * span_lo if idx % 2 == 0 else 0.85 * span_hi
-            targets.append(q0 + offset)
-        return targets
+        return compute_fall_posture(ctx, self.joints, self.joint_limits, direction)
 
     def _facts(self, ctx):
         p, tilt_deg, pitch_deg, yaw_rad = publish_biped_telemetry(
