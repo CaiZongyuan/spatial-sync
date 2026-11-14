@@ -54,6 +54,12 @@ properties:
     unit: m
     deadband: 0.002
     maxRateHz: 20
+  baseHeight:
+    schema:
+      type: number
+    unit: m
+    deadband: 0.002
+    maxRateHz: 20
   yawRad:
     schema:
       type: number

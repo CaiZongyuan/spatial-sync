@@ -69,7 +69,9 @@ def test_policy_freezes_real_onnx_and_provenance_retry_restart_and_detects_tampe
         assert client.get("/api/v1/health").json()["sessionCount"] == 0
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/v1/policies/training-probe/1").json()["contentHash"] == policy["contentHash"]
-        assert len(client.get("/api/v1/policies").json()["policies"]) == 1
+        listed = client.get("/api/v1/policies").json()["policies"]
+        assert [item["id"] for item in listed if item["name"] == "training-probe"] == [policy["id"]]
+        assert len(listed) == 4
         root = app.state.manager.library_assets.roots["user"]
         source = root / "jobs" / job["jobId"] / "artifacts/policy.onnx"
         source.write_bytes(b"changed")

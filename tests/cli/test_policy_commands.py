@@ -31,7 +31,11 @@ async def test_installed_policy_cli_and_mcp_share_readback_and_rejection(
         assert process.returncode == code, process.stdout + process.stderr
         return json.loads(process.stdout)
 
-    assert invoke("policy", "ls") == []
+    assert {item["id"] for item in invoke("policy", "ls")} == {
+        "policy/microduck-bow@1",
+        "policy/microduck-stand-up@1",
+        "policy/microduck-walk-to@1",
+    }
     refused = invoke("policy", "create", "host-path", code=1)
     assert refused["error"]["detail"]["code"] == "policy_source_invalid"
     assert invoke("policy", "show", "policy/missing@1", code=1)["error"]["detail"]["code"] == "unknown_policy"

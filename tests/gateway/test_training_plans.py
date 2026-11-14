@@ -35,7 +35,11 @@ def test_task_push_versions_hashes_and_never_executes_package_python(tmp_path):
         assert third["id"] == "task/training-probe@2" and third["contentHash"] != first["contentHash"]
         assert push(client, task_archive(task_directory(tmp_path / "original"))).json()["id"] == first["id"]
         assert client.get("/api/v1/tasks/training-probe/1").json()["contentHash"] == first["contentHash"]
-        assert len(client.get("/api/v1/tasks").json()["tasks"]) == 2
+        probe_tasks = [
+            item["id"] for item in client.get("/api/v1/tasks").json()["tasks"]
+            if item["name"] == "training-probe"
+        ]
+        assert probe_tasks == ["task/training-probe@1", "task/training-probe@2"]
         assert client.get("/api/v1/health").json()["sessionCount"] == 0
 
 
@@ -101,9 +105,10 @@ def test_task_archive_rejects_escape_and_filesystem_links(name, kind):
         entry.linkname = "/etc/passwd" if kind != tarfile.REGTYPE else ""
         archive.addfile(entry, io.BytesIO())
     with TestClient(create_app(Settings())) as client:
+        before = client.get("/api/v1/tasks").json()["tasks"]
         response = push(client, stream.getvalue())
         assert response.status_code == 422
-        assert client.get("/api/v1/tasks").json()["tasks"] == []
+        assert client.get("/api/v1/tasks").json()["tasks"] == before
 
 
 @pytest.mark.parametrize("failure", ["approval_append", "plan_link"])
@@ -177,7 +182,8 @@ def test_malformed_task_success_returns_import_invalid_without_publishing_a_vers
     task["success"] = success
     (package / "task.yaml").write_text(yaml.safe_dump(task), encoding="utf-8")
     with TestClient(create_app(Settings())) as client:
+        before = client.get("/api/v1/tasks").json()["tasks"]
         response = push(client, task_archive(package))
         assert response.status_code == 422, response.text
         assert response.json()["detail"]["code"] == "import_invalid"
-        assert client.get("/api/v1/tasks").json()["tasks"] == []
+        assert client.get("/api/v1/tasks").json()["tasks"] == before

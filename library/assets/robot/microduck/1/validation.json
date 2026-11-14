@@ -1,0 +1,373 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "asset:robot/microduck@1",
+  "ranAt": "2026-11-14T09:28:58.203964+00:00",
+  "toolVersions": {
+    "usd-core": "26.8",
+    "pydantic": "2.12.4",
+    "pyyaml": "6.0.3",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "python": "3.13.14",
+    "mujoco": "3.15.0"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Package metadata and declared files match their schemas"
+    },
+    {
+      "id": "S2",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Stage must use Z up and metersPerUnit=1"
+    },
+    {
+      "id": "S3",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Asset root and default prim must be /Asset"
+    },
+    {
+      "id": "S4",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Original license and declared file hashes exist and match"
+    },
+    {
+      "id": "S5",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Declared types and Config spatial references exist"
+    },
+    {
+      "id": "S6",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Visual budget: 81418 triangles; package-local textures <=4096x4096"
+    },
+    {
+      "id": "S7",
+      "tier": "structural",
+      "status": "pass",
+      "message": "USD dependencies resolve only to package-local or indexed library files"
+    },
+    {
+      "id": "S8",
+      "tier": "structural",
+      "status": "warn",
+      "message": "No inspectable taught joint configuration is declared",
+      "notApplicable": true
+    },
+    {
+      "id": "P1",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Newton model loaded with finite state",
+      "measurements": {
+        "observedArrays": [
+          "body_q",
+          "body_qd",
+          "joint_q",
+          "joint_qd",
+          "body_mass",
+          "body_inertia",
+          "shape_transform",
+          "shape_scale"
+        ]
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 3686.683 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/trunk_base",
+      "measurements": {
+        "massKg": 0.19922399520874023,
+        "collisionVolumeM3": 5.403882096288726e-05,
+        "densityKgM3": 3686.682863520711
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 17143.302 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/yaw2roll",
+      "measurements": {
+        "massKg": 0.02304060012102127,
+        "collisionVolumeM3": 1.3440001112030586e-06,
+        "densityKgM3": 17143.302243030972
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 546.585 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/hip_l",
+      "measurements": {
+        "massKg": 0.00618933979421854,
+        "collisionVolumeM3": 1.132364650402451e-05,
+        "densityKgM3": 546.5853947329424
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 17934.036 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/upper_leg_left",
+      "measurements": {
+        "massKg": 0.04820669814944267,
+        "collisionVolumeM3": 2.6880004497797927e-06,
+        "densityKgM3": 17934.03648923938
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 3373.371 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/leg",
+      "measurements": {
+        "massKg": 0.02158440090715885,
+        "collisionVolumeM3": 6.398467121471185e-06,
+        "densityKgM3": 3373.3706053952496
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 1301.312 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/ankle_left",
+      "measurements": {
+        "massKg": 0.03002459928393364,
+        "collisionVolumeM3": 2.307255817868281e-05,
+        "densityKgM3": 1301.3121064171355
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 17988.961 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/neck",
+      "measurements": {
+        "massKg": 0.03684139996767044,
+        "collisionVolumeM3": 2.0480003968259552e-06,
+        "densityKgM3": 17988.96134237484
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 13558.519 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/neck_pitch",
+      "measurements": {
+        "massKg": 0.00571999978274107,
+        "collisionVolumeM3": 4.218749722895154e-07,
+        "densityKgM3": 13558.518894113655
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 18080.354 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/yaw_roll_motion",
+      "measurements": {
+        "massKg": 0.04859999939799309,
+        "collisionVolumeM3": 2.6880004497797927e-06,
+        "densityKgM3": 18080.353893532465
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 332.822 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/jaw_soft",
+      "measurements": {
+        "massKg": 0.1887660026550293,
+        "collisionVolumeM3": 0.0005671674298355356,
+        "densityKgM3": 332.8223602504233
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 17143.302 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/bearing_roll",
+      "measurements": {
+        "massKg": 0.02304060012102127,
+        "collisionVolumeM3": 1.3440001112030586e-06,
+        "densityKgM3": 17143.302243030972
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 546.585 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/hip_l_2",
+      "measurements": {
+        "massKg": 0.00618933979421854,
+        "collisionVolumeM3": 1.132364650402451e-05,
+        "densityKgM3": 546.5853947329424
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 17934.036 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/upper_leg_right",
+      "measurements": {
+        "massKg": 0.04820669814944267,
+        "collisionVolumeM3": 2.6880004497797927e-06,
+        "densityKgM3": 17934.03648923938
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 3373.371 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/leg_2",
+      "measurements": {
+        "massKg": 0.02158440090715885,
+        "collisionVolumeM3": 6.398467121471185e-06,
+        "densityKgM3": 3373.3706053952496
+      }
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Collision-volume density: 1301.333 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "entityKey": "/Asset/ankle_right",
+      "measurements": {
+        "massKg": 0.030025100335478783,
+        "collisionVolumeM3": 2.307257818756625e-05,
+        "densityKgM3": 1301.332694222236
+      }
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Initial scene joint check applies to scene packages",
+      "notApplicable": true
+    },
+    {
+      "id": "P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Taught positions belong to a scene",
+      "notApplicable": true
+    },
+    {
+      "id": "P2",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Free-body displacement after 2 s: 3.351 mm (limit 5 mm)",
+      "entityKey": "/Asset/trunk_base",
+      "measurements": {
+        "initialM": [
+          0.0,
+          0.0,
+          0.11777198314666748
+        ],
+        "finalM": [
+          -0.002271645236760378,
+          2.320088242413476e-06,
+          0.11530889570713043
+        ],
+        "displacementM": 0.0033506980167288636,
+        "limitM": 0.005
+      }
+    },
+    {
+      "id": "P3",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Maximum measured penetration: 0.437 mm (limit 2 mm)",
+      "entityKey": "/Validation/Ground",
+      "measurements": {
+        "otherEntityKey": "/Asset/ankle_left/collision_0",
+        "contactCount": 204,
+        "depthM": 0.00043680332601070404,
+        "limitM": 0.002,
+        "worldStaticShapeCount": 1,
+        "excludedWorldStaticPairCount": 0,
+        "simTime": 2.0000000000000013
+      }
+    }
+  ],
+  "launchable": true,
+  "untypedEntities": [],
+  "referencedAssets": [],
+  "inspection": "Recorded structure and Newton CPU physics checks",
+  "completeness": [
+    {
+      "id": "collision",
+      "status": "present",
+      "message": "Authored collision geometry"
+    },
+    {
+      "id": "massInertia",
+      "status": "present",
+      "message": "Authored mass and inertia"
+    },
+    {
+      "id": "visual",
+      "status": "present",
+      "message": "PBR visual and visual budget"
+    },
+    {
+      "id": "license",
+      "status": "present",
+      "message": "Original license and source hashes"
+    },
+    {
+      "id": "jointSites",
+      "status": "present",
+      "message": "Named joints and sites"
+    },
+    {
+      "id": "types",
+      "status": "present",
+      "message": "Implemented entity types"
+    }
+  ],
+  "physics": {
+    "status": "completed",
+    "device": "cpu",
+    "ranAt": "2026-11-14T09:28:59.601187+00:00",
+    "toolVersions": {
+      "newton": "1.7.0",
+      "warp-lang": "1.18.0",
+      "usd-core": "26.8",
+      "python": "3.13.14",
+      "mujoco": "3.15.0"
+    },
+    "physicsDt": 0.002,
+    "solver": "mujoco",
+    "solverOptions": {
+      "iterations": 20,
+      "ls_iterations": 10,
+      "noslip_iterations": 0,
+      "integrator": 3,
+      "cone": 0
+    },
+    "simulationSeconds": 2.0000000000000013,
+    "freeBodyCount": 1
+  }
+}

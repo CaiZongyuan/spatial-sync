@@ -108,9 +108,13 @@ def test_non_target_drift_rejects_before_any_override(policy_inputs):
 
 def test_checkpoint_intent_reuses_the_existing_exact_frozen_policy(policy_inputs):
     manager, policy, scene, suite, _ = policy_inputs
+    before = [item["id"] for item in manager.policies.list()]
     subject = resolve_policy_subject(manager, "checkpoint/" + policy["checkpoint"], suite, scene)
     assert subject.candidateIdentity.id == policy["id"]
-    assert len(manager.policies.list()) == 1
+    assert [item["id"] for item in manager.policies.list()] == before
+    assert [item["id"] for item in manager.policies.list() if item["name"] == policy["name"]] == [
+        policy["id"]
+    ]
     assert verify_policy_subject(manager, subject, suite, scene) == subject
 
 

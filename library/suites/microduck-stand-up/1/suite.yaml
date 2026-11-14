@@ -1,0 +1,31 @@
+id: suite/microduck-stand-up
+title: Microduck multi-directional fall recovery
+layer: embodied
+scene: microduck-arena@1
+sceneContentHash: 9af821e9b1d687a48c7cf65f879fd24497d09b62212a418e02a8cb7d3e0cf75a
+source: newton
+episodes:
+  - id: train-front
+    split: train
+    params: {fromFall: front}
+  - id: train-back
+    split: train
+    params: {fromFall: back}
+  - id: train-left
+    split: train
+    params: {fromFall: left}
+  - id: train-right
+    split: train
+    params: {fromFall: right}
+  - id: test-front
+    split: test
+    params: {fromFall: front}
+  - id: test-back
+    split: test
+    params: {fromFall: back}
+  - id: test-left
+    split: test
+    params: {fromFall: left}
+  - id: test-right
+    split: test
+    params: {fromFall: right}

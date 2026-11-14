@@ -1,0 +1,17 @@
+name: microduck-walk-to
+scene: microduck-arena@1
+robot: /World/Lab/Microduck
+implements: biped/v1.walkTo
+timeoutSeconds: 20
+success:
+  all:
+    - {property: fallen, equals: false}
+    - {property: lastCompletedAction, equals: walkTo}
+    - {property: currentWaypoint, notNull: true}
+    - {property: tiltDeg, lte: 20.0}
+    - {property: baseHeight, gte: 0.09}
+milestones:
+  - id: walking
+    when: {property: phase, equals: walking}
+  - id: arrived
+    when: {property: currentWaypoint, notNull: true}

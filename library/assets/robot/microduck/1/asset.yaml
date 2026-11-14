@@ -1,0 +1,144 @@
+id: robot/microduck
+kind: robot
+title: Pollen Robotics Microduck Biped
+description: Canonical Z-up OpenUSD biped robot derived from upstream Microduck robot_groundcontact.xml
+  (15 rigid bodies, 14 XL330 revolute joints, STAND2 equilibrium posture, standard
+  UsdPhysics angular drives).
+stage: asset.usdc
+visual: visual.glb
+dimensionsM:
+- 0.118936
+- 0.14163
+- 0.277956
+physics:
+  massKg: 0.73724318
+  massSource: datasheet
+  collision: authored
+simulation:
+  solver: mujoco
+  warmupSteps: 1
+  physicsDt: 0.002
+implements:
+- type: biped/v1
+  programs:
+    newton: biped.posture
+  config:
+    baseBody: trunk_base
+    jointKeys:
+    - joints/left_hip_yaw
+    - joints/left_hip_roll
+    - joints/left_hip_pitch
+    - joints/left_knee
+    - joints/left_ankle
+    - joints/neck_pitch
+    - joints/head_pitch
+    - joints/head_yaw
+    - joints/head_roll
+    - joints/right_hip_yaw
+    - joints/right_hip_roll
+    - joints/right_hip_pitch
+    - joints/right_knee
+    - joints/right_ankle
+    defaultPosition: &id001
+    - 0.0
+    - -0.0873
+    - -0.4579
+    - -0.0049
+    - 0.453
+    - 0.3491
+    - 0.3491
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0873
+    - 0.4579
+    - 0.0049
+    - -0.453
+    bowMinPitchDeg: 12.0
+    maxTiltDeg: 55.0
+    uprightTiltDeg: 20.0
+    minStandHeight: 0.09
+    fallMinTiltDeg: 68.0
+    fallSettleSeconds: 0.45
+    xyTolerance: 0.08
+    yawTolerance: 0.25
+    dwellSeconds: 0.25
+    actionTargets:
+      standUp: *id001
+      bow:
+      - 0.0
+      - -0.0873
+      - -0.6379
+      - -0.0049
+      - 0.413
+      - 0.45
+      - 0.45
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0873
+      - 0.6379
+      - 0.0049
+      - -0.413
+    fallPostures:
+      front:
+      - 0.0
+      - -0.0873
+      - 0.5
+      - -0.5
+      - -0.6
+      - 1.0
+      - 1.1
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0873
+      - -0.5
+      - 0.5
+      - 0.6
+      back:
+      - 0.0
+      - -0.0873
+      - -1.1
+      - -0.0049
+      - 0.9
+      - -0.6
+      - -0.6
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0873
+      - 1.1
+      - 0.0049
+      - -0.9
+      left:
+      - 0.0
+      - 0.36
+      - -1.1
+      - 1.2
+      - 0.8
+      - 0.3491
+      - 0.3491
+      - 0.0
+      - 0.41
+      - 0.0
+      - 0.36
+      - 0.2
+      - 0.0
+      - -0.2
+      right:
+      - 0.0
+      - -0.36
+      - -0.2
+      - 0.0
+      - 0.2
+      - 0.3491
+      - 0.3491
+      - 0.0
+      - -0.41
+      - 0.0
+      - -0.36
+      - 1.1
+      - -1.2
+      - -0.8
+dressing: false

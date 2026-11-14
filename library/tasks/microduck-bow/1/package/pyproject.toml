@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lw-microduck-bow"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.entry-points."mjlab.tasks"]
+lw_microduck_bow = "lw_microduck_bow:register"
+
+[tool.setuptools.packages.find]
+include = ["lw_microduck_bow*"]

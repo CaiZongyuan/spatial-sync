@@ -1,0 +1,389 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Xform "Lab"
+    {
+        def Scope "PhysicsMaterials"
+        {
+            def Material "GroundMaterial" (
+                prepend apiSchemas = ["PhysicsMaterialAPI"]
+            )
+            {
+                float physics:dynamicFriction = 1.0
+                float physics:restitution = 0.0
+                float physics:staticFriction = 1.0
+            }
+        }
+
+        def Plane "Ground" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            rel material:binding:physics = </World/Lab/PhysicsMaterials/GroundMaterial>
+        }
+
+        def Xform "PatrolDuck" (
+            prepend references = @library:assets/robot/microduck/1/asset.usdc@</Asset>
+        )
+        {
+            quatf xformOp:orient = (0.92387953, 0, 0, -0.38268343)
+            double3 xformOp:translate = (-0.55, 0.35, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Xform "BenchNorth"
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0.1, 0.95, 0.22)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+            def Cube "TableTopVisual"
+            {
+                double size = 1
+                float3 xformOp:scale = (0.94, 0.48, 0.04)
+                double3 xformOp:translate = (0, 0, 0.18)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "CabinetBaseVisual"
+            {
+                double size = 1
+                float3 xformOp:scale = (0.88, 0.42, 0.34)
+                double3 xformOp:translate = (0, 0, -0.01)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def Cube "Collider" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                uniform token purpose = "guide"
+                double size = 1
+                float3 xformOp:scale = (0.9, 0.44, 0.38)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+
+        def Xform "Centrifuge" (
+            prepend apiSchemas = ["PhysicsArticulationRootAPI"]
+            prepend references = @library:assets/device/lab-centrifuge-reference/1/asset.usda@</Asset>
+        )
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0.1, 0.95, 0.48)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+            def Xform "Housing" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            )
+            {
+                point3f physics:centerOfMass = (0, 0, 0)
+                float3 physics:diagonalInertia = (0.08, 0.08, 0.15)
+                float physics:mass = 6.0
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                def Cube "Collider" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    uniform token purpose = "guide"
+                    double size = 1
+                    float3 xformOp:scale = (0.4, 0.4, 0.1)
+                    double3 xformOp:translate = (0, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                }
+            }
+
+            def PhysicsFixedJoint "BaseMount"
+            {
+                rel physics:body1 = </World/Lab/Centrifuge/Housing>
+                point3f physics:localPos0 = (0.1, 0.95, 0.48)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, 0, 0, 0)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+            }
+
+            def Xform "Rotor" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            )
+            {
+                point3f physics:centerOfMass = (0, 0, 0)
+                float3 physics:diagonalInertia = (0.004, 0.004, 0.007)
+                float physics:mass = 0.8
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (0, 0, 0.12)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                def Cylinder "DrumVisual"
+                {
+                    uniform token axis = "Z"
+                    double height = 0.05
+                    double radius = 0.13
+                }
+
+                def Cylinder "Collider" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    uniform token axis = "Z"
+                    double height = 0.05
+                    uniform token purpose = "guide"
+                    double radius = 0.13
+                }
+            }
+
+            def PhysicsRevoluteJoint "Spindle" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0.05
+                float drive:angular:physics:maxForce = 10.0
+                float drive:angular:physics:stiffness = 0.0
+                float drive:angular:physics:targetVelocity = 0.0
+                uniform token drive:angular:physics:type = "force"
+                uniform token physics:axis = "Z"
+                rel physics:body0 = </World/Lab/Centrifuge/Housing>
+                rel physics:body1 = </World/Lab/Centrifuge/Rotor>
+                bool physics:collisionEnabled = 0
+                point3f physics:localPos0 = (0, 0, 0.12)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, 0, 0, 0)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+                float physics:lowerLimit = -1000000.0
+                float physics:upperLimit = 1000000.0
+            }
+
+            def Xform "Lid" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            )
+            {
+                point3f physics:centerOfMass = (-0.18, 0, 0)
+                float3 physics:diagonalInertia = (0.006, 0.006, 0.011)
+                float physics:mass = 0.4
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (0.18, 0, 0.24)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+                def Cube "LidVisual"
+                {
+                    double size = 1
+                    float3 xformOp:scale = (0.4, 0.4, 0.025)
+                    double3 xformOp:translate = (-0.18, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                }
+
+                def Cube "Collider" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    uniform token purpose = "guide"
+                    double size = 1
+                    float3 xformOp:scale = (0.4, 0.4, 0.025)
+                    double3 xformOp:translate = (-0.18, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                }
+            }
+
+            def PhysicsRevoluteJoint "LidHinge" (
+                prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+            )
+            {
+                float drive:angular:physics:damping = 0.12
+                float drive:angular:physics:maxForce = 50.0
+                float drive:angular:physics:stiffness = 5.236
+                float drive:angular:physics:targetPosition = 0.0
+                uniform token drive:angular:physics:type = "force"
+                uniform token physics:axis = "Y"
+                rel physics:body0 = </World/Lab/Centrifuge/Housing>
+                rel physics:body1 = </World/Lab/Centrifuge/Lid>
+                bool physics:collisionEnabled = 0
+                point3f physics:localPos0 = (0.18, 0, 0.24)
+                point3f physics:localPos1 = (0, 0, 0)
+                quatf physics:localRot0 = (1, 0, 0, 0)
+                quatf physics:localRot1 = (1, 0, 0, 0)
+                float physics:lowerLimit = -5.0
+                float physics:upperLimit = 95.0
+                float state:angular:physics:position = 0.0
+            }
+        }
+
+        def Scope "Waypoints"
+        {
+            def Xform "Dock"
+            {
+                quatf xformOp:orient = (0.92387953, 0, 0, -0.38268343)
+                double3 xformOp:translate = (-0.55, 0.35, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "AisleWest"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (-0.55, -0.15, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "BenchNorth"
+            {
+                quatf xformOp:orient = (0.70710677, 0, 0, 0.70710677)
+                double3 xformOp:translate = (-0.2, 0.32, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "CentrifugeBay"
+            {
+                quatf xformOp:orient = (0.70710677, 0, 0, 0.70710677)
+                double3 xformOp:translate = (0.1, 0.3, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "CorridorEast"
+            {
+                quatf xformOp:orient = (0.70710677, 0, 0, 0.70710677)
+                double3 xformOp:translate = (0.5, -0.15, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "InspectTurn"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (-0.55, 0.35, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+        }
+    }
+
+    def Xform "Dressing"
+    {
+        def Scope "Materials"
+        {
+            def Material "DockMat"
+            {
+                token outputs:surface.connect = </World/Dressing/Materials/DockMat/Surface.outputs:surface>
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor = (0.16, 0.56, 0.74)
+                    float inputs:roughness = 0.55
+                    token outputs:surface
+                }
+            }
+
+            def Material "WaypointMat"
+            {
+                token outputs:surface.connect = </World/Dressing/Materials/WaypointMat/Surface.outputs:surface>
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor = (0.94, 0.58, 0.14)
+                    float inputs:roughness = 0.55
+                    token outputs:surface
+                }
+            }
+
+            def Material "CabinetMat"
+            {
+                token outputs:surface.connect = </World/Dressing/Materials/CabinetMat/Surface.outputs:surface>
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor = (0.76, 0.80, 0.84)
+                    float inputs:roughness = 0.45
+                    token outputs:surface
+                }
+            }
+        }
+
+        def Cylinder "DockPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.08
+            rel material:binding = </World/Dressing/Materials/DockMat>
+            double3 xformOp:translate = (-0.55, 0.35, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "AisleWestPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.055
+            rel material:binding = </World/Dressing/Materials/WaypointMat>
+            double3 xformOp:translate = (-0.55, -0.15, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "BenchNorthPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.055
+            rel material:binding = </World/Dressing/Materials/WaypointMat>
+            double3 xformOp:translate = (-0.2, 0.32, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "CentrifugeBayPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.06
+            rel material:binding = </World/Dressing/Materials/WaypointMat>
+            double3 xformOp:translate = (0.1, 0.3, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "CorridorEastPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.055
+            rel material:binding = </World/Dressing/Materials/WaypointMat>
+            double3 xformOp:translate = (0.5, -0.15, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cube "SouthStorageCabinet" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double size = 1
+            rel material:binding = </World/Dressing/Materials/CabinetMat>
+            float3 xformOp:scale = (1.1, 0.36, 0.45)
+            double3 xformOp:translate = (0, -0.78, 0.225)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+
+        def Cube "EastInstrumentRack" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double size = 1
+            rel material:binding = </World/Dressing/Materials/CabinetMat>
+            float3 xformOp:scale = (0.36, 0.85, 0.65)
+            double3 xformOp:translate = (1.02, 0.15, 0.325)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+    }
+}

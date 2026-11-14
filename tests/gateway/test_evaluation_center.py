@@ -143,7 +143,13 @@ def test_every_public_evaluation_read_keeps_normal_dto_and_excludes_nested_priva
         assert [case["id"] for case in suite["episodes"]] == ["train-one", "train-two"]
         inventory = client.get("/api/v1/suites").json()
         assert set(inventory) == {"suites"}
-        assert sorted(value["id"] for value in inventory["suites"]) == [SUITE, "suite/lab-ops-basic@1"]
+        assert sorted(value["id"] for value in inventory["suites"]) == [
+            SUITE,
+            "suite/lab-ops-basic@1",
+            "suite/microduck-bow@1",
+            "suite/microduck-stand-up@1",
+            "suite/microduck-walk-to@1",
+        ]
         by_id = {value["id"]: value for value in inventory["suites"]}
         assert by_id[SUITE] == suite
         case_ids = [

@@ -1,0 +1,10 @@
+name: microduck-arena
+title: Microduck Standard Locomotion & Posture Arena
+description: Flat canonical Z-up evaluation and training arena for Microduck with multi-directional ground Waypoints.
+sources:
+- newton
+stage: stage.usda
+simulation:
+  solver: mujoco
+  warmupSteps: 1
+  physicsDt: 0.002

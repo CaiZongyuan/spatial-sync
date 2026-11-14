@@ -27,6 +27,7 @@ from packages.library.previews import (
     file_hash,
     input_hash,
 )
+from packages.library.reports import measured_physics_dt
 from packages.library.scenes import BUILTIN_ROOT, SceneLibrary, content_hash
 from packages.protocol.schema import Command, SessionOptions
 from packages.transport import FrameCodec
@@ -213,11 +214,19 @@ async def capture(version, source_kind, root):
             opened.add(path)
 
     sys.addaudithook(observe)
+    options = SessionOptions(device="cpu")
+    if source_kind == "newton":
+        report = version.report()
+        scene_dt = (version.metadata.get("simulation") or {}).get("physicsDt")
+        if scene_dt is None:
+            scene_dt = report.get("authoredPhysicsDt") or measured_physics_dt(report)
+        if scene_dt is not None:
+            options = SessionOptions(device="cpu", physicsDt=scene_dt)
     source = Source("preview-" + version.content_hash[:20])
     source.configure_scene(version)
     with native_capture_inputs(source_kind == "newton") as native_inputs:
         try:
-            manifest, catalog = await source.start(version.builder, SessionOptions(device="cpu"))
+            manifest, catalog = await source.start(version.builder, options)
             await source.execute(Command(requestId="capture-pause", command="pause"))
             if source_kind == "newton":
                 await source.execute(Command(requestId="capture-initial", command="reset"))

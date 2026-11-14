@@ -1,0 +1,13 @@
+name: microduck-arena
+title: Microduck Standard Locomotion & Posture Arena
+description: Default policy-driven canonical Z-up Microduck evaluation and locomotion
+  arena binding trained CPU ONNX skills (walkTo, standUp, bow).
+sources:
+- newton
+stage: stage.usda
+simulation:
+  solver: mujoco
+  warmupSteps: 1
+  physicsDt: 0.002
+derivedFrom:
+  scene: microduck-arena@1

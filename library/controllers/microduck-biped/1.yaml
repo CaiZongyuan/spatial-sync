@@ -1,0 +1,39 @@
+controller: microduck-biped
+version: 1
+embodiment: microduck-sim
+robotModel: microduck-mjlab-ppo
+policy: policy/microduck-walk-to@1
+program: biped.policy
+action:
+  space: joint_position_offset
+  hz: 50.0
+  hzSource: task/microduck-walk-to@1 control.hz
+observation: 8994a9e999db6f01ce0728c45666ed0883ca7bb520c9bde0ed6299c064affe08
+task: task/microduck-walk-to@1
+policies:
+  walkTo:
+    policy: policy/microduck-walk-to@1
+    action:
+      space: joint_position_offset
+      hz: 50.0
+      hzSource: task/microduck-walk-to@1 control.hz
+    observation: 8994a9e999db6f01ce0728c45666ed0883ca7bb520c9bde0ed6299c064affe08
+    task: task/microduck-walk-to@1
+  standUp:
+    policy: policy/microduck-stand-up@1
+    action:
+      space: joint_position_offset
+      hz: 50.0
+      hzSource: task/microduck-stand-up@1 control.hz
+    observation: 2fe5d8b2f8ddb1e1107e65037356988df1609e4240e84962646bbcba739bdbf3
+    task: task/microduck-stand-up@1
+  bow:
+    policy: policy/microduck-bow@1
+    action:
+      space: joint_position_offset
+      hz: 50.0
+      hzSource: task/microduck-bow@1 control.hz
+    observation: 309e9a7ca156ebc0017c464f2c5bf93ab5cc23af6f565fa1e31dca1d8b845f33
+    task: task/microduck-bow@1
+scene: microduck-arena@2
+evaluationId: eval-dc572cde5c2d469087e41c468154fe68
