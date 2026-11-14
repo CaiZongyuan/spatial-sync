@@ -20,6 +20,9 @@ from packages.policies.observations import (
     command_envelope_failure,
     coverage_failure,
     joint_targets,
+    observation_canonical_refs,
+    remap_observation_spec_entity,
+    spec_within_robot_entity,
 )
 
 POLICY_REF = r"^policy/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*$"
@@ -171,6 +174,50 @@ def build_policy_evidence(record: dict, model: CpuPolicy, action_starts: int, ob
     }
 
 
+def validate_observations_against_port(spec: ObservationSpec, port) -> None:
+    """Verify every canonical joint, body, and site in spec.observations exists on PhysicsPort."""
+    for item in spec.observations:
+        role, keys, frame_body = observation_canonical_refs(item)
+        if role == "joint":
+            for key in keys:
+                try:
+                    ref = port.bind_joint(key)
+                except (KeyError, AssertionError, ValueError) as exc:
+                    raise ValueError(f"Observation joint {key} is unavailable on PhysicsPort") from exc
+                if hasattr(port, "joint_metadata"):
+                    meta = port.joint_metadata(ref)
+                    if meta.get("kind") not in ("revolute", "prismatic") or any(
+                        meta.get(width) != 1 for width in ("qWidth", "qdWidth")
+                    ):
+                        raise ValueError(
+                            f"Observation joint {key} must be a scalar revolute or prismatic joint"
+                        )
+        elif role == "body":
+            for key in keys:
+                try:
+                    port.bind_body(key)
+                except (KeyError, AssertionError, ValueError) as exc:
+                    raise ValueError(f"Observation body {key} is unavailable on PhysicsPort") from exc
+        elif role == "site":
+            for key in keys:
+                try:
+                    if hasattr(port, "bind_site"):
+                        port.bind_site(key)
+                    elif hasattr(port, "site_pose"):
+                        port.site_pose(key)
+                    else:
+                        raise ValueError("PhysicsPort has no site bindings")
+                except (KeyError, AssertionError, ValueError) as exc:
+                    raise ValueError(f"Observation site {key} is unavailable on PhysicsPort") from exc
+        if frame_body is not None:
+            try:
+                port.bind_body(frame_body)
+            except (KeyError, AssertionError, ValueError) as exc:
+                raise ValueError(
+                    f"Observation frame body {frame_body} is unavailable on PhysicsPort"
+                ) from exc
+
+
 class PolicySlot:
     """Isolated runtime state and native CPU ONNX execution counters for one bound action."""
 
@@ -183,14 +230,21 @@ class PolicySlot:
         interface: str,
         joint_units: dict[str, str],
         joint_limits: dict[str, tuple[float | None, float | None]],
+        physics=None,
     ):
         self.action = action
         self.record, self.package = runtime_library().resolve(policy_id)
         self.task = read_json(self.package / "task.json")
-        self.spec = ObservationSpec.model_validate(document(self.package / "obs_spec.yaml"))
-        if self.task["robot"] != entity_key or self.task["implements"] != f"{interface}.{action}":
+        raw_spec = ObservationSpec.model_validate(document(self.package / "obs_spec.yaml"))
+        if self.task["implements"] != f"{interface}.{action}":
             raise ValueError("Policy Task does not identify this robot entity and bound action")
+        task_robot = self.task["robot"]
+        if task_robot != entity_key and not spec_within_robot_entity(raw_spec, task_robot):
+            raise ValueError("Policy Task does not identify this robot entity and bound action")
+        self.spec = remap_observation_spec_entity(raw_spec, task_robot, entity_key)
         validate_action_against_joints(self.spec.action, joint_units, joint_limits)
+        if physics is not None:
+            validate_observations_against_port(self.spec, physics)
         export = read_json(self.package / "artifacts/export.json")
         self.model = CpuPolicy(
             self.package / self.record["onnx"],
@@ -323,6 +377,7 @@ class MultiPolicyProgram:
                     interface=interface,
                     joint_units=self.joint_units,
                     joint_limits=self.joint_limits,
+                    physics=ctx.physics,
                 )
         else:
             _, package = runtime_library().resolve(ctx.config.policy)
@@ -335,6 +390,7 @@ class MultiPolicyProgram:
                 interface=interface,
                 joint_units=self.joint_units,
                 joint_limits=self.joint_limits,
+                physics=ctx.physics,
             )
         self._command_keys: dict[str, tuple[str, ...]] = {}
         if type(self)._command is MultiPolicyProgram._command:
@@ -385,6 +441,9 @@ class MultiPolicyProgram:
     def _accept_stop(self, inv, ctx) -> Reject | None:
         return None
 
+    def _parameter_coverage_failure(self, inv, ctx, slot: PolicySlot) -> dict | None:
+        return coverage_failure(slot.task, inv.action, inv.params)
+
     def _accept_action(self, inv, ctx, slot: PolicySlot) -> Reject | None:
         return None
 
@@ -393,6 +452,15 @@ class MultiPolicyProgram:
 
     def _fault_failure(self, inv, ctx, slot: PolicySlot) -> tuple[str, str] | None:
         return None
+
+    def _action_completed(self, inv, ctx, slot: PolicySlot) -> bool:
+        return not ctx.check([slot.task["success"]])
+
+    def _tick_robot(self, ctx, dt: float) -> None:
+        return None
+
+    def _step_active_action(self, inv, ctx, slot: PolicySlot, dt: float) -> bool:
+        return False
 
     def _set_idle_state(self, ctx):
         if self.state_property is not None:
@@ -408,6 +476,15 @@ class MultiPolicyProgram:
 
     def _on_action_start(self, inv, ctx, slot: PolicySlot):
         self._set_active_state(inv, ctx, slot)
+
+    def _on_action_complete(self, inv, ctx, slot: PolicySlot):
+        self._set_idle_state(ctx)
+
+    def _on_timeout(self, inv, ctx, slot: PolicySlot):
+        self._set_idle_state(ctx)
+
+    def _on_cancel(self, inv, ctx):
+        self._set_idle_state(ctx)
 
     def _on_stop(self, inv, ctx):
         self._set_idle_state(ctx)
@@ -426,7 +503,7 @@ class MultiPolicyProgram:
                 message=f"No Policy is bound for action '{inv.action}'",
                 details={"boundActions": sorted(self.slots)},
             )
-        failure = coverage_failure(slot.task, inv.action, inv.params)
+        failure = self._parameter_coverage_failure(inv, ctx, slot)
         if failure:
             return Reject(**failure)
         try:
@@ -466,9 +543,10 @@ class MultiPolicyProgram:
         inv.cancelled()
         self.handle = None
         self.active_slot = None
-        self._set_idle_state(ctx)
+        self._on_cancel(inv, ctx)
 
     def tick(self, ctx, dt):
+        self._tick_robot(ctx, dt)
         if ctx.fact_due:
             self._facts(ctx)
         inv, slot = self.handle, self.active_slot
@@ -483,19 +561,21 @@ class MultiPolicyProgram:
             self.active_slot = None
             self._set_fault_state(ctx, code, message)
             return
-        if not ctx.check([slot.task["success"]]):
+        if self._action_completed(inv, ctx, slot):
             self._hold(ctx)
-            inv.succeed()
             self.handle = None
             self.active_slot = None
-            self._set_idle_state(ctx)
+            self._on_action_complete(inv, ctx, slot)
+            inv.succeed()
             return
-        if ctx.sim_time - self.started >= self._action_timeout(inv, ctx, slot):
+        if ctx.sim_time - self.started + 1e-10 >= self._action_timeout(inv, ctx, slot):
             self._hold(ctx)
             inv.fail("motion_timeout", "Policy did not satisfy the pinned Task condition")
             self.handle = None
             self.active_slot = None
-            self._set_idle_state(ctx)
+            self._on_timeout(inv, ctx, slot)
+            return
+        if self._step_active_action(inv, ctx, slot, dt):
             return
         interval = 1.0 / float(slot.task["control"]["hz"])
         if ctx.sim_time + 1e-10 < self.next_inference:

@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-12T17:33:16.100646+00:00",
+  "capturedAt": "2026-11-14T05:01:16.213237+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -41,7 +41,7 @@
     },
     {
       "path": "packages/info/binding_validation.py",
-      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
+      "sha256": "59c4b29d3f24c44c6d9d423cbc92ec3f4cef81d8c30ebe6327c3118ad0a1eadd"
     },
     {
       "path": "packages/info/catalog.py",
@@ -105,7 +105,7 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "c94b4289b070a128661a615c08ce1e04db0377038dd4dcb9d4a126f72717684c"
+      "sha256": "bc23f21ec21fcf884c8145499c2d8ce26ac717e911b642deb5720a0128d6f836"
     },
     {
       "path": "packages/library/structural.py",
@@ -113,7 +113,7 @@
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
+      "sha256": "749c6a24fed465f95a2f28f59ad1025df35d2484b04be3c0039a665b30535b33"
     },
     {
       "path": "packages/library/transactions.py",
@@ -133,11 +133,23 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "d6770c318ae285add4bed8d76313de7af4adcfbf83c07b53633e50b25e7bd038"
+      "sha256": "22b2d3b128d7990715eafb326c14986c3968dff043b5dc00dd0c24ce46318366"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "fdf11cf24c8f2671669ef68d7ed0f0db590c1655d33692546fc9a144091ed298"
+      "sha256": "7ea8f92edd23570010374e285cc706caf51496c82efcd145bb0df36bd1764ec0"
+    },
+    {
+      "path": "packages/programs/biped/__init__.py",
+      "sha256": "30ec962115fa88dbd558d403c462996f804a85e5d48f943cfc2d801b2222a9f6"
+    },
+    {
+      "path": "packages/programs/biped/policy.py",
+      "sha256": "5a880b72b8a252f9550d0d747f6737f2e5e032d2fe359594b36f2ab0bc4ea360"
+    },
+    {
+      "path": "packages/programs/biped/posture.py",
+      "sha256": "7f5d023f77fc75cb09f4e71ef5a679cde3bc373cc35b134ef31e82cac29779a9"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -181,7 +193,7 @@
     },
     {
       "path": "packages/programs/policy_base.py",
-      "sha256": "64a547d4d42905f95ddc9caae4a0b87ffb6469378a7dd13c0c0acf6ba5c845af"
+      "sha256": "862365fee30588891ed9d7f1a627cf4343950e35cb2bde436924faba91765a5c"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -217,7 +229,7 @@
     },
     {
       "path": "packages/programs/simulation.py",
-      "sha256": "25e3206ec27d8c6db2bf36a493a5a4254fc279b28cee264042f3c92b9edf9f22"
+      "sha256": "b9fce40390e7b6cef985f8ae665ffc746f4a052ad49a87232bc3c7559e08f533"
     },
     {
       "path": "packages/programs/subjects.py",
@@ -249,7 +261,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "f036927ea2d04feaf8a36cd398d91fe1b1123c8c002dd4a321b9ef45e2bef138"
+      "sha256": "ca7dc86c86f1714fe8b9a612e5be949d312f6c21b53ff1ca9f33c5841d825f7f"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -327,10 +339,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "d8befedc6e3b83071567867797a20ecabd30082083790169addb948b2e31f399",
-    "catalog.json": "31ab06a582ef3a49f384023b6f3f69eef4ee450848245b2a12e5d9c6ec154ea5",
-    "state.json": "0ae00d2e7aa0a098bd96285b445c2a689b06cd9947940dc6fe7d4ce27537d7f0",
-    "snapshot.bin": "5450804f931043c07055597419bdddbb3be1a6aaf89fb4499098544619128e77"
+    "manifest.json": "8a4f13caac9b3ff7b796705cc6b41f9c2199660c2237f832e174ec47b1c1c08f",
+    "catalog.json": "9b0a2b3362757e0f4dcd65f58c754eff1051491ab54ba6002b8dc3e63569f5d1",
+    "state.json": "fc31a442fedf9f02cdf650baf8940a81c1adf6d6a19754507c9f9e6959bb7ffe",
+    "snapshot.bin": "2587cfeda77576438a47fb09ad8d500e4862ff0afdcd8115a81da3937762c8d1"
   },
   "counts": {
     "physicalEntities": 3,

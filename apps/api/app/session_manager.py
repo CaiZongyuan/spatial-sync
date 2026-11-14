@@ -1238,17 +1238,44 @@ class SessionManager:
                             raise HTTPException(409, {"code": prefix + "_evaluation_scene_mismatch"})
                     deployment_permit = None
                     if simulation_subject is None:
+                        from packages.programs.deployment import (
+                            authorize_builtin_policy_deployment,
+                            authorize_cross_scene_policy_deployment,
+                        )
                         from packages.programs.simulation import scene_requires_material_authorization
 
+                        requires_auth = scene_requires_material_authorization(selected, selected_source)
+                        has_promotion_lineage = bool(
+                            (selected.metadata.get("derivedFrom") or {}).get("promotion")
+                        )
                         issuer = getattr(self, "controller_promotions", None)
-                        if issuer is not None:
-                            deployment_permit = issuer.authorize_scene(selected)
-                        if (deployment_permit is None
-                                and scene_requires_material_authorization(selected, selected_source)):
-                            raise PlanError(
-                                "simulation_deployment_required",
-                                "Select a human-approved published Scene for this controller", status=409,
+                        if (
+                            selected_source == "newton"
+                            and requires_auth
+                            and not has_promotion_lineage
+                            and getattr(selected, "root", None) == "builtin"
+                        ):
+                            deployment_permit = authorize_builtin_policy_deployment(
+                                selected, state_root=self.settings.state_root
                             )
+                        elif (
+                            selected_source == "newton"
+                            and requires_auth
+                            and not has_promotion_lineage
+                            and issuer is not None
+                        ):
+                            deployment_permit = authorize_cross_scene_policy_deployment(
+                                selected, state_root=self.settings.state_root
+                            )
+                        else:
+                            if issuer is not None:
+                                deployment_permit = issuer.authorize_scene(selected)
+                            if deployment_permit is None and requires_auth:
+                                raise PlanError(
+                                    "simulation_deployment_required",
+                                    "Select a human-approved published Scene for this controller",
+                                    status=409,
+                                )
                     if not selected.metadata["stage"].startswith("python:") and selected_source != "newton":
                         raise HTTPException(503, {"code": "source_unavailable",
                                                   "message": "This source does not load USD scene packages"})

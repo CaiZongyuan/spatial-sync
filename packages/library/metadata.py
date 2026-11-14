@@ -1,7 +1,7 @@
 """Asset and scene authoring metadata; indexing does not load a physics engine."""
 
 import math
-from typing import Literal
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
@@ -159,9 +159,19 @@ class Location(Schema):
     requires: list[dict[str, JsonValue]] = Field(default_factory=list)
 
 
+class Waypoint(Schema):
+    p: list[float] = Field(min_length=3, max_length=3)
+    yaw: float = 0.0
+    site: str | None = Field(default=None, min_length=1, exclude_if=lambda value: value is None)
+    xyTolerance: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
+    yawTolerance: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
+    requires: list[dict[str, JsonValue]] = Field(default_factory=list, exclude_if=lambda value: not value)
+
+
 class Locations(Schema):
     robot: str | None = None
-    locations: dict[str, Location]
+    locations: dict[str, Location] = Field(default_factory=dict)
+    waypoints: dict[Annotated[str, Field(min_length=1)], Waypoint] = Field(default_factory=dict)
 
 
 def scene_metadata(path):

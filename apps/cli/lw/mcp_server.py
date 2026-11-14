@@ -37,12 +37,14 @@ Threshold = Annotated[float, Field(strict=True, ge=0, allow_inf_nan=False)]
 def catalog_instructions(catalog):
     groups = defaultdict(list)
     locations = set()
+    waypoints = set()
     units = set()
     for key, binding in catalog["entities"].items():
         groups[binding["type"]].append(key)
         config = binding.get("config", {}).get("locations", {})
         if isinstance(config, dict):
             locations.update(config.get("locations", {}))
+            waypoints.update(config.get("waypoints", {}))
     for definition in catalog["types"].values():
         units.update(prop["unit"] for prop in definition["properties"].values() if prop.get("unit"))
     entities = []
@@ -66,6 +68,7 @@ def catalog_instructions(catalog):
         + ",".join(sorted(units))
         + ". Locations: "
         + ",".join(sorted(locations))
+        + (". Waypoints: " + ",".join(sorted(waypoints)) if waypoints else "")
         + ". Entities: "
         + "; ".join(entities)
     )

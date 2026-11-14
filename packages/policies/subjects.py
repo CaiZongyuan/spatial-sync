@@ -24,7 +24,11 @@ from packages.programs.subjects import (
 )
 
 from .library import PolicyLibrary, digest, read_json
-from .observations import ObservationSpec
+from .observations import (
+    ObservationSpec,
+    observation_canonical_refs,
+    spec_within_robot_entity,
+)
 
 Hash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Text = Annotated[str, Field(min_length=1)]
@@ -116,8 +120,8 @@ def fixed_bindings(scene, source):
         raise _invalid("Verified evaluation bindings are unavailable", "policy_binding_unavailable") from exc
 
 
-def scene_joint_resources(scene) -> dict[str, dict]:
-    """Inspect physical joint kinds and finite limits from the Scene's stage."""
+def scene_stage_resources(scene) -> dict:
+    """Inspect physical joint, body, and site resources from the Scene's stage."""
     payload = scene.runtime_payload()
     metadata = payload["metadata"]
     if metadata["stage"].startswith("python:"):
@@ -132,16 +136,24 @@ def scene_joint_resources(scene) -> dict[str, dict]:
     else:
         graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
         stage = graph.compose(metadata["stage"])
-        if graph.errors:
-            raise ValueError("; ".join(graph.errors))
+        if stage is None or graph.errors:
+            raise ValueError("; ".join(graph.errors) or "USD stage cannot be composed")
         resources = usd_resources(stage)
-    return resources.get("joints", {})
+    return resources
+
+
+def scene_joint_resources(scene) -> dict[str, dict]:
+    """Inspect physical joint kinds and finite limits from the Scene's stage."""
+    return scene_stage_resources(scene).get("joints", {})
 
 
 def _validate_scene_action_channels(scene, program_cls, config, spec):
     configured = program_cls.policy_joints(config)
     try:
-        stage_joints = scene_joint_resources(scene)
+        resources = scene_stage_resources(scene)
+        stage_joints = resources.get("joints", {})
+        stage_bodies = set(resources.get("bodies", ()))
+        stage_sites = set(resources.get("sites", ()))
     except (ValueError, OSError, KeyError, TypeError) as exc:
         raise _invalid(
             "Scene physical joint resources are unavailable", "policy_binding_unavailable"
@@ -183,6 +195,35 @@ def _validate_scene_action_channels(scene, program_cls, config, spec):
             raise _invalid(
                 f"Policy action bounds exceed physical joint limits on {key}",
                 "policy_action_binding_mismatch",
+            )
+    for item in spec.observations:
+        role, keys, frame_body = observation_canonical_refs(item)
+        if role == "joint":
+            for key in keys:
+                info = stage_joints.get(key)
+                if info is None or info.get("kind") not in ("revolute", "prismatic"):
+                    raise _invalid(
+                        f"Policy observation joint {key} does not match target Scene joints",
+                        "policy_observation_binding_mismatch",
+                    )
+        elif role == "body":
+            for key in keys:
+                if key not in stage_bodies:
+                    raise _invalid(
+                        f"Policy observation body {key} does not exist in target Scene",
+                        "policy_observation_binding_mismatch",
+                    )
+        elif role == "site":
+            for key in keys:
+                if key not in stage_sites:
+                    raise _invalid(
+                        f"Policy observation site {key} does not exist in target Scene",
+                        "policy_observation_binding_mismatch",
+                    )
+        if frame_body is not None and frame_body not in stage_bodies:
+            raise _invalid(
+                f"Policy observation frame body {frame_body} does not exist in target Scene",
+                "policy_observation_binding_mismatch",
             )
 
 
@@ -329,7 +370,15 @@ def validate_policy_execution(subject, evidence, *, runtime=None):
         ) from exc
 
 
-def validate_policy_material(candidate, binding, roots, *, controller=None, expected_action=None):
+def validate_policy_material(
+    candidate,
+    binding,
+    roots,
+    *,
+    controller=None,
+    expected_action=None,
+    allow_entity_remap: bool = False,
+):
     identity = CandidateIdentity.model_validate(candidate)
     library = PolicyLibrary(roots)
     record, package = library.resolve(identity.id)
@@ -350,8 +399,15 @@ def validate_policy_material(candidate, binding, roots, *, controller=None, expe
         )
     ):
         raise _invalid("Deployed Policy material or binding differs", "policy_subject_changed")
-    if task["robot"] != binding.get("key") or interface != binding.get("type"):
+    target_key = binding.get("key")
+    if interface != binding.get("type") or not isinstance(target_key, str) or not target_key.startswith("/"):
         raise _invalid("Deployed Policy Task target differs")
+    if task["robot"] != target_key:
+        if not allow_entity_remap:
+            raise _invalid("Deployed Policy Task target differs")
+        spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
+        if not spec_within_robot_entity(spec, task["robot"]):
+            raise _invalid("Deployed Policy channels cannot remap outside Task robot")
     if controller is not None and (
         controller.get("program") != program_cls.id
         or controller.get("policy") != identity.id
@@ -361,7 +417,14 @@ def validate_policy_material(candidate, binding, roots, *, controller=None, expe
     return record
 
 
-def validate_policy_bundle_material(bundle, binding, roots, *, controller=None):
+def validate_policy_bundle_material(
+    bundle,
+    binding,
+    roots,
+    *,
+    controller=None,
+    allow_entity_remap: bool = False,
+):
     config = binding.get("config", {})
     config_policies = config.get("policies")
     if (
@@ -380,7 +443,11 @@ def validate_policy_bundle_material(bundle, binding, roots, *, controller=None):
     records = {}
     for action, act_candidate in bundle["policies"].items():
         records[action] = validate_policy_material(
-            act_candidate, binding, roots, expected_action=action
+            act_candidate,
+            binding,
+            roots,
+            expected_action=action,
+            allow_entity_remap=allow_entity_remap,
         )
     if controller is not None:
         ctrl_policies = controller.get("policies")

@@ -138,8 +138,12 @@ def add_taught_sites(builder, stage, paths, payload, *, calibrations=None):
             if role.get("spatialReference") == "site":
                 requested.update([value] if isinstance(value, str) else value or [])
             if role.get("documentSchema") == "locations" and isinstance(value, dict):
-                requested.update(location["site"] for location in value["locations"].values()
-                                 if location.get("site"))
+                requested.update(
+                    entry["site"]
+                    for group in ("locations", "waypoints")
+                    for entry in value.get(group, {}).values()
+                    if entry.get("site")
+                )
     expanded = set()
     available = None
     for pattern in requested:

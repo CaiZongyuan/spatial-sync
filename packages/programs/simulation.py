@@ -93,10 +93,20 @@ def material_bindings(catalog):
     }
 
 
-def validate_candidate_material(candidate, binding, roots, *, controller=None):
+def validate_candidate_material(
+    candidate, binding, roots, *, controller=None, allow_entity_remap: bool = False
+):
     if candidate.get("kind") == "policy-bundle":
-        return policies.validate_policy_bundle_material(candidate, binding, roots, controller=controller)
-    schema = {"policy": "lw.policy-subject/1", "program": "lw.script-subject/1"}.get(candidate.get("kind"))
+        return policies.validate_policy_bundle_material(
+            candidate, binding, roots, controller=controller, allow_entity_remap=allow_entity_remap
+        )
+    if candidate.get("kind") == "policy":
+        return policies.validate_policy_material(
+            candidate, binding, roots, controller=controller, allow_entity_remap=allow_entity_remap
+        )
+    if allow_entity_remap:
+        raise LibraryError("simulation_deployment_changed", "Script material cannot remap across Scenes", 409)
+    schema = {"program": "lw.script-subject/1"}.get(candidate.get("kind"))
     return _adapter({"schema": schema}).material(candidate, binding, roots, controller=controller)
 
 

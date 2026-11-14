@@ -65,6 +65,7 @@ export interface SceneDetail extends SceneVersion {
     simulation?: { solver?: string; warmupSteps?: number } };
   entities: { key?: string; match?: string; type: string; program: string }[];
   locations: Record<string, { site?: string; zone?: string; p?: number[]; approach?: number[]; grasp?: number[] }>;
+  waypoints?: Record<string, { p: [number, number, number]; yaw: number; site?: string; xyTolerance?: number; yawTolerance?: number }>;
   validation: ValidationReport | null;
   inspection: string;
   recordings: Recording[];

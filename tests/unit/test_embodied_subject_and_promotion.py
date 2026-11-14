@@ -18,6 +18,7 @@ from packages.info.plans import PlanError
 from packages.library.assets import AssetLibrary
 from packages.library.common import LibraryError, content_hash, load_entity_types
 from packages.library.imports import LibraryImports
+from packages.library.robot_resources import Embodiment
 from packages.library.suites import SuiteLibrary
 from packages.library.transactions import durable_json
 from packages.policies.subjects import (
@@ -305,10 +306,12 @@ def _publish_promotion(
         version_fields=version_fields,
         context_hash="pending",
     )
+    embodiment_doc = robot_resources._documents("embodiments", Embodiment)[version_fields["embodiment"]]
     context = {
         "baseScene": {"id": scene.id, "contentHash": scene.content_hash},
         "subject": subject.document(),
         "controller": controller,
+        "embodiment": embodiment_doc,
         "versionFields": version_fields,
         "libraryRoot": str(user_lib),
         "materialIdentities": materials,

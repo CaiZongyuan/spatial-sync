@@ -543,7 +543,8 @@ class SceneLibrary:
                     for binding in display_bindings
                     if binding.get("type") in definitions
                 },
-                "locations": version.locations["locations"],
+                "locations": version.locations.get("locations", {}),
+                "waypoints": version.locations.get("waypoints", {}),
                 "validation": version.report(),
                 "inspection": "Authored bindings retained; effective bindings from recorded validation",
                 "assets": (version.report() or {}).get("referencedAssets", []),

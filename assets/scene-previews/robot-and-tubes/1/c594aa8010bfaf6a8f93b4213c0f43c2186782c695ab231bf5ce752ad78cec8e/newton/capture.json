@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-12T17:33:45.482329+00:00",
+  "capturedAt": "2026-11-14T05:01:48.468869+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -116,6 +116,10 @@
       "sha256": "f0fbee554aaa946d06aaa625c5c3c907f7b74b98adcd79a8a3b015e7b0c401c5"
     },
     {
+      "path": "devices/types/biped.v1.yaml",
+      "sha256": "60c962ad54e8ba750834a7f5b1a2afe292f1a0f0b7b4b4cd72def6e8dd29c575"
+    },
+    {
       "path": "devices/types/centrifuge.v1.yaml",
       "sha256": "06428acb28038cb5a09d1338ac2ce915994f7a6bf26238041f991067948e201a"
     },
@@ -169,7 +173,7 @@
     },
     {
       "path": "packages/info/binding_validation.py",
-      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
+      "sha256": "59c4b29d3f24c44c6d9d423cbc92ec3f4cef81d8c30ebe6327c3118ad0a1eadd"
     },
     {
       "path": "packages/info/catalog.py",
@@ -233,7 +237,7 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "c94b4289b070a128661a615c08ce1e04db0377038dd4dcb9d4a126f72717684c"
+      "sha256": "bc23f21ec21fcf884c8145499c2d8ce26ac717e911b642deb5720a0128d6f836"
     },
     {
       "path": "packages/library/structural.py",
@@ -241,7 +245,7 @@
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
+      "sha256": "749c6a24fed465f95a2f28f59ad1025df35d2484b04be3c0039a665b30535b33"
     },
     {
       "path": "packages/library/transactions.py",
@@ -261,11 +265,23 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "d6770c318ae285add4bed8d76313de7af4adcfbf83c07b53633e50b25e7bd038"
+      "sha256": "22b2d3b128d7990715eafb326c14986c3968dff043b5dc00dd0c24ce46318366"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "fdf11cf24c8f2671669ef68d7ed0f0db590c1655d33692546fc9a144091ed298"
+      "sha256": "7ea8f92edd23570010374e285cc706caf51496c82efcd145bb0df36bd1764ec0"
+    },
+    {
+      "path": "packages/programs/biped/__init__.py",
+      "sha256": "30ec962115fa88dbd558d403c462996f804a85e5d48f943cfc2d801b2222a9f6"
+    },
+    {
+      "path": "packages/programs/biped/policy.py",
+      "sha256": "5a880b72b8a252f9550d0d747f6737f2e5e032d2fe359594b36f2ab0bc4ea360"
+    },
+    {
+      "path": "packages/programs/biped/posture.py",
+      "sha256": "7f5d023f77fc75cb09f4e71ef5a679cde3bc373cc35b134ef31e82cac29779a9"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -309,7 +325,7 @@
     },
     {
       "path": "packages/programs/policy_base.py",
-      "sha256": "64a547d4d42905f95ddc9caae4a0b87ffb6469378a7dd13c0c0acf6ba5c845af"
+      "sha256": "862365fee30588891ed9d7f1a627cf4343950e35cb2bde436924faba91765a5c"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -345,7 +361,7 @@
     },
     {
       "path": "packages/programs/simulation.py",
-      "sha256": "25e3206ec27d8c6db2bf36a493a5a4254fc279b28cee264042f3c92b9edf9f22"
+      "sha256": "b9fce40390e7b6cef985f8ae665ffc746f4a052ad49a87232bc3c7559e08f533"
     },
     {
       "path": "packages/programs/subjects.py",
@@ -377,7 +393,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "f036927ea2d04feaf8a36cd398d91fe1b1123c8c002dd4a321b9ef45e2bef138"
+      "sha256": "ca7dc86c86f1714fe8b9a612e5be949d312f6c21b53ff1ca9f33c5841d825f7f"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -467,10 +483,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "8c0816abbeb46d8f949919ca3b660753cbea47194601d5476526bf6043949b9e",
-    "catalog.json": "a486b91e95feea4a3fc7e700e2c3c0b2a76e2c17b1eb70e89854f9a28cb4bfd3",
-    "state.json": "e56b5bff5e22f00a817fb714a50803fbfaa56a2642a0a69c3737fa3eaccbcc7c",
-    "snapshot.bin": "8fdf469d1be249420c3a13b436d2e6de0100499114732d6373dafa0abe0734fd",
+    "manifest.json": "ae9821cdc29f552859aa5230aab24057973642abc806aabbe95d86b7780af673",
+    "catalog.json": "3128d56c3b2e8539c00fce45b42aec0904b76d6375396a228a240c9a2ed2ee07",
+    "state.json": "e3145ea3012cebdf8e6b5583266aa9c9354af25d42e6d1900dcb92a4582cb07c",
+    "snapshot.bin": "61a5dbb4f2773a14f187cb9bce4e3b9fbb537aae872ffeff436cc6d087b9bafb",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

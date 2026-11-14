@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-12T17:33:01.859315+00:00",
+  "capturedAt": "2026-11-12T19:59:10.485798+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -30,6 +30,10 @@
     {
       "path": "devices/types/biosafety-cabinet.v1.yaml",
       "sha256": "f0fbee554aaa946d06aaa625c5c3c907f7b74b98adcd79a8a3b015e7b0c401c5"
+    },
+    {
+      "path": "devices/types/biped.v1.yaml",
+      "sha256": "60c962ad54e8ba750834a7f5b1a2afe292f1a0f0b7b4b4cd72def6e8dd29c575"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -81,7 +85,7 @@
     },
     {
       "path": "packages/info/binding_validation.py",
-      "sha256": "1bbd1ef666be2648e7fe0695dc1c3aed7aa7c208cbf2579edf296d882be1e6d7"
+      "sha256": "59c4b29d3f24c44c6d9d423cbc92ec3f4cef81d8c30ebe6327c3118ad0a1eadd"
     },
     {
       "path": "packages/info/catalog.py",
@@ -129,11 +133,11 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "c94b4289b070a128661a615c08ce1e04db0377038dd4dcb9d4a126f72717684c"
+      "sha256": "bc23f21ec21fcf884c8145499c2d8ce26ac717e911b642deb5720a0128d6f836"
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "760032c73b51d949563e6d72c996306642f0c12c1fa20e3a25eb213005107c29"
+      "sha256": "749c6a24fed465f95a2f28f59ad1025df35d2484b04be3c0039a665b30535b33"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -219,10 +223,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "b7051230fda9d61d2584a8e08fb0746a1910707289b626b3aecb3070c1700866",
-    "catalog.json": "c65644c0fdf6a416ee8059ba08862b095b577bab34cc1d7b848a1cd72b668c13",
-    "state.json": "58230892d284dcc9230a411e413bd071c1c8534f56ce82a5a6d4a7c8a682454f",
-    "snapshot.bin": "7fadee102d1a80bdc37b7c83785463401896631c435d537b1c418c4df4a9a89b"
+    "manifest.json": "c5897c4833fa2c5ea10f9f1649b481a67e7d1bbff6d40840c7345b4598c3699a",
+    "catalog.json": "51cb5a4c9c00e559ae83cd257268b944e749339a5c28bfae8798c106926c2167",
+    "state.json": "f4be9faaf0fede78c459e13c297c58bb40734fba7dbe0c71a948310d06d4391e",
+    "snapshot.bin": "7a1c2e948249882a6789d4da298cfbbd307116b224d31c4f2a9f4dd5b7828e5e"
   },
   "counts": {
     "physicalEntities": 30,

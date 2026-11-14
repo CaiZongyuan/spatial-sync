@@ -338,6 +338,81 @@ def joint_targets(spec, positions, output):
     return np.clip(target, spec.action.lower, spec.action.upper)
 
 
+def observation_canonical_refs(
+    item: Observation,
+) -> tuple[Literal["joint", "body", "site"] | None, tuple[str, ...], str | None]:
+    """Classify an Observation item's spatial resource role, canonical (/...) keys, and frame body."""
+    source = item.source
+    role: Literal["joint", "body", "site"] | None = None
+    keys: tuple[str, ...] = ()
+    if source.startswith("joint_"):
+        role = "joint"
+        keys = tuple(key for key in item.keys if key.startswith("/"))
+    elif source == "projected_gravity" or source.startswith("body_"):
+        role = "body"
+        keys = (item.key,) if item.key is not None and item.key.startswith("/") else ()
+    elif source.startswith("site_"):
+        role = "site"
+        keys = (item.key,) if item.key is not None and item.key.startswith("/") else ()
+    frame_body = (
+        item.frame
+        if item.frame is not None and item.frame.startswith("/") and source != "command"
+        else None
+    )
+    return role, keys, frame_body
+
+
+def spec_within_robot_entity(spec: ObservationSpec, robot_entity: str) -> bool:
+    """Return True iff all action and observation refs belong to robot_entity (no aliases/external paths)."""
+    prefix = robot_entity + "/"
+
+    def owned(path: str) -> bool:
+        return path == robot_entity or path.startswith(prefix)
+
+    if any(not owned(key) for key in spec.action.jointKeys):
+        return False
+    for obs in spec.observations:
+        if any(not owned(key) for key in obs.keys):
+            return False
+        if obs.key is not None and (not obs.key.startswith("/") or not owned(obs.key)):
+            return False
+        if (
+            obs.frame is not None
+            and obs.frame not in ("world", "body")
+            and (not obs.frame.startswith("/") or not owned(obs.frame))
+        ):
+            return False
+    return True
+
+
+def remap_observation_spec_entity(
+    spec: ObservationSpec, source_entity: str, target_entity: str
+) -> ObservationSpec:
+    """Deterministically rebase canonical robot paths in an ObservationSpec across Scenes."""
+    if source_entity == target_entity:
+        return spec
+    if not spec_within_robot_entity(spec, source_entity):
+        raise ValueError("ObservationSpec contains canonical paths outside source robot entity")
+
+    def remap(path: str) -> str:
+        if path == source_entity:
+            return target_entity
+        if path.startswith(source_entity + "/"):
+            return target_entity + path[len(source_entity) :]
+        return path
+
+    raw = spec.model_dump(mode="json", by_alias=True)
+    raw["action"]["jointKeys"] = [remap(key) for key in raw["action"]["jointKeys"]]
+    for obs in raw["observations"]:
+        if obs.get("keys"):
+            obs["keys"] = [remap(key) for key in obs["keys"]]
+        if obs.get("key") is not None:
+            obs["key"] = remap(obs["key"])
+        if obs.get("frame") is not None and obs["frame"].startswith("/"):
+            obs["frame"] = remap(obs["frame"])
+    return ObservationSpec.model_validate(raw)
+
+
 def sim_gap(train_success, platform_success):
     """Rates are fractions; strictly more than fifteen percentage points is a gap."""
     if train_success is None or platform_success is None:

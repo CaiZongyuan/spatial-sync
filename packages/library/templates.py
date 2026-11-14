@@ -159,7 +159,12 @@ def require_spatial_domain(config, fields, root):
         if information.get("spatialReference") and value is not None:
             paths = value if isinstance(value, list) else [value]
         elif information.get("documentSchema") == "locations" and isinstance(value, dict):
-            paths = [location["site"] for location in value["locations"].values() if location.get("site")]
+            paths = [
+                entry["site"]
+                for group in ("locations", "waypoints")
+                for entry in value.get(group, {}).values()
+                if entry.get("site")
+            ]
         else:
             continue
         for path in paths:
