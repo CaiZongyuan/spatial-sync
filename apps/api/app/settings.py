@@ -41,6 +41,8 @@ class Settings:
     node_token: str | None = field(default_factory=lambda: os.getenv("SPATIAL_NODE_TOKEN"))
     node_trainer: tuple[str, ...] = field(default_factory=lambda: tuple(json.loads(
         os.getenv("SPATIAL_NODE_TRAINER", "[]"))))
+    node_mjlab_trainer: tuple[str, ...] = field(default_factory=lambda: tuple(json.loads(
+        os.getenv("SPATIAL_NODE_MJLAB_TRAINER", "[]"))))
     node_capabilities: Path | None = field(default_factory=lambda: (
         Path(os.environ["SPATIAL_NODE_CAPABILITIES"]) if os.getenv("SPATIAL_NODE_CAPABILITIES") else None))
     node_gateway_url: str = field(default_factory=lambda: os.getenv(

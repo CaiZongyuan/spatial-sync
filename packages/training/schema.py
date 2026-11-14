@@ -53,6 +53,13 @@ class IsaacLab(Schema):
     sceneInput: Literal["usd", "scene-package"] = "usd"
 
 
+class MjLab(Schema):
+    task_id: Text
+    sceneInput: Literal["usd", "scene-package"] = "usd"
+    physics_dt: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
+    decimation: int | None = Field(default=None, ge=1, exclude_if=lambda value: value is None)
+
+
 NumericBound = Annotated[list[float | int], Field(min_length=2, max_length=2)]
 
 
@@ -88,7 +95,8 @@ class TaskMetadata(Schema):
     success: dict[str, JsonValue]
     control: Control
     observation: Text
-    isaaclab: IsaacLab
+    isaaclab: IsaacLab | None = Field(default=None, exclude_if=lambda value: value is None)
+    mjlab: MjLab | None = Field(default=None, exclude_if=lambda value: value is None)
     evaluation: Evaluation
     loopBudget: LoopBudget
     demonstrations: list[DemonstrationUse] = Field(default_factory=list, max_length=32)
@@ -119,6 +127,15 @@ class TaskMetadata(Schema):
 
     @model_validator(mode="after")
     def evaluation_scene(self):
+        if (self.isaaclab is None) == (self.mjlab is None):
+            raise ValueError("Task must configure exactly one training backend: isaaclab or mjlab")
+        if (
+            self.mjlab is not None
+            and self.mjlab.physics_dt is not None
+            and self.mjlab.decimation is not None
+            and abs(1.0 / (self.mjlab.physics_dt * self.mjlab.decimation) - self.control.hz) > 1e-4
+        ):
+            raise ValueError("mjlab physics_dt * decimation must match control.hz")
         if self.evaluation.scene != self.scene:
             raise ValueError("Task evaluation must pin the Task scene")
         has_episode_params = bool(self.episode.params) or bool(self.episode.paramBounds)

@@ -45,20 +45,45 @@ def external_files(policy, output):
     return [files[name] for name in sorted(files)]
 
 
+_ACTIVE_WRAP_LEARN = None
+
+
+def ensure_runner_bridged(runner_cls):
+    if _ACTIVE_WRAP_LEARN is None or runner_cls is None:
+        return runner_cls
+    current = getattr(runner_cls, "learn", None)
+    if current is not None and not getattr(current, "_lw_bridged", False):
+        runner_cls.learn = _ACTIVE_WRAP_LEARN(current)
+    return runner_cls
+
+
 def install():
+    global _ACTIVE_WRAP_LEARN
     from rsl_rl.runners import OnPolicyRunner
 
     output = Path(os.environ["LW_NODE_OUTPUT"])
     output.mkdir(parents=True, exist_ok=True)
     inputs = json.loads(Path(os.environ["LW_NODE_INPUTS"]).read_text(encoding="utf-8"))
     job = inputs["job"]
-    names = {
-        "isaaclab": "isaaclab",
-        "newton": "newton",
-        "warp": "warp-lang",
-        "torch": "torch",
-        "rsl_rl": "rsl-rl-lib",
-    }
+    declared = inputs.get("task", {})
+    is_mjlab = isinstance(declared, dict) and declared.get("mjlab") is not None
+    if is_mjlab:
+        names = {
+            "mjlab": "mjlab",
+            "mujoco": "mujoco",
+            "mujoco_warp": "mujoco-warp",
+            "warp": "warp-lang",
+            "torch": "torch",
+            "rsl_rl": "rsl-rl-lib",
+        }
+    else:
+        names = {
+            "isaaclab": "isaaclab",
+            "newton": "newton",
+            "warp": "warp-lang",
+            "torch": "torch",
+            "rsl_rl": "rsl-rl-lib",
+        }
     versions = {
         "versions": {name: importlib.metadata.version(distribution) for name, distribution in names.items()},
         "hardware": inputs["hardware"],
@@ -70,14 +95,18 @@ def install():
     }
     if versions["versions"]["rsl_rl"] != inputs["plan"]["algorithm"]["version"]:
         raise RuntimeError("Installed RSL-RL version differs from the approved plan")
-    declared = inputs.get("task", {})
-    presets = declared.get("isaaclab", {}).get("presets", []) if isinstance(declared, dict) else []
-    if not presets:
+    presets = (
+        declared.get("isaaclab", {}).get("presets", [])
+        if isinstance(declared, dict) and not is_mjlab
+        else []
+    )
+    if not presets and not is_mjlab:
         presets = next(
             (arg.split("=", 1)[1].split(",") for arg in sys.argv if arg.startswith("presets=")), []
         )
     if (
-        versions["hardware"]["device"] == "cpu"
+        not is_mjlab
+        and versions["hardware"]["device"] == "cpu"
         and versions["versions"]["isaaclab"] == "3.0.0"
         and versions["versions"]["newton"] == "1.6.0rc1"
         and "newton_mjwarp" in presets
@@ -87,65 +116,97 @@ def install():
             "no approved environment count or physics setting was changed"
         )
     (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
-    original_learn = OnPolicyRunner.learn
 
-    def learn(runner, *args, **kwargs):
-        from contextlib import ExitStack
+    def _wrap_learn(raw_learn):
+        def learn(runner, *args, **kwargs):
+            if getattr(runner, "_lw_in_bridged_learn", False):
+                return raw_learn(runner, *args, **kwargs)
+            from contextlib import ExitStack
 
-        native = None
-        original_log = runner.logger.log
-        started = time.monotonic()
+            runner._lw_in_bridged_learn = True
+            native = None
+            original_log = runner.logger.log
+            started = time.monotonic()
 
-        def log(*args, **kwargs):
-            result = original_log(*args, **kwargs)
-            row = {
-                "iteration": int(kwargs.get("it", runner.current_learning_iteration)) + 1,
-                "elapsedSeconds": time.monotonic() - started,
-                "meanReward": statistics.mean(runner.logger.rewbuffer) if runner.logger.rewbuffer else None,
-                "trainSuccess": None,
-                "memoryUsedMb": None,
-            }
-            with (output / "metrics.jsonl").open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(row, allow_nan=False) + "\n")
-            return result
+            def log(*args, **kwargs):
+                result = original_log(*args, **kwargs)
+                row = {
+                    "iteration": int(kwargs.get("it", runner.current_learning_iteration)) + 1,
+                    "elapsedSeconds": time.monotonic() - started,
+                    "meanReward": (
+                        statistics.mean(runner.logger.rewbuffer) if runner.logger.rewbuffer else None
+                    ),
+                    "trainSuccess": None,
+                    "memoryUsedMb": None,
+                }
+                with (output / "metrics.jsonl").open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(row, allow_nan=False) + "\n")
+                return result
 
-        runner.logger.log = log
-        try:
-            with ExitStack() as stack:
-                if os.getenv("LW_NODE_VIEW_IPC") or inputs.get("nativeObservationProfile"):
-                    from lw_view_bridge import observe_training
+            try:
+                runner.logger.log = log
+                try:
+                    with ExitStack() as stack:
+                        if os.getenv("LW_NODE_VIEW_IPC") or inputs.get("nativeObservationProfile"):
+                            from lw_view_bridge import observe_training
 
-                    observer = stack.enter_context(observe_training(runner, inputs))
-                    if profile := inputs.get("nativeObservationProfile"):
-                        from lw_native_observation_capture import NativeObservationCapture
+                            observer = stack.enter_context(observe_training(runner, inputs))
+                            if profile := inputs.get("nativeObservationProfile"):
+                                from lw_native_observation_capture import NativeObservationCapture
 
-                        native = stack.enter_context(
-                            NativeObservationCapture(runner, observer, profile, inputs)
-                        )
-                result = original_learn(runner, *args, **kwargs)
-        finally:
-            runner.logger.log = original_log
-        checkpoint = Path(runner.logger.log_dir) / f"model_{runner.current_learning_iteration}.pt"
-        relative = checkpoint.resolve().relative_to((Path.cwd() / "logs").resolve())
-        with checkpoint.open("rb") as stream:
-            checkpoint_hash = hashlib.file_digest(stream, "sha256").hexdigest()
-        runner.export_policy_to_onnx(str(output), filename="policy.onnx")
-        with (output / "policy.onnx").open("rb") as stream:
-            policy_hash = hashlib.file_digest(stream, "sha256").hexdigest()
-        export = {
-            "checkpoint": "checkpoints/" + relative.as_posix(), "checkpointSha256": checkpoint_hash,
-            "policy": "policy.onnx", "policySha256": policy_hash,
-            "externalData": external_files(output / "policy.onnx", output),
-            "iteration": runner.current_learning_iteration, "afterLearn": True,
-        }
-        (output / "export.json").write_text(json.dumps(export), encoding="utf-8")
-        if native is not None:
-            native.publish(output, export, versions)
-        if getattr(runner, "env", None) is not None:
-            from lw_observation_capture import capture_observations
+                                native = stack.enter_context(
+                                    NativeObservationCapture(runner, observer, profile, inputs)
+                                )
+                        result = raw_learn(runner, *args, **kwargs)
+                finally:
+                    runner.logger.log = original_log
+                checkpoint = Path(runner.logger.log_dir) / f"model_{runner.current_learning_iteration}.pt"
+                relative = checkpoint.resolve().relative_to((Path.cwd() / "logs").resolve())
+                with checkpoint.open("rb") as stream:
+                    checkpoint_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+                try:
+                    import torch.onnx as _torch_onnx
+                except ImportError:
+                    _torch_onnx = None
 
-            capture_observations(runner, output, inputs, export, versions)
-        return result
+                original_onnx_export = getattr(_torch_onnx, "export", None)
+                if _torch_onnx is not None and original_onnx_export is not None:
+                    def _legacy_onnx_export(*export_args, **export_kwargs):
+                        export_kwargs["dynamo"] = False
+                        export_kwargs["dynamic_axes"] = {}
+                        return original_onnx_export(*export_args, **export_kwargs)
 
-    OnPolicyRunner.learn = learn
+                    _torch_onnx.export = _legacy_onnx_export
+                try:
+                    runner.export_policy_to_onnx(str(output), filename="policy.onnx")
+                finally:
+                    if _torch_onnx is not None and original_onnx_export is not None:
+                        _torch_onnx.export = original_onnx_export
+                with (output / "policy.onnx").open("rb") as stream:
+                    policy_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+                export = {
+                    "checkpoint": "checkpoints/" + relative.as_posix(),
+                    "checkpointSha256": checkpoint_hash,
+                    "policy": "policy.onnx",
+                    "policySha256": policy_hash,
+                    "externalData": external_files(output / "policy.onnx", output),
+                    "iteration": runner.current_learning_iteration,
+                    "afterLearn": True,
+                }
+                (output / "export.json").write_text(json.dumps(export), encoding="utf-8")
+                if native is not None:
+                    native.publish(output, export, versions)
+                if getattr(runner, "env", None) is not None:
+                    from lw_observation_capture import capture_observations
+
+                    capture_observations(runner, output, inputs, export, versions)
+                return result
+            finally:
+                runner._lw_in_bridged_learn = False
+
+        learn._lw_bridged = True
+        return learn
+
+    _ACTIVE_WRAP_LEARN = _wrap_learn
+    OnPolicyRunner.learn = _wrap_learn(OnPolicyRunner.learn)
     return None

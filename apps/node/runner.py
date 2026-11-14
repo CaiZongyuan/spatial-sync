@@ -100,6 +100,69 @@ def trainer_arguments(inputs, callback):
     return command
 
 
+def mjlab_trainer_arguments(inputs, callback):
+    plan, job = inputs["plan"], inputs["job"]
+    task = inputs["task"]
+    mjlab = task["mjlab"]
+    hyper = plan["hyperparameters"]
+    if plan["algorithm"].get("library") != "rsl_rl" or plan["algorithm"].get("name") != "PPO":
+        raise ValueError("The local node currently supports rsl_rl PPO")
+    known = {
+        "num_envs",
+        "max_iterations",
+        "learning_rate",
+        "device",
+        "num_steps_per_env",
+        "num_learning_epochs",
+        "num_mini_batches",
+        "save_interval",
+    }
+    if set(mjlab) - {"task_id", "sceneInput", "physics_dt", "decimation"}:
+        raise ValueError("Unsupported mjlab backend fields; no field may be silently ignored")
+    if set(hyper) - known or set(plan["model"]) - {"actor", "critic", "activation", "obs_normalization"}:
+        raise ValueError("Unsupported approved hyperparameter/model fields; no field may be silently ignored")
+    command = [
+        "--task",
+        mjlab["task_id"],
+        "--num_envs",
+        str(hyper["num_envs"]),
+        "--max_iterations",
+        str(hyper["max_iterations"]),
+        "--seed",
+        str(job["seed"]),
+        "--device",
+        "cpu" if job["executionDevice"] == "cpu" else "cuda:0",
+        "--logger",
+        "tensorboard",
+        "--experiment_name",
+        job["jobId"],
+        "--external_callback",
+        callback,
+    ]
+    if mjlab.get("physics_dt") is not None:
+        command.extend(["--physics_dt", str(mjlab["physics_dt"])])
+    if mjlab.get("decimation") is not None:
+        command.extend(["--decimation", str(mjlab["decimation"])])
+    for name in (
+        "learning_rate",
+        "num_steps_per_env",
+        "num_learning_epochs",
+        "num_mini_batches",
+        "save_interval",
+    ):
+        if name in hyper:
+            command.extend([f"--{name}", str(hyper[name])])
+    if "actor" in plan["model"]:
+        command.extend(["--actor_hidden_dims", json.dumps(plan["model"]["actor"])])
+    if "critic" in plan["model"]:
+        command.extend(["--critic_hidden_dims", json.dumps(plan["model"]["critic"])])
+    if "activation" in plan["model"]:
+        command.extend(["--activation", str(plan["model"]["activation"])])
+    if "obs_normalization" in plan["model"]:
+        command.extend(["--obs_normalization", json.dumps(bool(plan["model"]["obs_normalization"]))])
+    return command
+
+
 class OwnedRun:
     def __init__(self, node, assignment):
         self.node, self.assignment = node, assignment
@@ -255,6 +318,10 @@ class OwnedRun:
                                 bridge / "lw_native_observation_capture.py")
                 shutil.copyfile(Path(__file__).with_name("observation_capture.py"),
                                 bridge / "lw_observation_capture.py")
+                shutil.copyfile(Path(__file__).with_name("usd_mjcf.py"),
+                                bridge / "lw_usd_mjcf.py")
+                shutil.copyfile(Path(__file__).with_name("mjlab_launcher.py"),
+                                bridge / "lw_mjlab_launcher.py")
                 self.view_directory.mkdir()
                 self.view_active.set()
                 env.update(
@@ -279,8 +346,15 @@ class OwnedRun:
                 )
                 if inputs["job"]["executionDevice"] == "cpu":
                     env.update(OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
+                is_mjlab = inputs["task"].get("mjlab") is not None
+                backend_name = "mjlab" if is_mjlab else "isaaclab"
+                trainer_prefix = list(self.node.mjlab_trainer if is_mjlab else self.node.trainer)
+                if not trainer_prefix:
+                    raise RuntimeError(
+                        f"{backend_name} trainer runtime is not configured on this compute node"
+                    )
                 stage = scene_package["stage"]
-                if inputs["task"]["isaaclab"].get("sceneInput", "usd") == "usd":
+                if inputs["task"][backend_name].get("sceneInput", "usd") == "usd":
                     if stage.startswith("python:"):
                         raise ValueError(
                             "Python builder scene has no composed USD; Task needs scene-package support"
@@ -296,7 +370,7 @@ class OwnedRun:
                             "uv",
                             "venv",
                             "--python",
-                            self.node.trainer[0],
+                            trainer_prefix[0],
                             "--system-site-packages",
                             str(environment),
                         ],
@@ -309,7 +383,7 @@ class OwnedRun:
                     with runtime_sites.open("wb") as runtime_output:
                         self._command(
                             [
-                                self.node.trainer[0],
+                                trainer_prefix[0],
                                 "-c",
                                 "import json,site;print(json.dumps(site.getsitepackages()))",
                             ],
@@ -335,8 +409,13 @@ class OwnedRun:
                         stdout,
                         stderr,
                     )
-                    args = trainer_arguments(inputs, "lw_training_bridge.install")
-                    self._command([python, *self.node.trainer[1:], *args], env, stdout, stderr)
+                    if is_mjlab:
+                        args = mjlab_trainer_arguments(inputs, "lw_training_bridge.install")
+                        entry = trainer_prefix[1:] if len(trainer_prefix) > 1 else ["-m", "lw_mjlab_launcher"]
+                        self._command([python, *entry, *args], env, stdout, stderr)
+                    else:
+                        args = trainer_arguments(inputs, "lw_training_bridge.install")
+                        self._command([python, *trainer_prefix[1:], *args], env, stdout, stderr)
                 for pattern, category in (("*.pt", "checkpoints"), ("events.out.tfevents.*", "tensorboard")):
                     for file in (self.root / "logs").rglob(pattern):
                         target = output / category / file.relative_to(self.root / "logs")
@@ -469,8 +548,9 @@ class OwnedRun:
 
 
 class LocalNode:
-    def __init__(self, url, root, trainer, capabilities, *, interval=10, timeout=86400):
+    def __init__(self, url, root, trainer, capabilities, *, mjlab_trainer=(), interval=10, timeout=86400):
         self.url, self.root, self.trainer = url, Path(root), trainer
+        self.mjlab_trainer = mjlab_trainer
         self.capabilities, self.interval, self.timeout = capabilities, interval, timeout
         self.root.mkdir(parents=True, exist_ok=True)
         identity = self.root / "instance-id"
@@ -566,7 +646,10 @@ def main():
     parser.add_argument("--url", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument(
-        "--trainer", required=True, help="JSON command prefix in an existing Isaac Lab environment"
+        "--trainer", default="[]", help="JSON command prefix in an existing Isaac Lab environment"
+    )
+    parser.add_argument(
+        "--mjlab-trainer", default="[]", help="JSON command prefix in an existing mjlab environment"
     )
     parser.add_argument("--capabilities", help="Measured node/GPU/timing metadata JSON")
     parser.add_argument("--interval", type=float, default=10)
@@ -590,6 +673,7 @@ def main():
         args.root,
         json.loads(args.trainer),
         capabilities,
+        mjlab_trainer=json.loads(args.mjlab_trainer),
         interval=args.interval,
         timeout=args.timeout,
     )
@@ -597,11 +681,22 @@ def main():
     asyncio.run(node.run())
 
 
+def _nvidia_smi() -> str:
+    found = shutil.which("nvidia-smi")
+    if found:
+        return found
+    wsl_smi = Path("/usr/lib/wsl/lib/nvidia-smi")
+    if wsl_smi.is_file():
+        return str(wsl_smi)
+    return "nvidia-smi"
+
+
 def gpu_usage():
     usage, processes = {}, {}
+    smi = _nvidia_smi()
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=uuid,memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
+            [smi, "--query-gpu=uuid,memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=2,
@@ -616,7 +711,7 @@ def gpu_usage():
                     "unavailableReason": None,
                 }
         result = subprocess.run(
-            ["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
+            [smi, "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=2,
@@ -633,9 +728,10 @@ def gpu_usage():
 
 def discover():
     gpus = []
+    smi = _nvidia_smi()
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=uuid,name,memory.total", "--format=csv,noheader,nounits"],
+            [smi, "--query-gpu=uuid,name,memory.total", "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=3,

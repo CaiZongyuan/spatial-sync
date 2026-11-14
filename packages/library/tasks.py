@@ -117,12 +117,14 @@ class TaskLibrary:
                 elif task.episode.commandEnvelope is not None:
                     raise ValueError("commandEnvelope requires a command observation in obs_spec")
             project = tomllib.loads((package / "pyproject.toml").read_text(encoding="utf-8"))
-            entries = project.get("project", {}).get("entry-points", {}).get("isaaclab.tasks", {})
+            entry_group = "mjlab.tasks" if task.mjlab is not None else "isaaclab.tasks"
+            entries = project.get("project", {}).get("entry-points", {}).get(entry_group, {})
             if not entries or not isinstance(entries, dict) or any(
                 not isinstance(key, str) or not isinstance(value, str) or not value.strip()
                 for key, value in entries.items()
             ):
-                raise ValueError("pyproject.toml requires an isaaclab.tasks entry point")
+                article = "a" if task.mjlab is not None else "an"
+                raise ValueError(f"pyproject.toml requires {article} {entry_group} entry point")
             scenes = self.scenes()
             scenes.refresh()
             scene = scenes.resolve(task.scene)

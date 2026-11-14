@@ -177,9 +177,10 @@ class TrainingJobs:
             raise PlanError("invalid_job", "Training device must be explicitly cpu or cuda", status=422)
         task = self.manager.tasks.show(plan["task"])
         scene = self.manager.library.resolve(task["task"]["scene"])
+        backend = task["task"].get("mjlab") or task["task"].get("isaaclab") or {}
         if (
             scene.metadata["stage"].startswith("python:")
-            and task["task"]["isaaclab"].get("sceneInput", "usd") != "scene-package"
+            and backend.get("sceneInput", "usd") != "scene-package"
         ):
             raise PlanError(
                 "task_scene_input_unsupported", "Python builder inputs need a scene-package Task", status=422
