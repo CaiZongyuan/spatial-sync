@@ -1,0 +1,127 @@
+scene: microduck-lab-patrol
+entities:
+- key: /World/Lab/PatrolDuck
+  type: biped/v1
+  program: biped.policy
+  config:
+    baseBody: /World/Lab/PatrolDuck/trunk_base
+    jointKeys:
+    - /World/Lab/PatrolDuck/joints/left_hip_yaw
+    - /World/Lab/PatrolDuck/joints/left_hip_roll
+    - /World/Lab/PatrolDuck/joints/left_hip_pitch
+    - /World/Lab/PatrolDuck/joints/left_knee
+    - /World/Lab/PatrolDuck/joints/left_ankle
+    - /World/Lab/PatrolDuck/joints/neck_pitch
+    - /World/Lab/PatrolDuck/joints/head_pitch
+    - /World/Lab/PatrolDuck/joints/head_yaw
+    - /World/Lab/PatrolDuck/joints/head_roll
+    - /World/Lab/PatrolDuck/joints/right_hip_yaw
+    - /World/Lab/PatrolDuck/joints/right_hip_roll
+    - /World/Lab/PatrolDuck/joints/right_hip_pitch
+    - /World/Lab/PatrolDuck/joints/right_knee
+    - /World/Lab/PatrolDuck/joints/right_ankle
+    defaultPosition:
+    - 0.0
+    - -0.0873
+    - -0.4579
+    - -0.0049
+    - 0.453
+    - 0.3491
+    - 0.3491
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0873
+    - 0.4579
+    - 0.0049
+    - -0.453
+    fallPostures:
+      front:
+      - 0.0
+      - -0.0873
+      - 0.5
+      - -0.5
+      - -0.6
+      - 1.0
+      - 1.1
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0873
+      - -0.5
+      - 0.5
+      - 0.6
+      back:
+      - 0.0
+      - -0.0873
+      - -1.1
+      - -0.0049
+      - 0.9
+      - -0.6
+      - -0.6
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0873
+      - 1.1
+      - 0.0049
+      - -0.9
+      left:
+      - 0.0
+      - 0.36
+      - -1.1
+      - 1.2
+      - 0.8
+      - 0.3491
+      - 0.3491
+      - 0.0
+      - 0.41
+      - 0.0
+      - 0.36
+      - 0.2
+      - 0.0
+      - -0.2
+      right:
+      - 0.0
+      - -0.36
+      - -0.2
+      - 0.0
+      - 0.2
+      - 0.3491
+      - 0.3491
+      - 0.0
+      - -0.41
+      - 0.0
+      - -0.36
+      - 1.1
+      - -1.2
+      - -0.8
+    policies:
+      walkTo: policy/microduck-walk-to@1
+      standUp: policy/microduck-stand-up@1
+      bow: policy/microduck-bow@1
+    locations: locations.yaml
+    bowMinPitchDeg: 12.0
+    bowDurationSeconds: 1.0
+    maxTiltDeg: 55.0
+    uprightTiltDeg: 20.0
+    minStandHeight: 0.09
+    fallMinTiltDeg: 68.0
+    fallSettleSeconds: 0.45
+    xyTolerance: 0.08
+    yawTolerance: 0.25
+    dwellSeconds: 0.25
+    linearGain: 1.5
+    yawGain: 2.0
+    maxLinearSpeed: 0.28
+    maxLateralSpeed: 0.12
+    maxYawRate: 0.85
+    commandSmoothing: 0.22
+    headingAlignRad: 0.3
+    maxSeconds: 30.0
+- key: /World/Lab/Centrifuge
+  template: device/lab-centrifuge-reference@1
+  config:
+    tubes: []
+    spindleJoint: /World/Lab/Centrifuge/Spindle
+    lidJoint: /World/Lab/Centrifuge/LidHinge

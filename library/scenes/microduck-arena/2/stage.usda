@@ -1,0 +1,265 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Xform "Lab"
+    {
+        def Scope "PhysicsMaterials"
+        {
+            def Material "GroundMaterial" (
+                prepend apiSchemas = ["PhysicsMaterialAPI"]
+            )
+            {
+                float physics:dynamicFriction = 1.0
+                float physics:restitution = 0.0
+                float physics:staticFriction = 1.0
+            }
+        }
+
+        def Plane "Ground" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            rel material:binding:physics = </World/Lab/PhysicsMaterials/GroundMaterial>
+        }
+
+        def Xform "Microduck" (
+            prepend references = @library:assets/robot/microduck/1/asset.usdc@</Asset>
+        )
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Scope "Waypoints"
+        {
+            def Xform "Origin"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "North"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:translate = (0.45, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "South"
+            {
+                quatf xformOp:orient = (0, 0, 0, 1)
+                double3 xformOp:translate = (-0.4, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "East"
+            {
+                quatf xformOp:orient = (0.70710677, 0, 0, -0.70710677)
+                double3 xformOp:translate = (0, -0.42, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "West"
+            {
+                quatf xformOp:orient = (0.70710677, 0, 0, 0.70710677)
+                double3 xformOp:translate = (0, 0.42, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "Northeast"
+            {
+                quatf xformOp:orient = (0.931975, 0, 0, -0.362523)
+                double3 xformOp:translate = (0.38, -0.35, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "Northwest"
+            {
+                quatf xformOp:orient = (0.931975, 0, 0, 0.362523)
+                double3 xformOp:translate = (0.38, 0.35, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "TurnLeft"
+            {
+                quatf xformOp:orient = (0.8660254, 0, 0, 0.5)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+
+            def Xform "TurnRight"
+            {
+                quatf xformOp:orient = (0.8660254, 0, 0, -0.5)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+            }
+        }
+    }
+
+    def Xform "Dressing"
+    {
+        def Scope "Materials"
+        {
+            def Material "PadNorthMat"
+            {
+                token outputs:surface.connect = </World/Dressing/Materials/PadNorthMat/Surface.outputs:surface>
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor = (0.18, 0.62, 0.45)
+                    float inputs:roughness = 0.6
+                    token outputs:surface
+                }
+            }
+
+            def Material "PadMarkerMat"
+            {
+                token outputs:surface.connect = </World/Dressing/Materials/PadMarkerMat/Surface.outputs:surface>
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor = (0.92, 0.56, 0.16)
+                    float inputs:roughness = 0.55
+                    token outputs:surface
+                }
+            }
+
+            def Material "BorderMat"
+            {
+                token outputs:surface.connect = </World/Dressing/Materials/BorderMat/Surface.outputs:surface>
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor = (0.24, 0.28, 0.34)
+                    float inputs:roughness = 0.5
+                    token outputs:surface
+                }
+            }
+        }
+
+        def Cylinder "NorthPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.06
+            rel material:binding = </World/Dressing/Materials/PadNorthMat>
+            double3 xformOp:translate = (0.45, 0, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "SouthPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.055
+            rel material:binding = </World/Dressing/Materials/PadMarkerMat>
+            double3 xformOp:translate = (-0.4, 0, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "EastPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.055
+            rel material:binding = </World/Dressing/Materials/PadMarkerMat>
+            double3 xformOp:translate = (0, -0.42, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "WestPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.055
+            rel material:binding = </World/Dressing/Materials/PadMarkerMat>
+            double3 xformOp:translate = (0, 0.42, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "NortheastPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.05
+            rel material:binding = </World/Dressing/Materials/PadMarkerMat>
+            double3 xformOp:translate = (0.38, -0.35, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cylinder "NorthwestPad" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.002
+            double radius = 0.05
+            rel material:binding = </World/Dressing/Materials/PadMarkerMat>
+            double3 xformOp:translate = (0.38, 0.35, 0.001)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Cube "BorderNorth" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double size = 1
+            rel material:binding = </World/Dressing/Materials/BorderMat>
+            float3 xformOp:scale = (0.04, 1.64, 0.03)
+            double3 xformOp:translate = (0.8, 0, 0.015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+
+        def Cube "BorderSouth" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double size = 1
+            rel material:binding = </World/Dressing/Materials/BorderMat>
+            float3 xformOp:scale = (0.04, 1.64, 0.03)
+            double3 xformOp:translate = (-0.8, 0, 0.015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+
+        def Cube "BorderEast" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double size = 1
+            rel material:binding = </World/Dressing/Materials/BorderMat>
+            float3 xformOp:scale = (1.56, 0.04, 0.03)
+            double3 xformOp:translate = (0, -0.8, 0.015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+
+        def Cube "BorderWest" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            double size = 1
+            rel material:binding = </World/Dressing/Materials/BorderMat>
+            float3 xformOp:scale = (1.56, 0.04, 0.03)
+            double3 xformOp:translate = (0, 0.8, 0.015)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        }
+    }
+}

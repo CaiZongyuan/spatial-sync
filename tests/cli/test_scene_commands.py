@@ -166,7 +166,9 @@ async def test_scene_cli_and_mcp_bootstrap_inspection_launch_and_replacement(gat
             "usd-lab@1",
             "fr3-culture-reference@1",
             "microduck-arena@1",
+            "microduck-arena@2",
             "microduck-lab-patrol@1",
+            "microduck-lab-patrol@2",
         }
         robot = cli("show", "robot-and-tubes")
         assert robot["sceneVersion"] == "robot-and-tubes@2"

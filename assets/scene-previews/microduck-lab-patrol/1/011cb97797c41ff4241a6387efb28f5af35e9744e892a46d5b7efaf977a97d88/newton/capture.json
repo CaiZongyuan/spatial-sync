@@ -23,7 +23,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-14T09:37:58.418818+00:00",
+  "capturedAt": "2026-11-14T16:56:46.760103+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -275,7 +275,7 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "e9366eb6c30e4015a494a3d17b7560582fcb2e739ad748beeebc2b538d966c0f"
+      "sha256": "49e754b37687b15fc6fd417ae76486b0db08781376fdae9732bf3ed42f9d554c"
     },
     {
       "path": "packages/programs/biped/posture.py",
@@ -485,10 +485,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "0eef5b907d8013fc3e65cc59e873558332be5b8268ec5229e2b04d0abc481d68",
-    "catalog.json": "23b2334929f0f21d4284f1a2bf71e22d6e341a55991d7c869d15844a5f6805cc",
-    "state.json": "902a97cf460d73d6b7c946203b3a87c7cafe6543b70872fc867be82c1e85e365",
-    "snapshot.bin": "1afff86bc5273db601897d506c51b64e5902a52232a2e3ea75d79de5c7916541",
+    "manifest.json": "156974d81acdd9ccbedc52cfd090da11ca21ebf59e3b11d7e7e4f6b151ceff41",
+    "catalog.json": "98dbd2727f81693c791bf9ee7832f028f09541ab5bda4fa9ae6be11910b046f7",
+    "state.json": "605318e05c3e0a1669b61b22cc822279cbcfaf5ca36b09af393f693dd008f13d",
+    "snapshot.bin": "8b0561469962868978359c30e996b3c86ce945664da86083ca1e58b5c3fdf109",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",

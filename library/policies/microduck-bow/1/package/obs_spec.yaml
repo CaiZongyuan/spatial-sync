@@ -1,0 +1,283 @@
+schema: lw.obs-spec/1
+observations:
+- name: command
+  source: command
+  keys: []
+  key: null
+  frame: body
+  unit: rad
+  shape:
+  - 1
+  offset:
+  - 0.0
+  scale:
+  - 1.0
+  lower:
+  - -0.1
+  upper:
+  - 0.5
+- name: base_ang_vel
+  source: body_angular_velocity
+  keys: []
+  key: /World/Lab/Microduck/trunk_base
+  frame: body
+  unit: rad/s
+  shape:
+  - 3
+  offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  scale:
+  - 1.0
+  - 1.0
+  - 1.0
+- name: projected_gravity
+  source: projected_gravity
+  keys: []
+  key: /World/Lab/Microduck/trunk_base
+  unit: '1'
+  shape:
+  - 3
+  offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  scale:
+  - 1.0
+  - 1.0
+  - 1.0
+- name: joint_pos
+  source: joint_position
+  keys:
+  - /World/Lab/Microduck/joints/left_hip_yaw
+  - /World/Lab/Microduck/joints/left_hip_roll
+  - /World/Lab/Microduck/joints/left_hip_pitch
+  - /World/Lab/Microduck/joints/left_knee
+  - /World/Lab/Microduck/joints/left_ankle
+  - /World/Lab/Microduck/joints/neck_pitch
+  - /World/Lab/Microduck/joints/head_pitch
+  - /World/Lab/Microduck/joints/head_yaw
+  - /World/Lab/Microduck/joints/head_roll
+  - /World/Lab/Microduck/joints/right_hip_yaw
+  - /World/Lab/Microduck/joints/right_hip_roll
+  - /World/Lab/Microduck/joints/right_hip_pitch
+  - /World/Lab/Microduck/joints/right_knee
+  - /World/Lab/Microduck/joints/right_ankle
+  key: null
+  frame: world
+  unit: rad
+  shape:
+  - 14
+  offset:
+  - 0.0
+  - -0.0873
+  - -0.4579
+  - -0.0049
+  - 0.453
+  - 0.3491
+  - 0.3491
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0873
+  - 0.4579
+  - 0.0049
+  - -0.453
+  scale:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+- name: joint_vel
+  source: joint_velocity
+  keys:
+  - /World/Lab/Microduck/joints/left_hip_yaw
+  - /World/Lab/Microduck/joints/left_hip_roll
+  - /World/Lab/Microduck/joints/left_hip_pitch
+  - /World/Lab/Microduck/joints/left_knee
+  - /World/Lab/Microduck/joints/left_ankle
+  - /World/Lab/Microduck/joints/neck_pitch
+  - /World/Lab/Microduck/joints/head_pitch
+  - /World/Lab/Microduck/joints/head_yaw
+  - /World/Lab/Microduck/joints/head_roll
+  - /World/Lab/Microduck/joints/right_hip_yaw
+  - /World/Lab/Microduck/joints/right_hip_roll
+  - /World/Lab/Microduck/joints/right_hip_pitch
+  - /World/Lab/Microduck/joints/right_knee
+  - /World/Lab/Microduck/joints/right_ankle
+  key: null
+  frame: world
+  unit: rad/s
+  shape:
+  - 14
+  offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  scale:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+- name: previous_action
+  source: previous_action
+  keys: []
+  key: null
+  frame: world
+  unit: '1'
+  shape:
+  - 14
+  offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  scale:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+action:
+  space: joint_position_offset
+  jointKeys:
+  - /World/Lab/Microduck/joints/left_hip_yaw
+  - /World/Lab/Microduck/joints/left_hip_roll
+  - /World/Lab/Microduck/joints/left_hip_pitch
+  - /World/Lab/Microduck/joints/left_knee
+  - /World/Lab/Microduck/joints/left_ankle
+  - /World/Lab/Microduck/joints/neck_pitch
+  - /World/Lab/Microduck/joints/head_pitch
+  - /World/Lab/Microduck/joints/head_yaw
+  - /World/Lab/Microduck/joints/head_roll
+  - /World/Lab/Microduck/joints/right_hip_yaw
+  - /World/Lab/Microduck/joints/right_hip_roll
+  - /World/Lab/Microduck/joints/right_hip_pitch
+  - /World/Lab/Microduck/joints/right_knee
+  - /World/Lab/Microduck/joints/right_ankle
+  units:
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  - rad
+  defaultPosition:
+  - 0.0
+  - -0.0873
+  - -0.4579
+  - -0.0049
+  - 0.453
+  - 0.3491
+  - 0.3491
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0873
+  - 0.4579
+  - 0.0049
+  - -0.453
+  scale:
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  - 0.35
+  lower:
+  - -0.436332
+  - -0.383972
+  - -1.570796
+  - -1.570796
+  - -1.570796
+  - -1.570796
+  - -1.570796
+  - -2.96706
+  - -0.436332
+  - -0.523599
+  - -0.383972
+  - -1.570796
+  - -1.570796
+  - -1.570796
+  upper:
+  - 0.523599
+  - 0.383972
+  - 1.570796
+  - 1.570796
+  - 1.570796
+  - 1.047198
+  - 1.570796
+  - 2.96706
+  - 0.436332
+  - 0.436332
+  - 0.383972
+  - 1.570796
+  - 1.570796
+  - 1.570796

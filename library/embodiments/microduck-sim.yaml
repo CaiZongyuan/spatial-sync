@@ -1,0 +1,18 @@
+id: microduck-sim
+title: Pollen Robotics Microduck Biped（仿真）
+kind: sim
+asset: robot/microduck@1
+controller: microduck-biped
+bindings:
+- scene: microduck-arena@1
+  entity: /World/Lab/Microduck
+  source: newton
+- scene: microduck-arena@2
+  entity: /World/Lab/Microduck
+  source: newton
+- scene: microduck-lab-patrol@1
+  entity: /World/Lab/PatrolDuck
+  source: newton
+- scene: microduck-lab-patrol@2
+  entity: /World/Lab/PatrolDuck
+  source: newton

@@ -1,0 +1,39 @@
+robot: /World/Lab/Microduck
+locations: {}
+waypoints:
+  origin:
+    p: [0.0, 0.0, 0.0]
+    yaw: 0.0
+    site: /World/Lab/Waypoints/Origin
+  north:
+    p: [0.45, 0.0, 0.0]
+    yaw: 0.0
+    site: /World/Lab/Waypoints/North
+  south:
+    p: [-0.40, 0.0, 0.0]
+    yaw: 3.141593
+    site: /World/Lab/Waypoints/South
+  east:
+    p: [0.0, -0.42, 0.0]
+    yaw: -1.570796
+    site: /World/Lab/Waypoints/East
+  west:
+    p: [0.0, 0.42, 0.0]
+    yaw: 1.570796
+    site: /World/Lab/Waypoints/West
+  northeast:
+    p: [0.38, -0.35, 0.0]
+    yaw: -0.741947
+    site: /World/Lab/Waypoints/Northeast
+  northwest:
+    p: [0.38, 0.35, 0.0]
+    yaw: 0.741947
+    site: /World/Lab/Waypoints/Northwest
+  turn_left:
+    p: [0.0, 0.0, 0.0]
+    yaw: 1.047198
+    site: /World/Lab/Waypoints/TurnLeft
+  turn_right:
+    p: [0.0, 0.0, 0.0]
+    yaw: -1.047198
+    site: /World/Lab/Waypoints/TurnRight

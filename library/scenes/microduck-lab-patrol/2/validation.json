@@ -1,0 +1,617 @@
+{
+  "schema": "lw.validation/1",
+  "subject": "scene:microduck-lab-patrol@2",
+  "ranAt": "2026-11-14T17:36:33.975190+00:00",
+  "toolVersions": {
+    "usd-core": "26.8",
+    "pydantic": "2.12.4",
+    "pyyaml": "6.0.3",
+    "newton": "1.7.0",
+    "warp-lang": "1.18.0",
+    "python": "3.13.14",
+    "mujoco": "3.15.0"
+  },
+  "checks": [
+    {
+      "id": "S1",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Package metadata and declared files match their schemas"
+    },
+    {
+      "id": "S2",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Stage must use Z up and metersPerUnit=1"
+    },
+    {
+      "id": "S3",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Entity paths must be ASCII under /World/Lab and separate from dressing"
+    },
+    {
+      "id": "S4",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Asset provenance check applies to asset versions",
+      "notApplicable": true
+    },
+    {
+      "id": "S5",
+      "tier": "structural",
+      "status": "pass",
+      "message": "Declared types and Config spatial references exist"
+    },
+    {
+      "id": "S6",
+      "tier": "structural",
+      "status": "warn",
+      "message": "Dressing has 0 USD reference groups; merged GLB count has not been checked",
+      "dressingReferenceCount": 0
+    },
+    {
+      "id": "S7",
+      "tier": "structural",
+      "status": "pass",
+      "message": "USD dependencies resolve only to package-local or indexed library files"
+    },
+    {
+      "id": "S8",
+      "tier": "structural",
+      "status": "warn",
+      "message": "No inspectable taught joint configuration is declared",
+      "notApplicable": true
+    },
+    {
+      "id": "P1",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Newton model loaded with finite state",
+      "measurements": {
+        "observedArrays": [
+          "body_q",
+          "body_qd",
+          "joint_q",
+          "joint_qd",
+          "body_mass",
+          "body_inertia",
+          "shape_transform",
+          "shape_scale"
+        ]
+      }
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/left_hip_yaw",
+      "measurements": {
+        "position": 0.0,
+        "lower": -0.4363323152065277,
+        "upper": 0.5235987901687622,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position -0.0873 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/left_hip_roll",
+      "measurements": {
+        "position": -0.08730000257492065,
+        "lower": -0.3839724361896515,
+        "upper": 0.3839724361896515,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position -0.4579 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/left_hip_pitch",
+      "measurements": {
+        "position": -0.4578999876976013,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position -0.0049 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/left_knee",
+      "measurements": {
+        "position": -0.004900000058114529,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0.453 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/left_ankle",
+      "measurements": {
+        "position": 0.453000009059906,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0.3491 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/neck_pitch",
+      "measurements": {
+        "position": 0.3490999937057495,
+        "lower": -1.5707963705062866,
+        "upper": 1.0471975803375244,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0.3491 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/head_pitch",
+      "measurements": {
+        "position": 0.3490999937057495,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/head_yaw",
+      "measurements": {
+        "position": 0.0,
+        "lower": -2.96705961227417,
+        "upper": 2.96705961227417,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/head_roll",
+      "measurements": {
+        "position": 0.0,
+        "lower": -0.4363323152065277,
+        "upper": 0.4363323152065277,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/right_hip_yaw",
+      "measurements": {
+        "position": 0.0,
+        "lower": -0.5235987901687622,
+        "upper": 0.4363323152065277,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0.0873 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/right_hip_roll",
+      "measurements": {
+        "position": 0.08730000257492065,
+        "lower": -0.3839724361896515,
+        "upper": 0.3839724361896515,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0.4579 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/right_hip_pitch",
+      "measurements": {
+        "position": 0.4578999876976013,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0.0049 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/right_knee",
+      "measurements": {
+        "position": 0.004900000058114529,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position -0.453 rad",
+      "entityKey": "/World/Lab/PatrolDuck/joints/right_ankle",
+      "measurements": {
+        "position": -0.453000009059906,
+        "lower": -1.5707963705062866,
+        "upper": 1.5707963705062866,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0 rad",
+      "entityKey": "/World/Lab/Centrifuge/LidHinge",
+      "measurements": {
+        "position": 0.0,
+        "lower": -0.0872664600610733,
+        "upper": 1.6580628156661987,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P5",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Initial joint position 0 rad",
+      "entityKey": "/World/Lab/Centrifuge/Spindle",
+      "measurements": {
+        "position": 0.0,
+        "lower": -17453.29296875,
+        "upper": 17453.29296875,
+        "unit": "rad"
+      },
+      "coordinate": 0
+    },
+    {
+      "id": "P6",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Scene has no configured taught arm locations",
+      "notApplicable": true
+    },
+    {
+      "id": "P4",
+      "tier": "physics",
+      "status": "warn",
+      "message": "Mass/density check applies to individual asset packages",
+      "notApplicable": true
+    },
+    {
+      "id": "P2",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Free-body displacement after 2 s: 2.505 mm (limit 5 mm)",
+      "entityKey": "/World/Lab/PatrolDuck/trunk_base",
+      "measurements": {
+        "initialM": [
+          -0.550000011920929,
+          0.3499999940395355,
+          0.11777198314666748
+        ],
+        "finalM": [
+          -0.549551784992218,
+          0.3495537042617798,
+          0.11534851044416428
+        ],
+        "displacementM": 0.0025046560412817346,
+        "limitM": 0.005
+      }
+    },
+    {
+      "id": "P3",
+      "tier": "physics",
+      "status": "pass",
+      "message": "Maximum measured penetration: 0.363 mm (limit 2 mm)",
+      "entityKey": "/World/Lab/Ground",
+      "measurements": {
+        "otherEntityKey": "/World/Lab/PatrolDuck/ankle_left/collision_0",
+        "contactCount": 217,
+        "depthM": 0.00036339834332466125,
+        "limitM": 0.002,
+        "worldStaticShapeCount": 1,
+        "excludedWorldStaticPairCount": 0,
+        "simTime": 2.0000000000000013
+      }
+    }
+  ],
+  "launchable": true,
+  "untypedEntities": [
+    "/World/Lab/BenchNorth"
+  ],
+  "referencedAssets": [
+    {
+      "id": "device/lab-centrifuge-reference@1",
+      "contentHash": "71664a732be700a4626f2deef4d54fcbcb5afa1bbc01df314fa60ce4ecc20894"
+    },
+    {
+      "id": "robot/microduck@1",
+      "contentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b"
+    }
+  ],
+  "inspection": "Recorded structure and Newton CPU physics checks",
+  "effectiveBindings": {
+    "newton": [
+      {
+        "key": "/World/Lab/PatrolDuck",
+        "type": "biped/v1",
+        "program": "biped.policy",
+        "config": {
+          "jointKeys": [
+            "/World/Lab/PatrolDuck/joints/left_hip_yaw",
+            "/World/Lab/PatrolDuck/joints/left_hip_roll",
+            "/World/Lab/PatrolDuck/joints/left_hip_pitch",
+            "/World/Lab/PatrolDuck/joints/left_knee",
+            "/World/Lab/PatrolDuck/joints/left_ankle",
+            "/World/Lab/PatrolDuck/joints/neck_pitch",
+            "/World/Lab/PatrolDuck/joints/head_pitch",
+            "/World/Lab/PatrolDuck/joints/head_yaw",
+            "/World/Lab/PatrolDuck/joints/head_roll",
+            "/World/Lab/PatrolDuck/joints/right_hip_yaw",
+            "/World/Lab/PatrolDuck/joints/right_hip_roll",
+            "/World/Lab/PatrolDuck/joints/right_hip_pitch",
+            "/World/Lab/PatrolDuck/joints/right_knee",
+            "/World/Lab/PatrolDuck/joints/right_ankle"
+          ],
+          "baseBody": "/World/Lab/PatrolDuck/trunk_base",
+          "policies": {
+            "walkTo": "policy/microduck-walk-to@1",
+            "standUp": "policy/microduck-stand-up@1",
+            "bow": "policy/microduck-bow@1"
+          },
+          "maxSeconds": 30.0,
+          "locations": {
+            "robot": "/World/Lab/PatrolDuck",
+            "locations": {},
+            "waypoints": {
+              "dock": {
+                "p": [
+                  -0.55,
+                  0.35,
+                  0.0
+                ],
+                "yaw": -0.785398,
+                "site": "/World/Lab/Waypoints/Dock"
+              },
+              "aisle_west": {
+                "p": [
+                  -0.55,
+                  -0.15,
+                  0.0
+                ],
+                "yaw": 0.0,
+                "site": "/World/Lab/Waypoints/AisleWest"
+              },
+              "bench_north": {
+                "p": [
+                  -0.2,
+                  0.32,
+                  0.0
+                ],
+                "yaw": 1.570796,
+                "site": "/World/Lab/Waypoints/BenchNorth"
+              },
+              "centrifuge_bay": {
+                "p": [
+                  0.1,
+                  0.3,
+                  0.0
+                ],
+                "yaw": 1.570796,
+                "site": "/World/Lab/Waypoints/CentrifugeBay"
+              },
+              "corridor_east": {
+                "p": [
+                  0.5,
+                  -0.15,
+                  0.0
+                ],
+                "yaw": 1.570796,
+                "site": "/World/Lab/Waypoints/CorridorEast"
+              },
+              "inspect_turn": {
+                "p": [
+                  -0.55,
+                  0.35,
+                  0.0
+                ],
+                "yaw": 0.0,
+                "site": "/World/Lab/Waypoints/InspectTurn"
+              }
+            }
+          },
+          "defaultPosition": [
+            0.0,
+            -0.0873,
+            -0.4579,
+            -0.0049,
+            0.453,
+            0.3491,
+            0.3491,
+            0.0,
+            0.0,
+            0.0,
+            0.0873,
+            0.4579,
+            0.0049,
+            -0.453
+          ],
+          "fallPostures": {
+            "front": [
+              0.0,
+              -0.0873,
+              0.5,
+              -0.5,
+              -0.6,
+              1.0,
+              1.1,
+              0.0,
+              0.0,
+              0.0,
+              0.0873,
+              -0.5,
+              0.5,
+              0.6
+            ],
+            "back": [
+              0.0,
+              -0.0873,
+              -1.1,
+              -0.0049,
+              0.9,
+              -0.6,
+              -0.6,
+              0.0,
+              0.0,
+              0.0,
+              0.0873,
+              1.1,
+              0.0049,
+              -0.9
+            ],
+            "left": [
+              0.0,
+              0.36,
+              -1.1,
+              1.2,
+              0.8,
+              0.3491,
+              0.3491,
+              0.0,
+              0.41,
+              0.0,
+              0.36,
+              0.2,
+              0.0,
+              -0.2
+            ],
+            "right": [
+              0.0,
+              -0.36,
+              -0.2,
+              0.0,
+              0.2,
+              0.3491,
+              0.3491,
+              0.0,
+              -0.41,
+              0.0,
+              -0.36,
+              1.1,
+              -1.2,
+              -0.8
+            ]
+          },
+          "maxTiltDeg": 55.0,
+          "uprightTiltDeg": 20.0,
+          "minStandHeight": 0.09,
+          "fallMinTiltDeg": 68.0,
+          "fallSettleSeconds": 0.45,
+          "xyTolerance": 0.08,
+          "yawTolerance": 0.25,
+          "dwellSeconds": 0.25,
+          "linearGain": 1.5,
+          "yawGain": 2.0,
+          "maxLinearSpeed": 0.28,
+          "maxLateralSpeed": 0.12,
+          "maxYawRate": 0.85,
+          "commandSmoothing": 0.22,
+          "headingAlignRad": 0.3,
+          "bowMinPitchDeg": 12.0,
+          "bowDurationSeconds": 1.0,
+          "fallTimeoutSeconds": 4.0
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      },
+      {
+        "key": "/World/Lab/Centrifuge",
+        "type": "centrifuge/v1",
+        "program": "centrifuge.newton",
+        "config": {
+          "slotSites": [
+            "/World/Lab/Centrifuge/Rotor/Slot1",
+            "/World/Lab/Centrifuge/Rotor/Slot2",
+            "/World/Lab/Centrifuge/Rotor/Slot3",
+            "/World/Lab/Centrifuge/Rotor/Slot4"
+          ],
+          "tubes": [],
+          "spindleJoint": "/World/Lab/Centrifuge/Spindle",
+          "lidJoint": "/World/Lab/Centrifuge/LidHinge",
+          "visualRpmCap": 60.0
+        },
+        "interlocks": {},
+        "unplaced": false,
+        "alerts": {}
+      }
+    ]
+  },
+  "entityCount": 21,
+  "bindingCount": 2,
+  "physics": {
+    "status": "completed",
+    "device": "cpu",
+    "ranAt": "2026-11-14T17:36:25.431325+00:00",
+    "toolVersions": {
+      "newton": "1.7.0",
+      "warp-lang": "1.18.0",
+      "usd-core": "26.8",
+      "python": "3.13.14",
+      "mujoco": "3.15.0"
+    },
+    "physicsDt": 0.002,
+    "solver": "mujoco",
+    "solverOptions": {
+      "iterations": 20,
+      "ls_iterations": 10,
+      "noslip_iterations": 0,
+      "integrator": 3,
+      "cone": 0
+    },
+    "simulationSeconds": 2.0000000000000013,
+    "freeBodyCount": 1
+  }
+}

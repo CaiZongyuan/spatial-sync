@@ -5,11 +5,17 @@ from __future__ import annotations
 import math
 from typing import Literal
 
+import numpy as np
 from pydantic import Field, model_validator
 
 from packages.info.program import Reject
 from packages.library.metadata import Locations
-from packages.policies.observations import command_envelope_failure
+from packages.policies.observations import (
+    assemble,
+    command_envelope_failure,
+    joint_targets,
+    observation_canonical_refs,
+)
 from packages.programs.biped.posture import (
     compute_fall_posture,
     publish_biped_telemetry,
@@ -22,6 +28,7 @@ from packages.programs.policy_base import (
     MultiPolicyProgram,
     PolicySlot,
     SpatialPath,
+    extract_observation_state,
 )
 
 FallDirection = Literal["front", "back", "left", "right"]
@@ -127,6 +134,9 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._fall_tilt_reached_at: float | None = None
         self._smoothed_cmd = [0.0, 0.0, 0.0]
         self._action_start_inferences = 0
+        self._idle_slot: PolicySlot | None = None
+        self._idle_previous: np.ndarray | None = None
+        self._next_idle_inference = 0.0
         if ctx.config.defaultPosition is not None and not self.fallen:
             self._apply_posture(ctx, ctx.config.defaultPosition)
 
@@ -305,7 +315,88 @@ class BipedPolicyProgram(MultiPolicyProgram):
             return [float(max(lo, min(hi, val))) for val, (lo, hi) in zip(raw, cmd_bounds, strict=True)]
         return [float(max(lo, min(hi, 0.0))) for lo, hi in cmd_bounds]
 
+    def _select_idle_balance_slot(self) -> PolicySlot | None:
+        ordered: list[PolicySlot] = []
+        for preferred in ("bow", "walkTo", "standUp"):
+            cand = self.slots.get(preferred)
+            if cand is not None:
+                ordered.append(cand)
+        for cand in self.slots.values():
+            if cand not in ordered:
+                ordered.append(cand)
+        for cand in ordered:
+            needs_ref = False
+            for obs_term in cand.spec.observations:
+                _, keys, frame_body = observation_canonical_refs(obs_term)
+                if any(k.startswith("$") for k in keys) or (
+                    frame_body is not None and frame_body.startswith("$")
+                ):
+                    needs_ref = True
+                    break
+            if needs_ref:
+                continue
+            bounds = _slot_command_bounds(cand)
+            if bounds is not None:
+                if any(not (lo <= 0.0 <= hi) for lo, hi in bounds):
+                    continue
+                if command_envelope_failure(cand.task, [0.0] * len(bounds)) is not None:
+                    continue
+            return cand
+        return None
+
+    def _arm_idle_balance(self, ctx, previous_slot: PolicySlot | None = None) -> None:
+        if self.fallen:
+            self._idle_slot = None
+            self._idle_previous = None
+            return
+        slot = self._select_idle_balance_slot()
+        self._idle_slot = slot
+        if slot is None:
+            self._idle_previous = None
+            return
+        if previous_slot is slot:
+            self._idle_previous = slot.previous.copy()
+        else:
+            self._idle_previous = np.zeros(len(slot.spec.action.jointKeys), dtype=np.float64)
+        self._next_idle_inference = ctx.sim_time
+
+    def _step_idle_balance(self, ctx) -> None:
+        slot = self._idle_slot
+        if slot is None or self._idle_previous is None:
+            return
+        if ctx.sim_time + 1e-10 < self._next_idle_inference:
+            return
+        bounds = _slot_command_bounds(slot)
+        cmd = [0.0] * len(bounds) if bounds is not None else None
+        obs = assemble(
+            slot.spec,
+            extract_observation_state(ctx.physics, slot.spec, {}),
+            previous_action=self._idle_previous,
+            command=cmd,
+        )
+        inputs = obs.astype(np.float32)[None, :]
+        if not np.isfinite(inputs).all():
+            return
+        raw_out = slot.model.session.run([slot.model.output], {slot.model.input: inputs})[0]
+        output = np.asarray(raw_out[0], dtype=np.float64)
+        if output.shape != (slot.model.actions,) or not np.isfinite(output).all():
+            return
+        positions = [ctx.physics.joint_q(self.joints[key])[0] for key in slot.spec.action.jointKeys]
+        targets = joint_targets(slot.spec, positions, output)
+        for key, raw_target in zip(slot.spec.action.jointKeys, targets, strict=True):
+            value = float(raw_target)
+            phys_lo, phys_hi = self.joint_limits.get(key, (None, None))
+            if phys_lo is not None:
+                value = max(phys_lo, value)
+            if phys_hi is not None:
+                value = min(phys_hi, value)
+            ctx.physics.set_joint_target(self.joints[key], [value])
+        self._idle_previous = output.copy()
+        self._next_idle_inference = ctx.sim_time + 1.0 / float(slot.task["control"]["hz"])
+
     def _on_action_start(self, inv, ctx, slot: PolicySlot):
+        self._idle_slot = None
+        self._idle_previous = None
         self.active_action_name = inv.action
         self.last_completed_action = None
         self._dwell_elapsed = 0.0
@@ -345,8 +436,13 @@ class BipedPolicyProgram(MultiPolicyProgram):
                 self.fallen = True
                 self.last_completed_action = None
                 self.phase = "fallen"
+                self._idle_slot = None
+                self._idle_previous = None
                 self._hold(ctx)
                 self._facts(ctx)
+                return
+            if not self.fallen:
+                self._step_idle_balance(ctx)
             return
 
         height_ok = (
@@ -477,6 +573,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
             self.fallen = False
         self.last_completed_action = inv.action
         self._set_idle_state(ctx)
+        self._arm_idle_balance(ctx, previous_slot=slot)
 
     def _sync_interrupted_fall_state(self, ctx):
         _, tilt_deg, _, _, _, _ = read_biped_kinematics(ctx, self.base_body)
@@ -485,6 +582,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         if self.fallen:
             self.last_completed_action = None
         self._set_idle_state(ctx)
+        self._arm_idle_balance(ctx, previous_slot=self._last_slot)
 
     def _on_cancel(self, inv, ctx):
         self._sync_interrupted_fall_state(ctx)
@@ -497,3 +595,4 @@ class BipedPolicyProgram(MultiPolicyProgram):
             self.fallen = True
             self.last_completed_action = None
         self._set_idle_state(ctx)
+        self._arm_idle_balance(ctx, previous_slot=slot)

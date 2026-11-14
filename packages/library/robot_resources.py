@@ -147,6 +147,41 @@ class RobotModel(Document):
         return self
 
 
+def _scene_references_robot_asset(
+    scene, target_key: str, asset_id: str, asset_content_hash: str
+) -> bool:
+    payload = scene.runtime_payload()
+    stage_spec = payload["metadata"]["stage"]
+    if stage_spec.startswith("python:"):
+        return False
+    expected_map = {item["id"]: item["contentHash"] for item in payload["expectedAssets"]}
+    if expected_map.get(asset_id) != asset_content_hash:
+        return False
+    from pxr import Usd
+
+    from packages.library.structural import USDGraph
+
+    graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
+    stage = graph.compose(stage_spec)
+    if stage is None or graph.errors:
+        return False
+    asset_snapshot = next((item for item in payload["assets"] if item["id"] == asset_id), None)
+    if asset_snapshot is None:
+        return False
+    asset_layer = graph.layer(asset_snapshot, asset_snapshot["metadata"]["stage"])
+    if asset_layer is None or graph.errors or Usd.Stage.Open(asset_layer) is None:
+        return False
+    prim = stage.GetPrimAtPath(target_key)
+    return bool(
+        prim
+        and prim.IsValid()
+        and any(
+            spec.layer.identifier == asset_layer.identifier and str(spec.path) == "/Asset"
+            for spec in prim.GetPrimStack()
+        )
+    )
+
+
 class RobotResources:
     def __init__(self, roots, assets, scenes, programs):
         self.roots = {name: Path(root).resolve() for name, root in roots.items()}
@@ -263,7 +298,15 @@ class RobotResources:
                               if item.binding.get("key") == binding["entity"]), None)
                 authored = next((item for item in scene.bindings["entities"]
                                  if item.get("key") == binding["entity"]), None)
-                if match is None or authored is None or authored.get("template") != value["asset"]:
+                authored_template = authored.get("template") if authored is not None else None
+                matches_asset = authored_template == value["asset"] or (
+                    authored is not None
+                    and authored_template is None
+                    and _scene_references_robot_asset(
+                        scene, binding["entity"], value["asset"], summary["contentHash"]
+                    )
+                )
+                if match is None or not matches_asset:
                     raise LibraryError("robot_binding_mismatch", "Scene does not bind this robot asset", 409)
                 program = match.binding["program"]
                 model = next((item for item in models if item["capability"]["program"] == program), None)

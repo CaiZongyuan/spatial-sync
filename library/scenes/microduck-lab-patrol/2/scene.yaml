@@ -1,0 +1,13 @@
+name: microduck-lab-patrol
+title: Microduck Laboratory Patrol & Equipment Inspection
+description: Default policy-driven multi-entity laboratory patrol layout pairing trained
+  CPU ONNX Microduck skills (walkTo, standUp, bow) with a benchtop centrifuge.
+sources:
+- newton
+stage: stage.usda
+simulation:
+  solver: mujoco
+  warmupSteps: 1
+  physicsDt: 0.002
+derivedFrom:
+  scene: microduck-lab-patrol@1

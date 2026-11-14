@@ -1,0 +1,1 @@
+{"checkpoint": "checkpoints/rsl_rl/job-81285f66ef7a4ef8ab592cef5c443f75/2026-11-15_00-04-31/model_499.pt", "checkpointSha256": "0898e927bb87c025ba2721d1ab40076fc69f4545fd8b25f378295fdc993fe0c5", "policy": "policy.onnx", "policySha256": "0ec356838af3fa272c20a9653d4b505d1d08de1f8c972b5bbce2cd8860b3fbca", "externalData": [], "iteration": 499, "afterLearn": true}

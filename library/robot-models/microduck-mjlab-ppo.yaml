@@ -1,0 +1,36 @@
+id: microduck-mjlab-ppo
+title: Microduck mjlab PPO Multi-Skill Locomotion & Recovery
+family: rl-policy
+source: spatial-sync built-in mjlab + rsl_rl PPO (walkTo / standUp / bow)
+license: Apache-2.0
+parameters: 143058
+embodiments:
+- microduck-sim
+upstreamEmbodiments:
+- Pollen Robotics Microduck
+actionSpace: joint_position_offset (14 DoF @ 50 Hz)
+compute:
+  inference: CPU
+runnable: true
+capability:
+  program: biped.policy
+  sources:
+  - newton
+  requirements:
+  - CPUExecutionProvider (onnxruntime)
+  - Newton simulation dependencies
+  - Canonical robot/microduck@1 14-DoF articulation
+  notes: Three compact [256, 128] ELU PPO policies trained on RTX 3090 in USD-derived
+    mjlab-warp (500 Hz solver / 50 Hz control, zero-backlash standard UsdPhysics drives)
+    and qualified against 256 native witnesses + deterministic CPU NewtonSimulation
+    suites.
+quality:
+  status: evaluated
+  evaluationId: eval-dc572cde5c2d469087e41c468154fe68
+sources:
+- title: Pollen Robotics Microduck open-source robot and RL reference
+  url: https://github.com/pollen-robotics/microduck
+  retrievedOn: '2026-11-14'
+- title: mjlab MuJoCo-Warp reinforcement learning framework
+  url: https://github.com/mujocolab/mjlab
+  retrievedOn: '2026-11-14'
