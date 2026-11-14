@@ -145,6 +145,7 @@ async def test_microduck_arena_and_lab_patrol_across_http_cli_mcp_and_evaluation
                     assert vals0["phase"] == "idle"
                     assert vals0["tiltDeg"] < 10.0
                     assert 0.10 < vals0["basePosition"][2] < 0.14
+                    assert vals0["baseHeight"] == pytest.approx(vals0["basePosition"][2], abs=0.0025)
                     assert len(vals0["jointPositions"]) == 14
 
                     # Open-loop walkTo(north) executes and reports motion_timeout cleanly without crashing
@@ -188,7 +189,8 @@ async def test_microduck_arena_and_lab_patrol_across_http_cli_mcp_and_evaluation
                     assert stand_front.json()["error"]["code"] == "motion_timeout"
                     vals_fallen = await _lw_cli("get", arena_bot, env=arena_env)
                     assert vals_fallen["fallen"] is True
-                    assert vals_fallen["tiltDeg"] > 55.0
+                    assert vals_fallen["tiltDeg"] >= 65.0
+                    assert vals_fallen["baseHeight"] <= 0.070
 
                     # Reset restores upright standing equilibrium; bow executes forward pitch excursion
                     rst = await client.post(
@@ -332,3 +334,92 @@ async def test_microduck_arena_and_lab_patrol_across_http_cli_mcp_and_evaluation
             server.should_exit = True
             await server_task
             sock.close()
+
+
+def test_microduck_four_way_fall_induction_settles_on_floor_before_handoff(tmp_path: Path) -> None:
+    import yaml
+
+    from packages.info.catalog import DEVICE_ROOT, compile_catalog
+    from packages.info.program import HostCore
+    from packages.library.common import BUILTIN_ROOT
+    from packages.library.scenes import SceneLibrary
+    from packages.protocol.schema import Actor, InvokeRequest
+    from packages.sim_runtime.info_catalog import REGISTRY
+    from packages.sim_runtime.library_scene import prepare_scene_config
+    from packages.sim_runtime.manifest_export import export_manifest
+    from packages.sim_runtime.physics_port import PhysicsPort
+    from packages.sim_runtime.simulation import NewtonSimulation
+
+    scenes = SceneLibrary(
+        builtin_root=BUILTIN_ROOT,
+        user_root=tmp_path / "user",
+        state_root=tmp_path / "state",
+    )
+    arena = scenes.resolve("microduck-arena@1", launch=True, source="newton")
+    payload = arena.runtime_payload()
+    sim_cfg = prepare_scene_config(payload, include_visuals=False)
+    biped_type = yaml.safe_load((DEVICE_ROOT / "types/biped.v1.yaml").read_text(encoding="utf-8"))
+    entity = "/World/Lab/Microduck"
+    binding = dict(payload["structure"]["effectiveBindings"]["newton"][0])
+    cfg = dict(binding["config"]) | {"locations": {}}
+    posture_cls = REGISTRY["biped.posture"]
+    catalog = compile_catalog(
+        "rev-microduck-falls",
+        {"biped/v1": biped_type},
+        {entity: binding | {"config": cfg}},
+        {entity: posture_cls.Config.model_validate(cfg)},
+    )
+    actor = Actor(kind="user", name="tester")
+
+    with NewtonSimulation(
+        "microduck-arena@1",
+        device="cpu",
+        physics_dt=sim_cfg.physics_dt,
+        solver=arena.metadata["simulation"]["solver"],
+        config=sim_cfg,
+    ) as sim:
+        manifest = export_manifest(
+            sim, session_id="s-fall", scene_revision="rev-fall", revision_numeric_id=1
+        )
+        for direction in ("front", "back", "left", "right"):
+            sim.reset()
+            port = PhysicsPort(sim, manifest)
+            sim_t = 0.0
+            host = HostCore(
+                catalog,
+                REGISTRY,
+                physics=port,
+                source="sim",
+                fact_hz=100.0,
+                publication_clock=lambda: sim_t,
+            )
+            res = host.invoke(
+                InvokeRequest(
+                    invocationId=f"fall-{direction}",
+                    requestId=f"req-{direction}",
+                    entityKey=entity,
+                    action="standUp",
+                    params={"fromFall": direction},
+                    actor=actor,
+                    epoch=0,
+                    createdSimTime=0.0,
+                    createdAtMs=1.0,
+                )
+            )
+            assert res.status in ("accepted", "running")
+            port.commit()
+            handoff_vals = None
+            dt_ctrl = 0.02
+            for step_idx in range(180):
+                sim.step(10)
+                port.capture()
+                sim_t = round((step_idx + 1) * dt_ctrl, 6)
+                host.tick(sim_t, dt_ctrl)
+                port.commit()
+                vals = host.values()[entity]
+                if vals["fallen"] is True:
+                    handoff_vals = vals
+                    break
+            assert handoff_vals is not None, f"Direction {direction} did not reach settled fall handoff"
+            assert handoff_vals["baseHeight"] <= 0.070, (direction, handoff_vals)
+            assert handoff_vals["tiltDeg"] >= 65.0, (direction, handoff_vals)

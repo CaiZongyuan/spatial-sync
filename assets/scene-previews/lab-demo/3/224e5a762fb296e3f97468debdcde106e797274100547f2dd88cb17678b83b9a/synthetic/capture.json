@@ -30,7 +30,7 @@
   ],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-14T07:12:29.881506+00:00",
+  "capturedAt": "2026-11-14T09:55:06.068862+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -58,7 +58,7 @@
     },
     {
       "path": "devices/types/biped.v1.yaml",
-      "sha256": "60c962ad54e8ba750834a7f5b1a2afe292f1a0f0b7b4b4cd72def6e8dd29c575"
+      "sha256": "2375f23056574bfe2fe904fcb5aeaffcbbfec75291a299dd6edcf08d413ee0a3"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -368,10 +368,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "60b7f43b71b4c92ec8400dbcf31d867f8225e3bdb68fd099d3e1e7363ffa0cce",
-    "catalog.json": "7ad0398780f796618b55e666737478e5e594e6277f3bcc0da6c9eeceed634140",
-    "state.json": "43316f33a302da9c43e11af5032338c86ea466429997b8227a3d6b9febaed7c9",
-    "snapshot.bin": "213087fdc932f7ba9c5d7f1950ce403581a97b9efae35c11825a76814170c3d3"
+    "manifest.json": "35c6afb7ba47639faa792d3cb1d594bf285af774527fa3703476a4edfee3fbe9",
+    "catalog.json": "7badeb55cb6873063292c375eb414949ebf3b28aefb5964ad9d60998efe3ff26",
+    "state.json": "daa712e3ebbaa27a233c890eb277940560ea2ddc21e18034befa691df0c14050",
+    "snapshot.bin": "c48f013b13590cf3f9ec1ce466ad3be8ede60b186badbd81de7df123b9451a16"
   },
   "counts": {
     "physicalEntities": 33,

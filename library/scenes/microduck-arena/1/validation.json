@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "scene:microduck-arena@1",
-  "ranAt": "2026-11-14T07:40:44.620862+00:00",
+  "ranAt": "2026-11-14T09:29:47.562781+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",
@@ -295,20 +295,20 @@
       "id": "P2",
       "tier": "physics",
       "status": "pass",
-      "message": "Free-body displacement after 2 s: 2.885 mm (limit 5 mm)",
+      "message": "Free-body displacement after 2 s: 3.351 mm (limit 5 mm)",
       "entityKey": "/World/Lab/Microduck/trunk_base",
       "measurements": {
         "initialM": [
           0.0,
           0.0,
-          0.11777201294898987
+          0.11777198314666748
         ],
         "finalM": [
-          0.00156162038911134,
-          2.354115196112616e-07,
-          0.11534667015075684
+          -0.002271645236760378,
+          2.320088242413476e-06,
+          0.11530889570713043
         ],
-        "displacementM": 0.0028846049961905825,
+        "displacementM": 0.0033506980167288636,
         "limitM": 0.005
       }
     },
@@ -316,12 +316,12 @@
       "id": "P3",
       "tier": "physics",
       "status": "pass",
-      "message": "Maximum measured penetration: 0.517 mm (limit 2 mm)",
-      "entityKey": "/World/Lab/Microduck/neck_pitch/collision_0",
+      "message": "Maximum measured penetration: 0.437 mm (limit 2 mm)",
+      "entityKey": "/World/Lab/Ground",
       "measurements": {
-        "otherEntityKey": "/World/Lab/Microduck/jaw_soft/collision_2",
-        "contactCount": 197,
-        "depthM": 0.0005167791969142854,
+        "otherEntityKey": "/World/Lab/Microduck/ankle_left/collision_0",
+        "contactCount": 204,
+        "depthM": 0.00043680332601070404,
         "limitM": 0.002,
         "worldStaticShapeCount": 1,
         "excludedWorldStaticPairCount": 0,
@@ -334,7 +334,7 @@
   "referencedAssets": [
     {
       "id": "robot/microduck@1",
-      "contentHash": "f0cbcc23a0afdc3466d18336bf14f4a76f700cb9f29153c8beea8d63f5579332"
+      "contentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b"
     }
   ],
   "inspection": "Recorded structure and Newton CPU physics checks",
@@ -570,6 +570,9 @@
           "fallTimeoutSeconds": 4.0,
           "maxTiltDeg": 55.0,
           "uprightTiltDeg": 20.0,
+          "minStandHeight": 0.09,
+          "fallMinTiltDeg": 68.0,
+          "fallSettleSeconds": 0.45,
           "bowMinPitchDeg": 12.0,
           "xyTolerance": 0.08,
           "yawTolerance": 0.25
@@ -585,7 +588,7 @@
   "physics": {
     "status": "completed",
     "device": "cpu",
-    "ranAt": "2026-11-14T07:40:45.799385+00:00",
+    "ranAt": "2026-11-14T09:29:48.991149+00:00",
     "toolVersions": {
       "newton": "1.7.0",
       "warp-lang": "1.18.0",

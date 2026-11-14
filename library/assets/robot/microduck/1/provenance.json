@@ -160,6 +160,10 @@
       "sha256": "b0c9902dee19f06cdb7fa930292e0e1c91e2dc59baa971211495b58ff76c3c60",
       "bytes": 290784
     },
+    "microduck_rl/src/mjlab_microduck/robot/microduck/joints_properties.xml": {
+      "sha256": "6a4481a9279ffd92139479e67515df7b3510799ceb648c18fde0d58c300eae86",
+      "bytes": 1780
+    },
     "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml": {
       "sha256": "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15",
       "bytes": 32904
@@ -175,22 +179,22 @@
       "bytes": 11357
     },
     "asset.usdc": {
-      "sha256": "269b05fce2fa34a22febd465bcda00d802dca4aac8c4800f4d794d50e3fab442",
-      "bytes": 2038775
+      "sha256": "85f69669b4a43d8eaf5afaef9ba5afb6aa2a549acc0069b336806fe5310c696e",
+      "bytes": 2038778
     },
     "asset.yaml": {
-      "sha256": "4948d67a63a365f9e7e39712f398b1f7b88342a7b6438530796dc2ac4eb3113b",
-      "bytes": 2379
+      "sha256": "d650a3ad4721666efa2efc1dc09bc3a48c8cbfad9f08fded6fdce96d3d3beb19",
+      "bytes": 2457
     },
     "visual.glb": {
-      "sha256": "9d00ac0d3060e530923062ab003fc9f36917174a102ce1e8bd670547da852eca",
-      "bytes": 1506516
+      "sha256": "59327c4277d29cab5a42caf7f46380cb5be8fa45eb3f6ad18a8c8b88a1f45fbc",
+      "bytes": 1506488
     }
   },
   "producer": {
     "path": "tools/package_microduck_asset.py",
-    "sha256": "4f6e1b9503f6a2be06054df858ee684ed6ea26ce3abf61593f1a4c50a519d462",
-    "bytes": 32505
+    "sha256": "c1f3a0fc5ad6d7392b102dcf32ce8e4b06cb8fe7338498a20cf3c01698a6d124",
+    "bytes": 34311
   },
   "toolVersions": {
     "python": "3.13.14",
@@ -203,7 +207,7 @@
   "conversion": {
     "device": "cpu",
     "poseName": "STAND2",
-    "trunkEquilibriumPitchDeg": -5.010211,
+    "trunkEquilibriumPitchDeg": -5.00954144,
     "poseRad": {
       "left_hip_yaw": 0.0,
       "left_hip_roll": -0.0873,

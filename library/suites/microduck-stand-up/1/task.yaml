@@ -8,6 +8,7 @@ success:
     - {property: fallen, equals: false}
     - {property: lastCompletedAction, equals: standUp}
     - {property: tiltDeg, lte: 20.0}
+    - {property: baseHeight, gte: 0.09}
 milestones:
   - id: fallen
     when: {property: fallen, equals: true}

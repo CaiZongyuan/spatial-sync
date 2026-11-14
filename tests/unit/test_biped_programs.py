@@ -249,6 +249,7 @@ def test_biped_type_and_programs_have_no_robot_specific_hardcoding():
         "currentWaypoint",
         "targetWaypoint",
         "basePosition",
+        "baseHeight",
         "yawRad",
         "tiltDeg",
         "pitchDeg",
@@ -517,6 +518,7 @@ def test_biped_posture_program_publishes_telemetry_and_validates_waypoints():
     assert vals["phase"] == "idle"
     assert vals["fallen"] is False
     assert vals["activeAction"] is None
+    assert vals["baseHeight"] == pytest.approx(0.25)
     assert port.targets[joints[0]] == pytest.approx(0.1)
 
     actor = Actor(kind="user", name="op")
@@ -908,3 +910,245 @@ def test_policy_slot_rejects_external_obs_remap_and_missing_port_channels(tmp_pa
         getattr(ev, "code", None) == "internal_error" and "MissingImuSite" in ev.message
         for ev in site_events
     )
+
+
+def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_path, monkeypatch):
+    user_lib = tmp_path / "user-lib"
+    monkeypatch.setenv("LW_LIBRARY", str(user_lib))
+    biped_type = _load_biped_type()
+    posture_cls = REGISTRY["biped.posture"]
+    policy_cls = REGISTRY["biped.policy"]
+
+    entity = "/World/Lab/ArenaBiped"
+    joints = [f"{entity}/LeftHip", f"{entity}/RightHip", f"{entity}/LeftKnee", f"{entity}/RightKnee"]
+    trunk = f"{entity}/Trunk"
+    policies = _make_biped_policies(user_lib, robot=entity, scene="arena@1")
+
+    for cls in (posture_cls, policy_cls):
+        bad_raw = {
+            "jointKeys": joints,
+            "baseBody": trunk,
+            "maxTiltDeg": 55.0,
+            "fallMinTiltDeg": 50.0,
+        }
+        if cls is policy_cls:
+            bad_raw["policies"] = policies
+        with pytest.raises(ValueError, match="fallMinTiltDeg"):
+            cls.Config.model_validate(bad_raw)
+
+    base_posture_cfg = {
+        "jointKeys": joints,
+        "baseBody": trunk,
+        "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+        "actionTargets": {
+            "standUp": [0.05, 0.05, -0.05, -0.05],
+            "bow": [0.40, 0.40, 0.0, 0.0],
+        },
+        "fallPostures": {"front": [0.90, 0.90, -0.50, -0.50]},
+        "locations": {"waypoints": {"home": {"p": [0.0, 0.0, 0.0], "yaw": 0.0}}},
+        "actionDuration": 0.20,
+        "dwellSeconds": 0.15,
+        "maxTiltDeg": 50.0,
+        "uprightTiltDeg": 15.0,
+        "minStandHeight": 0.09,
+        "fallMinTiltDeg": 68.0,
+        "fallSettleSeconds": 0.20,
+        "bowMinPitchDeg": 8.0,
+    }
+    overridden = policy_cls.apply_policy_override(base_posture_cfg, "standUp", policies["standUp"])
+    assert overridden["minStandHeight"] == pytest.approx(0.09)
+    assert overridden["fallMinTiltDeg"] == pytest.approx(68.0)
+    assert overridden["fallSettleSeconds"] == pytest.approx(0.20)
+
+    # 1. Verify BipedPostureProgram minStandHeight crouch guard & fallSettleSeconds hold
+    port_p = KinematicBipedPort(joints, trunk, pose_p=(0.0, 0.0, 0.12))
+    cat_p = compile_catalog(
+        "rev-posture-guards",
+        {"biped/v1": biped_type},
+        {entity: {"key": entity, "type": "biped/v1", "program": posture_cls.id, "config": base_posture_cfg}},
+        {entity: posture_cls.Config.model_validate(base_posture_cfg)},
+    )
+    sim_tp = 0.0
+    host_p = HostCore(
+        cat_p, REGISTRY, physics=port_p, source="sim", fact_hz=20.0, publication_clock=lambda: sim_tp
+    )
+    actor = Actor(kind="user", name="tester")
+    invs_p = {}
+
+    def step_p(n=1, dt=0.05):
+        nonlocal sim_tp
+        for _ in range(n):
+            sim_tp = round(sim_tp + dt, 6)
+            for ev in host_p.tick(sim_tp, dt):
+                if hasattr(ev, "invocationId") and hasattr(ev, "status"):
+                    invs_p[ev.invocationId] = ev
+
+    def req_p(inv_id, action, params=None):
+        return InvokeRequest(
+            invocationId=inv_id,
+            requestId="req-" + inv_id,
+            entityKey=entity,
+            action=action,
+            params=params or {},
+            actor=actor,
+            epoch=0,
+            createdSimTime=sim_tp,
+            createdAtMs=1000.0,
+        )
+
+    # Crouching at z=0.060 (< minStandHeight=0.09) at waypoint "home" fails walkTo!
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_p.poses[trunk][1])
+    res_crouch = host_p.invoke(req_p("p-walk-crouch", "walkTo", {"waypoint": "home"}))
+    assert res_crouch.status in ("accepted", "running")
+    step_p(5)
+    assert invs_p["p-walk-crouch"].status == "failed"
+    assert invs_p["p-walk-crouch"].error.code == "motion_timeout"
+    assert host_p.values()[entity]["baseHeight"] == pytest.approx(0.06)
+
+    # Standing at z=0.12 (>= 0.09) at waypoint "home" succeeds walkTo
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.12]), port_p.poses[trunk][1])
+    assert host_p.invoke(req_p("p-walk-ok", "walkTo", {"waypoint": "home"})).status in ("accepted", "running")
+    step_p(5)
+    assert invs_p["p-walk-ok"].status == "succeeded"
+
+    # Crouching upright return after bow fails motion_timeout
+    assert host_p.invoke(req_p("p-bow-crouch", "bow")).status in ("accepted", "running")
+    port_p.set_euler(pitch_deg=14.0)
+    step_p(4)  # Reaches bow peak & switches to upright return
+    port_p.set_euler(pitch_deg=2.0)
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_p.poses[trunk][1])
+    step_p(8)
+    assert invs_p["p-bow-crouch"].status == "failed"
+
+    # standUp(fromFall="front") waits for fallMinTiltDeg=68.0 AND fallSettleSeconds=0.20, plus minStandHeight!
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.12]), port_p.poses[trunk][1])
+    assert host_p.invoke(req_p("p-su", "standUp", {"fromFall": "front"})).status in ("accepted", "running")
+    step_p(1)
+    assert port_p.targets[joints[0]] == pytest.approx(0.90)
+    # 60 deg exceeds maxTiltDeg=50.0, but is below fallMinTiltDeg=68.0 -> still holding fall posture!
+    port_p.set_euler(pitch_deg=60.0)
+    step_p(3)
+    assert host_p.values()[entity]["fallen"] is False
+    assert port_p.targets[joints[0]] == pytest.approx(0.90)
+    # Reach 72 deg (>= 68.0), hold 2 ticks (0.10s < 0.20s), then dip below maxTiltDeg -> resets timer!
+    port_p.set_euler(pitch_deg=72.0)
+    step_p(2)
+    assert host_p.values()[entity]["fallen"] is False
+    port_p.set_euler(pitch_deg=45.0)
+    step_p(1)
+    port_p.set_euler(pitch_deg=72.0)
+    step_p(3)  # Only 0.10s elapsed since re-reaching 72 deg -> still holding fall posture!
+    assert host_p.values()[entity]["fallen"] is False
+    assert port_p.targets[joints[0]] == pytest.approx(0.90)
+    step_p(2)  # Total 0.20s settled -> clears _pre_fall_direction & commands standUp posture!
+    assert host_p.values()[entity]["fallen"] is True
+    assert port_p.targets[joints[0]] == pytest.approx(0.05)
+    # Upright tilt (2 deg) at crouch height z=0.060 must NOT accumulate dwell!
+    port_p.set_euler(pitch_deg=2.0)
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_p.poses[trunk][1])
+    step_p(3)
+    assert invs_p.get("p-su") is None or invs_p["p-su"].status == "running"
+    # Raise to z=0.11 (>= 0.09) -> dwells 0.15s and succeeds!
+    port_p.poses[trunk] = (np.array([0.0, 0.0, 0.11]), port_p.poses[trunk][1])
+    step_p(3)
+    assert invs_p["p-su"].status == "succeeded"
+
+    # 2. Verify BipedPolicyProgram minStandHeight crouch guard & zero inference calls during fallSettleSeconds
+    pol_cfg = {
+        "jointKeys": joints,
+        "baseBody": trunk,
+        "defaultPosition": [0.0, 0.0, 0.0, 0.0],
+        "policies": policies,
+        "fallPostures": {"front": [0.90, 0.90, -0.50, -0.50]},
+        "locations": {"waypoints": {"home": {"p": [0.0, 0.0, 0.0], "yaw": 0.0}}},
+        "dwellSeconds": 0.15,
+        "maxTiltDeg": 50.0,
+        "uprightTiltDeg": 15.0,
+        "minStandHeight": 0.09,
+        "fallMinTiltDeg": 68.0,
+        "fallSettleSeconds": 0.20,
+        "bowMinPitchDeg": 8.0,
+        "bowDurationSeconds": 0.15,
+    }
+    port_m = KinematicBipedPort(joints, trunk, pose_p=(0.0, 0.0, 0.12))
+    cat_m = compile_catalog(
+        "rev-policy-guards",
+        {"biped/v1": biped_type},
+        {entity: {"key": entity, "type": "biped/v1", "program": policy_cls.id, "config": pol_cfg}},
+        {entity: policy_cls.Config.model_validate(pol_cfg)},
+    )
+    sim_tm = 0.0
+    host_m = HostCore(
+        cat_m, REGISTRY, physics=port_m, source="sim", fact_hz=20.0, publication_clock=lambda: sim_tm
+    )
+    invs_m = {}
+
+    def step_m(n=1, dt=0.05):
+        nonlocal sim_tm
+        for _ in range(n):
+            sim_tm = round(sim_tm + dt, 6)
+            for ev in host_m.tick(sim_tm, dt):
+                if hasattr(ev, "invocationId") and hasattr(ev, "status"):
+                    invs_m[ev.invocationId] = ev
+
+    def req_m(inv_id, action, params=None):
+        return InvokeRequest(
+            invocationId=inv_id,
+            requestId="req-" + inv_id,
+            entityKey=entity,
+            action=action,
+            params=params or {},
+            actor=actor,
+            epoch=0,
+            createdSimTime=sim_tm,
+            createdAtMs=1000.0,
+        )
+
+    # walkTo crouch at z=0.060 stays running until raised to z=0.11
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_m.poses[trunk][1])
+    assert host_m.invoke(req_m("m-walk", "walkTo", {"waypoint": "home"})).status in ("accepted", "running")
+    step_m(5)
+    assert invs_m.get("m-walk") is None or invs_m["m-walk"].status == "running"
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.11]), port_m.poses[trunk][1])
+    step_m(4)
+    assert invs_m["m-walk"].status == "succeeded"
+
+    # bow upright return crouch at z=0.060 stays running until raised to z=0.11
+    assert host_m.invoke(req_m("m-bow", "bow")).status in ("accepted", "running")
+    port_m.set_euler(pitch_deg=16.0)
+    step_m(3)
+    port_m.set_euler(pitch_deg=2.0)
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_m.poses[trunk][1])
+    step_m(5)
+    assert invs_m.get("m-bow") is None or invs_m["m-bow"].status == "running"
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.11]), port_m.poses[trunk][1])
+    step_m(4)
+    assert invs_m["m-bow"].status == "succeeded"
+
+    # standUp(fromFall="front") runs ZERO ONNX policy inferences during fall + settle window!
+    assert host_m.invoke(req_m("m-su", "standUp", {"fromFall": "front"})).status in ("accepted", "running")
+    step_m(1)
+    assert host_m.program_execution(entity, action="standUp")["inferenceCalls"] == 0
+    assert port_m.targets[joints[0]] == pytest.approx(0.90)
+    port_m.set_euler(pitch_deg=60.0)  # Below fallMinTiltDeg=68.0
+    step_m(3)
+    assert host_m.program_execution(entity, action="standUp")["inferenceCalls"] == 0
+    assert host_m.values()[entity]["fallen"] is False
+    port_m.set_euler(pitch_deg=72.0)  # Reach fallMinTiltDeg=68.0; settle takes 0.20s (4 ticks after reach)
+    step_m(4)  # Tick 1 sets _fall_tilt_reached_at; ticks 2..4 accumulate 0.15s < 0.20s -> still 0 inferences!
+    assert host_m.program_execution(entity, action="standUp")["inferenceCalls"] == 0
+    assert host_m.values()[entity]["fallen"] is False
+    step_m(1)  # 0.20s settled -> clears _pre_fall_direction AND runs 1st ONNX recovery inference!
+    assert host_m.values()[entity]["fallen"] is True
+    assert host_m.program_execution(entity, action="standUp")["inferenceCalls"] == 1
+    assert port_m.targets[joints[0]] == pytest.approx(0.05)
+
+    # Crouch at z=0.060 blocks standUp completion; raising to z=0.11 completes after dwellSeconds
+    port_m.set_euler(pitch_deg=2.0)
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.06]), port_m.poses[trunk][1])
+    step_m(5)
+    assert invs_m.get("m-su") is None or invs_m["m-su"].status == "running"
+    port_m.poses[trunk] = (np.array([0.0, 0.0, 0.11]), port_m.poses[trunk][1])
+    step_m(4)
+    assert invs_m["m-su"].status == "succeeded"
+    assert host_m.values()[entity]["baseHeight"] == pytest.approx(0.11)

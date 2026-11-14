@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-14T07:12:29.464738+00:00",
+  "capturedAt": "2026-11-14T09:55:04.736457+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -33,7 +33,7 @@
     },
     {
       "path": "devices/types/biped.v1.yaml",
-      "sha256": "60c962ad54e8ba750834a7f5b1a2afe292f1a0f0b7b4b4cd72def6e8dd29c575"
+      "sha256": "2375f23056574bfe2fe904fcb5aeaffcbbfec75291a299dd6edcf08d413ee0a3"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -223,10 +223,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "69c871bbcc66e6323e47cd6128bd837a32afa37575461f902e0502a604bfaf48",
-    "catalog.json": "f6ee30411ca88ab22cf3b74c944862277f1e388c8c9839bac2d26c25a17505f4",
-    "state.json": "d51dd2bcf233ae159cf1b7a0bee2ae9fbe0ada1a632cacead7677cc12c6388c2",
-    "snapshot.bin": "13605e7d9784e3e18efab7ec989ba201a0f228830ccc963a04dfa4b2477b70d6"
+    "manifest.json": "91a7434d0b28d9bad8c79ca9b4fa670407ea028651ce331b7cd699b8086da23c",
+    "catalog.json": "97b62d9ddee16860afb0a8fca56ba0b80cf02060e34f6e7c7749bd43157692e3",
+    "state.json": "026b501ff3a22fb7d9f39b8e9e1a6e1e205799f80d4499a54a866ba6a68c9709",
+    "snapshot.bin": "7d0f783900a16ad8a3f447ea971dfd69aab9e89f4cbd51b59b42c2f63766493f"
   },
   "counts": {
     "physicalEntities": 33,

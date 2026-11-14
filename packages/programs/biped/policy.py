@@ -39,6 +39,12 @@ class BipedPolicyConfig(MultiPolicyConfig):
     minStandHeight: float | None = Field(
         default=None, gt=0.0, allow_inf_nan=False, exclude_if=lambda value: value is None
     )
+    fallMinTiltDeg: float | None = Field(
+        default=None, gt=0.0, lt=180.0, allow_inf_nan=False, exclude_if=lambda value: value is None
+    )
+    fallSettleSeconds: float = Field(
+        default=0.0, ge=0.0, allow_inf_nan=False, exclude_if=lambda value: value == 0.0
+    )
     xyTolerance: float = Field(default=0.08, gt=0.0, allow_inf_nan=False)
     yawTolerance: float = Field(default=0.20, gt=0.0, allow_inf_nan=False)
     dwellSeconds: float = Field(default=0.25, gt=0.0, allow_inf_nan=False)
@@ -64,6 +70,8 @@ class BipedPolicyConfig(MultiPolicyConfig):
                 raise ValueError(f"fallPostures[{direction}] must match jointKeys length")
         if self.uprightTiltDeg >= self.maxTiltDeg:
             raise ValueError("uprightTiltDeg must be strictly less than maxTiltDeg")
+        if self.fallMinTiltDeg is not None and self.fallMinTiltDeg < self.maxTiltDeg:
+            raise ValueError("fallMinTiltDeg must be >= maxTiltDeg")
         Locations.model_validate(self.locations)
         return self
 
@@ -116,6 +124,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._dwell_elapsed = 0.0
         self._bow_peaked = False
         self._pre_fall_direction: str | None = None
+        self._fall_tilt_reached_at: float | None = None
         self._smoothed_cmd = [0.0, 0.0, 0.0]
         self._action_start_inferences = 0
         if ctx.config.defaultPosition is not None and not self.fallen:
@@ -151,6 +160,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self.active_action_name = None
         self.target_waypoint = None
         self._pre_fall_direction = None
+        self._fall_tilt_reached_at = None
         self._facts(ctx)
 
     def _set_fault_state(self, ctx, code: str, message: str):
@@ -300,6 +310,7 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self.last_completed_action = None
         self._dwell_elapsed = 0.0
         self._bow_peaked = False
+        self._fall_tilt_reached_at = None
         self._smoothed_cmd = [0.0, 0.0, 0.0]
         self._action_start_inferences = slot.model.inference_calls
         if inv.action == "walkTo":
@@ -338,8 +349,12 @@ class BipedPolicyProgram(MultiPolicyProgram):
                 self._facts(ctx)
             return
 
+        height_ok = (
+            ctx.config.minStandHeight is None or float(p[2]) >= float(ctx.config.minStandHeight)
+        )
+
         if inv.action == "walkTo":
-            if tilt_deg <= ctx.config.maxTiltDeg and self.target_waypoint in self.waypoints:
+            if tilt_deg <= ctx.config.maxTiltDeg and height_ok and self.target_waypoint in self.waypoints:
                 wp = self.waypoints[self.target_waypoint]
                 xy_tol = float(wp.get("xyTolerance") or ctx.config.xyTolerance)
                 yaw_tol = float(wp.get("yawTolerance") or ctx.config.yawTolerance)
@@ -355,16 +370,30 @@ class BipedPolicyProgram(MultiPolicyProgram):
 
         if inv.action == "standUp":
             if self._pre_fall_direction is not None:
-                if tilt_deg >= ctx.config.maxTiltDeg:
+                target_fall_tilt = float(
+                    ctx.config.fallMinTiltDeg
+                    if ctx.config.fallMinTiltDeg is not None
+                    else ctx.config.maxTiltDeg
+                )
+                if self._fall_tilt_reached_at is None and tilt_deg >= target_fall_tilt:
+                    self._fall_tilt_reached_at = ctx.sim_time
+                elif self._fall_tilt_reached_at is not None and tilt_deg < ctx.config.maxTiltDeg:
+                    self._fall_tilt_reached_at = None
+                if (
+                    self._fall_tilt_reached_at is not None
+                    and ctx.sim_time - self._fall_tilt_reached_at + 1e-9
+                    >= ctx.config.fallSettleSeconds
+                ):
                     self.fallen = True
+                    self.last_completed_action = None
                     self._pre_fall_direction = None
+                    self._fall_tilt_reached_at = None
                     self._dwell_elapsed = 0.0
+                    if self.active_slot is not None:
+                        self._action_start_inferences = self.active_slot.model.inference_calls
                     self.next_inference = ctx.sim_time
                     self._facts(ctx)
                 return
-            height_ok = (
-                ctx.config.minStandHeight is None or float(p[2]) >= float(ctx.config.minStandHeight)
-            )
             if tilt_deg <= ctx.config.uprightTiltDeg and height_ok:
                 self._dwell_elapsed += dt
             else:
@@ -376,8 +405,13 @@ class BipedPolicyProgram(MultiPolicyProgram):
                 if not self._bow_peaked:
                     self._bow_peaked = True
                     self._facts(ctx)
-            returned_upright = tilt_deg <= ctx.config.uprightTiltDeg and (
-                ctx.config.bowMinPitchDeg == 0.0 or abs(pitch_deg) < ctx.config.bowMinPitchDeg * 0.75
+            returned_upright = (
+                tilt_deg <= ctx.config.uprightTiltDeg
+                and height_ok
+                and (
+                    ctx.config.bowMinPitchDeg == 0.0
+                    or abs(pitch_deg) < ctx.config.bowMinPitchDeg * 0.75
+                )
             )
             if self._bow_peaked and returned_upright:
                 self._dwell_elapsed += dt
@@ -392,7 +426,8 @@ class BipedPolicyProgram(MultiPolicyProgram):
             ):
                 return (
                     "fall_induction_timeout",
-                    "Controlled fall posture did not reach maxTiltDeg within fallTimeoutSeconds",
+                    "Controlled fall posture did not reach and settle at target fall tilt "
+                    "within fallTimeoutSeconds",
                 )
             return None
         if self._latest_tilt_deg > ctx.config.maxTiltDeg:

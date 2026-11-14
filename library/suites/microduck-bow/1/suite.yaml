@@ -2,7 +2,7 @@ id: suite/microduck-bow
 title: Microduck forward bow and upright recovery
 layer: embodied
 scene: microduck-arena@1
-sceneContentHash: e1abe2e9d040e8d9b544f44233afa8f27883d40e383b6b19b1cf5680ddec02b4
+sceneContentHash: 9af821e9b1d687a48c7cf65f879fd24497d09b62212a418e02a8cb7d3e0cf75a
 source: newton
 episodes:
   - id: train-1

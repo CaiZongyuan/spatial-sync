@@ -34,12 +34,18 @@ from packages.library.assets import AssetLibrary
 from packages.library.assets import metadata as parse_asset_metadata
 from packages.library.visuals import glb_budget
 
-DEFAULT_SOURCE = Path(os.environ.get("MICRODUCK_SOURCE", "/root/project/microduck"))
 DEFAULT_OUTPUT = ROOT / "library/assets/robot/microduck/1"
 UPSTREAM_REPOSITORY = "https://github.com/pollen-robotics/microduck"
-FALLBACK_REVISION = "5984efb770855432b03dafd3d879e9929981e45b"
+PINNED_UPSTREAM_REVISION = "5984efb770855432b03dafd3d879e9929981e45b"
 ENTRYPOINT_REL = "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml"
+JOINTS_PROPS_REL = "microduck_rl/src/mjlab_microduck/robot/microduck/joints_properties.xml"
 CONSTANTS_REL = "microduck_rl/src/mjlab_microduck/robot/microduck_constants.py"
+PINNED_UPSTREAM_SHA256: dict[str, str] = {
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    ENTRYPOINT_REL: "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15",
+    JOINTS_PROPS_REL: "6a4481a9279ffd92139479e67515df7b3510799ceb648c18fde0d58c300eae86",
+    CONSTANTS_REL: "1b741537d1e67615e5094d4330802db74f9621cee05d6bd7a5ac734cace78099",
+}
 
 # Upstream STAND2 keyframe (radians) from mjlab_microduck/robot/microduck_constants.py.
 JOINT_ORDER = (
@@ -84,19 +90,19 @@ ACTUATOR_ARMATURE = 0.0018
 ACTUATOR_FRICTIONLOSS = 0.0048
 
 # Static equilibrium trunk pitch (deg) for STAND2 under soft 0.55 N*m/rad PD drives.
-TRUNK_EQUILIBRIUM_PITCH_DEG = -5.010211
+TRUNK_EQUILIBRIUM_PITCH_DEG = -5.00954144
 
 # Compact box colliders (body-local center [m], full box extents [m]) for the 7
 # intermediate links that carry positive mass in robot_groundcontact.xml without
 # authored collision geoms, satisfying P4 (50 <= density <= 20000 kg/m^3) and P3.
 INTERMEDIATE_LINK_COLLIDERS: dict[str, tuple[tuple[float, float, float], tuple[float, float, float]]] = {
-    "yaw2roll": ((0.0, 0.001, 0.015), (0.014, 0.014, 0.016)),
-    "bearing_roll": ((0.0, 0.001, 0.015), (0.014, 0.014, 0.016)),
-    "upper_leg_left": ((0.007, 0.020, 0.013), (0.014, 0.024, 0.020)),
-    "upper_leg_right": ((-0.007, 0.020, 0.013), (0.014, 0.024, 0.020)),
-    "neck": ((0.0, -0.025, 0.014), (0.014, 0.024, 0.016)),
-    "neck_pitch": ((0.0, 0.012, -0.0145), (0.010, 0.010, 0.010)),
-    "yaw_roll_motion": ((0.0, -0.005, 0.016), (0.016, 0.016, 0.020)),
+    "yaw2roll": ((-0.014, 0.0075, 0.0304), (0.008, 0.012, 0.014)),
+    "bearing_roll": ((-0.0005, 0.0053, 0.0224), (0.008, 0.012, 0.014)),
+    "upper_leg_left": ((-0.008, -0.004, 0.036), (0.012, 0.014, 0.016)),
+    "upper_leg_right": ((-0.012, -0.004, 0.036), (0.012, 0.014, 0.016)),
+    "neck": ((0.0013, -0.002, 0.009), (0.008, 0.016, 0.016)),
+    "neck_pitch": ((-0.004, -0.004, -0.022), (0.0075, 0.0075, 0.0075)),
+    "yaw_roll_motion": ((-0.008, -0.016, -0.022), (0.012, 0.014, 0.016)),
 }
 
 INTERNAL_MESH_PREFIXES = (
@@ -209,29 +215,43 @@ def decimate_visual_mesh(mesh: trimesh.Trimesh, *, internal: bool) -> trimesh.Tr
     return out
 
 
-def upstream_revision(source_root: Path) -> str:
-    try:
-        proc = subprocess.run(
-            ["git", "-c", f"safe.directory={source_root}", "-C", str(source_root), "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+def verify_upstream_source(source_root: Path) -> str:
+    """Verify upstream revision and pinned SHA-256 ledger before stamping provenance."""
+    for rel, want_sha in PINNED_UPSTREAM_SHA256.items():
+        candidate = source_root / rel
+        if not candidate.is_file():
+            raise FileNotFoundError(f"Required upstream Microduck file missing: {candidate}")
+        got_sha = str(fingerprint(candidate)["sha256"])
+        if got_sha != want_sha:
+            raise ValueError(
+                f"Upstream file {rel} SHA-256 mismatch: expected {want_sha}, got {got_sha}"
+            )
+    if (source_root / ".git").exists():
+        try:
+            proc = subprocess.run(
+                ["git", "-c", f"safe.directory={source_root}", "-C", str(source_root), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ValueError(f"Failed to verify git HEAD at {source_root}: {exc}") from exc
         rev = proc.stdout.strip()
-        if len(rev) == 40:
-            return rev
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return FALLBACK_REVISION
+        if rev != PINNED_UPSTREAM_REVISION:
+            raise ValueError(
+                f"Upstream git HEAD {rev} does not match pinned revision {PINNED_UPSTREAM_REVISION}"
+            )
+        return rev
+    return PINNED_UPSTREAM_REVISION
 
 
 def package_microduck(source_root: Path, output_dir: Path) -> dict[str, object]:
+    verified_rev = verify_upstream_source(source_root)
     xml_path = source_root / ENTRYPOINT_REL
+    joints_props_path = source_root / JOINTS_PROPS_REL
     license_path = source_root / "LICENSE"
     constants_path = source_root / CONSTANTS_REL
-    if not xml_path.is_file() or not license_path.is_file():
-        raise FileNotFoundError(f"Upstream Microduck source not found at {source_root}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     root = ET.parse(xml_path).getroot()
@@ -671,6 +691,9 @@ def package_microduck(source_root: Path, output_dir: Path) -> dict[str, object]:
                     "bowMinPitchDeg": 12.0,
                     "maxTiltDeg": 55.0,
                     "uprightTiltDeg": 20.0,
+                    "minStandHeight": 0.09,
+                    "fallMinTiltDeg": 68.0,
+                    "fallSettleSeconds": 0.45,
                     "xyTolerance": 0.08,
                     "yawTolerance": 0.25,
                     "dwellSeconds": 0.25,
@@ -690,9 +713,7 @@ def package_microduck(source_root: Path, output_dir: Path) -> dict[str, object]:
         newline="\n",
     )
 
-    tracked_sources = [license_path, xml_path]
-    if constants_path.is_file():
-        tracked_sources.append(constants_path)
+    tracked_sources = [license_path, xml_path, joints_props_path, constants_path]
     tracked_sources.extend(sorted(mesh_paths.values()))
     source_files = {
         src.relative_to(source_root).as_posix(): fingerprint(src)
@@ -707,7 +728,7 @@ def package_microduck(source_root: Path, output_dir: Path) -> dict[str, object]:
 
     provenance = {
         "repository": UPSTREAM_REPOSITORY,
-        "revision": upstream_revision(source_root),
+        "revision": verified_rev,
         "license": "Apache-2.0; original upstream LICENSE retained",
         "sourceEntrypoint": ENTRYPOINT_REL,
         "sourceFiles": source_files,
@@ -805,7 +826,14 @@ def validate_asset_package(output_dir: Path, state_dir: Path) -> dict[str, objec
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="Upstream microduck repo path")
+    env_source = os.environ.get("MICRODUCK_SOURCE")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=Path(env_source) if env_source else None,
+        required=not bool(env_source),
+        help="Upstream microduck repo path (or set MICRODUCK_SOURCE)",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Output asset version directory")
     parser.add_argument("--validate", action="store_true", help="Run StructuralValidator (S1-S8 + P1-P6)")
     parser.add_argument(

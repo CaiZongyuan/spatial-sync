@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-14T07:13:34.432703+00:00",
+  "capturedAt": "2026-11-14T09:55:46.001189+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -134,7 +134,7 @@
     },
     {
       "path": "devices/types/biped.v1.yaml",
-      "sha256": "60c962ad54e8ba750834a7f5b1a2afe292f1a0f0b7b4b4cd72def6e8dd29c575"
+      "sha256": "2375f23056574bfe2fe904fcb5aeaffcbbfec75291a299dd6edcf08d413ee0a3"
     },
     {
       "path": "devices/types/centrifuge.v1.yaml",
@@ -390,11 +390,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "5a880b72b8a252f9550d0d747f6737f2e5e032d2fe359594b36f2ab0bc4ea360"
+      "sha256": "e9366eb6c30e4015a494a3d17b7560582fcb2e739ad748beeebc2b538d966c0f"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "7f5d023f77fc75cb09f4e71ef5a679cde3bc373cc35b134ef31e82cac29779a9"
+      "sha256": "792fcc2e033874e681b1ea4e40229eda49ed2aca984e46f5a10decf3fdc4cd79"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -596,10 +596,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "f11a319645ed342797a8051a7a26ced5d4483a402418a2f9a39ade65979e6e81",
-    "catalog.json": "de5de684a90659cc80d275b445f890aa879b9400a239fadc0a523ab6d2a26249",
-    "state.json": "8af96f03549bcff997e3d3ddfa7f1371518cc97c34623166245fbc032f0f7a97",
-    "snapshot.bin": "032620ee8c1deaa7ff4a46d678726291fbcb1753314ae7bda0a1ba1454476c15",
+    "manifest.json": "d7e682bc951ccd7ab5a961a31145436d3db0cb7531d73bf4e2754c2e4f641a00",
+    "catalog.json": "a819f398e8294eaa28b4e5c35c8e328803721a3471b7ca944b68df6f5bd2811b",
+    "state.json": "182c31b74a1de73f875d58cc2ede7ff5e0d03fc2dec9bdd1744b72ebb2fcc82d",
+    "snapshot.bin": "bd0de55961cb3ac5b2a638b31123edbcc33fb8fb9875e8ea9b391559a53e2fa1",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

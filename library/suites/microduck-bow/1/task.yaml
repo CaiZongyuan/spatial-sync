@@ -8,6 +8,7 @@ success:
     - {property: fallen, equals: false}
     - {property: lastCompletedAction, equals: bow}
     - {property: tiltDeg, lte: 20.0}
+    - {property: baseHeight, gte: 0.09}
 milestones:
   - id: bowed
     when: {property: pitchDeg, gte: 12.0}

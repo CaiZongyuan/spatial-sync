@@ -8,6 +8,8 @@ success:
     - {property: fallen, equals: false}
     - {property: lastCompletedAction, equals: walkTo}
     - {property: currentWaypoint, notNull: true}
+    - {property: tiltDeg, lte: 20.0}
+    - {property: baseHeight, gte: 0.09}
 milestones:
   - id: walking
     when: {property: phase, equals: walking}

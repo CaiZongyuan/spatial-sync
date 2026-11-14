@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
-import mujoco
+import numpy as np
 import pytest
 
 from apps.node.usd_mjcf import derive_usd_mjcf, verify_against_observation_spec
@@ -15,6 +16,7 @@ from packages.library.common import BUILTIN_ROOT
 from packages.library.previews import PreviewRepository
 from packages.library.scenes import SceneLibrary
 from packages.library.suites import SuiteLibrary
+from tools.package_microduck_asset import PINNED_UPSTREAM_SHA256, verify_upstream_source
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,6 +72,16 @@ EXPECTED_BODY_MASSES = {
     "ankle_right": 0.030025100,
 }
 
+SYNTHETIC_INTERMEDIATE_BODIES = (
+    "yaw2roll",
+    "bearing_roll",
+    "upper_leg_left",
+    "upper_leg_right",
+    "neck",
+    "neck_pitch",
+    "yaw_roll_motion",
+)
+
 EXPECTED_SITES = (
     "imu",
     "left_foot",
@@ -108,15 +120,35 @@ def test_microduck_asset_package_validation_and_provenance(tmp_path: Path) -> No
     assert "Apache License" in license_text and "Version 2.0" in license_text
 
     provenance = json.loads((version.path / "provenance.json").read_text(encoding="utf-8"))
-    assert provenance["producer"]["path"] == "tools/package_microduck_asset.py"
+    producer_path = ROOT / "tools/package_microduck_asset.py"
+    assert provenance["producer"] == {
+        "path": "tools/package_microduck_asset.py",
+        "sha256": _sha256(producer_path),
+        "bytes": producer_path.stat().st_size,
+    }
     assert provenance["license"].startswith("Apache-2.0")
-    assert len(provenance["revision"]) == 40
+    assert provenance["revision"] == "5984efb770855432b03dafd3d879e9929981e45b"
+    for pinned_rel, pinned_sha in PINNED_UPSTREAM_SHA256.items():
+        assert provenance["sourceFiles"][pinned_rel]["sha256"] == pinned_sha
     assert set(provenance["files"]) == {"LICENSE", "asset.usdc", "asset.yaml", "visual.glb"}
     for rel_name, entry in provenance["files"].items():
         target = version.path / rel_name
         assert target.is_file()
         assert entry["bytes"] == target.stat().st_size
         assert entry["sha256"] == _sha256(target)
+
+    # Verify verify_upstream_source rejects tampered or unverified directories
+    fake_src = tmp_path / "fake-upstream"
+    fake_src.mkdir()
+    shutil.copyfile(version.path / "LICENSE", fake_src / "LICENSE")
+    for rel in PINNED_UPSTREAM_SHA256:
+        if rel == "LICENSE":
+            continue
+        dest = fake_src / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("tampered", encoding="utf-8")
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        verify_upstream_source(fake_src)
 
     impl = version.metadata["implements"][0]
     assert impl["type"] == "biped/v1"
@@ -125,6 +157,9 @@ def test_microduck_asset_package_validation_and_provenance(tmp_path: Path) -> No
     assert cfg["baseBody"] == "trunk_base"
     assert tuple(cfg["jointKeys"]) == tuple(f"joints/{name}" for name in EXPECTED_JOINTS)
     assert tuple(cfg["defaultPosition"]) == pytest.approx(EXPECTED_STAND2, abs=1e-6)
+    assert cfg["minStandHeight"] == pytest.approx(0.09)
+    assert cfg["fallMinTiltDeg"] == pytest.approx(68.0)
+    assert cfg["fallSettleSeconds"] == pytest.approx(0.45)
     assert set(cfg["actionTargets"]) == {"standUp", "bow"}
     assert set(cfg["fallPostures"]) == {"front", "back", "left", "right"}
 
@@ -199,6 +234,9 @@ def test_microduck_embodied_suites_bind_exact_arena_hash_and_hide_private_splits
         assert suite.metadata["source"] == "newton"
         assert suite.task["robot"] == "/World/Lab/Microduck"
         assert suite.task["implements"] == implements
+        success_clauses = suite.task["success"]["all"]
+        assert {"property": "baseHeight", "gte": 0.09} in success_clauses
+        assert {"property": "tiltDeg", "lte": 20.0} in success_clauses
         public = suite.public()
         serialized = json.dumps(public)
         assert public["target"] == "/World/Lab/Microduck"
@@ -238,19 +276,6 @@ def test_derive_usd_mjcf_matches_microduck_asset_and_arena_scene() -> None:
             assert j.max_force == pytest.approx(0.96, rel=1e-5)
             assert j.armature == pytest.approx(0.0018, rel=1e-5)
             assert j.frictionloss == pytest.approx(0.0048, rel=1e-5)
-
-        model = derived.to_mjmodel()
-        assert model.nbody == 16  # world + 15 rigid bodies
-        assert model.nq == 21  # 7 freejoint + 14 hinges
-        assert model.nv == 20  # 6 freejoint + 14 hinges
-        assert model.nu == 14
-        total_mass = float(model.body_mass[1:].sum())
-        assert total_mass == pytest.approx(sum(EXPECTED_BODY_MASSES.values()), rel=1e-6)
-        for body_name, want_mass in EXPECTED_BODY_MASSES.items():
-            body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-            assert body_id > 0
-            assert float(model.body_mass[body_id]) == pytest.approx(want_mass, rel=1e-6)
-            assert all(val > 0.0 for val in model.body_inertia[body_id])
 
     entity_key = "/World/Lab/Microduck"
     canonical_keys = [f"{entity_key}/joints/{name}" for name in EXPECTED_JOINTS]
@@ -305,15 +330,82 @@ def test_derive_usd_mjcf_matches_microduck_asset_and_arena_scene() -> None:
     )
 
 
-def test_zero_microduck_hardcoding_in_platform_core() -> None:
+def test_microduck_mjmodel_masses_and_zero_phantom_self_collisions(tmp_path: Path) -> None:
+    mujoco = pytest.importorskip("mujoco")
+
+    asset_dir = BUILTIN_ROOT / "assets/robot/microduck/1"
+    arena_stage = BUILTIN_ROOT / "scenes/microduck-arena/1/stage.usda"
+    derived_asset = derive_usd_mjcf(asset_dir / "asset.usdc")
+    derived_scene = derive_usd_mjcf(
+        arena_stage,
+        prim_path="/World/Lab/Microduck",
+        asset_packages={"robot/microduck@1": asset_dir},
+    )
+
+    for derived in (derived_asset, derived_scene):
+        model = derived.to_mjmodel()
+        assert model.nbody == 16  # world + 15 rigid bodies
+        assert model.nq == 21  # 7 freejoint + 14 hinges
+        assert model.nv == 20  # 6 freejoint + 14 hinges
+        assert model.nu == 14
+        total_mass = float(model.body_mass[1:].sum())
+        assert total_mass == pytest.approx(sum(EXPECTED_BODY_MASSES.values()), rel=1e-6)
+        for body_name, want_mass in EXPECTED_BODY_MASSES.items():
+            body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            assert body_id > 0
+            assert float(model.body_mass[body_id]) == pytest.approx(want_mass, rel=1e-6)
+            assert all(val > 0.0 for val in model.body_inertia[body_id])
+
+    assets = AssetLibrary(tmp_path / "state", builtin_root=BUILTIN_ROOT, user_root=tmp_path / "user")
+    assets.startup()
+    cfg = assets.resolve("robot/microduck@1").metadata["implements"][0]["config"]
+    bow_pose = np.asarray(cfg["actionTargets"]["bow"], dtype=np.float64)
+
+    model = derived_asset.to_mjmodel()
+    data = mujoco.MjData(model)
+    for label, q_joints in (("STAND2", np.asarray(EXPECTED_STAND2, dtype=np.float64)), ("bow", bow_pose)):
+        data.qpos[:3] = derived_asset.root_pos
+        data.qpos[3:7] = derived_asset.root_quat
+        data.qpos[7:] = q_joints
+        mujoco.mj_forward(model, data)
+        assert data.ncon == 0, f"Expected 0 self-contacts at {label}, got {data.ncon}"
+
+    synth_geom_ids = set()
+    for body_name in SYNTHETIC_INTERMEDIATE_BODIES:
+        geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"{body_name}_collision_0")
+        assert geom_id >= 0, f"Missing synthetic collider on {body_name}"
+        synth_geom_ids.add(geom_id)
+
+    lo = np.asarray([j.lower for j in derived_asset.joints], dtype=np.float64)
+    hi = np.asarray([j.upper for j in derived_asset.joints], dtype=np.float64)
+    rng = np.random.default_rng(42)
+    offending: list[tuple[int, str, str, float]] = []
+    for sample_idx in range(500):
+        data.qpos[:7] = [0.0, 0.0, 0.25, 1.0, 0.0, 0.0, 0.0]
+        data.qpos[7:] = rng.uniform(lo, hi)
+        mujoco.mj_forward(model, data)
+        for con_idx in range(data.ncon):
+            con = data.contact[con_idx]
+            if con.geom1 in synth_geom_ids or con.geom2 in synth_geom_ids:
+                b1 = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[con.geom1])
+                b2 = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[con.geom2])
+                offending.append((sample_idx, b1, b2, float(con.dist)))
+    assert offending == [], f"Synthetic P4 colliders caused phantom self-contacts: {offending[:10]}"
+
+
+def test_platform_core_remains_zero_microduck_hardcoded() -> None:
     core_roots = (
         ROOT / "packages/sim_runtime",
         ROOT / "packages/policies",
         ROOT / "packages/programs",
         ROOT / "packages/training",
         ROOT / "packages/info",
+        ROOT / "packages/library",
+        ROOT / "packages/protocol",
         ROOT / "apps/node",
         ROOT / "apps/api",
+        ROOT / "apps/web/src",
+        ROOT / "apps/cli",
         ROOT / "devices/types",
     )
     offenders: list[str] = []

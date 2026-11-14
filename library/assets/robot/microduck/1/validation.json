@@ -1,7 +1,7 @@
 {
   "schema": "lw.validation/1",
   "subject": "asset:robot/microduck@1",
-  "ranAt": "2026-11-14T06:59:11.585415+00:00",
+  "ranAt": "2026-11-14T09:28:58.203964+00:00",
   "toolVersions": {
     "usd-core": "26.8",
     "pydantic": "2.12.4",
@@ -95,12 +95,12 @@
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 7347.130 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 17143.302 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/yaw2roll",
       "measurements": {
         "massKg": 0.02304060012102127,
-        "collisionVolumeM3": 3.1360002594738035e-06,
-        "densityKgM3": 7347.129532727559
+        "collisionVolumeM3": 1.3440001112030586e-06,
+        "densityKgM3": 17143.302243030972
       }
     },
     {
@@ -119,12 +119,12 @@
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 7173.615 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 17934.036 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/upper_leg_left",
       "measurements": {
         "massKg": 0.04820669814944267,
-        "collisionVolumeM3": 6.720000328641618e-06,
-        "densityKgM3": 7173.6154452223345
+        "collisionVolumeM3": 2.6880004497797927e-06,
+        "densityKgM3": 17934.03648923938
       }
     },
     {
@@ -147,44 +147,44 @@
       "entityKey": "/Asset/ankle_left",
       "measurements": {
         "massKg": 0.03002459928393364,
-        "collisionVolumeM3": 2.3072556359693408e-05,
-        "densityKgM3": 1301.312209009709
+        "collisionVolumeM3": 2.307255817868281e-05,
+        "densityKgM3": 1301.3121064171355
       }
     },
     {
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 6852.938 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 17988.961 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/neck",
       "measurements": {
         "massKg": 0.03684139996767044,
-        "collisionVolumeM3": 5.376000899559585e-06,
-        "densityKgM3": 6852.937835387746
+        "collisionVolumeM3": 2.0480003968259552e-06,
+        "densityKgM3": 17988.96134237484
       }
     },
     {
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 5720.000 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 13558.519 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/neck_pitch",
       "measurements": {
         "massKg": 0.00571999978274107,
-        "collisionVolumeM3": 9.999999974752427e-07,
-        "densityKgM3": 5719.999797182681
+        "collisionVolumeM3": 4.218749722895154e-07,
+        "densityKgM3": 13558.518894113655
       }
     },
     {
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 9492.187 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 18080.354 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/yaw_roll_motion",
       "measurements": {
         "massKg": 0.04859999939799309,
-        "collisionVolumeM3": 5.1200004236306995e-06,
-        "densityKgM3": 9492.186597033484
+        "collisionVolumeM3": 2.6880004497797927e-06,
+        "densityKgM3": 18080.353893532465
       }
     },
     {
@@ -203,12 +203,12 @@
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 7347.130 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 17143.302 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/bearing_roll",
       "measurements": {
         "massKg": 0.02304060012102127,
-        "collisionVolumeM3": 3.1360002594738035e-06,
-        "densityKgM3": 7347.129532727559
+        "collisionVolumeM3": 1.3440001112030586e-06,
+        "densityKgM3": 17143.302243030972
       }
     },
     {
@@ -227,12 +227,12 @@
       "id": "P4",
       "tier": "physics",
       "status": "pass",
-      "message": "Collision-volume density: 7173.615 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
+      "message": "Collision-volume density: 17934.036 kg/m\u00b3 (range 50\u201320000 kg/m\u00b3)",
       "entityKey": "/Asset/upper_leg_right",
       "measurements": {
         "massKg": 0.04820669814944267,
-        "collisionVolumeM3": 6.720000328641618e-06,
-        "densityKgM3": 7173.6154452223345
+        "collisionVolumeM3": 2.6880004497797927e-06,
+        "densityKgM3": 17934.03648923938
       }
     },
     {
@@ -255,8 +255,8 @@
       "entityKey": "/Asset/ankle_right",
       "measurements": {
         "massKg": 0.030025100335478783,
-        "collisionVolumeM3": 2.307256727362983e-05,
-        "densityKgM3": 1301.3333097871239
+        "collisionVolumeM3": 2.307257818756625e-05,
+        "densityKgM3": 1301.332694222236
       }
     },
     {
@@ -277,20 +277,20 @@
       "id": "P2",
       "tier": "physics",
       "status": "pass",
-      "message": "Free-body displacement after 2 s: 2.885 mm (limit 5 mm)",
+      "message": "Free-body displacement after 2 s: 3.351 mm (limit 5 mm)",
       "entityKey": "/Asset/trunk_base",
       "measurements": {
         "initialM": [
           0.0,
           0.0,
-          0.11777201294898987
+          0.11777198314666748
         ],
         "finalM": [
-          0.00156162038911134,
-          2.354115196112616e-07,
-          0.11534667015075684
+          -0.002271645236760378,
+          2.320088242413476e-06,
+          0.11530889570713043
         ],
-        "displacementM": 0.0028846049961905825,
+        "displacementM": 0.0033506980167288636,
         "limitM": 0.005
       }
     },
@@ -298,12 +298,12 @@
       "id": "P3",
       "tier": "physics",
       "status": "pass",
-      "message": "Maximum measured penetration: 0.517 mm (limit 2 mm)",
-      "entityKey": "/Asset/neck_pitch/collision_0",
+      "message": "Maximum measured penetration: 0.437 mm (limit 2 mm)",
+      "entityKey": "/Validation/Ground",
       "measurements": {
-        "otherEntityKey": "/Asset/jaw_soft/collision_2",
-        "contactCount": 197,
-        "depthM": 0.0005167791969142854,
+        "otherEntityKey": "/Asset/ankle_left/collision_0",
+        "contactCount": 204,
+        "depthM": 0.00043680332601070404,
         "limitM": 0.002,
         "worldStaticShapeCount": 1,
         "excludedWorldStaticPairCount": 0,
@@ -350,7 +350,7 @@
   "physics": {
     "status": "completed",
     "device": "cpu",
-    "ranAt": "2026-11-14T06:59:12.915216+00:00",
+    "ranAt": "2026-11-14T09:28:59.601187+00:00",
     "toolVersions": {
       "newton": "1.7.0",
       "warp-lang": "1.18.0",

@@ -18,7 +18,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-14T07:12:28.719145+00:00",
+  "capturedAt": "2026-11-14T09:55:02.237679+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -266,11 +266,11 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "5a880b72b8a252f9550d0d747f6737f2e5e032d2fe359594b36f2ab0bc4ea360"
+      "sha256": "e9366eb6c30e4015a494a3d17b7560582fcb2e739ad748beeebc2b538d966c0f"
     },
     {
       "path": "packages/programs/biped/posture.py",
-      "sha256": "7f5d023f77fc75cb09f4e71ef5a679cde3bc373cc35b134ef31e82cac29779a9"
+      "sha256": "792fcc2e033874e681b1ea4e40229eda49ed2aca984e46f5a10decf3fdc4cd79"
     },
     {
       "path": "packages/programs/centrifuge/loading.py",
@@ -472,10 +472,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "c4b9f6cc3f20c43f21b0782e2d74599b17e822c8dc963fb06e2850c1d5f20cd9",
-    "catalog.json": "68781818610fa25b2a321efa506b5d563249b5c585c218fb6b923772edb1ed5e",
-    "state.json": "3b8f2b7cc8baa5130e33961ceee9d7420f326190e666ee4f8064af752474acd4",
-    "snapshot.bin": "73986396ac45a8738544ee6113bb8cc29cc550fd9d6335ec047cbc61b2d09627",
+    "manifest.json": "e31149667271414052c7706ca5854fc8e19b2e25be0a6d2d19d90df76c09edaa",
+    "catalog.json": "b1123538d629a0affd3cf5e5252712490c2375e316949bef6598afc816faf881",
+    "state.json": "ddb118e03033a962744ee2c57287f6e0227666dcf68458d5e5a78d34dc94448e",
+    "snapshot.bin": "2bb120bfbe93399c22f43f7848b2a537f4605bc552aae6b73a90a815dce6391b",
     "assets/sha256-5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71.glb": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71",
     "assets/sha256-5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12.glb": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12",
     "assets/sha256-a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89.glb": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89"

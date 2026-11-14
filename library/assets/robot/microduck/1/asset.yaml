@@ -7,9 +7,9 @@ description: Canonical Z-up OpenUSD biped robot derived from upstream Microduck 
 stage: asset.usdc
 visual: visual.glb
 dimensionsM:
-- 0.118935
+- 0.118936
 - 0.14163
-- 0.277957
+- 0.277956
 physics:
   massKg: 0.73724318
   massSource: datasheet
@@ -57,6 +57,9 @@ implements:
     bowMinPitchDeg: 12.0
     maxTiltDeg: 55.0
     uprightTiltDeg: 20.0
+    minStandHeight: 0.09
+    fallMinTiltDeg: 68.0
+    fallSettleSeconds: 0.45
     xyTolerance: 0.08
     yawTolerance: 0.25
     dwellSeconds: 0.25
