@@ -77,6 +77,14 @@ def test_mjlab_simulation_rejects_shifted_usd_collider(tmp_path):
     run_pinned_composition(tmp_path, "geometry")
 
 
+def test_mjlab_simulation_rejects_shifted_articulation_link(tmp_path):
+    run_pinned_composition(tmp_path, "link")
+
+
+def test_mjlab_simulation_preserves_root_placement_and_checks_joint_frames(tmp_path):
+    run_pinned_composition(tmp_path, "joint-frames")
+
+
 def test_mjlab_simulation_compares_compiled_meshes_in_the_link_frame(tmp_path):
     run_pinned_composition(tmp_path, "mesh")
 
@@ -285,6 +293,10 @@ def check_final_simulation(path, case):
         callback_calls.append(1)
         spec.geom("robot/A_Ball").pos[2] += .5
 
+    def shift_link(spec):
+        callback_calls.append(1)
+        spec.body("robot/B").pos[0] += .5
+
     def build(*, callback=None, disabled=()):
         cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
                        entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
@@ -312,6 +324,12 @@ def check_final_simulation(path, case):
         sim, verify, actual = build(callback=add_exclusion)
         assert actual == {frozenset(("terrain", "robot/A_Ball"))}
         assert len(callback_calls) == 1
+    elif case == "link":
+        sim, verify, actual = build(callback=shift_link)
+        assert actual == {frozenset(("terrain", "robot/A_Ball"))}
+        assert sim.mj_model.geom("robot/B_Ball").pos.tolist() == [0., 0., 0.]
+        assert abs(sim.mj_model.body("robot/B").pos[0] - good_sim.mj_model.body("robot/B").pos[0] - .5) < 1e-7
+        assert len(callback_calls) == 1
     else:
         sim, verify, actual = build(callback=shift_collider)
         assert actual == set()
@@ -324,6 +342,9 @@ def check_final_simulation(path, case):
     except usd_mjcf.UnsupportedUsdPhysics as exc:
         if case == "disable":
             assert exc.prim_path == "/World/Lab/Floor"
+        elif case == "link":
+            assert exc.prim_path == "/World/Lab/Robot/B"
+            assert "parent-relative" in str(exc)
         else:
             assert exc.prim_path == "/World/Lab/Robot/A/Ball"
             if case == "exclude":
@@ -413,6 +434,97 @@ def check_mesh_geometry(path):
     print("Equivalent mesh frame, vertex order, quaternion sign and root pose accepted", flush=True)
 
 
+def check_joint_frames(path):
+    import math
+
+    import mujoco
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+    from pxr import Usd, UsdPhysics
+
+    from apps.node import usd_mjcf
+
+    for root_mode in ("free", "mocap", "fixed"):
+        # Use an owned layer per model so OpenUSD does not reuse a previous fixture.
+        stage_path = path.with_name(root_mode + ".usda")
+        stage_path.write_text(STAGE)
+        stage = Usd.Stage.Open(str(stage_path))
+        if root_mode != "free":
+            fixed = UsdPhysics.FixedJoint.Define(stage, "/World/Lab/Robot/Fixed")
+            fixed.CreateBody1Rel().SetTargets(["/World/Lab/Robot/A"])
+            fixed.CreateLocalPos0Attr((0., 0., 1.))
+        if root_mode == "fixed":
+            stage.GetPrimAtPath("/World/Lab/Robot/A").RemoveProperty("physics:filteredPairs")
+            for name in ("B", "C", "AB", "BC"):
+                stage.RemovePrim("/World/Lab/Robot/" + name)
+        stage.GetRootLayer().Save()
+        derived = usd_mjcf.derive_usd_mjcf(
+            stage_path, prim_path="/World/Lab/Robot", include_static_colliders=False,
+        )
+
+        def build(callback=None):
+            initial = EntityCfg.InitialStateCfg(
+                pos=(.25, .35, 1.1), rot=(math.sqrt(.5), 0., 0., math.sqrt(.5)),
+                joint_pos={".*": .3},
+            )
+            entity = EntityCfg(spec_fn=derived.to_mjspec, init_state=initial)
+            cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                           entities={"robot": entity}, spec_fn=callback)
+            verify = usd_mjcf.configure_mjlab_usd_scene(cfg, stage_path)
+            sim = Simulation(1, SimulationCfg(), Scene(cfg, device="cpu").compile(), device="cpu")
+            return sim.mj_model, verify
+
+        def along_hinge_axis(spec):
+            # The same hinge line can be represented by any point on its axis.
+            joint = spec.joint("robot/AB")
+            joint.pos[:] += .25 * joint.axis
+
+        model, verify = build(None if root_mode == "fixed" else along_hinge_axis)
+        verify(model)
+        data = mujoco.MjData(model)
+        mujoco.mj_resetDataKeyframe(model, data, model.key("init_state").id)
+        if root_mode == "free":
+            assert abs(data.qpos[0] - .25) < 1e-7
+            data.qpos[2] += .4
+        else:
+            root_name = "robot/mocap_base" if root_mode == "fixed" else "robot/A"
+            index = model.body_mocapid[model.body(root_name).id]
+            assert index >= 0
+            data.mocap_pos[index, 2] += .4
+        mujoco.mj_forward(model, data)
+        verify(model)
+        print(f"{root_mode} placement and reset accepted", flush=True)
+
+        if root_mode == "mocap":
+            def move_anchor(spec):
+                joint = spec.joint("robot/AB")
+                transverse = min(range(3), key=lambda index: abs(joint.axis[index]))
+                joint.pos[transverse] += .05
+
+            changed, verify_changed = build(move_anchor)
+            try:
+                verify_changed(changed)
+            except usd_mjcf.UnsupportedUsdPhysics as exc:
+                assert exc.prim_path == "/World/Lab/Robot/AB"
+                assert "hinge anchor" in str(exc)
+            else:
+                raise AssertionError("Final Simulation accepted a changed hinge anchor")
+        if root_mode == "fixed":
+            def shift_welded_link(spec):
+                spec.body("robot/A").pos[0] += .5
+
+            changed, verify_changed = build(shift_welded_link)
+            try:
+                verify_changed(changed)
+            except usd_mjcf.UnsupportedUsdPhysics as exc:
+                assert exc.prim_path == "/World/Lab/Robot/A"
+                assert "parent-relative" in str(exc)
+            else:
+                raise AssertionError("Final Simulation accepted a changed fixed attachment")
+
+
 if __name__ == "__main__":
     path, case = Path(sys.argv[1]), sys.argv[2]
     if case == "parent":
@@ -421,5 +533,7 @@ if __name__ == "__main__":
         check_ground_fidelity(path, case)
     elif case == "mesh":
         check_mesh_geometry(path)
+    elif case == "joint-frames":
+        check_joint_frames(path)
     else:
         check_final_simulation(path, case)

@@ -861,6 +861,83 @@ def _same_collider_points(reference, candidate, tolerance):
     return contains_all(reference, candidate) and contains_all(candidate, reference)
 
 
+def _mjlab_kinematics(model, derived, coordinates, *, prefix=""):
+    import mujoco
+
+    body_paths = {}
+    for path, name in derived.body_names_by_path.items():
+        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, prefix + name)
+        if index <= 0:
+            raise UnsupportedUsdPhysics(path, "Missing USD rigid link in simulation")
+        body_paths[index] = path
+
+    data = mujoco.MjData(model)
+    joint_paths = {}
+    joint_frames = {}
+    for joint in derived.joints:
+        path = joint.prim_path
+        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, prefix + joint.name)
+        kind = mujoco.mjtJoint.mjJNT_HINGE if joint.kind == "hinge" else mujoco.mjtJoint.mjJNT_SLIDE
+        if index < 0 or model.jnt_type[index] != kind:
+            raise UnsupportedUsdPhysics(path, "Missing USD joint or changed joint type")
+        address = model.jnt_qposadr[index]
+        data.qpos[address] = coordinates[path]
+        joint_paths[index] = path
+        axis = model.jnt_axis[index].copy()
+        # Translating a hinge anchor along its own axis preserves the joint line.
+        anchor = model.jnt_pos[index]
+        joint_frames[path] = (axis, anchor - (anchor @ axis) * axis if joint.kind == "hinge" else None)
+
+    mujoco.mj_kinematics(model, data)
+    links = {}
+    for index, path in body_paths.items():
+        parent = model.body_parentid[index]
+        parent_path = body_paths.get(parent)
+        first = model.body_jntadr[index]
+        joints = range(first, first + model.body_jntnum[index])
+        free_root = len(joints) == 1 and model.jnt_type[first] == mujoco.mjtJoint.mjJNT_FREE
+        mocap_root = model.body_mocapid[index] >= 0
+        if parent and parent_path is None:
+            # mjlab wraps a fixed entity in a single world-attached mocap
+            # placement body. The original link's offset inside it stays pinned.
+            if (not prefix or model.body(int(parent)).name != prefix + "mocap_base"
+                    or model.body_parentid[parent] != 0 or model.body_mocapid[parent] < 0
+                    or model.body_jntnum[parent] != 0 or free_root or mocap_root):
+                raise UnsupportedUsdPhysics(path, "Simulation changed rigid link parent")
+        attached = () if free_root else tuple(sorted(joint_paths.get(j, "") for j in joints))
+        if "" in attached:
+            raise UnsupportedUsdPhysics(path, "Simulation attached an unrecognized joint to USD link")
+        relative = None
+        if not (free_root or mocap_root):
+            parent_inverse = data.xmat[parent].reshape(3, 3).T
+            relative = (parent_inverse @ (data.xpos[index] - data.xpos[parent]),
+                        parent_inverse @ data.xmat[index].reshape(3, 3))
+        links[path] = ((parent_path, attached, free_root, mocap_root), relative)
+    return links, joint_frames
+
+
+def _check_mjlab_kinematics(reference, candidate):
+    import numpy as np
+
+    expected_links, expected_joints = reference
+    actual_links, actual_joints = candidate
+    for path, (structure, pose) in expected_links.items():
+        actual_structure, actual_pose = actual_links[path]
+        if structure != actual_structure:
+            raise UnsupportedUsdPhysics(path, "Simulation changed link parent, attached joints or root type")
+        if pose is not None and any(
+            not np.allclose(left, right, rtol=0., atol=1e-5)
+            for left, right in zip(pose, actual_pose, strict=True)
+        ):
+            raise UnsupportedUsdPhysics(path, "Simulation changed parent-relative link transform")
+    for path, (axis, anchor) in expected_joints.items():
+        actual_axis, actual_anchor = actual_joints[path]
+        if not np.allclose(axis, actual_axis, rtol=0., atol=1e-5):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD joint axis")
+        if anchor is not None and not np.allclose(anchor, actual_anchor, rtol=0., atol=1e-5):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD hinge anchor")
+
+
 def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
     """Compose the USD plane and return a check for the final simulation model."""
     import mujoco
@@ -900,6 +977,21 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
     prefix = next(iter(scene_cfg.entities)) + "/"
     plane_key = str(plane_path)
     expected = _mjlab_contact_snapshot(source_model, source_paths, plane_key)
+    root_index = source_model.body(derived.root_body).id
+    wrapped_contacts = None
+    if source_model.body_jntnum[root_index] == 0 and source_model.body_mocapid[root_index] < 0:
+        # The SDK's placement wrapper gives a static entity its own mocap weld
+        # island. Compile that source collision representation separately.
+        wrapped = derived.to_mjspec()
+        wrapped.body(derived.root_body).mocap = True
+        wrapped_model = wrapped.compile()
+        wrapped_paths = _mjlab_collider_paths(wrapped_model, source_names)
+        wrapped_contacts = _mjlab_contact_snapshot(wrapped_model, wrapped_paths, plane_key)
+    coordinates = {
+        joint.prim_path: float(source_model.qpos0[source_model.joint(joint.name).qposadr[0]])
+        for joint in derived.joints
+    }
+    expected_kinematics = _mjlab_kinematics(source_model, derived, coordinates)
     expected_geometry = {
         path: _link_local_collision_geometry(source_model, index, path)
         for index, path in source_paths.items() if path != plane_key
@@ -921,6 +1013,8 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
 
     def verify(model):
         _check_mjlab_plane_pose(model, "terrain", plane_path)
+        actual_kinematics = _mjlab_kinematics(model, derived, coordinates, prefix=prefix)
+        _check_mjlab_kinematics(expected_kinematics, actual_kinematics)
         final_paths = _mjlab_collider_paths(model, final_names)
         for index, path in final_paths.items():
             if path == plane_key:
@@ -938,11 +1032,15 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
                 raise UnsupportedUsdPhysics(path, "Simulation changed link-local collider vertices")
 
         actual = _mjlab_contact_snapshot(model, final_paths, plane_key)
-        changed_pairs = expected.keys() ^ actual.keys()
+        root_index = model.body(prefix + derived.root_body).id
+        # A non-world parent for this root has already been verified as the SDK wrapper.
+        uses_wrapper = wrapped_contacts is not None and model.body_parentid[root_index] != 0
+        expected_pairs = wrapped_contacts if uses_wrapper else expected
+        changed_pairs = expected_pairs.keys() ^ actual.keys()
         if changed_pairs:
             first, second = min(changed_pairs)
             raise UnsupportedUsdPhysics(first, f"Simulation changed collision eligibility with {second}")
-        for pair, reference in expected.items():
+        for pair, reference in expected_pairs.items():
             candidate = actual[pair]
             same_parameters = reference.shape == candidate.shape and np.allclose(
                 reference, candidate, rtol=0., atol=1e-8,
