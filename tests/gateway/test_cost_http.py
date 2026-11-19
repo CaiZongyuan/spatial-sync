@@ -1,6 +1,7 @@
 """GPU-free public accounting with authenticated cumulative node reports."""
 
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from apps.api.app.settings import Settings
 from packages.training.jobs import profile_key
 from tests.fixtures.training_task import task_archive, training_plan
 from tests.gateway.test_evaluation_center import documents as evaluation_documents
+from tests.gateway.test_remote_training_nodes import OPERATOR, beat, register, remote_settings
 
 TOKEN = "cost-contract-fake-node-token"
 HEADERS = {"X-Node-Token": TOKEN, "X-Node-Instance": "cost-worker"}
@@ -344,3 +346,74 @@ def test_cost_reads_do_not_publish_an_uncommitted_counter_after_job_persistence_
     reopened.state.jobs.clock = lambda: clock[0]
     with TestClient(reopened) as http:
         assert totals(http)["gpuSeconds"] == pytest.approx(10)
+
+
+def test_reconciliation_write_failure_leaves_authenticated_nodes_unavailable(tmp_path):
+    settings = remote_settings(node_token=TOKEN)
+    app = create_app(settings)
+    clock = [1000.0]
+    app.state.jobs.clock = lambda: clock[0]
+    with TestClient(app, headers=OPERATOR) as http:
+        _, body, job = admitted(http, clock)
+        named = register(http, "other-worker")
+        clock[0] += 10
+        assert report(http, body, job, 10).status_code == 200
+        del http.headers["Authorization"]
+        assert beat(http, named).status_code == 200
+        node = HEADERS | {"X-Lease-Id": job["leaseId"]}
+        job_url = f"/api/v1/jobs/{job['jobId']}"
+        package = job_url + "/inputs/packages/0"
+        exported = http.get(package, headers=node)
+        assert exported.status_code == 200 and exported.headers["content-type"] == "application/x-tar"
+
+        # A normal log read can recover an incomplete final write by truncating the tail.
+        log_path = tmp_path / "user-library" / "jobs" / job["jobId"] / "logs.jsonl"
+        partial_log = b'"complete"\n"partial'
+        log_path.write_bytes(partial_log)
+        path = settings.state_root / "jobs.json"
+        backup = path.with_name("retained-jobs.json")
+        path.rename(backup)
+        path.mkdir()
+        try:
+            deadline = time.monotonic() + 5
+            while http.get("/api/v1/cost/summary", headers=OPERATOR).status_code == 200:
+                assert time.monotonic() < deadline, "Scheduled reconciliation did not try to persist"
+                time.sleep(0.025)
+
+            clock[0] += 10
+            failed = [
+                report(http, body, job, 20),
+                beat(http, named),
+                http.get(job_url + "/inputs", headers=node),
+                http.get(package, headers=node),
+                http.post(job_url + "/artifacts", headers=node, content=b"unused archive"),
+                http.get(job_url, headers=OPERATOR),
+                http.get(job_url + "/logs", headers=OPERATOR),
+                http.get(job_url + f"/view-assets/{'a' * 64}/fixture.glb", headers=OPERATOR),
+                http.get("/api/v1/jobs", headers=OPERATOR),
+                http.get("/api/v1/nodes", headers=OPERATOR),
+                http.get("/api/v1/nodes/local", headers=OPERATOR),
+                http.get("/api/v1/cost/summary", headers=OPERATOR),
+                http.post(job_url + "/cancel", headers=OPERATOR),
+            ]
+            for response in failed:
+                assert response.status_code == 503, (response.request.url, response.text)
+                assert response.json()["detail"]["code"] == "jobs_persistence_unavailable"
+            assert log_path.read_bytes() == partial_log
+            assert not (log_path.parent / "artifacts").exists()
+
+            for bad in ({}, HEADERS | {"X-Node-Token": "wrong"}):
+                assert http.post("/api/v1/nodes/local/heartbeat", headers=bad, json=body).status_code == 401
+                denied = http.post("/api/v1/nodes/local/heartbeat", headers=OPERATOR | bad, json=body)
+                assert denied.status_code == 403 and denied.json()["detail"]["code"] == "node_auth_required"
+            assert beat(http, named, path_id="local").status_code == 403
+        finally:
+            path.rmdir()
+            backup.rename(path)
+
+    reopened = create_app(settings)
+    reopened.state.jobs.clock = lambda: clock[0]
+    with TestClient(reopened, headers=OPERATOR) as http:
+        assert totals(http)["gpuSeconds"] == pytest.approx(10)
+        assert http.get(job_url).json()["metrics"]["elapsedSeconds"] == 10
+        assert http.get(job_url + "/logs").json()["lines"] == ["complete"]

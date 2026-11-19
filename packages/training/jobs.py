@@ -104,17 +104,21 @@ class TrainingJobs:
             raise PlanError("jobs_persistence_unavailable", "Job ownership could not be saved", status=503)
 
     def _save(self):
-        self._require_available()
-        try:
-            self.manager.costs.capture(self.records, self.clock())
-            durable_json(self.path, {
-                "jobs": self.records, "nodes": self.nodes, "registrations": self.registrations,
-                "nodeCredentials": self.node_credentials, "leaseSequence": self.lease_sequence,
-                "gpuQuarantine": self.gpu_quarantine, "cleanupKey": self.cleanup_key,
-            })
-        except (OSError, ValueError) as exc:
-            self._failure = True
-            raise PlanError("jobs_persistence_unavailable", "Job ownership save failed", status=503) from exc
+        # Artifact publication checks availability under the same resource lock.
+        with self.manager._resource_lock:
+            self._require_available()
+            try:
+                self.manager.costs.capture(self.records, self.clock())
+                durable_json(self.path, {
+                    "jobs": self.records, "nodes": self.nodes, "registrations": self.registrations,
+                    "nodeCredentials": self.node_credentials, "leaseSequence": self.lease_sequence,
+                    "gpuQuarantine": self.gpu_quarantine, "cleanupKey": self.cleanup_key,
+                })
+            except (OSError, ValueError) as exc:
+                self._failure = True
+                raise PlanError(
+                    "jobs_persistence_unavailable", "Job ownership save failed", status=503
+                ) from exc
 
     async def run(self):
         while True:
@@ -191,7 +195,7 @@ class TrainingJobs:
 
     def authenticated_node(self, headers, identity=None):
         claimed = headers.get("x-node-id", "local")
-        if self._failure or (identity is not None and identity != claimed):
+        if identity is not None and identity != claimed:
             return False
         token = headers.get("x-node-token", "")
         if not token:
@@ -958,6 +962,7 @@ class TrainingJobs:
         return {"cleanup": {"schemaVersion": lease["cleanupVersion"], "token": self._cleanup_token(scope)}}
 
     def list_nodes(self):
+        self._require_available()
         identities = dict.fromkeys(
             (*self.nodes, *self.node_credentials) if self.manager.settings.remote
             else (identity for identity in self.nodes if identity == "local")
@@ -966,6 +971,7 @@ class TrainingJobs:
         return [self.node_document(identity) for identity in identities]
 
     def node_document(self, identity):
+        self._require_available()
         node = self.nodes.get(identity)
         if identity != "local" and not self.manager.settings.remote:
             node = None
@@ -1013,6 +1019,7 @@ class TrainingJobs:
         return destination_parent(root, ("jobs", identity), create=True) / "logs.jsonl"
 
     def read_logs(self, identity):
+        self._require_available()
         path = self._log_path(identity)
         if not path.exists():
             return []

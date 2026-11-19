@@ -157,7 +157,8 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
             {"path": name, "size": (stage / name).stat().st_size, "sha256": _file_hash(stage / name)}
             for name in sorted(files)
         ]
-        directory = destination_parent(root, ("jobs", job["jobId"]), create=True)
+        parts = ("jobs", job["jobId"])
+        directory = destination_parent(root, parts)
         destination = directory / "artifacts"
         if destination.exists():
             existing = [
@@ -174,5 +175,6 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
             if verify_lease is not None:
                 verify_lease()
             if not destination.exists():
+                destination_parent(root, parts, create=True)
                 os.rename(stage, destination)
         return records, versions

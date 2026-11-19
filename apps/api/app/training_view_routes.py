@@ -52,6 +52,7 @@ def install_training_view_routes(app, manager, views, role_for, authenticate_nod
             await websocket.close(code=1008)
             return
         try:
+            manager.jobs._require_available()
             job = manager.jobs.get(identity)
         except PlanError:
             await websocket.close(code=1008)
@@ -87,10 +88,12 @@ def install_training_view_routes(app, manager, views, role_for, authenticate_nod
 
     @app.get("/api/v1/jobs/{identity}/view-assets/{digest}/{relative:path}")
     async def resource(identity: str, digest: str, relative: str):
+        manager.jobs._require_available()
         job = manager.jobs.get(identity)
         if job["status"] in TERMINAL:
             raise PlanError("training_view_asset_unavailable", "Job view is no longer active", status=404)
         payload = await asyncio.to_thread(views.descriptors.read, identity, digest, relative)
+        manager.jobs._require_available()
         media = {
             ".glb": "model/gltf-binary",
             ".gltf": "model/gltf+json",

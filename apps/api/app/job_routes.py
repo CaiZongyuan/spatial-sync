@@ -31,6 +31,7 @@ def install_job_routes(app, manager, role_for, views=None):
     def node(request, identity=None, *, node_id=None):
         if not jobs.authenticated_node(request.headers, node_id):
             raise PlanError("node_auth_required", "This Compute Node's token is required", status=403)
+        jobs._require_available()
         if identity:
             job = jobs.get(identity)
             owner = jobs.nodes.get(job["nodeId"])
@@ -56,6 +57,7 @@ def install_job_routes(app, manager, role_for, views=None):
 
     @app.get("/api/v1/jobs")
     async def listing(plan: str | None = None, status: str | None = None, kind: str | None = None):
+        jobs._require_available()
         return {
             "jobs": [
                 jobs.document(job)
@@ -163,6 +165,7 @@ def install_job_routes(app, manager, role_for, views=None):
                     raise PlanError("artifacts_invalid", "Artifacts exceed 128 MiB", status=422)
                 stream.write(chunk)
             stream.seek(0)
+            node(request, identity)
             records, versions = await anyio.to_thread.run_sync(
                 store_artifacts, manager, job, stream, lambda: node(request, identity),
                 lease.get("trainerVersions"),
