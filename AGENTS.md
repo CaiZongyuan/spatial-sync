@@ -23,7 +23,7 @@ These are hard to reverse. Change them deliberately, with the user.
 - `entityKey` is the one identity shared by the spatial and information planes, derived from Newton labels (USD scenes: Prim Paths).
 - Protocol geometry keeps Newton conventions: Z-up, half extents, capsule/cylinder/cone along local Z. Only `apps/web/src/lib/geometry/primitives.ts` converts to Three.js.
 - Web, CLI and MCP reach devices only through the HTTP API's single action pipeline.
-- Device behavior lives in `devices/` YAML and `packages/programs/`. The pipeline in `packages/info` and the API stay device-agnostic, and MCP tools stay generic.
+- Built-in device behavior lives in `devices/` YAML and `packages/programs/`; user-defined robot `EntityType`s live as immutable versioned library declarations (`u-<name>/v<N>`) driven by built-in generic policy hosts (`ADR-0010`). The pipeline in `packages/info` and the API stay device-agnostic, and MCP tools stay generic.
 
 ## Working style
 

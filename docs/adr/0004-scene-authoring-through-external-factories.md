@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
-updated: 2026-10-24
+updated: 2026-11-19
 ---
 
 # Author scenes in external factories and retain the original Asset references
@@ -14,6 +14,15 @@ The platform may display a read-only brief, confirmation summary or authoring st
 
 Blender is an authoring tool; a published Scene Version remains a USD composition of fixed Asset versions. Existing validated robots and physical Assets retain their original packages. The factory extracts instance identity and placement from the authoring workspace and writes references and layout opinions, rather than treating a Blender import/export round trip as preservation of the original physics. Blender's documented USD layer, variant and material limitations make that distinction necessary. Changed geometry becomes a derived Asset with new provenance and validation.
 
-Use MCP for Blender as the agent's Blender control layer and small project-owned scripts for asset identity, layout extraction and package production. Scene-critical unknowns and placeholders remain explicit in a Scene Draft. A model's visual appearance does not establish its physical or behavioral suitability for the requested task. Image-to-3D is an optional route for noncritical props after reuse and procedural modeling, with a separately selected service, license policy and generation budget.
+Use MCP for Blender as the agent's Blender control layer and small project-owned scripts for asset identity, layout extraction and package production. Scene-critical unknowns and placeholders remain explicit in a Scene Draft. A model's visual appearance does not establish its physical or behavioral suitability for the requested task. Image-to-3D is an optional route for noncritical scene elements after reuse and procedural modeling, with a separately selected service, license policy and generation budget.
 
-This records an accepted design; the reusable factory and Blender bridge are not yet implemented. The workflow and verification targets are in [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md).
+The external factory workflow and verification targets are in [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md).
+
+## Amendment (2026-11-19) — Deterministic training and evaluation Scenes
+
+The approved design lets users and external Agents compose deterministic training and evaluation `Scene Draft`s through CLI, MCP or lightweight Web placement controls and publish immutable OpenUSD `Scene Version`s. High-detail laboratory environments remain in the Blender workflow and authoring conversations stay in external `Agent Runtime`s using `Platform Skill`s. [Scene authoring backend #298](https://github.com/CaiZongyuan/spatial-sync/issues/298) · [Web placement controls #300](https://github.com/CaiZongyuan/spatial-sync/issues/300) · [ADR-0001](0001-usd-canonical-scene-format.md) · [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md)
+
+### Consequences
+
+- `Scene Version` owns baked terrain, static obstacles, initial rigid-body `Entity` poses and markers. `Task` owns episode reset randomization, command sampling and terrain curriculum.
+- The `mjlab` compiler builds each parallel environment from the pinned `Scene Version`, including its declared interactive `Entities`. Stair collision uses box primitives to preserve the individual steps in the solver. [Scene composition requirements](../spec/LAB_SELF_SERVICE_EMBODIED_SPEC_V1.md#平台内确定性训练场景编排与多实体入训)
